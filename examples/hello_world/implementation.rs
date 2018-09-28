@@ -38,6 +38,10 @@ impl CompilerQueryContext for QueryContextImpl {
 // FIXME: This code... probably should not live here. But maybe we
 // just want to provide some helpers or something? I do suspect I want
 // people to be able to customize this.
+//
+// Seems like a classic case where specialization could be useful to
+// permit behavior refinement.
+
 impl BaseQueryContext for QueryContextImpl {
     type QueryDescriptor = DynDescriptor;
 
