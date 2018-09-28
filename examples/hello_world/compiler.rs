@@ -2,5 +2,5 @@ pub trait CompilerQueryContext: salsa::BaseQueryContext {
     fn interner(&self) -> &Interner;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Interner;

@@ -25,6 +25,18 @@ where
     map: RefCell<FxHashMap<Q::Key, QueryState<Q::Value>>>,
 }
 
+impl<QC, Q> Default for MemoizedStorage<QC, Q>
+where
+    Q: Query<QC>,
+    QC: BaseQueryContext,
+{
+    fn default() -> Self {
+        MemoizedStorage {
+            map: RefCell::new(FxHashMap::default()),
+        }
+    }
+}
+
 impl<QC, Q> QueryStorageOps<QC, Q> for MemoizedStorage<QC, Q>
 where
     Q: Query<QC>,

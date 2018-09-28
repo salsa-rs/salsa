@@ -19,23 +19,23 @@ pub trait ClassTableQueryContext: compiler::CompilerQueryContext {
     );
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct DefId;
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub struct DefId(usize);
 
 query_definition! {
     pub AllClasses(_: &impl ClassTableQueryContext, (): ()) -> Arc<Vec<DefId>> {
-        Arc::new(vec![]) // dummy impl
+        Arc::new(vec![DefId(0), DefId(10)]) // dummy impl
     }
 }
 
 query_definition! {
-    pub Fields(_: &impl ClassTableQueryContext, _class: DefId) -> Arc<Vec<DefId>> {
-        Arc::new(vec![]) // dummy impl
+    pub Fields(_: &impl ClassTableQueryContext, class: DefId) -> Arc<Vec<DefId>> {
+        Arc::new(vec![DefId(class.0 + 1), DefId(class.0 + 2)]) // dummy impl
     }
 }
 
 query_definition! {
-    pub AllFields(query: &impl ClassTableQueryContext, _class: DefId) -> Arc<Vec<DefId>> {
+    pub AllFields(query: &impl ClassTableQueryContext, (): ()) -> Arc<Vec<DefId>> {
         Arc::new(
             query.all_classes()
                 .of(())
@@ -43,7 +43,7 @@ query_definition! {
                 .cloned()
                 .flat_map(|def_id| {
                     let fields = query.fields().of(def_id);
-                    (0..fields.len()).map(move |i| fields[i].clone())
+                    (0..fields.len()).map(move |i| fields[i])
                 })
                 .collect()
         )

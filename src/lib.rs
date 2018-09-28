@@ -53,7 +53,7 @@ pub trait Query<QC: BaseQueryContext>: Debug + Default + Sized + 'static {
     fn execute(query: &QC, key: Self::Key) -> Self::Value;
 }
 
-pub trait QueryStorageOps<QC, Q>
+pub trait QueryStorageOps<QC, Q>: Default
 where
     QC: BaseQueryContext,
     Q: Query<QC>,
