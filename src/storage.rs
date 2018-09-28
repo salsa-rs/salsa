@@ -1,7 +1,6 @@
 use crate::BaseQueryContext;
 use crate::CycleDetected;
 use crate::Query;
-use crate::QueryState;
 use crate::QueryStorageOps;
 use crate::QueryTable;
 use rustc_hash::FxHashMap;
@@ -23,6 +22,17 @@ where
     QC: BaseQueryContext,
 {
     map: RefCell<FxHashMap<Q::Key, QueryState<Q::Value>>>,
+}
+
+/// Defines the "current state" of query's memoized results.
+#[derive(Debug)]
+pub enum QueryState<V> {
+    /// We are currently computing the result of this query; if we see
+    /// this value in the table, it indeeds a cycle.
+    InProgress,
+
+    /// We have computed the query already, and here is the result.
+    Memoized(V),
 }
 
 impl<QC, Q> Default for MemoizedStorage<QC, Q>

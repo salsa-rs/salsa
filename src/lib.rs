@@ -46,8 +46,8 @@ pub trait BaseQueryContext: Sized {
 }
 
 pub trait Query<QC: BaseQueryContext>: Debug + Default + Sized + 'static {
-    type Key: Clone + Debug + Hash + Eq;
-    type Value: Clone + Debug + Hash + Eq;
+    type Key: Clone + Debug + Hash + Eq + Send;
+    type Value: Clone + Debug + Hash + Eq + Send;
     type Storage: QueryStorageOps<QC, Self>;
 
     fn execute(query: &QC, key: Self::Key) -> Self::Value;
@@ -77,12 +77,6 @@ where
     pub descriptor_fn: fn(&QC, &Q::Key) -> QC::QueryDescriptor,
 }
 
-#[derive(Debug)]
-pub enum QueryState<V> {
-    InProgress,
-    Memoized(V),
-}
-
 pub struct CycleDetected;
 
 impl<QC, Q> QueryTable<'me, QC, Q>
@@ -103,16 +97,38 @@ where
     }
 }
 
-/// A macro helper for writing the query contexts in traits that helps
-/// you avoid repeating information.
+/// A macro that helps in defining the "context trait" of a given
+/// module.  This is a trait that defines everything that a block of
+/// queries need to execute, as well as defining the queries
+/// themselves that are exported for others to use.
+///
+/// This macro declares the "prototype" for a single query. This will
+/// expand into a `fn` item. This prototype specifies name of the
+/// method (in the example below, that would be `my_query`) and
+/// connects it to query definition type (`MyQuery`, in the example
+/// below). These typically have the same name but a distinct
+/// capitalization convention. Note that the actual input/output type
+/// of the query are given only in the query definition (see the
+/// `query_definition` macro for more details).
 ///
 /// Example:
 ///
 /// ```ignore
 /// trait TypeckQueryContext {
-///     query_prototype!(fn <method>() for <type>);
+///     query_prototype! {
+///         /// Comments or other attributes can go here
+///         fn my_query() for MyQuery
+///     }
 /// }
 /// ```
+///
+/// This just expands to something like:
+///
+/// ```ignore
+/// fn my_query(&self) -> QueryTable<'_, Self, $query_type>;
+/// ```
+///
+/// This permits us to invoke the query via `query.my_query().of(key)`.
 #[macro_export]
 macro_rules! query_prototype {
     (
@@ -124,15 +140,31 @@ macro_rules! query_prototype {
     }
 }
 
+/// Creates a **Query Definition** type. This defines the input (key)
+/// of the query, the output key (value), and the query context trait
+/// that the query requires.
+///
 /// Example:
 ///
 /// ```ignore
 /// query_definition! {
-///     QueryName(query: &impl TypeckQueryContext, key: DefId) -> Arc<Vec<DefId>> {
-///         ...
+///     pub MyQuery(query: &impl MyQueryContext, key: MyKey) -> MyValue {
+///         ... // fn body specifies what happens when query is invoked
 ///     }
 /// }
 /// ```
+///
+/// Here, the query context trait would be `MyQueryContext` -- this
+/// should be a trait containing all the other queries that the
+/// definition needs to invoke (as well as any other methods that you
+/// may want).
+///
+/// The `MyKey` type is the **key** to the query -- it must be Clone,
+/// Debug, Hash, Eq, and Send, as specified in the `Query` trait.
+///
+/// The `MyKey` type is the **value** to the query -- it too must be
+/// Clone, Debug, Hash, Eq, and Send, as specified in the `Query`
+/// trait.
 #[macro_export]
 macro_rules! query_definition {
     (
