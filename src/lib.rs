@@ -108,7 +108,7 @@ where
 ///
 /// Example:
 ///
-/// ```
+/// ```ignore
 /// trait TypeckQueryContext {
 ///     query_prototype!(fn <method>() for <type>);
 /// }
@@ -120,18 +120,19 @@ macro_rules! query_prototype {
         fn $method_name:ident() for $query_type:ty
     ) => {
         $(#[$attr])*
-        fn $method_name(&self) -> $crate::query::QueryTable<'_, Self, $query_type>;
+        fn $method_name(&self) -> $crate::QueryTable<'_, Self, $query_type>;
     }
 }
 
 /// Example:
 ///
-/// ```
+/// ```ignore
 /// query_definition! {
 ///     QueryName(query: &impl TypeckQueryContext, key: DefId) -> Arc<Vec<DefId>> {
-///         ...       
+///         ...
 ///     }
 /// }
+/// ```
 #[macro_export]
 macro_rules! query_definition {
     (
@@ -143,13 +144,13 @@ macro_rules! query_definition {
         #[derive(Default, Debug)]
         $v struct $name;
 
-        impl<QC> $crate::query::Query<QC> for $name
+        impl<QC> $crate::Query<QC> for $name
         where
             QC: $query_trait,
         {
             type Key = $key_ty;
             type Value = $value_ty;
-            type Storage = $crate::query::storage::MemoizedStorage<QC, Self>;
+            type Storage = $crate::storage::MemoizedStorage<QC, Self>;
 
             fn execute($query: &QC, $key: $key_ty) -> $value_ty {
                 $($body)*

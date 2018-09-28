@@ -18,13 +18,13 @@ use std::hash::Hash;
 /// out cycle stack errors and not for any real recovery; also, not
 /// especially efficient.
 #[derive(PartialEq, Eq)]
-crate struct DynDescriptor {
+pub struct DynDescriptor {
     type_id: TypeId,
     debug_string: String,
 }
 
 impl DynDescriptor {
-    crate fn from_key<QC, Q>(_query: &QC, key: &Q::Key) -> DynDescriptor
+    pub fn from_key<QC, Q>(_query: &QC, key: &Q::Key) -> DynDescriptor
     where
         QC: BaseQueryContext,
         Q: Query<QC>,

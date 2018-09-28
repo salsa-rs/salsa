@@ -17,7 +17,7 @@ use std::hash::Hash;
 // contains a certain amount of boilerplate. This file aims to
 // reduce that.
 
-crate struct MemoizedStorage<QC, Q>
+pub struct MemoizedStorage<QC, Q>
 where
     Q: Query<QC>,
     QC: BaseQueryContext,
