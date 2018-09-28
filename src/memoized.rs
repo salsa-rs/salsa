@@ -27,7 +27,7 @@ where
 
 /// Defines the "current state" of query's memoized results.
 #[derive(Debug)]
-pub enum QueryState<V> {
+enum QueryState<V> {
     /// We are currently computing the result of this query; if we see
     /// this value in the table, it indeeds a cycle.
     InProgress,
