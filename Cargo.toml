@@ -11,3 +11,4 @@ readme = "README.md"
 [dependencies]
 derive-new = "0.5.5"
 rustc-hash = "1.0"
+parking_lot = "0.6.4"

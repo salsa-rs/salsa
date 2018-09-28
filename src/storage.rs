@@ -3,6 +3,7 @@ use crate::CycleDetected;
 use crate::Query;
 use crate::QueryStorageOps;
 use crate::QueryTable;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
 use std::any::Any;
 use std::cell::RefCell;
@@ -21,7 +22,7 @@ where
     Q: Query<QC>,
     QC: BaseQueryContext,
 {
-    map: RefCell<FxHashMap<Q::Key, QueryState<Q::Value>>>,
+    map: RwLock<FxHashMap<Q::Key, QueryState<Q::Value>>>,
 }
 
 /// Defines the "current state" of query's memoized results.
@@ -42,7 +43,7 @@ where
 {
     fn default() -> Self {
         MemoizedStorage {
-            map: RefCell::new(FxHashMap::default()),
+            map: RwLock::new(FxHashMap::default()),
         }
     }
 }
@@ -59,18 +60,16 @@ where
         descriptor: impl FnOnce() -> QC::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected> {
         {
-            let mut map = self.map.borrow_mut();
-            match map.entry(key.clone()) {
-                Entry::Occupied(entry) => {
-                    return match entry.get() {
-                        QueryState::InProgress => Err(CycleDetected),
-                        QueryState::Memoized(value) => Ok(value.clone()),
-                    };
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(QueryState::InProgress);
-                }
+            let map_read = self.map.upgradable_read();
+            if let Some(value) = map_read.get(key) {
+                return match value {
+                    QueryState::InProgress => Err(CycleDetected),
+                    QueryState::Memoized(value) => Ok(value.clone()),
+                };
             }
+
+            let mut map_write = RwLockUpgradableReadGuard::upgrade(map_read);
+            map_write.insert(key.clone(), QueryState::InProgress);
         }
 
         // If we get here, the query is in progress, and we are the
@@ -79,8 +78,8 @@ where
         let value = query.execute_query_implementation::<Q>(descriptor, key);
 
         {
-            let mut map = self.map.borrow_mut();
-            let old_value = map.insert(key.clone(), QueryState::Memoized(value.clone()));
+            let mut map_write = self.map.write();
+            let old_value = map_write.insert(key.clone(), QueryState::Memoized(value.clone()));
             assert!(
                 match old_value {
                     Some(QueryState::InProgress) => true,

@@ -48,7 +48,7 @@ pub trait BaseQueryContext: Sized {
 pub trait Query<QC: BaseQueryContext>: Debug + Default + Sized + 'static {
     type Key: Clone + Debug + Hash + Eq + Send;
     type Value: Clone + Debug + Hash + Eq + Send;
-    type Storage: QueryStorageOps<QC, Self> + Send;
+    type Storage: QueryStorageOps<QC, Self> + Send + Sync;
 
     fn execute(query: &QC, key: Self::Key) -> Self::Value;
 }
