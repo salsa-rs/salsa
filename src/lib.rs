@@ -190,3 +190,52 @@ macro_rules! query_definition {
         }
     }
 }
+
+#[macro_export]
+macro_rules! query_context_storage {
+    (
+        $(#[$attr:meta])*
+        $v:vis struct $Storage:ident for $storage_field:ident in $QueryContext:ty {
+            $(
+                impl $TraitName:path {
+                    $(
+                        fn $query_method:ident() for $QueryType:path;
+                    )*
+                }
+            )*
+        }
+    ) => {
+        #[allow(non_snake_case)]
+        #[derive(Default)]
+        $(#[$attr])*
+        $v struct $Storage {
+            $(
+                $(
+                    $query_method: <$QueryType as $crate::Query<$QueryContext>>::Storage,
+                )*
+            )*
+        }
+
+        $(
+            impl $TraitName for $QueryContext {
+                $(
+                    fn $query_method(
+                        &self,
+                    ) -> $crate::QueryTable<'_, Self, $QueryType> {
+                        QueryTable::new(
+                            self,
+                            &self.$storage_field.$query_method,
+
+                            // FIXME: we should not hardcode the descriptor like this.
+                            // Have to think of the best fix.
+                            $crate::dyn_descriptor::DynDescriptor::from_key::<
+                                Self,
+                                $QueryType,
+                            >,
+                        )
+                }
+                )*
+            }
+        )*
+    };
+}
