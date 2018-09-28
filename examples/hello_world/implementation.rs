@@ -15,6 +15,8 @@ pub struct QueryContextImpl {
     execution_stack: RefCell<Vec<DynDescriptor>>,
 }
 
+// This is an example of how you "link up" all the queries in your
+// application.
 query_context_storage! {
     struct QueryContextImplStorage for storage in QueryContextImpl {
         impl class_table::ClassTableQueryContext {
@@ -25,12 +27,17 @@ query_context_storage! {
     }
 }
 
+// This is an example of how you provide custom bits of stuff that
+// your queries may need; in this case, an `Interner` value.
 impl CompilerQueryContext for QueryContextImpl {
     fn interner(&self) -> &Interner {
         &self.interner
     }
 }
 
+// FIXME: This code... probably should not live here. But maybe we
+// just want to provide some helpers or something? I do suspect I want
+// people to be able to customize this.
 impl BaseQueryContext for QueryContextImpl {
     type QueryDescriptor = DynDescriptor;
 
