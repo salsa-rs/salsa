@@ -4,6 +4,8 @@ version = "0.1.0"
 authors = ["Niko Matsakis <niko@alum.mit.edu>"]
 edition = "2018"
 license = "Apache-2.0/MIT"
+repository = "https://github.com/nikomatsakis/salsa"
+description = "A generic framework for on-demand, incrementalized computation"
 
 [dependencies]
 derive-new = "0.5.5"
