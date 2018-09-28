@@ -6,3 +6,5 @@ edition = "2018"
 license = "Apache-2.0/MIT"
 
 [dependencies]
+derive-new = "0.5.5"
+rustc-hash = "1.0"
