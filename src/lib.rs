@@ -22,7 +22,7 @@ use std::fmt::Write;
 use std::hash::Hash;
 
 pub mod dyn_descriptor;
-pub mod storage;
+pub mod memoized;
 
 pub trait BaseQueryContext: Sized {
     /// A "query descriptor" packages up all the possible queries and a key.
@@ -182,7 +182,7 @@ macro_rules! query_definition {
         {
             type Key = $key_ty;
             type Value = $value_ty;
-            type Storage = $crate::storage::MemoizedStorage<QC, Self>;
+            type Storage = $crate::memoized::MemoizedStorage<QC, Self>;
 
             fn execute($query: &QC, $key: $key_ty) -> $value_ty {
                 $($body)*
