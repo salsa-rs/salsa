@@ -186,64 +186,55 @@ macro_rules! query_definition {
     // we consume.
     (
         @filter_attrs {
-            input { #[storage(memoized)] $(#[$attr:meta])* };
+            input { #[storage(memoized)] $($input:tt)* };
             storage { $storage:tt };
             other_attrs { $($other_attrs:tt)* };
-            tokens { $($tokens:tt)* };
         }
     ) => {
         $crate::query_definition! {
             @filter_attrs {
-                input { $(#[$attr])* };
+                input { $($input)* };
                 storage { memoized };
                 other_attrs { $($other_attrs)* };
-                tokens { $($tokens)* };
             }
         }
     };
 
     (
         @filter_attrs {
-            input { #[storage(transparent)] $(#[$attr:meta])* };
+            input { #[storage(transparent)] $($input:tt)* };
             storage { $storage:tt };
             other_attrs { $($other_attrs:tt)* };
-            tokens { $($tokens:tt)* };
         }
     ) => {
         $crate::query_definition! {
             @filter_attrs {
-                input { $(#[$attr])* };
+                input { $($input)* };
                 storage { transparent };
                 other_attrs { $($other_attrs)* };
-                tokens { $($tokens)* };
             }
         }
     };
 
     (
         @filter_attrs {
-            input { #[$attr:meta] $(#[$attrs:meta])* };
+            input { #[$attr:meta] $($input:tt)* };
             storage { $storage:tt };
             other_attrs { $($other_attrs:tt)* };
-            tokens { $($tokens:tt)* };
         }
     ) => {
         $crate::query_definition! {
             @filter_attrs {
-                input { $(#[$attrs])* };
+                input { $($input)* };
                 storage { $storage };
                 other_attrs { $($other_attrs)* #[$attr] };
-                tokens { $($tokens)* };
             }
         }
     };
 
     (
         @filter_attrs {
-            input { };
-            storage { $storage:tt };
-            other_attrs { $($attrs:tt)* };
-            tokens {
+            input {
                 $v:vis $name:ident(
                     $query:tt : &impl $query_trait:path,
                     $key:tt : $key_ty:ty $(,)*
@@ -251,6 +242,8 @@ macro_rules! query_definition {
                     $($body:tt)*
                 }
             };
+            storage { $storage:tt };
+            other_attrs { $($attrs:tt)* };
         }
     ) => {
         #[derive(Default, Debug)]
@@ -283,15 +276,26 @@ macro_rules! query_definition {
         $crate::transparent::TransparentStorage
     };
 
+    // Various legal start states:
     (
-        $(#[$attr:meta])* $($tokens:tt)*
+        # $($tokens:tt)*
     ) => {
         $crate::query_definition! {
             @filter_attrs {
-                input { $(#[$attr])* };
+                input { # $($tokens)* };
                 storage { memoized };
                 other_attrs { };
-                tokens { $($tokens)* };
+            }
+        }
+    };
+    (
+        $v:vis $name:ident $($tokens:tt)*
+    ) => {
+        $crate::query_definition! {
+            @filter_attrs {
+                input { $v $name $($tokens)* };
+                storage { memoized };
+                other_attrs { };
             }
         }
     };
@@ -328,7 +332,7 @@ macro_rules! query_context_storage {
                     fn $query_method(
                         &self,
                     ) -> $crate::QueryTable<'_, Self, $QueryType> {
-                        QueryTable::new(
+                        $crate::QueryTable::new(
                             self,
                             &self.$storage_field.$query_method,
 

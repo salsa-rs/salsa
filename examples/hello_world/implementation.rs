@@ -4,7 +4,6 @@ use salsa::dyn_descriptor::DynDescriptor;
 use salsa::query_context_storage;
 use salsa::BaseQueryContext;
 use salsa::Query;
-use salsa::QueryTable;
 use std::cell::RefCell;
 use std::fmt::Write;
 
