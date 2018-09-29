@@ -29,16 +29,19 @@ pub use self::runtime::Runtime;
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait QueryContext: Sized + HasQueryContextDescriptor {
+pub trait QueryContext: Sized + QueryContextStorageTypes {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &runtime::Runtime<Self>;
+
+    /// Gives access to the underlying query storage.
+    fn salsa_storage(&self) -> &Self::QueryStorage;
 }
 
 /// Defines the `QueryDescriptor` associated type. An impl of this
 /// should be generated for your query-context type automatically by
 /// the `query_context_storage` macro, so you shouldn't need to mess
 /// with this trait directly.
-pub trait HasQueryContextDescriptor {
+pub trait QueryContextStorageTypes {
     /// A "query descriptor" packages up all the possible queries and a key.
     /// It is used to store information about (e.g.) the stack.
     ///
@@ -46,6 +49,10 @@ pub trait HasQueryContextDescriptor {
     /// works for a fixed set of queries, but a boxed trait object is good
     /// for a more open-ended option.
     type QueryDescriptor: Debug + Eq;
+
+    /// Defines the "storage type", where all the query data is kept.
+    /// This type is defined by the `query_context_storage` macro.
+    type QueryStorage;
 }
 
 pub trait Query<QC: QueryContext>: Debug + Default + Sized + 'static {
@@ -314,7 +321,7 @@ macro_rules! query_definition {
 macro_rules! query_context_storage {
     (
         $(#[$attr:meta])*
-        $v:vis struct $Storage:ident for $storage_field:ident in $QueryContext:ty {
+        $v:vis struct $Storage:ident for $QueryContext:ty {
             $(
                 impl $TraitName:path {
                     $(
@@ -335,8 +342,9 @@ macro_rules! query_context_storage {
             )*
         }
 
-        impl $crate::HasQueryContextDescriptor for $QueryContext {
+        impl $crate::QueryContextStorageTypes for $QueryContext {
             type QueryDescriptor = $crate::dyn_descriptor::DynDescriptor;
+            type QueryStorage = $Storage;
         }
 
         $(
@@ -347,8 +355,7 @@ macro_rules! query_context_storage {
                     ) -> $crate::QueryTable<'_, Self, $QueryType> {
                         $crate::QueryTable::new(
                             self,
-                            &self.$storage_field.$query_method,
-
+                            &$crate::QueryContext::salsa_storage(self).$query_method,
                             $crate::dyn_descriptor::DynDescriptor::from_key::<
                                 Self,
                                 $QueryType,

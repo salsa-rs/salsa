@@ -12,7 +12,7 @@ pub struct QueryContextImpl {
 // This is an example of how you "link up" all the queries in your
 // application.
 query_context_storage! {
-    struct QueryContextImplStorage for storage in QueryContextImpl {
+    pub struct QueryContextImplStorage for QueryContextImpl {
         impl class_table::ClassTableQueryContext {
             fn all_classes() for class_table::AllClasses;
             fn all_fields() for class_table::AllFields;
@@ -37,6 +37,10 @@ impl CompilerQueryContext for QueryContextImpl {
 // permit behavior refinement.
 
 impl salsa::QueryContext for QueryContextImpl {
+    fn salsa_storage(&self) -> &QueryContextImplStorage {
+        &self.storage
+    }
+
     fn salsa_runtime(&self) -> &salsa::runtime::Runtime<QueryContextImpl> {
         &self.runtime
     }

@@ -9,7 +9,7 @@ pub struct QueryContextImpl {
 }
 
 salsa::query_context_storage! {
-    struct QueryContextImplStorage for storage in QueryContextImpl {
+    pub struct QueryContextImplStorage for QueryContextImpl {
         impl queries::QueryContext {
             fn memoized() for queries::Memoized;
             fn transparent() for queries::Transparent;
@@ -26,6 +26,10 @@ impl queries::CounterContext for QueryContextImpl {
 }
 
 impl salsa::QueryContext for QueryContextImpl {
+    fn salsa_storage(&self) -> &QueryContextImplStorage {
+        &self.storage
+    }
+
     fn salsa_runtime(&self) -> &salsa::runtime::Runtime<QueryContextImpl> {
         &self.runtime
     }
