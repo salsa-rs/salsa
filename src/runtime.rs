@@ -82,6 +82,23 @@ where
         value
     }
 
+    /// Reports that the currently active query read the result from
+    /// another query.
+    ///
+    /// # Parameters
+    ///
+    /// - `descriptor`: the query whose result was read
+    /// - `changed_revision`: the last revision in which the result of that
+    ///   query had changed
+    crate fn report_query_read(&self, descriptor: QC::QueryDescriptor, changed_revision: Revision) {
+        self.local_state
+            .borrow_mut()
+            .query_stack
+            .last_mut()
+            .unwrap()
+            .add_read(descriptor, changed_revision);
+    }
+
     /// Obviously, this should be user configurable at some point.
     crate fn report_unexpected_cycle(&self, descriptor: QC::QueryDescriptor) -> ! {
         let local_state = self.local_state.borrow();
@@ -107,7 +124,8 @@ struct SharedState<QC: QueryContext> {
     revision: AtomicU64,
 }
 
-/// State that will be specific to a single execution threads (when we support multiple threads)
+/// State that will be specific to a single execution threads (when we
+/// support multiple threads)
 struct LocalState<QC: QueryContext> {
     query_stack: Vec<ActiveQuery<QC>>,
 }
@@ -131,6 +149,12 @@ impl<QC: QueryContext> ActiveQuery<QC> {
             descriptor,
             max_revision_read: Revision::zero(),
             subqueries: FxIndexSet::default(),
+        }
+    }
+
+    fn add_read(&mut self, subquery: QC::QueryDescriptor, changed_revision: Revision) {
+        if self.subqueries.insert(subquery) {
+            self.max_revision_read = self.max_revision_read.max(changed_revision);
         }
     }
 }
