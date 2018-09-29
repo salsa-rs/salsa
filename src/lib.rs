@@ -47,12 +47,14 @@ pub trait QueryContextStorageTypes {
     /// At runtime, it can be implemented in various ways: a monster enum
     /// works for a fixed set of queries, but a boxed trait object is good
     /// for a more open-ended option.
-    type QueryDescriptor: Debug + Eq + Hash;
+    type QueryDescriptor: QueryDescriptor;
 
     /// Defines the "storage type", where all the query data is kept.
     /// This type is defined by the `query_context_storage` macro.
     type QueryStorage;
 }
+
+pub trait QueryDescriptor: Debug + Eq + Hash {}
 
 pub trait Query<QC: QueryContext>: Debug + Default + Sized + 'static {
     type Key: Clone + Debug + Hash + Eq + Send;
@@ -363,6 +365,9 @@ macro_rules! query_context_storage {
         impl $crate::QueryContextStorageTypes for $QueryContext {
             type QueryDescriptor = __SalsaQueryDescriptor;
             type QueryStorage = $Storage;
+        }
+
+        impl $crate::QueryDescriptor for __SalsaQueryDescriptor {
         }
 
         $(
