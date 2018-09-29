@@ -12,6 +12,8 @@ salsa::query_context_storage! {
         impl queries::QueryContext {
             fn memoized() for queries::Memoized;
             fn transparent() for queries::Transparent;
+            fn cycle_memoized() for queries::CycleMemoized;
+            fn cycle_transparent() for queries::CycleTransparent;
         }
     }
 }
