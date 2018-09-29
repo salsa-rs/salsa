@@ -31,3 +31,17 @@ fn intermingled() {
     assert_eq!(v2 + 1, v3);
     assert_eq!(v2, v4);
 }
+
+#[test]
+#[should_panic(expected = "cycle detected")]
+fn cycle_memoized() {
+    let query = QueryContextImpl::default();
+    query.cycle_memoized().of(());
+}
+
+#[test]
+#[should_panic(expected = "cycle detected")]
+fn cycle_transparent() {
+    let query = QueryContextImpl::default();
+    query.cycle_transparent().of(());
+}

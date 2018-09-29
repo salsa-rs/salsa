@@ -3,7 +3,7 @@ use crate::Query;
 use crate::QueryContext;
 use crate::QueryStorageOps;
 use crate::QueryTable;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::{RwLock};
 use rustc_hash::FxHashMap;
 use std::any::Any;
 use std::cell::RefCell;
@@ -22,18 +22,7 @@ where
     Q: Query<QC>,
     QC: QueryContext,
 {
-    map: RwLock<FxHashMap<Q::Key, QueryState<Q::Value>>>,
-}
-
-/// Defines the "current state" of query's memoized results.
-#[derive(Debug)]
-enum QueryState<V> {
-    /// We are currently computing the result of this query; if we see
-    /// this value in the table, it indeeds a cycle.
-    InProgress,
-
-    /// We have computed the query already, and here is the result.
-    Memoized(V),
+    map: RwLock<FxHashMap<Q::Key, Q::Value>>,
 }
 
 impl<QC, Q> Default for MemoizedStorage<QC, Q>
@@ -60,16 +49,10 @@ where
         descriptor: impl FnOnce() -> QC::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected> {
         {
-            let map_read = self.map.upgradable_read();
+            let map_read = self.map.read();
             if let Some(value) = map_read.get(key) {
-                return match value {
-                    QueryState::InProgress => Err(CycleDetected),
-                    QueryState::Memoized(value) => Ok(value.clone()),
-                };
+                return Ok(value.clone());
             }
-
-            let mut map_write = RwLockUpgradableReadGuard::upgrade(map_read);
-            map_write.insert(key.clone(), QueryState::InProgress);
         }
 
         // If we get here, the query is in progress, and we are the
@@ -77,21 +60,17 @@ where
         let descriptor = descriptor();
         let value = query
             .salsa_runtime()
-            .execute_query_implementation::<Q>(query, descriptor, key);
+            .execute_query_implementation::<Q>(query, descriptor, key)?;
 
-        {
+        // Let's store the value! If some over thread has managed
+        // to compute the value faster, use that and drop ours
+        // (which should be equvalent) on the floor.
+        let value = {
             let mut map_write = self.map.write();
-            let old_value = map_write.insert(key.clone(), QueryState::Memoized(value.clone()));
-            assert!(
-                match old_value {
-                    Some(QueryState::InProgress) => true,
-                    _ => false,
-                },
-                "expected in-progress state, not {:?}",
-                old_value
-            );
-        }
-
+            map_write.entry(key.clone())
+                .or_insert_with(move || value)
+                .clone()
+        };
         Ok(value)
     }
 }
