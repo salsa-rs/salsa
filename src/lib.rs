@@ -1,13 +1,10 @@
 #![deny(rust_2018_idioms)]
 #![feature(in_band_lifetimes)]
-#![feature(box_patterns)]
-#![feature(crate_visibility_modifier)]
 #![feature(nll)]
 #![feature(min_const_fn)]
 #![feature(const_fn)]
 #![feature(const_let)]
 #![feature(try_from)]
-#![feature(macro_at_most_once_rep)]
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
@@ -112,13 +109,15 @@ where
 /// of the query are given only in the query definition (see the
 /// `query_definition` macro for more details).
 ///
-/// Example:
+/// ### Examples
+///
+/// The simplest example is something like this:
 ///
 /// ```ignore
 /// trait TypeckQueryContext {
 ///     query_prototype! {
 ///         /// Comments or other attributes can go here
-///         fn my_query() for MyQuery
+///         fn my_query() for MyQuery;
 ///     }
 /// }
 /// ```
@@ -130,14 +129,29 @@ where
 /// ```
 ///
 /// This permits us to invoke the query via `query.my_query().of(key)`.
+///
+/// You can also include more than one query if you prefer:
+///
+/// ```ignore
+/// trait TypeckQueryContext {
+///     query_prototype! {
+///         fn my_query() for MyQuery;
+///         fn my_other_query() for MyOtherQuery;
+///     }
+/// }
+/// ```
 #[macro_export]
 macro_rules! query_prototype {
     (
-        $(#[$attr:meta])*
-        fn $method_name:ident() for $query_type:ty
+        $(
+            $(#[$attr:meta])*
+            fn $method_name:ident() for $query_type:ty;
+        )*
     ) => {
-        $(#[$attr])*
-        fn $method_name(&self) -> $crate::QueryTable<'_, Self, $query_type>;
+        $(
+            $(#[$attr])*
+            fn $method_name(&self) -> $crate::QueryTable<'_, Self, $query_type>;
+        )*
     }
 }
 

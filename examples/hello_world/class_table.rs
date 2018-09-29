@@ -3,20 +3,16 @@ use salsa::{query_definition, query_prototype};
 use std::sync::Arc;
 
 pub trait ClassTableQueryContext: compiler::CompilerQueryContext {
-    query_prototype!(
+    query_prototype! {
         /// Get the fields.
-        fn fields() for Fields
-    );
+        fn fields() for Fields;
 
-    query_prototype!(
         /// Get the list of all classes
-        fn all_classes() for AllClasses
-    );
+        fn all_classes() for AllClasses;
 
-    query_prototype!(
         /// Get the list of all fields
-        fn all_fields() for AllFields
-    );
+        fn all_fields() for AllFields;
+    }
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
