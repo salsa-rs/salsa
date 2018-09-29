@@ -31,6 +31,10 @@ pub trait QueryContext: Sized + HasQueryContextDescriptor {
     fn salsa_runtime(&self) -> &runtime::Runtime<Self>;
 }
 
+/// Defines the `QueryDescriptor` associated type. An impl of this
+/// should be generated for your query-context type automatically by
+/// the `query_context_storage` macro, so you shouldn't need to mess
+/// with this trait directly.
 pub trait HasQueryContextDescriptor {
     /// A "query descriptor" packages up all the possible queries and a key.
     /// It is used to store information about (e.g.) the stack.
