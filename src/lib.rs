@@ -26,6 +26,9 @@ pub mod transparent;
 
 pub use self::runtime::Runtime;
 
+/// The base trait which your "query context" must implement. Gives
+/// access to the salsa runtime, which you must embed into your query
+/// context (along with whatever other state you may require).
 pub trait QueryContext: Sized + HasQueryContextDescriptor {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &runtime::Runtime<Self>;
