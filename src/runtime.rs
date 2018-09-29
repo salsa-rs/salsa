@@ -2,14 +2,28 @@ use crate::Query;
 use crate::QueryContext;
 use std::cell::RefCell;
 use std::fmt::Write;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 pub struct Runtime<QC>
 where
     QC: QueryContext,
 {
-    storage: Arc<QC::QueryContextStorage>,
+    shared_state: Arc<SharedState<QC>>,
     execution_stack: RefCell<Vec<QC::QueryDescriptor>>,
+}
+
+struct SharedState<QC>
+where
+    QC: QueryContext,
+{
+    storage: QC::QueryContextStorage,
+    revision: AtomicU64,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Revision {
+    generation: usize,
 }
 
 impl<QC> Default for Runtime<QC>
@@ -18,7 +32,10 @@ where
 {
     fn default() -> Self {
         Runtime {
-            storage: Arc::default(),
+            shared_state: Arc::new(SharedState {
+                storage: Default::default(),
+                revision: Default::default(),
+            }),
             execution_stack: RefCell::default(),
         }
     }
@@ -29,7 +46,7 @@ where
     QC: QueryContext,
 {
     pub fn storage(&self) -> &QC::QueryContextStorage {
-        &self.storage
+        &self.shared_state.storage
     }
 
     crate fn execute_query_implementation<Q>(

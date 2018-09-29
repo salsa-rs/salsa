@@ -2,10 +2,7 @@
 #![feature(in_band_lifetimes)]
 #![feature(crate_visibility_modifier)]
 #![feature(nll)]
-#![feature(min_const_fn)]
-#![feature(const_fn)]
-#![feature(const_let)]
-#![feature(try_from)]
+#![feature(integer_atomics)]
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
