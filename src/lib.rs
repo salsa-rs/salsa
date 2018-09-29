@@ -23,6 +23,7 @@ use std::hash::Hash;
 
 pub mod dyn_descriptor;
 pub mod memoized;
+pub mod transparent;
 
 pub trait BaseQueryContext: Sized {
     /// A "query descriptor" packages up all the possible queries and a key.
@@ -167,13 +168,79 @@ macro_rules! query_prototype {
 /// trait.
 #[macro_export]
 macro_rules! query_definition {
+    // Step 1. Filtering the attributes to look for the special ones
+    // we consume.
     (
-        $(#[$attr:meta])*
-        $v:vis $name:ident($query:tt : &impl $query_trait:path, $key:tt : $key_ty:ty) -> $value_ty:ty {
-            $($body:tt)*
+        @filter_attrs {
+            input { #[storage(memoized)] $(#[$attr:meta])* };
+            storage { $storage:tt };
+            other_attrs { $($other_attrs:tt)* };
+            tokens { $($tokens:tt)* };
+        }
+    ) => {
+        $crate::query_definition! {
+            @filter_attrs {
+                input { $(#[$attr])* };
+                storage { memoized };
+                other_attrs { $($other_attrs)* };
+                tokens { $($tokens)* };
+            }
+        }
+    };
+
+    (
+        @filter_attrs {
+            input { #[storage(transparent)] $(#[$attr:meta])* };
+            storage { $storage:tt };
+            other_attrs { $($other_attrs:tt)* };
+            tokens { $($tokens:tt)* };
+        }
+    ) => {
+        $crate::query_definition! {
+            @filter_attrs {
+                input { $(#[$attr])* };
+                storage { transparent };
+                other_attrs { $($other_attrs)* };
+                tokens { $($tokens)* };
+            }
+        }
+    };
+
+    (
+        @filter_attrs {
+            input { #[$attr:meta] $(#[$attrs:meta])* };
+            storage { $storage:tt };
+            other_attrs { $($other_attrs:tt)* };
+            tokens { $($tokens:tt)* };
+        }
+    ) => {
+        $crate::query_definition! {
+            @filter_attrs {
+                input { $(#[$attrs])* };
+                storage { $storage };
+                other_attrs { $($other_attrs)* #[$attr] };
+                tokens { $($tokens)* };
+            }
+        }
+    };
+
+    (
+        @filter_attrs {
+            input { };
+            storage { $storage:tt };
+            other_attrs { $($attrs:tt)* };
+            tokens {
+                $v:vis $name:ident(
+                    $query:tt : &impl $query_trait:path,
+                    $key:tt : $key_ty:ty $(,)*
+                ) -> $value_ty:ty {
+                    $($body:tt)*
+                }
+            };
         }
     ) => {
         #[derive(Default, Debug)]
+        $(#[$attrs])*
         $v struct $name;
 
         impl<QC> $crate::Query<QC> for $name
@@ -182,13 +249,38 @@ macro_rules! query_definition {
         {
             type Key = $key_ty;
             type Value = $value_ty;
-            type Storage = $crate::memoized::MemoizedStorage<QC, Self>;
+            type Storage = $crate::query_definition! { @storage_ty[QC, Self, $storage] };
 
             fn execute($query: &QC, $key: $key_ty) -> $value_ty {
                 $($body)*
             }
         }
-    }
+    };
+
+    (
+        @storage_ty[$QC:ident, $Self:ident, memoized]
+    ) => {
+        $crate::memoized::MemoizedStorage<$QC, $Self>
+    };
+
+    (
+        @storage_ty[$QC:ident, $Self:ident, transparent]
+    ) => {
+        $crate::transparent::TransparentStorage
+    };
+
+    (
+        $(#[$attr:meta])* $($tokens:tt)*
+    ) => {
+        $crate::query_definition! {
+            @filter_attrs {
+                input { $(#[$attr])* };
+                storage { memoized };
+                other_attrs { };
+                tokens { $($tokens)* };
+            }
+        }
+    };
 }
 
 #[macro_export]
