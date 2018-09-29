@@ -1,6 +1,6 @@
-use crate::BaseQueryContext;
 use crate::CycleDetected;
 use crate::Query;
+use crate::QueryContext;
 use crate::QueryStorageOps;
 use crate::QueryTable;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
@@ -20,7 +20,7 @@ use std::hash::Hash;
 pub struct MemoizedStorage<QC, Q>
 where
     Q: Query<QC>,
-    QC: BaseQueryContext,
+    QC: QueryContext,
 {
     map: RwLock<FxHashMap<Q::Key, QueryState<Q::Value>>>,
 }
@@ -39,7 +39,7 @@ enum QueryState<V> {
 impl<QC, Q> Default for MemoizedStorage<QC, Q>
 where
     Q: Query<QC>,
-    QC: BaseQueryContext,
+    QC: QueryContext,
 {
     fn default() -> Self {
         MemoizedStorage {
@@ -51,7 +51,7 @@ where
 impl<QC, Q> QueryStorageOps<QC, Q> for MemoizedStorage<QC, Q>
 where
     Q: Query<QC>,
-    QC: BaseQueryContext,
+    QC: QueryContext,
 {
     fn try_fetch<'q>(
         &self,

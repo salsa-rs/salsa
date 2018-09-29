@@ -26,7 +26,7 @@ pub mod transparent;
 
 pub use self::runtime::Runtime;
 
-pub trait BaseQueryContext: Sized {
+pub trait QueryContext: Sized {
     /// A "query descriptor" packages up all the possible queries and a key.
     /// It is used to store information about (e.g.) the stack.
     ///
@@ -39,7 +39,7 @@ pub trait BaseQueryContext: Sized {
     fn salsa_runtime(&self) -> &runtime::Runtime<Self>;
 }
 
-pub trait Query<QC: BaseQueryContext>: Debug + Default + Sized + 'static {
+pub trait Query<QC: QueryContext>: Debug + Default + Sized + 'static {
     type Key: Clone + Debug + Hash + Eq + Send;
     type Value: Clone + Debug + Hash + Eq + Send;
     type Storage: QueryStorageOps<QC, Self> + Send + Sync;
@@ -49,7 +49,7 @@ pub trait Query<QC: BaseQueryContext>: Debug + Default + Sized + 'static {
 
 pub trait QueryStorageOps<QC, Q>: Default
 where
-    QC: BaseQueryContext,
+    QC: QueryContext,
     Q: Query<QC>,
 {
     fn try_fetch<'q>(
@@ -63,7 +63,7 @@ where
 #[derive(new)]
 pub struct QueryTable<'me, QC, Q>
 where
-    QC: BaseQueryContext,
+    QC: QueryContext,
     Q: Query<QC>,
 {
     pub query: &'me QC,
@@ -75,7 +75,7 @@ pub struct CycleDetected;
 
 impl<QC, Q> QueryTable<'me, QC, Q>
 where
-    QC: BaseQueryContext,
+    QC: QueryContext,
     Q: Query<QC>,
 {
     pub fn of(&self, key: Q::Key) -> Q::Value {

@@ -1,18 +1,18 @@
-use crate::BaseQueryContext;
 use crate::Query;
+use crate::QueryContext;
 use std::cell::RefCell;
 use std::fmt::Write;
 
 pub struct Runtime<QC>
 where
-    QC: BaseQueryContext,
+    QC: QueryContext,
 {
     execution_stack: RefCell<Vec<QC::QueryDescriptor>>,
 }
 
 impl<QC> Default for Runtime<QC>
 where
-    QC: BaseQueryContext,
+    QC: QueryContext,
 {
     fn default() -> Self {
         Runtime {
@@ -23,7 +23,7 @@ where
 
 impl<QC> Runtime<QC>
 where
-    QC: BaseQueryContext,
+    QC: QueryContext,
 {
     crate fn execute_query_implementation<Q>(
         &self,

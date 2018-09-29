@@ -1,7 +1,6 @@
 use crate::class_table;
 use crate::compiler::{CompilerQueryContext, Interner};
 use salsa::query_context_storage;
-use salsa::BaseQueryContext;
 
 #[derive(Default)]
 pub struct QueryContextImpl {
@@ -37,7 +36,7 @@ impl CompilerQueryContext for QueryContextImpl {
 // Seems like a classic case where specialization could be useful to
 // permit behavior refinement.
 
-impl BaseQueryContext for QueryContextImpl {
+impl salsa::QueryContext for QueryContextImpl {
     type QueryDescriptor = salsa::dyn_descriptor::DynDescriptor;
 
     fn salsa_runtime(&self) -> &salsa::runtime::Runtime<QueryContextImpl> {

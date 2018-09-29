@@ -1,5 +1,5 @@
-use crate::BaseQueryContext;
 use crate::Query;
+use crate::QueryContext;
 use crate::QueryTable;
 use rustc_hash::FxHashMap;
 use std::any::{Any, TypeId};
@@ -26,7 +26,7 @@ pub struct DynDescriptor {
 impl DynDescriptor {
     pub fn from_key<QC, Q>(_query: &QC, key: &Q::Key) -> DynDescriptor
     where
-        QC: BaseQueryContext,
+        QC: QueryContext,
         Q: Query<QC>,
     {
         let type_id = TypeId::of::<Q>();

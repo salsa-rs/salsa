@@ -1,4 +1,4 @@
-crate trait CounterContext: salsa::BaseQueryContext {
+crate trait CounterContext: salsa::QueryContext {
     fn increment(&self) -> usize;
 }
 

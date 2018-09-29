@@ -1,6 +1,6 @@
-use crate::BaseQueryContext;
 use crate::CycleDetected;
 use crate::Query;
+use crate::QueryContext;
 use crate::QueryStorageOps;
 use crate::QueryTable;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
@@ -23,7 +23,7 @@ pub struct TransparentStorage;
 impl<QC, Q> QueryStorageOps<QC, Q> for TransparentStorage
 where
     Q: Query<QC>,
-    QC: BaseQueryContext,
+    QC: QueryContext,
 {
     fn try_fetch<'q>(
         &self,

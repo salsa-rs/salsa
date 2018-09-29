@@ -25,7 +25,7 @@ impl queries::CounterContext for QueryContextImpl {
     }
 }
 
-impl salsa::BaseQueryContext for QueryContextImpl {
+impl salsa::QueryContext for QueryContextImpl {
     type QueryDescriptor = salsa::dyn_descriptor::DynDescriptor;
 
     fn salsa_runtime(&self) -> &salsa::runtime::Runtime<QueryContextImpl> {
