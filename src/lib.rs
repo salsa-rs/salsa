@@ -1,5 +1,6 @@
 #![deny(rust_2018_idioms)]
 #![feature(in_band_lifetimes)]
+#![feature(crate_visibility_modifier)]
 #![feature(nll)]
 #![feature(min_const_fn)]
 #![feature(const_fn)]
@@ -20,7 +21,10 @@ use std::hash::Hash;
 
 pub mod dyn_descriptor;
 pub mod memoized;
+pub mod runtime;
 pub mod transparent;
+
+pub use self::runtime::Runtime;
 
 pub trait BaseQueryContext: Sized {
     /// A "query descriptor" packages up all the possible queries and a key.
@@ -31,16 +35,8 @@ pub trait BaseQueryContext: Sized {
     /// for a more open-ended option.
     type QueryDescriptor: Debug + Eq;
 
-    fn execute_query_implementation<Q>(
-        &self,
-        descriptor: Self::QueryDescriptor,
-        key: &Q::Key,
-    ) -> Q::Value
-    where
-        Q: Query<Self>;
-
-    /// Reports an unexpected cycle attempting to access the query Q with the given key.
-    fn report_unexpected_cycle(&self, descriptor: Self::QueryDescriptor) -> !;
+    /// Gives access to the underlying salsa runtime.
+    fn salsa_runtime(&self) -> &runtime::Runtime<Self>;
 }
 
 pub trait Query<QC: BaseQueryContext>: Debug + Default + Sized + 'static {
@@ -86,7 +82,9 @@ where
         self.storage
             .try_fetch(self.query, &key, || self.descriptor(&key))
             .unwrap_or_else(|CycleDetected| {
-                self.query.report_unexpected_cycle(self.descriptor(&key))
+                self.query
+                    .salsa_runtime()
+                    .report_unexpected_cycle(self.descriptor(&key))
             })
     }
 
@@ -301,6 +299,8 @@ macro_rules! query_definition {
     };
 }
 
+/// This macro generates the "query storage" that goes into your query
+/// context.
 #[macro_export]
 macro_rules! query_context_storage {
     (
@@ -336,8 +336,6 @@ macro_rules! query_context_storage {
                             self,
                             &self.$storage_field.$query_method,
 
-                            // FIXME: we should not hardcode the descriptor like this.
-                            // Have to think of the best fix.
                             $crate::dyn_descriptor::DynDescriptor::from_key::<
                                 Self,
                                 $QueryType,

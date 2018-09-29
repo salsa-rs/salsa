@@ -75,7 +75,9 @@ where
         // If we get here, the query is in progress, and we are the
         // ones tasked with finding its final value.
         let descriptor = descriptor();
-        let value = query.execute_query_implementation::<Q>(descriptor, key);
+        let value = query
+            .salsa_runtime()
+            .execute_query_implementation::<Q>(query, descriptor, key);
 
         {
             let mut map_write = self.map.write();
