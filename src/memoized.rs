@@ -33,7 +33,12 @@ enum QueryState<V> {
     InProgress,
 
     /// We have computed the query already, and here is the result.
-    Memoized(V),
+    Memoized(Memoized<V>),
+}
+
+#[derive(Debug)]
+struct Memoized<V> {
+    value: V,
 }
 
 impl<QC, Q> Default for MemoizedStorage<QC, Q>
@@ -64,7 +69,7 @@ where
             if let Some(value) = map_read.get(key) {
                 return match value {
                     QueryState::InProgress => Err(CycleDetected),
-                    QueryState::Memoized(value) => Ok(value.clone()),
+                    QueryState::Memoized(m) => Ok(m.value.clone()),
                 };
             }
 
@@ -81,7 +86,12 @@ where
 
         {
             let mut map_write = self.map.write();
-            let old_value = map_write.insert(key.clone(), QueryState::Memoized(value.clone()));
+            let old_value = map_write.insert(
+                key.clone(),
+                QueryState::Memoized(Memoized {
+                    value: value.clone(),
+                }),
+            );
             assert!(
                 match old_value {
                     Some(QueryState::InProgress) => true,
