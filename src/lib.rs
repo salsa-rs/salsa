@@ -26,7 +26,12 @@ pub mod transparent;
 
 pub use self::runtime::Runtime;
 
-pub trait QueryContext: Sized {
+pub trait QueryContext: Sized + HasQueryContextDescriptor {
+    /// Gives access to the underlying salsa runtime.
+    fn salsa_runtime(&self) -> &runtime::Runtime<Self>;
+}
+
+pub trait HasQueryContextDescriptor {
     /// A "query descriptor" packages up all the possible queries and a key.
     /// It is used to store information about (e.g.) the stack.
     ///
@@ -34,9 +39,6 @@ pub trait QueryContext: Sized {
     /// works for a fixed set of queries, but a boxed trait object is good
     /// for a more open-ended option.
     type QueryDescriptor: Debug + Eq;
-
-    /// Gives access to the underlying salsa runtime.
-    fn salsa_runtime(&self) -> &runtime::Runtime<Self>;
 }
 
 pub trait Query<QC: QueryContext>: Debug + Default + Sized + 'static {
@@ -324,6 +326,10 @@ macro_rules! query_context_storage {
                     $query_method: <$QueryType as $crate::Query<$QueryContext>>::Storage,
                 )*
             )*
+        }
+
+        impl $crate::HasQueryContextDescriptor for $QueryContext {
+            type QueryDescriptor = $crate::dyn_descriptor::DynDescriptor;
         }
 
         $(

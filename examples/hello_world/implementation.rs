@@ -37,8 +37,6 @@ impl CompilerQueryContext for QueryContextImpl {
 // permit behavior refinement.
 
 impl salsa::QueryContext for QueryContextImpl {
-    type QueryDescriptor = salsa::dyn_descriptor::DynDescriptor;
-
     fn salsa_runtime(&self) -> &salsa::runtime::Runtime<QueryContextImpl> {
         &self.runtime
     }
