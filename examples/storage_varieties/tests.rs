@@ -41,7 +41,6 @@ fn cycle_memoized() {
 
 #[test]
 #[should_panic(expected = "cycle detected")]
-#[ignore]
 fn cycle_transparent() {
     let query = QueryContextImpl::default();
     query.cycle_transparent().of(());

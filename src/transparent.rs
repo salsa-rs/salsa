@@ -35,8 +35,8 @@ where
         // here? Or should we just call `Q::execute`, and maybe
         // separate out the `push`/`pop` operations.
         let descriptor = descriptor();
-        Ok(query
+        query
             .salsa_runtime()
-            .execute_query_implementation::<Q>(query, descriptor, key))
+            .execute_query_implementation::<Q>(query, descriptor, key)
     }
 }

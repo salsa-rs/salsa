@@ -49,7 +49,7 @@ pub trait QueryContextStorageTypes: Sized {
     type QueryContextStorage: Default;
 }
 
-pub trait QueryDescriptor<QC>: Debug + Eq + Hash {}
+pub trait QueryDescriptor<QC>: Clone + Debug + Eq + Hash {}
 
 pub trait Query<QC: QueryContext>: Debug + Default + Sized + 'static {
     type Key: Clone + Debug + Hash + Eq + Send;
@@ -343,12 +343,12 @@ macro_rules! query_context_storage {
         /// its exact structure is subject to change. Sadly, I don't
         /// know any way to hide this with hygiene, so use `__`
         /// instead.
-        #[derive(Debug, PartialEq, Eq, Hash)]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         $v struct __SalsaQueryDescriptor {
             kind: __SalsaQueryDescriptorKind
         }
 
-        #[derive(Debug, PartialEq, Eq, Hash)]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         enum __SalsaQueryDescriptorKind {
             $(
                 $(
