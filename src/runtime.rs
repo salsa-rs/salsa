@@ -1,45 +1,24 @@
 use crate::Query;
 use crate::QueryContext;
-use rustc_hash::FxHashMap;
+use rustc_hash::FxHasher;
 use std::cell::RefCell;
 use std::fmt::Write;
+use std::hash::BuildHasherDefault;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-pub struct Runtime<QC>
-where
-    QC: QueryContext,
-{
+type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
+
+/// The salsa runtime stores the storage for all queries as well as
+/// tracking the query stack and dependencies between cycles.
+///
+/// Each new runtime you create (e.g., via `Runtime::new` or
+/// `Runtime::default`) will have an independent set of query storage
+/// associated with it. Normally, therefore, you only do this once, at
+/// the start of your application.
+pub struct Runtime<QC: QueryContext> {
     shared_state: Arc<SharedState<QC>>,
     local_state: RefCell<LocalState<QC>>,
-}
-
-/// State that will be common to all threads (when we support multiple threads)
-struct SharedState<QC>
-where
-    QC: QueryContext,
-{
-    storage: QC::QueryContextStorage,
-    revision: AtomicU64,
-}
-
-/// State that will be specific to a single execution threads (when we support multiple threads)
-struct LocalState<QC>
-where
-    QC: QueryContext,
-{
-    query_stack: Vec<QC::QueryDescriptor>,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Revision {
-    generation: u64,
-}
-
-impl Revision {
-    crate fn zero() -> Self {
-        Revision { generation: 0 }
-    }
 }
 
 impl<QC> Default for Runtime<QC>
@@ -63,6 +42,10 @@ impl<QC> Runtime<QC>
 where
     QC: QueryContext,
 {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn storage(&self) -> &QC::QueryContextStorage {
         &self.shared_state.storage
     }
@@ -90,7 +73,10 @@ where
     where
         Q: Query<QC>,
     {
-        self.local_state.borrow_mut().query_stack.push(descriptor);
+        self.local_state
+            .borrow_mut()
+            .query_stack
+            .push(ActiveQuery::new(descriptor));
         let value = Q::execute(query, key.clone());
         self.local_state.borrow_mut().query_stack.pop();
         value
@@ -103,14 +89,59 @@ where
 
         let start_index = (0..query_stack.len())
             .rev()
-            .filter(|&i| query_stack[i] == descriptor)
+            .filter(|&i| query_stack[i].descriptor == descriptor)
             .next()
             .unwrap();
 
         let mut message = format!("Internal error, cycle detected:\n");
-        for descriptor in &query_stack[start_index..] {
-            writeln!(message, "- {:?}\n", descriptor).unwrap();
+        for active_query in &query_stack[start_index..] {
+            writeln!(message, "- {:?}\n", active_query.descriptor).unwrap();
         }
         panic!(message)
+    }
+}
+
+/// State that will be common to all threads (when we support multiple threads)
+struct SharedState<QC: QueryContext> {
+    storage: QC::QueryContextStorage,
+    revision: AtomicU64,
+}
+
+/// State that will be specific to a single execution threads (when we support multiple threads)
+struct LocalState<QC: QueryContext> {
+    query_stack: Vec<ActiveQuery<QC>>,
+}
+
+struct ActiveQuery<QC: QueryContext> {
+    /// What query is executing
+    descriptor: QC::QueryDescriptor,
+
+    /// Each time we execute a subquery, it returns to us the revision
+    /// in which its value last changed. We track the maximum of these
+    /// to find the maximum revision in which *we* changed.
+    max_revision_read: Revision,
+
+    /// Each subquery
+    subqueries: FxIndexSet<QC::QueryDescriptor>,
+}
+
+impl<QC: QueryContext> ActiveQuery<QC> {
+    fn new(descriptor: QC::QueryDescriptor) -> Self {
+        ActiveQuery {
+            descriptor,
+            max_revision_read: Revision::zero(),
+            subqueries: FxIndexSet::default(),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Revision {
+    generation: u64,
+}
+
+impl Revision {
+    crate fn zero() -> Self {
+        Revision { generation: 0 }
     }
 }
