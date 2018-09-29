@@ -7,24 +7,24 @@ use salsa::query_context_storage;
 /// interacts with it through traits and never knows its real name).
 ///
 /// Query contexts can contain whatever you want them to, but salsa
-/// requires two things:
-///
-/// - a salsa runtime (the `runtime` field, here)
-/// - query storage (declared using the `query_context_storage` macro below)
+/// requires you to add a `salsa::runtime::Runtime` member. Note
+/// though: you should be very careful if adding shared, mutable state
+/// to your context (e.g., a shared counter or some such thing). If
+/// mutations to that shared state affect the results of your queries,
+/// that's going to mess up the incremental results.
 #[derive(Default)]
 pub struct QueryContextImpl {
     runtime: salsa::runtime::Runtime<QueryContextImpl>,
-    storage: QueryContextImplStorage,
+
+    /// An interner is an example of shared mutable state that would
+    /// be ok: although the interner allocates internally when you
+    /// intern something new, this never affects any previously
+    /// interned values, so it's not going to affect query results.
     interner: Interner,
 }
 
-/// This impl tells salsa where to find the runtime and storage in
-/// your query context.
+/// This impl tells salsa where to find the salsa runtime.
 impl salsa::QueryContext for QueryContextImpl {
-    fn salsa_storage(&self) -> &QueryContextImplStorage {
-        &self.storage
-    }
-
     fn salsa_runtime(&self) -> &salsa::runtime::Runtime<QueryContextImpl> {
         &self.runtime
     }

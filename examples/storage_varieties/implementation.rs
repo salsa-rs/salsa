@@ -25,10 +25,6 @@ impl queries::CounterContext for QueryContextImpl {
 }
 
 impl salsa::QueryContext for QueryContextImpl {
-    fn extra(&self) -> u32 {
-        0
-    }
-
     fn salsa_runtime(&self) -> &salsa::runtime::Runtime<QueryContextImpl> {
         &self.runtime
     }
