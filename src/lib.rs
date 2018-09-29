@@ -29,9 +29,6 @@ pub mod transparent;
 pub trait QueryContext: QueryContextStorageTypes {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &runtime::Runtime<Self>;
-
-    /// Gives access to the underlying query storage.
-    fn salsa_storage(&self) -> &Self::QueryStorage;
 }
 
 /// Defines the `QueryDescriptor` associated type. An impl of this
@@ -49,7 +46,7 @@ pub trait QueryContextStorageTypes: Sized {
 
     /// Defines the "storage type", where all the query data is kept.
     /// This type is defined by the `query_context_storage` macro.
-    type QueryStorage;
+    type QueryContextStorage: Default;
 }
 
 pub trait QueryDescriptor<QC>: Debug + Eq + Hash {}
@@ -362,7 +359,7 @@ macro_rules! query_context_storage {
 
         impl $crate::QueryContextStorageTypes for $QueryContext {
             type QueryDescriptor = __SalsaQueryDescriptor;
-            type QueryStorage = $Storage;
+            type QueryContextStorage = $Storage;
         }
 
         impl $crate::QueryDescriptor<$QueryContext> for __SalsaQueryDescriptor {
@@ -376,7 +373,9 @@ macro_rules! query_context_storage {
                     ) -> $crate::QueryTable<'_, Self, $QueryType> {
                         $crate::QueryTable::new(
                             self,
-                            &$crate::QueryContext::salsa_storage(self).$query_method,
+                            &$crate::QueryContext::salsa_runtime(self)
+                                .storage()
+                                .$query_method,
                             |_, key| {
                                 let key = std::clone::Clone::clone(key);
                                 __SalsaQueryDescriptor {

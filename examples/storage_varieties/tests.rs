@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use crate::implementation::QueryContextImpl;
 use crate::queries::QueryContext;
 

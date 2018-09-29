@@ -4,7 +4,6 @@ use std::cell::Cell;
 #[derive(Default)]
 pub struct QueryContextImpl {
     runtime: salsa::runtime::Runtime<QueryContextImpl>,
-    storage: QueryContextImplStorage,
     counter: Cell<usize>,
 }
 
@@ -26,8 +25,8 @@ impl queries::CounterContext for QueryContextImpl {
 }
 
 impl salsa::QueryContext for QueryContextImpl {
-    fn salsa_storage(&self) -> &QueryContextImplStorage {
-        &self.storage
+    fn extra(&self) -> u32 {
+        0
     }
 
     fn salsa_runtime(&self) -> &salsa::runtime::Runtime<QueryContextImpl> {

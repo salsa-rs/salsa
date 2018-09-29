@@ -2,11 +2,13 @@ use crate::Query;
 use crate::QueryContext;
 use std::cell::RefCell;
 use std::fmt::Write;
+use std::sync::Arc;
 
 pub struct Runtime<QC>
 where
     QC: QueryContext,
 {
+    storage: Arc<QC::QueryContextStorage>,
     execution_stack: RefCell<Vec<QC::QueryDescriptor>>,
 }
 
@@ -16,6 +18,7 @@ where
 {
     fn default() -> Self {
         Runtime {
+            storage: Arc::default(),
             execution_stack: RefCell::default(),
         }
     }
@@ -25,6 +28,10 @@ impl<QC> Runtime<QC>
 where
     QC: QueryContext,
 {
+    pub fn storage(&self) -> &QC::QueryContextStorage {
+        &self.storage
+    }
+
     crate fn execute_query_implementation<Q>(
         &self,
         query: &QC,
