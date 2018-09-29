@@ -13,7 +13,7 @@ use salsa::query_context_storage;
 /// - query storage (declared using the `query_context_storage` macro below)
 #[derive(Default)]
 pub struct QueryContextImpl {
-    runtime: salsa::Runtime<QueryContextImpl>,
+    runtime: salsa::runtime::Runtime<QueryContextImpl>,
     storage: QueryContextImplStorage,
     interner: Interner,
 }

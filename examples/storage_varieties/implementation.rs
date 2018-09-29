@@ -3,7 +3,7 @@ use std::cell::Cell;
 
 #[derive(Default)]
 pub struct QueryContextImpl {
-    runtime: salsa::Runtime<QueryContextImpl>,
+    runtime: salsa::runtime::Runtime<QueryContextImpl>,
     storage: QueryContextImplStorage,
     counter: Cell<usize>,
 }

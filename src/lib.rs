@@ -23,12 +23,10 @@ pub mod memoized;
 pub mod runtime;
 pub mod transparent;
 
-pub use self::runtime::Runtime;
-
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait QueryContext: Sized + QueryContextStorageTypes {
+pub trait QueryContext: QueryContextStorageTypes {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &runtime::Runtime<Self>;
 
@@ -40,21 +38,21 @@ pub trait QueryContext: Sized + QueryContextStorageTypes {
 /// should be generated for your query-context type automatically by
 /// the `query_context_storage` macro, so you shouldn't need to mess
 /// with this trait directly.
-pub trait QueryContextStorageTypes {
+pub trait QueryContextStorageTypes: Sized {
     /// A "query descriptor" packages up all the possible queries and a key.
     /// It is used to store information about (e.g.) the stack.
     ///
     /// At runtime, it can be implemented in various ways: a monster enum
     /// works for a fixed set of queries, but a boxed trait object is good
     /// for a more open-ended option.
-    type QueryDescriptor: QueryDescriptor;
+    type QueryDescriptor: QueryDescriptor<Self>;
 
     /// Defines the "storage type", where all the query data is kept.
     /// This type is defined by the `query_context_storage` macro.
     type QueryStorage;
 }
 
-pub trait QueryDescriptor: Debug + Eq + Hash {}
+pub trait QueryDescriptor<QC>: Debug + Eq + Hash {}
 
 pub trait Query<QC: QueryContext>: Debug + Default + Sized + 'static {
     type Key: Clone + Debug + Hash + Eq + Send;
@@ -367,7 +365,7 @@ macro_rules! query_context_storage {
             type QueryStorage = $Storage;
         }
 
-        impl $crate::QueryDescriptor for __SalsaQueryDescriptor {
+        impl $crate::QueryDescriptor<$QueryContext> for __SalsaQueryDescriptor {
         }
 
         $(
