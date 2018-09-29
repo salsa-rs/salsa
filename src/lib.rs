@@ -46,7 +46,11 @@ pub trait QueryContextStorageTypes: Sized {
     type QueryContextStorage: Default;
 }
 
-pub trait QueryDescriptor<QC>: Debug + Eq + Hash {}
+pub trait QueryDescriptor<QC>: Debug + Eq + Hash + Send + Sync {
+    /// Returns true if the value of this query may have changed since
+    /// the given revision.
+    fn maybe_changed_since(&self, revision: runtime::Revision) -> bool;
+}
 
 pub trait Query<QC: QueryContext>: Debug + Default + Sized + 'static {
     type Key: Clone + Debug + Hash + Eq + Send;

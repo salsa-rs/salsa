@@ -69,17 +69,31 @@ where
         query: &QC,
         descriptor: QC::QueryDescriptor,
         key: &Q::Key,
-    ) -> Q::Value
+    ) -> (Q::Value, QueryDescriptorSet<QC>)
     where
         Q: Query<QC>,
     {
-        self.local_state
-            .borrow_mut()
-            .query_stack
-            .push(ActiveQuery::new(descriptor));
+        // Push the active query onto the stack.
+        let push_len = {
+            let mut local_state = self.local_state.borrow_mut();
+            local_state.query_stack.push(ActiveQuery::new(descriptor));
+            local_state.query_stack.len()
+        };
+
+        // Execute user's code, accumulating inputs etc.
         let value = Q::execute(query, key.clone());
-        self.local_state.borrow_mut().query_stack.pop();
-        value
+
+        // Extract accumulated inputs.
+        let ActiveQuery { subqueries, .. } = {
+            let mut local_state = self.local_state.borrow_mut();
+
+            // Sanity check: pushes and pops should be balanced.
+            assert_eq!(local_state.query_stack.len(), push_len);
+
+            local_state.query_stack.pop().unwrap()
+        };
+
+        (value, subqueries)
     }
 
     /// Reports that the currently active query read the result from
@@ -134,28 +148,20 @@ struct ActiveQuery<QC: QueryContext> {
     /// What query is executing
     descriptor: QC::QueryDescriptor,
 
-    /// Each time we execute a subquery, it returns to us the revision
-    /// in which its value last changed. We track the maximum of these
-    /// to find the maximum revision in which *we* changed.
-    max_revision_read: Revision,
-
     /// Each subquery
-    subqueries: FxIndexSet<QC::QueryDescriptor>,
+    subqueries: QueryDescriptorSet<QC>,
 }
 
 impl<QC: QueryContext> ActiveQuery<QC> {
     fn new(descriptor: QC::QueryDescriptor) -> Self {
         ActiveQuery {
             descriptor,
-            max_revision_read: Revision::zero(),
-            subqueries: FxIndexSet::default(),
+            subqueries: QueryDescriptorSet::new(),
         }
     }
 
-    fn add_read(&mut self, subquery: QC::QueryDescriptor, changed_revision: Revision) {
-        if self.subqueries.insert(subquery) {
-            self.max_revision_read = self.max_revision_read.max(changed_revision);
-        }
+    fn add_read(&mut self, subquery: QC::QueryDescriptor, _changed_revision: Revision) {
+        self.subqueries.insert(subquery);
     }
 }
 
@@ -167,5 +173,37 @@ pub struct Revision {
 impl Revision {
     crate fn zero() -> Self {
         Revision { generation: 0 }
+    }
+}
+
+/// An insertion-order-preserving set of queries. Used to track the
+/// inputs accessed during query execution.
+crate struct QueryDescriptorSet<QC: QueryContext> {
+    set: FxIndexSet<QC::QueryDescriptor>,
+}
+
+impl<QC: QueryContext> std::fmt::Debug for QueryDescriptorSet<QC> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.set, fmt)
+    }
+}
+
+impl<QC: QueryContext> QueryDescriptorSet<QC> {
+    fn new() -> Self {
+        QueryDescriptorSet {
+            set: FxIndexSet::default(),
+        }
+    }
+
+    /// Add `descriptor` to the set. Returns true if `descriptor` is
+    /// newly added and false if `descriptor` was already a member.
+    fn insert(&mut self, descriptor: QC::QueryDescriptor) -> bool {
+        self.set.insert(descriptor)
+    }
+
+    /// Iterate over all queries in the set, in the order of their
+    /// first insertion.
+    pub fn iter(&self) -> impl Iterator<Item = &QC::QueryDescriptor> {
+        self.set.iter()
     }
 }
