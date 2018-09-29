@@ -247,7 +247,7 @@ macro_rules! query_definition {
         }
     ) => {
         #[derive(Default, Debug)]
-        $(#[$attrs])*
+        $($attrs)*
         $v struct $name;
 
         impl<QC> $crate::Query<QC> for $name
