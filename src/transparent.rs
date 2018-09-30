@@ -1,3 +1,4 @@
+use crate::runtime::Revision;
 use crate::CycleDetected;
 use crate::Query;
 use crate::QueryContext;
@@ -39,5 +40,15 @@ where
             .salsa_runtime()
             .execute_query_implementation::<Q>(query, descriptor, key);
         Ok(value)
+    }
+
+    fn maybe_changed_since(
+        &self,
+        _query: &'q QC,
+        _revision: Revision,
+        _key: &Q::Key,
+        _descriptor: &QC::QueryDescriptor,
+    ) -> bool {
+        unimplemented!()
     }
 }

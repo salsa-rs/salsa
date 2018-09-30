@@ -40,11 +40,11 @@ where
     InProgress,
 
     /// We have computed the query already, and here is the result.
-    Memoized(Memoized<QC, Q>),
+    Memoized(Memo<QC, Q>),
 }
 
 #[derive(Debug)]
-struct Memoized<QC, Q>
+struct Memo<QC, Q>
 where
     Q: Query<QC>,
     QC: QueryContext,
@@ -64,6 +64,25 @@ where
     changed_at: Revision,
 }
 
+impl<QC, Q> Memo<QC, Q>
+where
+    Q: Query<QC>,
+    QC: QueryContext,
+{
+    fn stamped_value(&self) -> StampedValue<Q::Value> {
+        StampedValue {
+            value: self.value.clone(),
+            changed_at: self.changed_at,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct StampedValue<V> {
+    value: V,
+    changed_at: Revision,
+}
+
 impl<QC, Q> Default for MemoizedStorage<QC, Q>
 where
     Q: Query<QC>,
@@ -76,17 +95,17 @@ where
     }
 }
 
-impl<QC, Q> QueryStorageOps<QC, Q> for MemoizedStorage<QC, Q>
+impl<QC, Q> MemoizedStorage<QC, Q>
 where
     Q: Query<QC>,
     QC: QueryContext,
 {
-    fn try_fetch<'q>(
+    fn read<'q>(
         &self,
         query: &'q QC,
         key: &Q::Key,
         descriptor: impl FnOnce() -> QC::QueryDescriptor,
-    ) -> Result<Q::Value, CycleDetected> {
+    ) -> Result<StampedValue<Q::Value>, CycleDetected> {
         let revision_now = query.salsa_runtime().current_revision();
 
         let mut old_value = {
@@ -96,7 +115,7 @@ where
                     QueryState::InProgress => return Err(CycleDetected),
                     QueryState::Memoized(m) => {
                         if m.verified_at == revision_now {
-                            return Ok(m.value.clone());
+                            return Ok(m.stamped_value());
                         }
                     }
                 }
@@ -114,13 +133,13 @@ where
             if old_memo
                 .inputs
                 .iter()
-                .all(|old_input| !old_input.maybe_changed_since(old_memo.verified_at))
+                .all(|old_input| !old_input.maybe_changed_since(query, old_memo.verified_at))
             {
                 // If none of out inputs have changed since the last time we refreshed
                 // our value, then our value must still be good. We'll just patch
                 // the verified-at date and re-use it.
                 old_memo.verified_at = revision_now;
-                let value = old_memo.value.clone();
+                let stamped_value = old_memo.stamped_value();
 
                 let mut map_write = self.map.write();
                 let placeholder = map_write.insert(key.clone(), old_value.unwrap());
@@ -131,7 +150,7 @@ where
                     },
                     "expected in-progress state",
                 );
-                return Ok(value);
+                return Ok(stamped_value);
             }
         }
 
@@ -167,7 +186,7 @@ where
 
             let old_value = map_write.insert(
                 key.clone(),
-                QueryState::Memoized(Memoized {
+                QueryState::Memoized(Memo {
                     value: value.clone(),
                     inputs,
                     verified_at: revision_now,
@@ -183,6 +202,50 @@ where
             );
         }
 
-        Ok(value)
+        Ok(StampedValue { value, changed_at })
+    }
+}
+
+impl<QC, Q> QueryStorageOps<QC, Q> for MemoizedStorage<QC, Q>
+where
+    Q: Query<QC>,
+    QC: QueryContext,
+{
+    fn try_fetch<'q>(
+        &self,
+        query: &'q QC,
+        key: &Q::Key,
+        descriptor: impl FnOnce() -> QC::QueryDescriptor,
+    ) -> Result<Q::Value, CycleDetected> {
+        Ok(self.read(query, key, descriptor)?.value)
+    }
+
+    fn maybe_changed_since(
+        &self,
+        query: &'q QC,
+        revision: Revision,
+        key: &Q::Key,
+        descriptor: &QC::QueryDescriptor,
+    ) -> bool {
+        // Check for the case where we have no cache entry, or our cache
+        // entry is up to date (common case):
+        {
+            let revision_now = query.salsa_runtime().current_revision();
+            let map_read = self.map.read();
+            match map_read.get(key) {
+                None | Some(QueryState::InProgress) => return true,
+                Some(QueryState::Memoized(memo)) => {
+                    if memo.verified_at >= revision_now {
+                        return memo.changed_at > revision;
+                    }
+                }
+            }
+        }
+
+        // Otherwise fall back to the full read to compute the result.
+        match self.read(query, key, || descriptor.clone()) {
+            Ok(v) => v.changed_at > revision,
+            Err(CycleDetected) => true,
+        }
     }
 }

@@ -46,10 +46,10 @@ pub trait QueryContextStorageTypes: Sized {
     type QueryContextStorage: Default;
 }
 
-pub trait QueryDescriptor<QC>: Debug + Eq + Hash + Send + Sync {
+pub trait QueryDescriptor<QC>: Clone + Debug + Eq + Hash + Send + Sync {
     /// Returns true if the value of this query may have changed since
     /// the given revision.
-    fn maybe_changed_since(&self, revision: runtime::Revision) -> bool;
+    fn maybe_changed_since(&self, query: &QC, revision: runtime::Revision) -> bool;
 }
 
 pub trait Query<QC: QueryContext>: Debug + Default + Sized + 'static {
@@ -65,12 +65,45 @@ where
     QC: QueryContext,
     Q: Query<QC>,
 {
+    /// Execute the query, returning the result (often, the result
+    /// will be memoized).  This is the "main method" for
+    /// queries.
+    ///
+    /// Returns `Err` in the event of a cycle, meaning that computing
+    /// the value for this `key` is recursively attempting to fetch
+    /// itself.
     fn try_fetch<'q>(
         &self,
         query: &'q QC,
         key: &Q::Key,
         descriptor: impl FnOnce() -> QC::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected>;
+
+    /// True if the query **may** have changed since the given
+    /// revision. The query will answer this question with as much
+    /// precision as it is able to do based on its storage type.  In
+    /// the event of a cycle being detected as part of this function,
+    /// it returns true.
+    ///
+    /// Example: The steps for a memoized query are as follows.
+    ///
+    /// - If the query has already been computed:
+    ///   - Check the inputs that the previous computation used
+    ///     recursively to see if *they* have changed.  If they have
+    ///     not, then return false.
+    ///   - If they have, then the query is re-executed and the new
+    ///     result is compared against the old result. If it is equal,
+    ///     then return false.
+    /// - Return true.
+    ///
+    /// Other storage types will skip some or all of these steps.
+    fn maybe_changed_since(
+        &self,
+        query: &'q QC,
+        revision: runtime::Revision,
+        key: &Q::Key,
+        descriptor: &QC::QueryDescriptor,
+    ) -> bool;
 }
 
 #[derive(new)]
@@ -344,12 +377,12 @@ macro_rules! query_context_storage {
         /// its exact structure is subject to change. Sadly, I don't
         /// know any way to hide this with hygiene, so use `__`
         /// instead.
-        #[derive(Debug, PartialEq, Eq, Hash)]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         $v struct __SalsaQueryDescriptor {
             kind: __SalsaQueryDescriptorKind
         }
 
-        #[derive(Debug, PartialEq, Eq, Hash)]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         enum __SalsaQueryDescriptorKind {
             $(
                 $(
@@ -364,6 +397,29 @@ macro_rules! query_context_storage {
         }
 
         impl $crate::QueryDescriptor<$QueryContext> for __SalsaQueryDescriptor {
+            fn maybe_changed_since(
+                &self,
+                query: &$QueryContext,
+                revision: $crate::runtime::Revision,
+            ) -> bool {
+                match &self.kind {
+                    $(
+                        $(
+                            __SalsaQueryDescriptorKind::$query_method(key) => {
+                                let runtime = $crate::QueryContext::salsa_runtime(query);
+                                let storage = &runtime.storage().$query_method;
+                                <_ as $crate::QueryStorageOps<$QueryContext, $QueryType>>::maybe_changed_since(
+                                    storage,
+                                    query,
+                                    revision,
+                                    key,
+                                    self,
+                                )
+                            }
+                        )*
+                    )*
+                }
+            }
         }
 
         $(
