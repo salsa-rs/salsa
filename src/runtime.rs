@@ -202,7 +202,7 @@ impl Revision {
 
 impl std::fmt::Debug for Revision {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(fmt, "R({})", self.generation)
+        write!(fmt, "R{}", self.generation)
     }
 }
 

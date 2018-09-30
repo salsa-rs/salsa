@@ -25,7 +25,7 @@ salsa::query_definition! {
     crate Memoized1(query: &impl QueryContext, (): ()) -> usize {
         query.log().add("Memoized1 invoked");
         let v = query.volatile().of(());
-        v / 3
+        v / 2
     }
 }
 
