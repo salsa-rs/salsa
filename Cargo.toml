@@ -13,3 +13,6 @@ derive-new = "0.5.5"
 rustc-hash = "1.0"
 parking_lot = "0.6.4"
 indexmap = "1.0.1"
+
+[dev-dependencies]
+text-diff = "0.4.0"

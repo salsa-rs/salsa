@@ -50,6 +50,24 @@ where
         &self.shared_state.storage
     }
 
+    /// Indicates that some input to the system has changed and hence
+    /// that memoized values **may** be invalidated. This cannot be
+    /// invoked while query computation is in progress.
+    ///
+    /// As a user of the system, you would not normally invoke this
+    /// method directly. Instead, you would use "input" queries and
+    /// invoke their `set` method. But it can be useful if you have a
+    /// "volatile" input that you must poll from time to time; in that
+    /// case, you can wrap the input with a "no-storage" query and
+    /// invoke this method from time to time.
+    pub fn next_revision(&self) {
+        if !self.local_state.borrow().query_stack.is_empty() {
+            panic!("next_revision invoked during a query computation");
+        }
+
+        self.increment_revision();
+    }
+
     /// Read current value of the revision counter.
     crate fn current_revision(&self) -> Revision {
         Revision {
