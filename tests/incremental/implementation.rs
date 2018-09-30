@@ -1,26 +1,31 @@
+use crate::counter::Counter;
+use crate::log::Log;
 use crate::queries;
-use std::cell::Cell;
 
 #[derive(Default)]
 pub struct QueryContextImpl {
     runtime: salsa::runtime::Runtime<QueryContextImpl>,
-    counter: Cell<usize>,
+    clock: Counter,
+    log: Log,
 }
 
 salsa::query_context_storage! {
     pub struct QueryContextImplStorage for QueryContextImpl {
         impl queries::QueryContext {
-            fn memoized() for queries::Memoized;
-            fn transparent() for queries::Transparent;
+            fn memoized2() for queries::Memoized2;
+            fn memoized1() for queries::Memoized1;
+            fn volatile() for queries::Volatile;
         }
     }
 }
 
 impl queries::CounterContext for QueryContextImpl {
-    fn increment(&self) -> usize {
-        let v = self.counter.get();
-        self.counter.set(v + 1);
-        v
+    fn clock(&self) -> &Counter {
+        &self.clock
+    }
+
+    fn log(&self) -> &Log {
+        &self.log
     }
 }
 
