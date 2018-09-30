@@ -16,10 +16,9 @@ use std::fmt::Display;
 use std::fmt::Write;
 use std::hash::Hash;
 
-// The master implementation that knits together all the queries
-// contains a certain amount of boilerplate. This file aims to
-// reduce that.
-
+/// Memoized queries store the result plus a list of the other queries
+/// that they invoked. This means we can avoid recomputing them when
+/// none of those inputs have changed.
 pub struct MemoizedStorage<QC, Q>
 where
     Q: Query<QC>,

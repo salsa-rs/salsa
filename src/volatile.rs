@@ -14,10 +14,8 @@ use std::fmt::Display;
 use std::fmt::Write;
 use std::hash::Hash;
 
-// The master implementation that knits together all the queries
-// contains a certain amount of boilerplate. This file aims to
-// reduce that.
-
+/// Volatile Storage is just **always** considered dirty. Any time you
+/// ask for the result of such a query, it is recomputed.
 #[derive(Default)]
 pub struct VolatileStorage;
 
@@ -49,6 +47,6 @@ where
         _key: &Q::Key,
         _descriptor: &QC::QueryDescriptor,
     ) -> bool {
-        unimplemented!()
+        true
     }
 }
