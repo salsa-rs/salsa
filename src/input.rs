@@ -1,6 +1,7 @@
 use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
 use crate::CycleDetected;
+use crate::MutQueryStorageOps;
 use crate::Query;
 use crate::QueryContext;
 use crate::QueryDescriptor;
@@ -113,6 +114,27 @@ where
         };
 
         changed_at > revision
+    }
+}
+
+impl<QC, Q> MutQueryStorageOps<QC, Q> for InputStorage<QC, Q>
+where
+    Q: Query<QC>,
+    QC: QueryContext,
+    Q::Value: Default,
+{
+    fn set(&self, query: &QC, key: &Q::Key, value: Q::Value) {
+        let key = key.clone();
+
+        let mut map_write = self.map.write();
+
+        // Do this *after* we acquire the lock, so that we are not
+        // racing with somebody else to modify this same cell.
+        // (Otherwise, someone else might write a *newer* revision
+        // into the same cell while we block on the lock.)
+        let changed_at = query.salsa_runtime().increment_revision();
+
+        map_write.insert(key, StampedValue { value, changed_at });
     }
 }
 

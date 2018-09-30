@@ -1,5 +1,6 @@
 use crate::counter::Counter;
 use crate::log::Log;
+use crate::memoized_inputs;
 use crate::memoized_volatile;
 
 crate trait TestContext: salsa::QueryContext {
@@ -45,6 +46,12 @@ salsa::query_context_storage! {
             fn memoized2() for memoized_volatile::Memoized2;
             fn memoized1() for memoized_volatile::Memoized1;
             fn volatile() for memoized_volatile::Volatile;
+        }
+
+        impl memoized_inputs::MemoizedInputsContext {
+            fn max() for memoized_inputs::Max;
+            fn input1() for memoized_inputs::Input1;
+            fn input2() for memoized_inputs::Input2;
         }
     }
 }

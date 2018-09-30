@@ -147,16 +147,39 @@ where
             })
     }
 
+    /// Equivalent to `of(DefaultKey::default_key())`
+    pub fn read(&self) -> Q::Value
+    where
+        Q::Key: DefaultKey,
+    {
+        self.of(DefaultKey::default_key())
+    }
+
+    /// Assign a value to an "input queries". Must be used outside of
+    /// an active query computation.
     pub fn set(&self, key: Q::Key, value: Q::Value)
     where
         Q::Storage: MutQueryStorageOps<QC, Q>,
     {
-        self.query.salsa_runtime().next_revision();
         self.storage.set(self.query, &key, value);
     }
 
     fn descriptor(&self, key: &Q::Key) -> QC::QueryDescriptor {
         (self.descriptor_fn)(self.query, key)
+    }
+}
+
+/// A variant of the `Default` trait used for query keys that are
+/// either singletons (e.g., `()`) or have some overwhelming default.
+/// In this case, you can write `query.my_query().read()` as a
+/// convenient shorthand.
+pub trait DefaultKey {
+    fn default_key() -> Self;
+}
+
+impl DefaultKey for () {
+    fn default_key() -> Self {
+        ()
     }
 }
 
@@ -360,7 +383,7 @@ macro_rules! query_definition {
     (
         @storage_ty[$QC:ident, $Self:ident, input]
     ) => {
-        $crate::volatile::InputStorage<$QC, $Self>
+        $crate::input::InputStorage<$QC, $Self>
     };
 
     // Various legal start states:

@@ -54,8 +54,6 @@ fn volatile_x2() {
 /// - On the first run of R2, we recompute everything (since Memoized1 result *did* change).
 #[test]
 fn revalidate() {
-    env_logger::init();
-
     let query = TestContextImpl::default();
 
     query.memoized2().of(());
