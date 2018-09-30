@@ -5,7 +5,7 @@ crate trait CounterContext: salsa::QueryContext {
 crate trait QueryContext: CounterContext {
     salsa::query_prototype! {
         fn memoized() for Memoized;
-        fn transparent() for Transparent;
+        fn volatile() for Volatile;
     }
 }
 
@@ -18,10 +18,10 @@ salsa::query_definition! {
 }
 
 salsa::query_definition! {
-    /// Because this query is transparent, each time it is invoked,
+    /// Because this query is volatile, each time it is invoked,
     /// we will increment the counter.
-    #[storage(transparent)]
-    crate Transparent(query: &impl QueryContext, (): ()) -> usize {
+    #[storage(volatile)]
+    crate Volatile(query: &impl QueryContext, (): ()) -> usize {
         query.increment()
     }
 }

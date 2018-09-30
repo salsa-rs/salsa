@@ -11,7 +11,7 @@ salsa::query_context_storage! {
     pub struct QueryContextImplStorage for QueryContextImpl {
         impl queries::QueryContext {
             fn memoized() for queries::Memoized;
-            fn transparent() for queries::Transparent;
+            fn volatile() for queries::Volatile;
         }
     }
 }

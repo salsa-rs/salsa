@@ -14,17 +14,17 @@ fn memoized_twice() {
 #[test]
 fn transparent_twice() {
     let query = QueryContextImpl::default();
-    let v1 = query.transparent().of(());
-    let v2 = query.transparent().of(());
+    let v1 = query.volatile().of(());
+    let v2 = query.volatile().of(());
     assert_eq!(v1 + 1, v2);
 }
 
 #[test]
 fn intermingled() {
     let query = QueryContextImpl::default();
-    let v1 = query.transparent().of(());
+    let v1 = query.volatile().of(());
     let v2 = query.memoized().of(());
-    let v3 = query.transparent().of(());
+    let v3 = query.volatile().of(());
     let v4 = query.memoized().of(());
 
     assert_eq!(v1 + 1, v2);

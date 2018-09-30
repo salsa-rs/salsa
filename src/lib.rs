@@ -18,7 +18,7 @@ use std::hash::Hash;
 
 pub mod memoized;
 pub mod runtime;
-pub mod transparent;
+pub mod volatile;
 
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
@@ -246,7 +246,7 @@ macro_rules! query_definition {
 
     (
         @filter_attrs {
-            input { #[storage(transparent)] $($input:tt)* };
+            input { #[storage(volatile)] $($input:tt)* };
             storage { $storage:tt };
             other_attrs { $($other_attrs:tt)* };
         }
@@ -254,7 +254,7 @@ macro_rules! query_definition {
         $crate::query_definition! {
             @filter_attrs {
                 input { $($input)* };
-                storage { transparent };
+                storage { volatile };
                 other_attrs { $($other_attrs)* };
             }
         }
@@ -315,9 +315,9 @@ macro_rules! query_definition {
     };
 
     (
-        @storage_ty[$QC:ident, $Self:ident, transparent]
+        @storage_ty[$QC:ident, $Self:ident, volatile]
     ) => {
-        $crate::transparent::TransparentStorage
+        $crate::volatile::VolatileStorage
     };
 
     // Various legal start states:

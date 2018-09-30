@@ -19,9 +19,9 @@ use std::hash::Hash;
 // reduce that.
 
 #[derive(Default)]
-pub struct TransparentStorage;
+pub struct VolatileStorage;
 
-impl<QC, Q> QueryStorageOps<QC, Q> for TransparentStorage
+impl<QC, Q> QueryStorageOps<QC, Q> for VolatileStorage
 where
     Q: Query<QC>,
     QC: QueryContext,
