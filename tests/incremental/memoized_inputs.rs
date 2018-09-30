@@ -19,17 +19,11 @@ salsa::query_definition! {
 }
 
 salsa::query_definition! {
-    #[storage(input)]
-    crate Input1(_query: &impl MemoizedInputsContext, _value: ()) -> usize {
-        panic!("silly")
-    }
+    crate Input1: Map<(), usize>;
 }
 
 salsa::query_definition! {
-    #[storage(input)]
-    crate Input2(_query: &impl MemoizedInputsContext, _value: ()) -> usize {
-        panic!("silly")
-    }
+    crate Input2: Map<(), usize>;
 }
 
 #[test]

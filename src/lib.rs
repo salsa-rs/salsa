@@ -306,22 +306,6 @@ macro_rules! query_definition {
 
     (
         @filter_attrs {
-            input { #[storage(input)] $($input:tt)* };
-            storage { $storage:tt };
-            other_attrs { $($other_attrs:tt)* };
-        }
-    ) => {
-        $crate::query_definition! {
-            @filter_attrs {
-                input { $($input)* };
-                storage { input };
-                other_attrs { $($other_attrs)* };
-            }
-        }
-    };
-
-    (
-        @filter_attrs {
             input { #[$attr:meta] $($input:tt)* };
             storage { $storage:tt };
             other_attrs { $($other_attrs:tt)* };
@@ -336,6 +320,7 @@ macro_rules! query_definition {
         }
     };
 
+    // Accept a "fn-like" query definition
     (
         @filter_attrs {
             input {
@@ -369,6 +354,12 @@ macro_rules! query_definition {
     };
 
     (
+        @storage_ty[$QC:ident, $Self:ident, default]
+    ) => {
+        $crate::query_definition! { @storage_ty[$QC, $Self, memoized] }
+    };
+
+    (
         @storage_ty[$QC:ident, $Self:ident, memoized]
     ) => {
         $crate::memoized::MemoizedStorage<$QC, $Self>
@@ -380,10 +371,32 @@ macro_rules! query_definition {
         $crate::volatile::VolatileStorage
     };
 
+    // Accept a "field-like" query definition (input)
     (
-        @storage_ty[$QC:ident, $Self:ident, input]
+        @filter_attrs {
+            input {
+                $v:vis $name:ident: Map<$key_ty:ty, $value_ty:ty>;
+            };
+            storage { default };
+            other_attrs { $($attrs:tt)* };
+        }
     ) => {
-        $crate::input::InputStorage<$QC, $Self>
+        #[derive(Default, Debug)]
+        $($attrs)*
+        $v struct $name;
+
+        impl<QC> $crate::Query<QC> for $name
+        where
+            QC: $crate::QueryContext
+        {
+            type Key = $key_ty;
+            type Value = $value_ty;
+            type Storage = $crate::input::InputStorage<QC, Self>;
+
+            fn execute(_: &QC, _: $key_ty) -> $value_ty {
+                panic!("execute should never run for an input query")
+            }
+        }
     };
 
     // Various legal start states:
@@ -393,7 +406,7 @@ macro_rules! query_definition {
         $crate::query_definition! {
             @filter_attrs {
                 input { # $($tokens)* };
-                storage { memoized };
+                storage { default };
                 other_attrs { };
             }
         }
@@ -404,7 +417,7 @@ macro_rules! query_definition {
         $crate::query_definition! {
             @filter_attrs {
                 input { $v $name $($tokens)* };
-                storage { memoized };
+                storage { default };
                 other_attrs { };
             }
         }
