@@ -97,9 +97,9 @@ where
     Q: Query<QC>,
     QC: QueryContext,
 {
-    fn read<'q>(
+    fn read(
         &self,
-        query: &'q QC,
+        query: &QC,
         key: &Q::Key,
         descriptor: &QC::QueryDescriptor,
     ) -> Result<StampedValue<Q::Value>, CycleDetected> {

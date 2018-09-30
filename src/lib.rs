@@ -16,6 +16,7 @@ use std::fmt::Display;
 use std::fmt::Write;
 use std::hash::Hash;
 
+pub mod input;
 pub mod memoized;
 pub mod runtime;
 pub mod volatile;
@@ -72,9 +73,9 @@ where
     /// Returns `Err` in the event of a cycle, meaning that computing
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
-    fn try_fetch<'q>(
+    fn try_fetch(
         &self,
-        query: &'q QC,
+        query: &QC,
         key: &Q::Key,
         descriptor: &QC::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected>;
@@ -99,11 +100,22 @@ where
     /// Other storage types will skip some or all of these steps.
     fn maybe_changed_since(
         &self,
-        query: &'q QC,
+        query: &QC,
         revision: runtime::Revision,
         key: &Q::Key,
         descriptor: &QC::QueryDescriptor,
     ) -> bool;
+}
+
+/// An optional trait that is implemented for "user mutable" storage:
+/// that is, storage whose value is not derived from other storage but
+/// is set independently.
+pub trait MutQueryStorageOps<QC, Q>: Default
+where
+    QC: QueryContext,
+    Q: Query<QC>,
+{
+    fn set(&self, query: &QC, key: &Q::Key, new_value: Q::Value);
 }
 
 #[derive(new)]
@@ -112,9 +124,9 @@ where
     QC: QueryContext,
     Q: Query<QC>,
 {
-    pub query: &'me QC,
-    pub storage: &'me Q::Storage,
-    pub descriptor_fn: fn(&QC, &Q::Key) -> QC::QueryDescriptor,
+    query: &'me QC,
+    storage: &'me Q::Storage,
+    descriptor_fn: fn(&QC, &Q::Key) -> QC::QueryDescriptor,
 }
 
 pub struct CycleDetected;
@@ -133,6 +145,14 @@ where
                     .salsa_runtime()
                     .report_unexpected_cycle(descriptor)
             })
+    }
+
+    pub fn set(&self, key: Q::Key, value: Q::Value)
+    where
+        Q::Storage: MutQueryStorageOps<QC, Q>,
+    {
+        self.query.salsa_runtime().next_revision();
+        self.storage.set(self.query, &key, value);
     }
 
     fn descriptor(&self, key: &Q::Key) -> QC::QueryDescriptor {
@@ -263,6 +283,22 @@ macro_rules! query_definition {
 
     (
         @filter_attrs {
+            input { #[storage(input)] $($input:tt)* };
+            storage { $storage:tt };
+            other_attrs { $($other_attrs:tt)* };
+        }
+    ) => {
+        $crate::query_definition! {
+            @filter_attrs {
+                input { $($input)* };
+                storage { input };
+                other_attrs { $($other_attrs)* };
+            }
+        }
+    };
+
+    (
+        @filter_attrs {
             input { #[$attr:meta] $($input:tt)* };
             storage { $storage:tt };
             other_attrs { $($other_attrs:tt)* };
@@ -319,6 +355,12 @@ macro_rules! query_definition {
         @storage_ty[$QC:ident, $Self:ident, volatile]
     ) => {
         $crate::volatile::VolatileStorage
+    };
+
+    (
+        @storage_ty[$QC:ident, $Self:ident, input]
+    ) => {
+        $crate::volatile::InputStorage<$QC, $Self>
     };
 
     // Various legal start states:

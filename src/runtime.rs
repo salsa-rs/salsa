@@ -195,9 +195,7 @@ pub struct Revision {
 }
 
 impl Revision {
-    crate fn zero() -> Self {
-        Revision { generation: 0 }
-    }
+    crate const ZERO: Self = Revision { generation: 0 };
 }
 
 impl std::fmt::Debug for Revision {
