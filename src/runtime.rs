@@ -1,5 +1,6 @@
 use crate::Query;
 use crate::QueryContext;
+use log::debug;
 use rustc_hash::FxHasher;
 use std::cell::RefCell;
 use std::fmt::Write;
@@ -77,24 +78,32 @@ where
 
     /// Increments the current revision counter and returns the new value.
     crate fn increment_revision(&self) -> Revision {
-        Revision {
+        let result = Revision {
             generation: 1 + self.shared_state.revision.fetch_add(1, Ordering::SeqCst),
-        }
+        };
+
+        debug!("increment_revision: incremented to {:?}", result);
+
+        result
     }
 
     crate fn execute_query_implementation<Q>(
         &self,
         query: &QC,
-        descriptor: QC::QueryDescriptor,
+        descriptor: &QC::QueryDescriptor,
         key: &Q::Key,
     ) -> (Q::Value, QueryDescriptorSet<QC>)
     where
         Q: Query<QC>,
     {
+        debug!("{:?}({:?}): executing query", Q::default(), key);
+
         // Push the active query onto the stack.
         let push_len = {
             let mut local_state = self.local_state.borrow_mut();
-            local_state.query_stack.push(ActiveQuery::new(descriptor));
+            local_state
+                .query_stack
+                .push(ActiveQuery::new(descriptor.clone()));
             local_state.query_stack.len()
         };
 
@@ -122,13 +131,10 @@ where
     /// - `descriptor`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    crate fn report_query_read(&self, descriptor: QC::QueryDescriptor, changed_revision: Revision) {
-        self.local_state
-            .borrow_mut()
-            .query_stack
-            .last_mut()
-            .unwrap()
-            .add_read(descriptor, changed_revision);
+    crate fn report_query_read(&self, descriptor: &QC::QueryDescriptor) {
+        if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
+            top_query.add_read(descriptor);
+        }
     }
 
     /// Obviously, this should be user configurable at some point.
@@ -178,12 +184,12 @@ impl<QC: QueryContext> ActiveQuery<QC> {
         }
     }
 
-    fn add_read(&mut self, subquery: QC::QueryDescriptor, _changed_revision: Revision) {
-        self.subqueries.insert(subquery);
+    fn add_read(&mut self, subquery: &QC::QueryDescriptor) {
+        self.subqueries.insert(subquery.clone());
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Revision {
     generation: u64,
 }
@@ -191,6 +197,12 @@ pub struct Revision {
 impl Revision {
     crate fn zero() -> Self {
         Revision { generation: 0 }
+    }
+}
+
+impl std::fmt::Debug for Revision {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(fmt, "R({})", self.generation)
     }
 }
 

@@ -76,7 +76,7 @@ where
         &self,
         query: &'q QC,
         key: &Q::Key,
-        descriptor: impl FnOnce() -> QC::QueryDescriptor,
+        descriptor: &QC::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected>;
 
     /// True if the query **may** have changed since the given
@@ -125,12 +125,13 @@ where
     Q: Query<QC>,
 {
     pub fn of(&self, key: Q::Key) -> Q::Value {
+        let descriptor = self.descriptor(&key);
         self.storage
-            .try_fetch(self.query, &key, || self.descriptor(&key))
+            .try_fetch(self.query, &key, &descriptor)
             .unwrap_or_else(|CycleDetected| {
                 self.query
                     .salsa_runtime()
-                    .report_unexpected_cycle(self.descriptor(&key))
+                    .report_unexpected_cycle(descriptor)
             })
     }
 

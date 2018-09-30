@@ -10,7 +10,7 @@ impl Log {
         self.data.borrow_mut().push(text.into());
     }
 
-    crate fn read(&self) -> Vec<String> {
-        self.data.borrow().clone()
+    crate fn take(&self) -> Vec<String> {
+        std::mem::replace(&mut *self.data.borrow_mut(), vec![])
     }
 }

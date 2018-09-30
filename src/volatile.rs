@@ -4,6 +4,7 @@ use crate::Query;
 use crate::QueryContext;
 use crate::QueryStorageOps;
 use crate::QueryTable;
+use log::debug;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
 use std::any::Any;
@@ -28,25 +29,34 @@ where
         &self,
         query: &'q QC,
         key: &Q::Key,
-        descriptor: impl FnOnce() -> QC::QueryDescriptor,
+        descriptor: &QC::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected> {
         // FIXME: Should we even call `execute_query_implementation`
         // here? Or should we just call `Q::execute`, and maybe
         // separate out the `push`/`pop` operations.
-        let descriptor = descriptor();
         let (value, _inputs) = query
             .salsa_runtime()
             .execute_query_implementation::<Q>(query, descriptor, key);
+
+        query.salsa_runtime().report_query_read(descriptor);
+
         Ok(value)
     }
 
     fn maybe_changed_since(
         &self,
         _query: &'q QC,
-        _revision: Revision,
-        _key: &Q::Key,
+        revision: Revision,
+        key: &Q::Key,
         _descriptor: &QC::QueryDescriptor,
     ) -> bool {
+        debug!(
+            "{:?}({:?})::maybe_changed_since(revision={:?}) ==> true (volatile)",
+            Q::default(),
+            key,
+            revision,
+        );
+
         true
     }
 }

@@ -6,6 +6,7 @@ use crate::QueryContext;
 use crate::QueryDescriptor;
 use crate::QueryStorageOps;
 use crate::QueryTable;
+use log::debug;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
 use std::any::Any;
@@ -28,7 +29,6 @@ where
 }
 
 /// Defines the "current state" of query's memoized results.
-#[derive(Debug)]
 enum QueryState<QC, Q>
 where
     Q: Query<QC>,
@@ -42,7 +42,6 @@ where
     Memoized(Memo<QC, Q>),
 }
 
-#[derive(Debug)]
 struct Memo<QC, Q>
 where
     Q: Query<QC>,
@@ -76,7 +75,6 @@ where
     }
 }
 
-#[derive(Debug)]
 struct StampedValue<V> {
     value: V,
     changed_at: Revision,
@@ -103,9 +101,16 @@ where
         &self,
         query: &'q QC,
         key: &Q::Key,
-        descriptor: impl FnOnce() -> QC::QueryDescriptor,
+        descriptor: &QC::QueryDescriptor,
     ) -> Result<StampedValue<Q::Value>, CycleDetected> {
         let revision_now = query.salsa_runtime().current_revision();
+
+        debug!(
+            "{:?}({:?}): invoked at {:?}",
+            Q::default(),
+            key,
+            revision_now,
+        );
 
         let mut old_value = {
             let map_read = self.map.upgradable_read();
@@ -113,7 +118,21 @@ where
                 match value {
                     QueryState::InProgress => return Err(CycleDetected),
                     QueryState::Memoized(m) => {
+                        debug!(
+                            "{:?}({:?}): found memoized value verified_at={:?}",
+                            Q::default(),
+                            key,
+                            m.verified_at,
+                        );
+
                         if m.verified_at == revision_now {
+                            debug!(
+                                "{:?}({:?}): returning memoized value (changed_at={:?})",
+                                Q::default(),
+                                key,
+                                m.changed_at,
+                            );
+
                             return Ok(m.stamped_value());
                         }
                     }
@@ -134,6 +153,8 @@ where
                 .iter()
                 .all(|old_input| !old_input.maybe_changed_since(query, old_memo.verified_at))
             {
+                debug!("{:?}({:?}): inputs still valid", Q::default(), key);
+
                 // If none of out inputs have changed since the last time we refreshed
                 // our value, then our value must still be good. We'll just patch
                 // the verified-at date and re-use it.
@@ -155,7 +176,6 @@ where
 
         // Query was not previously executed or value is potentially
         // stale. Let's execute!
-        let descriptor = descriptor();
         let (value, inputs) = query
             .salsa_runtime()
             .execute_query_implementation::<Q>(query, descriptor, key);
@@ -214,9 +234,16 @@ where
         &self,
         query: &'q QC,
         key: &Q::Key,
-        descriptor: impl FnOnce() -> QC::QueryDescriptor,
+        descriptor: &QC::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected> {
-        Ok(self.read(query, key, descriptor)?.value)
+        let StampedValue {
+            value,
+            changed_at: _,
+        } = self.read(query, key, &descriptor)?;
+
+        query.salsa_runtime().report_query_read(descriptor);
+
+        Ok(value)
     }
 
     fn maybe_changed_since(
@@ -226,10 +253,19 @@ where
         key: &Q::Key,
         descriptor: &QC::QueryDescriptor,
     ) -> bool {
+        let revision_now = query.salsa_runtime().current_revision();
+
+        debug!(
+            "{:?}({:?})::maybe_changed_since(revision={:?}, revision_now={:?})",
+            Q::default(),
+            key,
+            revision,
+            revision_now,
+        );
+
         // Check for the case where we have no cache entry, or our cache
         // entry is up to date (common case):
         {
-            let revision_now = query.salsa_runtime().current_revision();
             let map_read = self.map.read();
             match map_read.get(key) {
                 None | Some(QueryState::InProgress) => return true,
@@ -242,7 +278,7 @@ where
         }
 
         // Otherwise fall back to the full read to compute the result.
-        match self.read(query, key, || descriptor.clone()) {
+        match self.read(query, key, descriptor) {
             Ok(v) => v.changed_at > revision,
             Err(CycleDetected) => true,
         }
