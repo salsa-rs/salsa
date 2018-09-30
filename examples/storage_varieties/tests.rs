@@ -12,7 +12,7 @@ fn memoized_twice() {
 }
 
 #[test]
-fn transparent_twice() {
+fn volatile_twice() {
     let query = QueryContextImpl::default();
     let v1 = query.volatile().of(());
     let v2 = query.volatile().of(());
