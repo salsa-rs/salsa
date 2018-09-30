@@ -1,38 +1,42 @@
-#![cfg(test)]
+use crate::implementation::{TestContext, TestContextImpl};
+use salsa::QueryContext;
 
-use crate::implementation::QueryContextImpl;
-use crate::queries::CounterContext;
-use crate::queries::QueryContext as _;
-use salsa::QueryContext as _;
+crate trait MemoizedVolatileContext: TestContext {
+    salsa::query_prototype! {
+        // Queries for testing a "volatile" value wrapped by
+        // memoization.
+        fn memoized2() for Memoized2;
+        fn memoized1() for Memoized1;
+        fn volatile() for Volatile;
+    }
+}
 
-impl QueryContextImpl {
-    fn assert_log(&self, expected_log: &[&str]) {
-        use difference::{Changeset, Difference};
+salsa::query_definition! {
+    crate Memoized2(query: &impl MemoizedVolatileContext, (): ()) -> usize {
+        query.log().add("Memoized2 invoked");
+        query.memoized1().of(())
+    }
+}
 
-        let expected_text = &format!("{:#?}", expected_log);
-        let actual_text = &format!("{:#?}", self.log().take());
+salsa::query_definition! {
+    crate Memoized1(query: &impl MemoizedVolatileContext, (): ()) -> usize {
+        query.log().add("Memoized1 invoked");
+        let v = query.volatile().of(());
+        v / 2
+    }
+}
 
-        if expected_text == actual_text {
-            return;
-        }
-
-        let Changeset { diffs, .. } = Changeset::new(expected_text, actual_text, "\n");
-
-        for i in 0..diffs.len() {
-            match &diffs[i] {
-                Difference::Same(x) => println!(" {}", x),
-                Difference::Add(x) => println!("+{}", x),
-                Difference::Rem(x) => println!("-{}", x),
-            }
-        }
-
-        panic!("incorrect log results");
+salsa::query_definition! {
+    #[storage(volatile)]
+    crate Volatile(query: &impl MemoizedVolatileContext, (): ()) -> usize {
+        query.log().add("Volatile invoked");
+        query.clock().increment()
     }
 }
 
 #[test]
 fn volatile_x2() {
-    let query = QueryContextImpl::default();
+    let query = TestContextImpl::default();
 
     // Invoking volatile twice will simply execute twice.
     query.volatile().of(());
@@ -52,7 +56,7 @@ fn volatile_x2() {
 fn revalidate() {
     env_logger::init();
 
-    let query = QueryContextImpl::default();
+    let query = TestContextImpl::default();
 
     query.memoized2().of(());
     query.assert_log(&["Memoized2 invoked", "Memoized1 invoked", "Volatile invoked"]);

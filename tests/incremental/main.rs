@@ -4,7 +4,6 @@
 mod counter;
 mod implementation;
 mod log;
-mod queries;
-mod tests;
+mod memoized_volatile;
 
 fn main() {}
