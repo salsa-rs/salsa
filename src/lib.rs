@@ -136,7 +136,7 @@ where
     QC: QueryContext,
     Q: Query<QC>,
 {
-    pub fn of(&self, key: Q::Key) -> Q::Value {
+    pub fn get(&self, key: Q::Key) -> Q::Value {
         let descriptor = self.descriptor(&key);
         self.storage
             .try_fetch(self.query, &key, &descriptor)
@@ -152,7 +152,7 @@ where
     where
         Q::Key: DefaultKey,
     {
-        self.of(DefaultKey::default_key())
+        self.get(DefaultKey::default_key())
     }
 
     /// Assign a value to an "input queries". Must be used outside of

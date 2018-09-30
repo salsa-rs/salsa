@@ -30,22 +30,22 @@ salsa::query_definition! {
 fn revalidate() {
     let query = TestContextImpl::default();
 
-    let v = query.max().of(());
+    let v = query.max().read();
     assert_eq!(v, 0);
     query.assert_log(&["Max invoked"]);
 
-    let v = query.max().of(());
+    let v = query.max().read();
     assert_eq!(v, 0);
     query.assert_log(&[]);
 
     query.input1().set((), 44);
     query.assert_log(&[]);
 
-    let v = query.max().of(());
+    let v = query.max().read();
     assert_eq!(v, 44);
     query.assert_log(&["Max invoked"]);
 
-    let v = query.max().of(());
+    let v = query.max().read();
     assert_eq!(v, 44);
     query.assert_log(&[]);
 
@@ -56,11 +56,11 @@ fn revalidate() {
     query.input1().set((), 64);
     query.assert_log(&[]);
 
-    let v = query.max().of(());
+    let v = query.max().read();
     assert_eq!(v, 66);
     query.assert_log(&["Max invoked"]);
 
-    let v = query.max().of(());
+    let v = query.max().read();
     assert_eq!(v, 66);
     query.assert_log(&[]);
 }

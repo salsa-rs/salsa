@@ -14,14 +14,14 @@ crate trait MemoizedVolatileContext: TestContext {
 salsa::query_definition! {
     crate Memoized2(query: &impl MemoizedVolatileContext, (): ()) -> usize {
         query.log().add("Memoized2 invoked");
-        query.memoized1().of(())
+        query.memoized1().read()
     }
 }
 
 salsa::query_definition! {
     crate Memoized1(query: &impl MemoizedVolatileContext, (): ()) -> usize {
         query.log().add("Memoized1 invoked");
-        let v = query.volatile().of(());
+        let v = query.volatile().read();
         v / 2
     }
 }
@@ -39,8 +39,8 @@ fn volatile_x2() {
     let query = TestContextImpl::default();
 
     // Invoking volatile twice will simply execute twice.
-    query.volatile().of(());
-    query.volatile().of(());
+    query.volatile().read();
+    query.volatile().read();
     query.assert_log(&["Volatile invoked", "Volatile invoked"]);
 }
 
@@ -56,20 +56,20 @@ fn volatile_x2() {
 fn revalidate() {
     let query = TestContextImpl::default();
 
-    query.memoized2().of(());
+    query.memoized2().read();
     query.assert_log(&["Memoized2 invoked", "Memoized1 invoked", "Volatile invoked"]);
 
-    query.memoized2().of(());
+    query.memoized2().read();
     query.assert_log(&[]);
 
     // Second generation: volatile will change (to 1) but memoized1
     // will not (still 0, as 1/2 = 0)
     query.salsa_runtime().next_revision();
 
-    query.memoized2().of(());
+    query.memoized2().read();
     query.assert_log(&["Memoized1 invoked", "Volatile invoked"]);
 
-    query.memoized2().of(());
+    query.memoized2().read();
     query.assert_log(&[]);
 
     // Third generation: volatile will change (to 2) and memoized1
@@ -77,9 +77,9 @@ fn revalidate() {
     // changed, we now invoke Memoized2.
     query.salsa_runtime().next_revision();
 
-    query.memoized2().of(());
+    query.memoized2().read();
     query.assert_log(&["Memoized1 invoked", "Volatile invoked", "Memoized2 invoked"]);
 
-    query.memoized2().of(());
+    query.memoized2().read();
     query.assert_log(&[]);
 }
