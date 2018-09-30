@@ -34,11 +34,11 @@ query_definition! {
     pub AllFields(query: &impl ClassTableQueryContext, (): ()) -> Arc<Vec<DefId>> {
         Arc::new(
             query.all_classes()
-                .of(())
+                .get(())
                 .iter()
                 .cloned()
                 .flat_map(|def_id| {
-                    let fields = query.fields().of(def_id);
+                    let fields = query.fields().get(def_id);
                     (0..fields.len()).map(move |i| fields[i])
                 })
                 .collect()

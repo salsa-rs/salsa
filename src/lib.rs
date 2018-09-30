@@ -16,6 +16,7 @@ use std::fmt::Display;
 use std::fmt::Write;
 use std::hash::Hash;
 
+pub mod input;
 pub mod memoized;
 pub mod runtime;
 pub mod volatile;
@@ -72,9 +73,9 @@ where
     /// Returns `Err` in the event of a cycle, meaning that computing
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
-    fn try_fetch<'q>(
+    fn try_fetch(
         &self,
-        query: &'q QC,
+        query: &QC,
         key: &Q::Key,
         descriptor: &QC::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected>;
@@ -99,11 +100,22 @@ where
     /// Other storage types will skip some or all of these steps.
     fn maybe_changed_since(
         &self,
-        query: &'q QC,
+        query: &QC,
         revision: runtime::Revision,
         key: &Q::Key,
         descriptor: &QC::QueryDescriptor,
     ) -> bool;
+}
+
+/// An optional trait that is implemented for "user mutable" storage:
+/// that is, storage whose value is not derived from other storage but
+/// is set independently.
+pub trait MutQueryStorageOps<QC, Q>: Default
+where
+    QC: QueryContext,
+    Q: Query<QC>,
+{
+    fn set(&self, query: &QC, key: &Q::Key, new_value: Q::Value);
 }
 
 #[derive(new)]
@@ -112,9 +124,9 @@ where
     QC: QueryContext,
     Q: Query<QC>,
 {
-    pub query: &'me QC,
-    pub storage: &'me Q::Storage,
-    pub descriptor_fn: fn(&QC, &Q::Key) -> QC::QueryDescriptor,
+    query: &'me QC,
+    storage: &'me Q::Storage,
+    descriptor_fn: fn(&QC, &Q::Key) -> QC::QueryDescriptor,
 }
 
 pub struct CycleDetected;
@@ -124,7 +136,7 @@ where
     QC: QueryContext,
     Q: Query<QC>,
 {
-    pub fn of(&self, key: Q::Key) -> Q::Value {
+    pub fn get(&self, key: Q::Key) -> Q::Value {
         let descriptor = self.descriptor(&key);
         self.storage
             .try_fetch(self.query, &key, &descriptor)
@@ -135,8 +147,39 @@ where
             })
     }
 
+    /// Equivalent to `of(DefaultKey::default_key())`
+    pub fn read(&self) -> Q::Value
+    where
+        Q::Key: DefaultKey,
+    {
+        self.get(DefaultKey::default_key())
+    }
+
+    /// Assign a value to an "input queries". Must be used outside of
+    /// an active query computation.
+    pub fn set(&self, key: Q::Key, value: Q::Value)
+    where
+        Q::Storage: MutQueryStorageOps<QC, Q>,
+    {
+        self.storage.set(self.query, &key, value);
+    }
+
     fn descriptor(&self, key: &Q::Key) -> QC::QueryDescriptor {
         (self.descriptor_fn)(self.query, key)
+    }
+}
+
+/// A variant of the `Default` trait used for query keys that are
+/// either singletons (e.g., `()`) or have some overwhelming default.
+/// In this case, you can write `query.my_query().read()` as a
+/// convenient shorthand.
+pub trait DefaultKey {
+    fn default_key() -> Self;
+}
+
+impl DefaultKey for () {
+    fn default_key() -> Self {
+        ()
     }
 }
 
@@ -277,6 +320,7 @@ macro_rules! query_definition {
         }
     };
 
+    // Accept a "fn-like" query definition
     (
         @filter_attrs {
             input {
@@ -310,6 +354,12 @@ macro_rules! query_definition {
     };
 
     (
+        @storage_ty[$QC:ident, $Self:ident, default]
+    ) => {
+        $crate::query_definition! { @storage_ty[$QC, $Self, memoized] }
+    };
+
+    (
         @storage_ty[$QC:ident, $Self:ident, memoized]
     ) => {
         $crate::memoized::MemoizedStorage<$QC, $Self>
@@ -321,6 +371,34 @@ macro_rules! query_definition {
         $crate::volatile::VolatileStorage
     };
 
+    // Accept a "field-like" query definition (input)
+    (
+        @filter_attrs {
+            input {
+                $v:vis $name:ident: Map<$key_ty:ty, $value_ty:ty>;
+            };
+            storage { default };
+            other_attrs { $($attrs:tt)* };
+        }
+    ) => {
+        #[derive(Default, Debug)]
+        $($attrs)*
+        $v struct $name;
+
+        impl<QC> $crate::Query<QC> for $name
+        where
+            QC: $crate::QueryContext
+        {
+            type Key = $key_ty;
+            type Value = $value_ty;
+            type Storage = $crate::input::InputStorage<QC, Self>;
+
+            fn execute(_: &QC, _: $key_ty) -> $value_ty {
+                panic!("execute should never run for an input query")
+            }
+        }
+    };
+
     // Various legal start states:
     (
         # $($tokens:tt)*
@@ -328,7 +406,7 @@ macro_rules! query_definition {
         $crate::query_definition! {
             @filter_attrs {
                 input { # $($tokens)* };
-                storage { memoized };
+                storage { default };
                 other_attrs { };
             }
         }
@@ -339,7 +417,7 @@ macro_rules! query_definition {
         $crate::query_definition! {
             @filter_attrs {
                 input { $v $name $($tokens)* };
-                storage { memoized };
+                storage { default };
                 other_attrs { };
             }
         }
