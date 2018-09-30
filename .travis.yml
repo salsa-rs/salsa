@@ -1,0 +1,7 @@
+language: rust
+rust:
+  - nightly
+script:
+- RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 cargo test --all
+- RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 cargo test --tests --all
+- RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 cargo test --examples --all
