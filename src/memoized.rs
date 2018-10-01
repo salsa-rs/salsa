@@ -142,14 +142,7 @@ where
                 let stamped_value = old_memo.stamped_value.clone();
 
                 let mut map_write = self.map.write();
-                let placeholder = map_write.insert(key.clone(), old_value.unwrap());
-                assert!(
-                    match placeholder {
-                        Some(QueryState::InProgress) => true,
-                        _ => false,
-                    },
-                    "expected in-progress state",
-                );
+                self.overwrite_placeholder(&mut map_write, key, old_value.unwrap());
                 return Ok(stamped_value);
             }
         }
@@ -182,25 +175,34 @@ where
 
         {
             let mut map_write = self.map.write();
-
-            let old_value = map_write.insert(
-                key.clone(),
+            self.overwrite_placeholder(
+                &mut map_write,
+                key,
                 QueryState::Memoized(Memo {
                     stamped_value: stamped_value.clone(),
                     inputs,
                     verified_at: revision_now,
                 }),
             );
-            assert!(
-                match old_value {
-                    Some(QueryState::InProgress) => true,
-                    _ => false,
-                },
-                "expected in-progress state",
-            );
         }
 
         Ok(stamped_value)
+    }
+
+    fn overwrite_placeholder(
+        &self,
+        map_write: &mut FxHashMap<Q::Key, QueryState<QC, Q>>,
+        key: &Q::Key,
+        value: QueryState<QC, Q>,
+    ) {
+        let old_value = map_write.insert(key.clone(), value);
+        assert!(
+            match old_value {
+                Some(QueryState::InProgress) => true,
+                _ => false,
+            },
+            "expected in-progress state",
+        );
     }
 }
 
