@@ -368,7 +368,7 @@ macro_rules! query_definition {
     (
         @storage_ty[$QC:ident, $Self:ident, volatile]
     ) => {
-        $crate::volatile::VolatileStorage
+        $crate::volatile::VolatileStorage<$QC, $Self>
     };
 
     // Accept a "field-like" query definition (input)
