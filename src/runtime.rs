@@ -92,7 +92,7 @@ where
         query: &QC,
         descriptor: &QC::QueryDescriptor,
         key: &Q::Key,
-    ) -> (Q::Value, QueryDescriptorSet<QC>)
+    ) -> (StampedValue<Q::Value>, QueryDescriptorSet<QC>)
     where
         Q: Query<QC>,
     {
@@ -111,7 +111,11 @@ where
         let value = Q::execute(query, key.clone());
 
         // Extract accumulated inputs.
-        let ActiveQuery { subqueries, .. } = {
+        let ActiveQuery {
+            subqueries,
+            changed_at,
+            ..
+        } = {
             let mut local_state = self.local_state.borrow_mut();
 
             // Sanity check: pushes and pops should be balanced.
@@ -120,7 +124,7 @@ where
             local_state.query_stack.pop().unwrap()
         };
 
-        (value, subqueries)
+        (StampedValue { value, changed_at }, subqueries)
     }
 
     /// Reports that the currently active query read the result from
@@ -131,9 +135,9 @@ where
     /// - `descriptor`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    crate fn report_query_read(&self, descriptor: &QC::QueryDescriptor) {
+    crate fn report_query_read(&self, descriptor: &QC::QueryDescriptor, changed_at: Revision) {
         if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
-            top_query.add_read(descriptor);
+            top_query.add_read(descriptor, changed_at);
         }
     }
 
@@ -172,6 +176,9 @@ struct ActiveQuery<QC: QueryContext> {
     /// What query is executing
     descriptor: QC::QueryDescriptor,
 
+    /// Records the maximum revision where any subquery changed
+    changed_at: Revision,
+
     /// Each subquery
     subqueries: QueryDescriptorSet<QC>,
 }
@@ -180,12 +187,14 @@ impl<QC: QueryContext> ActiveQuery<QC> {
     fn new(descriptor: QC::QueryDescriptor) -> Self {
         ActiveQuery {
             descriptor,
+            changed_at: Revision::ZERO,
             subqueries: QueryDescriptorSet::new(),
         }
     }
 
-    fn add_read(&mut self, subquery: &QC::QueryDescriptor) {
+    fn add_read(&mut self, subquery: &QC::QueryDescriptor, changed_at: Revision) {
         self.subqueries.insert(subquery.clone());
+        self.changed_at = self.changed_at.max(changed_at);
     }
 }
 

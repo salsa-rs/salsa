@@ -156,7 +156,7 @@ where
 
         // Query was not previously executed or value is potentially
         // stale. Let's execute!
-        let (value, inputs) = query
+        let (mut stamped_value, inputs) = query
             .salsa_runtime()
             .execute_query_implementation::<Q>(query, descriptor, key);
 
@@ -173,10 +173,10 @@ where
         // really change, even if some of its inputs have. So we can
         // "backdate" its `changed_at` revision to be the same as the
         // old value.
-        let mut changed_at = revision_now;
         if let Some(QueryState::Memoized(old_memo)) = &old_value {
-            if old_memo.stamped_value.value == value {
-                changed_at = old_memo.stamped_value.changed_at;
+            if old_memo.stamped_value.value == stamped_value.value {
+                assert!(old_memo.stamped_value.changed_at <= stamped_value.changed_at);
+                stamped_value.changed_at = old_memo.stamped_value.changed_at;
             }
         }
 
@@ -186,10 +186,7 @@ where
             let old_value = map_write.insert(
                 key.clone(),
                 QueryState::Memoized(Memo {
-                    stamped_value: StampedValue {
-                        value: value.clone(),
-                        changed_at,
-                    },
+                    stamped_value: stamped_value.clone(),
                     inputs,
                     verified_at: revision_now,
                 }),
@@ -203,7 +200,7 @@ where
             );
         }
 
-        Ok(StampedValue { value, changed_at })
+        Ok(stamped_value)
     }
 }
 
@@ -218,12 +215,11 @@ where
         key: &Q::Key,
         descriptor: &QC::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected> {
-        let StampedValue {
-            value,
-            changed_at: _,
-        } = self.read(query, key, &descriptor)?;
+        let StampedValue { value, changed_at } = self.read(query, key, &descriptor)?;
 
-        query.salsa_runtime().report_query_read(descriptor);
+        query
+            .salsa_runtime()
+            .report_query_read(descriptor, changed_at);
 
         Ok(value)
     }

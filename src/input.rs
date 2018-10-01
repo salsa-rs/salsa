@@ -82,12 +82,11 @@ where
         key: &Q::Key,
         descriptor: &QC::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected> {
-        let StampedValue {
-            value,
-            changed_at: _,
-        } = self.read(query, key, &descriptor)?;
+        let StampedValue { value, changed_at } = self.read(query, key, &descriptor)?;
 
-        query.salsa_runtime().report_query_read(descriptor);
+        query
+            .salsa_runtime()
+            .report_query_read(descriptor, changed_at);
 
         Ok(value)
     }

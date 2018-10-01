@@ -1,4 +1,5 @@
 use crate::runtime::Revision;
+use crate::runtime::StampedValue;
 use crate::CycleDetected;
 use crate::Query;
 use crate::QueryContext;
@@ -54,16 +55,24 @@ where
             return Err(CycleDetected);
         }
 
-        // FIXME: Should we even call `execute_query_implementation`
-        // here? Or should we just call `Q::execute`, and maybe
-        // separate out the `push`/`pop` operations.
-        let (value, _inputs) = query
+        let (
+            StampedValue {
+                value,
+                changed_at: _,
+            },
+            _inputs,
+        ) = query
             .salsa_runtime()
             .execute_query_implementation::<Q>(query, descriptor, key);
+
         let was_in_progress = self.in_progress.lock().remove(key);
         assert!(was_in_progress);
 
-        query.salsa_runtime().report_query_read(descriptor);
+        let revision_now = query.salsa_runtime().current_revision();
+
+        query
+            .salsa_runtime()
+            .report_query_read(descriptor, revision_now);
 
         Ok(value)
     }
