@@ -1,5 +1,6 @@
 use crate::counter::Counter;
 use crate::log::Log;
+use crate::memoized_dep_inputs;
 use crate::memoized_inputs;
 use crate::memoized_volatile;
 
@@ -42,16 +43,24 @@ impl TestContextImpl {
 
 salsa::query_context_storage! {
     crate struct TestContextImplStorage for TestContextImpl {
-        impl memoized_volatile::MemoizedVolatileContext {
-            fn memoized2() for memoized_volatile::Memoized2;
-            fn memoized1() for memoized_volatile::Memoized1;
-            fn volatile() for memoized_volatile::Volatile;
+        impl memoized_dep_inputs::MemoizedDepInputsContext {
+            fn dep_memoized2() for memoized_dep_inputs::Memoized2;
+            fn dep_memoized1() for memoized_dep_inputs::Memoized1;
+            fn dep_derived1() for memoized_dep_inputs::Derived1;
+            fn dep_input1() for memoized_dep_inputs::Input1;
+            fn dep_input2() for memoized_dep_inputs::Input2;
         }
 
         impl memoized_inputs::MemoizedInputsContext {
             fn max() for memoized_inputs::Max;
             fn input1() for memoized_inputs::Input1;
             fn input2() for memoized_inputs::Input2;
+        }
+
+        impl memoized_volatile::MemoizedVolatileContext {
+            fn memoized2() for memoized_volatile::Memoized2;
+            fn memoized1() for memoized_volatile::Memoized1;
+            fn volatile() for memoized_volatile::Volatile;
         }
     }
 }
