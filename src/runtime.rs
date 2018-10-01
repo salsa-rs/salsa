@@ -62,10 +62,6 @@ where
     /// case, you can wrap the input with a "no-storage" query and
     /// invoke this method from time to time.
     pub fn next_revision(&self) {
-        if !self.local_state.borrow().query_stack.is_empty() {
-            panic!("next_revision invoked during a query computation");
-        }
-
         self.increment_revision();
     }
 
@@ -78,6 +74,10 @@ where
 
     /// Increments the current revision counter and returns the new value.
     crate fn increment_revision(&self) -> Revision {
+        if !self.local_state.borrow().query_stack.is_empty() {
+            panic!("increment_revision invoked during a query computation");
+        }
+
         let result = Revision {
             generation: 1 + self.shared_state.revision.fetch_add(1, Ordering::SeqCst),
         };
