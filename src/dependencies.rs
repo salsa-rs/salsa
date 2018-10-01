@@ -18,21 +18,20 @@ use std::fmt::Display;
 use std::fmt::Write;
 use std::hash::Hash;
 
-/// Memoized queries store the result plus a list of the other queries
-/// that they invoked. This means we can avoid recomputing them when
-/// none of those inputs have changed.
-pub struct MemoizedStorage<QC, Q>
+/// "Dependency" queries just track their dependencies and not the
+/// actual value (which they produce on demand). This lessens the
+/// storage requirements.
+pub struct DependencyStorage<QC, Q>
 where
     Q: Query<QC>,
     QC: QueryContext,
 {
-    map: RwLock<FxHashMap<Q::Key, QueryState<QC, Q>>>,
+    map: RwLock<FxHashMap<Q::Key, QueryState<QC>>>,
 }
 
 /// Defines the "current state" of query's memoized results.
-enum QueryState<QC, Q>
+enum QueryState<QC>
 where
-    Q: Query<QC>,
     QC: QueryContext,
 {
     /// We are currently computing the result of this query; if we see
@@ -40,16 +39,13 @@ where
     InProgress,
 
     /// We have computed the query already, and here is the result.
-    Memoized(Memo<QC, Q>),
+    Memoized(Memo<QC>),
 }
 
-struct Memo<QC, Q>
+struct Memo<QC>
 where
-    Q: Query<QC>,
     QC: QueryContext,
 {
-    stamped_value: StampedValue<Q::Value>,
-
     inputs: QueryDescriptorSet<QC>,
 
     /// Last time that we checked our inputs to see if they have
@@ -58,21 +54,24 @@ where
     /// see if any of them have changed since our last check -- if so,
     /// we'll need to re-execute.
     verified_at: Revision,
+
+    /// Last time that our value changed.
+    changed_at: Revision,
 }
 
-impl<QC, Q> Default for MemoizedStorage<QC, Q>
+impl<QC, Q> Default for DependencyStorage<QC, Q>
 where
     Q: Query<QC>,
     QC: QueryContext,
 {
     fn default() -> Self {
-        MemoizedStorage {
+        DependencyStorage {
             map: RwLock::new(FxHashMap::default()),
         }
     }
 }
 
-impl<QC, Q> MemoizedStorage<QC, Q>
+impl<QC, Q> DependencyStorage<QC, Q>
 where
     Q: Query<QC>,
     QC: QueryContext,
@@ -92,64 +91,22 @@ where
             revision_now,
         );
 
-        let mut old_value = {
+        {
             let map_read = self.map.upgradable_read();
             if let Some(value) = map_read.get(key) {
                 match value {
                     QueryState::InProgress => return Err(CycleDetected),
-                    QueryState::Memoized(m) => {
-                        debug!(
-                            "{:?}({:?}): found memoized value verified_at={:?}",
-                            Q::default(),
-                            key,
-                            m.verified_at,
-                        );
-
-                        if m.verified_at == revision_now {
-                            debug!(
-                                "{:?}({:?}): returning memoized value (changed_at={:?})",
-                                Q::default(),
-                                key,
-                                m.stamped_value.changed_at,
-                            );
-
-                            return Ok(m.stamped_value.clone());
-                        }
-                    }
+                    QueryState::Memoized(_) => {}
                 }
             }
 
             let mut map_write = RwLockUpgradableReadGuard::upgrade(map_read);
-            map_write.insert(key.clone(), QueryState::InProgress)
-        };
-
-        // If we have an old-value, it *may* now be stale, since there
-        // has been a new revision since the last time we checked. So,
-        // first things first, let's walk over each of our previous
-        // inputs and check whether they are out of date.
-        if let Some(QueryState::Memoized(old_memo)) = &mut old_value {
-            if old_memo
-                .inputs
-                .iter()
-                .all(|old_input| !old_input.maybe_changed_since(query, old_memo.verified_at))
-            {
-                debug!("{:?}({:?}): inputs still valid", Q::default(), key);
-
-                // If none of out inputs have changed since the last time we refreshed
-                // our value, then our value must still be good. We'll just patch
-                // the verified-at date and re-use it.
-                old_memo.verified_at = revision_now;
-                let stamped_value = old_memo.stamped_value.clone();
-
-                let mut map_write = self.map.write();
-                self.overwrite_placeholder(&mut map_write, key, old_value.unwrap());
-                return Ok(stamped_value);
-            }
+            map_write.insert(key.clone(), QueryState::InProgress);
         }
 
-        // Query was not previously executed or value is potentially
-        // stale. Let's execute!
-        let (mut stamped_value, inputs) = query
+        // Note that, unlike with a memoized query, we must always
+        // re-execute.
+        let (stamped_value, inputs) = query
             .salsa_runtime()
             .execute_query_implementation::<Q>(query, descriptor, key);
 
@@ -162,27 +119,23 @@ where
             "revision altered during query execution",
         );
 
-        // If the new value is equal to the old one, then it didn't
-        // really change, even if some of its inputs have. So we can
-        // "backdate" its `changed_at` revision to be the same as the
-        // old value.
-        if let Some(QueryState::Memoized(old_memo)) = &old_value {
-            if old_memo.stamped_value.value == stamped_value.value {
-                assert!(old_memo.stamped_value.changed_at <= stamped_value.changed_at);
-                stamped_value.changed_at = old_memo.stamped_value.changed_at;
-            }
-        }
-
         {
             let mut map_write = self.map.write();
-            self.overwrite_placeholder(
-                &mut map_write,
-                key,
+
+            let old_value = map_write.insert(
+                key.clone(),
                 QueryState::Memoized(Memo {
-                    stamped_value: stamped_value.clone(),
                     inputs,
                     verified_at: revision_now,
+                    changed_at: stamped_value.changed_at,
                 }),
+            );
+            assert!(
+                match old_value {
+                    Some(QueryState::InProgress) => true,
+                    _ => false,
+                },
+                "expected in-progress state",
             );
         }
 
@@ -191,11 +144,16 @@ where
 
     fn overwrite_placeholder(
         &self,
-        map_write: &mut FxHashMap<Q::Key, QueryState<QC, Q>>,
+        map_write: &mut FxHashMap<Q::Key, QueryState<QC>>,
         key: &Q::Key,
-        value: QueryState<QC, Q>,
+        value: Option<QueryState<QC>>,
     ) {
-        let old_value = map_write.insert(key.clone(), value);
+        let old_value = if let Some(v) = value {
+            map_write.insert(key.clone(), v)
+        } else {
+            map_write.remove(key)
+        };
+
         assert!(
             match old_value {
                 Some(QueryState::InProgress) => true,
@@ -206,7 +164,7 @@ where
     }
 }
 
-impl<QC, Q> QueryStorageOps<QC, Q> for MemoizedStorage<QC, Q>
+impl<QC, Q> QueryStorageOps<QC, Q> for DependencyStorage<QC, Q>
 where
     Q: Query<QC>,
     QC: QueryContext,
@@ -231,7 +189,7 @@ where
         query: &'q QC,
         revision: Revision,
         key: &Q::Key,
-        descriptor: &QC::QueryDescriptor,
+        _descriptor: &QC::QueryDescriptor,
     ) -> bool {
         let revision_now = query.salsa_runtime().current_revision();
 
@@ -243,24 +201,47 @@ where
             revision_now,
         );
 
-        // Check for the case where we have no cache entry, or our cache
-        // entry is up to date (common case):
-        {
-            let map_read = self.map.read();
+        let value = {
+            let map_read = self.map.upgradable_read();
             match map_read.get(key) {
                 None | Some(QueryState::InProgress) => return true,
                 Some(QueryState::Memoized(memo)) => {
-                    if memo.verified_at >= revision_now {
-                        return memo.stamped_value.changed_at > revision;
+                    // If our memo is still up to date, then check if we've
+                    // changed since the revision.
+                    if memo.verified_at == revision_now {
+                        return memo.changed_at > revision;
                     }
                 }
             }
+
+            let mut map_write = RwLockUpgradableReadGuard::upgrade(map_read);
+            map_write.insert(key.clone(), QueryState::InProgress)
+        };
+
+        // Otherwise, walk the inputs we had and check them. Note that
+        // we don't want to hold the lock while we do this.
+        let mut memo = match value {
+            Some(QueryState::Memoized(memo)) => memo,
+            _ => unreachable!(),
+        };
+
+        if memo
+            .inputs
+            .iter()
+            .all(|old_input| !old_input.maybe_changed_since(query, memo.verified_at))
+        {
+            memo.verified_at = revision_now;
+            self.overwrite_placeholder(
+                &mut self.map.write(),
+                key,
+                Some(QueryState::Memoized(memo)),
+            );
+            return false;
         }
 
-        // Otherwise fall back to the full read to compute the result.
-        match self.read(query, key, descriptor) {
-            Ok(v) => v.changed_at > revision,
-            Err(CycleDetected) => true,
-        }
+        // Just remove the existing entry. It's out of date.
+        self.overwrite_placeholder(&mut self.map.write(), key, None);
+
+        true
     }
 }

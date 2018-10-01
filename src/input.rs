@@ -1,5 +1,6 @@
 use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
+use crate::runtime::StampedValue;
 use crate::CycleDetected;
 use crate::MutQueryStorageOps;
 use crate::Query;
@@ -81,12 +82,11 @@ where
         key: &Q::Key,
         descriptor: &QC::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected> {
-        let StampedValue {
-            value,
-            changed_at: _,
-        } = self.read(query, key, &descriptor)?;
+        let StampedValue { value, changed_at } = self.read(query, key, &descriptor)?;
 
-        query.salsa_runtime().report_query_read(descriptor);
+        query
+            .salsa_runtime()
+            .report_query_read(descriptor, changed_at);
 
         Ok(value)
     }
@@ -136,10 +136,4 @@ where
 
         map_write.insert(key, StampedValue { value, changed_at });
     }
-}
-
-#[derive(Clone)]
-struct StampedValue<V> {
-    value: V,
-    changed_at: Revision,
 }

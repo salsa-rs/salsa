@@ -16,6 +16,7 @@ use std::fmt::Display;
 use std::fmt::Write;
 use std::hash::Hash;
 
+pub mod dependencies;
 pub mod input;
 pub mod memoized;
 pub mod runtime;
@@ -306,6 +307,22 @@ macro_rules! query_definition {
 
     (
         @filter_attrs {
+            input { #[storage(dependencies)] $($input:tt)* };
+            storage { $storage:tt };
+            other_attrs { $($other_attrs:tt)* };
+        }
+    ) => {
+        $crate::query_definition! {
+            @filter_attrs {
+                input { $($input)* };
+                storage { dependencies };
+                other_attrs { $($other_attrs)* };
+            }
+        }
+    };
+
+    (
+        @filter_attrs {
             input { #[$attr:meta] $($input:tt)* };
             storage { $storage:tt };
             other_attrs { $($other_attrs:tt)* };
@@ -369,6 +386,12 @@ macro_rules! query_definition {
         @storage_ty[$QC:ident, $Self:ident, volatile]
     ) => {
         $crate::volatile::VolatileStorage<$QC, $Self>
+    };
+
+    (
+        @storage_ty[$QC:ident, $Self:ident, dependencies]
+    ) => {
+        $crate::dependencies::DependencyStorage<$QC, $Self>
     };
 
     // Accept a "field-like" query definition (input)
