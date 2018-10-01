@@ -1,5 +1,6 @@
 use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
+use crate::runtime::StampedValue;
 use crate::CycleDetected;
 use crate::MutQueryStorageOps;
 use crate::Query;
@@ -136,10 +137,4 @@ where
 
         map_write.insert(key, StampedValue { value, changed_at });
     }
-}
-
-#[derive(Clone)]
-struct StampedValue<V> {
-    value: V,
-    changed_at: Revision,
 }

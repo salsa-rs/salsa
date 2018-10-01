@@ -235,3 +235,9 @@ impl<QC: QueryContext> QueryDescriptorSet<QC> {
         self.set.iter()
     }
 }
+
+#[derive(Clone, Debug)]
+crate struct StampedValue<V> {
+    crate value: V,
+    crate changed_at: Revision,
+}

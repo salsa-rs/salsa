@@ -1,5 +1,6 @@
 use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
+use crate::runtime::StampedValue;
 use crate::CycleDetected;
 use crate::Query;
 use crate::QueryContext;
@@ -73,11 +74,6 @@ where
             changed_at: self.changed_at,
         }
     }
-}
-
-struct StampedValue<V> {
-    value: V,
-    changed_at: Revision,
 }
 
 impl<QC, Q> Default for MemoizedStorage<QC, Q>
