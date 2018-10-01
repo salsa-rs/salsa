@@ -48,7 +48,7 @@ where
     Q: Query<QC>,
     QC: QueryContext,
 {
-    value: Q::Value,
+    stamped_value: StampedValue<Q::Value>,
 
     inputs: QueryDescriptorSet<QC>,
 
@@ -58,22 +58,6 @@ where
     /// see if any of them have changed since our last check -- if so,
     /// we'll need to re-execute.
     verified_at: Revision,
-
-    /// Last time that our value changed.
-    changed_at: Revision,
-}
-
-impl<QC, Q> Memo<QC, Q>
-where
-    Q: Query<QC>,
-    QC: QueryContext,
-{
-    fn stamped_value(&self) -> StampedValue<Q::Value> {
-        StampedValue {
-            value: self.value.clone(),
-            changed_at: self.changed_at,
-        }
-    }
 }
 
 impl<QC, Q> Default for MemoizedStorage<QC, Q>
@@ -126,10 +110,10 @@ where
                                 "{:?}({:?}): returning memoized value (changed_at={:?})",
                                 Q::default(),
                                 key,
-                                m.changed_at,
+                                m.stamped_value.changed_at,
                             );
 
-                            return Ok(m.stamped_value());
+                            return Ok(m.stamped_value.clone());
                         }
                     }
                 }
@@ -155,7 +139,7 @@ where
                 // our value, then our value must still be good. We'll just patch
                 // the verified-at date and re-use it.
                 old_memo.verified_at = revision_now;
-                let stamped_value = old_memo.stamped_value();
+                let stamped_value = old_memo.stamped_value.clone();
 
                 let mut map_write = self.map.write();
                 let placeholder = map_write.insert(key.clone(), old_value.unwrap());
@@ -187,12 +171,12 @@ where
 
         // If the new value is equal to the old one, then it didn't
         // really change, even if some of its inputs have. So we can
-        // "backdate" our `changed_at` revision to be the same as the
+        // "backdate" its `changed_at` revision to be the same as the
         // old value.
         let mut changed_at = revision_now;
         if let Some(QueryState::Memoized(old_memo)) = &old_value {
-            if old_memo.value == value {
-                changed_at = old_memo.changed_at;
+            if old_memo.stamped_value.value == value {
+                changed_at = old_memo.stamped_value.changed_at;
             }
         }
 
@@ -202,10 +186,12 @@ where
             let old_value = map_write.insert(
                 key.clone(),
                 QueryState::Memoized(Memo {
-                    value: value.clone(),
+                    stamped_value: StampedValue {
+                        value: value.clone(),
+                        changed_at,
+                    },
                     inputs,
                     verified_at: revision_now,
-                    changed_at,
                 }),
             );
             assert!(
@@ -267,7 +253,7 @@ where
                 None | Some(QueryState::InProgress) => return true,
                 Some(QueryState::Memoized(memo)) => {
                     if memo.verified_at >= revision_now {
-                        return memo.changed_at > revision;
+                        return memo.stamped_value.changed_at > revision;
                     }
                 }
             }
