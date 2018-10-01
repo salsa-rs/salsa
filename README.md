@@ -4,7 +4,8 @@
 
 ## Obligatory warning
 
-Very much a WORK IN PROGRESS at this point. Not really ready for use.
+Very much a WORK IN PROGRESS at this point. Ready for experimental use
+but expect frequent breaking changes.
 
 ## Credits
 

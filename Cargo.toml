@@ -1,11 +1,11 @@
 [package]
 name = "salsa"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Niko Matsakis <niko@alum.mit.edu>"]
 edition = "2018"
 license = "Apache-2.0/MIT"
 repository = "https://github.com/nikomatsakis/salsa"
-description = "A generic framework for on-demand, incrementalized computation (not ready for public use)"
+description = "A generic framework for on-demand, incrementalized computation (experimental)"
 readme = "README.md"
 
 [dependencies]
