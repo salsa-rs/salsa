@@ -22,8 +22,8 @@ salsa::query_context_storage! {
     }
 }
 
-trait QueryContext: salsa::QueryContext {
-    salsa::query_prototype! {
+salsa::query_prototype! {
+    trait QueryContext: salsa::QueryContext {
         // `a` and `b` depend on each other and form a cycle
         fn memoized_a() for MemoizedA;
         fn memoized_b() for MemoizedB;
