@@ -2,8 +2,8 @@ crate trait CounterContext: salsa::QueryContext {
     fn increment(&self) -> usize;
 }
 
-crate trait QueryContext: CounterContext {
-    salsa::query_prototype! {
+salsa::query_prototype! {
+    crate trait QueryContext: CounterContext {
         fn memoized() for Memoized;
         fn volatile() for Volatile;
     }

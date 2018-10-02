@@ -232,16 +232,44 @@ impl DefaultKey for () {
 #[macro_export]
 macro_rules! query_prototype {
     (
-        $(
-            $(#[$attr:meta])*
-            fn $method_name:ident() for $query_type:ty;
-        )*
+        $(#[$attr:meta])* $v:vis trait $name:ident $($t:tt)*
     ) => {
-        $(
-            $(#[$attr])*
-            fn $method_name(&self) -> $crate::QueryTable<'_, Self, $query_type>;
-        )*
-    }
+        $crate::query_prototype! {
+            attr[$(#[$attr])*];
+            headers[$v, $name, ];
+            tokens[$($t)*];
+        }
+    };
+
+    (
+        attr[$($trait_attr:tt)*];
+        headers[$v:vis, $name:ident, $($header:tt)*];
+        tokens[{
+            $(
+                $(#[$method_attr:meta])*
+                fn $method_name:ident() for $query_type:ty;
+            )*
+        }];
+    ) => {
+        $($trait_attr)* $v trait $name $($header)* {
+            $(
+                $(#[$method_attr])*
+                fn $method_name(&self) -> $crate::QueryTable<'_, Self, $query_type>;
+            )*
+        }
+    };
+
+    (
+        attr[$($attr:tt)*];
+        headers[$($headers:tt)*];
+        tokens[$token:tt $($tokens:tt)*];
+    ) => {
+        $crate::query_prototype! {
+            attr[$($attr)*];
+            headers[$($headers)* $token];
+            tokens[$($tokens)*];
+        }
+    };
 }
 
 /// Creates a **Query Definition** type. This defines the input (key)

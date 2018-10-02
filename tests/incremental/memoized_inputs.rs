@@ -1,7 +1,7 @@
 use crate::implementation::{TestContext, TestContextImpl};
 
-crate trait MemoizedInputsContext: TestContext {
-    salsa::query_prototype! {
+salsa::query_prototype! {
+    crate trait MemoizedInputsContext: TestContext {
         fn max() for Max;
         fn input1() for Input1;
         fn input2() for Input2;

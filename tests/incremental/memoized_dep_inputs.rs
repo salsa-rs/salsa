@@ -1,7 +1,7 @@
 use crate::implementation::{TestContext, TestContextImpl};
 
-crate trait MemoizedDepInputsContext: TestContext {
-    salsa::query_prototype! {
+salsa::query_prototype! {
+    crate trait MemoizedDepInputsContext: TestContext {
         fn dep_memoized2() for Memoized2;
         fn dep_memoized1() for Memoized1;
         fn dep_derived1() for Derived1;

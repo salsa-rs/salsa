@@ -2,8 +2,8 @@ use crate::compiler;
 use salsa::{query_definition, query_prototype};
 use std::sync::Arc;
 
-pub trait ClassTableQueryContext: compiler::CompilerQueryContext {
-    query_prototype! {
+query_prototype! {
+    pub trait ClassTableQueryContext: compiler::CompilerQueryContext {
         /// Get the fields.
         fn fields() for Fields;
 
