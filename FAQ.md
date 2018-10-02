@@ -8,9 +8,11 @@ re-executed after any given change is based on the algorithm used in
 rustc. Michael Woerister and I first described the rustc algorithm in
 terms of two colors, red and green, and hence we called it the
 "red-green algorithm". This made me think of the New Mexico State
-Question --- "Red or green?" --- which refers to salsa. Although this
-version no longer uses colors (we borrowed revision counters from
-Glimmer, instead), I still like the name.
+Question --- ["Red or green?"][nm] --- which refers to chile
+(salsa). Although this version no longer uses colors (we borrowed
+revision counters from Glimmer, instead), I still like the name.
+
+[nm]: http://www.sos.state.nm.us/Kids_Corner/State_Symbols.aspx#question
 
 ## What is the relationship between salsa and an Entity-Component System (ECS)?
 
