@@ -1,4 +1,4 @@
-pub trait CompilerQueryContext: salsa::QueryContext {
+pub trait CompilerDatabase: salsa::Database {
     fn interner(&self) -> &Interner;
 }
 

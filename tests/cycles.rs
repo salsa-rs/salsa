@@ -1,19 +1,19 @@
 #![feature(crate_visibility_modifier)]
 
 #[derive(Default)]
-pub struct QueryContextImpl {
-    runtime: salsa::runtime::Runtime<QueryContextImpl>,
+pub struct DatabaseImpl {
+    runtime: salsa::runtime::Runtime<DatabaseImpl>,
 }
 
-impl salsa::QueryContext for QueryContextImpl {
-    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<QueryContextImpl> {
+impl salsa::Database for DatabaseImpl {
+    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<DatabaseImpl> {
         &self.runtime
     }
 }
 
-salsa::query_context_storage! {
-    pub struct QueryContextImplStorage for QueryContextImpl {
-        impl QueryContext {
+salsa::database_storage! {
+    pub struct DatabaseImplStorage for DatabaseImpl {
+        impl Database {
             fn memoized_a() for MemoizedA;
             fn memoized_b() for MemoizedB;
             fn volatile_a() for VolatileA;
@@ -23,7 +23,7 @@ salsa::query_context_storage! {
 }
 
 salsa::query_prototype! {
-    trait QueryContext: salsa::QueryContext {
+    trait Database: salsa::Database {
         // `a` and `b` depend on each other and form a cycle
         fn memoized_a() for MemoizedA;
         fn memoized_b() for MemoizedB;
@@ -33,41 +33,41 @@ salsa::query_prototype! {
 }
 
 salsa::query_definition! {
-    crate MemoizedA(query: &impl QueryContext, (): ()) -> () {
-        query.memoized_b().get(())
+    crate MemoizedA(db: &impl Database, (): ()) -> () {
+        db.memoized_b().get(())
     }
 }
 
 salsa::query_definition! {
-    crate MemoizedB(query: &impl QueryContext, (): ()) -> () {
-        query.memoized_a().get(())
-    }
-}
-
-salsa::query_definition! {
-    #[storage(volatile)]
-    crate VolatileA(query: &impl QueryContext, (): ()) -> () {
-        query.volatile_b().get(())
+    crate MemoizedB(db: &impl Database, (): ()) -> () {
+        db.memoized_a().get(())
     }
 }
 
 salsa::query_definition! {
     #[storage(volatile)]
-    crate VolatileB(query: &impl QueryContext, (): ()) -> () {
-        query.volatile_a().get(())
+    crate VolatileA(db: &impl Database, (): ()) -> () {
+        db.volatile_b().get(())
+    }
+}
+
+salsa::query_definition! {
+    #[storage(volatile)]
+    crate VolatileB(db: &impl Database, (): ()) -> () {
+        db.volatile_a().get(())
     }
 }
 
 #[test]
 #[should_panic(expected = "cycle detected")]
 fn cycle_memoized() {
-    let query = QueryContextImpl::default();
+    let query = DatabaseImpl::default();
     query.memoized_a().get(());
 }
 
 #[test]
 #[should_panic(expected = "cycle detected")]
 fn cycle_volatile() {
-    let query = QueryContextImpl::default();
+    let query = DatabaseImpl::default();
     query.volatile_a().get(());
 }

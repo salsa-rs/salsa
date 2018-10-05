@@ -1,5 +1,5 @@
 use crate::implementation::{TestContext, TestContextImpl};
-use salsa::QueryContext;
+use salsa::Database;
 
 salsa::query_prototype! {
     crate trait MemoizedVolatileContext: TestContext {
@@ -12,25 +12,25 @@ salsa::query_prototype! {
 }
 
 salsa::query_definition! {
-    crate Memoized2(query: &impl MemoizedVolatileContext, (): ()) -> usize {
-        query.log().add("Memoized2 invoked");
-        query.memoized1().read()
+    crate Memoized2(db: &impl MemoizedVolatileContext, (): ()) -> usize {
+        db.log().add("Memoized2 invoked");
+        db.memoized1().read()
     }
 }
 
 salsa::query_definition! {
-    crate Memoized1(query: &impl MemoizedVolatileContext, (): ()) -> usize {
-        query.log().add("Memoized1 invoked");
-        let v = query.volatile().read();
+    crate Memoized1(db: &impl MemoizedVolatileContext, (): ()) -> usize {
+        db.log().add("Memoized1 invoked");
+        let v = db.volatile().read();
         v / 2
     }
 }
 
 salsa::query_definition! {
     #[storage(volatile)]
-    crate Volatile(query: &impl MemoizedVolatileContext, (): ()) -> usize {
-        query.log().add("Volatile invoked");
-        query.clock().increment()
+    crate Volatile(db: &impl MemoizedVolatileContext, (): ()) -> usize {
+        db.log().add("Volatile invoked");
+        db.clock().increment()
     }
 }
 

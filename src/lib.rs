@@ -25,16 +25,16 @@ pub mod volatile;
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait QueryContext: QueryContextStorageTypes {
+pub trait Database: DatabaseStorageTypes {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &runtime::Runtime<Self>;
 }
 
 /// Defines the `QueryDescriptor` associated type. An impl of this
 /// should be generated for your query-context type automatically by
-/// the `query_context_storage` macro, so you shouldn't need to mess
+/// the `database_storage` macro, so you shouldn't need to mess
 /// with this trait directly.
-pub trait QueryContextStorageTypes: Sized {
+pub trait DatabaseStorageTypes: Sized {
     /// A "query descriptor" packages up all the possible queries and a key.
     /// It is used to store information about (e.g.) the stack.
     ///
@@ -44,28 +44,28 @@ pub trait QueryContextStorageTypes: Sized {
     type QueryDescriptor: QueryDescriptor<Self>;
 
     /// Defines the "storage type", where all the query data is kept.
-    /// This type is defined by the `query_context_storage` macro.
-    type QueryContextStorage: Default;
+    /// This type is defined by the `database_storage` macro.
+    type DatabaseStorage: Default;
 }
 
-pub trait QueryDescriptor<QC>: Clone + Debug + Eq + Hash + Send + Sync {
+pub trait QueryDescriptor<DB>: Clone + Debug + Eq + Hash + Send + Sync {
     /// Returns true if the value of this query may have changed since
     /// the given revision.
-    fn maybe_changed_since(&self, query: &QC, revision: runtime::Revision) -> bool;
+    fn maybe_changed_since(&self, db: &DB, revision: runtime::Revision) -> bool;
 }
 
-pub trait Query<QC: QueryContext>: Debug + Default + Sized + 'static {
+pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type Key: Clone + Debug + Hash + Eq + Send;
     type Value: Clone + Debug + Hash + Eq + Send;
-    type Storage: QueryStorageOps<QC, Self> + Send + Sync;
+    type Storage: QueryStorageOps<DB, Self> + Send + Sync;
 
-    fn execute(query: &QC, key: Self::Key) -> Self::Value;
+    fn execute(db: &DB, key: Self::Key) -> Self::Value;
 }
 
-pub trait QueryStorageOps<QC, Q>: Default
+pub trait QueryStorageOps<DB, Q>: Default
 where
-    QC: QueryContext,
-    Q: Query<QC>,
+    DB: Database,
+    Q: Query<DB>,
 {
     /// Execute the query, returning the result (often, the result
     /// will be memoized).  This is the "main method" for
@@ -76,9 +76,9 @@ where
     /// itself.
     fn try_fetch(
         &self,
-        query: &QC,
+        db: &DB,
         key: &Q::Key,
-        descriptor: &QC::QueryDescriptor,
+        descriptor: &DB::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected>;
 
     /// True if the query **may** have changed since the given
@@ -101,50 +101,48 @@ where
     /// Other storage types will skip some or all of these steps.
     fn maybe_changed_since(
         &self,
-        query: &QC,
+        db: &DB,
         revision: runtime::Revision,
         key: &Q::Key,
-        descriptor: &QC::QueryDescriptor,
+        descriptor: &DB::QueryDescriptor,
     ) -> bool;
 }
 
 /// An optional trait that is implemented for "user mutable" storage:
 /// that is, storage whose value is not derived from other storage but
 /// is set independently.
-pub trait MutQueryStorageOps<QC, Q>: Default
+pub trait MutQueryStorageOps<DB, Q>: Default
 where
-    QC: QueryContext,
-    Q: Query<QC>,
+    DB: Database,
+    Q: Query<DB>,
 {
-    fn set(&self, query: &QC, key: &Q::Key, new_value: Q::Value);
+    fn set(&self, db: &DB, key: &Q::Key, new_value: Q::Value);
 }
 
 #[derive(new)]
-pub struct QueryTable<'me, QC, Q>
+pub struct QueryTable<'me, DB, Q>
 where
-    QC: QueryContext,
-    Q: Query<QC>,
+    DB: Database,
+    Q: Query<DB>,
 {
-    query: &'me QC,
+    db: &'me DB,
     storage: &'me Q::Storage,
-    descriptor_fn: fn(&QC, &Q::Key) -> QC::QueryDescriptor,
+    descriptor_fn: fn(&DB, &Q::Key) -> DB::QueryDescriptor,
 }
 
 pub struct CycleDetected;
 
-impl<QC, Q> QueryTable<'me, QC, Q>
+impl<DB, Q> QueryTable<'me, DB, Q>
 where
-    QC: QueryContext,
-    Q: Query<QC>,
+    DB: Database,
+    Q: Query<DB>,
 {
     pub fn get(&self, key: Q::Key) -> Q::Value {
         let descriptor = self.descriptor(&key);
         self.storage
-            .try_fetch(self.query, &key, &descriptor)
+            .try_fetch(self.db, &key, &descriptor)
             .unwrap_or_else(|CycleDetected| {
-                self.query
-                    .salsa_runtime()
-                    .report_unexpected_cycle(descriptor)
+                self.db.salsa_runtime().report_unexpected_cycle(descriptor)
             })
     }
 
@@ -160,13 +158,13 @@ where
     /// an active query computation.
     pub fn set(&self, key: Q::Key, value: Q::Value)
     where
-        Q::Storage: MutQueryStorageOps<QC, Q>,
+        Q::Storage: MutQueryStorageOps<DB, Q>,
     {
-        self.storage.set(self.query, &key, value);
+        self.storage.set(self.db, &key, value);
     }
 
-    fn descriptor(&self, key: &Q::Key) -> QC::QueryDescriptor {
-        (self.descriptor_fn)(self.query, key)
+    fn descriptor(&self, key: &Q::Key) -> DB::QueryDescriptor {
+        (self.descriptor_fn)(self.db, key)
     }
 }
 
@@ -203,7 +201,7 @@ impl DefaultKey for () {
 /// The simplest example is something like this:
 ///
 /// ```ignore
-/// trait TypeckQueryContext {
+/// trait TypeckDatabase {
 ///     query_prototype! {
 ///         /// Comments or other attributes can go here
 ///         fn my_query() for MyQuery;
@@ -222,7 +220,7 @@ impl DefaultKey for () {
 /// You can also include more than one query if you prefer:
 ///
 /// ```ignore
-/// trait TypeckQueryContext {
+/// trait TypeckDatabase {
 ///     query_prototype! {
 ///         fn my_query() for MyQuery;
 ///         fn my_other_query() for MyOtherQuery;
@@ -280,13 +278,13 @@ macro_rules! query_prototype {
 ///
 /// ```ignore
 /// query_definition! {
-///     pub MyQuery(query: &impl MyQueryContext, key: MyKey) -> MyValue {
+///     pub MyQuery(db: &impl MyDatabase, key: MyKey) -> MyValue {
 ///         ... // fn body specifies what happens when query is invoked
 ///     }
 /// }
 /// ```
 ///
-/// Here, the query context trait would be `MyQueryContext` -- this
+/// Here, the query context trait would be `MyDatabase` -- this
 /// should be a trait containing all the other queries that the
 /// definition needs to invoke (as well as any other methods that you
 /// may want).
@@ -370,7 +368,7 @@ macro_rules! query_definition {
         @filter_attrs {
             input {
                 $v:vis $name:ident(
-                    $query:tt : &impl $query_trait:path,
+                    $db:tt : &impl $query_trait:path,
                     $key:tt : $key_ty:ty $(,)*
                 ) -> $value_ty:ty {
                     $($body:tt)*
@@ -384,42 +382,42 @@ macro_rules! query_definition {
         $($attrs)*
         $v struct $name;
 
-        impl<QC> $crate::Query<QC> for $name
+        impl<DB> $crate::Query<DB> for $name
         where
-            QC: $query_trait,
+            DB: $query_trait,
         {
             type Key = $key_ty;
             type Value = $value_ty;
-            type Storage = $crate::query_definition! { @storage_ty[QC, Self, $storage] };
+            type Storage = $crate::query_definition! { @storage_ty[DB, Self, $storage] };
 
-            fn execute($query: &QC, $key: $key_ty) -> $value_ty {
+            fn execute($db: &DB, $key: $key_ty) -> $value_ty {
                 $($body)*
             }
         }
     };
 
     (
-        @storage_ty[$QC:ident, $Self:ident, default]
+        @storage_ty[$DB:ident, $Self:ident, default]
     ) => {
-        $crate::query_definition! { @storage_ty[$QC, $Self, memoized] }
+        $crate::query_definition! { @storage_ty[$DB, $Self, memoized] }
     };
 
     (
-        @storage_ty[$QC:ident, $Self:ident, memoized]
+        @storage_ty[$DB:ident, $Self:ident, memoized]
     ) => {
-        $crate::memoized::MemoizedStorage<$QC, $Self>
+        $crate::memoized::MemoizedStorage<$DB, $Self>
     };
 
     (
-        @storage_ty[$QC:ident, $Self:ident, volatile]
+        @storage_ty[$DB:ident, $Self:ident, volatile]
     ) => {
-        $crate::volatile::VolatileStorage<$QC, $Self>
+        $crate::volatile::VolatileStorage<$DB, $Self>
     };
 
     (
-        @storage_ty[$QC:ident, $Self:ident, dependencies]
+        @storage_ty[$DB:ident, $Self:ident, dependencies]
     ) => {
-        $crate::dependencies::DependencyStorage<$QC, $Self>
+        $crate::dependencies::DependencyStorage<$DB, $Self>
     };
 
     // Accept a "field-like" query definition (input)
@@ -436,15 +434,15 @@ macro_rules! query_definition {
         $($attrs)*
         $v struct $name;
 
-        impl<QC> $crate::Query<QC> for $name
+        impl<DB> $crate::Query<DB> for $name
         where
-            QC: $crate::QueryContext
+            DB: $crate::Database
         {
             type Key = $key_ty;
             type Value = $value_ty;
-            type Storage = $crate::input::InputStorage<QC, Self>;
+            type Storage = $crate::input::InputStorage<DB, Self>;
 
-            fn execute(_: &QC, _: $key_ty) -> $value_ty {
+            fn execute(_: &DB, _: $key_ty) -> $value_ty {
                 panic!("execute should never run for an input query")
             }
         }
@@ -478,10 +476,10 @@ macro_rules! query_definition {
 /// This macro generates the "query storage" that goes into your query
 /// context.
 #[macro_export]
-macro_rules! query_context_storage {
+macro_rules! database_storage {
     (
         $(#[$attr:meta])*
-        $v:vis struct $Storage:ident for $QueryContext:ty {
+        $v:vis struct $Storage:ident for $Database:ty {
             $(
                 impl $TraitName:path {
                     $(
@@ -496,7 +494,7 @@ macro_rules! query_context_storage {
         $v struct $Storage {
             $(
                 $(
-                    $query_method: <$QueryType as $crate::Query<$QueryContext>>::Storage,
+                    $query_method: <$QueryType as $crate::Query<$Database>>::Storage,
                 )*
             )*
         }
@@ -516,31 +514,31 @@ macro_rules! query_context_storage {
         enum __SalsaQueryDescriptorKind {
             $(
                 $(
-                    $query_method(<$QueryType as $crate::Query<$QueryContext>>::Key),
+                    $query_method(<$QueryType as $crate::Query<$Database>>::Key),
                 )*
             )*
         }
 
-        impl $crate::QueryContextStorageTypes for $QueryContext {
+        impl $crate::DatabaseStorageTypes for $Database {
             type QueryDescriptor = __SalsaQueryDescriptor;
-            type QueryContextStorage = $Storage;
+            type DatabaseStorage = $Storage;
         }
 
-        impl $crate::QueryDescriptor<$QueryContext> for __SalsaQueryDescriptor {
+        impl $crate::QueryDescriptor<$Database> for __SalsaQueryDescriptor {
             fn maybe_changed_since(
                 &self,
-                query: &$QueryContext,
+                db: &$Database,
                 revision: $crate::runtime::Revision,
             ) -> bool {
                 match &self.kind {
                     $(
                         $(
                             __SalsaQueryDescriptorKind::$query_method(key) => {
-                                let runtime = $crate::QueryContext::salsa_runtime(query);
+                                let runtime = $crate::Database::salsa_runtime(db);
                                 let storage = &runtime.storage().$query_method;
-                                <_ as $crate::QueryStorageOps<$QueryContext, $QueryType>>::maybe_changed_since(
+                                <_ as $crate::QueryStorageOps<$Database, $QueryType>>::maybe_changed_since(
                                     storage,
-                                    query,
+                                    db,
                                     revision,
                                     key,
                                     self,
@@ -553,14 +551,14 @@ macro_rules! query_context_storage {
         }
 
         $(
-            impl $TraitName for $QueryContext {
+            impl $TraitName for $Database {
                 $(
                     fn $query_method(
                         &self,
                     ) -> $crate::QueryTable<'_, Self, $QueryType> {
                         $crate::QueryTable::new(
                             self,
-                            &$crate::QueryContext::salsa_runtime(self)
+                            &$crate::Database::salsa_runtime(self)
                                 .storage()
                                 .$query_method,
                             |_, key| {

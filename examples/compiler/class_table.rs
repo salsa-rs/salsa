@@ -3,7 +3,7 @@ use salsa::{query_definition, query_prototype};
 use std::sync::Arc;
 
 query_prototype! {
-    pub trait ClassTableQueryContext: compiler::CompilerQueryContext {
+    pub trait ClassTableDatabase: compiler::CompilerDatabase {
         /// Get the fields.
         fn fields() for Fields;
 
@@ -19,19 +19,19 @@ query_prototype! {
 pub struct DefId(usize);
 
 query_definition! {
-    pub AllClasses(_: &impl ClassTableQueryContext, (): ()) -> Arc<Vec<DefId>> {
+    pub AllClasses(_: &impl ClassTableDatabase, (): ()) -> Arc<Vec<DefId>> {
         Arc::new(vec![DefId(0), DefId(10)]) // dummy impl
     }
 }
 
 query_definition! {
-    pub Fields(_: &impl ClassTableQueryContext, class: DefId) -> Arc<Vec<DefId>> {
+    pub Fields(_: &impl ClassTableDatabase, class: DefId) -> Arc<Vec<DefId>> {
         Arc::new(vec![DefId(class.0 + 1), DefId(class.0 + 2)]) // dummy impl
     }
 }
 
 query_definition! {
-    pub AllFields(query: &impl ClassTableQueryContext, (): ()) -> Arc<Vec<DefId>> {
+    pub AllFields(query: &impl ClassTableDatabase, (): ()) -> Arc<Vec<DefId>> {
         Arc::new(
             query.all_classes()
                 .get(())

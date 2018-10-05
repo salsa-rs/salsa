@@ -1,20 +1,21 @@
 use crate::class_table;
-use crate::compiler::{CompilerQueryContext, Interner};
-use salsa::query_context_storage;
+use crate::compiler::{CompilerDatabase, Interner};
 
-/// Our "query context" is the context type that we will be threading
-/// through our application (though 99% of the application only
-/// interacts with it through traits and never knows its real name).
+/// Our "database" will be threaded through our application (though
+/// 99% of the application only interacts with it through traits and
+/// never knows its real name). It contains all the values for all of
+/// our memoized queries and encapsulates **all mutable state that
+/// persists longer than a single query execution.**
 ///
-/// Query contexts can contain whatever you want them to, but salsa
+/// Databases can contain whatever you want them to, but salsa
 /// requires you to add a `salsa::runtime::Runtime` member. Note
 /// though: you should be very careful if adding shared, mutable state
 /// to your context (e.g., a shared counter or some such thing). If
 /// mutations to that shared state affect the results of your queries,
 /// that's going to mess up the incremental results.
 #[derive(Default)]
-pub struct QueryContextImpl {
-    runtime: salsa::runtime::Runtime<QueryContextImpl>,
+pub struct DatabaseImpl {
+    runtime: salsa::runtime::Runtime<DatabaseImpl>,
 
     /// An interner is an example of shared mutable state that would
     /// be ok: although the interner allocates internally when you
@@ -24,8 +25,8 @@ pub struct QueryContextImpl {
 }
 
 /// This impl tells salsa where to find the salsa runtime.
-impl salsa::QueryContext for QueryContextImpl {
-    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<QueryContextImpl> {
+impl salsa::Database for DatabaseImpl {
+    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<DatabaseImpl> {
         &self.runtime
     }
 }
@@ -34,10 +35,10 @@ impl salsa::QueryContext for QueryContextImpl {
 /// all of the query traits from your application that you wish to
 /// provide storage for. This macro will generate the appropriate
 /// storage and also generate impls for those traits, so that you
-/// `QueryContextImpl` type implements them.
-query_context_storage! {
-    pub struct QueryContextImplStorage for QueryContextImpl {
-        impl class_table::ClassTableQueryContext {
+/// `DatabaseImpl` type implements them.
+salsa::database_storage! {
+    pub struct DatabaseImplStorage for DatabaseImpl {
+        impl class_table::ClassTableDatabase {
             fn all_classes() for class_table::AllClasses;
             fn all_fields() for class_table::AllFields;
             fn fields() for class_table::Fields;
@@ -48,7 +49,7 @@ query_context_storage! {
 /// In addition to the "query provider" traits, you may have other
 /// trait requirements that your application needs -- you can
 /// implement those yourself (in this case, an `interner`).
-impl CompilerQueryContext for QueryContextImpl {
+impl CompilerDatabase for DatabaseImpl {
     fn interner(&self) -> &Interner {
         &self.interner
     }

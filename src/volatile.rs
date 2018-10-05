@@ -1,8 +1,8 @@
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
+use crate::Database;
 use crate::Query;
-use crate::QueryContext;
 use crate::QueryStorageOps;
 use crate::QueryTable;
 use log::debug;
@@ -18,20 +18,20 @@ use std::hash::Hash;
 
 /// Volatile Storage is just **always** considered dirty. Any time you
 /// ask for the result of such a query, it is recomputed.
-pub struct VolatileStorage<QC, Q>
+pub struct VolatileStorage<DB, Q>
 where
-    Q: Query<QC>,
-    QC: QueryContext,
+    Q: Query<DB>,
+    DB: Database,
 {
     /// We don't store the results of volatile queries,
     /// but we track in-progress set to detect cycles.
     in_progress: Mutex<FxHashSet<Q::Key>>,
 }
 
-impl<QC, Q> Default for VolatileStorage<QC, Q>
+impl<DB, Q> Default for VolatileStorage<DB, Q>
 where
-    Q: Query<QC>,
-    QC: QueryContext,
+    Q: Query<DB>,
+    DB: Database,
 {
     fn default() -> Self {
         VolatileStorage {
@@ -40,16 +40,16 @@ where
     }
 }
 
-impl<QC, Q> QueryStorageOps<QC, Q> for VolatileStorage<QC, Q>
+impl<DB, Q> QueryStorageOps<DB, Q> for VolatileStorage<DB, Q>
 where
-    Q: Query<QC>,
-    QC: QueryContext,
+    Q: Query<DB>,
+    DB: Database,
 {
     fn try_fetch<'q>(
         &self,
-        query: &'q QC,
+        db: &'q DB,
         key: &Q::Key,
-        descriptor: &QC::QueryDescriptor,
+        descriptor: &DB::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected> {
         if !self.in_progress.lock().insert(key.clone()) {
             return Err(CycleDetected);
@@ -61,17 +61,16 @@ where
                 changed_at: _,
             },
             _inputs,
-        ) = query
+        ) = db
             .salsa_runtime()
-            .execute_query_implementation::<Q>(query, descriptor, key);
+            .execute_query_implementation::<Q>(db, descriptor, key);
 
         let was_in_progress = self.in_progress.lock().remove(key);
         assert!(was_in_progress);
 
-        let revision_now = query.salsa_runtime().current_revision();
+        let revision_now = db.salsa_runtime().current_revision();
 
-        query
-            .salsa_runtime()
+        db.salsa_runtime()
             .report_query_read(descriptor, revision_now);
 
         Ok(value)
@@ -79,10 +78,10 @@ where
 
     fn maybe_changed_since(
         &self,
-        _query: &'q QC,
+        _db: &'q DB,
         revision: Revision,
         key: &Q::Key,
-        _descriptor: &QC::QueryDescriptor,
+        _descriptor: &DB::QueryDescriptor,
     ) -> bool {
         debug!(
             "{:?}({:?})::maybe_changed_since(revision={:?}) ==> true (volatile)",

@@ -1,5 +1,5 @@
+use crate::Database;
 use crate::Query;
-use crate::QueryContext;
 use log::debug;
 use rustc_hash::FxHasher;
 use std::cell::RefCell;
@@ -17,14 +17,14 @@ type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
 /// `Runtime::default`) will have an independent set of query storage
 /// associated with it. Normally, therefore, you only do this once, at
 /// the start of your application.
-pub struct Runtime<QC: QueryContext> {
-    shared_state: Arc<SharedState<QC>>,
-    local_state: RefCell<LocalState<QC>>,
+pub struct Runtime<DB: Database> {
+    shared_state: Arc<SharedState<DB>>,
+    local_state: RefCell<LocalState<DB>>,
 }
 
-impl<QC> Default for Runtime<QC>
+impl<DB> Default for Runtime<DB>
 where
-    QC: QueryContext,
+    DB: Database,
 {
     fn default() -> Self {
         Runtime {
@@ -39,15 +39,15 @@ where
     }
 }
 
-impl<QC> Runtime<QC>
+impl<DB> Runtime<DB>
 where
-    QC: QueryContext,
+    DB: Database,
 {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn storage(&self) -> &QC::QueryContextStorage {
+    pub fn storage(&self) -> &DB::DatabaseStorage {
         &self.shared_state.storage
     }
 
@@ -89,12 +89,12 @@ where
 
     crate fn execute_query_implementation<Q>(
         &self,
-        query: &QC,
-        descriptor: &QC::QueryDescriptor,
+        db: &DB,
+        descriptor: &DB::QueryDescriptor,
         key: &Q::Key,
-    ) -> (StampedValue<Q::Value>, QueryDescriptorSet<QC>)
+    ) -> (StampedValue<Q::Value>, QueryDescriptorSet<DB>)
     where
-        Q: Query<QC>,
+        Q: Query<DB>,
     {
         debug!("{:?}({:?}): executing query", Q::default(), key);
 
@@ -108,7 +108,7 @@ where
         };
 
         // Execute user's code, accumulating inputs etc.
-        let value = Q::execute(query, key.clone());
+        let value = Q::execute(db, key.clone());
 
         // Extract accumulated inputs.
         let ActiveQuery {
@@ -135,14 +135,14 @@ where
     /// - `descriptor`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    crate fn report_query_read(&self, descriptor: &QC::QueryDescriptor, changed_at: Revision) {
+    crate fn report_query_read(&self, descriptor: &DB::QueryDescriptor, changed_at: Revision) {
         if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
             top_query.add_read(descriptor, changed_at);
         }
     }
 
     /// Obviously, this should be user configurable at some point.
-    crate fn report_unexpected_cycle(&self, descriptor: QC::QueryDescriptor) -> ! {
+    crate fn report_unexpected_cycle(&self, descriptor: DB::QueryDescriptor) -> ! {
         let local_state = self.local_state.borrow();
         let LocalState { query_stack, .. } = &*local_state;
 
@@ -161,30 +161,30 @@ where
 }
 
 /// State that will be common to all threads (when we support multiple threads)
-struct SharedState<QC: QueryContext> {
-    storage: QC::QueryContextStorage,
+struct SharedState<DB: Database> {
+    storage: DB::DatabaseStorage,
     revision: AtomicU64,
 }
 
 /// State that will be specific to a single execution threads (when we
 /// support multiple threads)
-struct LocalState<QC: QueryContext> {
-    query_stack: Vec<ActiveQuery<QC>>,
+struct LocalState<DB: Database> {
+    query_stack: Vec<ActiveQuery<DB>>,
 }
 
-struct ActiveQuery<QC: QueryContext> {
+struct ActiveQuery<DB: Database> {
     /// What query is executing
-    descriptor: QC::QueryDescriptor,
+    descriptor: DB::QueryDescriptor,
 
     /// Records the maximum revision where any subquery changed
     changed_at: Revision,
 
     /// Each subquery
-    subqueries: QueryDescriptorSet<QC>,
+    subqueries: QueryDescriptorSet<DB>,
 }
 
-impl<QC: QueryContext> ActiveQuery<QC> {
-    fn new(descriptor: QC::QueryDescriptor) -> Self {
+impl<DB: Database> ActiveQuery<DB> {
+    fn new(descriptor: DB::QueryDescriptor) -> Self {
         ActiveQuery {
             descriptor,
             changed_at: Revision::ZERO,
@@ -192,7 +192,7 @@ impl<QC: QueryContext> ActiveQuery<QC> {
         }
     }
 
-    fn add_read(&mut self, subquery: &QC::QueryDescriptor, changed_at: Revision) {
+    fn add_read(&mut self, subquery: &DB::QueryDescriptor, changed_at: Revision) {
         self.subqueries.insert(subquery.clone());
         self.changed_at = self.changed_at.max(changed_at);
     }
@@ -215,17 +215,17 @@ impl std::fmt::Debug for Revision {
 
 /// An insertion-order-preserving set of queries. Used to track the
 /// inputs accessed during query execution.
-crate struct QueryDescriptorSet<QC: QueryContext> {
-    set: FxIndexSet<QC::QueryDescriptor>,
+crate struct QueryDescriptorSet<DB: Database> {
+    set: FxIndexSet<DB::QueryDescriptor>,
 }
 
-impl<QC: QueryContext> std::fmt::Debug for QueryDescriptorSet<QC> {
+impl<DB: Database> std::fmt::Debug for QueryDescriptorSet<DB> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Debug::fmt(&self.set, fmt)
     }
 }
 
-impl<QC: QueryContext> QueryDescriptorSet<QC> {
+impl<DB: Database> QueryDescriptorSet<DB> {
     fn new() -> Self {
         QueryDescriptorSet {
             set: FxIndexSet::default(),
@@ -234,13 +234,13 @@ impl<QC: QueryContext> QueryDescriptorSet<QC> {
 
     /// Add `descriptor` to the set. Returns true if `descriptor` is
     /// newly added and false if `descriptor` was already a member.
-    fn insert(&mut self, descriptor: QC::QueryDescriptor) -> bool {
+    fn insert(&mut self, descriptor: DB::QueryDescriptor) -> bool {
         self.set.insert(descriptor)
     }
 
     /// Iterate over all queries in the set, in the order of their
     /// first insertion.
-    pub fn iter(&self) -> impl Iterator<Item = &QC::QueryDescriptor> {
+    pub fn iter(&self) -> impl Iterator<Item = &DB::QueryDescriptor> {
         self.set.iter()
     }
 }

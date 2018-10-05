@@ -11,24 +11,24 @@ salsa::query_prototype! {
 }
 
 salsa::query_definition! {
-    crate Memoized2(query: &impl MemoizedDepInputsContext, (): ()) -> usize {
-        query.log().add("Memoized2 invoked");
-        query.dep_memoized1().read()
+    crate Memoized2(db: &impl MemoizedDepInputsContext, (): ()) -> usize {
+        db.log().add("Memoized2 invoked");
+        db.dep_memoized1().read()
     }
 }
 
 salsa::query_definition! {
-    crate Memoized1(query: &impl MemoizedDepInputsContext, (): ()) -> usize {
-        query.log().add("Memoized1 invoked");
-        query.dep_derived1().read() * 2
+    crate Memoized1(db: &impl MemoizedDepInputsContext, (): ()) -> usize {
+        db.log().add("Memoized1 invoked");
+        db.dep_derived1().read() * 2
     }
 }
 
 salsa::query_definition! {
     #[storage(dependencies)]
-    crate Derived1(query: &impl MemoizedDepInputsContext, (): ()) -> usize {
-        query.log().add("Derived1 invoked");
-        query.dep_input1().read() / 2
+    crate Derived1(db: &impl MemoizedDepInputsContext, (): ()) -> usize {
+        db.log().add("Derived1 invoked");
+        db.dep_input1().read() / 2
     }
 }
 

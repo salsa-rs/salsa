@@ -1,9 +1,9 @@
-crate trait CounterContext: salsa::QueryContext {
+crate trait Counter: salsa::Database {
     fn increment(&self) -> usize;
 }
 
 salsa::query_prototype! {
-    crate trait QueryContext: CounterContext {
+    crate trait Database: Counter {
         fn memoized() for Memoized;
         fn volatile() for Volatile;
     }
@@ -12,8 +12,8 @@ salsa::query_prototype! {
 salsa::query_definition! {
     /// Because this query is memoized, we only increment the counter
     /// the first time it is invoked.
-    crate Memoized(query: &impl QueryContext, (): ()) -> usize {
-        query.increment()
+    crate Memoized(db: &impl Database, (): ()) -> usize {
+        db.increment()
     }
 }
 
@@ -21,7 +21,7 @@ salsa::query_definition! {
     /// Because this query is volatile, each time it is invoked,
     /// we will increment the counter.
     #[storage(volatile)]
-    crate Volatile(query: &impl QueryContext, (): ()) -> usize {
-        query.increment()
+    crate Volatile(db: &impl Database, (): ()) -> usize {
+        db.increment()
     }
 }

@@ -9,11 +9,11 @@ salsa::query_prototype! {
 }
 
 salsa::query_definition! {
-    crate Max(query: &impl MemoizedInputsContext, (): ()) -> usize {
-        query.log().add("Max invoked");
+    crate Max(db: &impl MemoizedInputsContext, (): ()) -> usize {
+        db.log().add("Max invoked");
         std::cmp::max(
-            query.input1().read(),
-            query.input2().read(),
+            db.input1().read(),
+            db.input2().read(),
         )
     }
 }
