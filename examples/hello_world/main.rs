@@ -1,3 +1,4 @@
+use salsa::Query;
 use std::sync::Arc;
 
 ///////////////////////////////////////////////////////////////////////////
@@ -10,8 +11,12 @@ use std::sync::Arc;
 // query type (`InputString`) that will be defined later.
 salsa::query_prototype! {
     trait HelloWorldDatabase: salsa::Database {
-        fn input_string() for InputString;
-        fn length() for Length;
+        fn input_string(key: ()) -> Arc<String> {
+            type InputString;
+        }
+        fn length(key: ()) -> usize {
+            type Length;
+        }
     }
 }
 
@@ -34,7 +39,7 @@ salsa::query_definition! {
 salsa::query_definition! {
     Length(db: &impl HelloWorldDatabase, _key: ()) -> usize {
         // Read the input string:
-        let input_string = db.input_string().get(());
+        let input_string = db.input_string(());
 
         // Return its length:
         input_string.len()
@@ -75,9 +80,9 @@ salsa::database_storage! {
 fn main() {
     let db = DatabaseStruct::default();
 
-    println!("Initially, the length is {}.", db.length().get(()));
+    println!("Initially, the length is {}.", db.length(()));
 
-    db.input_string().set((), Arc::new(format!("Hello, world")));
+    InputString.set(&db, (), Arc::new(format!("Hello, world")));
 
-    println!("Now, the length is {}.", db.length().get(()));
+    println!("Now, the length is {}.", db.length(()));
 }

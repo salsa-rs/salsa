@@ -62,6 +62,21 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type Key: Clone + Debug + Hash + Eq + Send;
     type Value: Clone + Debug + Hash + Eq + Send;
     type Storage: QueryStorageOps<DB, Self> + Send + Sync;
+
+    fn get(self, db: &DB, key: Self::Key) -> Self::Value
+    where
+        DB: GetQueryTable<Self>,
+    {
+        <DB as GetQueryTable<Self>>::get_query_table(db).get(key)
+    }
+
+    fn set(self, db: &DB, key: Self::Key, value: Self::Value)
+    where
+        DB: GetQueryTable<Self>,
+        Self::Storage: MutQueryStorageOps<DB, Self>,
+    {
+        <DB as GetQueryTable<Self>>::get_query_table(db).set(key, value)
+    }
 }
 
 pub trait GetQueryTable<Q: Query<Self>>: Database {
@@ -262,15 +277,18 @@ macro_rules! query_prototype {
         tokens[{
             $(
                 $(#[$method_attr:meta])*
-                fn $method_name:ident() for $query_type:ty;
+                fn $method_name:ident($key_name:ident: $key:ty) -> $value:ty {
+                    type $QueryType:ty;
+                }
             )*
         }];
     ) => {
-        $($trait_attr)* $v trait $name: $($crate::GetQueryTable<$query_type> +)* $($header)* {
+        $($trait_attr)* $v trait $name: $($crate::GetQueryTable<$QueryType> +)* $($header)* {
             $(
                 $(#[$method_attr])*
-                fn $method_name(&self) -> $crate::QueryTable<'_, Self, $query_type> {
-                    <Self as $crate::GetQueryTable<$query_type>>::get_query_table(self)
+                fn $method_name(&self, key: $key) -> $value {
+                    <Self as $crate::GetQueryTable<$QueryType>>::get_query_table(self)
+                        .get(key)
                 }
             )*
         }

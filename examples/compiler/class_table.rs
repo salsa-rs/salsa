@@ -5,13 +5,19 @@ use std::sync::Arc;
 query_prototype! {
     pub trait ClassTableDatabase: compiler::CompilerDatabase {
         /// Get the fields.
-        fn fields() for Fields;
+        fn fields(class: DefId) -> Arc<Vec<DefId>> {
+            type Fields;
+        }
 
         /// Get the list of all classes
-        fn all_classes() for AllClasses;
+        fn all_classes(key: ()) -> Arc<Vec<DefId>> {
+            type AllClasses;
+        }
 
         /// Get the list of all fields
-        fn all_fields() for AllFields;
+        fn all_fields(key: ()) -> Arc<Vec<DefId>> {
+            type AllFields;
+        }
     }
 }
 
@@ -31,14 +37,13 @@ query_definition! {
 }
 
 query_definition! {
-    pub AllFields(query: &impl ClassTableDatabase, (): ()) -> Arc<Vec<DefId>> {
+    pub AllFields(db: &impl ClassTableDatabase, (): ()) -> Arc<Vec<DefId>> {
         Arc::new(
-            query.all_classes()
-                .get(())
+            db.all_classes(())
                 .iter()
                 .cloned()
                 .flat_map(|def_id| {
-                    let fields = query.fields().get(def_id);
+                    let fields = db.fields(def_id);
                     (0..fields.len()).map(move |i| fields[i])
                 })
                 .collect()

@@ -4,8 +4,12 @@ crate trait Counter: salsa::Database {
 
 salsa::query_prototype! {
     crate trait Database: Counter {
-        fn memoized() for Memoized;
-        fn volatile() for Volatile;
+        fn memoized(key: ()) -> usize {
+            type Memoized;
+        }
+        fn volatile(key: ()) -> usize {
+            type Volatile;
+        }
     }
 }
 
