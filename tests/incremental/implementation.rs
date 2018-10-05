@@ -4,7 +4,7 @@ use crate::memoized_dep_inputs;
 use crate::memoized_inputs;
 use crate::memoized_volatile;
 
-crate trait TestContext: salsa::QueryContext {
+crate trait TestContext: salsa::Database {
     fn clock(&self) -> &Counter;
     fn log(&self) -> &Log;
 }
@@ -41,7 +41,7 @@ impl TestContextImpl {
     }
 }
 
-salsa::query_context_storage! {
+salsa::database_storage! {
     crate struct TestContextImplStorage for TestContextImpl {
         impl memoized_dep_inputs::MemoizedDepInputsContext {
             fn dep_memoized2() for memoized_dep_inputs::Memoized2;
@@ -75,7 +75,7 @@ impl TestContext for TestContextImpl {
     }
 }
 
-impl salsa::QueryContext for TestContextImpl {
+impl salsa::Database for TestContextImpl {
     fn salsa_runtime(&self) -> &salsa::runtime::Runtime<TestContextImpl> {
         &self.runtime
     }

@@ -1,123 +1,137 @@
 The `hello_world` example is intended to walk through the very basics
 of a salsa setup. Here is a more detailed writeup.
 
-### Step 1: Define the query context trait
+### Step 1: Define a query group
 
-The **query context** is the central struct that holds all the state
-for your application. It has the current values of all your inputs,
-the values of any memoized queries you have executed thus far, and
-dependency information between them.
+A **query group** is a collection of queries (both inputs and
+functions) that are defined in one particular spot. Each query group
+represents some subset of the full set of queries you will use in your
+application. Query groups can also depend on one another: so you might
+have some basic query group A and then another query group B that uses
+the queries from A and adds a few more. (These relationships must form
+a DAG at present, but that is due to Rust's restrictions around
+supertraits, which are likely to be lifted.)
 
-In your program, however, you rarely interact with the **actual**
-query context struct. Instead, you interact with query context
-**traits** that you define. These traits define the set of queries
-that you need for any given piece of code. You define them using
-the `salsa::query_prototype!` macro.
-
-Here is a simple example of a query context trait from the
-`hello_world` example. It defines exactly two queries: `input_string`
-and `length`. You see that the `query_prototype!` macro just lists out
-the names of the queries as methods (e.g., `input_string()`) and also a
-path to a type that will define the query (`InputString`). It doesn't
-give many other details: those are specified in the query definition
-that comes later.
+Each query group is defined via an invocation of `salsa::query_group!`
+macro. This is the invocation used in `hello_world`:
 
 ```rust
-salsa::query_prototype! {
-    trait HelloWorldContext: salsa::QueryContext {
-        fn input_string() for InputString;
-        fn length() for Length;
+salsa::query_group! {
+    trait HelloWorldDatabase: salsa::Database {
+        fn input_string(key: ()) -> Arc<String> {
+            type InputString;
+            storage input;
+        }
+
+        fn length(key: ()) -> usize {
+            type Length;
+        }
     }
 }
 ```
 
-### Step 2: Define the queries
+This invocation will in fact expand to a number of things you can
+later use and name. First and foremost is the **query group trait**,
+here called `HelloWorldDatabase`. As the name suggests, this trait
+will ultimately be implemented by the **database**, which is the
+struct in your application that contains the store for all queries and
+any other global state that persists beyond a single query execution.
+In writing your application, though, we never work with a concrete
+database struct: instead we work against a generic struct through
+traits, thus capturing the subset of functionality that we actually
+need.
 
-The actual query definitions are made using the
-`salsa::query_definition` macro. For an **input query**, such as
-`input_string`, these resemble a variable definition:
+The `HelloWorldDatabase` trait has one supertrait:
+`salsa::Database`. If we were defining more query groups in our
+application, and we wanted to invoke some of those queries from within
+this query group, we might list those query groupes here. You can also
+list any other traits you want, so long as your final database type
+implements them (this lets you add custom state and so forth to your
+database).
+
+Within this trait, we list out the queries that this group provides.
+Here, there are two: `input_string` and `length`. For each query, you
+specify the key and value type of the query in the form of a function:
+but the "fn body" is obviously not real Rust syntax. Rather, it's just
+used to specify a few bits of metadata about the query. We'll see how
+to define the fn body in the next step.
+
+**For each query.** For each query, we must **always** define a `type`
+(e.g., `type InputString;`).  The macro will define a type with this
+name alongside the trait: you can use this name later to specify which
+query you are talking about. This is needed for some of the more
+advanced methods (we'll discuss them later).
+
+You can also optionally define the **storage** for a query via a
+declaration like `storage <s>;`. The most common kind of storage is
+either *memoized* (the default) or *input*. An *input* is a special
+sort of query that is not defined by a function: rather, it gets its
+values via explicit `set` operations (we'll see them later). In our
+case, we define one input query (`input_string`) and one memoized
+query (`length`).
+
+### Step 2: Define the query functions
+
+Once you've defined your query group, you have to give the function
+definition for every non-input query. In our case, that is the query
+`length`. To do this, you simply define a function with the
+appropriate name in the same module as the query group; if you would
+prefer to use a different name or location, you write `use fn
+path::to::other_fn;` in the query definition to tell us where to find
+it.
+
+The query function for `length` looks like:
 
 ```rust
-salsa::query_definition! {
-    InputString: Map<(), Arc<String>>;
+fn length(db: &impl HelloWorldDatabase, (): ()) -> usize {
+    // Read the input string:
+    let input_string = db.input_string(());
+
+    // Return its length:
+    input_string.len()
 }
 ```
 
-Here, the `Map` is actually a keyword -- you have to write it.  The
-idea is that each query isn't defining a single value: they are always
-a mapping from some **key** to some **value** -- in this case, though,
-the type of the key is just the unit type `()` (so in a sense this
-*is* a single value). The value type would be `Arc<String>`.
+Note that every query function takes two arguments: the first is your
+database, which you access via a generic that references your trait
+(e.g., `impl HelloWorldDatabase`). The second is the key -- in this
+simple example, that's just `()`.
 
-Note that both keys and values are cloned with relative frequency, so
-it's a good idea to pick types that can be cheaply cloned. Also, for
-the incremental system to work, keys and value types must not employ
-"interior mutability" (no `Mutex` or `AtomicUsize` etc).
-
-Next let's define the `length` query, which is a function query:
+**Invoking a query.** In the first line of the function we see how to
+invoke a query for a given key:
 
 ```rust
-salsa::query_definition! {
-    Length(context: &impl HelloWorldContext, _key: ()) -> usize {
-        // Read the input string:
-        let input_string = context.input_string().get(());
-
-        // Return its length:
-        input_string.len()
-    }
-}
+let input_string = db.input_string(());
 ```
 
-Like the `InputString` query, `Length` has a **key** and a **value**
--- but this time the type of the key is specified as the type of the
-second argument (`_key`), and the type of the value is specified from
-the return type (`usize`).
+You simply call the function and give the key you want -- in this case
+`()`.
 
-You can also see that functions take a first argument, the `context`,
-which always has the form `&impl <SomeContextTrait>`. This `context`
-value gives access to all the other queries that are listed in the
-context trait that you specify.
+### Step 3: Define the database struct
 
-In the first line of the function we see how we invoke a query:
-
-```rust
-let input_string = context.input_string().get(());
-```
-
-When you invoke `context.input_string()`, what you get back is called
-a `QueryTable` -- it offers a few methods that let you interact with
-the query. The main method you will use though is `get(key)` which --
-given a `key` -- computes and returns the up-to-date value. In the
-case of an input query like `input_string`, this just returns whatever
-value has been set by the user (if no value has been set yet, it
-returns the `Default::default()` value; all query inputs must
-implement `Default`).
-
-### Step 3: Implement the query context trait
-
-The final step is to create the **query context struct** which will
-implement your query context trait(s). This struct combines all the
-parts of your system into one whole; it can also add custom state of
-your own (such as an interner or configuration). In our simple example
-though we won't do any of that. The only field that you **actually**
-need is a reference to the **salsa runtime**; then you must also
-implement the `QueryContext` trait to tell salsa where to find this
-runtime:
+The final step is to create the **database struct** which will
+implement the traits from each of your query groups. This struct
+combines all the parts of your system into one whole; it can also add
+custom state of your own (such as an interner or configuration). In
+our simple example though we won't do any of that. The only field that
+you **actually** need is a reference to the **salsa runtime**; then
+you must also implement the `salsa::Database` trait to tell salsa
+where to find this runtime:
 
 ```rust
 #[derive(Default)]
-struct QueryContextStruct {
-    runtime: salsa::runtime::Runtime<QueryContextStruct>,
+struct DatabaseStruct {
+    runtime: salsa::runtime::Runtime<DatabaseStruct>,
 }
 
-impl salsa::QueryContext for QueryContextImpl {
-    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<QueryContextStruct> {
+impl salsa::Database for DatabaseStruct {
+    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<DatabaseStruct> {
         &self.runtime
     }
 }
 ```
 
-Next, you must use the `query_context_storage!` to define the "storage
+Next, you must use the `database_storage!` to define the "storage
 struct" for your type. This storage struct contains all the hashmaps
 and other things that salsa uses to store the values for your
 queries. You won't need to interact with it directly. To use the
@@ -125,12 +139,12 @@ macro, you basically list out all the traits and each of the queries
 within those traits:
 
 ```rust
-query_context_storage! {
-    struct QueryContextStorage for QueryContextStruct {
-    //     ^^^^^^^^^^^^^^^^^^^     ------------------
-    //     name of the type        the name of your context type
+salsa::database_storage! {
+    struct DatabaseStorage for DatabaseStruct {
+    //     ^^^^^^^^^^^^^^^     --------------
+    //     name of the type    the name of your context type
     //     we will make
-        impl HelloWorldContext {
+        impl HelloWorldDatabase {
             fn input_string() for InputString;
             fn length() for Length;
         }
@@ -138,26 +152,40 @@ query_context_storage! {
 }
 ```
 
-The `query_context_storage` macro will also implement the
-`HelloWorldContext` trait for your query context type.
+The `database_storage` macro will also implement the
+`HelloWorldDatabase` trait for your query context type.
 
-Now that we've defined our query context, we can start using it:
+**Use the database.** Now that we've defined our database, we can
+start using it:
 
 ```rust
 fn main() {
-    let context = QueryContextStruct::default();
+    let db = DatabaseStruct::default();
 
-    println!("Initially, the length is {}.", context.length().get(()));
+    println!("Initially, the length is {}.", db.length().get(()));
 
-    context
-        .input_string()
+    db.query(InputString)
         .set((), Arc::new(format!("Hello, world")));
 
-    println!("Now, the length is {}.", context.length().get(()));
+    println!("Now, the length is {}.", db.length().get(()));
 }
 ```
 
-And if we run this code:
+One thing to notice here is how we set the value for an input query:
+
+```rust
+    db.query(InputString)
+        .set((), Arc::new(format!("Hello, world")));
+```
+
+The `db.query(Foo)` method takes as argument the query type that
+characterizes your query. It gives back a "query table" type, which
+offers you more advanced methods beyond simply executing the query
+(for example, for input queries, you can invoke `set`). In fact, the
+standard call `db.query_name(key)` to access a query is just a
+shorthand for `db.query(QueryType).get(key)`.
+
+Finally, if we run this code:
 
 ```bash
 > cargo run --example hello_world

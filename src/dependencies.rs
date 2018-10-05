@@ -2,9 +2,9 @@ use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
-use crate::Query;
-use crate::QueryContext;
+use crate::Database;
 use crate::QueryDescriptor;
+use crate::QueryFunction;
 use crate::QueryStorageOps;
 use crate::QueryTable;
 use log::debug;
@@ -21,32 +21,32 @@ use std::hash::Hash;
 /// "Dependency" queries just track their dependencies and not the
 /// actual value (which they produce on demand). This lessens the
 /// storage requirements.
-pub struct DependencyStorage<QC, Q>
+pub struct DependencyStorage<DB, Q>
 where
-    Q: Query<QC>,
-    QC: QueryContext,
+    Q: QueryFunction<DB>,
+    DB: Database,
 {
-    map: RwLock<FxHashMap<Q::Key, QueryState<QC>>>,
+    map: RwLock<FxHashMap<Q::Key, QueryState<DB>>>,
 }
 
 /// Defines the "current state" of query's memoized results.
-enum QueryState<QC>
+enum QueryState<DB>
 where
-    QC: QueryContext,
+    DB: Database,
 {
     /// We are currently computing the result of this query; if we see
     /// this value in the table, it indeeds a cycle.
     InProgress,
 
     /// We have computed the query already, and here is the result.
-    Memoized(Memo<QC>),
+    Memoized(Memo<DB>),
 }
 
-struct Memo<QC>
+struct Memo<DB>
 where
-    QC: QueryContext,
+    DB: Database,
 {
-    inputs: QueryDescriptorSet<QC>,
+    inputs: QueryDescriptorSet<DB>,
 
     /// Last time that we checked our inputs to see if they have
     /// changed. If this is equal to the current revision, then the
@@ -59,10 +59,10 @@ where
     changed_at: Revision,
 }
 
-impl<QC, Q> Default for DependencyStorage<QC, Q>
+impl<DB, Q> Default for DependencyStorage<DB, Q>
 where
-    Q: Query<QC>,
-    QC: QueryContext,
+    Q: QueryFunction<DB>,
+    DB: Database,
 {
     fn default() -> Self {
         DependencyStorage {
@@ -71,18 +71,18 @@ where
     }
 }
 
-impl<QC, Q> DependencyStorage<QC, Q>
+impl<DB, Q> DependencyStorage<DB, Q>
 where
-    Q: Query<QC>,
-    QC: QueryContext,
+    Q: QueryFunction<DB>,
+    DB: Database,
 {
     fn read(
         &self,
-        query: &QC,
+        db: &DB,
         key: &Q::Key,
-        descriptor: &QC::QueryDescriptor,
+        descriptor: &DB::QueryDescriptor,
     ) -> Result<StampedValue<Q::Value>, CycleDetected> {
-        let revision_now = query.salsa_runtime().current_revision();
+        let revision_now = db.salsa_runtime().current_revision();
 
         debug!(
             "{:?}({:?}): invoked at {:?}",
@@ -106,15 +106,15 @@ where
 
         // Note that, unlike with a memoized query, we must always
         // re-execute.
-        let (stamped_value, inputs) = query
+        let (stamped_value, inputs) = db
             .salsa_runtime()
-            .execute_query_implementation::<Q>(query, descriptor, key);
+            .execute_query_implementation::<Q>(db, descriptor, key);
 
         // We assume that query is side-effect free -- that is, does
         // not mutate the "inputs" to the query system. Sanity check
         // that assumption here, at least to the best of our ability.
         assert_eq!(
-            query.salsa_runtime().current_revision(),
+            db.salsa_runtime().current_revision(),
             revision_now,
             "revision altered during query execution",
         );
@@ -144,9 +144,9 @@ where
 
     fn overwrite_placeholder(
         &self,
-        map_write: &mut FxHashMap<Q::Key, QueryState<QC>>,
+        map_write: &mut FxHashMap<Q::Key, QueryState<DB>>,
         key: &Q::Key,
-        value: Option<QueryState<QC>>,
+        value: Option<QueryState<DB>>,
     ) {
         let old_value = if let Some(v) = value {
             map_write.insert(key.clone(), v)
@@ -164,34 +164,32 @@ where
     }
 }
 
-impl<QC, Q> QueryStorageOps<QC, Q> for DependencyStorage<QC, Q>
+impl<DB, Q> QueryStorageOps<DB, Q> for DependencyStorage<DB, Q>
 where
-    Q: Query<QC>,
-    QC: QueryContext,
+    Q: QueryFunction<DB>,
+    DB: Database,
 {
     fn try_fetch<'q>(
         &self,
-        query: &'q QC,
+        db: &'q DB,
         key: &Q::Key,
-        descriptor: &QC::QueryDescriptor,
+        descriptor: &DB::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected> {
-        let StampedValue { value, changed_at } = self.read(query, key, &descriptor)?;
+        let StampedValue { value, changed_at } = self.read(db, key, &descriptor)?;
 
-        query
-            .salsa_runtime()
-            .report_query_read(descriptor, changed_at);
+        db.salsa_runtime().report_query_read(descriptor, changed_at);
 
         Ok(value)
     }
 
     fn maybe_changed_since(
         &self,
-        query: &'q QC,
+        db: &'q DB,
         revision: Revision,
         key: &Q::Key,
-        _descriptor: &QC::QueryDescriptor,
+        _descriptor: &DB::QueryDescriptor,
     ) -> bool {
-        let revision_now = query.salsa_runtime().current_revision();
+        let revision_now = db.salsa_runtime().current_revision();
 
         debug!(
             "{:?}({:?})::maybe_changed_since(revision={:?}, revision_now={:?})",
@@ -228,7 +226,7 @@ where
         if memo
             .inputs
             .iter()
-            .all(|old_input| !old_input.maybe_changed_since(query, memo.verified_at))
+            .all(|old_input| !old_input.maybe_changed_since(db, memo.verified_at))
         {
             memo.verified_at = revision_now;
             self.overwrite_placeholder(

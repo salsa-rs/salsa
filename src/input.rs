@@ -2,9 +2,9 @@ use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
+use crate::Database;
 use crate::MutQueryStorageOps;
 use crate::Query;
-use crate::QueryContext;
 use crate::QueryDescriptor;
 use crate::QueryStorageOps;
 use crate::QueryTable;
@@ -22,19 +22,19 @@ use std::hash::Hash;
 /// Input queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
 /// none of those inputs have changed.
-pub struct InputStorage<QC, Q>
+pub struct InputStorage<DB, Q>
 where
-    Q: Query<QC>,
-    QC: QueryContext,
+    Q: Query<DB>,
+    DB: Database,
     Q::Value: Default,
 {
     map: RwLock<FxHashMap<Q::Key, StampedValue<Q::Value>>>,
 }
 
-impl<QC, Q> Default for InputStorage<QC, Q>
+impl<DB, Q> Default for InputStorage<DB, Q>
 where
-    Q: Query<QC>,
-    QC: QueryContext,
+    Q: Query<DB>,
+    DB: Database,
     Q::Value: Default,
 {
     fn default() -> Self {
@@ -44,17 +44,17 @@ where
     }
 }
 
-impl<QC, Q> InputStorage<QC, Q>
+impl<DB, Q> InputStorage<DB, Q>
 where
-    Q: Query<QC>,
-    QC: QueryContext,
+    Q: Query<DB>,
+    DB: Database,
     Q::Value: Default,
 {
     fn read<'q>(
         &self,
-        _query: &'q QC,
+        _db: &'q DB,
         key: &Q::Key,
-        _descriptor: &QC::QueryDescriptor,
+        _descriptor: &DB::QueryDescriptor,
     ) -> Result<StampedValue<Q::Value>, CycleDetected> {
         {
             let map_read = self.map.read();
@@ -70,33 +70,31 @@ where
     }
 }
 
-impl<QC, Q> QueryStorageOps<QC, Q> for InputStorage<QC, Q>
+impl<DB, Q> QueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
-    Q: Query<QC>,
-    QC: QueryContext,
+    Q: Query<DB>,
+    DB: Database,
     Q::Value: Default,
 {
     fn try_fetch<'q>(
         &self,
-        query: &'q QC,
+        db: &'q DB,
         key: &Q::Key,
-        descriptor: &QC::QueryDescriptor,
+        descriptor: &DB::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected> {
-        let StampedValue { value, changed_at } = self.read(query, key, &descriptor)?;
+        let StampedValue { value, changed_at } = self.read(db, key, &descriptor)?;
 
-        query
-            .salsa_runtime()
-            .report_query_read(descriptor, changed_at);
+        db.salsa_runtime().report_query_read(descriptor, changed_at);
 
         Ok(value)
     }
 
     fn maybe_changed_since(
         &self,
-        _query: &'q QC,
+        _db: &'q DB,
         revision: Revision,
         key: &Q::Key,
-        _descriptor: &QC::QueryDescriptor,
+        _descriptor: &DB::QueryDescriptor,
     ) -> bool {
         debug!(
             "{:?}({:?})::maybe_changed_since(revision={:?})",
@@ -117,13 +115,13 @@ where
     }
 }
 
-impl<QC, Q> MutQueryStorageOps<QC, Q> for InputStorage<QC, Q>
+impl<DB, Q> MutQueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
-    Q: Query<QC>,
-    QC: QueryContext,
+    Q: Query<DB>,
+    DB: Database,
     Q::Value: Default,
 {
-    fn set(&self, query: &QC, key: &Q::Key, value: Q::Value) {
+    fn set(&self, db: &DB, key: &Q::Key, value: Q::Value) {
         let key = key.clone();
 
         let mut map_write = self.map.write();
@@ -132,7 +130,7 @@ where
         // racing with somebody else to modify this same cell.
         // (Otherwise, someone else might write a *newer* revision
         // into the same cell while we block on the lock.)
-        let changed_at = query.salsa_runtime().increment_revision();
+        let changed_at = db.salsa_runtime().increment_revision();
 
         map_write.insert(key, StampedValue { value, changed_at });
     }

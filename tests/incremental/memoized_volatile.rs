@@ -1,37 +1,37 @@
 use crate::implementation::{TestContext, TestContextImpl};
-use salsa::QueryContext;
+use salsa::Database;
 
-salsa::query_prototype! {
+salsa::query_group! {
     crate trait MemoizedVolatileContext: TestContext {
         // Queries for testing a "volatile" value wrapped by
         // memoization.
-        fn memoized2() for Memoized2;
-        fn memoized1() for Memoized1;
-        fn volatile() for Volatile;
+        fn memoized2(key: ()) -> usize {
+            type Memoized2;
+        }
+        fn memoized1(key: ()) -> usize {
+            type Memoized1;
+        }
+        fn volatile(key: ()) -> usize {
+            type Volatile;
+            storage volatile;
+        }
     }
 }
 
-salsa::query_definition! {
-    crate Memoized2(query: &impl MemoizedVolatileContext, (): ()) -> usize {
-        query.log().add("Memoized2 invoked");
-        query.memoized1().read()
-    }
+fn memoized2(db: &impl MemoizedVolatileContext, (): ()) -> usize {
+    db.log().add("Memoized2 invoked");
+    db.memoized1(())
 }
 
-salsa::query_definition! {
-    crate Memoized1(query: &impl MemoizedVolatileContext, (): ()) -> usize {
-        query.log().add("Memoized1 invoked");
-        let v = query.volatile().read();
-        v / 2
-    }
+fn memoized1(db: &impl MemoizedVolatileContext, (): ()) -> usize {
+    db.log().add("Memoized1 invoked");
+    let v = db.volatile(());
+    v / 2
 }
 
-salsa::query_definition! {
-    #[storage(volatile)]
-    crate Volatile(query: &impl MemoizedVolatileContext, (): ()) -> usize {
-        query.log().add("Volatile invoked");
-        query.clock().increment()
-    }
+fn volatile(db: &impl MemoizedVolatileContext, (): ()) -> usize {
+    db.log().add("Volatile invoked");
+    db.clock().increment()
 }
 
 #[test]
@@ -39,8 +39,8 @@ fn volatile_x2() {
     let query = TestContextImpl::default();
 
     // Invoking volatile twice will simply execute twice.
-    query.volatile().read();
-    query.volatile().read();
+    query.volatile(());
+    query.volatile(());
     query.assert_log(&["Volatile invoked", "Volatile invoked"]);
 }
 
@@ -56,20 +56,20 @@ fn volatile_x2() {
 fn revalidate() {
     let query = TestContextImpl::default();
 
-    query.memoized2().read();
+    query.memoized2(());
     query.assert_log(&["Memoized2 invoked", "Memoized1 invoked", "Volatile invoked"]);
 
-    query.memoized2().read();
+    query.memoized2(());
     query.assert_log(&[]);
 
     // Second generation: volatile will change (to 1) but memoized1
     // will not (still 0, as 1/2 = 0)
     query.salsa_runtime().next_revision();
 
-    query.memoized2().read();
+    query.memoized2(());
     query.assert_log(&["Memoized1 invoked", "Volatile invoked"]);
 
-    query.memoized2().read();
+    query.memoized2(());
     query.assert_log(&[]);
 
     // Third generation: volatile will change (to 2) and memoized1
@@ -77,9 +77,9 @@ fn revalidate() {
     // changed, we now invoke Memoized2.
     query.salsa_runtime().next_revision();
 
-    query.memoized2().read();
+    query.memoized2(());
     query.assert_log(&["Memoized1 invoked", "Volatile invoked", "Memoized2 invoked"]);
 
-    query.memoized2().read();
+    query.memoized2(());
     query.assert_log(&[]);
 }

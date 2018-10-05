@@ -2,21 +2,21 @@ use crate::queries;
 use std::cell::Cell;
 
 #[derive(Default)]
-pub struct QueryContextImpl {
-    runtime: salsa::runtime::Runtime<QueryContextImpl>,
+pub struct DatabaseImpl {
+    runtime: salsa::runtime::Runtime<DatabaseImpl>,
     counter: Cell<usize>,
 }
 
-salsa::query_context_storage! {
-    pub struct QueryContextImplStorage for QueryContextImpl {
-        impl queries::QueryContext {
+salsa::database_storage! {
+    pub struct DatabaseImplStorage for DatabaseImpl {
+        impl queries::Database {
             fn memoized() for queries::Memoized;
             fn volatile() for queries::Volatile;
         }
     }
 }
 
-impl queries::CounterContext for QueryContextImpl {
+impl queries::Counter for DatabaseImpl {
     fn increment(&self) -> usize {
         let v = self.counter.get();
         self.counter.set(v + 1);
@@ -24,8 +24,8 @@ impl queries::CounterContext for QueryContextImpl {
     }
 }
 
-impl salsa::QueryContext for QueryContextImpl {
-    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<QueryContextImpl> {
+impl salsa::Database for DatabaseImpl {
+    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<DatabaseImpl> {
         &self.runtime
     }
 }
