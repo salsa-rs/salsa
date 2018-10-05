@@ -2,22 +2,42 @@ use salsa::Database;
 use std::sync::Arc;
 
 ///////////////////////////////////////////////////////////////////////////
-// Step 1. Define the database trait
+// Step 1. Define the query group
 
-// Define a **database trait** listing out all the prototypes
-// that are defined in this section of the code (in real applications
-// you would have many of these). For each query, we just give the
-// name of the accessor method (`input_string`) and link that to a
-// query type (`InputString`) that will be defined later.
+// A **query group** is a collection of queries (both inputs and
+// functions) that are defined in one particular spot. Each query group
+// represents some subset of the full set of queries you will use in your
+// application. Query groups can also depend on one another: so you might
+// have some basic query group A and then another query group B that uses
+// the queries from A and adds a few more. (These relationships must form
+// a DAG at present, but that is due to Rust's restrictions around
+// supertraits, which are likely to be lifted.)
 salsa::query_group! {
     trait HelloWorldDatabase: salsa::Database {
+        // For each query, we give the name, input type (here, `()`)
+        // and the output type `Arc<String>`. Inside the "fn body" we
+        // give some other configuration.
         fn input_string(key: ()) -> Arc<String> {
+            // The type we will generate to represent this query.
             type InputString;
+
+            // Specify the queries' "storage" -- in this case, this is
+            // an *input query*, which means that its value changes
+            // only when it is explicitly *set* (see the `main`
+            // function below).
             storage input;
         }
 
+        // This is a *derived query*, meaning its value is specified by
+        // a function (see Step 2, below).
         fn length(key: ()) -> usize {
             type Length;
+
+            // No explicit storage defaults to `storage memoized;`
+            //
+            // The function that defines this query is (by default) a
+            // function with the same name as the query in the
+            // containing module (e.g., `length`).
         }
     }
 }
@@ -25,12 +45,14 @@ salsa::query_group! {
 ///////////////////////////////////////////////////////////////////////////
 // Step 2. Define the queries.
 
-// Define a **function query**. It too has a key and value type, but
-// it is defined with a function that -- given the key -- computes the
-// value. This function is supplied with a context (an `&impl
-// HelloWorldDatabase`) that gives access to other queries. The runtime
-// will track which queries you use so that we can incrementally
-// update memoized results.
+// Define the **function** for the `length` query. This function will
+// be called whenever the query's value must be recomputed. After it
+// is called once, its result is typically memoized, unless we think
+// that one of the inputs may have changed. Its first argument (`db`)
+// is the "database", which is the type that contains the storage for
+// all of the queries in the system -- we never know the concrete type
+// here, we only know the subset of methods we care about (defined by
+// the `HelloWorldDatabase` trait we specified above).
 fn length(db: &impl HelloWorldDatabase, (): ()) -> usize {
     // Read the input string:
     let input_string = db.input_string(());
@@ -40,7 +62,7 @@ fn length(db: &impl HelloWorldDatabase, (): ()) -> usize {
 }
 
 ///////////////////////////////////////////////////////////////////////////
-// Step 3. Define the database struct that implements the database trait
+// Step 3. Define the database struct
 
 // Define the actual database struct. This must contain a salsa
 // runtime but can also contain anything else you need.
