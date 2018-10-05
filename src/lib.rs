@@ -54,12 +54,14 @@ pub trait QueryDescriptor<DB>: Clone + Debug + Eq + Hash + Send + Sync {
     fn maybe_changed_since(&self, db: &DB, revision: runtime::Revision) -> bool;
 }
 
+pub trait QueryFunction<DB: Database>: Query<DB> {
+    fn execute(db: &DB, key: Self::Key) -> Self::Value;
+}
+
 pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type Key: Clone + Debug + Hash + Eq + Send;
     type Value: Clone + Debug + Hash + Eq + Send;
     type Storage: QueryStorageOps<DB, Self> + Send + Sync;
-
-    fn execute(db: &DB, key: Self::Key) -> Self::Value;
 }
 
 pub trait QueryStorageOps<DB, Q>: Default
@@ -389,7 +391,12 @@ macro_rules! query_definition {
             type Key = $key_ty;
             type Value = $value_ty;
             type Storage = $crate::query_definition! { @storage_ty[DB, Self, $storage] };
+        }
 
+        impl<DB> $crate::QueryFunction<DB> for $name
+        where
+            DB: $query_trait,
+        {
             fn execute($db: &DB, $key: $key_ty) -> $value_ty {
                 $($body)*
             }
@@ -441,10 +448,6 @@ macro_rules! query_definition {
             type Key = $key_ty;
             type Value = $value_ty;
             type Storage = $crate::input::InputStorage<DB, Self>;
-
-            fn execute(_: &DB, _: $key_ty) -> $value_ty {
-                panic!("execute should never run for an input query")
-            }
         }
     };
 

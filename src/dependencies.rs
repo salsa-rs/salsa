@@ -3,8 +3,8 @@ use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
 use crate::Database;
-use crate::Query;
 use crate::QueryDescriptor;
+use crate::QueryFunction;
 use crate::QueryStorageOps;
 use crate::QueryTable;
 use log::debug;
@@ -23,7 +23,7 @@ use std::hash::Hash;
 /// storage requirements.
 pub struct DependencyStorage<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     map: RwLock<FxHashMap<Q::Key, QueryState<DB>>>,
@@ -61,7 +61,7 @@ where
 
 impl<DB, Q> Default for DependencyStorage<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     fn default() -> Self {
@@ -73,7 +73,7 @@ where
 
 impl<DB, Q> DependencyStorage<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     fn read(
@@ -166,7 +166,7 @@ where
 
 impl<DB, Q> QueryStorageOps<DB, Q> for DependencyStorage<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     fn try_fetch<'q>(

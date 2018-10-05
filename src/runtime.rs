@@ -1,5 +1,6 @@
 use crate::Database;
 use crate::Query;
+use crate::QueryFunction;
 use log::debug;
 use rustc_hash::FxHasher;
 use std::cell::RefCell;
@@ -94,7 +95,7 @@ where
         key: &Q::Key,
     ) -> (StampedValue<Q::Value>, QueryDescriptorSet<DB>)
     where
-        Q: Query<DB>,
+        Q: QueryFunction<DB>,
     {
         debug!("{:?}({:?}): executing query", Q::default(), key);
 

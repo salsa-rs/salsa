@@ -2,7 +2,7 @@ use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
 use crate::Database;
-use crate::Query;
+use crate::QueryFunction;
 use crate::QueryStorageOps;
 use crate::QueryTable;
 use log::debug;
@@ -20,7 +20,7 @@ use std::hash::Hash;
 /// ask for the result of such a query, it is recomputed.
 pub struct VolatileStorage<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     /// We don't store the results of volatile queries,
@@ -30,7 +30,7 @@ where
 
 impl<DB, Q> Default for VolatileStorage<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     fn default() -> Self {
@@ -42,7 +42,7 @@ where
 
 impl<DB, Q> QueryStorageOps<DB, Q> for VolatileStorage<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     fn try_fetch<'q>(

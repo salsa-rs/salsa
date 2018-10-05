@@ -3,8 +3,8 @@ use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
 use crate::Database;
-use crate::Query;
 use crate::QueryDescriptor;
+use crate::QueryFunction;
 use crate::QueryStorageOps;
 use crate::QueryTable;
 use log::debug;
@@ -23,7 +23,7 @@ use std::hash::Hash;
 /// none of those inputs have changed.
 pub struct MemoizedStorage<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     map: RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
@@ -32,7 +32,7 @@ where
 /// Defines the "current state" of query's memoized results.
 enum QueryState<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     /// We are currently computing the result of this query; if we see
@@ -45,7 +45,7 @@ where
 
 struct Memo<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     stamped_value: StampedValue<Q::Value>,
@@ -62,7 +62,7 @@ where
 
 impl<DB, Q> Default for MemoizedStorage<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     fn default() -> Self {
@@ -74,7 +74,7 @@ where
 
 impl<DB, Q> MemoizedStorage<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     fn read(
@@ -206,7 +206,7 @@ where
 
 impl<DB, Q> QueryStorageOps<DB, Q> for MemoizedStorage<DB, Q>
 where
-    Q: Query<DB>,
+    Q: QueryFunction<DB>,
     DB: Database,
 {
     fn try_fetch<'q>(
