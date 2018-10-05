@@ -208,14 +208,14 @@ impl DefaultKey for () {
 /// queries need to execute, as well as defining the queries
 /// themselves that are exported for others to use.
 ///
-/// This macro declares the "prototype" for a single query. This will
-/// expand into a `fn` item. This prototype specifies name of the
-/// method (in the example below, that would be `my_query`) and
-/// connects it to query definition type (`MyQuery`, in the example
-/// below). These typically have the same name but a distinct
-/// capitalization convention. Note that the actual input/output type
-/// of the query are given only in the query definition (see the
-/// `query_definition` macro for more details).
+/// This macro declares the "prototype" for a group of queries. It will
+/// expand into a trait and a set of structs, one per query.
+///
+/// For each query, you give the name of the accessor method to invoke
+/// the query (e.g., `my_query`, below), as well as its input/output
+/// types.  You also give the name for a query type (e.g., `MyQuery`,
+/// below) that represents the query, and optionally other details,
+/// such as its storage.
 ///
 /// ### Examples
 ///
@@ -225,26 +225,10 @@ impl DefaultKey for () {
 /// trait TypeckDatabase {
 ///     query_prototype! {
 ///         /// Comments or other attributes can go here
-///         fn my_query() for MyQuery;
-///     }
-/// }
-/// ```
-///
-/// This just expands to something like:
-///
-/// ```ignore
-/// fn my_query(&self) -> QueryTable<'_, Self, $query_type>;
-/// ```
-///
-/// This permits us to invoke the query via `query.my_query().of(key)`.
-///
-/// You can also include more than one query if you prefer:
-///
-/// ```ignore
-/// trait TypeckDatabase {
-///     query_prototype! {
-///         fn my_query() for MyQuery;
-///         fn my_other_query() for MyOtherQuery;
+///         fn my_query(input: u32) -> u64 {
+///             type MyQuery;
+///             storage memoized; // optional, this is the default
+///         }
 ///     }
 /// }
 /// ```
@@ -273,25 +257,40 @@ macro_rules! query_prototype {
     // Base case: found the trait body
     (
         attr[$($trait_attr:tt)*];
-        headers[$v:vis, $name:ident, $($header:tt)*];
+        headers[$v:vis, $query_trait:ident, $($header:tt)*];
         tokens[{
             $(
                 $(#[$method_attr:meta])*
-                fn $method_name:ident($key_name:ident: $key:ty) -> $value:ty {
-                    type $QueryType:ty;
+                fn $method_name:ident($key_name:ident: $key_ty:ty) -> $value_ty:ty {
+                    type $QueryType:ident;
+                    $(storage $storage:ident;)* // FIXME(rust-lang/rust#48075) should be `?`
                 }
             )*
         }];
     ) => {
-        $($trait_attr)* $v trait $name: $($crate::GetQueryTable<$QueryType> +)* $($header)* {
+        $($trait_attr)* $v trait $query_trait: $($crate::GetQueryTable<$QueryType> +)* $($header)* {
             $(
                 $(#[$method_attr])*
-                fn $method_name(&self, key: $key) -> $value {
+                fn $method_name(&self, key: $key_ty) -> $value_ty {
                     <Self as $crate::GetQueryTable<$QueryType>>::get_query_table(self)
                         .get(key)
                 }
             )*
         }
+
+        $(
+            #[derive(Default, Debug)]
+            $v struct $QueryType;
+
+            impl<DB> $crate::Query<DB> for $QueryType
+            where
+                DB: $query_trait,
+            {
+                type Key = $key_ty;
+                type Value = $value_ty;
+                type Storage = $crate::query_prototype! { @storage_ty[DB, Self, $($storage)*] };
+            }
+        )*
     };
 
     // Recursive case: found some more part of the trait header.
@@ -307,143 +306,13 @@ macro_rules! query_prototype {
             tokens[$($tokens)*];
         }
     };
-}
 
-/// Creates a **Query Definition** type. This defines the input (key)
-/// of the query, the output key (value), and the query context trait
-/// that the query requires.
-///
-/// Example:
-///
-/// ```ignore
-/// query_definition! {
-///     pub MyQuery(db: &impl MyDatabase, key: MyKey) -> MyValue {
-///         ... // fn body specifies what happens when query is invoked
-///     }
-/// }
-/// ```
-///
-/// Here, the query context trait would be `MyDatabase` -- this
-/// should be a trait containing all the other queries that the
-/// definition needs to invoke (as well as any other methods that you
-/// may want).
-///
-/// The `MyKey` type is the **key** to the query -- it must be Clone,
-/// Debug, Hash, Eq, and Send, as specified in the `Query` trait.
-///
-/// The `MyKey` type is the **value** to the query -- it too must be
-/// Clone, Debug, Hash, Eq, and Send, as specified in the `Query`
-/// trait.
-#[macro_export]
-macro_rules! query_definition {
-    // Step 1. Filtering the attributes to look for the special ones
-    // we consume.
+    // Generate storage type
     (
-        @filter_attrs {
-            input { #[storage(memoized)] $($input:tt)* };
-            storage { $storage:tt };
-            other_attrs { $($other_attrs:tt)* };
-        }
+        // Default case:
+        @storage_ty[$DB:ident, $Self:ident, ]
     ) => {
-        $crate::query_definition! {
-            @filter_attrs {
-                input { $($input)* };
-                storage { memoized };
-                other_attrs { $($other_attrs)* };
-            }
-        }
-    };
-
-    (
-        @filter_attrs {
-            input { #[storage(volatile)] $($input:tt)* };
-            storage { $storage:tt };
-            other_attrs { $($other_attrs:tt)* };
-        }
-    ) => {
-        $crate::query_definition! {
-            @filter_attrs {
-                input { $($input)* };
-                storage { volatile };
-                other_attrs { $($other_attrs)* };
-            }
-        }
-    };
-
-    (
-        @filter_attrs {
-            input { #[storage(dependencies)] $($input:tt)* };
-            storage { $storage:tt };
-            other_attrs { $($other_attrs:tt)* };
-        }
-    ) => {
-        $crate::query_definition! {
-            @filter_attrs {
-                input { $($input)* };
-                storage { dependencies };
-                other_attrs { $($other_attrs)* };
-            }
-        }
-    };
-
-    (
-        @filter_attrs {
-            input { #[$attr:meta] $($input:tt)* };
-            storage { $storage:tt };
-            other_attrs { $($other_attrs:tt)* };
-        }
-    ) => {
-        $crate::query_definition! {
-            @filter_attrs {
-                input { $($input)* };
-                storage { $storage };
-                other_attrs { $($other_attrs)* #[$attr] };
-            }
-        }
-    };
-
-    // Accept a "fn-like" query definition
-    (
-        @filter_attrs {
-            input {
-                $v:vis $name:ident(
-                    $db:tt : &impl $query_trait:path,
-                    $key:tt : $key_ty:ty $(,)*
-                ) -> $value_ty:ty {
-                    $($body:tt)*
-                }
-            };
-            storage { $storage:tt };
-            other_attrs { $($attrs:tt)* };
-        }
-    ) => {
-        #[derive(Default, Debug)]
-        $($attrs)*
-        $v struct $name;
-
-        impl<DB> $crate::Query<DB> for $name
-        where
-            DB: $query_trait,
-        {
-            type Key = $key_ty;
-            type Value = $value_ty;
-            type Storage = $crate::query_definition! { @storage_ty[DB, Self, $storage] };
-        }
-
-        impl<DB> $crate::QueryFunction<DB> for $name
-        where
-            DB: $query_trait,
-        {
-            fn execute($db: &DB, $key: $key_ty) -> $value_ty {
-                $($body)*
-            }
-        }
-    };
-
-    (
-        @storage_ty[$DB:ident, $Self:ident, default]
-    ) => {
-        $crate::query_definition! { @storage_ty[$DB, $Self, memoized] }
+        $crate::query_prototype! { @storage_ty[$DB, $Self, memoized] }
     };
 
     (
@@ -464,52 +333,10 @@ macro_rules! query_definition {
         $crate::dependencies::DependencyStorage<$DB, $Self>
     };
 
-    // Accept a "field-like" query definition (input)
     (
-        @filter_attrs {
-            input {
-                $v:vis $name:ident: Map<$key_ty:ty, $value_ty:ty>;
-            };
-            storage { default };
-            other_attrs { $($attrs:tt)* };
-        }
+        @storage_ty[$DB:ident, $Self:ident, input]
     ) => {
-        #[derive(Default, Debug)]
-        $($attrs)*
-        $v struct $name;
-
-        impl<DB> $crate::Query<DB> for $name
-        where
-            DB: $crate::Database
-        {
-            type Key = $key_ty;
-            type Value = $value_ty;
-            type Storage = $crate::input::InputStorage<DB, Self>;
-        }
-    };
-
-    // Various legal start states:
-    (
-        # $($tokens:tt)*
-    ) => {
-        $crate::query_definition! {
-            @filter_attrs {
-                input { # $($tokens)* };
-                storage { default };
-                other_attrs { };
-            }
-        }
-    };
-    (
-        $v:vis $name:ident $($tokens:tt)*
-    ) => {
-        $crate::query_definition! {
-            @filter_attrs {
-                input { $v $name $($tokens)* };
-                storage { default };
-                other_attrs { };
-            }
-        }
+        $crate::input::InputStorage<DB, Self>
     };
 }
 

@@ -33,35 +33,35 @@ salsa::query_prototype! {
         }
         fn volatile_a(key: ()) -> () {
             type VolatileA;
+            storage volatile;
         }
         fn volatile_b(key: ()) -> () {
             type VolatileB;
+            storage volatile;
         }
     }
 }
 
-salsa::query_definition! {
-    crate MemoizedA(db: &impl Database, (): ()) -> () {
+impl<DB: Database> salsa::QueryFunction<DB> for MemoizedA {
+    fn execute(db: &DB, (): ()) -> () {
         db.memoized_b(())
     }
 }
 
-salsa::query_definition! {
-    crate MemoizedB(db: &impl Database, (): ()) -> () {
+impl<DB: Database> salsa::QueryFunction<DB> for MemoizedB {
+    fn execute(db: &DB, (): ()) -> () {
         db.memoized_a(())
     }
 }
 
-salsa::query_definition! {
-    #[storage(volatile)]
-    crate VolatileA(db: &impl Database, (): ()) -> () {
+impl<DB: Database> salsa::QueryFunction<DB> for VolatileA {
+    fn execute(db: &DB, (): ()) -> () {
         db.volatile_b(())
     }
 }
 
-salsa::query_definition! {
-    #[storage(volatile)]
-    crate VolatileB(db: &impl Database, (): ()) -> () {
+impl<DB: Database> salsa::QueryFunction<DB> for VolatileB {
+    fn execute(db: &DB, (): ()) -> () {
         db.volatile_a(())
     }
 }

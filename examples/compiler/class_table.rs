@@ -1,5 +1,5 @@
 use crate::compiler;
-use salsa::{query_definition, query_prototype};
+use salsa::query_prototype;
 use std::sync::Arc;
 
 query_prototype! {
@@ -24,20 +24,20 @@ query_prototype! {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub struct DefId(usize);
 
-query_definition! {
-    pub AllClasses(_: &impl ClassTableDatabase, (): ()) -> Arc<Vec<DefId>> {
+impl<DB: ClassTableDatabase> salsa::QueryFunction<DB> for AllClasses {
+    fn execute(_: &DB, (): ()) -> Arc<Vec<DefId>> {
         Arc::new(vec![DefId(0), DefId(10)]) // dummy impl
     }
 }
 
-query_definition! {
-    pub Fields(_: &impl ClassTableDatabase, class: DefId) -> Arc<Vec<DefId>> {
+impl<DB: ClassTableDatabase> salsa::QueryFunction<DB> for Fields {
+    fn execute(_: &DB, class: DefId) -> Arc<Vec<DefId>> {
         Arc::new(vec![DefId(class.0 + 1), DefId(class.0 + 2)]) // dummy impl
     }
 }
 
-query_definition! {
-    pub AllFields(db: &impl ClassTableDatabase, (): ()) -> Arc<Vec<DefId>> {
+impl<DB: ClassTableDatabase> salsa::QueryFunction<DB> for AllFields {
+    fn execute(db: &DB, (): ()) -> Arc<Vec<DefId>> {
         Arc::new(
             db.all_classes(())
                 .iter()
@@ -45,8 +45,7 @@ query_definition! {
                 .flat_map(|def_id| {
                     let fields = db.fields(def_id);
                     (0..fields.len()).map(move |i| fields[i])
-                })
-                .collect()
+                }).collect(),
         )
     }
 }

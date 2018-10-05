@@ -13,28 +13,28 @@ salsa::query_prototype! {
         }
         fn volatile(key: ()) -> usize {
             type Volatile;
+            storage volatile;
         }
     }
 }
 
-salsa::query_definition! {
-    crate Memoized2(db: &impl MemoizedVolatileContext, (): ()) -> usize {
+impl<DB: MemoizedVolatileContext> salsa::QueryFunction<DB> for Memoized2 {
+    fn execute(db: &DB, (): ()) -> usize {
         db.log().add("Memoized2 invoked");
         db.memoized1(())
     }
 }
 
-salsa::query_definition! {
-    crate Memoized1(db: &impl MemoizedVolatileContext, (): ()) -> usize {
+impl<DB: MemoizedVolatileContext> salsa::QueryFunction<DB> for Memoized1 {
+    fn execute(db: &DB, (): ()) -> usize {
         db.log().add("Memoized1 invoked");
         let v = db.volatile(());
         v / 2
     }
 }
 
-salsa::query_definition! {
-    #[storage(volatile)]
-    crate Volatile(db: &impl MemoizedVolatileContext, (): ()) -> usize {
+impl<DB: MemoizedVolatileContext> salsa::QueryFunction<DB> for Volatile {
+    fn execute(db: &DB, (): ()) -> usize {
         db.log().add("Volatile invoked");
         db.clock().increment()
     }

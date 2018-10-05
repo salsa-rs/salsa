@@ -11,44 +11,38 @@ salsa::query_prototype! {
         }
         fn dep_derived1(key: ()) -> usize {
             type Derived1;
+            storage dependencies;
         }
         fn dep_input1(key: ()) -> usize {
             type Input1;
+            storage input;
         }
         fn dep_input2(key: ()) -> usize {
             type Input2;
+            storage input;
         }
     }
 }
 
-salsa::query_definition! {
-    crate Memoized2(db: &impl MemoizedDepInputsContext, (): ()) -> usize {
+impl<DB: MemoizedDepInputsContext> salsa::QueryFunction<DB> for Memoized2 {
+    fn execute(db: &DB, (): ()) -> usize {
         db.log().add("Memoized2 invoked");
         db.dep_memoized1(())
     }
 }
 
-salsa::query_definition! {
-    crate Memoized1(db: &impl MemoizedDepInputsContext, (): ()) -> usize {
+impl<DB: MemoizedDepInputsContext> salsa::QueryFunction<DB> for Memoized1 {
+    fn execute(db: &DB, (): ()) -> usize {
         db.log().add("Memoized1 invoked");
         db.dep_derived1(()) * 2
     }
 }
 
-salsa::query_definition! {
-    #[storage(dependencies)]
-    crate Derived1(db: &impl MemoizedDepInputsContext, (): ()) -> usize {
+impl<DB: MemoizedDepInputsContext> salsa::QueryFunction<DB> for Derived1 {
+    fn execute(db: &DB, (): ()) -> usize {
         db.log().add("Derived1 invoked");
         db.dep_input1(()) / 2
     }
-}
-
-salsa::query_definition! {
-    crate Input1: Map<(), usize>;
-}
-
-salsa::query_definition! {
-    crate Input2: Map<(), usize>;
 }
 
 #[test]

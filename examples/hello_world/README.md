@@ -20,18 +20,24 @@ example. It defines exactly two queries: `input_string` and
 names of the queries as methods (e.g., `input_string()`) and also a
 path to a type that will define the query (`InputString`). It doesn't
 give many other details: those are specified in the query definition
-that comes later.
+that comes later. XXX out of date
 
 ```rust
 salsa::query_prototype! {
     trait HelloWorldDatabase: salsa::Database {
-        fn input_string() for InputString;
-        fn length() for Length;
+        fn input_string(key: ()) -> Arc<String> {
+            type InputString;
+            storage input;
+        }
+
+        fn length(key: ()) -> usize {
+            type Length;
+        }
     }
 }
 ```
 
-### Step 2: Define the queries
+### Step 2: Define the query bodies
 
 The actual query definitions are made using the
 `salsa::query_definition` macro. For an **input query**, such as

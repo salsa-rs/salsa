@@ -9,23 +9,23 @@ salsa::query_prototype! {
         }
         fn volatile(key: ()) -> usize {
             type Volatile;
+            storage volatile;
         }
     }
 }
 
-salsa::query_definition! {
-    /// Because this query is memoized, we only increment the counter
-    /// the first time it is invoked.
-    crate Memoized(db: &impl Database, (): ()) -> usize {
+/// Because this query is memoized, we only increment the counter
+/// the first time it is invoked.
+impl<DB: Database> salsa::QueryFunction<DB> for Memoized {
+    fn execute(db: &DB, (): ()) -> usize {
         db.increment()
     }
 }
 
-salsa::query_definition! {
-    /// Because this query is volatile, each time it is invoked,
-    /// we will increment the counter.
-    #[storage(volatile)]
-    crate Volatile(db: &impl Database, (): ()) -> usize {
+/// Because this query is volatile, each time it is invoked,
+/// we will increment the counter.
+impl<DB: Database> salsa::QueryFunction<DB> for Volatile {
+    fn execute(db: &DB, (): ()) -> usize {
         db.increment()
     }
 }

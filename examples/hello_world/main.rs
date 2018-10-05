@@ -13,7 +13,9 @@ salsa::query_prototype! {
     trait HelloWorldDatabase: salsa::Database {
         fn input_string(key: ()) -> Arc<String> {
             type InputString;
+            storage input;
         }
+
         fn length(key: ()) -> usize {
             type Length;
         }
@@ -23,21 +25,14 @@ salsa::query_prototype! {
 ///////////////////////////////////////////////////////////////////////////
 // Step 2. Define the queries.
 
-// Define an **input query**. Like all queries, it is a map from a key
-// (of type `()`) to a value (of type `Arc<String>`). All values begin
-// as `Default::default` but you can assign them new values.
-salsa::query_definition! {
-    InputString: Map<(), Arc<String>>;
-}
-
 // Define a **function query**. It too has a key and value type, but
 // it is defined with a function that -- given the key -- computes the
 // value. This function is supplied with a context (an `&impl
 // HelloWorldDatabase`) that gives access to other queries. The runtime
 // will track which queries you use so that we can incrementally
 // update memoized results.
-salsa::query_definition! {
-    Length(db: &impl HelloWorldDatabase, _key: ()) -> usize {
+impl<DB: HelloWorldDatabase> salsa::QueryFunction<DB> for Length {
+    fn execute(db: &DB, _key: ()) -> usize {
         // Read the input string:
         let input_string = db.input_string(());
 

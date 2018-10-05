@@ -34,7 +34,7 @@ Using salsa is as easy as 1, 2, 3...
    and queries you will need. We'll start with one such trait, but
    later on you can use more than one to break up your system into
    components (or spread your code across crates).
-2. **Implement the queries** using the `query_definition!` macro.
+2. **Implement the query functions** where appropriate.
 3. Define the **database struct**, which contains the storage for all
    the inputs/queries you will be using. The query struct will contain
    the storage for all of the inputs/queries and may also contain

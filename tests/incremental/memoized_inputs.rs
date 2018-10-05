@@ -8,29 +8,20 @@ salsa::query_prototype! {
         }
         fn input1(key: ()) -> usize {
             type Input1;
+            storage input;
         }
         fn input2(key: ()) -> usize {
             type Input2;
+            storage input;
         }
     }
 }
 
-salsa::query_definition! {
-    crate Max(db: &impl MemoizedInputsContext, (): ()) -> usize {
+impl<DB: MemoizedInputsContext> salsa::QueryFunction<DB> for Max {
+    fn execute(db: &DB, (): ()) -> usize {
         db.log().add("Max invoked");
-        std::cmp::max(
-            db.input1(()),
-            db.input2(()),
-        )
+        std::cmp::max(db.input1(()), db.input2(()))
     }
-}
-
-salsa::query_definition! {
-    crate Input1: Map<(), usize>;
-}
-
-salsa::query_definition! {
-    crate Input2: Map<(), usize>;
 }
 
 #[test]
