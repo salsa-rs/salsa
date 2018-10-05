@@ -17,11 +17,9 @@ salsa::query_prototype! {
     }
 }
 
-impl<DB: MemoizedInputsContext> salsa::QueryFunction<DB> for Max {
-    fn execute(db: &DB, (): ()) -> usize {
-        db.log().add("Max invoked");
-        std::cmp::max(db.input1(()), db.input2(()))
-    }
+fn max(db: &impl MemoizedInputsContext, (): ()) -> usize {
+    db.log().add("Max invoked");
+    std::cmp::max(db.input1(()), db.input2(()))
 }
 
 #[test]

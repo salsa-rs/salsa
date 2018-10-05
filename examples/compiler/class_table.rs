@@ -24,28 +24,22 @@ query_prototype! {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub struct DefId(usize);
 
-impl<DB: ClassTableDatabase> salsa::QueryFunction<DB> for AllClasses {
-    fn execute(_: &DB, (): ()) -> Arc<Vec<DefId>> {
-        Arc::new(vec![DefId(0), DefId(10)]) // dummy impl
-    }
+fn all_classes(_: &impl ClassTableDatabase, (): ()) -> Arc<Vec<DefId>> {
+    Arc::new(vec![DefId(0), DefId(10)]) // dummy impl
 }
 
-impl<DB: ClassTableDatabase> salsa::QueryFunction<DB> for Fields {
-    fn execute(_: &DB, class: DefId) -> Arc<Vec<DefId>> {
-        Arc::new(vec![DefId(class.0 + 1), DefId(class.0 + 2)]) // dummy impl
-    }
+fn fields(_: &impl ClassTableDatabase, class: DefId) -> Arc<Vec<DefId>> {
+    Arc::new(vec![DefId(class.0 + 1), DefId(class.0 + 2)]) // dummy impl
 }
 
-impl<DB: ClassTableDatabase> salsa::QueryFunction<DB> for AllFields {
-    fn execute(db: &DB, (): ()) -> Arc<Vec<DefId>> {
-        Arc::new(
-            db.all_classes(())
-                .iter()
-                .cloned()
-                .flat_map(|def_id| {
-                    let fields = db.fields(def_id);
-                    (0..fields.len()).map(move |i| fields[i])
-                }).collect(),
-        )
-    }
+fn all_fields(db: &impl ClassTableDatabase, (): ()) -> Arc<Vec<DefId>> {
+    Arc::new(
+        db.all_classes(())
+            .iter()
+            .cloned()
+            .flat_map(|def_id| {
+                let fields = db.fields(def_id);
+                (0..fields.len()).map(move |i| fields[i])
+            }).collect(),
+    )
 }

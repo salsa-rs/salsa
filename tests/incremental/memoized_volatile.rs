@@ -18,26 +18,20 @@ salsa::query_prototype! {
     }
 }
 
-impl<DB: MemoizedVolatileContext> salsa::QueryFunction<DB> for Memoized2 {
-    fn execute(db: &DB, (): ()) -> usize {
-        db.log().add("Memoized2 invoked");
-        db.memoized1(())
-    }
+fn memoized2(db: &impl MemoizedVolatileContext, (): ()) -> usize {
+    db.log().add("Memoized2 invoked");
+    db.memoized1(())
 }
 
-impl<DB: MemoizedVolatileContext> salsa::QueryFunction<DB> for Memoized1 {
-    fn execute(db: &DB, (): ()) -> usize {
-        db.log().add("Memoized1 invoked");
-        let v = db.volatile(());
-        v / 2
-    }
+fn memoized1(db: &impl MemoizedVolatileContext, (): ()) -> usize {
+    db.log().add("Memoized1 invoked");
+    let v = db.volatile(());
+    v / 2
 }
 
-impl<DB: MemoizedVolatileContext> salsa::QueryFunction<DB> for Volatile {
-    fn execute(db: &DB, (): ()) -> usize {
-        db.log().add("Volatile invoked");
-        db.clock().increment()
-    }
+fn volatile(db: &impl MemoizedVolatileContext, (): ()) -> usize {
+    db.log().add("Volatile invoked");
+    db.clock().increment()
 }
 
 #[test]

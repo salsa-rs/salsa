@@ -24,25 +24,19 @@ salsa::query_prototype! {
     }
 }
 
-impl<DB: MemoizedDepInputsContext> salsa::QueryFunction<DB> for Memoized2 {
-    fn execute(db: &DB, (): ()) -> usize {
-        db.log().add("Memoized2 invoked");
-        db.dep_memoized1(())
-    }
+fn dep_memoized2(db: &impl MemoizedDepInputsContext, (): ()) -> usize {
+    db.log().add("Memoized2 invoked");
+    db.dep_memoized1(())
 }
 
-impl<DB: MemoizedDepInputsContext> salsa::QueryFunction<DB> for Memoized1 {
-    fn execute(db: &DB, (): ()) -> usize {
-        db.log().add("Memoized1 invoked");
-        db.dep_derived1(()) * 2
-    }
+fn dep_memoized1(db: &impl MemoizedDepInputsContext, (): ()) -> usize {
+    db.log().add("Memoized1 invoked");
+    db.dep_derived1(()) * 2
 }
 
-impl<DB: MemoizedDepInputsContext> salsa::QueryFunction<DB> for Derived1 {
-    fn execute(db: &DB, (): ()) -> usize {
-        db.log().add("Derived1 invoked");
-        db.dep_input1(()) / 2
-    }
+fn dep_derived1(db: &impl MemoizedDepInputsContext, (): ()) -> usize {
+    db.log().add("Derived1 invoked");
+    db.dep_input1(()) / 2
 }
 
 #[test]

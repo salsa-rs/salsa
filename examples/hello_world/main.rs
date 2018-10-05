@@ -31,14 +31,12 @@ salsa::query_prototype! {
 // HelloWorldDatabase`) that gives access to other queries. The runtime
 // will track which queries you use so that we can incrementally
 // update memoized results.
-impl<DB: HelloWorldDatabase> salsa::QueryFunction<DB> for Length {
-    fn execute(db: &DB, _key: ()) -> usize {
-        // Read the input string:
-        let input_string = db.input_string(());
+fn length(db: &impl HelloWorldDatabase, (): ()) -> usize {
+    // Read the input string:
+    let input_string = db.input_string(());
 
-        // Return its length:
-        input_string.len()
-    }
+    // Return its length:
+    input_string.len()
 }
 
 ///////////////////////////////////////////////////////////////////////////

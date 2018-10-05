@@ -224,6 +224,7 @@ impl DefaultKey for () {
 ///         fn my_query(input: u32) -> u64 {
 ///             type MyQuery;
 ///             storage memoized; // optional, this is the default
+///             use fn path::to::fn; // optional, default is `my_query`
 ///         }
 ///     }
 /// }
@@ -260,6 +261,7 @@ macro_rules! query_prototype {
                 fn $method_name:ident($key_name:ident: $key_ty:ty) -> $value_ty:ty {
                     type $QueryType:ident;
                     $(storage $storage:ident;)* // FIXME(rust-lang/rust#48075) should be `?`
+                    $(use fn $fn_path:path;)* // FIXME(rust-lang/rust#48075) should be `?`
                 }
             )*
         }];
@@ -286,7 +288,81 @@ macro_rules! query_prototype {
                 type Value = $value_ty;
                 type Storage = $crate::query_prototype! { @storage_ty[DB, Self, $($storage)*] };
             }
+
+            $crate::query_prototype! {
+                @query_fn[
+                    storage($($storage)*);
+                    method_name($method_name);
+                    fn_path($($fn_path)*);
+                    db_trait($query_trait);
+                    query_type($QueryType);
+                ]
+            }
         )*
+    };
+
+    (
+        @query_fn[
+            storage(input);
+            method_name($method_name:ident);
+            fn_path();
+            $($rest:tt)*
+        ]
+    ) => {
+        // do nothing for `storage input`, presuming they did not write an explicit `use fn`
+    };
+
+    (
+        @query_fn[
+            storage(input);
+            method_name($method_name:ident);
+            fn_path($($fn_path:tt)+);
+            $($rest:tt)*
+        ]
+    ) => {
+        // error for `storage input` with an explicit `use fn`
+        compile_error! {
+            "cannot have `storage input` combined with `use fn`"
+        }
+    };
+
+    (
+        @query_fn[
+            storage($($storage:ident)*);
+            method_name($method_name:ident);
+            fn_path();
+            $($rest:tt)*
+        ]
+    ) => {
+        // default to `use fn $method_name`
+        $crate::query_prototype! {
+            @query_fn[
+                storage($($storage)*);
+                method_name($method_name);
+                fn_path($method_name);
+                $($rest)*
+            ]
+        }
+    };
+
+    (
+        @query_fn[
+            storage($($storage:ident)*);
+            method_name($method_name:ident);
+            fn_path($fn_path:path);
+            db_trait($DbTrait:path);
+            query_type($QueryType:ty);
+        ]
+    ) => {
+        impl<DB> $crate::QueryFunction<DB> for $QueryType
+        where DB: $DbTrait
+        {
+            fn execute(db: &DB, key: <Self as $crate::Query<DB>>::Key)
+                       -> <Self as $crate::Query<DB>>::Value
+            {
+                $fn_path(db, key)
+            }
+        }
     };
 
     // Recursive case: found some more part of the trait header.

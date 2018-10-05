@@ -42,28 +42,20 @@ salsa::query_prototype! {
     }
 }
 
-impl<DB: Database> salsa::QueryFunction<DB> for MemoizedA {
-    fn execute(db: &DB, (): ()) -> () {
-        db.memoized_b(())
-    }
+fn memoized_a(db: &impl Database, (): ()) -> () {
+    db.memoized_b(())
 }
 
-impl<DB: Database> salsa::QueryFunction<DB> for MemoizedB {
-    fn execute(db: &DB, (): ()) -> () {
-        db.memoized_a(())
-    }
+fn memoized_b(db: &impl Database, (): ()) -> () {
+    db.memoized_a(())
 }
 
-impl<DB: Database> salsa::QueryFunction<DB> for VolatileA {
-    fn execute(db: &DB, (): ()) -> () {
-        db.volatile_b(())
-    }
+fn volatile_a(db: &impl Database, (): ()) -> () {
+    db.volatile_b(())
 }
 
-impl<DB: Database> salsa::QueryFunction<DB> for VolatileB {
-    fn execute(db: &DB, (): ()) -> () {
-        db.volatile_a(())
-    }
+fn volatile_b(db: &impl Database, (): ()) -> () {
+    db.volatile_a(())
 }
 
 #[test]
