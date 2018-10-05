@@ -7,6 +7,7 @@ use crate::QueryDescriptor;
 use crate::QueryFunction;
 use crate::QueryStorageOps;
 use crate::QueryTable;
+use crate::UncheckedMutQueryStorageOps;
 use log::debug;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
@@ -258,5 +259,28 @@ where
             Ok(v) => v.changed_at > revision,
             Err(CycleDetected) => true,
         }
+    }
+}
+
+impl<DB, Q> UncheckedMutQueryStorageOps<DB, Q> for MemoizedStorage<DB, Q>
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+{
+    fn set_unchecked(&self, db: &DB, key: &Q::Key, value: Q::Value) {
+        let key = key.clone();
+
+        let mut map_write = self.map.write();
+
+        let changed_at = db.salsa_runtime().current_revision();
+
+        map_write.insert(
+            key,
+            QueryState::Memoized(Memo {
+                stamped_value: StampedValue { value, changed_at },
+                inputs: QueryDescriptorSet::new(),
+                verified_at: changed_at,
+            }),
+        );
     }
 }

@@ -227,7 +227,7 @@ impl<DB: Database> std::fmt::Debug for QueryDescriptorSet<DB> {
 }
 
 impl<DB: Database> QueryDescriptorSet<DB> {
-    fn new() -> Self {
+    crate fn new() -> Self {
         QueryDescriptorSet {
             set: FxIndexSet::default(),
         }

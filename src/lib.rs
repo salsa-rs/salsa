@@ -136,6 +136,17 @@ where
     fn set(&self, db: &DB, key: &Q::Key, new_value: Q::Value);
 }
 
+/// An optional trait that is implemented for "user mutable" storage:
+/// that is, storage whose value is not derived from other storage but
+/// is set independently.
+pub trait UncheckedMutQueryStorageOps<DB, Q>: Default
+where
+    DB: Database,
+    Q: Query<DB>,
+{
+    fn set_unchecked(&self, db: &DB, key: &Q::Key, new_value: Q::Value);
+}
+
 #[derive(new)]
 pub struct QueryTable<'me, DB, Q>
 where
@@ -178,6 +189,22 @@ where
         Q::Storage: MutQueryStorageOps<DB, Q>,
     {
         self.storage.set(self.db, &key, value);
+    }
+
+    /// Assigns a value to the query **bypassing the normal
+    /// incremental checking** -- this value becomes the value for the
+    /// query in the current revision. This can even be used on
+    /// "derived" queries (so long as their results are memoized).
+    ///
+    /// **This is only meant to be used for "mocking" purposes in
+    /// tests** -- when testing a given query, you can use
+    /// `set_unchecked` to assign the values for its various inputs
+    /// and thus control what it sees when it executes.
+    pub fn set_unchecked(&self, key: Q::Key, value: Q::Value)
+    where
+        Q::Storage: UncheckedMutQueryStorageOps<DB, Q>,
+    {
+        self.storage.set_unchecked(self.db, &key, value);
     }
 
     fn descriptor(&self, key: &Q::Key) -> DB::QueryDescriptor {
