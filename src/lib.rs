@@ -64,6 +64,10 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type Storage: QueryStorageOps<DB, Self> + Send + Sync;
 }
 
+pub trait GetQueryTable<Q: Query<Self>>: Database {
+    fn get_query_table(db: &Self) -> QueryTable<'_, Self, Q>;
+}
+
 pub trait QueryStorageOps<DB, Q>: Default
 where
     DB: Database,
@@ -232,7 +236,17 @@ impl DefaultKey for () {
 #[macro_export]
 macro_rules! query_prototype {
     (
-        $(#[$attr:meta])* $v:vis trait $name:ident $($t:tt)*
+        $(#[$attr:meta])* $v:vis trait $name:ident { $($t:tt)* }
+    ) => {
+        $crate::query_prototype! {
+            attr[$(#[$attr])*];
+            headers[$v, $name, ];
+            tokens[{ $($t)* }];
+        }
+    };
+
+    (
+        $(#[$attr:meta])* $v:vis trait $name:ident : $($t:tt)*
     ) => {
         $crate::query_prototype! {
             attr[$(#[$attr])*];
@@ -241,6 +255,7 @@ macro_rules! query_prototype {
         }
     };
 
+    // Base case: found the trait body
     (
         attr[$($trait_attr:tt)*];
         headers[$v:vis, $name:ident, $($header:tt)*];
@@ -251,14 +266,18 @@ macro_rules! query_prototype {
             )*
         }];
     ) => {
-        $($trait_attr)* $v trait $name $($header)* {
+        $($trait_attr)* $v trait $name: $($crate::GetQueryTable<$query_type> +)* $($header)* {
             $(
                 $(#[$method_attr])*
-                fn $method_name(&self) -> $crate::QueryTable<'_, Self, $query_type>;
+                fn $method_name(&self) -> $crate::QueryTable<'_, Self, $query_type> {
+                    <Self as $crate::GetQueryTable<$query_type>>::get_query_table(self)
+                }
             )*
         }
     };
 
+    // Recursive case: found some more part of the trait header.
+    // Keep pulling out tokens until we find the body.
     (
         attr[$($attr:tt)*];
         headers[$($headers:tt)*];
@@ -554,14 +573,16 @@ macro_rules! database_storage {
         }
 
         $(
-            impl $TraitName for $Database {
-                $(
-                    fn $query_method(
-                        &self,
+            impl $TraitName for $Database { }
+
+            $(
+                impl $crate::GetQueryTable<$QueryType> for $Database {
+                    fn get_query_table(
+                        db: &Self,
                     ) -> $crate::QueryTable<'_, Self, $QueryType> {
                         $crate::QueryTable::new(
-                            self,
-                            &$crate::Database::salsa_runtime(self)
+                            db,
+                            &$crate::Database::salsa_runtime(db)
                                 .storage()
                                 .$query_method,
                             |_, key| {
@@ -571,9 +592,9 @@ macro_rules! database_storage {
                                 }
                             },
                         )
+                    }
                 }
-                )*
-            }
+            )*
         )*
     };
 }
