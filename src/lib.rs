@@ -316,7 +316,7 @@ macro_rules! query_group {
         @query_fn[
             storage(input);
             method_name($method_name:ident);
-            fn_path($($fn_path:tt)+);
+            fn_path($fn_path:path);
             $($rest:tt)*
         ]
     ) => {
