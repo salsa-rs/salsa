@@ -1,5 +1,5 @@
 use crate::implementation::{TestContext, TestContextImpl};
-use salsa::Query;
+use salsa::Database;
 
 salsa::query_prototype! {
     crate trait MemoizedInputsContext: TestContext {
@@ -36,7 +36,7 @@ fn revalidate() {
     assert_eq!(v, 0);
     db.assert_log(&[]);
 
-    Input1.set(db, (), 44);
+    db.query(Input1).set((), 44);
     db.assert_log(&[]);
 
     let v = db.max(());
@@ -47,11 +47,11 @@ fn revalidate() {
     assert_eq!(v, 44);
     db.assert_log(&[]);
 
-    Input1.set(db, (), 44);
+    db.query(Input1).set((), 44);
     db.assert_log(&[]);
-    Input2.set(db, (), 66);
+    db.query(Input2).set((), 66);
     db.assert_log(&[]);
-    Input1.set(db, (), 64);
+    db.query(Input1).set((), 64);
     db.assert_log(&[]);
 
     let v = db.max(());

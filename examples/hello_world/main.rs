@@ -1,4 +1,4 @@
-use salsa::Query;
+use salsa::Database;
 use std::sync::Arc;
 
 ///////////////////////////////////////////////////////////////////////////
@@ -77,7 +77,8 @@ fn main() {
 
     println!("Initially, the length is {}.", db.length(()));
 
-    InputString.set(&db, (), Arc::new(format!("Hello, world")));
+    db.query(InputString)
+        .set((), Arc::new(format!("Hello, world")));
 
     println!("Now, the length is {}.", db.length(()));
 }

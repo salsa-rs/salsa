@@ -28,6 +28,17 @@ pub mod volatile;
 pub trait Database: DatabaseStorageTypes {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &runtime::Runtime<Self>;
+
+    /// Get access to extra methods pertaining to a given query,
+    /// notably `set` (for inputs).
+    #[allow(unused_variables)]
+    fn query<Q>(&self, query: Q) -> QueryTable<'_, Self, Q>
+    where
+        Q: Query<Self>,
+        Self: GetQueryTable<Q>,
+    {
+        <Self as GetQueryTable<Q>>::get_query_table(self)
+    }
 }
 
 /// Defines the `QueryDescriptor` associated type. An impl of this
@@ -62,21 +73,6 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type Key: Clone + Debug + Hash + Eq + Send;
     type Value: Clone + Debug + Hash + Eq + Send;
     type Storage: QueryStorageOps<DB, Self> + Send + Sync;
-
-    fn get(self, db: &DB, key: Self::Key) -> Self::Value
-    where
-        DB: GetQueryTable<Self>,
-    {
-        <DB as GetQueryTable<Self>>::get_query_table(db).get(key)
-    }
-
-    fn set(self, db: &DB, key: Self::Key, value: Self::Value)
-    where
-        DB: GetQueryTable<Self>,
-        Self::Storage: MutQueryStorageOps<DB, Self>,
-    {
-        <DB as GetQueryTable<Self>>::get_query_table(db).set(key, value)
-    }
 }
 
 pub trait GetQueryTable<Q: Query<Self>>: Database {
