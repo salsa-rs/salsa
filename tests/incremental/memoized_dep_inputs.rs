@@ -1,7 +1,7 @@
 use crate::implementation::{TestContext, TestContextImpl};
 use salsa::Database;
 
-salsa::query_prototype! {
+salsa::query_group! {
     crate trait MemoizedDepInputsContext: TestContext {
         fn dep_memoized2(key: ()) -> usize {
             type Memoized2;

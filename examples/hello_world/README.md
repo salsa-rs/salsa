@@ -12,18 +12,18 @@ In your program, however, you rarely interact with the **actual**
 database struct. Instead, you interact with database **traits** that
 you define. These traits define the set of queries that you need for
 any given piece of code. You define them using the
-`salsa::query_prototype!` macro.
+`salsa::query_group!` macro.
 
 Here is a simple example of a database trait from the `hello_world`
 example. It defines exactly two queries: `input_string` and
-`length`. You see that the `query_prototype!` macro just lists out the
+`length`. You see that the `query_group!` macro just lists out the
 names of the queries as methods (e.g., `input_string()`) and also a
 path to a type that will define the query (`InputString`). It doesn't
 give many other details: those are specified in the query definition
 that comes later. XXX out of date
 
 ```rust
-salsa::query_prototype! {
+salsa::query_group! {
     trait HelloWorldDatabase: salsa::Database {
         fn input_string(key: ()) -> Arc<String> {
             type InputString;

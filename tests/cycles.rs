@@ -22,7 +22,7 @@ salsa::database_storage! {
     }
 }
 
-salsa::query_prototype! {
+salsa::query_group! {
     trait Database: salsa::Database {
         // `a` and `b` depend on each other and form a cycle
         fn memoized_a(key: ()) -> () {

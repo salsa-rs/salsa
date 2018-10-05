@@ -9,7 +9,7 @@ use std::sync::Arc;
 // you would have many of these). For each query, we just give the
 // name of the accessor method (`input_string`) and link that to a
 // query type (`InputString`) that will be defined later.
-salsa::query_prototype! {
+salsa::query_group! {
     trait HelloWorldDatabase: salsa::Database {
         fn input_string(key: ()) -> Arc<String> {
             type InputString;

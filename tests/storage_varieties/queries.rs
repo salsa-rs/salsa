@@ -2,7 +2,7 @@ crate trait Counter: salsa::Database {
     fn increment(&self) -> usize;
 }
 
-salsa::query_prototype! {
+salsa::query_group! {
     crate trait Database: Counter {
         fn memoized(key: ()) -> usize {
             type Memoized;

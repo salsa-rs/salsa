@@ -1,7 +1,7 @@
 use crate::implementation::{TestContext, TestContextImpl};
 use salsa::Database;
 
-salsa::query_prototype! {
+salsa::query_group! {
     crate trait MemoizedVolatileContext: TestContext {
         // Queries for testing a "volatile" value wrapped by
         // memoization.

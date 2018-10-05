@@ -219,7 +219,7 @@ impl DefaultKey for () {
 ///
 /// ```ignore
 /// trait TypeckDatabase {
-///     query_prototype! {
+///     query_group! {
 ///         /// Comments or other attributes can go here
 ///         fn my_query(input: u32) -> u64 {
 ///             type MyQuery;
@@ -230,11 +230,11 @@ impl DefaultKey for () {
 /// }
 /// ```
 #[macro_export]
-macro_rules! query_prototype {
+macro_rules! query_group {
     (
         $(#[$attr:meta])* $v:vis trait $name:ident { $($t:tt)* }
     ) => {
-        $crate::query_prototype! {
+        $crate::query_group! {
             attr[$(#[$attr])*];
             headers[$v, $name, ];
             tokens[{ $($t)* }];
@@ -244,7 +244,7 @@ macro_rules! query_prototype {
     (
         $(#[$attr:meta])* $v:vis trait $name:ident : $($t:tt)*
     ) => {
-        $crate::query_prototype! {
+        $crate::query_group! {
             attr[$(#[$attr])*];
             headers[$v, $name, ];
             tokens[$($t)*];
@@ -286,10 +286,10 @@ macro_rules! query_prototype {
             {
                 type Key = $key_ty;
                 type Value = $value_ty;
-                type Storage = $crate::query_prototype! { @storage_ty[DB, Self, $($storage)*] };
+                type Storage = $crate::query_group! { @storage_ty[DB, Self, $($storage)*] };
             }
 
-            $crate::query_prototype! {
+            $crate::query_group! {
                 @query_fn[
                     storage($($storage)*);
                     method_name($method_name);
@@ -335,7 +335,7 @@ macro_rules! query_prototype {
         ]
     ) => {
         // default to `use fn $method_name`
-        $crate::query_prototype! {
+        $crate::query_group! {
             @query_fn[
                 storage($($storage)*);
                 method_name($method_name);
@@ -372,7 +372,7 @@ macro_rules! query_prototype {
         headers[$($headers:tt)*];
         tokens[$token:tt $($tokens:tt)*];
     ) => {
-        $crate::query_prototype! {
+        $crate::query_group! {
             attr[$($attr)*];
             headers[$($headers)* $token];
             tokens[$($tokens)*];
@@ -384,7 +384,7 @@ macro_rules! query_prototype {
         // Default case:
         @storage_ty[$DB:ident, $Self:ident, ]
     ) => {
-        $crate::query_prototype! { @storage_ty[$DB, $Self, memoized] }
+        $crate::query_group! { @storage_ty[$DB, $Self, memoized] }
     };
 
     (

@@ -1,7 +1,7 @@
 use crate::implementation::{TestContext, TestContextImpl};
 use salsa::Database;
 
-salsa::query_prototype! {
+salsa::query_group! {
     crate trait MemoizedInputsContext: TestContext {
         fn max(key: ()) -> usize {
             type Max;
