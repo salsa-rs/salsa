@@ -8,6 +8,7 @@ use crate::Query;
 use crate::QueryDescriptor;
 use crate::QueryStorageOps;
 use crate::QueryTable;
+use crate::UncheckedMutQueryStorageOps;
 use log::debug;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
@@ -131,6 +132,25 @@ where
         // (Otherwise, someone else might write a *newer* revision
         // into the same cell while we block on the lock.)
         let changed_at = db.salsa_runtime().increment_revision();
+
+        map_write.insert(key, StampedValue { value, changed_at });
+    }
+}
+
+impl<DB, Q> UncheckedMutQueryStorageOps<DB, Q> for InputStorage<DB, Q>
+where
+    Q: Query<DB>,
+    DB: Database,
+    Q::Value: Default,
+{
+    fn set_unchecked(&self, db: &DB, key: &Q::Key, value: Q::Value) {
+        let key = key.clone();
+
+        let mut map_write = self.map.write();
+
+        // Unlike with `set`, here we use the **current revision** and
+        // do not create a new one.
+        let changed_at = db.salsa_runtime().current_revision();
 
         map_write.insert(key, StampedValue { value, changed_at });
     }
