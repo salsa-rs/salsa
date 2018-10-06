@@ -18,16 +18,56 @@ use std::fmt::Debug;
 use std::fmt::Display;
 use std::fmt::Write;
 use std::hash::Hash;
+use std::marker::PhantomData;
 
 /// Memoized queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
 /// none of those inputs have changed.
-pub struct MemoizedStorage<DB, Q>
+pub type MemoizedStorage<DB, Q> = WeakMemoizedStorage<DB, Q, AlwaysMemoizeValue>;
+
+/// "Dependency" queries just track their dependencies and not the
+/// actual value (which they produce on demand). This lessens the
+/// storage requirements.
+pub type DependencyStorage<DB, Q> = WeakMemoizedStorage<DB, Q, NeverMemoizeValue>;
+
+pub struct WeakMemoizedStorage<DB, Q, M>
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+    M: ShouldMemoizeValue<DB, Q>,
+{
+    map: RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
+    m: PhantomData<M>,
+}
+
+pub trait ShouldMemoizeValue<DB, Q>
 where
     Q: QueryFunction<DB>,
     DB: Database,
 {
-    map: RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
+    fn should_memoize_value(key: &Q::Key) -> bool;
+}
+
+pub enum AlwaysMemoizeValue {}
+impl<DB, Q> ShouldMemoizeValue<DB, Q> for AlwaysMemoizeValue
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+{
+    fn should_memoize_value(_key: &Q::Key) -> bool {
+        true
+    }
+}
+
+pub enum NeverMemoizeValue {}
+impl<DB, Q> ShouldMemoizeValue<DB, Q> for NeverMemoizeValue
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+{
+    fn should_memoize_value(_key: &Q::Key) -> bool {
+        false
+    }
 }
 
 /// Defines the "current state" of query's memoized results.
@@ -49,7 +89,11 @@ where
     Q: QueryFunction<DB>,
     DB: Database,
 {
-    stamped_value: StampedValue<Q::Value>,
+    /// Last time the value has actually changed.
+    /// changed_at can be less than verified_at.
+    changed_at: Revision,
+    /// The result of the query, if we decide to memoize it.
+    value: Option<Q::Value>,
 
     inputs: QueryDescriptorSet<DB>,
 
@@ -61,22 +105,25 @@ where
     verified_at: Revision,
 }
 
-impl<DB, Q> Default for MemoizedStorage<DB, Q>
+impl<DB, Q, M> Default for WeakMemoizedStorage<DB, Q, M>
 where
     Q: QueryFunction<DB>,
     DB: Database,
+    M: ShouldMemoizeValue<DB, Q>,
 {
     fn default() -> Self {
-        MemoizedStorage {
+        WeakMemoizedStorage {
             map: RwLock::new(FxHashMap::default()),
+            m: PhantomData,
         }
     }
 }
 
-impl<DB, Q> MemoizedStorage<DB, Q>
+impl<DB, Q, M> WeakMemoizedStorage<DB, Q, M>
 where
     Q: QueryFunction<DB>,
     DB: Database,
+    M: ShouldMemoizeValue<DB, Q>,
 {
     fn read(
         &self,
@@ -105,16 +152,22 @@ where
                             key,
                             m.verified_at,
                         );
-
+                        // We've found that the query is defenitelly up-to-date.
+                        // If the value is also memoized, return it.
+                        // Otherwise fallback to recomputing the value.
                         if m.verified_at == revision_now {
-                            debug!(
-                                "{:?}({:?}): returning memoized value (changed_at={:?})",
-                                Q::default(),
-                                key,
-                                m.stamped_value.changed_at,
-                            );
-
-                            return Ok(m.stamped_value.clone());
+                            if let Some(value) = &m.value {
+                                debug!(
+                                    "{:?}({:?}): returning memoized value (changed_at={:?})",
+                                    Q::default(),
+                                    key,
+                                    m.changed_at,
+                                );
+                                return Ok(StampedValue {
+                                    value: value.clone(),
+                                    changed_at: m.changed_at,
+                                });
+                            };
                         }
                     }
                 }
@@ -129,25 +182,29 @@ where
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
         if let Some(QueryState::Memoized(old_memo)) = &mut old_value {
-            if old_memo.inputs.iter().all(|old_input| {
-                !old_input.maybe_changed_since(db, old_memo.stamped_value.changed_at)
-            }) {
+            if old_memo
+                .inputs
+                .iter()
+                .all(|old_input| !old_input.maybe_changed_since(db, old_memo.changed_at))
+            {
                 debug!("{:?}({:?}): inputs still valid", Q::default(), key);
+                if old_memo.value.is_some() {
+                    // If none of out inputs have changed since the last time we refreshed
+                    // our value, then our value must still be good. We'll just patch
+                    // the verified-at date and re-use it.
+                    old_memo.verified_at = revision_now;
+                    let value = old_memo.value.clone().unwrap();
+                    let changed_at = old_memo.changed_at;
 
-                // If none of out inputs have changed since the last time we refreshed
-                // our value, then our value must still be good. We'll just patch
-                // the verified-at date and re-use it.
-                old_memo.verified_at = revision_now;
-                let stamped_value = old_memo.stamped_value.clone();
-
-                let mut map_write = self.map.write();
-                self.overwrite_placeholder(&mut map_write, key, old_value.unwrap());
-                return Ok(stamped_value);
+                    let mut map_write = self.map.write();
+                    self.overwrite_placeholder(&mut map_write, key, old_value.unwrap());
+                    return Ok(StampedValue { value, changed_at });
+                }
             }
         }
 
-        // Query was not previously executed or value is potentially
-        // stale. Let's execute!
+        // Query was not previously executed, or value is potentially
+        // stale, or value is absent. Let's execute!
         let (mut stamped_value, inputs) = db
             .salsa_runtime()
             .execute_query_implementation::<Q>(db, descriptor, key);
@@ -166,19 +223,25 @@ where
         // "backdate" its `changed_at` revision to be the same as the
         // old value.
         if let Some(QueryState::Memoized(old_memo)) = &old_value {
-            if old_memo.stamped_value.value == stamped_value.value {
-                assert!(old_memo.stamped_value.changed_at <= stamped_value.changed_at);
-                stamped_value.changed_at = old_memo.stamped_value.changed_at;
+            if old_memo.value.as_ref() == Some(&stamped_value.value) {
+                assert!(old_memo.changed_at <= stamped_value.changed_at);
+                stamped_value.changed_at = old_memo.changed_at;
             }
         }
 
         {
+            let value = if self.should_memoize_value(key) {
+                Some(stamped_value.value.clone())
+            } else {
+                None
+            };
             let mut map_write = self.map.write();
             self.overwrite_placeholder(
                 &mut map_write,
                 key,
                 QueryState::Memoized(Memo {
-                    stamped_value: stamped_value.clone(),
+                    changed_at: stamped_value.changed_at,
+                    value,
                     inputs,
                     verified_at: revision_now,
                 }),
@@ -203,12 +266,17 @@ where
             "expected in-progress state",
         );
     }
+
+    fn should_memoize_value(&self, key: &Q::Key) -> bool {
+        M::should_memoize_value(key)
+    }
 }
 
-impl<DB, Q> QueryStorageOps<DB, Q> for MemoizedStorage<DB, Q>
+impl<DB, Q, M> QueryStorageOps<DB, Q> for WeakMemoizedStorage<DB, Q, M>
 where
     Q: QueryFunction<DB>,
     DB: Database,
+    M: ShouldMemoizeValue<DB, Q>,
 {
     fn try_fetch<'q>(
         &self,
@@ -240,32 +308,60 @@ where
             revision_now,
         );
 
-        // Check for the case where we have no cache entry, or our cache
-        // entry is up to date (common case):
-        {
-            let map_read = self.map.read();
+        let value = {
+            let map_read = self.map.upgradable_read();
             match map_read.get(key) {
                 None | Some(QueryState::InProgress) => return true,
                 Some(QueryState::Memoized(memo)) => {
-                    if memo.verified_at >= revision_now {
-                        return memo.stamped_value.changed_at > revision;
+                    // If our memo is still up to date, then check if we've
+                    // changed since the revision.
+                    if memo.verified_at == revision_now {
+                        return memo.changed_at > revision;
+                    }
+                    if memo.value.is_some() {
+                        // Otherwise, if we cache values, fall back to the full read to compute the result.
+                        drop(memo);
+                        drop(map_read);
+                        return match self.read(db, key, descriptor) {
+                            Ok(v) => v.changed_at > revision,
+                            Err(CycleDetected) => true,
+                        };
                     }
                 }
-            }
+            };
+            // If, however, we don't cache values, then optimistically
+            // try to advance `verified_at` by walking the inputs.
+            let mut map_write = RwLockUpgradableReadGuard::upgrade(map_read);
+            map_write.insert(key.clone(), QueryState::InProgress)
+        };
+
+        let mut memo = match value {
+            Some(QueryState::Memoized(memo)) => memo,
+            _ => unreachable!(),
+        };
+
+        if memo
+            .inputs
+            .iter()
+            .all(|old_input| !old_input.maybe_changed_since(db, memo.verified_at))
+        {
+            memo.verified_at = revision_now;
+            self.overwrite_placeholder(&mut self.map.write(), key, QueryState::Memoized(memo));
+            return false;
         }
 
-        // Otherwise fall back to the full read to compute the result.
-        match self.read(db, key, descriptor) {
-            Ok(v) => v.changed_at > revision,
-            Err(CycleDetected) => true,
-        }
+        // Just remove the existing entry. It's out of date.
+        self.map.write().remove(key);
+
+        true
     }
 }
 
-impl<DB, Q> UncheckedMutQueryStorageOps<DB, Q> for MemoizedStorage<DB, Q>
+impl<DB, Q, M> UncheckedMutQueryStorageOps<DB, Q> for WeakMemoizedStorage<DB, Q, M>
 where
     Q: QueryFunction<DB>,
     DB: Database,
+    M: ShouldMemoizeValue<DB, Q>,
 {
     fn set_unchecked(&self, db: &DB, key: &Q::Key, value: Q::Value) {
         let key = key.clone();
@@ -277,7 +373,8 @@ where
         map_write.insert(
             key,
             QueryState::Memoized(Memo {
-                stamped_value: StampedValue { value, changed_at },
+                value: Some(value),
+                changed_at,
                 inputs: QueryDescriptorSet::new(),
                 verified_at: changed_at,
             }),
