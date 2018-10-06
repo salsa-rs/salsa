@@ -196,6 +196,12 @@ where
     /// query in the current revision. This can even be used on
     /// "derived" queries (so long as their results are memoized).
     ///
+    /// Note that once `set_unchecked` is used, the result is
+    /// effectively "fixed" for all future revisions. This "mocking"
+    /// system is pretty primitive and subject to revision; see
+    /// [salsa-rs/salsa#34](https://github.com/salsa-rs/salsa/issues/34)
+    /// for more details.
+    ///
     /// **This is only meant to be used for "mocking" purposes in
     /// tests** -- when testing a given query, you can use
     /// `set_unchecked` to assign the values for its various inputs
