@@ -8,14 +8,14 @@ use crate::compiler::{CompilerDatabase, Interner};
 /// persists longer than a single query execution.**
 ///
 /// Databases can contain whatever you want them to, but salsa
-/// requires you to add a `salsa::runtime::Runtime` member. Note
+/// requires you to add a `salsa::Runtime` member. Note
 /// though: you should be very careful if adding shared, mutable state
 /// to your context (e.g., a shared counter or some such thing). If
 /// mutations to that shared state affect the results of your queries,
 /// that's going to mess up the incremental results.
 #[derive(Default)]
 pub struct DatabaseImpl {
-    runtime: salsa::runtime::Runtime<DatabaseImpl>,
+    runtime: salsa::Runtime<DatabaseImpl>,
 
     /// An interner is an example of shared mutable state that would
     /// be ok: although the interner allocates internally when you
@@ -26,7 +26,7 @@ pub struct DatabaseImpl {
 
 /// This impl tells salsa where to find the salsa runtime.
 impl salsa::Database for DatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<DatabaseImpl> {
+    fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseImpl> {
         &self.runtime
     }
 }

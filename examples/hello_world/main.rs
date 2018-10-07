@@ -68,12 +68,12 @@ fn length(db: &impl HelloWorldDatabase, (): ()) -> usize {
 // runtime but can also contain anything else you need.
 #[derive(Default)]
 struct DatabaseStruct {
-    runtime: salsa::runtime::Runtime<DatabaseStruct>,
+    runtime: salsa::Runtime<DatabaseStruct>,
 }
 
 // Tell salsa where to find the runtime in your context.
 impl salsa::Database for DatabaseStruct {
-    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<DatabaseStruct> {
+    fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseStruct> {
         &self.runtime
     }
 }
