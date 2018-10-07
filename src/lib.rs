@@ -70,8 +70,8 @@ pub trait QueryFunction<DB: Database>: Query<DB> {
 }
 
 pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
-    type Key: Clone + Debug + Hash + Eq + Send;
-    type Value: Clone + Debug + Hash + Eq + Send;
+    type Key: Clone + Debug + Hash + Eq;
+    type Value: Clone + Debug + Hash + Eq;
     type Storage: QueryStorageOps<DB, Self> + Send + Sync;
 }
 
