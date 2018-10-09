@@ -22,12 +22,14 @@ pub mod memoized;
 pub mod runtime;
 pub mod volatile;
 
+pub use crate::runtime::Runtime;
+
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
 pub trait Database: DatabaseStorageTypes {
     /// Gives access to the underlying salsa runtime.
-    fn salsa_runtime(&self) -> &runtime::Runtime<Self>;
+    fn salsa_runtime(&self) -> &Runtime<Self>;
 
     /// Get access to extra methods pertaining to a given query,
     /// notably `set` (for inputs).

@@ -11,7 +11,7 @@ crate trait TestContext: salsa::Database {
 
 #[derive(Default)]
 crate struct TestContextImpl {
-    runtime: salsa::runtime::Runtime<TestContextImpl>,
+    runtime: salsa::Runtime<TestContextImpl>,
     clock: Counter,
     log: Log,
 }
@@ -76,7 +76,7 @@ impl TestContext for TestContextImpl {
 }
 
 impl salsa::Database for TestContextImpl {
-    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<TestContextImpl> {
+    fn salsa_runtime(&self) -> &salsa::Runtime<TestContextImpl> {
         &self.runtime
     }
 }

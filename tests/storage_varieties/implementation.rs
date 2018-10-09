@@ -3,7 +3,7 @@ use std::cell::Cell;
 
 #[derive(Default)]
 pub struct DatabaseImpl {
-    runtime: salsa::runtime::Runtime<DatabaseImpl>,
+    runtime: salsa::Runtime<DatabaseImpl>,
     counter: Cell<usize>,
 }
 
@@ -25,7 +25,7 @@ impl queries::Counter for DatabaseImpl {
 }
 
 impl salsa::Database for DatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<DatabaseImpl> {
+    fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseImpl> {
         &self.runtime
     }
 }

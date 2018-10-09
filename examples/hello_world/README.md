@@ -121,11 +121,11 @@ where to find this runtime:
 ```rust
 #[derive(Default)]
 struct DatabaseStruct {
-    runtime: salsa::runtime::Runtime<DatabaseStruct>,
+    runtime: salsa::Runtime<DatabaseStruct>,
 }
 
 impl salsa::Database for DatabaseStruct {
-    fn salsa_runtime(&self) -> &salsa::runtime::Runtime<DatabaseStruct> {
+    fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseStruct> {
         &self.runtime
     }
 }
