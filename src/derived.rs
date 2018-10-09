@@ -24,19 +24,21 @@ use std::marker::PhantomData;
 /// Memoized queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
 /// none of those inputs have changed.
-pub type MemoizedStorage<DB, Q> = WeakMemoizedStorage<DB, Q, AlwaysMemoizeValue>;
+pub type MemoizedStorage<DB, Q> = DerivedStorage<DB, Q, AlwaysMemoizeValue>;
 
 /// "Dependency" queries just track their dependencies and not the
 /// actual value (which they produce on demand). This lessens the
 /// storage requirements.
-pub type DependencyStorage<DB, Q> = WeakMemoizedStorage<DB, Q, NeverMemoizeValue>;
+pub type DependencyStorage<DB, Q> = DerivedStorage<DB, Q, NeverMemoizeValue>;
 
 /// "Dependency" queries just track their dependencies and not the
 /// actual value (which they produce on demand). This lessens the
 /// storage requirements.
-pub type VolatileStorage<DB, Q> = WeakMemoizedStorage<DB, Q, VolatileValue>;
+pub type VolatileStorage<DB, Q> = DerivedStorage<DB, Q, VolatileValue>;
 
-pub struct WeakMemoizedStorage<DB, Q, MP>
+/// Handles storage where the value is 'derived' by executing a
+/// function (in contrast to "inputs").
+pub struct DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
@@ -138,21 +140,21 @@ where
     verified_at: Revision,
 }
 
-impl<DB, Q, MP> Default for WeakMemoizedStorage<DB, Q, MP>
+impl<DB, Q, MP> Default for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
     MP: MemoizationPolicy<DB, Q>,
 {
     fn default() -> Self {
-        WeakMemoizedStorage {
+        DerivedStorage {
             map: RwLock::new(FxHashMap::default()),
             policy: PhantomData,
         }
     }
 }
 
-impl<DB, Q, MP> WeakMemoizedStorage<DB, Q, MP>
+impl<DB, Q, MP> DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
@@ -311,7 +313,7 @@ where
     }
 }
 
-impl<DB, Q, MP> QueryStorageOps<DB, Q> for WeakMemoizedStorage<DB, Q, MP>
+impl<DB, Q, MP> QueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
@@ -392,7 +394,7 @@ where
     }
 }
 
-impl<DB, Q, MP> UncheckedMutQueryStorageOps<DB, Q> for WeakMemoizedStorage<DB, Q, MP>
+impl<DB, Q, MP> UncheckedMutQueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
