@@ -67,14 +67,14 @@ where
     }
 
     /// Read current value of the revision counter.
-    crate fn current_revision(&self) -> Revision {
+    pub(crate) fn current_revision(&self) -> Revision {
         Revision {
             generation: self.shared_state.revision.load(Ordering::SeqCst),
         }
     }
 
     /// Increments the current revision counter and returns the new value.
-    crate fn increment_revision(&self) -> Revision {
+    pub(crate) fn increment_revision(&self) -> Revision {
         if !self.local_state.borrow().query_stack.is_empty() {
             panic!("increment_revision invoked during a query computation");
         }
@@ -88,7 +88,7 @@ where
         result
     }
 
-    crate fn execute_query_implementation<V>(
+    pub(crate) fn execute_query_implementation<V>(
         &self,
         descriptor: &DB::QueryDescriptor,
         execute: impl FnOnce() -> V,
@@ -132,13 +132,13 @@ where
     /// - `descriptor`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    crate fn report_query_read(&self, descriptor: &DB::QueryDescriptor, changed_at: ChangedAt) {
+    pub(crate) fn report_query_read(&self, descriptor: &DB::QueryDescriptor, changed_at: ChangedAt) {
         if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
             top_query.add_read(descriptor, changed_at);
         }
     }
 
-    crate fn report_untracked_read(&self) {
+    pub(crate) fn report_untracked_read(&self) {
         if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
             let changed_at = ChangedAt::Revision(self.current_revision());
             top_query.add_untracked_read(changed_at);
@@ -146,7 +146,7 @@ where
     }
 
     /// Obviously, this should be user configurable at some point.
-    crate fn report_unexpected_cycle(&self, descriptor: DB::QueryDescriptor) -> ! {
+    pub(crate) fn report_unexpected_cycle(&self, descriptor: DB::QueryDescriptor) -> ! {
         let local_state = self.local_state.borrow();
         let LocalState { query_stack, .. } = &*local_state;
 
@@ -213,7 +213,7 @@ pub struct Revision {
 }
 
 impl Revision {
-    crate const ZERO: Self = Revision { generation: 0 };
+    pub(crate) const ZERO: Self = Revision { generation: 0 };
 }
 
 impl std::fmt::Debug for Revision {
@@ -243,7 +243,7 @@ impl ChangedAt {
 
 /// An insertion-order-preserving set of queries. Used to track the
 /// inputs accessed during query execution.
-crate enum QueryDescriptorSet<DB: Database> {
+pub(crate) enum QueryDescriptorSet<DB: Database> {
     /// All reads were to tracked things:
     Tracked(FxIndexSet<DB::QueryDescriptor>),
 
@@ -285,7 +285,7 @@ impl<DB: Database> QueryDescriptorSet<DB> {
 }
 
 #[derive(Clone, Debug)]
-crate struct StampedValue<V> {
-    crate value: V,
-    crate changed_at: ChangedAt,
+pub(crate) struct StampedValue<V> {
+    pub(crate) value: V,
+    pub(crate) changed_at: ChangedAt,
 }

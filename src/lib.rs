@@ -1,6 +1,5 @@
 #![deny(rust_2018_idioms)]
 #![feature(in_band_lifetimes)]
-#![feature(crate_visibility_modifier)]
 #![feature(nll)]
 #![feature(integer_atomics)]
 #![allow(dead_code)]

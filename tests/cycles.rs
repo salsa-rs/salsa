@@ -1,5 +1,3 @@
-#![feature(crate_visibility_modifier)]
-
 #[derive(Default)]
 pub struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,
