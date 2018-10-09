@@ -30,17 +30,17 @@ pub type MemoizedStorage<DB, Q> = WeakMemoizedStorage<DB, Q, AlwaysMemoizeValue>
 /// storage requirements.
 pub type DependencyStorage<DB, Q> = WeakMemoizedStorage<DB, Q, NeverMemoizeValue>;
 
-pub struct WeakMemoizedStorage<DB, Q, M>
+pub struct WeakMemoizedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
-    M: ShouldMemoizeValue<DB, Q>,
+    MP: MemoizationPolicy<DB, Q>,
 {
     map: RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
-    m: PhantomData<M>,
+    policy: PhantomData<MP>,
 }
 
-pub trait ShouldMemoizeValue<DB, Q>
+pub trait MemoizationPolicy<DB, Q>
 where
     Q: QueryFunction<DB>,
     DB: Database,
@@ -49,7 +49,7 @@ where
 }
 
 pub enum AlwaysMemoizeValue {}
-impl<DB, Q> ShouldMemoizeValue<DB, Q> for AlwaysMemoizeValue
+impl<DB, Q> MemoizationPolicy<DB, Q> for AlwaysMemoizeValue
 where
     Q: QueryFunction<DB>,
     DB: Database,
@@ -60,7 +60,7 @@ where
 }
 
 pub enum NeverMemoizeValue {}
-impl<DB, Q> ShouldMemoizeValue<DB, Q> for NeverMemoizeValue
+impl<DB, Q> MemoizationPolicy<DB, Q> for NeverMemoizeValue
 where
     Q: QueryFunction<DB>,
     DB: Database,
@@ -106,25 +106,25 @@ where
     verified_at: Revision,
 }
 
-impl<DB, Q, M> Default for WeakMemoizedStorage<DB, Q, M>
+impl<DB, Q, MP> Default for WeakMemoizedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
-    M: ShouldMemoizeValue<DB, Q>,
+    MP: MemoizationPolicy<DB, Q>,
 {
     fn default() -> Self {
         WeakMemoizedStorage {
             map: RwLock::new(FxHashMap::default()),
-            m: PhantomData,
+            policy: PhantomData,
         }
     }
 }
 
-impl<DB, Q, M> WeakMemoizedStorage<DB, Q, M>
+impl<DB, Q, MP> WeakMemoizedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
-    M: ShouldMemoizeValue<DB, Q>,
+    MP: MemoizationPolicy<DB, Q>,
 {
     fn read(
         &self,
@@ -270,15 +270,15 @@ where
     }
 
     fn should_memoize_value(&self, key: &Q::Key) -> bool {
-        M::should_memoize_value(key)
+        MP::should_memoize_value(key)
     }
 }
 
-impl<DB, Q, M> QueryStorageOps<DB, Q> for WeakMemoizedStorage<DB, Q, M>
+impl<DB, Q, MP> QueryStorageOps<DB, Q> for WeakMemoizedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
-    M: ShouldMemoizeValue<DB, Q>,
+    MP: MemoizationPolicy<DB, Q>,
 {
     fn try_fetch<'q>(
         &self,
@@ -359,11 +359,11 @@ where
     }
 }
 
-impl<DB, Q, M> UncheckedMutQueryStorageOps<DB, Q> for WeakMemoizedStorage<DB, Q, M>
+impl<DB, Q, MP> UncheckedMutQueryStorageOps<DB, Q> for WeakMemoizedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
-    M: ShouldMemoizeValue<DB, Q>,
+    MP: MemoizationPolicy<DB, Q>,
 {
     fn set_unchecked(&self, db: &DB, key: &Q::Key, value: Q::Value) {
         let key = key.clone();
