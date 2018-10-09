@@ -194,14 +194,22 @@ impl<DB: Database> ActiveQuery<DB> {
     fn new(descriptor: DB::QueryDescriptor) -> Self {
         ActiveQuery {
             descriptor,
-            changed_at: ChangedAt::Revision(Revision::ZERO),
+            changed_at: ChangedAt::Constant,
             subqueries: QueryDescriptorSet::default(),
         }
     }
 
     fn add_read(&mut self, subquery: &DB::QueryDescriptor, changed_at: ChangedAt) {
-        self.subqueries.insert(subquery.clone());
-        self.changed_at = self.changed_at.max(changed_at);
+        match changed_at {
+            ChangedAt::Constant => {
+                // When we read constant values, we don't need to
+                // track the source of the value.
+            }
+            ChangedAt::Revision(_) => {
+                self.subqueries.insert(subquery.clone());
+                self.changed_at = self.changed_at.max(changed_at);
+            }
+        }
     }
 
     fn add_untracked_read(&mut self, changed_at: ChangedAt) {
@@ -232,6 +240,10 @@ impl std::fmt::Debug for Revision {
 /// changed.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ChangedAt {
+    /// Will never change again.
+    Constant,
+
+    /// Last changed in the given revision. May change in the future.
     Revision(Revision),
 }
 
@@ -239,6 +251,7 @@ impl ChangedAt {
     /// True if this value has changed after `revision`.
     pub fn changed_since(self, revision: Revision) -> bool {
         match self {
+            ChangedAt::Constant => false,
             ChangedAt::Revision(r) => r > revision,
         }
     }
