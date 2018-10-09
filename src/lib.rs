@@ -156,7 +156,7 @@ where
 
 pub struct CycleDetected;
 
-impl<'me, DB, Q> QueryTable<'me, DB, Q>
+impl<DB, Q> QueryTable<'_, DB, Q>
 where
     DB: Database,
     Q: Query<DB>,

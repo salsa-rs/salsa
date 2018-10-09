@@ -323,9 +323,9 @@ where
     DB: Database,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn try_fetch<'q>(
+    fn try_fetch(
         &self,
-        db: &'q DB,
+        db: &DB,
         key: &Q::Key,
         descriptor: &DB::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected> {
@@ -336,9 +336,9 @@ where
         Ok(value)
     }
 
-    fn maybe_changed_since<'q>(
+    fn maybe_changed_since(
         &self,
-        db: &'q DB,
+        db: &DB,
         revision: Revision,
         key: &Q::Key,
         descriptor: &DB::QueryDescriptor,
