@@ -79,8 +79,10 @@ where
             panic!("increment_revision invoked during a query computation");
         }
 
+        let old_revision = self.shared_state.revision.fetch_add(1, Ordering::SeqCst);
+        assert!(old_revision != usize::max_value());
         let result = Revision {
-            generation: 1 + self.shared_state.revision.fetch_add(1, Ordering::SeqCst) as u64,
+            generation: 1 + old_revision as u64,
         };
 
         debug!("increment_revision: incremented to {:?}", result);
