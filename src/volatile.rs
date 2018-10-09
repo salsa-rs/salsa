@@ -1,3 +1,4 @@
+use crate::runtime::ChangedAt;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
@@ -68,10 +69,9 @@ where
         let was_in_progress = self.in_progress.lock().remove(key);
         assert!(was_in_progress);
 
-        let revision_now = db.salsa_runtime().current_revision();
+        let changed_at = ChangedAt::Revision(db.salsa_runtime().current_revision());
 
-        db.salsa_runtime()
-            .report_query_read(descriptor, revision_now);
+        db.salsa_runtime().report_query_read(descriptor, changed_at);
 
         Ok(value)
     }

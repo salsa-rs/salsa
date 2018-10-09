@@ -136,7 +136,7 @@ where
     /// - `descriptor`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    crate fn report_query_read(&self, descriptor: &DB::QueryDescriptor, changed_at: Revision) {
+    crate fn report_query_read(&self, descriptor: &DB::QueryDescriptor, changed_at: ChangedAt) {
         if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
             top_query.add_read(descriptor, changed_at);
         }
@@ -178,7 +178,7 @@ struct ActiveQuery<DB: Database> {
     descriptor: DB::QueryDescriptor,
 
     /// Records the maximum revision where any subquery changed
-    changed_at: Revision,
+    changed_at: ChangedAt,
 
     /// Each subquery
     subqueries: QueryDescriptorSet<DB>,
@@ -188,12 +188,12 @@ impl<DB: Database> ActiveQuery<DB> {
     fn new(descriptor: DB::QueryDescriptor) -> Self {
         ActiveQuery {
             descriptor,
-            changed_at: Revision::ZERO,
+            changed_at: ChangedAt::Revision(Revision::ZERO),
             subqueries: QueryDescriptorSet::new(),
         }
     }
 
-    fn add_read(&mut self, subquery: &DB::QueryDescriptor, changed_at: Revision) {
+    fn add_read(&mut self, subquery: &DB::QueryDescriptor, changed_at: ChangedAt) {
         self.subqueries.insert(subquery.clone());
         self.changed_at = self.changed_at.max(changed_at);
     }
@@ -211,6 +211,25 @@ impl Revision {
 impl std::fmt::Debug for Revision {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(fmt, "R{}", self.generation)
+    }
+}
+
+/// Records when a stamped value changed.
+///
+/// Note: the order of variants is significant. We sometimes use `max`
+/// for example to find the "most recent revision" when something
+/// changed.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ChangedAt {
+    Revision(Revision),
+}
+
+impl ChangedAt {
+    /// True if this value has changed after `revision`.
+    pub fn changed_since(self, revision: Revision) -> bool {
+        match self {
+            ChangedAt::Revision(r) => r > revision,
+        }
     }
 }
 
@@ -249,5 +268,5 @@ impl<DB: Database> QueryDescriptorSet<DB> {
 #[derive(Clone, Debug)]
 crate struct StampedValue<V> {
     crate value: V,
-    crate changed_at: Revision,
+    crate changed_at: ChangedAt,
 }

@@ -1,3 +1,4 @@
+use crate::runtime::ChangedAt;
 use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
@@ -91,7 +92,7 @@ where
 {
     /// Last time the value has actually changed.
     /// changed_at can be less than verified_at.
-    changed_at: Revision,
+    changed_at: ChangedAt,
 
     /// The result of the query, if we decide to memoize it.
     value: Option<Q::Value>,
@@ -184,24 +185,18 @@ where
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
         if let Some(QueryState::Memoized(old_memo)) = &mut old_value {
-            if old_memo.value.is_some() {
-                if old_memo
-                    .inputs
-                    .iter()
-                    .all(|old_input| !old_input.maybe_changed_since(db, old_memo.changed_at))
-                {
-                    debug!("{:?}({:?}): inputs still valid", Q::default(), key);
-                    // If none of out inputs have changed since the last time we refreshed
-                    // our value, then our value must still be good. We'll just patch
-                    // the verified-at date and re-use it.
-                    old_memo.verified_at = revision_now;
-                    let value = old_memo.value.clone().unwrap();
-                    let changed_at = old_memo.changed_at;
+            if old_memo.validate_memoized_value(db) {
+                debug!("{:?}({:?}): inputs still valid", Q::default(), key);
+                // If none of out inputs have changed since the last time we refreshed
+                // our value, then our value must still be good. We'll just patch
+                // the verified-at date and re-use it.
+                old_memo.verified_at = revision_now;
+                let value = old_memo.value.clone().unwrap();
+                let changed_at = old_memo.changed_at;
 
-                    let mut map_write = self.map.write();
-                    self.overwrite_placeholder(&mut map_write, key, old_value.unwrap());
-                    return Ok(StampedValue { value, changed_at });
-                }
+                let mut map_write = self.map.write();
+                self.overwrite_placeholder(&mut map_write, key, old_value.unwrap());
+                return Ok(StampedValue { value, changed_at });
             }
         }
 
@@ -318,14 +313,14 @@ where
                     // If our memo is still up to date, then check if we've
                     // changed since the revision.
                     if memo.verified_at == revision_now {
-                        return memo.changed_at > revision;
+                        return memo.changed_at.changed_since(revision);
                     }
                     if memo.value.is_some() {
                         // Otherwise, if we cache values, fall back to the full read to compute the result.
                         drop(memo);
                         drop(map_read);
                         return match self.read(db, key, descriptor) {
-                            Ok(v) => v.changed_at > revision,
+                            Ok(v) => v.changed_at.changed_since(revision),
                             Err(CycleDetected) => true,
                         };
                     }
@@ -370,7 +365,8 @@ where
 
         let mut map_write = self.map.write();
 
-        let changed_at = db.salsa_runtime().current_revision();
+        let current_revision = db.salsa_runtime().current_revision();
+        let changed_at = ChangedAt::Revision(current_revision);
 
         map_write.insert(
             key,
@@ -378,8 +374,28 @@ where
                 value: Some(value),
                 changed_at,
                 inputs: QueryDescriptorSet::new(),
-                verified_at: changed_at,
+                verified_at: current_revision,
             }),
         );
+    }
+}
+
+impl<DB, Q> Memo<DB, Q>
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+{
+    fn validate_memoized_value(&self, db: &DB) -> bool {
+        // If we don't have a memoized value, nothing to validate.
+        if !self.value.is_some() {
+            return false;
+        }
+
+        match self.changed_at {
+            ChangedAt::Revision(revision) => self
+                .inputs
+                .iter()
+                .all(|old_input| !old_input.maybe_changed_since(db, revision)),
+        }
     }
 }
