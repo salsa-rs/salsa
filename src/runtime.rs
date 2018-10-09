@@ -6,7 +6,7 @@ use rustc_hash::FxHasher;
 use std::cell::RefCell;
 use std::fmt::Write;
 use std::hash::BuildHasherDefault;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
@@ -69,7 +69,7 @@ where
     /// Read current value of the revision counter.
     pub(crate) fn current_revision(&self) -> Revision {
         Revision {
-            generation: self.shared_state.revision.load(Ordering::SeqCst),
+            generation: self.shared_state.revision.load(Ordering::SeqCst) as u64,
         }
     }
 
@@ -80,7 +80,7 @@ where
         }
 
         let result = Revision {
-            generation: 1 + self.shared_state.revision.fetch_add(1, Ordering::SeqCst),
+            generation: 1 + self.shared_state.revision.fetch_add(1, Ordering::SeqCst) as u64,
         };
 
         debug!("increment_revision: incremented to {:?}", result);
@@ -167,7 +167,8 @@ where
 /// State that will be common to all threads (when we support multiple threads)
 struct SharedState<DB: Database> {
     storage: DB::DatabaseStorage,
-    revision: AtomicU64,
+    // Ideally, this should be `AtomicU64`, but that is currently unstable.
+    revision: AtomicUsize,
 }
 
 /// State that will be specific to a single execution threads (when we

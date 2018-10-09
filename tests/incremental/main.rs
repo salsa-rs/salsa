@@ -1,5 +1,3 @@
-#![feature(underscore_imports)]
-
 mod counter;
 mod implementation;
 mod log;

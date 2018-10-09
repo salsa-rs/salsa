@@ -1,7 +1,6 @@
 #![deny(rust_2018_idioms)]
 #![feature(in_band_lifetimes)]
 #![feature(nll)]
-#![feature(integer_atomics)]
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
