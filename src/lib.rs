@@ -174,14 +174,6 @@ where
             })
     }
 
-    /// Equivalent to `of(DefaultKey::default_key())`
-    pub fn read(&self) -> Q::Value
-    where
-        Q::Key: DefaultKey,
-    {
-        self.get(DefaultKey::default_key())
-    }
-
     /// Assign a value to an "input queries". Must be used outside of
     /// an active query computation.
     pub fn set(&self, key: Q::Key, value: Q::Value)
@@ -215,20 +207,6 @@ where
 
     fn descriptor(&self, key: &Q::Key) -> DB::QueryDescriptor {
         (self.descriptor_fn)(self.db, key)
-    }
-}
-
-/// A variant of the `Default` trait used for query keys that are
-/// either singletons (e.g., `()`) or have some overwhelming default.
-/// In this case, you can write `query.my_query().read()` as a
-/// convenient shorthand.
-pub trait DefaultKey {
-    fn default_key() -> Self;
-}
-
-impl DefaultKey for () {
-    fn default_key() -> Self {
-        ()
     }
 }
 
