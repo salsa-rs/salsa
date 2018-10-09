@@ -88,16 +88,13 @@ where
         result
     }
 
-    crate fn execute_query_implementation<Q>(
+    crate fn execute_query_implementation<V>(
         &self,
         db: &DB,
         descriptor: &DB::QueryDescriptor,
-        key: &Q::Key,
-    ) -> (StampedValue<Q::Value>, QueryDescriptorSet<DB>)
-    where
-        Q: QueryFunction<DB>,
-    {
-        debug!("{:?}({:?}): executing query", Q::default(), key);
+        execute: impl FnOnce() -> V,
+    ) -> (StampedValue<V>, QueryDescriptorSet<DB>) {
+        debug!("{:?}: execute_query_implementation invoked", descriptor);
 
         // Push the active query onto the stack.
         let push_len = {
@@ -109,7 +106,7 @@ where
         };
 
         // Execute user's code, accumulating inputs etc.
-        let value = Q::execute(db, key.clone());
+        let value = execute();
 
         // Extract accumulated inputs.
         let ActiveQuery {

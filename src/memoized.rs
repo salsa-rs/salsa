@@ -202,9 +202,12 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let (mut stamped_value, inputs) = db
-            .salsa_runtime()
-            .execute_query_implementation::<Q>(db, descriptor, key);
+        let (mut stamped_value, inputs) =
+            db.salsa_runtime()
+                .execute_query_implementation(db, descriptor, || {
+                    debug!("{:?}({:?}): executing query", Q::default(), key);
+                    Q::execute(db, key.clone())
+                });
 
         // We assume that query is side-effect free -- that is, does
         // not mutate the "inputs" to the query system. Sanity check

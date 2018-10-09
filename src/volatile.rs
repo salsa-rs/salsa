@@ -64,7 +64,10 @@ where
             _inputs,
         ) = db
             .salsa_runtime()
-            .execute_query_implementation::<Q>(db, descriptor, key);
+            .execute_query_implementation(db, descriptor, || {
+                debug!("{:?}({:?}): executing query", Q::default(), key);
+                Q::execute(db, key.clone())
+            });
 
         let was_in_progress = self.in_progress.lock().remove(key);
         assert!(was_in_progress);
