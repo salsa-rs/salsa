@@ -46,6 +46,8 @@ where
     }
 }
 
+struct IsConstant(bool);
+
 impl<DB, Q> InputStorage<DB, Q>
 where
     Q: Query<DB>,
@@ -71,26 +73,44 @@ where
         })
     }
 
-    fn set_common(&self, key: &Q::Key, value: Q::Value, changed_at: impl FnOnce() -> ChangedAt) {
-        let map = self.map.upgradable_read();
+    fn set_common(&self, db: &DB, key: &Q::Key, value: Q::Value, is_constant: IsConstant) {
+        let mut map = self.map.write();
 
         // If this value was previously stored, check if this is an
         // *actual change* before we do anything.
-        if let Some(old_value) = map.get(key) {
+        if let Some(old_value) = map.get_mut(key) {
             if old_value.value == value {
+                // If the value did not change, but it is now
+                // considered constant, we can just update
+                // `changed_at`. We don't have to trigger a new
+                // revision for this case: all the derived values are
+                // still intact, they just have conservative
+                // dependencies. The next revision, they may wind up
+                // with something more precise.
+                if is_constant.0 && !old_value.changed_at.is_constant() {
+                    old_value.changed_at = ChangedAt::Constant;
+                }
+
                 return;
             }
         }
 
         let key = key.clone();
 
-        let mut map = RwLockUpgradableReadGuard::upgrade(map);
+        // The value is changing, so even if we are setting this to a
+        // constant, we still need a new revision.
+        let next_revision = db.salsa_runtime().increment_revision();
 
         // Do this *after* we acquire the lock, so that we are not
         // racing with somebody else to modify this same cell.
         // (Otherwise, someone else might write a *newer* revision
         // into the same cell while we block on the lock.)
-        let changed_at = changed_at();
+        let changed_at = if is_constant.0 {
+            ChangedAt::Constant
+        } else {
+            ChangedAt::Revision(next_revision)
+        };
+
         let stamped_value = StampedValue { value, changed_at };
 
         match map.entry(key) {
@@ -166,16 +186,11 @@ where
     Q::Value: Default,
 {
     fn set(&self, db: &DB, key: &Q::Key, value: Q::Value) {
-        self.set_common(key, value, || {
-            ChangedAt::Revision(db.salsa_runtime().increment_revision())
-        });
+        self.set_common(db, key, value, IsConstant(false))
     }
 
-    fn set_constant(&self, _db: &DB, key: &Q::Key, value: Q::Value) {
-        // FIXME. One weirdness: if this previously had a value, but
-        // was not marked as constant, we will not "lower" the
-        // `ChangedAt` rating with the code as it is.
-        self.set_common(key, value, || ChangedAt::Constant);
+    fn set_constant(&self, db: &DB, key: &Q::Key, value: Q::Value) {
+        self.set_common(db, key, value, IsConstant(true))
     }
 }
 
