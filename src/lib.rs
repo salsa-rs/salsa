@@ -16,7 +16,6 @@ use std::fmt::Display;
 use std::fmt::Write;
 use std::hash::Hash;
 
-pub mod dependencies;
 pub mod input;
 pub mod memoized;
 pub mod runtime;
@@ -415,7 +414,7 @@ macro_rules! query_group {
     (
         @storage_ty[$DB:ident, $Self:ident, dependencies]
     ) => {
-        $crate::dependencies::DependencyStorage<$DB, $Self>
+        $crate::memoized::DependencyStorage<$DB, $Self>
     };
 
     (
