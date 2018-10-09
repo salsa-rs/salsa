@@ -19,7 +19,6 @@ use std::hash::Hash;
 pub mod input;
 pub mod memoized;
 pub mod runtime;
-pub mod volatile;
 
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
@@ -428,7 +427,7 @@ macro_rules! query_group {
     (
         @storage_ty[$DB:ident, $Self:ident, volatile]
     ) => {
-        $crate::volatile::VolatileStorage<$DB, $Self>
+        $crate::memoized::VolatileStorage<$DB, $Self>
     };
 
     (

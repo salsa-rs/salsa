@@ -31,6 +31,11 @@ pub type MemoizedStorage<DB, Q> = WeakMemoizedStorage<DB, Q, AlwaysMemoizeValue>
 /// storage requirements.
 pub type DependencyStorage<DB, Q> = WeakMemoizedStorage<DB, Q, NeverMemoizeValue>;
 
+/// "Dependency" queries just track their dependencies and not the
+/// actual value (which they produce on demand). This lessens the
+/// storage requirements.
+pub type VolatileStorage<DB, Q> = WeakMemoizedStorage<DB, Q, VolatileValue>;
+
 pub struct WeakMemoizedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
@@ -47,6 +52,8 @@ where
     DB: Database,
 {
     fn should_memoize_value(key: &Q::Key) -> bool;
+
+    fn is_volatile(key: &Q::Key) -> bool;
 }
 
 pub enum AlwaysMemoizeValue {}
@@ -58,6 +65,10 @@ where
     fn should_memoize_value(_key: &Q::Key) -> bool {
         true
     }
+
+    fn is_volatile(_key: &Q::Key) -> bool {
+        false
+    }
 }
 
 pub enum NeverMemoizeValue {}
@@ -68,6 +79,25 @@ where
 {
     fn should_memoize_value(_key: &Q::Key) -> bool {
         false
+    }
+
+    fn is_volatile(_key: &Q::Key) -> bool {
+        false
+    }
+}
+
+pub enum VolatileValue {}
+impl<DB, Q> MemoizationPolicy<DB, Q> for VolatileValue
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+{
+    fn should_memoize_value(_key: &Q::Key) -> bool {
+        false
+    }
+
+    fn is_volatile(_key: &Q::Key) -> bool {
+        true
     }
 }
 
@@ -97,6 +127,7 @@ where
     /// The result of the query, if we decide to memoize it.
     value: Option<Q::Value>,
 
+    /// The inputs that went into our query, if we are tracking them.
     inputs: QueryDescriptorSet<DB>,
 
     /// Last time that we checked our inputs to see if they have
@@ -202,12 +233,16 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let (mut stamped_value, inputs) =
-            db.salsa_runtime()
-                .execute_query_implementation(descriptor, || {
-                    debug!("{:?}({:?}): executing query", Q::default(), key);
-                    Q::execute(db, key.clone())
-                });
+        let runtime = db.salsa_runtime();
+        let (mut stamped_value, inputs) = runtime.execute_query_implementation(descriptor, || {
+            debug!("{:?}({:?}): executing query", Q::default(), key);
+
+            if self.is_volatile(key) {
+                runtime.report_untracked_read();
+            }
+
+            Q::execute(db, key.clone())
+        });
 
         // We assume that query is side-effect free -- that is, does
         // not mutate the "inputs" to the query system. Sanity check
@@ -269,6 +304,10 @@ where
 
     fn should_memoize_value(&self, key: &Q::Key) -> bool {
         MP::should_memoize_value(key)
+    }
+
+    fn is_volatile(&self, key: &Q::Key) -> bool {
+        MP::is_volatile(key)
     }
 }
 
