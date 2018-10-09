@@ -91,8 +91,26 @@ where
         // (Otherwise, someone else might write a *newer* revision
         // into the same cell while we block on the lock.)
         let changed_at = changed_at();
+        let stamped_value = StampedValue { value, changed_at };
 
-        map.insert(key, StampedValue { value, changed_at });
+        match map.entry(key) {
+            Entry::Occupied(mut entry) => {
+                assert!(
+                    !entry.get().changed_at.is_constant(),
+                    "modifying `{:?}({:?})`, which was previously marked as constant (old value `{:?}`, new value `{:?}`)",
+                    Q::default(),
+                    entry.key(),
+                    entry.get().value,
+                    stamped_value.value,
+                );
+
+                entry.insert(stamped_value);
+            }
+
+            Entry::Vacant(entry) => {
+                entry.insert(stamped_value);
+            }
+        }
     }
 }
 
@@ -151,6 +169,13 @@ where
         self.set_common(key, value, || {
             ChangedAt::Revision(db.salsa_runtime().increment_revision())
         });
+    }
+
+    fn set_constant(&self, _db: &DB, key: &Q::Key, value: Q::Value) {
+        // FIXME. One weirdness: if this previously had a value, but
+        // was not marked as constant, we will not "lower" the
+        // `ChangedAt` rating with the code as it is.
+        self.set_common(key, value, || ChangedAt::Constant);
     }
 }
 

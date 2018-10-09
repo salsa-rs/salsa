@@ -248,6 +248,13 @@ pub enum ChangedAt {
 }
 
 impl ChangedAt {
+    pub fn is_constant(self) -> bool {
+        match self {
+            ChangedAt::Constant => true,
+            ChangedAt::Revision(_) => false,
+        }
+    }
+
     /// True if this value has changed after `revision`.
     pub fn changed_since(self, revision: Revision) -> bool {
         match self {

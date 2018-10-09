@@ -130,6 +130,8 @@ where
     Q: Query<DB>,
 {
     fn set(&self, db: &DB, key: &Q::Key, new_value: Q::Value);
+
+    fn set_constant(&self, db: &DB, key: &Q::Key, new_value: Q::Value);
 }
 
 /// An optional trait that is implemented for "user mutable" storage:
@@ -177,6 +179,16 @@ where
         Q::Storage: InputQueryStorageOps<DB, Q>,
     {
         self.storage.set(self.db, &key, value);
+    }
+
+    /// Assign a value to an "input query", with the additional
+    /// promise that this value will **never change**. Must be used
+    /// outside of an active query computation.
+    pub fn set_constant(&self, key: Q::Key, value: Q::Value)
+    where
+        Q::Storage: InputQueryStorageOps<DB, Q>,
+    {
+        self.storage.set_constant(self.db, &key, value);
     }
 
     /// Assigns a value to the query **bypassing the normal
