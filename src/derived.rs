@@ -95,7 +95,12 @@ where
     DB: Database,
 {
     fn should_memoize_value(_key: &Q::Key) -> bool {
-        false
+        // Why memoize? Well, if the "volatile" value really is
+        // constantly changing, we still want to capture its value
+        // until the next revision is triggered and ensure it doesn't
+        // change -- otherwise the system gets into an inconsistent
+        // state where the same query reports back different values.
+        true
     }
 
     fn is_volatile(_key: &Q::Key) -> bool {
