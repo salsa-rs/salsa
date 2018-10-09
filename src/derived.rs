@@ -223,13 +223,12 @@ where
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
         if let Some(QueryState::Memoized(old_memo)) = &mut old_value {
-            if old_memo.verify_memoized_value(db) {
+            if let Some(value) = old_memo.verify_memoized_value(db) {
                 debug!("{:?}({:?}): inputs still valid", Q::default(), key);
                 // If none of out inputs have changed since the last time we refreshed
                 // our value, then our value must still be good. We'll just patch
                 // the verified-at date and re-use it.
                 old_memo.verified_at = revision_now;
-                let value = old_memo.value.clone().unwrap();
                 let changed_at = old_memo.changed_at;
 
                 let mut map_write = self.map.write();
@@ -430,13 +429,16 @@ where
     Q: QueryFunction<DB>,
     DB: Database,
 {
-    fn verify_memoized_value(&self, db: &DB) -> bool {
+    fn verify_memoized_value(&self, db: &DB) -> Option<Q::Value> {
         // If we don't have a memoized value, nothing to validate.
-        if !self.value.is_some() {
-            return false;
+        if let Some(v) = &self.value {
+            // If inputs are still valid.
+            if self.verify_inputs(db) {
+                return Some(v.clone());
+            }
         }
 
-        self.verify_inputs(db)
+        None
     }
 
     fn verify_inputs(&self, db: &DB) -> bool {
