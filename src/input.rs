@@ -124,9 +124,19 @@ where
     Q::Value: Default,
 {
     fn set(&self, db: &DB, key: &Q::Key, value: Q::Value) {
+        let map = self.map.upgradable_read();
+
+        // If this value was previously stored, check if this is an
+        // *actual change* before we do anything.
+        if let Some(old_value) = map.get(key) {
+            if old_value.value == value {
+                return;
+            }
+        }
+
         let key = key.clone();
 
-        let mut map_write = self.map.write();
+        let mut map = RwLockUpgradableReadGuard::upgrade(map);
 
         // Do this *after* we acquire the lock, so that we are not
         // racing with somebody else to modify this same cell.
@@ -134,7 +144,7 @@ where
         // into the same cell while we block on the lock.)
         let changed_at = ChangedAt::Revision(db.salsa_runtime().increment_revision());
 
-        map_write.insert(key, StampedValue { value, changed_at });
+        map.insert(key, StampedValue { value, changed_at });
     }
 }
 

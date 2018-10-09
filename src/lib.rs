@@ -170,7 +170,7 @@ where
             })
     }
 
-    /// Assign a value to an "input queries". Must be used outside of
+    /// Assign a value to an "input query". Must be used outside of
     /// an active query computation.
     pub fn set(&self, key: Q::Key, value: Q::Value)
     where
