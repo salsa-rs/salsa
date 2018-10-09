@@ -185,7 +185,7 @@ where
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
         if let Some(QueryState::Memoized(old_memo)) = &mut old_value {
-            if old_memo.validate_memoized_value(db) {
+            if old_memo.verify_memoized_value(db) {
                 debug!("{:?}({:?}): inputs still valid", Q::default(), key);
                 // If none of out inputs have changed since the last time we refreshed
                 // our value, then our value must still be good. We'll just patch
@@ -337,11 +337,7 @@ where
             _ => unreachable!(),
         };
 
-        if memo
-            .inputs
-            .iter()
-            .all(|old_input| !old_input.maybe_changed_since(db, memo.verified_at))
-        {
+        if memo.verify_inputs(db) {
             memo.verified_at = revision_now;
             self.overwrite_placeholder(&mut self.map.write(), key, QueryState::Memoized(memo));
             return false;
@@ -385,12 +381,16 @@ where
     Q: QueryFunction<DB>,
     DB: Database,
 {
-    fn validate_memoized_value(&self, db: &DB) -> bool {
+    fn verify_memoized_value(&self, db: &DB) -> bool {
         // If we don't have a memoized value, nothing to validate.
         if !self.value.is_some() {
             return false;
         }
 
+        self.verify_inputs(db)
+    }
+
+    fn verify_inputs(&self, db: &DB) -> bool {
         match self.changed_at {
             ChangedAt::Revision(revision) => self
                 .inputs
