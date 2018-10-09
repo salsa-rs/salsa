@@ -92,6 +92,7 @@ where
     /// Last time the value has actually changed.
     /// changed_at can be less than verified_at.
     changed_at: Revision,
+
     /// The result of the query, if we decide to memoize it.
     value: Option<Q::Value>,
 
@@ -152,7 +153,8 @@ where
                             key,
                             m.verified_at,
                         );
-                        // We've found that the query is defenitelly up-to-date.
+
+                        // We've found that the query is definitely up-to-date.
                         // If the value is also memoized, return it.
                         // Otherwise fallback to recomputing the value.
                         if m.verified_at == revision_now {
