@@ -336,7 +336,7 @@ where
         Ok(value)
     }
 
-    fn maybe_changed_since(
+    fn maybe_changed_since<'q>(
         &self,
         db: &'q DB,
         revision: Revision,
