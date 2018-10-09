@@ -1,3 +1,4 @@
+use crate::runtime::ChangedAt;
 use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
@@ -66,7 +67,7 @@ where
 
         Ok(StampedValue {
             value: <Q::Value>::default(),
-            changed_at: Revision::ZERO,
+            changed_at: ChangedAt::Revision(Revision::ZERO),
         })
     }
 }
@@ -109,10 +110,10 @@ where
             map_read
                 .get(key)
                 .map(|v| v.changed_at)
-                .unwrap_or(Revision::ZERO)
+                .unwrap_or(ChangedAt::Revision(Revision::ZERO))
         };
 
-        changed_at > revision
+        changed_at.changed_since(revision)
     }
 }
 
@@ -131,7 +132,7 @@ where
         // racing with somebody else to modify this same cell.
         // (Otherwise, someone else might write a *newer* revision
         // into the same cell while we block on the lock.)
-        let changed_at = db.salsa_runtime().increment_revision();
+        let changed_at = ChangedAt::Revision(db.salsa_runtime().increment_revision());
 
         map_write.insert(key, StampedValue { value, changed_at });
     }
@@ -150,7 +151,7 @@ where
 
         // Unlike with `set`, here we use the **current revision** and
         // do not create a new one.
-        let changed_at = db.salsa_runtime().current_revision();
+        let changed_at = ChangedAt::Revision(db.salsa_runtime().current_revision());
 
         map_write.insert(key, StampedValue { value, changed_at });
     }

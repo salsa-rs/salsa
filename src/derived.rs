@@ -1,3 +1,4 @@
+use crate::runtime::ChangedAt;
 use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
@@ -23,14 +24,21 @@ use std::marker::PhantomData;
 /// Memoized queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
 /// none of those inputs have changed.
-pub type MemoizedStorage<DB, Q> = WeakMemoizedStorage<DB, Q, AlwaysMemoizeValue>;
+pub type MemoizedStorage<DB, Q> = DerivedStorage<DB, Q, AlwaysMemoizeValue>;
 
 /// "Dependency" queries just track their dependencies and not the
 /// actual value (which they produce on demand). This lessens the
 /// storage requirements.
-pub type DependencyStorage<DB, Q> = WeakMemoizedStorage<DB, Q, NeverMemoizeValue>;
+pub type DependencyStorage<DB, Q> = DerivedStorage<DB, Q, NeverMemoizeValue>;
 
-pub struct WeakMemoizedStorage<DB, Q, MP>
+/// "Dependency" queries just track their dependencies and not the
+/// actual value (which they produce on demand). This lessens the
+/// storage requirements.
+pub type VolatileStorage<DB, Q> = DerivedStorage<DB, Q, VolatileValue>;
+
+/// Handles storage where the value is 'derived' by executing a
+/// function (in contrast to "inputs").
+pub struct DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
@@ -46,6 +54,8 @@ where
     DB: Database,
 {
     fn should_memoize_value(key: &Q::Key) -> bool;
+
+    fn should_track_inputs(key: &Q::Key) -> bool;
 }
 
 pub enum AlwaysMemoizeValue {}
@@ -57,6 +67,10 @@ where
     fn should_memoize_value(_key: &Q::Key) -> bool {
         true
     }
+
+    fn should_track_inputs(_key: &Q::Key) -> bool {
+        true
+    }
 }
 
 pub enum NeverMemoizeValue {}
@@ -66,6 +80,30 @@ where
     DB: Database,
 {
     fn should_memoize_value(_key: &Q::Key) -> bool {
+        false
+    }
+
+    fn should_track_inputs(_key: &Q::Key) -> bool {
+        true
+    }
+}
+
+pub enum VolatileValue {}
+impl<DB, Q> MemoizationPolicy<DB, Q> for VolatileValue
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+{
+    fn should_memoize_value(_key: &Q::Key) -> bool {
+        // Why memoize? Well, if the "volatile" value really is
+        // constantly changing, we still want to capture its value
+        // until the next revision is triggered and ensure it doesn't
+        // change -- otherwise the system gets into an inconsistent
+        // state where the same query reports back different values.
+        true
+    }
+
+    fn should_track_inputs(_key: &Q::Key) -> bool {
         false
     }
 }
@@ -91,11 +129,12 @@ where
 {
     /// Last time the value has actually changed.
     /// changed_at can be less than verified_at.
-    changed_at: Revision,
+    changed_at: ChangedAt,
 
     /// The result of the query, if we decide to memoize it.
     value: Option<Q::Value>,
 
+    /// The inputs that went into our query, if we are tracking them.
     inputs: QueryDescriptorSet<DB>,
 
     /// Last time that we checked our inputs to see if they have
@@ -106,21 +145,21 @@ where
     verified_at: Revision,
 }
 
-impl<DB, Q, MP> Default for WeakMemoizedStorage<DB, Q, MP>
+impl<DB, Q, MP> Default for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
     MP: MemoizationPolicy<DB, Q>,
 {
     fn default() -> Self {
-        WeakMemoizedStorage {
+        DerivedStorage {
             map: RwLock::new(FxHashMap::default()),
             policy: PhantomData,
         }
     }
 }
 
-impl<DB, Q, MP> WeakMemoizedStorage<DB, Q, MP>
+impl<DB, Q, MP> DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
@@ -184,32 +223,32 @@ where
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
         if let Some(QueryState::Memoized(old_memo)) = &mut old_value {
-            if old_memo.value.is_some() {
-                if old_memo
-                    .inputs
-                    .iter()
-                    .all(|old_input| !old_input.maybe_changed_since(db, old_memo.changed_at))
-                {
-                    debug!("{:?}({:?}): inputs still valid", Q::default(), key);
-                    // If none of out inputs have changed since the last time we refreshed
-                    // our value, then our value must still be good. We'll just patch
-                    // the verified-at date and re-use it.
-                    old_memo.verified_at = revision_now;
-                    let value = old_memo.value.clone().unwrap();
-                    let changed_at = old_memo.changed_at;
+            if let Some(value) = old_memo.verify_memoized_value(db) {
+                debug!("{:?}({:?}): inputs still valid", Q::default(), key);
+                // If none of out inputs have changed since the last time we refreshed
+                // our value, then our value must still be good. We'll just patch
+                // the verified-at date and re-use it.
+                old_memo.verified_at = revision_now;
+                let changed_at = old_memo.changed_at;
 
-                    let mut map_write = self.map.write();
-                    self.overwrite_placeholder(&mut map_write, key, old_value.unwrap());
-                    return Ok(StampedValue { value, changed_at });
-                }
+                let mut map_write = self.map.write();
+                self.overwrite_placeholder(&mut map_write, key, old_value.unwrap());
+                return Ok(StampedValue { value, changed_at });
             }
         }
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let (mut stamped_value, inputs) = db
-            .salsa_runtime()
-            .execute_query_implementation::<Q>(db, descriptor, key);
+        let runtime = db.salsa_runtime();
+        let (mut stamped_value, inputs) = runtime.execute_query_implementation(descriptor, || {
+            debug!("{:?}({:?}): executing query", Q::default(), key);
+
+            if !self.should_track_inputs(key) {
+                runtime.report_untracked_read();
+            }
+
+            Q::execute(db, key.clone())
+        });
 
         // We assume that query is side-effect free -- that is, does
         // not mutate the "inputs" to the query system. Sanity check
@@ -272,9 +311,13 @@ where
     fn should_memoize_value(&self, key: &Q::Key) -> bool {
         MP::should_memoize_value(key)
     }
+
+    fn should_track_inputs(&self, key: &Q::Key) -> bool {
+        MP::should_track_inputs(key)
+    }
 }
 
-impl<DB, Q, MP> QueryStorageOps<DB, Q> for WeakMemoizedStorage<DB, Q, MP>
+impl<DB, Q, MP> QueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
@@ -318,14 +361,14 @@ where
                     // If our memo is still up to date, then check if we've
                     // changed since the revision.
                     if memo.verified_at == revision_now {
-                        return memo.changed_at > revision;
+                        return memo.changed_at.changed_since(revision);
                     }
                     if memo.value.is_some() {
                         // Otherwise, if we cache values, fall back to the full read to compute the result.
                         drop(memo);
                         drop(map_read);
                         return match self.read(db, key, descriptor) {
-                            Ok(v) => v.changed_at > revision,
+                            Ok(v) => v.changed_at.changed_since(revision),
                             Err(CycleDetected) => true,
                         };
                     }
@@ -342,11 +385,7 @@ where
             _ => unreachable!(),
         };
 
-        if memo
-            .inputs
-            .iter()
-            .all(|old_input| !old_input.maybe_changed_since(db, memo.verified_at))
-        {
+        if memo.verify_inputs(db) {
             memo.verified_at = revision_now;
             self.overwrite_placeholder(&mut self.map.write(), key, QueryState::Memoized(memo));
             return false;
@@ -359,7 +398,7 @@ where
     }
 }
 
-impl<DB, Q, MP> UncheckedMutQueryStorageOps<DB, Q> for WeakMemoizedStorage<DB, Q, MP>
+impl<DB, Q, MP> UncheckedMutQueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database,
@@ -370,16 +409,47 @@ where
 
         let mut map_write = self.map.write();
 
-        let changed_at = db.salsa_runtime().current_revision();
+        let current_revision = db.salsa_runtime().current_revision();
+        let changed_at = ChangedAt::Revision(current_revision);
 
         map_write.insert(
             key,
             QueryState::Memoized(Memo {
                 value: Some(value),
                 changed_at,
-                inputs: QueryDescriptorSet::new(),
-                verified_at: changed_at,
+                inputs: QueryDescriptorSet::default(),
+                verified_at: current_revision,
             }),
         );
+    }
+}
+
+impl<DB, Q> Memo<DB, Q>
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+{
+    fn verify_memoized_value(&self, db: &DB) -> Option<Q::Value> {
+        // If we don't have a memoized value, nothing to validate.
+        if let Some(v) = &self.value {
+            // If inputs are still valid.
+            if self.verify_inputs(db) {
+                return Some(v.clone());
+            }
+        }
+
+        None
+    }
+
+    fn verify_inputs(&self, db: &DB) -> bool {
+        match self.changed_at {
+            ChangedAt::Revision(revision) => match &self.inputs {
+                QueryDescriptorSet::Tracked(inputs) => inputs
+                    .iter()
+                    .all(|old_input| !old_input.maybe_changed_since(db, revision)),
+
+                QueryDescriptorSet::Untracked => false,
+            },
+        }
     }
 }

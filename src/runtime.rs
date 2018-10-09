@@ -88,16 +88,12 @@ where
         result
     }
 
-    crate fn execute_query_implementation<Q>(
+    crate fn execute_query_implementation<V>(
         &self,
-        db: &DB,
         descriptor: &DB::QueryDescriptor,
-        key: &Q::Key,
-    ) -> (StampedValue<Q::Value>, QueryDescriptorSet<DB>)
-    where
-        Q: QueryFunction<DB>,
-    {
-        debug!("{:?}({:?}): executing query", Q::default(), key);
+        execute: impl FnOnce() -> V,
+    ) -> (StampedValue<V>, QueryDescriptorSet<DB>) {
+        debug!("{:?}: execute_query_implementation invoked", descriptor);
 
         // Push the active query onto the stack.
         let push_len = {
@@ -109,7 +105,7 @@ where
         };
 
         // Execute user's code, accumulating inputs etc.
-        let value = Q::execute(db, key.clone());
+        let value = execute();
 
         // Extract accumulated inputs.
         let ActiveQuery {
@@ -136,9 +132,16 @@ where
     /// - `descriptor`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    crate fn report_query_read(&self, descriptor: &DB::QueryDescriptor, changed_at: Revision) {
+    crate fn report_query_read(&self, descriptor: &DB::QueryDescriptor, changed_at: ChangedAt) {
         if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
             top_query.add_read(descriptor, changed_at);
+        }
+    }
+
+    crate fn report_untracked_read(&self) {
+        if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
+            let changed_at = ChangedAt::Revision(self.current_revision());
+            top_query.add_untracked_read(changed_at);
         }
     }
 
@@ -178,7 +181,7 @@ struct ActiveQuery<DB: Database> {
     descriptor: DB::QueryDescriptor,
 
     /// Records the maximum revision where any subquery changed
-    changed_at: Revision,
+    changed_at: ChangedAt,
 
     /// Each subquery
     subqueries: QueryDescriptorSet<DB>,
@@ -188,13 +191,18 @@ impl<DB: Database> ActiveQuery<DB> {
     fn new(descriptor: DB::QueryDescriptor) -> Self {
         ActiveQuery {
             descriptor,
-            changed_at: Revision::ZERO,
-            subqueries: QueryDescriptorSet::new(),
+            changed_at: ChangedAt::Revision(Revision::ZERO),
+            subqueries: QueryDescriptorSet::default(),
         }
     }
 
-    fn add_read(&mut self, subquery: &DB::QueryDescriptor, changed_at: Revision) {
+    fn add_read(&mut self, subquery: &DB::QueryDescriptor, changed_at: ChangedAt) {
         self.subqueries.insert(subquery.clone());
+        self.changed_at = self.changed_at.max(changed_at);
+    }
+
+    fn add_untracked_read(&mut self, changed_at: ChangedAt) {
+        self.subqueries.insert_untracked();
         self.changed_at = self.changed_at.max(changed_at);
     }
 }
@@ -214,40 +222,70 @@ impl std::fmt::Debug for Revision {
     }
 }
 
+/// Records when a stamped value changed.
+///
+/// Note: the order of variants is significant. We sometimes use `max`
+/// for example to find the "most recent revision" when something
+/// changed.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ChangedAt {
+    Revision(Revision),
+}
+
+impl ChangedAt {
+    /// True if this value has changed after `revision`.
+    pub fn changed_since(self, revision: Revision) -> bool {
+        match self {
+            ChangedAt::Revision(r) => r > revision,
+        }
+    }
+}
+
 /// An insertion-order-preserving set of queries. Used to track the
 /// inputs accessed during query execution.
-crate struct QueryDescriptorSet<DB: Database> {
-    set: FxIndexSet<DB::QueryDescriptor>,
+crate enum QueryDescriptorSet<DB: Database> {
+    /// All reads were to tracked things:
+    Tracked(FxIndexSet<DB::QueryDescriptor>),
+
+    /// Some reads to an untracked thing:
+    Untracked,
 }
 
 impl<DB: Database> std::fmt::Debug for QueryDescriptorSet<DB> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.set, fmt)
+        match self {
+            QueryDescriptorSet::Tracked(set) => std::fmt::Debug::fmt(set, fmt),
+            QueryDescriptorSet::Untracked => write!(fmt, "Untracked"),
+        }
+    }
+}
+
+impl<DB: Database> Default for QueryDescriptorSet<DB> {
+    fn default() -> Self {
+        QueryDescriptorSet::Tracked(FxIndexSet::default())
     }
 }
 
 impl<DB: Database> QueryDescriptorSet<DB> {
-    crate fn new() -> Self {
-        QueryDescriptorSet {
-            set: FxIndexSet::default(),
+    /// Add `descriptor` to the set. Returns true if `descriptor` is
+    /// newly added and false if `descriptor` was already a member.
+    fn insert(&mut self, descriptor: DB::QueryDescriptor) {
+        match self {
+            QueryDescriptorSet::Tracked(set) => {
+                set.insert(descriptor);
+            }
+
+            QueryDescriptorSet::Untracked => {}
         }
     }
 
-    /// Add `descriptor` to the set. Returns true if `descriptor` is
-    /// newly added and false if `descriptor` was already a member.
-    fn insert(&mut self, descriptor: DB::QueryDescriptor) -> bool {
-        self.set.insert(descriptor)
-    }
-
-    /// Iterate over all queries in the set, in the order of their
-    /// first insertion.
-    pub fn iter(&self) -> impl Iterator<Item = &DB::QueryDescriptor> {
-        self.set.iter()
+    fn insert_untracked(&mut self) {
+        *self = QueryDescriptorSet::Untracked;
     }
 }
 
 #[derive(Clone, Debug)]
 crate struct StampedValue<V> {
     crate value: V,
-    crate changed_at: Revision,
+    crate changed_at: ChangedAt,
 }

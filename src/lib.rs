@@ -16,10 +16,9 @@ use std::fmt::Display;
 use std::fmt::Write;
 use std::hash::Hash;
 
+pub mod derived;
 pub mod input;
-pub mod memoized;
 pub mod runtime;
-pub mod volatile;
 
 pub use crate::runtime::Runtime;
 
@@ -402,19 +401,19 @@ macro_rules! query_group {
     (
         @storage_ty[$DB:ident, $Self:ident, memoized]
     ) => {
-        $crate::memoized::MemoizedStorage<$DB, $Self>
+        $crate::derived::MemoizedStorage<$DB, $Self>
     };
 
     (
         @storage_ty[$DB:ident, $Self:ident, volatile]
     ) => {
-        $crate::volatile::VolatileStorage<$DB, $Self>
+        $crate::derived::VolatileStorage<$DB, $Self>
     };
 
     (
         @storage_ty[$DB:ident, $Self:ident, dependencies]
     ) => {
-        $crate::memoized::DependencyStorage<$DB, $Self>
+        $crate::derived::DependencyStorage<$DB, $Self>
     };
 
     (

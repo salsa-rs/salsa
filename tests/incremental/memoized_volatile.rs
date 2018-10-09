@@ -38,10 +38,11 @@ fn volatile(db: &impl MemoizedVolatileContext, (): ()) -> usize {
 fn volatile_x2() {
     let query = TestContextImpl::default();
 
-    // Invoking volatile twice will simply execute twice.
+    // Invoking volatile twice doesn't execute twice, because volatile
+    // queries are memoized by default.
     query.volatile(());
     query.volatile(());
-    query.assert_log(&["Volatile invoked", "Volatile invoked"]);
+    query.assert_log(&["Volatile invoked"]);
 }
 
 /// Test that:
@@ -67,7 +68,7 @@ fn revalidate() {
     query.salsa_runtime().next_revision();
 
     query.memoized2(());
-    query.assert_log(&["Memoized1 invoked", "Volatile invoked"]);
+    query.assert_log(&["Volatile invoked", "Memoized1 invoked"]);
 
     query.memoized2(());
     query.assert_log(&[]);
@@ -78,7 +79,7 @@ fn revalidate() {
     query.salsa_runtime().next_revision();
 
     query.memoized2(());
-    query.assert_log(&["Memoized1 invoked", "Volatile invoked", "Memoized2 invoked"]);
+    query.assert_log(&["Volatile invoked", "Memoized1 invoked", "Memoized2 invoked"]);
 
     query.memoized2(());
     query.assert_log(&[]);

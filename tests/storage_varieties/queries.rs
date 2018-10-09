@@ -17,7 +17,7 @@ salsa::query_group! {
 /// Because this query is memoized, we only increment the counter
 /// the first time it is invoked.
 fn memoized(db: &impl Database, (): ()) -> usize {
-    db.increment()
+    db.volatile(())
 }
 
 /// Because this query is volatile, each time it is invoked,
