@@ -80,7 +80,7 @@ where
         }
 
         let old_revision = self.shared_state.revision.fetch_add(1, Ordering::SeqCst);
-        assert!(old_revision != usize::max_value());
+        assert!(old_revision != usize::max_value(), "revision overflow");
         let result = Revision {
             generation: 1 + old_revision as u64,
         };
