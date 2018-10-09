@@ -184,13 +184,13 @@ where
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
         if let Some(QueryState::Memoized(old_memo)) = &mut old_value {
-            if old_memo
-                .inputs
-                .iter()
-                .all(|old_input| !old_input.maybe_changed_since(db, old_memo.changed_at))
-            {
-                debug!("{:?}({:?}): inputs still valid", Q::default(), key);
-                if old_memo.value.is_some() {
+            if old_memo.value.is_some() {
+                if old_memo
+                    .inputs
+                    .iter()
+                    .all(|old_input| !old_input.maybe_changed_since(db, old_memo.changed_at))
+                {
+                    debug!("{:?}({:?}): inputs still valid", Q::default(), key);
                     // If none of out inputs have changed since the last time we refreshed
                     // our value, then our value must still be good. We'll just patch
                     // the verified-at date and re-use it.
