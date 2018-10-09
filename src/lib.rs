@@ -124,7 +124,7 @@ where
 /// An optional trait that is implemented for "user mutable" storage:
 /// that is, storage whose value is not derived from other storage but
 /// is set independently.
-pub trait MutQueryStorageOps<DB, Q>: Default
+pub trait InputQueryStorageOps<DB, Q>: Default
 where
     DB: Database,
     Q: Query<DB>,
@@ -174,7 +174,7 @@ where
     /// an active query computation.
     pub fn set(&self, key: Q::Key, value: Q::Value)
     where
-        Q::Storage: MutQueryStorageOps<DB, Q>,
+        Q::Storage: InputQueryStorageOps<DB, Q>,
     {
         self.storage.set(self.db, &key, value);
     }

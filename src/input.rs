@@ -4,7 +4,7 @@ use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
 use crate::Database;
-use crate::MutQueryStorageOps;
+use crate::InputQueryStorageOps;
 use crate::Query;
 use crate::QueryDescriptor;
 use crate::QueryStorageOps;
@@ -117,7 +117,7 @@ where
     }
 }
 
-impl<DB, Q> MutQueryStorageOps<DB, Q> for InputStorage<DB, Q>
+impl<DB, Q> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
