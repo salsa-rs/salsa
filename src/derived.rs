@@ -55,7 +55,7 @@ where
 {
     fn should_memoize_value(key: &Q::Key) -> bool;
 
-    fn is_volatile(key: &Q::Key) -> bool;
+    fn should_track_inputs(key: &Q::Key) -> bool;
 }
 
 pub enum AlwaysMemoizeValue {}
@@ -68,8 +68,8 @@ where
         true
     }
 
-    fn is_volatile(_key: &Q::Key) -> bool {
-        false
+    fn should_track_inputs(_key: &Q::Key) -> bool {
+        true
     }
 }
 
@@ -83,8 +83,8 @@ where
         false
     }
 
-    fn is_volatile(_key: &Q::Key) -> bool {
-        false
+    fn should_track_inputs(_key: &Q::Key) -> bool {
+        true
     }
 }
 
@@ -103,8 +103,8 @@ where
         true
     }
 
-    fn is_volatile(_key: &Q::Key) -> bool {
-        true
+    fn should_track_inputs(_key: &Q::Key) -> bool {
+        false
     }
 }
 
@@ -244,7 +244,7 @@ where
         let (mut stamped_value, inputs) = runtime.execute_query_implementation(descriptor, || {
             debug!("{:?}({:?}): executing query", Q::default(), key);
 
-            if self.is_volatile(key) {
+            if !self.should_track_inputs(key) {
                 runtime.report_untracked_read();
             }
 
@@ -313,8 +313,8 @@ where
         MP::should_memoize_value(key)
     }
 
-    fn is_volatile(&self, key: &Q::Key) -> bool {
-        MP::is_volatile(key)
+    fn should_track_inputs(&self, key: &Q::Key) -> bool {
+        MP::should_track_inputs(key)
     }
 }
 
