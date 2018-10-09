@@ -2,7 +2,7 @@
 
 use crate::implementation::DatabaseImpl;
 use crate::queries::Database;
-use salsa::Database as _;
+use salsa::Database as _Database;
 
 #[test]
 fn memoized_twice() {

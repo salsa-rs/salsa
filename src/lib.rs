@@ -1,8 +1,4 @@
 #![deny(rust_2018_idioms)]
-#![feature(in_band_lifetimes)]
-#![feature(crate_visibility_modifier)]
-#![feature(nll)]
-#![feature(integer_atomics)]
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
@@ -160,7 +156,7 @@ where
 
 pub struct CycleDetected;
 
-impl<DB, Q> QueryTable<'me, DB, Q>
+impl<DB, Q> QueryTable<'_, DB, Q>
 where
     DB: Database,
     Q: Query<DB>,

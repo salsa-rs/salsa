@@ -2,7 +2,7 @@ use crate::implementation::{TestContext, TestContextImpl};
 use salsa::Database;
 
 salsa::query_group! {
-    crate trait MemoizedVolatileContext: TestContext {
+    pub(crate) trait MemoizedVolatileContext: TestContext {
         // Queries for testing a "volatile" value wrapped by
         // memoization.
         fn memoized2(key: ()) -> usize {

@@ -4,20 +4,20 @@ use crate::memoized_dep_inputs;
 use crate::memoized_inputs;
 use crate::memoized_volatile;
 
-crate trait TestContext: salsa::Database {
+pub(crate) trait TestContext: salsa::Database {
     fn clock(&self) -> &Counter;
     fn log(&self) -> &Log;
 }
 
 #[derive(Default)]
-crate struct TestContextImpl {
+pub(crate) struct TestContextImpl {
     runtime: salsa::Runtime<TestContextImpl>,
     clock: Counter,
     log: Log,
 }
 
 impl TestContextImpl {
-    crate fn assert_log(&self, expected_log: &[&str]) {
+    pub(crate) fn assert_log(&self, expected_log: &[&str]) {
         use difference::{Changeset, Difference};
 
         let expected_text = &format!("{:#?}", expected_log);
@@ -42,7 +42,7 @@ impl TestContextImpl {
 }
 
 salsa::database_storage! {
-    crate struct TestContextImplStorage for TestContextImpl {
+    pub(crate) struct TestContextImplStorage for TestContextImpl {
         impl memoized_dep_inputs::MemoizedDepInputsContext {
             fn dep_memoized2() for memoized_dep_inputs::Memoized2;
             fn dep_memoized1() for memoized_dep_inputs::Memoized1;

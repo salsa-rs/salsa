@@ -78,9 +78,9 @@ where
     DB: Database,
     Q::Value: Default,
 {
-    fn try_fetch<'q>(
+    fn try_fetch(
         &self,
-        db: &'q DB,
+        db: &DB,
         key: &Q::Key,
         descriptor: &DB::QueryDescriptor,
     ) -> Result<Q::Value, CycleDetected> {
@@ -93,7 +93,7 @@ where
 
     fn maybe_changed_since(
         &self,
-        _db: &'q DB,
+        _db: &DB,
         revision: Revision,
         key: &Q::Key,
         _descriptor: &DB::QueryDescriptor,

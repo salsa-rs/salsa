@@ -1,9 +1,9 @@
-crate trait Counter: salsa::Database {
+pub(crate) trait Counter: salsa::Database {
     fn increment(&self) -> usize;
 }
 
 salsa::query_group! {
-    crate trait Database: Counter {
+    pub(crate) trait Database: Counter {
         fn memoized(key: ()) -> usize {
             type Memoized;
         }

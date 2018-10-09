@@ -41,9 +41,11 @@ Using salsa is as easy as 1, 2, 3...
    the inputs/queries you will be using. The query struct will contain
    the storage for all of the inputs/queries and may also contain
    anything else that your code needs (e.g., configuration data).
-  
+
 To see an example of this in action, check out [the `hello_world`
 example](examples/hello_world/main.rs), which has a number of comments
 explaining how things work. The [`hello_world`
 README](examples/hello_world/README.md) has a more detailed writeup.
+
+Salsa requires at least Rust 1.30 (beta at the time of writing).
 
