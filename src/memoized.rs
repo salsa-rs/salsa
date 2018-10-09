@@ -204,7 +204,7 @@ where
         // stale, or value is absent. Let's execute!
         let (mut stamped_value, inputs) =
             db.salsa_runtime()
-                .execute_query_implementation(db, descriptor, || {
+                .execute_query_implementation(descriptor, || {
                     debug!("{:?}({:?}): executing query", Q::default(), key);
                     Q::execute(db, key.clone())
                 });
@@ -372,7 +372,7 @@ where
             QueryState::Memoized(Memo {
                 value: Some(value),
                 changed_at,
-                inputs: QueryDescriptorSet::new(),
+                inputs: QueryDescriptorSet::default(),
                 verified_at: current_revision,
             }),
         );
@@ -395,10 +395,13 @@ where
 
     fn verify_inputs(&self, db: &DB) -> bool {
         match self.changed_at {
-            ChangedAt::Revision(revision) => self
-                .inputs
-                .iter()
-                .all(|old_input| !old_input.maybe_changed_since(db, revision)),
+            ChangedAt::Revision(revision) => match &self.inputs {
+                QueryDescriptorSet::Tracked(inputs) => inputs
+                    .iter()
+                    .all(|old_input| !old_input.maybe_changed_since(db, revision)),
+
+                QueryDescriptorSet::Untracked => false,
+            },
         }
     }
 }

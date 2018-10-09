@@ -1,4 +1,5 @@
 use crate::runtime::ChangedAt;
+use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
@@ -56,23 +57,23 @@ where
             return Err(CycleDetected);
         }
 
-        let (
-            StampedValue {
-                value,
-                changed_at: _,
-            },
-            _inputs,
-        ) = db
-            .salsa_runtime()
-            .execute_query_implementation(db, descriptor, || {
+        let runtime = db.salsa_runtime();
+
+        let (StampedValue { value, changed_at }, inputs) =
+            runtime.execute_query_implementation(descriptor, || {
                 debug!("{:?}({:?}): executing query", Q::default(), key);
+                runtime.report_untracked_read();
                 Q::execute(db, key.clone())
             });
 
+        assert!(changed_at == ChangedAt::Revision(db.salsa_runtime().current_revision()));
+        assert!(match inputs {
+            QueryDescriptorSet::Untracked => true,
+            _ => false,
+        });
+
         let was_in_progress = self.in_progress.lock().remove(key);
         assert!(was_in_progress);
-
-        let changed_at = ChangedAt::Revision(db.salsa_runtime().current_revision());
 
         db.salsa_runtime().report_query_read(descriptor, changed_at);
 
