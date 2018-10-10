@@ -1,3 +1,4 @@
+use crate::constants;
 use crate::counter::Counter;
 use crate::log::Log;
 use crate::memoized_dep_inputs;
@@ -43,6 +44,11 @@ impl TestContextImpl {
 
 salsa::database_storage! {
     pub(crate) struct TestContextImplStorage for TestContextImpl {
+        impl constants::ConstantsDatabase {
+            fn constants_input() for constants::ConstantsInput;
+            fn constants_derived() for constants::ConstantsDerived;
+        }
+
         impl memoized_dep_inputs::MemoizedDepInputsContext {
             fn dep_memoized2() for memoized_dep_inputs::Memoized2;
             fn dep_memoized1() for memoized_dep_inputs::Memoized1;
