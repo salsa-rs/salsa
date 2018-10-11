@@ -60,3 +60,20 @@ fn revalidate() {
     assert_eq!(v, 66);
     db.assert_log(&[]);
 }
+
+/// Test that invoking `set` on an input with the same value does not
+/// trigger a new revision.
+#[test]
+fn set_after_no_change() {
+    let db = &TestContextImpl::default();
+
+    db.query(Input1).set((), 44);
+    let v = db.max(());
+    assert_eq!(v, 44);
+    db.assert_log(&["Max invoked"]);
+
+    db.query(Input1).set((), 44);
+    let v = db.max(());
+    assert_eq!(v, 44);
+    db.assert_log(&[]);
+}

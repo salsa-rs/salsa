@@ -134,7 +134,11 @@ where
     /// - `descriptor`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    pub(crate) fn report_query_read(&self, descriptor: &DB::QueryDescriptor, changed_at: ChangedAt) {
+    pub(crate) fn report_query_read(
+        &self,
+        descriptor: &DB::QueryDescriptor,
+        changed_at: ChangedAt,
+    ) {
         if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
             top_query.add_read(descriptor, changed_at);
         }
@@ -194,14 +198,22 @@ impl<DB: Database> ActiveQuery<DB> {
     fn new(descriptor: DB::QueryDescriptor) -> Self {
         ActiveQuery {
             descriptor,
-            changed_at: ChangedAt::Revision(Revision::ZERO),
+            changed_at: ChangedAt::Constant(Revision::ZERO),
             subqueries: QueryDescriptorSet::default(),
         }
     }
 
     fn add_read(&mut self, subquery: &DB::QueryDescriptor, changed_at: ChangedAt) {
-        self.subqueries.insert(subquery.clone());
-        self.changed_at = self.changed_at.max(changed_at);
+        match changed_at {
+            ChangedAt::Constant(_) => {
+                // When we read constant values, we don't need to
+                // track the source of the value.
+            }
+            ChangedAt::Revision(_) => {
+                self.subqueries.insert(subquery.clone());
+                self.changed_at = self.changed_at.max(changed_at);
+            }
+        }
     }
 
     fn add_untracked_read(&mut self, changed_at: ChangedAt) {
@@ -232,14 +244,28 @@ impl std::fmt::Debug for Revision {
 /// changed.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ChangedAt {
+    /// Will never change again (and the revision in which we became a
+    /// constant).
+    Constant(Revision),
+
+    /// Last changed in the given revision. May change in the future.
     Revision(Revision),
 }
 
 impl ChangedAt {
-    /// True if this value has changed after `revision`.
+    pub fn is_constant(self) -> bool {
+        match self {
+            ChangedAt::Constant(_) => true,
+            ChangedAt::Revision(_) => false,
+        }
+    }
+
+    /// True if a value is stored with this `ChangedAt` value has
+    /// changed after `revision`. This is invoked by query storage
+    /// when their dependents are asking them if they have changed.
     pub fn changed_since(self, revision: Revision) -> bool {
         match self {
-            ChangedAt::Revision(r) => r > revision,
+            ChangedAt::Constant(r) | ChangedAt::Revision(r) => r > revision,
         }
     }
 }

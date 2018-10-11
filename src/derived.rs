@@ -396,6 +396,15 @@ where
 
         true
     }
+
+    fn is_constant(&self, _db: &DB, key: &Q::Key) -> bool {
+        let map_read = self.map.read();
+        match map_read.get(key) {
+            None => false,
+            Some(QueryState::InProgress) => panic!("query in progress"),
+            Some(QueryState::Memoized(memo)) => memo.changed_at.is_constant(),
+        }
+    }
 }
 
 impl<DB, Q, MP> UncheckedMutQueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
@@ -443,6 +452,19 @@ where
 
     fn verify_inputs(&self, db: &DB) -> bool {
         match self.changed_at {
+            ChangedAt::Constant(_) => {
+                // If we know that the value is constant, it had
+                // better not change, but in that case, we ought not
+                // to have any inputs. Using `debug_assert` because
+                // this is on the fast path.
+                debug_assert!(match &self.inputs {
+                    QueryDescriptorSet::Tracked(inputs) => inputs.is_empty(),
+                    QueryDescriptorSet::Untracked => false,
+                });
+
+                true
+            }
+
             ChangedAt::Revision(revision) => match &self.inputs {
                 QueryDescriptorSet::Tracked(inputs) => inputs
                     .iter()

@@ -4,7 +4,7 @@ use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
 use crate::Database;
-use crate::MutQueryStorageOps;
+use crate::InputQueryStorageOps;
 use crate::Query;
 use crate::QueryDescriptor;
 use crate::QueryStorageOps;
@@ -46,6 +46,8 @@ where
     }
 }
 
+struct IsConstant(bool);
+
 impl<DB, Q> InputStorage<DB, Q>
 where
     Q: Query<DB>,
@@ -69,6 +71,67 @@ where
             value: <Q::Value>::default(),
             changed_at: ChangedAt::Revision(Revision::ZERO),
         })
+    }
+
+    fn set_common(&self, db: &DB, key: &Q::Key, value: Q::Value, is_constant: IsConstant) {
+        let mut map = self.map.write();
+
+        // If this value was previously stored, check if this is an
+        // *actual change* before we do anything.
+        if let Some(old_value) = map.get_mut(key) {
+            if old_value.value == value {
+                // If the value did not change, but it is now
+                // considered constant, we can just update
+                // `changed_at`. We don't have to trigger a new
+                // revision for this case: all the derived values are
+                // still intact, they just have conservative
+                // dependencies. The next revision, they may wind up
+                // with something more precise.
+                if is_constant.0 && !old_value.changed_at.is_constant() {
+                    old_value.changed_at =
+                        ChangedAt::Constant(db.salsa_runtime().current_revision());
+                }
+
+                return;
+            }
+        }
+
+        let key = key.clone();
+
+        // The value is changing, so even if we are setting this to a
+        // constant, we still need a new revision.
+        let next_revision = db.salsa_runtime().increment_revision();
+
+        // Do this *after* we acquire the lock, so that we are not
+        // racing with somebody else to modify this same cell.
+        // (Otherwise, someone else might write a *newer* revision
+        // into the same cell while we block on the lock.)
+        let changed_at = if is_constant.0 {
+            ChangedAt::Constant(next_revision)
+        } else {
+            ChangedAt::Revision(next_revision)
+        };
+
+        let stamped_value = StampedValue { value, changed_at };
+
+        match map.entry(key) {
+            Entry::Occupied(mut entry) => {
+                assert!(
+                    !entry.get().changed_at.is_constant(),
+                    "modifying `{:?}({:?})`, which was previously marked as constant (old value `{:?}`, new value `{:?}`)",
+                    Q::default(),
+                    entry.key(),
+                    entry.get().value,
+                    stamped_value.value,
+                );
+
+                entry.insert(stamped_value);
+            }
+
+            Entry::Vacant(entry) => {
+                entry.insert(stamped_value);
+            }
+        }
     }
 }
 
@@ -115,26 +178,28 @@ where
 
         changed_at.changed_since(revision)
     }
+
+    fn is_constant(&self, _db: &DB, key: &Q::Key) -> bool {
+        let map_read = self.map.read();
+        map_read
+            .get(key)
+            .map(|v| v.changed_at.is_constant())
+            .unwrap_or(false)
+    }
 }
 
-impl<DB, Q> MutQueryStorageOps<DB, Q> for InputStorage<DB, Q>
+impl<DB, Q> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
     Q::Value: Default,
 {
     fn set(&self, db: &DB, key: &Q::Key, value: Q::Value) {
-        let key = key.clone();
+        self.set_common(db, key, value, IsConstant(false))
+    }
 
-        let mut map_write = self.map.write();
-
-        // Do this *after* we acquire the lock, so that we are not
-        // racing with somebody else to modify this same cell.
-        // (Otherwise, someone else might write a *newer* revision
-        // into the same cell while we block on the lock.)
-        let changed_at = ChangedAt::Revision(db.salsa_runtime().increment_revision());
-
-        map_write.insert(key, StampedValue { value, changed_at });
+    fn set_constant(&self, db: &DB, key: &Q::Key, value: Q::Value) {
+        self.set_common(db, key, value, IsConstant(true))
     }
 }
 
