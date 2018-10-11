@@ -171,7 +171,11 @@ where
         key: &Q::Key,
         descriptor: &DB::QueryDescriptor,
     ) -> Result<StampedValue<Q::Value>, CycleDetected> {
-        let revision_now = db.salsa_runtime().current_revision();
+        let runtime = db.salsa_runtime();
+
+        let _read_lock = runtime.freeze_revision();
+
+        let revision_now = runtime.current_revision();
 
         debug!(
             "{:?}({:?}): invoked at {:?}",
@@ -239,7 +243,6 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let runtime = db.salsa_runtime();
         let (mut stamped_value, inputs) = runtime.execute_query_implementation(descriptor, || {
             debug!("{:?}({:?}): executing query", Q::default(), key);
 
@@ -254,7 +257,7 @@ where
         // not mutate the "inputs" to the query system. Sanity check
         // that assumption here, at least to the best of our ability.
         assert_eq!(
-            db.salsa_runtime().current_revision(),
+            runtime.current_revision(),
             revision_now,
             "revision altered during query execution",
         );

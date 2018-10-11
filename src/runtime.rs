@@ -2,7 +2,7 @@ use crate::Database;
 use crate::Query;
 use crate::QueryFunction;
 use log::debug;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
 use rustc_hash::FxHasher;
 use std::cell::RefCell;
 use std::fmt::Write;
@@ -67,6 +67,23 @@ where
     /// invoke this method from time to time.
     pub fn next_revision(&self) {
         self.increment_revision();
+    }
+
+    /// Indicates that a derived query has begun to execute; if this is the
+    /// first derived query on this thread, then acquires a read-lock on the
+    /// runtime to prevent us from moving to a new revision until that query
+    /// completes.
+    ///
+    /// (However, if other threads invoke `increment_revision`, then
+    /// the current revision may be considered cancelled, which can be
+    /// observed through `is_current_revision_canceled`.)
+    pub(crate) fn freeze_revision(&self) -> Option<RwLockReadGuard<'_, ()>> {
+        let local_state = self.local_state.borrow();
+        if local_state.query_stack.is_empty() {
+            Some(self.shared_state.revision_lock.read())
+        } else {
+            None
+        }
     }
 
     /// Read current value of the revision counter.
