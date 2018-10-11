@@ -43,6 +43,15 @@ fn invalidate_constant_1() {
     db.query(ConstantsInput).set_constant('a', 66);
 }
 
+/// Test that use can still `set` an input that is constant, so long
+/// as you don't change the value.
+#[test]
+fn set_after_constant_same_value() {
+    let db = &TestContextImpl::default();
+    db.query(ConstantsInput).set_constant('a', 44);
+    db.query(ConstantsInput).set('a', 44);
+}
+
 #[test]
 fn not_constant() {
     let db = &TestContextImpl::default();
