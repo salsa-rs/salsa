@@ -2,6 +2,7 @@ use crate::Database;
 use crate::Query;
 use crate::QueryFunction;
 use log::debug;
+use parking_lot::RwLock;
 use rustc_hash::FxHasher;
 use std::cell::RefCell;
 use std::fmt::Write;
@@ -31,6 +32,7 @@ where
         Runtime {
             shared_state: Arc::new(SharedState {
                 storage: Default::default(),
+                revision_lock: Default::default(),
                 revision: Default::default(),
             }),
             local_state: RefCell::new(LocalState {
@@ -78,6 +80,9 @@ where
         if !self.local_state.borrow().query_stack.is_empty() {
             panic!("increment_revision invoked during a query computation");
         }
+
+        // To modify the revision, we need the lock.
+        let _lock = self.shared_state.revision_lock.write();
 
         let old_revision = self.shared_state.revision.fetch_add(1, Ordering::SeqCst);
         assert!(old_revision != usize::max_value(), "revision overflow");
@@ -173,7 +178,18 @@ where
 /// State that will be common to all threads (when we support multiple threads)
 struct SharedState<DB: Database> {
     storage: DB::DatabaseStorage,
-    // Ideally, this should be `AtomicU64`, but that is currently unstable.
+
+    /// This lock must be held (with write permissions) in order to
+    /// mutate the current revision. This is used to ensure atomicity
+    /// of modifying the revision with queries that are executing and
+    /// so forth.
+    revision_lock: RwLock<()>,
+
+    /// Stores the current revision. This is an `AtomicUsize` because it may be
+    /// *read* at any point without holding the `revision_lock`. Updates, however,
+    /// require the `revision_lock` to be acquired.
+    ///
+    /// (Ideally, this should be `AtomicU64`, but that is currently unstable.)
     revision: AtomicUsize,
 }
 
