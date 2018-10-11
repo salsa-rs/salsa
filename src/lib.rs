@@ -152,8 +152,8 @@ where
 #[derive(new)]
 pub struct QueryTable<'me, DB, Q>
 where
-    DB: Database,
-    Q: Query<DB>,
+    DB: Database + 'me,
+    Q: Query<DB> + 'me,
 {
     db: &'me DB,
     storage: &'me Q::Storage,
