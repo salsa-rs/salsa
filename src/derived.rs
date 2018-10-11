@@ -396,6 +396,15 @@ where
 
         true
     }
+
+    fn is_constant(&self, _db: &DB, key: &Q::Key) -> bool {
+        let map_read = self.map.read();
+        match map_read.get(key) {
+            None => false,
+            Some(QueryState::InProgress) => panic!("query in progress"),
+            Some(QueryState::Memoized(memo)) => memo.changed_at.is_constant(),
+        }
+    }
 }
 
 impl<DB, Q, MP> UncheckedMutQueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>

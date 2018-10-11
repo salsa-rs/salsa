@@ -177,6 +177,14 @@ where
 
         changed_at.changed_since(revision)
     }
+
+    fn is_constant(&self, _db: &DB, key: &Q::Key) -> bool {
+        let map_read = self.map.read();
+        map_read
+            .get(key)
+            .map(|v| v.changed_at.is_constant())
+            .unwrap_or(false)
+    }
 }
 
 impl<DB, Q> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q>

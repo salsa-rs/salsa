@@ -12,6 +12,7 @@ use std::fmt::Display;
 use std::fmt::Write;
 use std::hash::Hash;
 
+pub mod debug;
 pub mod derived;
 pub mod input;
 pub mod runtime;
@@ -119,6 +120,9 @@ where
         key: &Q::Key,
         descriptor: &DB::QueryDescriptor,
     ) -> bool;
+
+    /// Check if `key` is (currently) believed to be a constant.
+    fn is_constant(&self, db: &DB, key: &Q::Key) -> bool;
 }
 
 /// An optional trait that is implemented for "user mutable" storage:
