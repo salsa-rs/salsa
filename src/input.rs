@@ -88,7 +88,8 @@ where
                 // dependencies. The next revision, they may wind up
                 // with something more precise.
                 if is_constant.0 && !old_value.changed_at.is_constant() {
-                    old_value.changed_at = ChangedAt::Constant;
+                    old_value.changed_at =
+                        ChangedAt::Constant(db.salsa_runtime().current_revision());
                 }
 
                 return;
@@ -106,7 +107,7 @@ where
         // (Otherwise, someone else might write a *newer* revision
         // into the same cell while we block on the lock.)
         let changed_at = if is_constant.0 {
-            ChangedAt::Constant
+            ChangedAt::Constant(next_revision)
         } else {
             ChangedAt::Revision(next_revision)
         };

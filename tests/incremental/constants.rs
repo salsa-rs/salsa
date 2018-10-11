@@ -73,4 +73,21 @@ fn mixed_constant() {
     assert_eq!(db.constants_add(('a', 'b')), 66);
     assert!(!db.query(ConstantsAdd).is_constant(('a', 'b')));
 }
+
+#[test]
+fn becomes_constant() {
+    let db = &TestContextImpl::default();
+
+    db.query(ConstantsInput).set('a', 22);
+    db.query(ConstantsInput).set('b', 44);
+    assert_eq!(db.constants_add(('a', 'b')), 66);
+    assert!(!db.query(ConstantsAdd).is_constant(('a', 'b')));
+
+    db.query(ConstantsInput).set_constant('a', 23);
+    assert_eq!(db.constants_add(('a', 'b')), 67);
+    assert!(!db.query(ConstantsAdd).is_constant(('a', 'b')));
+
+    db.query(ConstantsInput).set_constant('b', 45);
+    assert_eq!(db.constants_add(('a', 'b')), 68);
+    assert!(db.query(ConstantsAdd).is_constant(('a', 'b')));
 }

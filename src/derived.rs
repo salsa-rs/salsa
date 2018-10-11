@@ -452,7 +452,7 @@ where
 
     fn verify_inputs(&self, db: &DB) -> bool {
         match self.changed_at {
-            ChangedAt::Constant => {
+            ChangedAt::Constant(_) => {
                 // If we know that the value is constant, it had
                 // better not change, but in that case, we ought not
                 // to have any inputs. Using `debug_assert` because
