@@ -16,8 +16,7 @@ salsa::query_group! {
 }
 
 fn constants_add(db: &impl ConstantsDatabase, (key1, key2): (char, char)) -> usize {
-    db.log()
-        .add(format!("constants_derived({}, {}) invoked", key1, key2));
+    db.log().add(format!("add({}, {})", key1, key2));
     db.constants_input(key1) + db.constants_input(key2)
 }
 
@@ -90,4 +89,30 @@ fn becomes_constant() {
     db.query(ConstantsInput).set_constant('b', 45);
     assert_eq!(db.constants_add(('a', 'b')), 68);
     assert!(db.query(ConstantsAdd).is_constant(('a', 'b')));
+}
+
+#[test]
+fn becomes_constant_no_change() {
+    let db = &TestContextImpl::default();
+
+    db.query(ConstantsInput).set('a', 22);
+    db.query(ConstantsInput).set('b', 44);
+    assert_eq!(db.constants_add(('a', 'b')), 66);
+    assert!(!db.query(ConstantsAdd).is_constant(('a', 'b')));
+    db.assert_log(&["add(a, b)"]);
+
+    // 'a' is now constant, but the value did not change; this
+    // should not in and of itself trigger a new revision.
+    db.query(ConstantsInput).set_constant('a', 22);
+    assert_eq!(db.constants_add(('a', 'b')), 66);
+    assert!(!db.query(ConstantsAdd).is_constant(('a', 'b')));
+    db.assert_log(&[]); // no new revision, no new log entries
+
+    // 'b' is now constant, and its value DID change. This triggers a
+    // new revision, and at that point we figure out that we are
+    // constant.
+    db.query(ConstantsInput).set_constant('b', 45);
+    assert_eq!(db.constants_add(('a', 'b')), 67);
+    assert!(db.query(ConstantsAdd).is_constant(('a', 'b')));
+    db.assert_log(&["add(a, b)"]);
 }
