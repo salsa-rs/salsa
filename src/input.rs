@@ -195,10 +195,14 @@ where
     Q::Value: Default,
 {
     fn set(&self, db: &DB, key: &Q::Key, value: Q::Value) {
+        log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
+
         self.set_common(db, key, value, IsConstant(false))
     }
 
     fn set_constant(&self, db: &DB, key: &Q::Key, value: Q::Value) {
+        log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
+
         self.set_common(db, key, value, IsConstant(true))
     }
 }
