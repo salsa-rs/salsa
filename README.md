@@ -49,3 +49,9 @@ README](examples/hello_world/README.md) has a more detailed writeup.
 
 Salsa requires at least Rust 1.30 (beta at the time of writing).
 
+## Getting in touch
+
+The bulk of the discussion happens in the [issues](https://github.com/salsa-rs/salsa/issues) 
+and [pull requests](https://github.com/salsa-rs/salsa/pulls), 
+but we have a [zulip chat](https://salsa.zulipchat.com/) as well.
+
