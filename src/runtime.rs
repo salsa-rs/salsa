@@ -84,7 +84,7 @@ where
     pub(crate) fn freeze_revision(&self) -> Option<RwLockReadGuard<'_, ()>> {
         let local_state = self.local_state.borrow();
         if local_state.query_stack.is_empty() {
-            Some(self.shared_state.revision_lock.read())
+            Some(self.shared_state.query_lock.read())
         } else {
             None
         }
@@ -128,7 +128,7 @@ where
 
         // Get an (upgradable) read lock, so that we are sure nobody
         // else is changing the current revision.
-        let lock = self.shared_state.revision_lock.upgradable_read();
+        let lock = self.shared_state.query_lock.upgradable_read();
 
         // Flag current revision as cancelled.
         // `increment_revision` calls, they may all set the
@@ -148,7 +148,7 @@ where
         // `revision_cancelled` to false.  This way, if anybody should
         // happen to invoke `is_current_revision_canceled` before we
         // update the number, they don't get an incorrect result (but
-        // note that, because we hold `revision_lock`, no queries can
+        // note that, because we hold `query_lock`, no queries can
         // be currently executing anyhow, so it's sort of a moot
         // point).
         self.shared_state
@@ -253,15 +253,20 @@ where
 struct SharedState<DB: Database> {
     storage: DB::DatabaseStorage,
 
-    /// This lock must be held (with write permissions) in order to
-    /// mutate the current revision. This is used to ensure atomicity
-    /// of modifying the revision with queries that are executing and
-    /// so forth.
-    revision_lock: RwLock<()>,
+    /// Whenever derived queries are executing, they acquire this lock
+    /// in read mode. Mutating inputs (and thus creating a new
+    /// revision) requires a write lock (thus guaranteeing that no
+    /// derived queries are in progress). Note that this is not needed
+    /// to prevent **race conditions** -- the revision counter itself
+    /// is stored in an `AtomicUsize` so it can be cheaply read
+    /// without acquiring the lock.  Rather, the `query_lock` is used
+    /// to ensure a higher-level consistency property.
+    query_lock: RwLock<()>,
 
-    /// Stores the current revision. This is an `AtomicUsize` because it may be
-    /// *read* at any point without holding the `revision_lock`. Updates, however,
-    /// require the `revision_lock` to be acquired.
+    /// Stores the current revision. This is an `AtomicUsize` because
+    /// it may be *read* at any point without holding the
+    /// `query_lock`. Updates, however, require the `query_lock` to be
+    /// acquired. (See `query_lock` for details.)
     ///
     /// (Ideally, this should be `AtomicU64`, but that is currently unstable.)
     revision: AtomicUsize,
@@ -278,7 +283,7 @@ impl<DB: Database> Default for SharedState<DB> {
     fn default() -> Self {
         SharedState {
             storage: Default::default(),
-            revision_lock: Default::default(),
+            query_lock: Default::default(),
             revision: Default::default(),
             pending_revision_increments: Default::default(),
         }
