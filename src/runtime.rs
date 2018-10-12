@@ -1,7 +1,8 @@
 use crate::Database;
 use log::debug;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
-use rustc_hash::FxHasher;
+use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
+use rustc_hash::{FxHashMap, FxHasher};
+use smallvec::SmallVec;
 use std::cell::RefCell;
 use std::fmt::Write;
 use std::hash::BuildHasherDefault;
@@ -9,7 +10,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
-type FxIndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasherDefault<FxHasher>>;
 
 /// The salsa runtime stores the storage for all queries as well as
 /// tracking the query stack and dependencies between cycles.
@@ -261,6 +261,19 @@ where
         }
         panic!(message)
     }
+
+    /// Try to make this runtime blocked on `other_id`. Returns true
+    /// upon success or false if `other_id` is already blocked on us.
+    pub(crate) fn try_block_on(
+        &self,
+        descriptor: &DB::QueryDescriptor,
+        other_id: RuntimeId,
+    ) -> bool {
+        self.shared_state
+            .dependency_graph
+            .lock()
+            .add_edge(self.id(), descriptor, other_id)
+    }
 }
 
 /// State that will be common to all threads (when we support multiple threads)
@@ -294,6 +307,10 @@ struct SharedState<DB: Database> {
     /// "short-circuit" their results if they learn that. See
     /// `is_current_revision_canceled` for more information.
     pending_revision_increments: AtomicUsize,
+
+    /// The dependency graph tracks which runtimes are blocked on one
+    /// another, waiting for queries to terminate.
+    dependency_graph: Mutex<DependencyGraph<DB>>,
 }
 
 impl<DB: Database> Default for SharedState<DB> {
@@ -303,6 +320,7 @@ impl<DB: Database> Default for SharedState<DB> {
             storage: Default::default(),
             query_lock: Default::default(),
             revision: Default::default(),
+            dependency_graph: Default::default(),
             pending_revision_increments: Default::default(),
         }
     }
@@ -361,7 +379,7 @@ impl<DB: Database> ActiveQuery<DB> {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct RuntimeId {
     counter: usize,
 }
@@ -461,4 +479,65 @@ impl<DB: Database> QueryDescriptorSet<DB> {
 pub(crate) struct StampedValue<V> {
     pub(crate) value: V,
     pub(crate) changed_at: ChangedAt,
+}
+
+struct DependencyGraph<DB: Database> {
+    /// A `(K -> V)` pair in this map indicates that the the runtime
+    /// `K` is blocked on some query executing in the runtime `V`.
+    /// This encodes a graph that must be acyclic (or else deadlock
+    /// will result).
+    edges: FxHashMap<RuntimeId, RuntimeId>,
+    labels: FxHashMap<DB::QueryDescriptor, SmallVec<[RuntimeId; 4]>>,
+}
+
+impl<DB: Database> Default for DependencyGraph<DB> {
+    fn default() -> Self {
+        DependencyGraph {
+            edges: Default::default(),
+            labels: Default::default(),
+        }
+    }
+}
+
+impl<DB: Database> DependencyGraph<DB> {
+    /// Attempt to add an edge `from_id -> to_id` into the result graph.
+    fn add_edge(
+        &mut self,
+        from_id: RuntimeId,
+        descriptor: &DB::QueryDescriptor,
+        to_id: RuntimeId,
+    ) -> bool {
+        assert_ne!(from_id, to_id);
+        debug_assert!(!self.edges.contains_key(&from_id));
+
+        // First: walk the chain of things that `to_id` depends on,
+        // looking for us.
+        let mut p = to_id;
+        while let Some(&q) = self.edges.get(&p) {
+            if q == from_id {
+                return false;
+            }
+
+            p = q;
+        }
+
+        self.edges.insert(from_id, to_id);
+        self.labels
+            .entry(descriptor.clone())
+            .or_insert(SmallVec::default())
+            .push(from_id);
+        true
+    }
+
+    fn remove_edge(&mut self, descriptor: &DB::QueryDescriptor, to_id: RuntimeId) {
+        let vec = self
+            .labels
+            .remove(descriptor)
+            .unwrap_or(SmallVec::default());
+
+        for from_id in &vec {
+            let to_id1 = self.edges.remove(from_id);
+            assert_eq!(Some(to_id), to_id1);
+        }
+    }
 }
