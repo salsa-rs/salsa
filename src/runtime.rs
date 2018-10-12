@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
+type FxIndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasherDefault<FxHasher>>;
 
 /// The salsa runtime stores the storage for all queries as well as
 /// tracking the query stack and dependencies between cycles.
@@ -18,6 +19,7 @@ type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
 /// associated with it. Normally, therefore, you only do this once, at
 /// the start of your application.
 pub struct Runtime<DB: Database> {
+    id: RuntimeId,
     shared_state: Arc<SharedState<DB>>,
     local_state: RefCell<LocalState<DB>>,
 }
@@ -28,6 +30,7 @@ where
 {
     fn default() -> Self {
         Runtime {
+            id: RuntimeId { counter: 0 },
             shared_state: Default::default(),
             local_state: Default::default(),
         }
@@ -54,6 +57,9 @@ where
     /// thread** can lead to deadlock.
     pub fn fork(&self) -> Self {
         Runtime {
+            id: RuntimeId {
+                counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),
+            },
             shared_state: self.shared_state.clone(),
             local_state: Default::default(),
         }
@@ -253,6 +259,9 @@ where
 struct SharedState<DB: Database> {
     storage: DB::DatabaseStorage,
 
+    /// Stores the next id to use for a forked runtime (starts at 1).
+    next_id: AtomicUsize,
+
     /// Whenever derived queries are executing, they acquire this lock
     /// in read mode. Mutating inputs (and thus creating a new
     /// revision) requires a write lock (thus guaranteeing that no
@@ -282,6 +291,7 @@ struct SharedState<DB: Database> {
 impl<DB: Database> Default for SharedState<DB> {
     fn default() -> Self {
         SharedState {
+            next_id: AtomicUsize::new(1),
             storage: Default::default(),
             query_lock: Default::default(),
             revision: Default::default(),
@@ -341,6 +351,11 @@ impl<DB: Database> ActiveQuery<DB> {
         self.subqueries.insert_untracked();
         self.changed_at = self.changed_at.max(changed_at);
     }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct RuntimeId {
+    counter: usize,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
