@@ -38,6 +38,20 @@ pub trait Database: DatabaseStorageTypes {
     }
 }
 
+/// Indicates a database that also supports parallel query
+/// evaluation. All of Salsa's base query support is capable of
+/// parallel execution, but for it to work, your query key/value types
+/// must also be `Send`, as must any additional data in your database.
+pub trait ParallelDatabase: Database + Send {
+    /// Creates a copy of this database destined for another
+    /// thread. See also `Runtime::fork`.
+    ///
+    /// **Warning.** This second handle is intended to be used from a
+    /// separate thread. Using two database handles from the **same
+    /// thread** can lead to deadlock.
+    fn fork(&self) -> Self;
+}
+
 /// Defines the `QueryDescriptor` associated type. An impl of this
 /// should be generated for your query-context type automatically by
 /// the `database_storage` macro, so you shouldn't need to mess

@@ -30,15 +30,8 @@ where
 {
     fn default() -> Self {
         Runtime {
-            shared_state: Arc::new(SharedState {
-                storage: Default::default(),
-                revision_lock: Default::default(),
-                revision: Default::default(),
-                pending_revision_increments: Default::default(),
-            }),
-            local_state: RefCell::new(LocalState {
-                query_stack: Default::default(),
-            }),
+            shared_state: Default::default(),
+            local_state: Default::default(),
         }
     }
 }
@@ -53,6 +46,19 @@ where
 
     pub fn storage(&self) -> &DB::DatabaseStorage {
         &self.shared_state.storage
+    }
+
+    /// As with `Database::fork`, creates a second copy of the runtime
+    /// meant to be used from another thread.
+    ///
+    /// **Warning.** This second handle is intended to be used from a
+    /// separate thread. Using two database handles from the **same
+    /// thread** can lead to deadlock.
+    pub fn fork(&self) -> Self {
+        Runtime {
+            shared_state: self.shared_state.clone(),
+            local_state: Default::default(),
+        }
     }
 
     /// Indicates that some input to the system has changed and hence
@@ -266,10 +272,29 @@ struct SharedState<DB: Database> {
     pending_revision_increments: AtomicUsize,
 }
 
+impl<DB: Database> Default for SharedState<DB> {
+    fn default() -> Self {
+        SharedState {
+            storage: Default::default(),
+            revision_lock: Default::default(),
+            revision: Default::default(),
+            pending_revision_increments: Default::default(),
+        }
+    }
+}
+
 /// State that will be specific to a single execution threads (when we
 /// support multiple threads)
 struct LocalState<DB: Database> {
     query_stack: Vec<ActiveQuery<DB>>,
+}
+
+impl<DB: Database> Default for LocalState<DB> {
+    fn default() -> Self {
+        LocalState {
+            query_stack: Default::default(),
+        }
+    }
 }
 
 struct ActiveQuery<DB: Database> {
