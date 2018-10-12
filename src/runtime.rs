@@ -122,6 +122,8 @@ where
 
     /// Increments the current revision counter and returns the new value.
     pub(crate) fn increment_revision(&self) -> Revision {
+        log::debug!("increment_revision()");
+
         if !self.local_state.borrow().query_stack.is_empty() {
             panic!("increment_revision invoked during a query computation");
         }
@@ -230,6 +232,8 @@ where
 
     /// Obviously, this should be user configurable at some point.
     pub(crate) fn report_unexpected_cycle(&self, descriptor: DB::QueryDescriptor) -> ! {
+        debug!("report_unexpected_cycle(descriptor={:?})", descriptor);
+
         let local_state = self.local_state.borrow();
         let LocalState { query_stack, .. } = &*local_state;
 
