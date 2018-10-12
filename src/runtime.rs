@@ -1,13 +1,11 @@
 use crate::Database;
-use crate::Query;
-use crate::QueryFunction;
 use log::debug;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
 use rustc_hash::FxHasher;
 use std::cell::RefCell;
 use std::fmt::Write;
 use std::hash::BuildHasherDefault;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;

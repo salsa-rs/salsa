@@ -1,25 +1,16 @@
 use crate::runtime::ChangedAt;
-use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
 use crate::Database;
 use crate::InputQueryStorageOps;
 use crate::Query;
-use crate::QueryDescriptor;
 use crate::QueryStorageOps;
-use crate::QueryTable;
 use crate::UncheckedMutQueryStorageOps;
 use log::debug;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
-use std::any::Any;
-use std::cell::RefCell;
 use std::collections::hash_map::Entry;
-use std::fmt::Debug;
-use std::fmt::Display;
-use std::fmt::Write;
-use std::hash::Hash;
 
 /// Input queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when

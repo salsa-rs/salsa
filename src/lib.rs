@@ -1,15 +1,8 @@
 #![deny(rust_2018_idioms)]
 #![allow(dead_code)]
-#![allow(unused_imports)]
 
 use derive_new::new;
-use rustc_hash::FxHashMap;
-use std::any::Any;
-use std::cell::RefCell;
-use std::collections::hash_map::Entry;
 use std::fmt::Debug;
-use std::fmt::Display;
-use std::fmt::Write;
 use std::hash::Hash;
 
 pub mod debug;
