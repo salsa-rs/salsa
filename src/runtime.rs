@@ -45,6 +45,7 @@ where
         Self::default()
     }
 
+    /// Returns the underlying storage, where the keys/values for all queries are kept.
     pub fn storage(&self) -> &DB::DatabaseStorage {
         &self.shared_state.storage
     }
@@ -96,7 +97,13 @@ where
         }
     }
 
+    #[inline]
+    pub(crate) fn id(&self) -> RuntimeId {
+        self.id
+    }
+
     /// Read current value of the revision counter.
+    #[inline]
     pub(crate) fn current_revision(&self) -> Revision {
         Revision {
             generation: self.shared_state.revision.load(Ordering::SeqCst) as u64,
@@ -111,6 +118,7 @@ where
     /// canceled (which indicates that current query results will be
     /// ignored) your query is free to shortcircuit and return
     /// whatever it likes.
+    #[inline]
     pub fn is_current_revision_canceled(&self) -> bool {
         let pending_revision_increments = self
             .shared_state
@@ -354,7 +362,7 @@ impl<DB: Database> ActiveQuery<DB> {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct RuntimeId {
+pub(crate) struct RuntimeId {
     counter: usize,
 }
 

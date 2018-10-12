@@ -1,6 +1,8 @@
 use crate::runtime::ChangedAt;
 use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
+use crate::runtime::Runtime;
+use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
 use crate::Database;
@@ -106,9 +108,10 @@ where
     Q: QueryFunction<DB>,
     DB: Database,
 {
-    /// We are currently computing the result of this query; if we see
-    /// this value in the table, it indeeds a cycle.
-    InProgress,
+    /// The runtime with the given id is currently computing the
+    /// result of this query; if we see this value in the table, it
+    /// indeeds a cycle.
+    InProgress(RuntimeId),
 
     /// We have computed the query already, and here is the result.
     Memoized(Memo<DB, Q>),
@@ -180,7 +183,13 @@ where
             let map_read = self.map.upgradable_read();
             if let Some(value) = map_read.get(key) {
                 match value {
-                    QueryState::InProgress => return Err(CycleDetected),
+                    QueryState::InProgress(id) => {
+                        if *id == runtime.id() {
+                            return Err(CycleDetected);
+                        } else {
+                            unimplemented!();
+                        }
+                    }
                     QueryState::Memoized(m) => {
                         debug!(
                             "{:?}({:?}): found memoized value verified_at={:?}",
@@ -211,7 +220,7 @@ where
             }
 
             let mut map_write = RwLockUpgradableReadGuard::upgrade(map_read);
-            map_write.insert(key.clone(), QueryState::InProgress)
+            map_write.insert(key.clone(), QueryState::InProgress(runtime.id()))
         };
 
         // If we have an old-value, it *may* now be stale, since there
@@ -228,7 +237,7 @@ where
                 let changed_at = old_memo.changed_at;
 
                 let mut map_write = self.map.write();
-                self.overwrite_placeholder(&mut map_write, key, old_value.unwrap());
+                self.overwrite_placeholder(runtime, &mut map_write, key, old_value.unwrap());
                 return Ok(StampedValue { value, changed_at });
             }
         }
@@ -273,6 +282,7 @@ where
             };
             let mut map_write = self.map.write();
             self.overwrite_placeholder(
+                runtime,
                 &mut map_write,
                 key,
                 QueryState::Memoized(Memo {
@@ -289,6 +299,7 @@ where
 
     fn overwrite_placeholder(
         &self,
+        runtime: &Runtime<DB>,
         map_write: &mut FxHashMap<Q::Key, QueryState<DB, Q>>,
         key: &Q::Key,
         value: QueryState<DB, Q>,
@@ -296,7 +307,7 @@ where
         let old_value = map_write.insert(key.clone(), value);
         assert!(
             match old_value {
-                Some(QueryState::InProgress) => true,
+                Some(QueryState::InProgress(id)) => id == runtime.id(),
                 _ => false,
             },
             "expected in-progress state",
@@ -338,7 +349,8 @@ where
         key: &Q::Key,
         descriptor: &DB::QueryDescriptor,
     ) -> bool {
-        let revision_now = db.salsa_runtime().current_revision();
+        let runtime = db.salsa_runtime();
+        let revision_now = runtime.current_revision();
 
         debug!(
             "{:?}({:?})::maybe_changed_since(revision={:?}, revision_now={:?})",
@@ -351,7 +363,7 @@ where
         let value = {
             let map_read = self.map.upgradable_read();
             match map_read.get(key) {
-                None | Some(QueryState::InProgress) => return true,
+                None | Some(QueryState::InProgress(_)) => return true,
                 Some(QueryState::Memoized(memo)) => {
                     // If our memo is still up to date, then check if we've
                     // changed since the revision.
@@ -372,7 +384,7 @@ where
             // If, however, we don't cache values, then optimistically
             // try to advance `verified_at` by walking the inputs.
             let mut map_write = RwLockUpgradableReadGuard::upgrade(map_read);
-            map_write.insert(key.clone(), QueryState::InProgress)
+            map_write.insert(key.clone(), QueryState::InProgress(runtime.id()))
         };
 
         let mut memo = match value {
@@ -382,7 +394,12 @@ where
 
         if memo.verify_inputs(db) {
             memo.verified_at = revision_now;
-            self.overwrite_placeholder(&mut self.map.write(), key, QueryState::Memoized(memo));
+            self.overwrite_placeholder(
+                runtime,
+                &mut self.map.write(),
+                key,
+                QueryState::Memoized(memo),
+            );
             return false;
         }
 
@@ -396,7 +413,7 @@ where
         let map_read = self.map.read();
         match map_read.get(key) {
             None => false,
-            Some(QueryState::InProgress) => panic!("query in progress"),
+            Some(QueryState::InProgress(_)) => panic!("query in progress"),
             Some(QueryState::Memoized(memo)) => memo.changed_at.is_constant(),
         }
     }
