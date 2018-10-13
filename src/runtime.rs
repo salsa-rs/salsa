@@ -274,6 +274,13 @@ where
             .lock()
             .add_edge(self.id(), descriptor, other_id)
     }
+
+    pub(crate) fn unblock_queries_blocked_on_self(&self, descriptor: &DB::QueryDescriptor) {
+        self.shared_state
+            .dependency_graph
+            .lock()
+            .remove_edge(descriptor, self.id())
+    }
 }
 
 /// State that will be common to all threads (when we support multiple threads)

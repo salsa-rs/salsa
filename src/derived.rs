@@ -17,6 +17,7 @@ use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Memoized queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
@@ -126,10 +127,26 @@ where
     /// The runtime with the given id is currently computing the
     /// result of this query; if we see this value in the table, it
     /// indeeds a cycle.
-    InProgress { id: RuntimeId },
+    InProgress {
+        id: RuntimeId,
+        others_waiting: AtomicBool,
+    },
 
     /// We have computed the query already, and here is the result.
     Memoized(Memo<DB, Q>),
+}
+
+impl<DB, Q> QueryState<DB, Q>
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+{
+    fn in_progress(id: RuntimeId) -> Self {
+        QueryState::InProgress {
+            id,
+            others_waiting: AtomicBool::new(false),
+        }
+    }
 }
 
 struct Memo<DB, Q>
@@ -215,7 +232,7 @@ where
         // executing in parallel.
         let mut old_value = loop {
             // Read-lock check.
-            match self.probe(self.map.read(), runtime, revision_now, key) {
+            match self.probe(self.map.read(), runtime, revision_now, descriptor, key) {
                 ProbeState::UpToDate(v) => return Ok(v),
                 ProbeState::CycleDetected => return Err(CycleDetected),
                 ProbeState::BlockedOnOtherThread(other_id) => {
@@ -226,7 +243,7 @@ where
             }
 
             // Write-lock check: install `InProgress` sentinel if no usable value.
-            match self.probe(self.map.write(), runtime, revision_now, key) {
+            match self.probe(self.map.write(), runtime, revision_now, descriptor, key) {
                 ProbeState::UpToDate(v) => return Ok(v),
                 ProbeState::CycleDetected => return Err(CycleDetected),
                 ProbeState::BlockedOnOtherThread(other_id) => {
@@ -234,7 +251,7 @@ where
                     continue;
                 }
                 ProbeState::StaleOrAbsent(mut map) => {
-                    break map.insert(key.clone(), QueryState::InProgress { id: runtime.id() })
+                    break map.insert(key.clone(), QueryState::in_progress(runtime.id()))
                 }
             }
         };
@@ -252,8 +269,7 @@ where
                 old_memo.verified_at = revision_now;
                 let changed_at = old_memo.changed_at;
 
-                let mut map_write = self.map.write();
-                self.overwrite_placeholder(runtime, &mut map_write, key, old_value.unwrap());
+                self.overwrite_placeholder(runtime, descriptor, key, old_value.unwrap());
                 return Ok(StampedValue { value, changed_at });
             }
         }
@@ -296,10 +312,9 @@ where
             } else {
                 None
             };
-            let mut map_write = self.map.write();
             self.overwrite_placeholder(
                 runtime,
-                &mut map_write,
+                descriptor,
                 key,
                 QueryState::Memoized(Memo {
                     changed_at: stamped_value.changed_at,
@@ -326,17 +341,25 @@ where
         map: MapGuard,
         runtime: &Runtime<DB>,
         revision_now: Revision,
+        descriptor: &DB::QueryDescriptor,
         key: &Q::Key,
     ) -> ProbeState<Q::Value, MapGuard>
     where
         MapGuard: Deref<Target = FxHashMap<Q::Key, QueryState<DB, Q>>>,
     {
         match map.get(key) {
-            Some(QueryState::InProgress { id }) => {
+            Some(QueryState::InProgress { id, others_waiting }) => {
                 if *id == runtime.id() {
                     return ProbeState::CycleDetected;
                 } else {
-                    unimplemented!();
+                    if !runtime.try_block_on(descriptor, *id) {
+                        return ProbeState::CycleDetected;
+                    }
+
+                    // The reader of this will have to acquire map
+                    // lock, we don't need any particular ordering.
+                    others_waiting.store(true, Ordering::Relaxed);
+                    return ProbeState::BlockedOnOtherThread(*id);
                 }
             }
 
@@ -388,7 +411,10 @@ where
                 let map = self.map.read();
 
                 match map.get(key) {
-                    Some(QueryState::InProgress { id }) => {
+                    Some(QueryState::InProgress {
+                        id,
+                        others_waiting: _,
+                    }) => {
                         // Other thread still working!
                         assert_eq!(*id, other_id);
                     }
@@ -404,21 +430,48 @@ where
         }
     }
 
+    /// Overwrites the `InProgress` placeholder for `key` that we
+    /// inserted; if others were blocked, waiting for us to finish,
+    /// the notify them.
     fn overwrite_placeholder(
         &self,
         runtime: &Runtime<DB>,
-        map_write: &mut FxHashMap<Q::Key, QueryState<DB, Q>>,
+        descriptor: &DB::QueryDescriptor,
         key: &Q::Key,
         value: QueryState<DB, Q>,
     ) {
-        let old_value = map_write.insert(key.clone(), value);
-        assert!(
-            match old_value {
-                Some(QueryState::InProgress { id }) => id == runtime.id(),
-                _ => false,
-            },
-            "expected in-progress state",
-        );
+        // Overwrite the value, releasing the lock afterwards:
+        {
+            let mut write = self.map.write();
+            match write.insert(key.clone(), value) {
+                Some(QueryState::InProgress { id, others_waiting }) => {
+                    assert_eq!(id, runtime.id());
+
+                    // Others only write to this while holding the
+                    // read-lock, and we have the write lock, so they
+                    // must all have released their locks before we
+                    // acquired ours. Therefore, we see their writes and
+                    // can use relaxed ordering.
+                    let others_waiting = others_waiting.load(Ordering::Relaxed);
+                    if !others_waiting {
+                        // if nobody is waiting, we are done here
+                        return;
+                    }
+
+                    runtime.unblock_queries_blocked_on_self(descriptor);
+                }
+
+                _ => panic!("expected in-progress state"),
+            }
+        }
+
+        // Now, with the lock released, notify the others that they
+        // can unblock themselves. It is imp't that we acquire the
+        // signal-mutex-lock, because others will also be acquiring it
+        // to ensure that their "check the map" and "await" happens
+        // atomically with respect to our notify.
+        let _signal_lock_guard = self.signal_mutex.lock();
+        self.signal_cond_var.notify_all();
     }
 
     fn should_memoize_value(&self, key: &Q::Key) -> bool {
@@ -491,7 +544,7 @@ where
             // If, however, we don't cache values, then optimistically
             // try to advance `verified_at` by walking the inputs.
             let mut map_write = RwLockUpgradableReadGuard::upgrade(map_read);
-            map_write.insert(key.clone(), QueryState::InProgress { id: runtime.id() })
+            map_write.insert(key.clone(), QueryState::in_progress(runtime.id()))
         };
 
         let mut memo = match value {
@@ -501,12 +554,7 @@ where
 
         if memo.verify_inputs(db) {
             memo.verified_at = revision_now;
-            self.overwrite_placeholder(
-                runtime,
-                &mut self.map.write(),
-                key,
-                QueryState::Memoized(memo),
-            );
+            self.overwrite_placeholder(runtime, descriptor, key, QueryState::Memoized(memo));
             return false;
         }
 
