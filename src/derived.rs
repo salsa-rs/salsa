@@ -14,6 +14,7 @@ use log::debug;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
 use std::marker::PhantomData;
+use std::ops::Deref;
 
 /// Memoized queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
@@ -179,48 +180,22 @@ where
             revision_now,
         );
 
+        // First, check for an up-to-date value (or a cycle). This we
+        // can do with a simple read-lock.
+        match self.read_up_to_date_or_cycle(self.map.read(), runtime, revision_now, key) {
+            Ok(r) => return r,
+            Err(_guard) => (),
+        }
+
+        // Otherwise, we may have to take ownership. Get the write
+        // lock and check again.  If the value is not up-to-date (or
+        // we have to verify it), insert an `InProgress` indicator to
+        // hold our spot.
         let mut old_value = {
-            let map_read = self.map.upgradable_read();
-            if let Some(value) = map_read.get(key) {
-                match value {
-                    QueryState::InProgress(id) => {
-                        if *id == runtime.id() {
-                            return Err(CycleDetected);
-                        } else {
-                            unimplemented!();
-                        }
-                    }
-                    QueryState::Memoized(m) => {
-                        debug!(
-                            "{:?}({:?}): found memoized value verified_at={:?}",
-                            Q::default(),
-                            key,
-                            m.verified_at,
-                        );
-
-                        // We've found that the query is definitely up-to-date.
-                        // If the value is also memoized, return it.
-                        // Otherwise fallback to recomputing the value.
-                        if m.verified_at == revision_now {
-                            if let Some(value) = &m.value {
-                                debug!(
-                                    "{:?}({:?}): returning memoized value (changed_at={:?})",
-                                    Q::default(),
-                                    key,
-                                    m.changed_at,
-                                );
-                                return Ok(StampedValue {
-                                    value: value.clone(),
-                                    changed_at: m.changed_at,
-                                });
-                            };
-                        }
-                    }
-                }
+            match self.read_up_to_date_or_cycle(self.map.write(), runtime, revision_now, key) {
+                Ok(r) => return r,
+                Err(mut map) => map.insert(key.clone(), QueryState::InProgress(runtime.id())),
             }
-
-            let mut map_write = RwLockUpgradableReadGuard::upgrade(map_read);
-            map_write.insert(key.clone(), QueryState::InProgress(runtime.id()))
         };
 
         // If we have an old-value, it *may* now be stale, since there
@@ -295,6 +270,66 @@ where
         }
 
         Ok(stamped_value)
+    }
+
+    /// Helper for `read`:
+    ///
+    /// Looks in the map to see if we have an up-to-date value or a
+    /// cycle. If so, returns `Ok(v)` with either the value or a cycle-error;
+    /// this can be propagated as the final result of read.
+    ///
+    /// Otherwise, returns `Err(map)` where `map` is the lock guard
+    /// that was given in as argument.
+    fn read_up_to_date_or_cycle<MapGuard>(
+        &self,
+        map: MapGuard,
+        runtime: &Runtime<DB>,
+        revision_now: Revision,
+        key: &Q::Key,
+    ) -> Result<Result<StampedValue<Q::Value>, CycleDetected>, MapGuard>
+    where
+        MapGuard: Deref<Target = FxHashMap<Q::Key, QueryState<DB, Q>>>,
+    {
+        match map.get(key) {
+            Some(QueryState::InProgress(id)) => {
+                if *id == runtime.id() {
+                    return Ok(Err(CycleDetected));
+                } else {
+                    unimplemented!();
+                }
+            }
+
+            Some(QueryState::Memoized(m)) => {
+                debug!(
+                    "{:?}({:?}): found memoized value verified_at={:?}",
+                    Q::default(),
+                    key,
+                    m.verified_at,
+                );
+
+                // We've found that the query is definitely up-to-date.
+                // If the value is also memoized, return it.
+                // Otherwise fallback to recomputing the value.
+                if m.verified_at == revision_now {
+                    if let Some(value) = &m.value {
+                        debug!(
+                            "{:?}({:?}): returning memoized value (changed_at={:?})",
+                            Q::default(),
+                            key,
+                            m.changed_at,
+                        );
+                        return Ok(Ok(StampedValue {
+                            value: value.clone(),
+                            changed_at: m.changed_at,
+                        }));
+                    };
+                }
+            }
+
+            None => {}
+        }
+
+        Err(map)
     }
 
     fn overwrite_placeholder(
