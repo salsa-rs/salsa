@@ -126,7 +126,7 @@ where
     /// The runtime with the given id is currently computing the
     /// result of this query; if we see this value in the table, it
     /// indeeds a cycle.
-    InProgress(RuntimeId),
+    InProgress { id: RuntimeId },
 
     /// We have computed the query already, and here is the result.
     Memoized(Memo<DB, Q>),
@@ -210,7 +210,9 @@ where
         let mut old_value = {
             match self.read_up_to_date_or_cycle(self.map.write(), runtime, revision_now, key) {
                 Ok(r) => return r,
-                Err(mut map) => map.insert(key.clone(), QueryState::InProgress(runtime.id())),
+                Err(mut map) => {
+                    map.insert(key.clone(), QueryState::InProgress { id: runtime.id() })
+                }
             }
         };
 
@@ -307,7 +309,7 @@ where
         MapGuard: Deref<Target = FxHashMap<Q::Key, QueryState<DB, Q>>>,
     {
         match map.get(key) {
-            Some(QueryState::InProgress(id)) => {
+            Some(QueryState::InProgress { id }) => {
                 if *id == runtime.id() {
                     return Ok(Err(CycleDetected));
                 } else {
@@ -401,7 +403,7 @@ where
         let old_value = map_write.insert(key.clone(), value);
         assert!(
             match old_value {
-                Some(QueryState::InProgress(id)) => id == runtime.id(),
+                Some(QueryState::InProgress { id }) => id == runtime.id(),
                 _ => false,
             },
             "expected in-progress state",
@@ -457,7 +459,7 @@ where
         let value = {
             let map_read = self.map.upgradable_read();
             match map_read.get(key) {
-                None | Some(QueryState::InProgress(_)) => return true,
+                None | Some(QueryState::InProgress { .. }) => return true,
                 Some(QueryState::Memoized(memo)) => {
                     // If our memo is still up to date, then check if we've
                     // changed since the revision.
@@ -478,7 +480,7 @@ where
             // If, however, we don't cache values, then optimistically
             // try to advance `verified_at` by walking the inputs.
             let mut map_write = RwLockUpgradableReadGuard::upgrade(map_read);
-            map_write.insert(key.clone(), QueryState::InProgress(runtime.id()))
+            map_write.insert(key.clone(), QueryState::InProgress { id: runtime.id() })
         };
 
         let mut memo = match value {
@@ -507,7 +509,7 @@ where
         let map_read = self.map.read();
         match map_read.get(key) {
             None => false,
-            Some(QueryState::InProgress(_)) => panic!("query in progress"),
+            Some(QueryState::InProgress { .. }) => panic!("query in progress"),
             Some(QueryState::Memoized(memo)) => memo.changed_at.is_constant(),
         }
     }
