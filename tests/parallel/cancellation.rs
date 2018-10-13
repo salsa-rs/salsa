@@ -1,54 +1,9 @@
 use crate::setup::{Input, Knobs, ParDatabase, ParDatabaseImpl, WithValue};
-use salsa::Database;
-use salsa::ParallelDatabase;
+use salsa::{Database, ParallelDatabase};
 
-#[test]
-fn in_par() {
-    let db1 = ParDatabaseImpl::default();
-    let db2 = db1.fork();
-
-    db1.query(Input).set('a', 100);
-    db1.query(Input).set('b', 010);
-    db1.query(Input).set('c', 001);
-    db1.query(Input).set('d', 200);
-    db1.query(Input).set('e', 020);
-    db1.query(Input).set('f', 002);
-
-    let thread1 = std::thread::spawn(move || db1.sum("abc"));
-
-    let thread2 = std::thread::spawn(move || db2.sum("def"));
-
-    assert_eq!(thread1.join().unwrap(), 111);
-    assert_eq!(thread2.join().unwrap(), 222);
-}
-
-#[test]
-fn in_par_get_set_race() {
-    let db1 = ParDatabaseImpl::default();
-    let db2 = db1.fork();
-
-    db1.query(Input).set('a', 100);
-    db1.query(Input).set('b', 010);
-    db1.query(Input).set('c', 001);
-
-    let thread1 = std::thread::spawn(move || {
-        let v = db1.sum("abc");
-        v
-    });
-
-    let thread2 = std::thread::spawn(move || {
-        db2.query(Input).set('a', 1000);
-        db2.sum("a")
-    });
-
-    // If the 1st thread runs first, you get 111, otherwise you get
-    // 1011.
-    let value1 = thread1.join().unwrap();
-    assert!(value1 == 111 || value1 == 1011, "illegal result {}", value1);
-
-    assert_eq!(thread2.join().unwrap(), 1000);
-}
-
+/// Add test where a call to `sum` is cancelled by a simultaneous
+/// write. Check that we recompute the result in next revision, even
+/// though none of the inputs have changed.
 #[test]
 fn in_par_get_set_cancellation() {
     let db = ParDatabaseImpl::default();
