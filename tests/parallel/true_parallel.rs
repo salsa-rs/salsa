@@ -39,3 +39,42 @@ fn true_parallel_different_keys() {
     assert_eq!(thread1.join().unwrap(), 100);
     assert_eq!(thread2.join().unwrap(), 010);
 }
+
+/// Add a test that tries to trigger a conflict, where we fetch
+/// `sum("abc")` from two threads simultaneously, and of them
+/// therefore has to block.
+#[test]
+fn true_parallel_same_keys() {
+    let db = ParDatabaseImpl::default();
+
+    db.query(Input).set('a', 100);
+    db.query(Input).set('b', 010);
+    db.query(Input).set('c', 001);
+
+    // Thread 1 will await a barrier in the start of `sum`
+    let thread1 = std::thread::spawn({
+        let db = db.fork();
+        move || {
+            let v = db.knobs().sum_signal_on_entry.with_value(1, || {
+                db.knobs()
+                    .sum_await_on_entry
+                    .with_value(2, || db.sum("abc"))
+            });
+            v
+        }
+    });
+
+    // Thread 2 will sync barrier *just* before calling `sum`. Doesn't
+    // guarantee the race we want but makes it highly likely.
+    let thread2 = std::thread::spawn({
+        let db = db.fork();
+        move || {
+            db.knobs().signal.await(1);
+            db.knobs().signal.signal(2);
+            db.sum("abc")
+        }
+    });
+
+    assert_eq!(thread1.join().unwrap(), 111);
+    assert_eq!(thread2.join().unwrap(), 111);
+}
