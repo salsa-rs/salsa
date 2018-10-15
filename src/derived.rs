@@ -207,7 +207,7 @@ where
         );
 
         // First, do a check with a read-lock.
-        match self.read_probe(self.map.read(), runtime, revision_now, descriptor, key) {
+        match self.probe(self.map.read(), runtime, revision_now, descriptor, key) {
             ProbeState::UpToDate(v) => return Ok(v),
             ProbeState::CycleDetected => return Err(CycleDetected),
             ProbeState::StaleOrAbsent(_guard) => (),
@@ -232,7 +232,7 @@ where
         // Check with an upgradable read to see if there is a value
         // already. (This permits other readers but prevents anyone
         // else from running `read_upgrade` at the same time.)
-        let mut old_value = match self.read_probe(
+        let mut old_value = match self.probe(
             self.map.upgradable_read(),
             runtime,
             revision_now,
@@ -329,13 +329,25 @@ where
 
     /// Helper for `read`:
     ///
-    /// Looks in the map to see if we have an up-to-date value or a
-    /// cycle. If so, returns `Ok(v)` with either the value or a cycle-error;
-    /// this can be propagated as the final result of read.
+    /// Invoked with the guard `map` of some lock on `self.map` (read
+    /// or write) as well as details about the key to look up.  Looks
+    /// in the map to see if we have an up-to-date value or a
+    /// cycle. Returns a suitable `ProbeState`:
     ///
-    /// Otherwise, returns `Err(map)` where `map` is the lock guard
-    /// that was given in as argument.
-    fn read_probe<MapGuard>(
+    /// - `ProbeState::UpToDate(r)` if the table has an up-to-date
+    ///   value (or we blocked on another thread that produced such a value).
+    /// - `ProbeState::CycleDetected` if this thread is (directly or
+    ///   indirectly) already computing this value.
+    /// - `ProbeState::BlockedOnOtherThread` if some other thread
+    ///   (which does not depend on us) was already computing this
+    ///   value; caller should re-acquire the lock and try again.
+    /// - `ProbeState::StaleOrAbsent` if either (a) there is no memo
+    ///    for this key, (b) the memo has no value; or (c) the memo
+    ///    has not been verified at the current revision.
+    ///
+    /// Note that in all cases **except** for `StaleOrAbsent`, the lock on
+    /// `map` will have been released.
+    fn probe<MapGuard>(
         &self,
         map: MapGuard,
         runtime: &Runtime<DB>,
@@ -343,64 +355,6 @@ where
         descriptor: &DB::QueryDescriptor,
         key: &Q::Key,
     ) -> ProbeState<StampedValue<Q::Value>, MapGuard>
-    where
-        MapGuard: Deref<Target = FxHashMap<Q::Key, QueryState<DB, Q>>>,
-    {
-        self.probe(
-            map,
-            runtime,
-            revision_now,
-            descriptor,
-            key,
-            |memo| {
-                if let Some(value) = &memo.value {
-                    debug!(
-                        "{:?}({:?}): returning memoized value (changed_at={:?})",
-                        Q::default(),
-                        key,
-                        memo.changed_at,
-                    );
-                    Some(StampedValue {
-                        value: value.clone(),
-                        changed_at: memo.changed_at,
-                    })
-                } else {
-                    None
-                }
-            },
-            |v| v,
-        )
-    }
-
-    /// Helper:
-    ///
-    /// Invoked with the guard `map` of some lock on `self.map` (read
-    /// or write) as well as details about the key to look up. It will
-    /// check the map and return a suitable `ProbeState`:
-    ///
-    /// - `ProbeState::UpToDate(r)` if the memo is up-to-date,
-    ///   and invoking `with_up_to_date_memo` returned `Some(r)`.
-    /// - `ProbeState::CycleDetected` if this thread is (directly or
-    ///   indirectly) already computing this value.
-    /// - `ProbeState::BlockedOnOtherThread` if some other thread
-    ///   (which does not depend on us) was already computing this
-    ///   value; caller should re-acquire the lock and try again.
-    /// - `ProbeState::StaleOrAbsent` if either (a) there is no memo for this key,
-    ///    (b) the memo has not been verified at the current revision, or
-    ///    (c) `with_up_to_date_memo` returned `None`.
-    ///
-    /// Note that in all cases **except** for `StaleOrAbsent`, the lock on
-    /// `map` will have been released.
-    fn probe<MapGuard, R>(
-        &self,
-        map: MapGuard,
-        runtime: &Runtime<DB>,
-        revision_now: Revision,
-        descriptor: &DB::QueryDescriptor,
-        key: &Q::Key,
-        with_up_to_date_memo: impl FnOnce(&Memo<DB, Q>) -> Option<R>,
-        with_stamped_value: impl FnOnce(StampedValue<Q::Value>) -> R,
-    ) -> ProbeState<R, MapGuard>
     where
         MapGuard: Deref<Target = FxHashMap<Q::Key, QueryState<DB, Q>>>,
     {
@@ -425,25 +379,33 @@ where
                     std::mem::drop(map);
 
                     let value = rx.recv().unwrap();
-                    let value = with_stamped_value(value);
                     return ProbeState::UpToDate(value);
                 }
             }
 
-            Some(QueryState::Memoized(m)) => {
+            Some(QueryState::Memoized(memo)) => {
                 debug!(
                     "{:?}({:?}): found memoized value verified_at={:?}",
                     Q::default(),
                     key,
-                    m.verified_at,
+                    memo.verified_at,
                 );
 
                 // We've found that the query is definitely up-to-date.
                 // If the value is also memoized, return it.
                 // Otherwise fallback to recomputing the value.
-                if m.verified_at == revision_now {
-                    if let Some(r) = with_up_to_date_memo(&m) {
-                        return ProbeState::UpToDate(r);
+                if memo.verified_at == revision_now {
+                    if let Some(value) = &memo.value {
+                        debug!(
+                            "{:?}({:?}): returning memoized value (changed_at={:?})",
+                            Q::default(),
+                            key,
+                            memo.changed_at,
+                        );
+                        return ProbeState::UpToDate(StampedValue {
+                            value: value.clone(),
+                            changed_at: memo.changed_at,
+                        });
                     }
                 }
             }
