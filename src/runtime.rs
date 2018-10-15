@@ -214,7 +214,18 @@ where
             local_state.query_stack.pop().unwrap()
         };
 
-        (StampedValue { value, changed_at }, subqueries)
+        let query_descriptor_set = match subqueries {
+            None => QueryDescriptorSet::Untracked,
+            Some(set) => {
+                if set.is_empty() {
+                    QueryDescriptorSet::Constant
+                } else {
+                    QueryDescriptorSet::Tracked(Arc::new(set))
+                }
+            }
+        };
+
+        (StampedValue { value, changed_at }, query_descriptor_set)
     }
 
     /// Reports that the currently active query read the result from
@@ -355,7 +366,7 @@ struct ActiveQuery<DB: Database> {
     changed_at: ChangedAt,
 
     /// Each subquery
-    subqueries: QueryDescriptorSet<DB>,
+    subqueries: Option<FxIndexSet<DB::QueryDescriptor>>,
 }
 
 impl<DB: Database> ActiveQuery<DB> {
@@ -363,7 +374,7 @@ impl<DB: Database> ActiveQuery<DB> {
         ActiveQuery {
             descriptor,
             changed_at: ChangedAt::Constant(Revision::ZERO),
-            subqueries: QueryDescriptorSet::default(),
+            subqueries: Some(FxIndexSet::default()),
         }
     }
 
@@ -374,14 +385,16 @@ impl<DB: Database> ActiveQuery<DB> {
                 // track the source of the value.
             }
             ChangedAt::Revision(_) => {
-                self.subqueries.insert(subquery.clone());
+                if let Some(set) = &mut self.subqueries {
+                    set.insert(subquery.clone());
+                }
                 self.changed_at = self.changed_at.max(changed_at);
             }
         }
     }
 
     fn add_untracked_read(&mut self, changed_at: ChangedAt) {
-        self.subqueries.insert_untracked();
+        self.subqueries = None;
         self.changed_at = self.changed_at.max(changed_at);
     }
 }
@@ -442,8 +455,11 @@ impl ChangedAt {
 /// An insertion-order-preserving set of queries. Used to track the
 /// inputs accessed during query execution.
 pub(crate) enum QueryDescriptorSet<DB: Database> {
+    /// No inputs:
+    Constant,
+
     /// All reads were to tracked things:
-    Tracked(FxIndexSet<DB::QueryDescriptor>),
+    Tracked(Arc<FxIndexSet<DB::QueryDescriptor>>),
 
     /// Some reads to an untracked thing:
     Untracked,
@@ -452,6 +468,7 @@ pub(crate) enum QueryDescriptorSet<DB: Database> {
 impl<DB: Database> std::fmt::Debug for QueryDescriptorSet<DB> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            QueryDescriptorSet::Constant => write!(fmt, "Constant"),
             QueryDescriptorSet::Tracked(set) => std::fmt::Debug::fmt(set, fmt),
             QueryDescriptorSet::Untracked => write!(fmt, "Untracked"),
         }
@@ -460,25 +477,7 @@ impl<DB: Database> std::fmt::Debug for QueryDescriptorSet<DB> {
 
 impl<DB: Database> Default for QueryDescriptorSet<DB> {
     fn default() -> Self {
-        QueryDescriptorSet::Tracked(FxIndexSet::default())
-    }
-}
-
-impl<DB: Database> QueryDescriptorSet<DB> {
-    /// Add `descriptor` to the set. Returns true if `descriptor` is
-    /// newly added and false if `descriptor` was already a member.
-    fn insert(&mut self, descriptor: DB::QueryDescriptor) {
-        match self {
-            QueryDescriptorSet::Tracked(set) => {
-                set.insert(descriptor);
-            }
-
-            QueryDescriptorSet::Untracked => {}
-        }
-    }
-
-    fn insert_untracked(&mut self) {
-        *self = QueryDescriptorSet::Untracked;
+        QueryDescriptorSet::Constant
     }
 }
 

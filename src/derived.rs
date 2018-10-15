@@ -673,14 +673,16 @@ where
                 // to have any inputs. Using `debug_assert` because
                 // this is on the fast path.
                 debug_assert!(match &self.inputs {
-                    QueryDescriptorSet::Tracked(inputs) => inputs.is_empty(),
-                    QueryDescriptorSet::Untracked => false,
+                    QueryDescriptorSet::Constant => true,
+                    _ => false,
                 });
 
                 true
             }
 
             ChangedAt::Revision(revision) => match &self.inputs {
+                QueryDescriptorSet::Constant => true,
+
                 QueryDescriptorSet::Tracked(inputs) => inputs
                     .iter()
                     .all(|old_input| !old_input.maybe_changed_since(db, revision)),
