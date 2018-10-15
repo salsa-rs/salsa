@@ -13,7 +13,7 @@ use crate::UncheckedMutQueryStorageOps;
 use log::debug;
 use parking_lot::Condvar;
 use parking_lot::Mutex;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -574,9 +574,9 @@ where
             revision_now,
         );
 
-        let value = {
-            let map_read = self.map.upgradable_read();
-            match map_read.get(key) {
+        let descriptors = {
+            let map = self.map.read();
+            match map.get(key) {
                 None | Some(QueryState::InProgress { .. }) => return true,
                 Some(QueryState::Memoized(memo)) => {
                     // If our memo is still up to date, then check if we've
@@ -584,38 +584,73 @@ where
                     if memo.verified_at == revision_now {
                         return memo.changed_at.changed_since(revision);
                     }
+
+                    // As a special case, if we have no inputs, we are
+                    // always clean. No need to update `verified_at`.
+                    if let QueryDescriptorSet::Constant = memo.inputs {
+                        return false;
+                    }
+
+                    // At this point, the value may be dirty (we have to check
+                    // the descriptors). If we have a cached value, we'll just
+                    // fall back to invoking `read`, which will do that checking
+                    // (and a bit more).
                     if memo.value.is_some() {
-                        // Otherwise, if we cache values, fall back to the full read to compute the result.
-                        drop(memo);
-                        drop(map_read);
+                        drop(map);
                         return match self.read(db, key, descriptor) {
                             Ok(v) => v.changed_at.changed_since(revision),
                             Err(CycleDetected) => true,
                         };
                     }
+
+                    // If there are no inputs or we don't know the
+                    // inputs, we can answer right away.
+                    match &memo.inputs {
+                        QueryDescriptorSet::Constant => return false,
+                        QueryDescriptorSet::Untracked => return true,
+                        QueryDescriptorSet::Tracked(descriptors) => descriptors.clone(),
+                    }
                 }
-            };
-            // If, however, we don't cache values, then optimistically
-            // try to advance `verified_at` by walking the inputs.
-            let mut map_write = RwLockUpgradableReadGuard::upgrade(map_read);
-            map_write.insert(key.clone(), QueryState::in_progress(runtime.id()))
+            }
         };
 
-        let mut memo = match value {
-            Some(QueryState::Memoized(memo)) => memo,
-            _ => unreachable!(),
-        };
+        let maybe_changed = descriptors
+            .iter()
+            .filter(|descriptor| descriptor.maybe_changed_since(db, revision))
+            .inspect(|old_input| {
+                debug!(
+                    "{:?}({:?}): input `{:?}` may have changed",
+                    Q::default(),
+                    key,
+                    old_input
+                )
+            })
+            .next()
+            .is_some();
 
-        if memo.verify_inputs(db) {
-            memo.verified_at = revision_now;
-            self.overwrite_placeholder(runtime, descriptor, key, QueryState::Memoized(memo));
-            return false;
+        // Either way, we have to update our entry.
+        {
+            let mut map = self.map.write();
+            if maybe_changed {
+                map.remove(key);
+            } else {
+                // It is possible that other threads were verifying inputs
+                // at the same time. They too will be mutating the
+                // map. However, they can only come to the same conclusion
+                // that we did.
+                match map.get_mut(key) {
+                    Some(QueryState::Memoized(memo)) => {
+                        memo.verified_at = revision_now;
+                    }
+
+                    _ => {
+                        panic!("{:?}({:?}) changed state unexpectedly", Q::default(), key,);
+                    }
+                }
+            }
         }
 
-        // Just remove the existing entry. It's out of date.
-        self.map.write().remove(key);
-
-        true
+        maybe_changed
     }
 
     fn is_constant(&self, _db: &DB, key: &Q::Key) -> bool {
@@ -672,29 +707,48 @@ where
     }
 
     fn verify_inputs(&self, db: &DB) -> bool {
-        match self.changed_at {
-            ChangedAt::Constant(_) => {
-                // If we know that the value is constant, it had
-                // better not change, but in that case, we ought not
-                // to have any inputs. Using `debug_assert` because
-                // this is on the fast path.
-                debug_assert!(match &self.inputs {
-                    QueryDescriptorSet::Constant => true,
-                    _ => false,
+        match &self.inputs {
+            QueryDescriptorSet::Constant => {
+                debug_assert!(match self.changed_at {
+                    ChangedAt::Constant(_) => true,
+                    ChangedAt::Revision(_) => false,
                 });
 
                 true
             }
 
-            ChangedAt::Revision(revision) => match &self.inputs {
-                QueryDescriptorSet::Constant => true,
+            QueryDescriptorSet::Tracked(inputs) => {
+                debug_assert!(!inputs.is_empty());
+                debug_assert!(match self.changed_at {
+                    ChangedAt::Constant(_) => false,
+                    ChangedAt::Revision(_) => true,
+                });
 
-                QueryDescriptorSet::Tracked(inputs) => inputs
+                // Check whether any of our inputs change since the
+                // **last point where we were verified** (not since we
+                // last changed). This is important: if we have
+                // memoized values, then an input may have changed in
+                // revision R2, but we found that *our* value was the
+                // same regardless, so our change date is still
+                // R1. But our *verification* date will be R2, and we
+                // are only interested in finding out whether the
+                // input changed *again*.
+                let changed_input = inputs
                     .iter()
-                    .all(|old_input| !old_input.maybe_changed_since(db, revision)),
+                    .filter(|old_input| old_input.maybe_changed_since(db, self.verified_at))
+                    .inspect(|old_input| {
+                        debug!(
+                            "{:?}::verify_inputs: `{:?}` may have changed",
+                            Q::default(),
+                            old_input
+                        )
+                    })
+                    .next();
 
-                QueryDescriptorSet::Untracked => false,
-            },
+                changed_input.is_none()
+            }
+
+            QueryDescriptorSet::Untracked => false,
         }
     }
 }
