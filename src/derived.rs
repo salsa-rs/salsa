@@ -213,7 +213,25 @@ where
             ProbeState::StaleOrAbsent(_guard) => (),
         }
 
-        // Next, do a check with an upgradable read.
+        self.read_upgrade(db, key, descriptor, revision_now)
+    }
+
+    /// Second phase of a read operation: acquires an upgradable-read
+    /// and -- if needed -- validates whether inputs have changed,
+    /// recomputes value, etc. This is invoked after our initial probe
+    /// shows a potentially out of date value.
+    fn read_upgrade(
+        &self,
+        db: &DB,
+        key: &Q::Key,
+        descriptor: &DB::QueryDescriptor,
+        revision_now: Revision,
+    ) -> Result<StampedValue<Q::Value>, CycleDetected> {
+        let runtime = db.salsa_runtime();
+
+        // Check with an upgradable read to see if there is a value
+        // already. (This permits other readers but prevents anyone
+        // else from running `read_upgrade` at the same time.)
         let mut old_value = match self.read_probe(
             self.map.upgradable_read(),
             runtime,
@@ -544,13 +562,15 @@ where
                         return false;
                     }
 
-                    // At this point, the value may be dirty (we have to check
-                    // the descriptors). If we have a cached value, we'll just
-                    // fall back to invoking `read`, which will do that checking
-                    // (and a bit more).
+                    // At this point, the value may be dirty (we have
+                    // to check the descriptors). If we have a cached
+                    // value, we'll just fall back to invoking `read`,
+                    // which will do that checking (and a bit more) --
+                    // note that we skip the "pure read" part as we
+                    // already know the result.
                     if memo.value.is_some() {
                         drop(map);
-                        return match self.read(db, key, descriptor) {
+                        return match self.read_upgrade(db, key, descriptor, revision_now) {
                             Ok(v) => v.changed_at.changed_since(revision),
                             Err(CycleDetected) => true,
                         };
