@@ -532,7 +532,33 @@ where
         let descriptors = {
             let map = self.map.read();
             match map.get(key) {
-                None | Some(QueryState::InProgress { .. }) => return true,
+                // If somebody depends on us, but we have no map
+                // entry, that must mean that it was found to be out
+                // of date and removed.
+                None => return true,
+
+                // This value is being actively recomputed. Wait for
+                // that thread to finish (assuming it's not dependent
+                // on us...) and check its associated revision.
+                Some(QueryState::InProgress { id, waiting }) => {
+                    let other_id = *id;
+                    return match self
+                        .register_with_in_progress_thread(runtime, descriptor, other_id, waiting)
+                    {
+                        Ok(rx) => {
+                            // Release our lock on `self.map`, so other thread
+                            // can complete.
+                            std::mem::drop(map);
+
+                            let value = rx.recv().unwrap();
+                            return value.changed_at.changed_since(revision);
+                        }
+
+                        // Consider a cycle to have changed.
+                        Err(CycleDetected) => true,
+                    };
+                }
+
                 Some(QueryState::Memoized(memo)) => {
                     // If our memo is still up to date, then check if we've
                     // changed since the revision.
