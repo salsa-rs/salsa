@@ -560,6 +560,12 @@ where
         let runtime = db.salsa_runtime();
         let revision_now = runtime.current_revision();
 
+        // If a query is in progress, we know that the current
+        // revision is not changing.
+        if !runtime.query_in_progress() {
+            panic!("maybe_changed_since invoked outside of query execution")
+        }
+
         debug!(
             "{:?}({:?})::maybe_changed_since(revision={:?}, revision_now={:?})",
             Q::default(),

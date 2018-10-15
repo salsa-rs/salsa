@@ -88,10 +88,13 @@ where
     /// (However, if other threads invoke `increment_revision`, then
     /// the current revision may be considered cancelled, which can be
     /// observed through `is_current_revision_canceled`.)
-    pub(crate) fn freeze_revision(&self) -> Option<RwLockReadGuard<'_, ()>> {
-        let local_state = self.local_state.borrow();
-        if local_state.query_stack.is_empty() {
-            Some(self.shared_state.query_lock.read())
+    pub(crate) fn freeze_revision(&self) -> Option<RevisionGuard<'_, DB>> {
+        let mut local_state = self.local_state.borrow_mut();
+        if !local_state.query_in_progress {
+            local_state.query_in_progress = true;
+            let guard = self.shared_state.query_lock.read();
+
+            Some(RevisionGuard::new(self, guard))
         } else {
             None
         }
@@ -136,7 +139,7 @@ where
     pub(crate) fn increment_revision(&self) -> Revision {
         log::debug!("increment_revision()");
 
-        if !self.local_state.borrow().query_stack.is_empty() {
+        if self.query_in_progress() {
             panic!("increment_revision invoked during a query computation");
         }
 
@@ -179,6 +182,10 @@ where
         debug!("increment_revision: incremented to {:?}", result);
 
         result
+    }
+
+    pub(crate) fn query_in_progress(&self) -> bool {
+        self.local_state.borrow().query_in_progress
     }
 
     pub(crate) fn execute_query_implementation<V>(
@@ -347,14 +354,35 @@ impl<DB: Database> Default for SharedState<DB> {
 /// State that will be specific to a single execution threads (when we
 /// support multiple threads)
 struct LocalState<DB: Database> {
+    query_in_progress: bool,
     query_stack: Vec<ActiveQuery<DB>>,
 }
 
 impl<DB: Database> Default for LocalState<DB> {
     fn default() -> Self {
         LocalState {
+            query_in_progress: false,
             query_stack: Default::default(),
         }
+    }
+}
+
+pub(crate) struct RevisionGuard<'db, DB: Database + 'db> {
+    db: &'db Runtime<DB>,
+    lock: RwLockReadGuard<'db, ()>,
+}
+
+impl<'db, DB: Database> RevisionGuard<'db, DB> {
+    fn new(db: &'db Runtime<DB>, lock: RwLockReadGuard<'db, ()>) -> Self {
+        Self { db, lock }
+    }
+}
+
+impl<'db, DB: Database> Drop for RevisionGuard<'db, DB> {
+    fn drop(&mut self) {
+        let mut local_state = self.db.local_state.borrow_mut();
+        assert!(local_state.query_in_progress);
+        local_state.query_in_progress = false;
     }
 }
 
