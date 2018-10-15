@@ -176,8 +176,7 @@ where
 
 /// Return value of `probe` helper.
 enum ProbeState<V, G> {
-    UpToDate(V),
-    CycleDetected,
+    UpToDate(Result<V, CycleDetected>),
     StaleOrAbsent(G),
 }
 
@@ -208,8 +207,7 @@ where
 
         // First, do a check with a read-lock.
         match self.probe(self.map.read(), runtime, revision_now, descriptor, key) {
-            ProbeState::UpToDate(v) => return Ok(v),
-            ProbeState::CycleDetected => return Err(CycleDetected),
+            ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(_guard) => (),
         }
 
@@ -239,8 +237,7 @@ where
             descriptor,
             key,
         ) {
-            ProbeState::UpToDate(v) => return Ok(v),
-            ProbeState::CycleDetected => return Err(CycleDetected),
+            ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(map) => {
                 let mut map = RwLockUpgradableReadGuard::upgrade(map);
                 map.insert(key.clone(), QueryState::in_progress(runtime.id()))
@@ -362,10 +359,10 @@ where
             Some(QueryState::InProgress { id, waiting }) => {
                 let other_id = *id;
                 if other_id == runtime.id() {
-                    return ProbeState::CycleDetected;
+                    return ProbeState::UpToDate(Err(CycleDetected));
                 } else {
                     if !runtime.try_block_on(descriptor, other_id) {
-                        return ProbeState::CycleDetected;
+                        return ProbeState::UpToDate(Err(CycleDetected));
                     }
 
                     let (tx, rx) = mpsc::channel();
@@ -379,7 +376,7 @@ where
                     std::mem::drop(map);
 
                     let value = rx.recv().unwrap();
-                    return ProbeState::UpToDate(value);
+                    return ProbeState::UpToDate(Ok(value));
                 }
             }
 
@@ -402,10 +399,10 @@ where
                             key,
                             memo.changed_at,
                         );
-                        return ProbeState::UpToDate(StampedValue {
+                        return ProbeState::UpToDate(Ok(StampedValue {
                             value: value.clone(),
                             changed_at: memo.changed_at,
-                        });
+                        }));
                     }
                 }
             }
