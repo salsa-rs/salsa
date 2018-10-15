@@ -11,13 +11,13 @@ use crate::QueryFunction;
 use crate::QueryStorageOps;
 use crate::UncheckedMutQueryStorageOps;
 use log::debug;
-use parking_lot::Condvar;
 use parking_lot::Mutex;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Sender};
 
 /// Memoized queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
@@ -44,18 +44,6 @@ where
 {
     map: RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
     policy: PhantomData<MP>,
-
-    /// This cond var is used when one thread is waiting on another to
-    /// produce some specific key. In that case, the thread producing
-    /// the key will signal the cond-var. The threads awaiting the key
-    /// will check in `map` to see if their key is present and (if
-    /// not) await the cond-var.
-    signal_cond_var: Condvar,
-
-    /// Mutex used for `signal_cond_var`. Note that this mutex is
-    /// never acquired while holding the lock on `map` (but you may
-    /// acquire the `map` lock while holding this mutex).
-    signal_mutex: Mutex<()>,
 }
 
 pub trait MemoizationPolicy<DB, Q>
@@ -129,7 +117,7 @@ where
     /// indeeds a cycle.
     InProgress {
         id: RuntimeId,
-        others_waiting: AtomicBool,
+        waiting: Mutex<SmallVec<[Sender<StampedValue<Q::Value>>; 2]>>,
     },
 
     /// We have computed the query already, and here is the result.
@@ -144,7 +132,7 @@ where
     fn in_progress(id: RuntimeId) -> Self {
         QueryState::InProgress {
             id,
-            others_waiting: AtomicBool::new(false),
+            waiting: Default::default(),
         }
     }
 }
@@ -182,8 +170,6 @@ where
         DerivedStorage {
             map: RwLock::new(FxHashMap::default()),
             policy: PhantomData,
-            signal_cond_var: Default::default(),
-            signal_mutex: Default::default(),
         }
     }
 }
@@ -193,7 +179,6 @@ enum ProbeState<V, G> {
     UpToDate(V),
     CycleDetected,
     StaleOrAbsent(G),
-    BlockedOnOtherThread,
 }
 
 impl<DB, Q, MP> DerivedStorage<DB, Q, MP>
@@ -221,37 +206,26 @@ where
             revision_now,
         );
 
-        // In this loop, we are looking for an up-to-date value. The loop is needed
-        // to handle other threads: if we find that some other thread is "using" this
-        // key, we will block until they are done and then loop back around and try
-        // again.
-        //
-        // Otherwise, we first check for a usable value with the read
-        // lock. If that fails, we acquire the write lock and try
-        // again. We don't use an upgradable read lock because that
-        // would eliminate the ability for multiple cache hits to be
-        // executing in parallel.
-        let mut old_value = loop {
-            // Read-lock check.
-            match self.read_probe(self.map.read(), runtime, revision_now, descriptor, key) {
-                ProbeState::UpToDate(v) => return Ok(v),
-                ProbeState::CycleDetected => return Err(CycleDetected),
-                ProbeState::BlockedOnOtherThread => {
-                    continue;
-                }
-                ProbeState::StaleOrAbsent(_guard) => (),
-            }
+        // First, do a check with a read-lock.
+        match self.read_probe(self.map.read(), runtime, revision_now, descriptor, key) {
+            ProbeState::UpToDate(v) => return Ok(v),
+            ProbeState::CycleDetected => return Err(CycleDetected),
+            ProbeState::StaleOrAbsent(_guard) => (),
+        }
 
-            // Write-lock check: install `InProgress` sentinel if no usable value.
-            match self.read_probe(self.map.write(), runtime, revision_now, descriptor, key) {
-                ProbeState::UpToDate(v) => return Ok(v),
-                ProbeState::CycleDetected => return Err(CycleDetected),
-                ProbeState::BlockedOnOtherThread => {
-                    continue;
-                }
-                ProbeState::StaleOrAbsent(mut map) => {
-                    break map.insert(key.clone(), QueryState::in_progress(runtime.id()))
-                }
+        // Next, do a check with an upgradable read.
+        let mut old_value = match self.read_probe(
+            self.map.upgradable_read(),
+            runtime,
+            revision_now,
+            descriptor,
+            key,
+        ) {
+            ProbeState::UpToDate(v) => return Ok(v),
+            ProbeState::CycleDetected => return Err(CycleDetected),
+            ProbeState::StaleOrAbsent(map) => {
+                let mut map = RwLockUpgradableReadGuard::upgrade(map);
+                map.insert(key.clone(), QueryState::in_progress(runtime.id()))
             }
         };
 
@@ -268,8 +242,15 @@ where
                 old_memo.verified_at = revision_now;
                 let changed_at = old_memo.changed_at;
 
-                self.overwrite_placeholder(runtime, descriptor, key, old_value.unwrap());
-                return Ok(StampedValue { value, changed_at });
+                let new_value = StampedValue { value, changed_at };
+                self.overwrite_placeholder(
+                    runtime,
+                    descriptor,
+                    key,
+                    old_value.unwrap(),
+                    &new_value,
+                );
+                return Ok(new_value);
             }
         }
 
@@ -321,6 +302,7 @@ where
                     inputs,
                     verified_at: revision_now,
                 }),
+                &stamped_value,
             );
         }
 
@@ -346,22 +328,30 @@ where
     where
         MapGuard: Deref<Target = FxHashMap<Q::Key, QueryState<DB, Q>>>,
     {
-        self.probe(map, runtime, revision_now, descriptor, key, |memo| {
-            if let Some(value) = &memo.value {
-                debug!(
-                    "{:?}({:?}): returning memoized value (changed_at={:?})",
-                    Q::default(),
-                    key,
-                    memo.changed_at,
-                );
-                Some(StampedValue {
-                    value: value.clone(),
-                    changed_at: memo.changed_at,
-                })
-            } else {
-                None
-            }
-        })
+        self.probe(
+            map,
+            runtime,
+            revision_now,
+            descriptor,
+            key,
+            |memo| {
+                if let Some(value) = &memo.value {
+                    debug!(
+                        "{:?}({:?}): returning memoized value (changed_at={:?})",
+                        Q::default(),
+                        key,
+                        memo.changed_at,
+                    );
+                    Some(StampedValue {
+                        value: value.clone(),
+                        changed_at: memo.changed_at,
+                    })
+                } else {
+                    None
+                }
+            },
+            |v| v,
+        )
     }
 
     /// Helper:
@@ -391,12 +381,13 @@ where
         descriptor: &DB::QueryDescriptor,
         key: &Q::Key,
         with_up_to_date_memo: impl FnOnce(&Memo<DB, Q>) -> Option<R>,
+        with_stamped_value: impl FnOnce(StampedValue<Q::Value>) -> R,
     ) -> ProbeState<R, MapGuard>
     where
         MapGuard: Deref<Target = FxHashMap<Q::Key, QueryState<DB, Q>>>,
     {
         match map.get(key) {
-            Some(QueryState::InProgress { id, others_waiting }) => {
+            Some(QueryState::InProgress { id, waiting }) => {
                 let other_id = *id;
                 if other_id == runtime.id() {
                     return ProbeState::CycleDetected;
@@ -405,18 +396,19 @@ where
                         return ProbeState::CycleDetected;
                     }
 
+                    let (tx, rx) = mpsc::channel();
+
                     // The reader of this will have to acquire map
                     // lock, we don't need any particular ordering.
-                    others_waiting.store(true, Ordering::Relaxed);
+                    waiting.lock().push(tx);
 
                     // Release our lock on `self.map`, so other thread
                     // can complete.
                     std::mem::drop(map);
 
-                    // Wait for other thread to overwrite this placeholder.
-                    self.await_other_thread(other_id, key);
-
-                    return ProbeState::BlockedOnOtherThread;
+                    let value = rx.recv().unwrap();
+                    let value = with_stamped_value(value);
+                    return ProbeState::UpToDate(value);
                 }
             }
 
@@ -444,40 +436,6 @@ where
         ProbeState::StaleOrAbsent(map)
     }
 
-    /// If some other thread is tasked with producing a memoized
-    /// result for this value, then wait for them.
-    ///
-    /// Pre-conditions:
-    /// - we have installed ourselves in the dependency graph and set the
-    ///   bool that informs the producer we are waiting
-    /// - `self.map` must not be locked
-    fn await_other_thread(&self, other_id: RuntimeId, key: &Q::Key) {
-        let mut signal_lock_guard = self.signal_mutex.lock();
-
-        loop {
-            {
-                let map = self.map.read();
-
-                match map.get(key) {
-                    Some(QueryState::InProgress {
-                        id,
-                        others_waiting: _,
-                    }) => {
-                        // Other thread still working!
-                        assert_eq!(*id, other_id);
-                    }
-
-                    _ => {
-                        // The other thread finished!
-                        return;
-                    }
-                }
-            }
-
-            self.signal_cond_var.wait(&mut signal_lock_guard);
-        }
-    }
-
     /// Overwrites the `InProgress` placeholder for `key` that we
     /// inserted; if others were blocked, waiting for us to finish,
     /// the notify them.
@@ -486,40 +444,35 @@ where
         runtime: &Runtime<DB>,
         descriptor: &DB::QueryDescriptor,
         key: &Q::Key,
-        value: QueryState<DB, Q>,
+        map_value: QueryState<DB, Q>,
+        new_value: &StampedValue<Q::Value>,
     ) {
         // Overwrite the value, releasing the lock afterwards:
-        {
+        let waiting = {
             let mut write = self.map.write();
-            match write.insert(key.clone(), value) {
-                Some(QueryState::InProgress { id, others_waiting }) => {
+            match write.insert(key.clone(), map_value) {
+                Some(QueryState::InProgress { id, waiting }) => {
                     assert_eq!(id, runtime.id());
 
-                    // Others only write to this while holding the
-                    // read-lock, and we have the write lock, so they
-                    // must all have released their locks before we
-                    // acquired ours. Therefore, we see their writes and
-                    // can use relaxed ordering.
-                    let others_waiting = others_waiting.load(Ordering::Relaxed);
-                    if !others_waiting {
+                    let waiting = waiting.into_inner();
+
+                    if waiting.is_empty() {
                         // if nobody is waiting, we are done here
                         return;
                     }
 
                     runtime.unblock_queries_blocked_on_self(descriptor);
+
+                    waiting
                 }
 
                 _ => panic!("expected in-progress state"),
             }
-        }
+        };
 
-        // Now, with the lock released, notify the others that they
-        // can unblock themselves. It is imp't that we acquire the
-        // signal-mutex-lock, because others will also be acquiring it
-        // to ensure that their "check the map" and "await" happens
-        // atomically with respect to our notify.
-        let _signal_lock_guard = self.signal_mutex.lock();
-        self.signal_cond_var.notify_all();
+        for tx in waiting {
+            tx.send(new_value.clone()).unwrap();
+        }
     }
 
     fn should_memoize_value(&self, key: &Q::Key) -> bool {
