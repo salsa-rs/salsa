@@ -175,6 +175,13 @@ where
                 .unwrap_or(ChangedAt::Revision(Revision::ZERO))
         };
 
+        debug!(
+            "{:?}({:?}): changed_at = {:?}",
+            Q::default(),
+            key,
+            changed_at,
+        );
+
         changed_at.changed_since(revision)
     }
 
