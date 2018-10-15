@@ -1,25 +1,16 @@
 use crate::runtime::ChangedAt;
-use crate::runtime::QueryDescriptorSet;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleDetected;
 use crate::Database;
 use crate::InputQueryStorageOps;
 use crate::Query;
-use crate::QueryDescriptor;
 use crate::QueryStorageOps;
-use crate::QueryTable;
 use crate::UncheckedMutQueryStorageOps;
 use log::debug;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
-use std::any::Any;
-use std::cell::RefCell;
 use std::collections::hash_map::Entry;
-use std::fmt::Debug;
-use std::fmt::Display;
-use std::fmt::Write;
-use std::hash::Hash;
 
 /// Input queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
@@ -74,11 +65,9 @@ where
     }
 
     fn set_common(&self, db: &DB, key: &Q::Key, value: Q::Value, is_constant: IsConstant) {
-        let mut map = self.map.write();
+        let map = self.map.upgradable_read();
 
-        // If this value was previously stored, check if this is an
-        // *actual change* before we do anything.
-        if let Some(old_value) = map.get_mut(key) {
+        if let Some(old_value) = map.get(key) {
             if old_value.value == value {
                 // If the value did not change, but it is now
                 // considered constant, we can just update
@@ -88,6 +77,8 @@ where
                 // dependencies. The next revision, they may wind up
                 // with something more precise.
                 if is_constant.0 && !old_value.changed_at.is_constant() {
+                    let mut map = RwLockUpgradableReadGuard::upgrade(map);
+                    let old_value = map.get_mut(key).unwrap();
                     old_value.changed_at =
                         ChangedAt::Constant(db.salsa_runtime().current_revision());
                 }
@@ -100,7 +91,15 @@ where
 
         // The value is changing, so even if we are setting this to a
         // constant, we still need a new revision.
+        //
+        // CAREFUL: This will block until the global revision lock can
+        // be acquired. If there are still queries executing, they may
+        // need to read from this input. Therefore, we do not upgrade
+        // our lock (which would prevent them from reading) until
+        // `increment_revision` has finished.
         let next_revision = db.salsa_runtime().increment_revision();
+
+        let mut map = RwLockUpgradableReadGuard::upgrade(map);
 
         // Do this *after* we acquire the lock, so that we are not
         // racing with somebody else to modify this same cell.
@@ -176,6 +175,13 @@ where
                 .unwrap_or(ChangedAt::Revision(Revision::ZERO))
         };
 
+        debug!(
+            "{:?}({:?}): changed_at = {:?}",
+            Q::default(),
+            key,
+            changed_at,
+        );
+
         changed_at.changed_since(revision)
     }
 
@@ -195,10 +201,14 @@ where
     Q::Value: Default,
 {
     fn set(&self, db: &DB, key: &Q::Key, value: Q::Value) {
+        log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
+
         self.set_common(db, key, value, IsConstant(false))
     }
 
     fn set_constant(&self, db: &DB, key: &Q::Key, value: Q::Value) {
+        log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
+
         self.set_common(db, key, value, IsConstant(true))
     }
 }

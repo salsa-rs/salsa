@@ -1,15 +1,8 @@
 #![deny(rust_2018_idioms)]
 #![allow(dead_code)]
-#![allow(unused_imports)]
 
 use derive_new::new;
-use rustc_hash::FxHashMap;
-use std::any::Any;
-use std::cell::RefCell;
-use std::collections::hash_map::Entry;
 use std::fmt::Debug;
-use std::fmt::Display;
-use std::fmt::Write;
 use std::hash::Hash;
 
 pub mod debug;
@@ -36,6 +29,20 @@ pub trait Database: DatabaseStorageTypes {
     {
         <Self as GetQueryTable<Q>>::get_query_table(self)
     }
+}
+
+/// Indicates a database that also supports parallel query
+/// evaluation. All of Salsa's base query support is capable of
+/// parallel execution, but for it to work, your query key/value types
+/// must also be `Send`, as must any additional data in your database.
+pub trait ParallelDatabase: Database + Send {
+    /// Creates a copy of this database destined for another
+    /// thread. See also `Runtime::fork`.
+    ///
+    /// **Warning.** This second handle is intended to be used from a
+    /// separate thread. Using two database handles from the **same
+    /// thread** can lead to deadlock.
+    fn fork(&self) -> Self;
 }
 
 /// Defines the `QueryDescriptor` associated type. An impl of this
