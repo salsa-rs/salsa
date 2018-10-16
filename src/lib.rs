@@ -1,21 +1,30 @@
 #![warn(rust_2018_idioms)]
 #![allow(dead_code)]
 
+mod derived;
+mod input;
+mod runtime;
+
+pub mod debug;
+/// Items in this module are public for implementation reasons,
+/// and are exempt from the SemVer guarantees.
+#[doc(hidden)]
+pub mod plumbing;
+
+use crate::plumbing::CycleDetected;
+use crate::plumbing::InputQueryStorageOps;
+use crate::plumbing::QueryStorageOps;
+use crate::plumbing::UncheckedMutQueryStorageOps;
 use derive_new::new;
 use std::fmt::Debug;
 use std::hash::Hash;
-
-pub mod debug;
-pub mod derived;
-pub mod input;
-pub mod runtime;
 
 pub use crate::runtime::Runtime;
 
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait Database: DatabaseStorageTypes {
+pub trait Database: plumbing::DatabaseStorageTypes {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &Runtime<Self>;
 
@@ -25,9 +34,9 @@ pub trait Database: DatabaseStorageTypes {
     fn query<Q>(&self, query: Q) -> QueryTable<'_, Self, Q>
     where
         Q: Query<Self>,
-        Self: GetQueryTable<Q>,
+        Self: plumbing::GetQueryTable<Q>,
     {
-        <Self as GetQueryTable<Q>>::get_query_table(self)
+        <Self as plumbing::GetQueryTable<Q>>::get_query_table(self)
     }
 }
 
@@ -45,115 +54,10 @@ pub trait ParallelDatabase: Database + Send {
     fn fork(&self) -> Self;
 }
 
-/// Defines the `QueryDescriptor` associated type. An impl of this
-/// should be generated for your query-context type automatically by
-/// the `database_storage` macro, so you shouldn't need to mess
-/// with this trait directly.
-pub trait DatabaseStorageTypes: Sized {
-    /// A "query descriptor" packages up all the possible queries and a key.
-    /// It is used to store information about (e.g.) the stack.
-    ///
-    /// At runtime, it can be implemented in various ways: a monster enum
-    /// works for a fixed set of queries, but a boxed trait object is good
-    /// for a more open-ended option.
-    type QueryDescriptor: QueryDescriptor<Self>;
-
-    /// Defines the "storage type", where all the query data is kept.
-    /// This type is defined by the `database_storage` macro.
-    type DatabaseStorage: Default;
-}
-
-pub trait QueryDescriptor<DB>: Clone + Debug + Eq + Hash + Send + Sync {
-    /// Returns true if the value of this query may have changed since
-    /// the given revision.
-    fn maybe_changed_since(&self, db: &DB, revision: runtime::Revision) -> bool;
-}
-
-pub trait QueryFunction<DB: Database>: Query<DB> {
-    fn execute(db: &DB, key: Self::Key) -> Self::Value;
-}
-
 pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type Key: Clone + Debug + Hash + Eq;
     type Value: Clone + Debug + Hash + Eq;
-    type Storage: QueryStorageOps<DB, Self> + Send + Sync;
-}
-
-pub trait GetQueryTable<Q: Query<Self>>: Database {
-    fn get_query_table(db: &Self) -> QueryTable<'_, Self, Q>;
-}
-
-pub trait QueryStorageOps<DB, Q>: Default
-where
-    DB: Database,
-    Q: Query<DB>,
-{
-    /// Execute the query, returning the result (often, the result
-    /// will be memoized).  This is the "main method" for
-    /// queries.
-    ///
-    /// Returns `Err` in the event of a cycle, meaning that computing
-    /// the value for this `key` is recursively attempting to fetch
-    /// itself.
-    fn try_fetch(
-        &self,
-        db: &DB,
-        key: &Q::Key,
-        descriptor: &DB::QueryDescriptor,
-    ) -> Result<Q::Value, CycleDetected>;
-
-    /// True if the query **may** have changed since the given
-    /// revision. The query will answer this question with as much
-    /// precision as it is able to do based on its storage type.  In
-    /// the event of a cycle being detected as part of this function,
-    /// it returns true.
-    ///
-    /// Example: The steps for a memoized query are as follows.
-    ///
-    /// - If the query has already been computed:
-    ///   - Check the inputs that the previous computation used
-    ///     recursively to see if *they* have changed.  If they have
-    ///     not, then return false.
-    ///   - If they have, then the query is re-executed and the new
-    ///     result is compared against the old result. If it is equal,
-    ///     then return false.
-    /// - Return true.
-    ///
-    /// Other storage types will skip some or all of these steps.
-    fn maybe_changed_since(
-        &self,
-        db: &DB,
-        revision: runtime::Revision,
-        key: &Q::Key,
-        descriptor: &DB::QueryDescriptor,
-    ) -> bool;
-
-    /// Check if `key` is (currently) believed to be a constant.
-    fn is_constant(&self, db: &DB, key: &Q::Key) -> bool;
-}
-
-/// An optional trait that is implemented for "user mutable" storage:
-/// that is, storage whose value is not derived from other storage but
-/// is set independently.
-pub trait InputQueryStorageOps<DB, Q>: Default
-where
-    DB: Database,
-    Q: Query<DB>,
-{
-    fn set(&self, db: &DB, key: &Q::Key, new_value: Q::Value);
-
-    fn set_constant(&self, db: &DB, key: &Q::Key, new_value: Q::Value);
-}
-
-/// An optional trait that is implemented for "user mutable" storage:
-/// that is, storage whose value is not derived from other storage but
-/// is set independently.
-pub trait UncheckedMutQueryStorageOps<DB, Q>: Default
-where
-    DB: Database,
-    Q: Query<DB>,
-{
-    fn set_unchecked(&self, db: &DB, key: &Q::Key, new_value: Q::Value);
+    type Storage: plumbing::QueryStorageOps<DB, Self> + Send + Sync;
 }
 
 #[derive(new)]
@@ -166,8 +70,6 @@ where
     storage: &'me Q::Storage,
     descriptor_fn: fn(&DB, &Q::Key) -> DB::QueryDescriptor,
 }
-
-pub struct CycleDetected;
 
 impl<DB, Q> QueryTable<'_, DB, Q>
 where
@@ -187,7 +89,7 @@ where
     /// an active query computation.
     pub fn set(&self, key: Q::Key, value: Q::Value)
     where
-        Q::Storage: InputQueryStorageOps<DB, Q>,
+        Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
         self.storage.set(self.db, &key, value);
     }
@@ -197,7 +99,7 @@ where
     /// outside of an active query computation.
     pub fn set_constant(&self, key: Q::Key, value: Q::Value)
     where
-        Q::Storage: InputQueryStorageOps<DB, Q>,
+        Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
         self.storage.set_constant(self.db, &key, value);
     }
@@ -219,7 +121,7 @@ where
     /// and thus control what it sees when it executes.
     pub fn set_unchecked(&self, key: Q::Key, value: Q::Value)
     where
-        Q::Storage: UncheckedMutQueryStorageOps<DB, Q>,
+        Q::Storage: plumbing::UncheckedMutQueryStorageOps<DB, Q>,
     {
         self.storage.set_unchecked(self.db, &key, value);
     }
@@ -296,11 +198,11 @@ macro_rules! query_group {
             )*
         }];
     ) => {
-        $($trait_attr)* $v trait $query_trait: $($crate::GetQueryTable<$QueryType> +)* $($header)* {
+        $($trait_attr)* $v trait $query_trait: $($crate::plumbing::GetQueryTable<$QueryType> +)* $($header)* {
             $(
                 $(#[$method_attr])*
                 fn $method_name(&self, key: $key_ty) -> $value_ty {
-                    <Self as $crate::GetQueryTable<$QueryType>>::get_query_table(self)
+                    <Self as $crate::plumbing::GetQueryTable<$QueryType>>::get_query_table(self)
                         .get(key)
                 }
             )*
@@ -384,7 +286,7 @@ macro_rules! query_group {
             query_type($QueryType:ty);
         ]
     ) => {
-        impl<DB> $crate::QueryFunction<DB> for $QueryType
+        impl<DB> $crate::plumbing::QueryFunction<DB> for $QueryType
         where DB: $DbTrait
         {
             fn execute(db: &DB, key: <Self as $crate::Query<DB>>::Key)
@@ -420,25 +322,25 @@ macro_rules! query_group {
     (
         @storage_ty[$DB:ident, $Self:ident, memoized]
     ) => {
-        $crate::derived::MemoizedStorage<$DB, $Self>
+        $crate::plumbing::MemoizedStorage<$DB, $Self>
     };
 
     (
         @storage_ty[$DB:ident, $Self:ident, volatile]
     ) => {
-        $crate::derived::VolatileStorage<$DB, $Self>
+        $crate::plumbing::VolatileStorage<$DB, $Self>
     };
 
     (
         @storage_ty[$DB:ident, $Self:ident, dependencies]
     ) => {
-        $crate::derived::DependencyStorage<$DB, $Self>
+        $crate::plumbing::DependencyStorage<$DB, $Self>
     };
 
     (
         @storage_ty[$DB:ident, $Self:ident, input]
     ) => {
-        $crate::input::InputStorage<DB, Self>
+        $crate::plumbing::InputStorage<DB, Self>
     };
 }
 
@@ -488,16 +390,16 @@ macro_rules! database_storage {
             )*
         }
 
-        impl $crate::DatabaseStorageTypes for $Database {
+        impl $crate::plumbing::DatabaseStorageTypes for $Database {
             type QueryDescriptor = __SalsaQueryDescriptor;
             type DatabaseStorage = $Storage;
         }
 
-        impl $crate::QueryDescriptor<$Database> for __SalsaQueryDescriptor {
+        impl $crate::plumbing::QueryDescriptor<$Database> for __SalsaQueryDescriptor {
             fn maybe_changed_since(
                 &self,
                 db: &$Database,
-                revision: $crate::runtime::Revision,
+                revision: $crate::plumbing::Revision,
             ) -> bool {
                 match &self.kind {
                     $(
@@ -505,7 +407,7 @@ macro_rules! database_storage {
                             __SalsaQueryDescriptorKind::$query_method(key) => {
                                 let runtime = $crate::Database::salsa_runtime(db);
                                 let storage = &runtime.storage().$query_method;
-                                <_ as $crate::QueryStorageOps<$Database, $QueryType>>::maybe_changed_since(
+                                <_ as $crate::plumbing::QueryStorageOps<$Database, $QueryType>>::maybe_changed_since(
                                     storage,
                                     db,
                                     revision,
@@ -523,7 +425,7 @@ macro_rules! database_storage {
             impl $TraitName for $Database { }
 
             $(
-                impl $crate::GetQueryTable<$QueryType> for $Database {
+                impl $crate::plumbing::GetQueryTable<$QueryType> for $Database {
                     fn get_query_table(
                         db: &Self,
                     ) -> $crate::QueryTable<'_, Self, $QueryType> {

@@ -1,9 +1,9 @@
 //! Debugging APIs: these are meant for use when unit-testing or
 //! debugging your application but aren't ordinarily needed.
 
+use crate::plumbing::QueryStorageOps;
 use crate::Database;
 use crate::Query;
-use crate::QueryStorageOps;
 use crate::QueryTable;
 
 pub trait DebugQueryTable {
