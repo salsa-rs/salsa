@@ -1,12 +1,12 @@
+use crate::plumbing::CycleDetected;
+use crate::plumbing::InputQueryStorageOps;
+use crate::plumbing::QueryStorageOps;
+use crate::plumbing::UncheckedMutQueryStorageOps;
 use crate::runtime::ChangedAt;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
-use crate::CycleDetected;
 use crate::Database;
-use crate::InputQueryStorageOps;
 use crate::Query;
-use crate::QueryStorageOps;
-use crate::UncheckedMutQueryStorageOps;
 use log::debug;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
