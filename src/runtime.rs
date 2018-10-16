@@ -57,6 +57,9 @@ where
     /// separate thread. Using two database handles from the **same
     /// thread** can lead to deadlock.
     pub fn fork(&self) -> Self {
+        if self.query_in_progress() {
+            panic!("fork invoked during a query computation");
+        }
         Runtime {
             id: RuntimeId {
                 counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),
