@@ -37,6 +37,18 @@ where
     }
 }
 
+impl<DB> std::fmt::Debug for Runtime<DB>
+where
+    DB: Database,
+{
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt.debug_struct("Runtime")
+            .field("id", &self.id())
+            .field("revision", &self.current_revision())
+            .finish()
+    }
+}
+
 impl<DB> Runtime<DB>
 where
     DB: Database,
