@@ -230,7 +230,7 @@ where
         // Check with an upgradable read to see if there is a value
         // already. (This permits other readers but prevents anyone
         // else from running `read_upgrade` at the same time.)
-        let mut old_value = match self.probe(
+        let mut old_memo = match self.probe(
             self.map.upgradable_read(),
             runtime,
             revision_now,
@@ -240,7 +240,11 @@ where
             ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(map) => {
                 let mut map = RwLockUpgradableReadGuard::upgrade(map);
-                map.insert(key.clone(), QueryState::in_progress(runtime.id()))
+                match map.insert(key.clone(), QueryState::in_progress(runtime.id())) {
+                    Some(QueryState::Memoized(old_memo)) => Some(old_memo),
+                    Some(QueryState::InProgress { .. }) => unreachable!(),
+                    None => None
+                }
             }
         };
 
@@ -248,21 +252,21 @@ where
         // has been a new revision since the last time we checked. So,
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
-        if let Some(QueryState::Memoized(old_memo)) = &mut old_value {
-            if let Some(value) = old_memo.verify_memoized_value(db) {
+        if let Some(memo) = &mut old_memo {
+            if let Some(value) = memo.verify_memoized_value(db) {
                 debug!("{:?}({:?}): inputs still valid", Q::default(), key);
                 // If none of out inputs have changed since the last time we refreshed
                 // our value, then our value must still be good. We'll just patch
                 // the verified-at date and re-use it.
-                old_memo.verified_at = revision_now;
-                let changed_at = old_memo.changed_at;
+                memo.verified_at = revision_now;
+                let changed_at = memo.changed_at;
 
                 let new_value = StampedValue { value, changed_at };
                 self.overwrite_placeholder(
                     runtime,
                     descriptor,
                     key,
-                    old_value.unwrap(),
+                    old_memo.unwrap(),
                     &new_value,
                 );
                 return Ok(new_value);
@@ -294,7 +298,7 @@ where
         // really change, even if some of its inputs have. So we can
         // "backdate" its `changed_at` revision to be the same as the
         // old value.
-        if let Some(QueryState::Memoized(old_memo)) = &old_value {
+        if let Some(old_memo) = &old_memo {
             if old_memo.value.as_ref() == Some(&stamped_value.value) {
                 assert!(old_memo.changed_at <= stamped_value.changed_at);
                 stamped_value.changed_at = old_memo.changed_at;
@@ -311,12 +315,12 @@ where
                 runtime,
                 descriptor,
                 key,
-                QueryState::Memoized(Memo {
+                Memo {
                     changed_at: stamped_value.changed_at,
                     value,
                     inputs,
                     verified_at: revision_now,
-                }),
+                },
                 &stamped_value,
             );
         }
@@ -446,13 +450,13 @@ where
         runtime: &Runtime<DB>,
         descriptor: &DB::QueryDescriptor,
         key: &Q::Key,
-        map_value: QueryState<DB, Q>,
+        memo: Memo<DB, Q>,
         new_value: &StampedValue<Q::Value>,
     ) {
         // Overwrite the value, releasing the lock afterwards:
         let waiting = {
             let mut write = self.map.write();
-            match write.insert(key.clone(), map_value) {
+            match write.insert(key.clone(), QueryState::Memoized(memo)) {
                 Some(QueryState::InProgress { id, waiting }) => {
                     assert_eq!(id, runtime.id());
 
