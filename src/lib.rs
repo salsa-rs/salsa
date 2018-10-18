@@ -190,7 +190,7 @@ macro_rules! query_group {
         tokens[{
             $(
                 $(#[$method_attr:meta])*
-                fn $method_name:ident($key_name:ident: $key_ty:ty) -> $value_ty:ty {
+                fn $method_name:ident($($key_name:ident: $key_ty:ty),* $(,)*) -> $value_ty:ty {
                     type $QueryType:ident;
                     $(storage $storage:ident;)* // FIXME(rust-lang/rust#48075) should be `?`
                     $(use fn $fn_path:path;)* // FIXME(rust-lang/rust#48075) should be `?`
@@ -201,9 +201,9 @@ macro_rules! query_group {
         $($trait_attr)* $v trait $query_trait: $($crate::plumbing::GetQueryTable<$QueryType> +)* $($header)* {
             $(
                 $(#[$method_attr])*
-                fn $method_name(&self, key: $key_ty) -> $value_ty {
+                fn $method_name(&self, $($key_name: $key_ty),*) -> $value_ty {
                     <Self as $crate::plumbing::GetQueryTable<$QueryType>>::get_query_table(self)
-                        .get(key)
+                        .get(($($key_name),*))
                 }
             )*
         }
@@ -216,7 +216,7 @@ macro_rules! query_group {
             where
                 DB: $query_trait,
             {
-                type Key = $key_ty;
+                type Key = ($($key_ty),*);
                 type Value = $value_ty;
                 type Storage = $crate::query_group! { @storage_ty[DB, Self, $($storage)*] };
             }
