@@ -112,6 +112,14 @@ where
         }
     }
 
+    /// Implementation for the `with_frozen_revision` on
+    /// `Database`. See the `Database` trait for more
+    /// details.
+    pub fn with_frozen_revision<R>(&self, op: impl FnOnce() -> R) -> R {
+        let _lock = self.freeze_revision();
+        op()
+    }
+
     #[inline]
     pub(crate) fn id(&self) -> RuntimeId {
         self.id

@@ -28,6 +28,19 @@ pub trait Database: plumbing::DatabaseStorageTypes {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &Runtime<Self>;
 
+    /// Executes `op` while holding the "query lock". This guarantees
+    /// that all operations in `op` occur with one consistent database
+    /// revision: in particular, any attempts to `set` will block
+    /// until `op` returns (note that if `op` tries to invoke `set`,
+    /// you will get a deadlock).
+    ///
+    /// (This is the same locking mechanism used by active derived
+    /// queries to ensure that they have a consistent view of the
+    /// database.)
+    fn with_frozen_revision<R>(&self, op: impl FnOnce() -> R) -> R {
+        self.salsa_runtime().with_frozen_revision(op)
+    }
+
     /// Get access to extra methods pertaining to a given query,
     /// notably `set` (for inputs).
     #[allow(unused_variables)]
