@@ -44,7 +44,7 @@ need.
 The `HelloWorldDatabase` trait has one supertrait:
 `salsa::Database`. If we were defining more query groups in our
 application, and we wanted to invoke some of those queries from within
-this query group, we might list those query groupes here. You can also
+this query group, we might list those query groups here. You can also
 list any other traits you want, so long as your final database type
 implements them (this lets you add custom state and so forth to your
 database).

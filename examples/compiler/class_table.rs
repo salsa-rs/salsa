@@ -39,6 +39,7 @@ fn all_fields(db: &impl ClassTableDatabase, (): ()) -> Arc<Vec<DefId>> {
             .flat_map(|def_id| {
                 let fields = db.fields(def_id);
                 (0..fields.len()).map(move |i| fields[i])
-            }).collect(),
+            })
+            .collect(),
     )
 }

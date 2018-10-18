@@ -42,6 +42,7 @@ struct IsConstant(bool);
 impl<DB, Q> InputStorage<DB, Q>
 where
     Q: Query<DB>,
+    Q::Value: Eq,
     DB: Database,
     Q::Value: Default,
 {
@@ -137,6 +138,7 @@ where
 impl<DB, Q> QueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
+    Q::Value: Eq,
     DB: Database,
     Q::Value: Default,
 {
@@ -197,6 +199,7 @@ where
 impl<DB, Q> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
+    Q::Value: Eq,
     DB: Database,
     Q::Value: Default,
 {

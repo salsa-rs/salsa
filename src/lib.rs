@@ -56,7 +56,7 @@ pub trait ParallelDatabase: Database + Send {
 
 pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type Key: Clone + Debug + Hash + Eq;
-    type Value: Clone + Debug + Hash + Eq;
+    type Value: Clone + Debug;
     type Storage: plumbing::QueryStorageOps<DB, Self> + Send + Sync;
 }
 
