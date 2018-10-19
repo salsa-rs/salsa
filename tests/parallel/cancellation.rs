@@ -18,7 +18,7 @@ fn in_par_get_set_cancellation() {
         move || {
             let v1 = db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
-                    .sum_await_cancellation
+                    .sum_wait_for_cancellation
                     .with_value(true, || db.sum("abc"))
             });
 
@@ -27,7 +27,7 @@ fn in_par_get_set_cancellation() {
 
             // at this point, we have observed cancellation, so let's
             // wait until the `set` is known to have occurred.
-            db.await(2);
+            db.wait_for(2);
 
             // Now when we read we should get the correct sums. Note
             // in particular that we re-compute the sum of `"abc"`
@@ -41,7 +41,7 @@ fn in_par_get_set_cancellation() {
         let db = db.fork();
         move || {
             // Wait until we have entered `sum` in the other thread.
-            db.await(1);
+            db.wait_for(1);
 
             db.query(Input).set('d', 1000);
 
