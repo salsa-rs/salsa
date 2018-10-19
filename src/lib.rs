@@ -140,10 +140,10 @@ where
 /// expand into a trait and a set of structs, one per query.
 ///
 /// For each query, you give the name of the accessor method to invoke
-/// the query (e.g., `my_query`, below), as well as its input/output
-/// types.  You also give the name for a query type (e.g., `MyQuery`,
-/// below) that represents the query, and optionally other details,
-/// such as its storage.
+/// the query (e.g., `my_query`, below), as well as its parameter
+/// types and the output type. You also give the name for a query type
+/// (e.g., `MyQuery`, below) that represents the query, and optionally
+/// other details, such as its storage.
 ///
 /// ### Examples
 ///
@@ -157,6 +157,12 @@ where
 ///             type MyQuery;
 ///             storage memoized; // optional, this is the default
 ///             use fn path::to::fn; // optional, default is `my_query`
+///         }
+///
+///         /// Queries can have any number of inputs; the key type will be
+///         /// a tuple of the input types, so in this case `(u32, f32)`.
+///         fn other_query(input1: u32, input2: f32) -> u64 {
+///             type OtherQuery;
 ///         }
 ///     }
 /// }
