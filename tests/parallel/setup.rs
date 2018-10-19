@@ -1,4 +1,4 @@
-use parking_lot::{Condvar, Mutex};
+use crate::signal::Signal;
 use salsa::Database;
 use salsa::ParallelDatabase;
 use std::cell::Cell;
@@ -68,45 +68,6 @@ pub(crate) struct KnobsStruct {
 
     /// Invocations of `sum` will signal this stage prior to exiting.
     pub(crate) sum_signal_on_exit: Cell<usize>,
-}
-
-#[derive(Default)]
-pub(crate) struct Signal {
-    value: Mutex<usize>,
-    cond_var: Condvar,
-}
-
-impl Signal {
-    pub(crate) fn signal(&self, stage: usize) {
-        log::debug!("signal({})", stage);
-
-        // This check avoids acquiring the lock for things that will
-        // clearly be a no-op. Not *necessary* but helps to ensure we
-        // are more likely to encounter weird race conditions;
-        // otherwise calls to `sum` will tend to be unnecessarily
-        // synchronous.
-        if stage > 0 {
-            let mut v = self.value.lock();
-            if stage > *v {
-                *v = stage;
-                self.cond_var.notify_all();
-            }
-        }
-    }
-
-    /// Waits until the given condition is true; the fn is invoked
-    /// with the current stage.
-    pub(crate) fn wait_for(&self, stage: usize) {
-        log::debug!("wait_for({})", stage);
-
-        // As above, avoid lock if clearly a no-op.
-        if stage > 0 {
-            let mut v = self.value.lock();
-            while *v < stage {
-                self.cond_var.wait(&mut v);
-            }
-        }
-    }
 }
 
 fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
