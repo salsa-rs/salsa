@@ -51,8 +51,11 @@ database).
 
 Within this trait, we list out the queries that this group provides.
 Here, there are two: `input_string` and `length`. For each query, you
-specify the key and value type of the query in the form of a function:
-but the "fn body" is obviously not real Rust syntax. Rather, it's just
+specify a function signature: the parameters to the function are
+called the "key types" (in this case, we just give a single key of
+type `()`) and the return type is the "value type". You can have any
+number of key types. As you can see, though, this is not a real fn --
+the "fn body" is obviously not real Rust syntax. Rather, it's just
 used to specify a few bits of metadata about the query. We'll see how
 to define the fn body in the next step.
 

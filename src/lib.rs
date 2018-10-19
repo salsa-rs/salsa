@@ -140,10 +140,10 @@ where
 /// expand into a trait and a set of structs, one per query.
 ///
 /// For each query, you give the name of the accessor method to invoke
-/// the query (e.g., `my_query`, below), as well as its input/output
-/// types.  You also give the name for a query type (e.g., `MyQuery`,
-/// below) that represents the query, and optionally other details,
-/// such as its storage.
+/// the query (e.g., `my_query`, below), as well as its parameter
+/// types and the output type. You also give the name for a query type
+/// (e.g., `MyQuery`, below) that represents the query, and optionally
+/// other details, such as its storage.
 ///
 /// ### Examples
 ///
@@ -157,6 +157,12 @@ where
 ///             type MyQuery;
 ///             storage memoized; // optional, this is the default
 ///             use fn path::to::fn; // optional, default is `my_query`
+///         }
+///
+///         /// Queries can have any number of inputs; the key type will be
+///         /// a tuple of the input types, so in this case `(u32, f32)`.
+///         fn other_query(input1: u32, input2: f32) -> u64 {
+///             type OtherQuery;
 ///         }
 ///     }
 /// }
@@ -190,7 +196,7 @@ macro_rules! query_group {
         tokens[{
             $(
                 $(#[$method_attr:meta])*
-                fn $method_name:ident($key_name:ident: $key_ty:ty) -> $value_ty:ty {
+                fn $method_name:ident($($key_name:ident: $key_ty:ty),* $(,)*) -> $value_ty:ty {
                     type $QueryType:ident;
                     $(storage $storage:ident;)* // FIXME(rust-lang/rust#48075) should be `?`
                     $(use fn $fn_path:path;)* // FIXME(rust-lang/rust#48075) should be `?`
@@ -201,9 +207,9 @@ macro_rules! query_group {
         $($trait_attr)* $v trait $query_trait: $($crate::plumbing::GetQueryTable<$QueryType> +)* $($header)* {
             $(
                 $(#[$method_attr])*
-                fn $method_name(&self, key: $key_ty) -> $value_ty {
+                fn $method_name(&self, $($key_name: $key_ty),*) -> $value_ty {
                     <Self as $crate::plumbing::GetQueryTable<$QueryType>>::get_query_table(self)
-                        .get(key)
+                        .get(($($key_name),*))
                 }
             )*
         }
@@ -216,7 +222,7 @@ macro_rules! query_group {
             where
                 DB: $query_trait,
             {
-                type Key = $key_ty;
+                type Key = ($($key_ty),*);
                 type Value = $value_ty;
                 type Storage = $crate::query_group! { @storage_ty[DB, Self, $($storage)*] };
             }
@@ -228,6 +234,7 @@ macro_rules! query_group {
                     fn_path($($fn_path)*);
                     db_trait($query_trait);
                     query_type($QueryType);
+                    key($($key_name: $key_ty),*);
                 ]
             }
         )*
@@ -277,6 +284,8 @@ macro_rules! query_group {
         }
     };
 
+    // Handle fns of one argument: once parenthesized patterns are stable on beta,
+    // we can remove this special case.
     (
         @query_fn[
             storage($($storage:ident)*);
@@ -284,15 +293,39 @@ macro_rules! query_group {
             fn_path($fn_path:path);
             db_trait($DbTrait:path);
             query_type($QueryType:ty);
+            key($key_name:ident: $key_ty:ty);
         ]
     ) => {
         impl<DB> $crate::plumbing::QueryFunction<DB> for $QueryType
         where DB: $DbTrait
         {
-            fn execute(db: &DB, key: <Self as $crate::Query<DB>>::Key)
+            fn execute(db: &DB, $key_name: <Self as $crate::Query<DB>>::Key)
                        -> <Self as $crate::Query<DB>>::Value
             {
-                $fn_path(db, key)
+                $fn_path(db, $key_name)
+            }
+        }
+    };
+
+    // Handle fns of N arguments: once parenthesized patterns are stable on beta,
+    // we can use this code for all cases.
+    (
+        @query_fn[
+            storage($($storage:ident)*);
+            method_name($method_name:ident);
+            fn_path($fn_path:path);
+            db_trait($DbTrait:path);
+            query_type($QueryType:ty);
+            key($($key_name:ident: $key_ty:ty),*);
+        ]
+    ) => {
+        impl<DB> $crate::plumbing::QueryFunction<DB> for $QueryType
+        where DB: $DbTrait
+        {
+            fn execute(db: &DB, ($($key_name),*): <Self as $crate::Query<DB>>::Key)
+                       -> <Self as $crate::Query<DB>>::Value
+            {
+                $fn_path(db, $($key_name),*)
             }
         }
     };
