@@ -1,6 +1,6 @@
 [package]
 name = "salsa"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Niko Matsakis <niko@alum.mit.edu>"]
 edition = "2018"
 license = "Apache-2.0 OR MIT"
