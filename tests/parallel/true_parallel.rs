@@ -18,18 +18,20 @@ fn true_parallel_different_keys() {
         let db = db.fork();
         move || {
             let v = db.knobs().sum_signal_on_entry.with_value(1, || {
-                db.knobs().sum_await_on_exit.with_value(2, || db.sum("a"))
+                db.knobs()
+                    .sum_wait_for_on_exit
+                    .with_value(2, || db.sum("a"))
             });
             v
         }
     });
 
-    // Thread 2 will await stage 1 when it enters and signal stage 2
+    // Thread 2 will wait_for stage 1 when it enters and signal stage 2
     // when it leaves.
     let thread2 = std::thread::spawn({
         let db = db.fork();
         move || {
-            let v = db.knobs().sum_await_on_entry.with_value(1, || {
+            let v = db.knobs().sum_wait_for_on_entry.with_value(1, || {
                 db.knobs().sum_signal_on_exit.with_value(2, || db.sum("b"))
             });
             v
@@ -51,13 +53,13 @@ fn true_parallel_same_keys() {
     db.query(Input).set('b', 010);
     db.query(Input).set('c', 001);
 
-    // Thread 1 will await a barrier in the start of `sum`
+    // Thread 1 will wait_for a barrier in the start of `sum`
     let thread1 = std::thread::spawn({
         let db = db.fork();
         move || {
             let v = db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
-                    .sum_await_on_entry
+                    .sum_wait_for_on_entry
                     .with_value(2, || db.sum("abc"))
             });
             v
@@ -69,7 +71,7 @@ fn true_parallel_same_keys() {
     let thread2 = std::thread::spawn({
         let db = db.fork();
         move || {
-            db.knobs().signal.await(1);
+            db.knobs().signal.wait_for(1);
             db.knobs().signal.signal(2);
             db.sum("abc")
         }

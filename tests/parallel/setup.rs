@@ -25,7 +25,7 @@ pub(crate) trait Knobs {
 
     fn signal(&self, stage: usize);
 
-    fn await(&self, stage: usize);
+    fn wait_for(&self, stage: usize);
 }
 
 pub(crate) trait WithValue<T> {
@@ -56,15 +56,15 @@ pub(crate) struct KnobsStruct {
     /// Invocations of `sum` will signal this stage on entry.
     pub(crate) sum_signal_on_entry: Cell<usize>,
 
-    /// Invocations of `sum` will await this stage on entry.
-    pub(crate) sum_await_on_entry: Cell<usize>,
+    /// Invocations of `sum` will wait for this stage on entry.
+    pub(crate) sum_wait_for_on_entry: Cell<usize>,
 
-    /// If true, invocations of `sum` will await cancellation before
+    /// If true, invocations of `sum` will wait for cancellation before
     /// they exit.
-    pub(crate) sum_await_cancellation: Cell<bool>,
+    pub(crate) sum_wait_for_cancellation: Cell<bool>,
 
-    /// Invocations of `sum` will await this stage prior to exiting.
-    pub(crate) sum_await_on_exit: Cell<usize>,
+    /// Invocations of `sum` will wait for this stage prior to exiting.
+    pub(crate) sum_wait_for_on_exit: Cell<usize>,
 
     /// Invocations of `sum` will signal this stage prior to exiting.
     pub(crate) sum_signal_on_exit: Cell<usize>,
@@ -96,8 +96,8 @@ impl Signal {
 
     /// Waits until the given condition is true; the fn is invoked
     /// with the current stage.
-    pub(crate) fn await(&self, stage: usize) {
-        log::debug!("await({})", stage);
+    pub(crate) fn wait_for(&self, stage: usize) {
+        log::debug!("wait_for({})", stage);
 
         // As above, avoid lock if clearly a no-op.
         if stage > 0 {
@@ -114,14 +114,14 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
 
     db.signal(db.knobs().sum_signal_on_entry.get());
 
-    db.await(db.knobs().sum_await_on_entry.get());
+    db.wait_for(db.knobs().sum_wait_for_on_entry.get());
 
     for ch in key.chars() {
         sum += db.input(ch);
     }
 
-    if db.knobs().sum_await_cancellation.get() {
-        log::debug!("awaiting cancellation");
+    if db.knobs().sum_wait_for_cancellation.get() {
+        log::debug!("waiting for cancellation");
         while !db.salsa_runtime().is_current_revision_canceled() {
             std::thread::yield_now();
         }
@@ -129,7 +129,7 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
         return std::usize::MAX; // when we are cancelled, we return usize::MAX.
     }
 
-    db.await(db.knobs().sum_await_on_exit.get());
+    db.wait_for(db.knobs().sum_wait_for_on_exit.get());
 
     db.signal(db.knobs().sum_signal_on_exit.get());
 
@@ -166,8 +166,8 @@ impl Knobs for ParDatabaseImpl {
         self.knobs.signal.signal(stage);
     }
 
-    fn await(&self, stage: usize) {
-        self.knobs.signal.await(stage);
+    fn wait_for(&self, stage: usize) {
+        self.knobs.signal.wait_for(stage);
     }
 }
 
