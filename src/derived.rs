@@ -53,6 +53,8 @@ where
 {
     fn should_memoize_value(key: &Q::Key) -> bool;
 
+    fn memoized_value_eq(old_value: &Q::Value, new_value: &Q::Value) -> bool;
+
     fn should_track_inputs(key: &Q::Key) -> bool;
 }
 
@@ -60,10 +62,15 @@ pub enum AlwaysMemoizeValue {}
 impl<DB, Q> MemoizationPolicy<DB, Q> for AlwaysMemoizeValue
 where
     Q: QueryFunction<DB>,
+    Q::Value: Eq,
     DB: Database,
 {
     fn should_memoize_value(_key: &Q::Key) -> bool {
         true
+    }
+
+    fn memoized_value_eq(old_value: &Q::Value, new_value: &Q::Value) -> bool {
+        old_value == new_value
     }
 
     fn should_track_inputs(_key: &Q::Key) -> bool {
@@ -79,6 +86,10 @@ where
 {
     fn should_memoize_value(_key: &Q::Key) -> bool {
         false
+    }
+
+    fn memoized_value_eq(_old_value: &Q::Value, _new_value: &Q::Value) -> bool {
+        panic!("cannot reach since we never memoize")
     }
 
     fn should_track_inputs(_key: &Q::Key) -> bool {
@@ -99,6 +110,10 @@ where
         // change -- otherwise the system gets into an inconsistent
         // state where the same query reports back different values.
         true
+    }
+
+    fn memoized_value_eq(_old_value: &Q::Value, _new_value: &Q::Value) -> bool {
+        false
     }
 
     fn should_track_inputs(_key: &Q::Key) -> bool {
@@ -243,7 +258,7 @@ where
                 match map.insert(key.clone(), QueryState::in_progress(runtime.id())) {
                     Some(QueryState::Memoized(old_memo)) => Some(old_memo),
                     Some(QueryState::InProgress { .. }) => unreachable!(),
-                    None => None
+                    None => None,
                 }
             }
         };
@@ -262,13 +277,7 @@ where
                 let changed_at = memo.changed_at;
 
                 let new_value = StampedValue { value, changed_at };
-                self.overwrite_placeholder(
-                    runtime,
-                    descriptor,
-                    key,
-                    old_memo.unwrap(),
-                    &new_value,
-                );
+                self.overwrite_placeholder(runtime, descriptor, key, old_memo.unwrap(), &new_value);
                 return Ok(new_value);
             }
         }
@@ -299,9 +308,11 @@ where
         // "backdate" its `changed_at` revision to be the same as the
         // old value.
         if let Some(old_memo) = &old_memo {
-            if old_memo.value.as_ref() == Some(&stamped_value.value) {
-                assert!(old_memo.changed_at <= stamped_value.changed_at);
-                stamped_value.changed_at = old_memo.changed_at;
+            if let Some(old_value) = &old_memo.value {
+                if MP::memoized_value_eq(&old_value, &stamped_value.value) {
+                    assert!(old_memo.changed_at <= stamped_value.changed_at);
+                    stamped_value.changed_at = old_memo.changed_at;
+                }
             }
         }
 
