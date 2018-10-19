@@ -1,4 +1,5 @@
 use crate::Database;
+use lock_api::RawRwLock;
 use log::debug;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
 use rustc_hash::{FxHashMap, FxHasher};
@@ -112,12 +113,28 @@ where
         }
     }
 
-    /// Implementation for the `with_frozen_revision` on
-    /// `Database`. See the `Database` trait for more
-    /// details.
-    pub fn with_frozen_revision<R>(&self, op: impl FnOnce() -> R) -> R {
-        let _lock = self.start_query();
-        op()
+    /// Locks the current revision and returns a guard object that --
+    /// when dropped -- will unlock it. While a revision is locked,
+    /// queries can execute as normal but calls to `set` will block
+    /// (note that calls to `set` *do* set the cancellation flag,
+    /// which you can can check with
+    /// `is_current_revision_canceled`). The intention is that you can
+    /// lock the revision and then do multiple queries, thus
+    /// guaranteeing that all of those queries execute against a
+    /// consistent "view" of the database.
+    ///
+    /// Note that, unlike most RAII guards, the guard returned by this
+    /// method does not borrow the database or the runtime
+    /// (internally, it uses an `Arc` handle). This means it can be
+    /// sent to other threads without a problem -- the lock persists
+    /// as long as the guard has not yet been dropped.
+    ///
+    /// ### Deadlock warning
+    ///
+    /// If you invoke `lock_revision` and then, from the same thread,
+    /// call `set` on some input, you will get a deadlock.
+    pub fn lock_revision(&self) -> RevisionGuard<DB> {
+        RevisionGuard::new(&self.shared_state)
     }
 
     #[inline]
@@ -403,6 +420,38 @@ impl<'db, DB: Database> Drop for QueryGuard<'db, DB> {
         let mut local_state = self.db.local_state.borrow_mut();
         assert!(local_state.query_in_progress);
         local_state.query_in_progress = false;
+    }
+}
+
+/// The guard returned by `lock_revision`. Once this guard is dropped,
+/// the revision will be unlocked, and calls to `set` can proceed.
+pub struct RevisionGuard<DB: Database> {
+    shared_state: Arc<SharedState<DB>>,
+}
+
+impl<DB: Database> RevisionGuard<DB> {
+    /// Creates a new revision guard, acquiring the query read-lock in the process.
+    fn new(shared_state: &Arc<SharedState<DB>>) -> Self {
+        // Acquire the read-lock without using RAII. This requires the
+        // unsafe keyword because, if we were to unlock the lock this way,
+        // we would screw up other people using the safe APIs.
+        unsafe {
+            shared_state.query_lock.raw().lock_shared();
+        }
+
+        Self {
+            shared_state: shared_state.clone(),
+        }
+    }
+}
+
+impl<DB: Database> Drop for RevisionGuard<DB> {
+    fn drop(&mut self) {
+        // Release our read-lock without using RAII. As in `new`
+        // above, this requires the unsafe keyword.
+        unsafe {
+            self.shared_state.query_lock.raw().unlock_shared();
+        }
     }
 }
 
