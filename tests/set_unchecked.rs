@@ -2,29 +2,29 @@ use salsa::Database;
 
 salsa::query_group! {
     trait HelloWorldDatabase: salsa::Database {
-        fn input(key: ()) -> String {
+        fn input() -> String {
             type Input;
             storage input;
         }
 
-        fn length(key: ()) -> usize {
+        fn length() -> usize {
             type Length;
         }
 
-        fn double_length(key: ()) -> usize {
+        fn double_length() -> usize {
             type DoubleLength;
         }
     }
 }
 
-fn length(db: &impl HelloWorldDatabase, (): ()) -> usize {
-    let l = db.input(()).len();
+fn length(db: &impl HelloWorldDatabase) -> usize {
+    let l = db.input().len();
     assert!(l > 0); // not meant to be invoked with no input
     l
 }
 
-fn double_length(db: &impl HelloWorldDatabase, (): ()) -> usize {
-    db.length(()) * 2
+fn double_length(db: &impl HelloWorldDatabase) -> usize {
+    db.length() * 2
 }
 
 #[derive(Default)]
@@ -52,35 +52,35 @@ salsa::database_storage! {
 fn normal() {
     let db = DatabaseStruct::default();
     db.query(Input).set((), format!("Hello, world"));
-    assert_eq!(db.double_length(()), 24);
+    assert_eq!(db.double_length(), 24);
     db.query(Input).set((), format!("Hello, world!"));
-    assert_eq!(db.double_length(()), 26);
+    assert_eq!(db.double_length(), 26);
 }
 
 #[test]
 #[should_panic]
 fn use_without_set() {
     let db = DatabaseStruct::default();
-    db.double_length(());
+    db.double_length();
 }
 
 #[test]
 fn using_set_unchecked_on_input() {
     let db = DatabaseStruct::default();
     db.query(Input).set_unchecked((), format!("Hello, world"));
-    assert_eq!(db.double_length(()), 24);
+    assert_eq!(db.double_length(), 24);
 }
 
 #[test]
 fn using_set_unchecked_on_input_after() {
     let db = DatabaseStruct::default();
     db.query(Input).set((), format!("Hello, world"));
-    assert_eq!(db.double_length(()), 24);
+    assert_eq!(db.double_length(), 24);
 
     // If we use `set_unchecked`, we don't notice that `double_length`
     // is out of date. Oh well, don't do that.
     db.query(Input).set_unchecked((), format!("Hello, world!"));
-    assert_eq!(db.double_length(()), 24);
+    assert_eq!(db.double_length(), 24);
 }
 
 #[test]
@@ -91,5 +91,5 @@ fn using_set_unchecked() {
     // demonstrating that the code never runs.
     db.query(Length).set_unchecked((), 24);
 
-    assert_eq!(db.double_length(()), 48);
+    assert_eq!(db.double_length(), 48);
 }
