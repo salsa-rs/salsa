@@ -1,5 +1,12 @@
+use salsa::Database;
+
 salsa::query_group! {
     trait HelloWorldDatabase: salsa::Database {
+        fn input(a: u32, b: u32) -> u32 {
+            type Input;
+            storage input;
+        }
+
         fn none() -> u32 {
             type None;
         }
@@ -48,6 +55,7 @@ impl salsa::Database for DatabaseStruct {
 salsa::database_storage! {
     struct DatabaseStorage for DatabaseStruct {
         impl HelloWorldDatabase {
+            fn input() for Input;
             fn none() for None;
             fn one() for One;
             fn two() for Two;
@@ -59,6 +67,10 @@ salsa::database_storage! {
 #[test]
 fn execute() {
     let db = DatabaseStruct::default();
+
+    // test what happens with inputs:
+    db.query(Input).set((1, 2), 3);
+    assert_eq!(db.input(1, 2), 3);
 
     assert_eq!(db.none(), 22);
     assert_eq!(db.one(11), 22);
