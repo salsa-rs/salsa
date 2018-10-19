@@ -228,6 +228,7 @@ macro_rules! query_group {
                     fn_path($($fn_path)*);
                     db_trait($query_trait);
                     query_type($QueryType);
+                    key($($key_name: $key_ty),*);
                 ]
             }
         )*
@@ -277,6 +278,8 @@ macro_rules! query_group {
         }
     };
 
+    // Handle fns of one argument: once parenthesized patterns are stable on beta,
+    // we can remove this special case.
     (
         @query_fn[
             storage($($storage:ident)*);
@@ -284,15 +287,39 @@ macro_rules! query_group {
             fn_path($fn_path:path);
             db_trait($DbTrait:path);
             query_type($QueryType:ty);
+            key($key_name:ident: $key_ty:ty);
         ]
     ) => {
         impl<DB> $crate::plumbing::QueryFunction<DB> for $QueryType
         where DB: $DbTrait
         {
-            fn execute(db: &DB, key: <Self as $crate::Query<DB>>::Key)
+            fn execute(db: &DB, $key_name: <Self as $crate::Query<DB>>::Key)
                        -> <Self as $crate::Query<DB>>::Value
             {
-                $fn_path(db, key)
+                $fn_path(db, $key_name)
+            }
+        }
+    };
+
+    // Handle fns of N arguments: once parenthesized patterns are stable on beta,
+    // we can use this code for all cases.
+    (
+        @query_fn[
+            storage($($storage:ident)*);
+            method_name($method_name:ident);
+            fn_path($fn_path:path);
+            db_trait($DbTrait:path);
+            query_type($QueryType:ty);
+            key($($key_name:ident: $key_ty:ty),*);
+        ]
+    ) => {
+        impl<DB> $crate::plumbing::QueryFunction<DB> for $QueryType
+        where DB: $DbTrait
+        {
+            fn execute(db: &DB, ($($key_name),*): <Self as $crate::Query<DB>>::Key)
+                       -> <Self as $crate::Query<DB>>::Value
+            {
+                $fn_path(db, $($key_name),*)
             }
         }
     };

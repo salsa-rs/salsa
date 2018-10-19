@@ -18,7 +18,7 @@ salsa::query_group! {
     }
 }
 
-fn none(_db: &impl HelloWorldDatabase, (): ()) -> u32 {
+fn none(_db: &impl HelloWorldDatabase) -> u32 {
     22
 }
 
@@ -26,11 +26,11 @@ fn one(_db: &impl HelloWorldDatabase, k: u32) -> u32 {
     k * 2
 }
 
-fn two(_db: &impl HelloWorldDatabase, (a, b): (u32, u32)) -> u32 {
+fn two(_db: &impl HelloWorldDatabase, a: u32, b: u32) -> u32 {
     a * b
 }
 
-fn trailing(_db: &impl HelloWorldDatabase, (a, b): (u32, u32)) -> u32 {
+fn trailing(_db: &impl HelloWorldDatabase, a: u32, b: u32) -> u32 {
     a - b
 }
 
