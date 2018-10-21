@@ -651,7 +651,7 @@ where
                     match &memo.inputs {
                         QueryDescriptorSet::Constant => return false,
                         QueryDescriptorSet::Untracked => return true,
-                        QueryDescriptorSet::Tracked(descriptors) => descriptors.clone(),
+                        QueryDescriptorSet::Tracked { descriptors } => descriptors.clone(),
                     }
                 }
             }
@@ -759,14 +759,14 @@ where
                 true
             }
 
-            QueryDescriptorSet::Tracked(inputs) => {
-                debug_assert!(!inputs.is_empty());
+            QueryDescriptorSet::Tracked { descriptors } => {
+                debug_assert!(!descriptors.is_empty());
                 debug_assert!(match self.changed_at {
                     ChangedAt::Constant(_) => false,
                     ChangedAt::Revision(_) => true,
                 });
 
-                // Check whether any of our inputs change since the
+                // Check whether any of our inputs changed since the
                 // **last point where we were verified** (not since we
                 // last changed). This is important: if we have
                 // memoized values, then an input may have changed in
@@ -775,12 +775,12 @@ where
                 // R1. But our *verification* date will be R2, and we
                 // are only interested in finding out whether the
                 // input changed *again*.
-                let changed_input = inputs
+                let changed_input = descriptors
                     .iter()
                     .filter(|old_input| old_input.maybe_changed_since(db, self.verified_at))
                     .inspect(|old_input| {
                         debug!(
-                            "{:?}::verify_inputs: `{:?}` may have changed",
+                            "{:?}::verify_descriptors: `{:?}` may have changed",
                             Q::default(),
                             old_input
                         )

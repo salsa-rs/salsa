@@ -264,7 +264,9 @@ where
                 if set.is_empty() {
                     QueryDescriptorSet::Constant
                 } else {
-                    QueryDescriptorSet::Tracked(Arc::new(set))
+                    QueryDescriptorSet::Tracked {
+                        descriptors: Arc::new(set),
+                    }
                 }
             }
         };
@@ -556,7 +558,9 @@ pub(crate) enum QueryDescriptorSet<DB: Database> {
     Constant,
 
     /// All reads were to tracked things:
-    Tracked(Arc<FxIndexSet<DB::QueryDescriptor>>),
+    Tracked {
+        descriptors: Arc<FxIndexSet<DB::QueryDescriptor>>,
+    },
 
     /// Some reads to an untracked thing:
     Untracked,
@@ -565,9 +569,12 @@ pub(crate) enum QueryDescriptorSet<DB: Database> {
 impl<DB: Database> std::fmt::Debug for QueryDescriptorSet<DB> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            QueryDescriptorSet::Constant => write!(fmt, "Constant"),
-            QueryDescriptorSet::Tracked(set) => std::fmt::Debug::fmt(set, fmt),
-            QueryDescriptorSet::Untracked => write!(fmt, "Untracked"),
+            QueryDescriptorSet::Constant => fmt.debug_struct("Constant").finish(),
+            QueryDescriptorSet::Tracked { descriptors } => fmt
+                .debug_struct("Tracked")
+                .field("descriptors", descriptors)
+                .finish(),
+            QueryDescriptorSet::Untracked => fmt.debug_struct("Untracked").finish(),
         }
     }
 }
