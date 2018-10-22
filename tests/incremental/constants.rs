@@ -83,7 +83,7 @@ fn mixed_constant() {
 }
 
 #[test]
-fn becomes_constant() {
+fn becomes_constant_with_change() {
     let db = &TestContextImpl::default();
 
     db.query(ConstantsInput).set('a', 22);
