@@ -319,8 +319,8 @@ where
         if let Some(old_memo) = &old_memo {
             if let Some(old_value) = &old_memo.value {
                 if MP::memoized_value_eq(&old_value, &stamped_value.value) {
-                    assert!(old_memo.changed_at <= stamped_value.changed_at);
-                    stamped_value.changed_at = old_memo.changed_at;
+                    assert!(old_memo.changed_at.revision <= stamped_value.changed_at.revision);
+                    stamped_value.changed_at.revision = old_memo.changed_at.revision;
                 }
             }
         }
@@ -717,7 +717,10 @@ where
         let mut map_write = self.map.write();
 
         let current_revision = db.salsa_runtime().current_revision();
-        let changed_at = ChangedAt::Revision(current_revision);
+        let changed_at = ChangedAt {
+            is_constant: false,
+            revision: current_revision,
+        };
 
         map_write.insert(
             key,
@@ -751,20 +754,13 @@ where
     fn verify_inputs(&self, db: &DB) -> bool {
         match &self.inputs {
             QueryDescriptorSet::Constant => {
-                debug_assert!(match self.changed_at {
-                    ChangedAt::Constant(_) => true,
-                    ChangedAt::Revision(_) => false,
-                });
-
+                debug_assert!(self.changed_at.is_constant);
                 true
             }
 
             QueryDescriptorSet::Tracked { descriptors } => {
                 debug_assert!(!descriptors.is_empty());
-                debug_assert!(match self.changed_at {
-                    ChangedAt::Constant(_) => false,
-                    ChangedAt::Revision(_) => true,
-                });
+                debug_assert!(!self.changed_at.is_constant);
 
                 // Check whether any of our inputs changed since the
                 // **last point where we were verified** (not since we

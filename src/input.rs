@@ -61,7 +61,10 @@ where
 
         Ok(StampedValue {
             value: <Q::Value>::default(),
-            changed_at: ChangedAt::Revision(Revision::ZERO),
+            changed_at: ChangedAt {
+                is_constant: false,
+                revision: Revision::ZERO,
+            },
         })
     }
 
@@ -80,8 +83,10 @@ where
                 if is_constant.0 && !old_value.changed_at.is_constant() {
                     let mut map = RwLockUpgradableReadGuard::upgrade(map);
                     let old_value = map.get_mut(key).unwrap();
-                    old_value.changed_at =
-                        ChangedAt::Constant(db.salsa_runtime().current_revision());
+                    old_value.changed_at = ChangedAt {
+                        is_constant: true,
+                        revision: db.salsa_runtime().current_revision(),
+                    };
                 }
 
                 return;
@@ -106,10 +111,9 @@ where
         // racing with somebody else to modify this same cell.
         // (Otherwise, someone else might write a *newer* revision
         // into the same cell while we block on the lock.)
-        let changed_at = if is_constant.0 {
-            ChangedAt::Constant(next_revision)
-        } else {
-            ChangedAt::Revision(next_revision)
+        let changed_at = ChangedAt {
+            is_constant: is_constant.0,
+            revision: next_revision,
         };
 
         let stamped_value = StampedValue { value, changed_at };
@@ -174,7 +178,10 @@ where
             map_read
                 .get(key)
                 .map(|v| v.changed_at)
-                .unwrap_or(ChangedAt::Revision(Revision::ZERO))
+                .unwrap_or(ChangedAt {
+                    is_constant: false,
+                    revision: Revision::ZERO,
+                })
         };
 
         debug!(
@@ -229,7 +236,10 @@ where
 
         // Unlike with `set`, here we use the **current revision** and
         // do not create a new one.
-        let changed_at = ChangedAt::Revision(db.salsa_runtime().current_revision());
+        let changed_at = ChangedAt {
+            is_constant: false,
+            revision: db.salsa_runtime().current_revision(),
+        };
 
         map_write.insert(key, StampedValue { value, changed_at });
     }
