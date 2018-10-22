@@ -80,13 +80,10 @@ where
                 // still intact, they just have conservative
                 // dependencies. The next revision, they may wind up
                 // with something more precise.
-                if is_constant.0 && !old_value.changed_at.is_constant() {
+                if is_constant.0 && !old_value.changed_at.is_constant {
                     let mut map = RwLockUpgradableReadGuard::upgrade(map);
                     let old_value = map.get_mut(key).unwrap();
-                    old_value.changed_at = ChangedAt {
-                        is_constant: true,
-                        revision: db.salsa_runtime().current_revision(),
-                    };
+                    old_value.changed_at.is_constant = true;
                 }
 
                 return;
@@ -121,7 +118,7 @@ where
         match map.entry(key) {
             Entry::Occupied(mut entry) => {
                 assert!(
-                    !entry.get().changed_at.is_constant(),
+                    !entry.get().changed_at.is_constant,
                     "modifying `{:?}({:?})`, which was previously marked as constant (old value `{:?}`, new value `{:?}`)",
                     Q::default(),
                     entry.key(),
@@ -198,7 +195,7 @@ where
         let map_read = self.map.read();
         map_read
             .get(key)
-            .map(|v| v.changed_at.is_constant())
+            .map(|v| v.changed_at.is_constant)
             .unwrap_or(false)
     }
 }
