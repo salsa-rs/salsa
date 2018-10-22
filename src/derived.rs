@@ -209,7 +209,7 @@ where
     ) -> Result<StampedValue<Q::Value>, CycleDetected> {
         let runtime = db.salsa_runtime();
 
-        let _read_lock = runtime.freeze_revision();
+        let _read_lock = runtime.start_query();
 
         let revision_now = runtime.current_revision();
 
