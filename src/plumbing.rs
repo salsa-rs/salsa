@@ -30,6 +30,20 @@ pub trait DatabaseStorageTypes: Sized {
     type DatabaseStorage: Default;
 }
 
+/// Internal operations that the runtime uses to operate on the database.
+pub trait DatabaseOps: Sized {
+    /// Executes the callback for each kind of query.
+    fn for_each_query(&self, op: impl FnMut(&dyn QueryStorageMassOps<Self>));
+}
+
+/// Internal operations performed on the query storage as a whole
+/// (note that these ops do not need to know the identity of the
+/// query, unlike `QueryStorageOps`).
+pub trait QueryStorageMassOps<DB: Database> {
+    /// Discards memoized values that are not up to date with the current revision.
+    fn sweep(&self, db: &DB);
+}
+
 pub trait QueryDescriptor<DB>: Clone + Debug + Eq + Hash + Send + Sync {
     /// Returns true if the value of this query may have changed since
     /// the given revision.

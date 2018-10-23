@@ -1,6 +1,7 @@
 use crate::plumbing::CycleDetected;
 use crate::plumbing::QueryDescriptor;
 use crate::plumbing::QueryFunction;
+use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::plumbing::UncheckedMutQueryStorageOps;
 use crate::runtime::ChangedAt;
@@ -735,13 +736,24 @@ where
             if maybe_changed {
                 map.remove(key);
             } else {
-                // It is possible that other threads were verifying inputs
-                // at the same time. They too will be mutating the
-                // map. However, they can only come to the same conclusion
-                // that we did.
                 match map.get_mut(key) {
                     Some(QueryState::Memoized(memo)) => {
+                        // It is possible that other threads were verifying inputs
+                        // at the same time. They too will be mutating the
+                        // map. However, they can only come to the same conclusion
+                        // that we did.
                         memo.verified_at = revision_now;
+                    }
+
+                    None => {
+                        // It's also possible that the garbage
+                        // collector ran in the interim and swept this
+                        // cell right away. That is unfortunate but
+                        // not a big deal, we can still report to the
+                        // caller that we did not change -- this may
+                        // let them re-use stuff. If they re-execute,
+                        // since we have no entry in the map, we'll be
+                        // recomputed.
                     }
 
                     _ => {
@@ -761,6 +773,39 @@ where
             Some(QueryState::InProgress { .. }) => panic!("query in progress"),
             Some(QueryState::Memoized(memo)) => memo.inputs.is_constant(),
         }
+    }
+}
+
+impl<DB, Q, MP> QueryStorageMassOps<DB> for DerivedStorage<DB, Q, MP>
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+    MP: MemoizationPolicy<DB, Q>,
+{
+    fn sweep(&self, db: &DB) {
+        let revision_now = db.salsa_runtime().current_revision();
+        let mut map_write = self.map.write();
+        map_write.retain(|key, query_state| {
+            match query_state {
+                // Leave stuff that is currently being computed.
+                QueryState::InProgress { .. } => {
+                    debug!("sweep({:?}({:?})): in-progress", Q::default(), key);
+                    true
+                }
+
+                // Otherwise, keep only if it was used in this revision.
+                QueryState::Memoized(memo) => {
+                    debug!(
+                        "sweep({:?}({:?})): last verified at {:?}, current revision {:?}",
+                        Q::default(),
+                        key,
+                        memo.verified_at,
+                        revision_now
+                    );
+                    memo.verified_at == revision_now
+                }
+            }
+        });
     }
 }
 

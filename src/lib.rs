@@ -13,6 +13,7 @@ pub mod plumbing;
 
 use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
+use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::plumbing::UncheckedMutQueryStorageOps;
 use derive_new::new;
@@ -24,9 +25,20 @@ pub use crate::runtime::Runtime;
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait Database: plumbing::DatabaseStorageTypes {
+pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &Runtime<Self>;
+
+    /// Iterates through all query storage and removes any values that
+    /// have not been used since the last revision was created. The
+    /// intended use-cycle is that you first execute all of your
+    /// "main" queries; this will ensure that all query values they
+    /// consume are marked as used.  You then invoke this method to
+    /// remove other values that were not needed for your main query
+    /// results.
+    fn sweep_all(&self) {
+        self.salsa_runtime().sweep_all(self);
+    }
 
     /// Get access to extra methods pertaining to a given query,
     /// notably `set` (for inputs).
@@ -83,6 +95,13 @@ where
             .unwrap_or_else(|CycleDetected| {
                 self.db.salsa_runtime().report_unexpected_cycle(descriptor)
             })
+    }
+
+    pub fn sweep(&self)
+    where
+        Q::Storage: plumbing::QueryStorageMassOps<DB>,
+    {
+        self.storage.sweep(self.db);
     }
 
     /// Assign a value to an "input query". Must be used outside of
@@ -426,6 +445,21 @@ macro_rules! database_storage {
         impl $crate::plumbing::DatabaseStorageTypes for $Database {
             type QueryDescriptor = __SalsaQueryDescriptor;
             type DatabaseStorage = $Storage;
+        }
+
+        impl $crate::plumbing::DatabaseOps for $Database {
+            fn for_each_query(
+                &self,
+                mut op: impl FnMut(&dyn $crate::plumbing::QueryStorageMassOps<Self>),
+            ) {
+                $(
+                    $(
+                        op(&$crate::Database::salsa_runtime(self)
+                           .storage()
+                           .$query_method);
+                    )*
+                )*
+            }
         }
 
         impl $crate::plumbing::QueryDescriptor<$Database> for __SalsaQueryDescriptor {

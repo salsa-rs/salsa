@@ -93,6 +93,14 @@ where
         self.increment_revision();
     }
 
+    /// See `Database::sweep`.
+    pub(crate) fn sweep_all(&self, db: &DB) {
+        // Ensure that the revision doesn't change. Note that we don't
+        // need to stop the world though.
+        let _guard = self.shared_state.query_lock.read();
+        db.for_each_query(|query_storage| query_storage.sweep(db));
+    }
+
     /// Indicates that a derived query has begun to execute; if this is the
     /// first derived query on this thread, then acquires a read-lock on the
     /// runtime to prevent us from moving to a new revision until that query

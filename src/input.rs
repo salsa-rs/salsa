@@ -1,5 +1,6 @@
 use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
+use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::plumbing::UncheckedMutQueryStorageOps;
 use crate::runtime::ChangedAt;
@@ -198,6 +199,15 @@ where
             .map(|v| v.changed_at.is_constant)
             .unwrap_or(false)
     }
+}
+
+impl<DB, Q> QueryStorageMassOps<DB> for InputStorage<DB, Q>
+where
+    Q: Query<DB>,
+    DB: Database,
+    Q::Value: Default,
+{
+    fn sweep(&self, _db: &DB) {}
 }
 
 impl<DB, Q> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q>
