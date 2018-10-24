@@ -539,9 +539,9 @@ where
     DB: Database + 'db,
     Q: QueryFunction<DB>,
 {
+    // FIXME(#24) -- handle parallel case
     fn drop(&mut self) {
-        let map = self.map.upgradable_read();
-        let mut map = RwLockUpgradableReadGuard::upgrade(map);
+        let mut map = self.map.write();
         let _ = map.remove(self.key);
     }
 }
