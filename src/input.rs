@@ -199,6 +199,14 @@ where
             .map(|v| v.changed_at.is_constant)
             .unwrap_or(false)
     }
+
+    fn keys<C>(&self, _db: &DB) -> C
+    where
+        C: std::iter::FromIterator<Q::Key>,
+    {
+        let map = self.map.read();
+        map.keys().cloned().collect()
+    }
 }
 
 impl<DB, Q> QueryStorageMassOps<DB> for InputStorage<DB, Q>

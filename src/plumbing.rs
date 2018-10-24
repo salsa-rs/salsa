@@ -105,6 +105,11 @@ where
 
     /// Check if `key` is (currently) believed to be a constant.
     fn is_constant(&self, db: &DB, key: &Q::Key) -> bool;
+
+    /// Check if `key` is (currently) believed to be a constant.
+    fn keys<C>(&self, db: &DB) -> C
+    where
+        C: std::iter::FromIterator<Q::Key>;
 }
 
 /// An optional trait that is implemented for "user mutable" storage:

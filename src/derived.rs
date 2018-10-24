@@ -774,6 +774,14 @@ where
             Some(QueryState::Memoized(memo)) => memo.inputs.is_constant(),
         }
     }
+
+    fn keys<C>(&self, _db: &DB) -> C
+    where
+        C: std::iter::FromIterator<Q::Key>,
+    {
+        let map = self.map.read();
+        map.keys().cloned().collect()
+    }
 }
 
 impl<DB, Q, MP> QueryStorageMassOps<DB> for DerivedStorage<DB, Q, MP>
