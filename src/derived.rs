@@ -791,8 +791,8 @@ where
     MP: MemoizationPolicy<DB, Q>,
 {
     fn sweep(&self, db: &DB) {
-        let revision_now = db.salsa_runtime().current_revision();
         let mut map_write = self.map.write();
+        let revision_now = db.salsa_runtime().current_revision();
         map_write.retain(|key, query_state| {
             match query_state {
                 // Leave stuff that is currently being computed.
@@ -810,6 +810,16 @@ where
                         memo.verified_at,
                         revision_now
                     );
+
+                    // Since we don't acquire a query lock in this
+                    // method, it *is* possible for the revision to
+                    // change while we are executing. However, it is
+                    // *not* possible for any memos to have been
+                    // written into this table that reflect the new
+                    // revision, since we are holding the write lock
+                    // when we read `revision_now`.
+                    assert!(memo.verified_at <= revision_now);
+
                     memo.verified_at == revision_now
                 }
             }

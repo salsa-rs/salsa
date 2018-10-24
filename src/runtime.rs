@@ -95,9 +95,11 @@ where
 
     /// See `Database::sweep`.
     pub(crate) fn sweep_all(&self, db: &DB) {
-        // Ensure that the revision doesn't change. Note that we don't
-        // need to stop the world though.
-        let _guard = self.shared_state.query_lock.read();
+        // Note that we do not acquire the query lock (or any locks)
+        // here.  Each table is capable of sweeping itself atomically
+        // and there is no need to bring things to a halt. That said,
+        // users may wish to guarantee atomicity.
+
         db.for_each_query(|query_storage| query_storage.sweep(db));
     }
 
