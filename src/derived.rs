@@ -263,6 +263,8 @@ where
             }
         };
 
+        let panic_guard = PanicGuard::new(&self.map, key);
+
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
         // first things first, let's walk over each of our previous
@@ -277,7 +279,14 @@ where
                 let changed_at = memo.changed_at;
 
                 let new_value = StampedValue { value, changed_at };
-                self.overwrite_placeholder(runtime, descriptor, key, old_memo.unwrap(), &new_value);
+                self.overwrite_placeholder(
+                    runtime,
+                    descriptor,
+                    key,
+                    old_memo.unwrap(),
+                    &new_value,
+                    panic_guard,
+                );
                 return Ok(new_value);
             }
         }
@@ -333,6 +342,7 @@ where
                     verified_at: revision_now,
                 },
                 &stamped_value,
+                panic_guard,
             );
         }
 
@@ -463,7 +473,11 @@ where
         key: &Q::Key,
         memo: Memo<DB, Q>,
         new_value: &StampedValue<Q::Value>,
+        panic_guard: PanicGuard<'_, DB, Q>,
     ) {
+        // No panic occurred, do not run the panic-guard destructor:
+        std::mem::forget(panic_guard);
+
         // Overwrite the value, releasing the lock afterwards:
         let waiting = {
             let mut write = self.map.write();
@@ -498,6 +512,37 @@ where
 
     fn should_track_inputs(&self, key: &Q::Key) -> bool {
         MP::should_track_inputs(key)
+    }
+}
+
+struct PanicGuard<'db, DB, Q>
+where
+    DB: Database + 'db,
+    Q: QueryFunction<DB>,
+{
+    map: &'db RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
+    key: &'db Q::Key,
+}
+
+impl<'db, DB, Q> PanicGuard<'db, DB, Q>
+where
+    DB: Database + 'db,
+    Q: QueryFunction<DB>,
+{
+    fn new(map: &'db RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>, key: &'db Q::Key) -> Self {
+        Self { map, key }
+    }
+}
+
+impl<'db, DB, Q> Drop for PanicGuard<'db, DB, Q>
+where
+    DB: Database + 'db,
+    Q: QueryFunction<DB>,
+{
+    // FIXME(#24) -- handle parallel case
+    fn drop(&mut self) {
+        let mut map = self.map.write();
+        let _ = map.remove(self.key);
     }
 }
 
@@ -622,8 +667,7 @@ where
                     key,
                     old_input
                 )
-            })
-            .next()
+            }).next()
             .is_some();
 
         // Either way, we have to update our entry.
@@ -740,8 +784,7 @@ where
                             Q::default(),
                             old_input
                         )
-                    })
-                    .next();
+                    }).next();
 
                 changed_input.is_none()
             }
