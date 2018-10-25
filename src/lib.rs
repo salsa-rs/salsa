@@ -13,6 +13,7 @@ pub mod plumbing;
 
 use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
+use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::plumbing::UncheckedMutQueryStorageOps;
 use derive_new::new;
@@ -24,9 +25,31 @@ pub use crate::runtime::Runtime;
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait Database: plumbing::DatabaseStorageTypes {
+pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &Runtime<Self>;
+
+    /// Iterates through all query storage and removes any values that
+    /// have not been used since the last revision was created. The
+    /// intended use-cycle is that you first execute all of your
+    /// "main" queries; this will ensure that all query values they
+    /// consume are marked as used.  You then invoke this method to
+    /// remove other values that were not needed for your main query
+    /// results.
+    ///
+    /// **A note on atomicity.** Since `sweep_all` removes data that
+    /// hasn't been actively used since the last revision, executing
+    /// `sweep_all` concurrently with `set` operations is not
+    /// recommended.  It won't do any *harm* -- but it may cause more
+    /// data to be discarded then you expect, leading to more
+    /// re-computation. You can use the [`lock_revision`][] method to
+    /// guarantee atomicity (or execute `sweep_all` from the same
+    /// threads that would be performing a `set`).
+    ///
+    /// [`lock_revision`]: struct.Runtime.html#method.lock_revision
+    fn sweep_all(&self, strategy: SweepStrategy) {
+        self.salsa_runtime().sweep_all(self, strategy);
+    }
 
     /// Get access to extra methods pertaining to a given query,
     /// notably `set` (for inputs).
@@ -37,6 +60,33 @@ pub trait Database: plumbing::DatabaseStorageTypes {
         Self: plumbing::GetQueryTable<Q>,
     {
         <Self as plumbing::GetQueryTable<Q>>::get_query_table(self)
+    }
+}
+
+/// The sweep strategy controls what data we will keep/discard when we
+/// do a GC-sweep. The default (`SweepStrategy::default`) is to keep
+/// all memoized values used in the current revision.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct SweepStrategy {
+    keep_values: bool,
+}
+
+impl SweepStrategy {
+    /// Causes us to discard memoized *values* but keep the
+    /// *dependencies*. This means you will have to recompute the
+    /// results from any queries you execute but does permit you to
+    /// quickly determine if a value is still up to date.
+    pub fn discard_values(self) -> SweepStrategy {
+        SweepStrategy {
+            keep_values: false,
+            ..self
+        }
+    }
+}
+
+impl Default for SweepStrategy {
+    fn default() -> Self {
+        SweepStrategy { keep_values: true }
     }
 }
 
@@ -83,6 +133,13 @@ where
             .unwrap_or_else(|CycleDetected| {
                 self.db.salsa_runtime().report_unexpected_cycle(descriptor)
             })
+    }
+
+    pub fn sweep(&self, strategy: SweepStrategy)
+    where
+        Q::Storage: plumbing::QueryStorageMassOps<DB>,
+    {
+        self.storage.sweep(self.db, strategy);
     }
 
     /// Assign a value to an "input query". Must be used outside of
@@ -426,6 +483,21 @@ macro_rules! database_storage {
         impl $crate::plumbing::DatabaseStorageTypes for $Database {
             type QueryDescriptor = __SalsaQueryDescriptor;
             type DatabaseStorage = $Storage;
+        }
+
+        impl $crate::plumbing::DatabaseOps for $Database {
+            fn for_each_query(
+                &self,
+                mut op: impl FnMut(&dyn $crate::plumbing::QueryStorageMassOps<Self>),
+            ) {
+                $(
+                    $(
+                        op(&$crate::Database::salsa_runtime(self)
+                           .storage()
+                           .$query_method);
+                    )*
+                )*
+            }
         }
 
         impl $crate::plumbing::QueryDescriptor<$Database> for __SalsaQueryDescriptor {

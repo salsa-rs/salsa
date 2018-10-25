@@ -19,8 +19,6 @@ pub(crate) struct TestContextImpl {
 
 impl TestContextImpl {
     pub(crate) fn assert_log(&self, expected_log: &[&str]) {
-        use difference::{Changeset, Difference};
-
         let expected_text = &format!("{:#?}", expected_log);
         let actual_text = &format!("{:#?}", self.log().take());
 
@@ -28,13 +26,11 @@ impl TestContextImpl {
             return;
         }
 
-        let Changeset { diffs, .. } = Changeset::new(expected_text, actual_text, "\n");
-
-        for i in 0..diffs.len() {
-            match &diffs[i] {
-                Difference::Same(x) => println!(" {}", x),
-                Difference::Add(x) => println!("+{}", x),
-                Difference::Rem(x) => println!("-{}", x),
+        for diff in diff::lines(expected_text, actual_text) {
+            match diff {
+                diff::Result::Left(l) => println!("-{}", l),
+                diff::Result::Both(l, _) => println!(" {}", l),
+                diff::Result::Right(r) => println!("+{}", r),
             }
         }
 

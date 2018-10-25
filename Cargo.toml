@@ -18,5 +18,5 @@ log = "0.4.5"
 smallvec = "0.6.5"
 
 [dev-dependencies]
-difference = "2.0"
+diff = "0.1.0"
 env_logger = "0.5.13"

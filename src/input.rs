@@ -1,5 +1,6 @@
 use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
+use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::plumbing::UncheckedMutQueryStorageOps;
 use crate::runtime::ChangedAt;
@@ -7,6 +8,7 @@ use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::Database;
 use crate::Query;
+use crate::SweepStrategy;
 use log::debug;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
@@ -61,7 +63,10 @@ where
 
         Ok(StampedValue {
             value: <Q::Value>::default(),
-            changed_at: ChangedAt::Revision(Revision::ZERO),
+            changed_at: ChangedAt {
+                is_constant: false,
+                revision: Revision::ZERO,
+            },
         })
     }
 
@@ -77,11 +82,10 @@ where
                 // still intact, they just have conservative
                 // dependencies. The next revision, they may wind up
                 // with something more precise.
-                if is_constant.0 && !old_value.changed_at.is_constant() {
+                if is_constant.0 && !old_value.changed_at.is_constant {
                     let mut map = RwLockUpgradableReadGuard::upgrade(map);
                     let old_value = map.get_mut(key).unwrap();
-                    old_value.changed_at =
-                        ChangedAt::Constant(db.salsa_runtime().current_revision());
+                    old_value.changed_at.is_constant = true;
                 }
 
                 return;
@@ -106,10 +110,9 @@ where
         // racing with somebody else to modify this same cell.
         // (Otherwise, someone else might write a *newer* revision
         // into the same cell while we block on the lock.)
-        let changed_at = if is_constant.0 {
-            ChangedAt::Constant(next_revision)
-        } else {
-            ChangedAt::Revision(next_revision)
+        let changed_at = ChangedAt {
+            is_constant: is_constant.0,
+            revision: next_revision,
         };
 
         let stamped_value = StampedValue { value, changed_at };
@@ -117,7 +120,7 @@ where
         match map.entry(key) {
             Entry::Occupied(mut entry) => {
                 assert!(
-                    !entry.get().changed_at.is_constant(),
+                    !entry.get().changed_at.is_constant,
                     "modifying `{:?}({:?})`, which was previously marked as constant (old value `{:?}`, new value `{:?}`)",
                     Q::default(),
                     entry.key(),
@@ -174,7 +177,10 @@ where
             map_read
                 .get(key)
                 .map(|v| v.changed_at)
-                .unwrap_or(ChangedAt::Revision(Revision::ZERO))
+                .unwrap_or(ChangedAt {
+                    is_constant: false,
+                    revision: Revision::ZERO,
+                })
         };
 
         debug!(
@@ -191,9 +197,26 @@ where
         let map_read = self.map.read();
         map_read
             .get(key)
-            .map(|v| v.changed_at.is_constant())
+            .map(|v| v.changed_at.is_constant)
             .unwrap_or(false)
     }
+
+    fn keys<C>(&self, _db: &DB) -> C
+    where
+        C: std::iter::FromIterator<Q::Key>,
+    {
+        let map = self.map.read();
+        map.keys().cloned().collect()
+    }
+}
+
+impl<DB, Q> QueryStorageMassOps<DB> for InputStorage<DB, Q>
+where
+    Q: Query<DB>,
+    DB: Database,
+    Q::Value: Default,
+{
+    fn sweep(&self, _db: &DB, _strategy: SweepStrategy) {}
 }
 
 impl<DB, Q> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q>
@@ -229,7 +252,10 @@ where
 
         // Unlike with `set`, here we use the **current revision** and
         // do not create a new one.
-        let changed_at = ChangedAt::Revision(db.salsa_runtime().current_revision());
+        let changed_at = ChangedAt {
+            is_constant: false,
+            revision: db.salsa_runtime().current_revision(),
+        };
 
         map_write.insert(key, StampedValue { value, changed_at });
     }

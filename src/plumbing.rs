@@ -1,6 +1,7 @@
 use crate::Database;
 use crate::Query;
 use crate::QueryTable;
+use crate::SweepStrategy;
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -28,6 +29,20 @@ pub trait DatabaseStorageTypes: Sized {
     /// Defines the "storage type", where all the query data is kept.
     /// This type is defined by the `database_storage` macro.
     type DatabaseStorage: Default;
+}
+
+/// Internal operations that the runtime uses to operate on the database.
+pub trait DatabaseOps: Sized {
+    /// Executes the callback for each kind of query.
+    fn for_each_query(&self, op: impl FnMut(&dyn QueryStorageMassOps<Self>));
+}
+
+/// Internal operations performed on the query storage as a whole
+/// (note that these ops do not need to know the identity of the
+/// query, unlike `QueryStorageOps`).
+pub trait QueryStorageMassOps<DB: Database> {
+    /// Discards memoized values that are not up to date with the current revision.
+    fn sweep(&self, db: &DB, strategy: SweepStrategy);
 }
 
 pub trait QueryDescriptor<DB>: Clone + Debug + Eq + Hash + Send + Sync {
@@ -91,6 +106,11 @@ where
 
     /// Check if `key` is (currently) believed to be a constant.
     fn is_constant(&self, db: &DB, key: &Q::Key) -> bool;
+
+    /// Check if `key` is (currently) believed to be a constant.
+    fn keys<C>(&self, db: &DB) -> C
+    where
+        C: std::iter::FromIterator<Q::Key>;
 }
 
 /// An optional trait that is implemented for "user mutable" storage:

@@ -1,4 +1,4 @@
-use crate::Database;
+use crate::{Database, SweepStrategy};
 use lock_api::RawRwLock;
 use log::debug;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
@@ -10,7 +10,7 @@ use std::hash::BuildHasherDefault;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
+pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
 
 /// The salsa runtime stores the storage for all queries as well as
 /// tracking the query stack and dependencies between cycles.
@@ -91,6 +91,16 @@ where
     /// invoke this method from time to time.
     pub fn next_revision(&self) {
         self.increment_revision();
+    }
+
+    /// Default implementation for `Database::sweep_all`.
+    pub fn sweep_all(&self, db: &DB, strategy: SweepStrategy) {
+        // Note that we do not acquire the query lock (or any locks)
+        // here.  Each table is capable of sweeping itself atomically
+        // and there is no need to bring things to a halt. That said,
+        // users may wish to guarantee atomicity.
+
+        db.for_each_query(|query_storage| query_storage.sweep(db, strategy));
     }
 
     /// Indicates that a derived query has begun to execute; if this is the
@@ -229,7 +239,7 @@ where
         &self,
         descriptor: &DB::QueryDescriptor,
         execute: impl FnOnce() -> V,
-    ) -> (StampedValue<V>, QueryDescriptorSet<DB>) {
+    ) -> ComputedQueryResult<DB, V> {
         debug!("{:?}: execute_query_implementation invoked", descriptor);
 
         // Push the active query onto the stack.
@@ -258,18 +268,11 @@ where
             local_state.query_stack.pop().unwrap()
         };
 
-        let query_descriptor_set = match subqueries {
-            None => QueryDescriptorSet::Untracked,
-            Some(set) => {
-                if set.is_empty() {
-                    QueryDescriptorSet::Constant
-                } else {
-                    QueryDescriptorSet::Tracked(Arc::new(set))
-                }
-            }
-        };
-
-        (StampedValue { value, changed_at }, query_descriptor_set)
+        ComputedQueryResult {
+            value,
+            changed_at,
+            subqueries,
+        }
     }
 
     /// Reports that the currently active query read the result from
@@ -292,8 +295,7 @@ where
 
     pub(crate) fn report_untracked_read(&self) {
         if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
-            let changed_at = ChangedAt::Revision(self.current_revision());
-            top_query.add_untracked_read(changed_at);
+            top_query.add_untracked_read(self.current_revision());
         }
     }
 
@@ -459,40 +461,63 @@ struct ActiveQuery<DB: Database> {
     /// What query is executing
     descriptor: DB::QueryDescriptor,
 
-    /// Records the maximum revision where any subquery changed
+    /// Maximum revision of all inputs thus far;
+    /// we also track if all inputs have been constant.
+    ///
+    /// If we see an untracked input, this is not terribly relevant.
     changed_at: ChangedAt,
 
-    /// Each subquery
+    /// Set of subqueries that were accessed thus far, or `None` if
+    /// there was an untracked the read.
     subqueries: Option<FxIndexSet<DB::QueryDescriptor>>,
+}
+
+pub(crate) struct ComputedQueryResult<DB: Database, V> {
+    /// Final value produced
+    pub(crate) value: V,
+
+    /// Maximum revision of all inputs observed; `is_constant` is true
+    /// if all inputs were constants.
+    ///
+    /// If we observe an untracked read, this will be set to a
+    /// non-constant value that changed in the most recent revision.
+    pub(crate) changed_at: ChangedAt,
+
+    /// Complete set of subqueries that were accessed, or `None` if
+    /// there was an untracked the read.
+    pub(crate) subqueries: Option<FxIndexSet<DB::QueryDescriptor>>,
 }
 
 impl<DB: Database> ActiveQuery<DB> {
     fn new(descriptor: DB::QueryDescriptor) -> Self {
         ActiveQuery {
             descriptor,
-            changed_at: ChangedAt::Constant(Revision::ZERO),
+            changed_at: ChangedAt {
+                is_constant: true,
+                revision: Revision::ZERO,
+            },
             subqueries: Some(FxIndexSet::default()),
         }
     }
 
     fn add_read(&mut self, subquery: &DB::QueryDescriptor, changed_at: ChangedAt) {
-        match changed_at {
-            ChangedAt::Constant(_) => {
-                // When we read constant values, we don't need to
-                // track the source of the value.
-            }
-            ChangedAt::Revision(_) => {
-                if let Some(set) = &mut self.subqueries {
-                    set.insert(subquery.clone());
-                }
-                self.changed_at = self.changed_at.max(changed_at);
-            }
+        let ChangedAt {
+            is_constant,
+            revision,
+        } = changed_at;
+
+        if let Some(set) = &mut self.subqueries {
+            set.insert(subquery.clone());
         }
+
+        self.changed_at.is_constant &= is_constant;
+        self.changed_at.revision = self.changed_at.revision.max(revision);
     }
 
-    fn add_untracked_read(&mut self, changed_at: ChangedAt) {
+    fn add_untracked_read(&mut self, changed_at: Revision) {
         self.subqueries = None;
-        self.changed_at = self.changed_at.max(changed_at);
+        self.changed_at.is_constant = false;
+        self.changed_at.revision = changed_at;
     }
 }
 
@@ -517,64 +542,23 @@ impl std::fmt::Debug for Revision {
 }
 
 /// Records when a stamped value changed.
-///
-/// Note: the order of variants is significant. We sometimes use `max`
-/// for example to find the "most recent revision" when something
-/// changed.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ChangedAt {
-    /// Will never change again (and the revision in which we became a
-    /// constant).
-    Constant(Revision),
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ChangedAt {
+    // Will this value ever change again?
+    pub(crate) is_constant: bool,
 
-    /// Last changed in the given revision. May change in the future.
-    Revision(Revision),
+    // At which revision did this value last change? (If this value is
+    // the value of a constant input, this indicates when it became
+    // constant.)
+    pub(crate) revision: Revision,
 }
 
 impl ChangedAt {
-    pub fn is_constant(self) -> bool {
-        match self {
-            ChangedAt::Constant(_) => true,
-            ChangedAt::Revision(_) => false,
-        }
-    }
-
     /// True if a value is stored with this `ChangedAt` value has
     /// changed after `revision`. This is invoked by query storage
     /// when their dependents are asking them if they have changed.
-    pub fn changed_since(self, revision: Revision) -> bool {
-        match self {
-            ChangedAt::Constant(r) | ChangedAt::Revision(r) => r > revision,
-        }
-    }
-}
-
-/// An insertion-order-preserving set of queries. Used to track the
-/// inputs accessed during query execution.
-pub(crate) enum QueryDescriptorSet<DB: Database> {
-    /// No inputs:
-    Constant,
-
-    /// All reads were to tracked things:
-    Tracked(Arc<FxIndexSet<DB::QueryDescriptor>>),
-
-    /// Some reads to an untracked thing:
-    Untracked,
-}
-
-impl<DB: Database> std::fmt::Debug for QueryDescriptorSet<DB> {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            QueryDescriptorSet::Constant => write!(fmt, "Constant"),
-            QueryDescriptorSet::Tracked(set) => std::fmt::Debug::fmt(set, fmt),
-            QueryDescriptorSet::Untracked => write!(fmt, "Untracked"),
-        }
-    }
-}
-
-impl<DB: Database> Default for QueryDescriptorSet<DB> {
-    fn default() -> Self {
-        QueryDescriptorSet::Constant
+    pub(crate) fn changed_since(self, revision: Revision) -> bool {
+        self.revision > revision
     }
 }
 
