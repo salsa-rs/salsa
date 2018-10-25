@@ -93,8 +93,8 @@ where
         self.increment_revision();
     }
 
-    /// See `Database::sweep`.
-    pub(crate) fn sweep_all(&self, db: &DB) {
+    /// Default implementation for `Database::sweep_all`.
+    pub fn sweep_all(&self, db: &DB) {
         // Note that we do not acquire the query lock (or any locks)
         // here.  Each table is capable of sweeping itself atomically
         // and there is no need to bring things to a halt. That said,
