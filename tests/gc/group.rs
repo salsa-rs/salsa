@@ -1,5 +1,7 @@
+use crate::log::HasLog;
+
 salsa::query_group! {
-    pub(crate) trait GcDatabase: salsa::Database {
+    pub(crate) trait GcDatabase: salsa::Database + HasLog {
         fn min() -> usize {
             type Min;
             storage input;
@@ -34,6 +36,7 @@ salsa::query_group! {
 }
 
 fn fibonacci(db: &impl GcDatabase, key: usize) -> usize {
+    db.log().add(format!("fibonacci({:?})", key));
     if key == 0 {
         0
     } else if key == 1 {
@@ -44,6 +47,7 @@ fn fibonacci(db: &impl GcDatabase, key: usize) -> usize {
 }
 
 fn triangular(db: &impl GcDatabase, key: usize) -> usize {
+    db.log().add(format!("triangular({:?})", key));
     if key == 0 {
         0
     } else {
@@ -52,6 +56,7 @@ fn triangular(db: &impl GcDatabase, key: usize) -> usize {
 }
 
 fn compute(db: &impl GcDatabase, key: usize) -> usize {
+    db.log().add(format!("compute({:?})", key));
     if db.use_triangular(key) {
         db.triangular(key)
     } else {
@@ -60,5 +65,6 @@ fn compute(db: &impl GcDatabase, key: usize) -> usize {
 }
 
 fn compute_all(db: &impl GcDatabase) -> Vec<usize> {
+    db.log().add("compute_all()");
     (db.min()..db.max()).map(|v| db.compute(v)).collect()
 }
