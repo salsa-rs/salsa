@@ -1,6 +1,7 @@
 use crate::Database;
 use crate::Query;
 use crate::QueryTable;
+use crate::SweepStrategy;
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -41,7 +42,7 @@ pub trait DatabaseOps: Sized {
 /// query, unlike `QueryStorageOps`).
 pub trait QueryStorageMassOps<DB: Database> {
     /// Discards memoized values that are not up to date with the current revision.
-    fn sweep(&self, db: &DB);
+    fn sweep(&self, db: &DB, strategy: SweepStrategy);
 }
 
 pub trait QueryDescriptor<DB>: Clone + Debug + Eq + Hash + Send + Sync {

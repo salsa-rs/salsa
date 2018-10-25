@@ -1,7 +1,7 @@
 use crate::db;
 use crate::group::*;
 use salsa::debug::DebugQueryTable;
-use salsa::Database;
+use salsa::{Database, SweepStrategy};
 
 macro_rules! assert_keys {
     ($db:expr, $($query:expr => ($($key:expr),*),)*) => {
@@ -34,7 +34,7 @@ fn compute_one() {
 
     // Memoized, but will compute fibonacci(5) again
     db.compute(5);
-    db.sweep_all();
+    db.sweep_all(SweepStrategy::default());
 
     assert_keys! {
         db,
@@ -72,7 +72,7 @@ fn compute_switch() {
         Max => (),
     }
 
-    db.sweep_all();
+    db.sweep_all(SweepStrategy::default());
 
     // Now we just have `Triangular` and not `Fibonacci`
     assert_keys! {
@@ -88,7 +88,7 @@ fn compute_switch() {
     // Now run `compute` *again* in next revision.
     db.salsa_runtime().next_revision();
     assert_eq!(db.compute(5), 15);
-    db.sweep_all();
+    db.sweep_all(SweepStrategy::default());
 
     // We keep triangular, but just the outermost one.
     assert_keys! {
@@ -117,7 +117,7 @@ fn compute_all() {
     db.compute_all();
     db.salsa_runtime().next_revision();
     db.compute_all();
-    db.sweep_all();
+    db.sweep_all(SweepStrategy::default());
 
     assert_keys! {
         db,
@@ -145,7 +145,7 @@ fn compute_all() {
         Max => (()),
     }
 
-    db.sweep_all();
+    db.sweep_all(SweepStrategy::default());
 
     // We no longer used `Compute(5)` and `Triangular(5)`; note that
     // `UseTriangular(5)` is not collected, as it is an input.

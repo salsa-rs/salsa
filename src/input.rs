@@ -8,6 +8,7 @@ use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::Database;
 use crate::Query;
+use crate::SweepStrategy;
 use log::debug;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
@@ -215,7 +216,7 @@ where
     DB: Database,
     Q::Value: Default,
 {
-    fn sweep(&self, _db: &DB) {}
+    fn sweep(&self, _db: &DB, _strategy: SweepStrategy) {}
 }
 
 impl<DB, Q> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q>

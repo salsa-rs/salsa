@@ -47,8 +47,8 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// threads that would be performing a `set`).
     ///
     /// [`lock_revision`]: struct.Runtime.html#method.lock_revision
-    fn sweep_all(&self) {
-        self.salsa_runtime().sweep_all(self);
+    fn sweep_all(&self, strategy: SweepStrategy) {
+        self.salsa_runtime().sweep_all(self, strategy);
     }
 
     /// Get access to extra methods pertaining to a given query,
@@ -60,6 +60,33 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
         Self: plumbing::GetQueryTable<Q>,
     {
         <Self as plumbing::GetQueryTable<Q>>::get_query_table(self)
+    }
+}
+
+/// The sweep strategy controls what data we will keep/discard when we
+/// do a GC-sweep. The default (`SweepStrategy::default`) is to keep
+/// all memoized values used in the current revision.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct SweepStrategy {
+    keep_values: bool,
+}
+
+impl SweepStrategy {
+    /// Causes us to discard memoized *values* but keep the
+    /// *dependencies*. This means you will have to recompute the
+    /// results from any queries you execute but does permit you to
+    /// quickly determine if a value is still up to date.
+    pub fn discard_values(self) -> SweepStrategy {
+        SweepStrategy {
+            keep_values: false,
+            ..self
+        }
+    }
+}
+
+impl Default for SweepStrategy {
+    fn default() -> Self {
+        SweepStrategy { keep_values: true }
     }
 }
 
@@ -108,11 +135,11 @@ where
             })
     }
 
-    pub fn sweep(&self)
+    pub fn sweep(&self, strategy: SweepStrategy)
     where
         Q::Storage: plumbing::QueryStorageMassOps<DB>,
     {
-        self.storage.sweep(self.db);
+        self.storage.sweep(self.db, strategy);
     }
 
     /// Assign a value to an "input query". Must be used outside of

@@ -1,7 +1,7 @@
 use crate::db;
 use crate::group::{Fibonacci, GcDatabase};
 use salsa::debug::DebugQueryTable;
-use salsa::Database;
+use salsa::{Database, SweepStrategy};
 
 // For constant values (like `fibonacci`), we only keep the values
 // that were used in the latest revision, not the sub-values that
@@ -18,7 +18,7 @@ fn one_rev() {
 
     // Everything was used in this revision, so
     // nothing gets collected.
-    db.sweep_all();
+    db.sweep_all(SweepStrategy::default());
     assert_eq!(k.len(), 6);
 }
 
@@ -35,7 +35,7 @@ fn two_rev_nothing() {
 
     // Nothing was used in this revision, so
     // everything gets collected.
-    db.sweep_all();
+    db.sweep_all(SweepStrategy::default());
 
     let k: Vec<_> = db.query(Fibonacci).keys();
     assert_eq!(k.len(), 0);
@@ -56,7 +56,7 @@ fn two_rev_one_use() {
 
     // fibonacci is a constant, so it will not be invalidated,
     // hence we keep `fibonacci(5)` but remove 0..=4.
-    db.sweep_all();
+    db.sweep_all(SweepStrategy::default());
 
     let k: Vec<_> = db.query(Fibonacci).keys();
     assert_eq!(k, vec![5]);
@@ -78,7 +78,7 @@ fn two_rev_two_uses() {
 
     // fibonacci is a constant, so it will not be invalidated,
     // hence we keep 3 and 5 but remove the rest.
-    db.sweep_all();
+    db.sweep_all(SweepStrategy::default());
 
     let mut k: Vec<_> = db.query(Fibonacci).keys();
     k.sort();

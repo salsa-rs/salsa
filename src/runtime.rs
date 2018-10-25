@@ -1,4 +1,4 @@
-use crate::Database;
+use crate::{Database, SweepStrategy};
 use lock_api::RawRwLock;
 use log::debug;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
@@ -94,13 +94,13 @@ where
     }
 
     /// Default implementation for `Database::sweep_all`.
-    pub fn sweep_all(&self, db: &DB) {
+    pub fn sweep_all(&self, db: &DB, strategy: SweepStrategy) {
         // Note that we do not acquire the query lock (or any locks)
         // here.  Each table is capable of sweeping itself atomically
         // and there is no need to bring things to a halt. That said,
         // users may wish to guarantee atomicity.
 
-        db.for_each_query(|query_storage| query_storage.sweep(db));
+        db.for_each_query(|query_storage| query_storage.sweep(db, strategy));
     }
 
     /// Indicates that a derived query has begun to execute; if this is the

@@ -11,6 +11,7 @@ use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::Database;
+use crate::SweepStrategy;
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
@@ -790,7 +791,7 @@ where
     DB: Database,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn sweep(&self, db: &DB) {
+    fn sweep(&self, db: &DB, strategy: SweepStrategy) {
         let mut map_write = self.map.write();
         let revision_now = db.salsa_runtime().current_revision();
         map_write.retain(|key, query_state| {
@@ -819,6 +820,10 @@ where
                     // revision, since we are holding the write lock
                     // when we read `revision_now`.
                     assert!(memo.verified_at <= revision_now);
+
+                    if !strategy.keep_values {
+                        memo.value = None;
+                    }
 
                     memo.verified_at == revision_now
                 }
