@@ -13,7 +13,10 @@ salsa::query_group! {
 
         fn sum(key: &'static str) -> usize {
             type Sum;
-            use fn sum;
+        }
+
+        fn sum2(key: &'static str) -> usize {
+            type Sum2;
         }
     }
 }
@@ -97,6 +100,10 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
     sum
 }
 
+fn sum2(db: &impl ParDatabase, key: &'static str) -> usize {
+    sum(db, key)
+}
+
 #[derive(Default)]
 pub struct ParDatabaseImpl {
     runtime: salsa::Runtime<ParDatabaseImpl>,
@@ -137,6 +144,7 @@ salsa::database_storage! {
         impl ParDatabase {
             fn input() for Input;
             fn sum() for Sum;
+            fn sum2() for Sum2;
         }
     }
 }
