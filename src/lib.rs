@@ -202,7 +202,7 @@ where
 /// (e.g., `MyQuery`, below) that represents the query, and optionally
 /// other details, such as its storage.
 ///
-/// ### Examples
+/// # Examples
 ///
 /// The simplest example is something like this:
 ///
@@ -224,6 +224,57 @@ where
 ///     }
 /// }
 /// ```
+///
+/// # Storage modes
+///
+/// Here are the possible storage values for each query.  The default
+/// is `storage memoized`.
+///
+/// ## Input queries
+///
+/// Specifying `storage input` will give you an **input
+/// query**. Unlike derived queries, whose value is given by a
+/// function, input queries are explicit set by doing
+/// `db.query(QueryType).set(key, value)` (where `QueryType` is the
+/// `type` specified for the query).
+///
+/// If you simply specify `storage input`, you will get the default
+/// behavior:
+///
+/// - Accessing a value that has not yet been set will panic.
+/// - Each time you invoke `set`, we assume the value has changed.
+///
+/// You can change either of these two things by choosing one of the following
+/// "extended" options:
+///
+/// - `storage (input default)` -- Attempting to fetch a key that has
+///   not been explicitly `set` will use the `Default` trait to
+///   provide a value. Requires that the value implements `Default`.
+/// - `storage (input eq)` -- Compare new values against the old
+///   values and avoid triggering a new revision if they are
+///   equal. Requires value types to implement the `Eq` trait.
+/// - `storage (input default eq)` -- Both of the above.
+///
+/// ## Derived queries
+///
+/// Derived queries are specified by a function.
+///
+/// - `storage memoized` -- The result is memoized
+///   between calls.  If the inputs have changed, we will recompute
+///   the value, but then compare against the old memoized value,
+///   which can significantly reduce the amount of recomputation
+///   required in new revisions. This does require that the value
+///   implements `Eq`.
+/// - `storage volatile` -- indicates that the inputs are not fully
+///   captured by salsa. The result will be recomputed once per revision.
+/// - `storage dependencies` -- does not cache the value, so it will
+///   be recomputed every time it is needed. We do track the inputs, however,
+///   so if they have not changed, then things that rely on this query
+///   may be known not to have changed.
+/// - `storage input` -- does not cache the value, so it will
+///   be recomputed every time it is needed. We do track the inputs, however,
+///   so if they have not changed, then things that rely on this query
+///   may be known not to have changed.
 #[macro_export]
 macro_rules! query_group {
     (
@@ -255,7 +306,7 @@ macro_rules! query_group {
                 $(#[$method_attr:meta])*
                 fn $method_name:ident($($key_name:ident: $key_ty:ty),* $(,)*) -> $value_ty:ty {
                     type $QueryType:ident;
-                    $(storage $storage:ident;)* // FIXME(rust-lang/rust#48075) should be `?`
+                    $(storage $storage:tt;)* // FIXME(rust-lang/rust#48075) should be `?`
                     $(use fn $fn_path:path;)* // FIXME(rust-lang/rust#48075) should be `?`
                 }
             )*
@@ -310,7 +361,32 @@ macro_rules! query_group {
 
     (
         @query_fn[
+            storage((input $($flags:tt)*));
+            method_name($method_name:ident);
+            fn_path();
+            $($rest:tt)*
+        ]
+    ) => {
+        // do nothing for `storage input`, presuming they did not write an explicit `use fn`
+    };
+
+    (
+        @query_fn[
             storage(input);
+            method_name($method_name:ident);
+            fn_path($fn_path:path);
+            $($rest:tt)*
+        ]
+    ) => {
+        // error for `storage input` with an explicit `use fn`
+        compile_error! {
+            "cannot have `storage input` combined with `use fn`"
+        }
+    };
+
+    (
+        @query_fn[
+            storage((input $($flags:tt)*));
             method_name($method_name:ident);
             fn_path($fn_path:path);
             $($rest:tt)*
@@ -430,7 +506,33 @@ macro_rules! query_group {
     (
         @storage_ty[$DB:ident, $Self:ident, input]
     ) => {
-        $crate::plumbing::InputStorage<DB, Self>
+        $crate::plumbing::InputStorage<DB, Self, $crate::plumbing::ExplicitInputPolicy>
+    };
+
+    (
+        @storage_ty[$DB:ident, $Self:ident, (input default)]
+    ) => {
+        $crate::plumbing::InputStorage<DB, Self, $crate::plumbing::DefaultValueInputPolicy>
+    };
+
+    (
+        @storage_ty[$DB:ident, $Self:ident, (input eq)]
+    ) => {
+        $crate::plumbing::InputStorage<DB, Self, $crate::plumbing::EqValueInputPolicy>
+    };
+
+    (
+        @storage_ty[$DB:ident, $Self:ident, (input default eq)]
+    ) => {
+        $crate::plumbing::InputStorage<DB, Self, $crate::plumbing::DefaultEqValueInputPolicy>
+    };
+
+    (
+        @storage_ty[$DB:ident, $Self:ident, $storage:tt]
+    ) => {
+        compile_error! {
+            "invalid storage specification"
+        }
     };
 }
 

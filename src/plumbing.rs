@@ -8,6 +8,10 @@ use std::hash::Hash;
 pub use crate::derived::DependencyStorage;
 pub use crate::derived::MemoizedStorage;
 pub use crate::derived::VolatileStorage;
+pub use crate::input::DefaultEqValueInputPolicy;
+pub use crate::input::DefaultValueInputPolicy;
+pub use crate::input::EqValueInputPolicy;
+pub use crate::input::ExplicitInputPolicy;
 pub use crate::input::InputStorage;
 pub use crate::runtime::Revision;
 

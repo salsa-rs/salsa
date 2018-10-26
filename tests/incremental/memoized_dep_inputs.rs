@@ -15,7 +15,7 @@ salsa::query_group! {
         }
         fn dep_input1() -> usize {
             type Input1;
-            storage input;
+            storage (input default);
         }
         fn dep_input2() -> usize {
             type Input2;

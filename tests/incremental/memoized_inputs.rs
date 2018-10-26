@@ -8,11 +8,11 @@ salsa::query_group! {
         }
         fn input1() -> usize {
             type Input1;
-            storage input;
+            storage (input default eq);
         }
         fn input2() -> usize {
             type Input2;
-            storage input;
+            storage (input default eq);
         }
     }
 }

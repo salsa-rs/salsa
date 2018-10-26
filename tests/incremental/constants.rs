@@ -6,7 +6,7 @@ salsa::query_group! {
     pub(crate) trait ConstantsDatabase: TestContext {
         fn constants_input(key: char) -> usize {
             type ConstantsInput;
-            storage input;
+            storage (input default eq);
         }
 
         fn constants_add(keys: (char, char)) -> usize {

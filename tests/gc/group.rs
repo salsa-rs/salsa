@@ -14,7 +14,7 @@ salsa::query_group! {
 
         fn use_triangular(key: usize) -> bool {
             type UseTriangular;
-            storage input;
+            storage (input default);
         }
 
         fn fibonacci(key: usize) -> usize {
