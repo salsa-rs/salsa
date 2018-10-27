@@ -42,7 +42,7 @@ where
     }
 
     fn missing_value(key: &Q::Key) -> Q::Value {
-        panic!(format!("no value set for {:?}({:?})", Q::default(), key))
+        panic!("no value set for {:?}({:?})", Q::default(), key)
     }
 }
 
