@@ -271,10 +271,6 @@ where
 ///   be recomputed every time it is needed. We do track the inputs, however,
 ///   so if they have not changed, then things that rely on this query
 ///   may be known not to have changed.
-/// - `storage input` -- does not cache the value, so it will
-///   be recomputed every time it is needed. We do track the inputs, however,
-///   so if they have not changed, then things that rely on this query
-///   may be known not to have changed.
 #[macro_export]
 macro_rules! query_group {
     (
