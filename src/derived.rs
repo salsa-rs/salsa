@@ -527,7 +527,7 @@ where
         panic_guard: PanicGuard<'_, DB, Q>,
     ) {
         // No panic occurred, do not run the panic-guard destructor:
-        std::mem::forget(panic_guard);
+        panic_guard.forget();
 
         // Overwrite the value, releasing the lock afterwards:
         let waiting = {
@@ -583,6 +583,10 @@ where
     fn new(map: &'db RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>, key: &'db Q::Key) -> Self {
         Self { map, key }
     }
+
+    fn forget(self) {
+        std::mem::forget(self)
+    }
 }
 
 impl<'db, DB, Q> Drop for PanicGuard<'db, DB, Q>
@@ -592,8 +596,12 @@ where
 {
     // FIXME(#24) -- handle parallel case
     fn drop(&mut self) {
-        let mut map = self.map.write();
-        let _ = map.remove(self.key);
+        if std::thread::panicking() {
+            let mut map = self.map.write();
+            let _ = map.remove(self.key);
+        } else {
+            panic!(".forget() was not called")
+        }
     }
 }
 
