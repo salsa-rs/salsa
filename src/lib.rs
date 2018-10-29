@@ -21,6 +21,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 pub use crate::runtime::Runtime;
+pub use crate::runtime::RevisionGuard;
 
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
