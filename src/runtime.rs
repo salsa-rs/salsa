@@ -1,7 +1,7 @@
 use crate::{Database, SweepStrategy};
 use lock_api::RawRwLock;
 use log::debug;
-use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 use std::cell::RefCell;
@@ -190,12 +190,8 @@ where
             panic!("increment_revision invoked during a query computation");
         }
 
-        // Get an (upgradable) read lock, so that we are sure nobody
-        // else is changing the current revision.
-        let lock = self.shared_state.query_lock.upgradable_read();
-
-        // Flag current revision as cancelled.
-        // `increment_revision` calls, they may all set the
+        // Signal that we have a pending increment so that workers can
+        // start to cancel work.
         let old_pending_revision_increments = self
             .shared_state
             .pending_revision_increments
@@ -206,15 +202,14 @@ where
         );
 
         // To modify the revision, we need the lock.
-        let _lock = RwLockUpgradableReadGuard::upgrade(lock);
+        let _lock = self.shared_state.query_lock.write();
 
-        // *Before* updating the revision number, reset
-        // `revision_cancelled` to false.  This way, if anybody should
-        // happen to invoke `is_current_revision_canceled` before we
-        // update the number, they don't get an incorrect result (but
-        // note that, because we hold `query_lock`, no queries can
-        // be currently executing anyhow, so it's sort of a moot
-        // point).
+        // *Before* updating the revision number, decrement the
+        // `pending_revision_increments` counter. This way, if anybody
+        // should happen to invoke `is_current_revision_canceled`
+        // before we update the number, and they read 0, they don't
+        // get an incorrect result -- once they acquire the query
+        // lock, we'll be in the new revision.
         self.shared_state
             .pending_revision_increments
             .fetch_sub(1, Ordering::SeqCst);
