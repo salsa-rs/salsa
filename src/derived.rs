@@ -300,7 +300,7 @@ where
             }
         };
 
-        let panic_guard = PanicGuard::new(&self.map, key);
+        let panic_guard = PanicGuard::new(&self.map, key, runtime.id());
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
@@ -529,7 +529,10 @@ where
         // No panic occurred, do not run the panic-guard destructor:
         panic_guard.forget();
 
-        // Overwrite the value, releasing the lock afterwards:
+        // Replace the in-progress placeholder that we installed with
+        // the new memo, thus releasing our unique access to this
+        // key. If anybody has installed themselves in our "waiting"
+        // list, notify them that the value is available.
         let waiting = {
             let mut write = self.map.write();
             match write.insert(key.clone(), QueryState::Memoized(memo)) {
@@ -571,6 +574,7 @@ where
     DB: Database + 'db,
     Q: QueryFunction<DB>,
 {
+    my_id: RuntimeId,
     map: &'db RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
     key: &'db Q::Key,
 }
@@ -580,8 +584,12 @@ where
     DB: Database + 'db,
     Q: QueryFunction<DB>,
 {
-    fn new(map: &'db RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>, key: &'db Q::Key) -> Self {
-        Self { map, key }
+    fn new(
+        map: &'db RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
+        key: &'db Q::Key,
+        my_id: RuntimeId,
+    ) -> Self {
+        Self { map, key, my_id }
     }
 
     fn forget(self) {
@@ -594,12 +602,40 @@ where
     DB: Database + 'db,
     Q: QueryFunction<DB>,
 {
-    // FIXME(#24) -- handle parallel case
     fn drop(&mut self) {
         if std::thread::panicking() {
+            // In this case, we had installed a `InProgress` marker but we
+            // panicked before it could be removed. At this point, we
+            // therefore "own" unique access to our slot, so we can just
+            // remove the `InProgress` marker.
+
             let mut map = self.map.write();
-            let _ = map.remove(self.key);
+            let old_value = map.remove(self.key);
+            match old_value {
+                Some(QueryState::InProgress { id, waiting }) => {
+                    assert_eq!(id, self.my_id);
+
+                    let waiting = waiting.into_inner();
+
+                    if !waiting.is_empty() {
+                        // FIXME(#24) -- handle parallel case. In
+                        // particular, we ought to notify those
+                        // waiting on us that a panic occurred (they
+                        // can then propagate the panic themselves; or
+                        // perhaps re-execute?).
+                        panic!("FIXME(#24) -- handle parallel case");
+                    }
+                }
+
+                // If we don't see an `InProgress` marker, something
+                // has gone horribly wrong. This panic will
+                // (unfortunately) abort the process, but recovery is
+                // not possible.
+                _ => panic!("unexpected query state"),
+            }
         } else {
+            // If no panic occurred, then panic guard ought to be
+            // "forgotten" and so this Drop code should never run.
             panic!(".forget() was not called")
         }
     }
@@ -740,34 +776,54 @@ where
             .is_some();
 
         // Either way, we have to update our entry.
+        //
+        // Keep in mind, though, we only acquired a read lock so a lot
+        // could have happened in the interim. =) Therefore, we have
+        // to probe the current state of `key` and in some cases we
+        // ought to do nothing.
         {
             let mut map = self.map.write();
-            if maybe_changed {
-                map.remove(key);
-            } else {
-                match map.get_mut(key) {
-                    Some(QueryState::Memoized(memo)) => {
-                        // It is possible that other threads were verifying inputs
-                        // at the same time. They too will be mutating the
-                        // map. However, they can only come to the same conclusion
-                        // that we did.
+            match map.get_mut(key) {
+                Some(QueryState::Memoized(memo)) => {
+                    if memo.verified_at == revision_now {
+                        // Since we started verifying inputs, somebody
+                        // else has come along and updated this value
+                        // (they may even have recomputed
+                        // it). Therefore, we should not touch this
+                        // memo.
+                        //
+                        // FIXME: Should we still return whatever
+                        // `maybe_changed` value we computed,
+                        // however..? It seems .. harmless to indicate
+                        // that the value has changed, but possibly
+                        // less efficient? (It may cause some
+                        // downstream value to be recomputed that
+                        // wouldn't otherwise have to be?)
+                    } else if maybe_changed {
+                        // We found this entry is out of date and
+                        // nobody touch it in the meantime. Just
+                        // remove it.
+                        map.remove(key);
+                    } else {
+                        // We found this entry is valid. Update the
+                        // `verified_at` to reflect the current
+                        // revision.
                         memo.verified_at = revision_now;
                     }
+                }
 
-                    None => {
-                        // It's also possible that the garbage
-                        // collector ran in the interim and swept this
-                        // cell right away. That is unfortunate but
-                        // not a big deal, we can still report to the
-                        // caller that we did not change -- this may
-                        // let them re-use stuff. If they re-execute,
-                        // since we have no entry in the map, we'll be
-                        // recomputed.
-                    }
+                Some(QueryState::InProgress { .. }) => {
+                    // Since we started verifying inputs, somebody
+                    // else has come along and started updated this
+                    // value. Just leave their marker alone and return
+                    // whatever `maybe_changed` value we computed.
+                }
 
-                    _ => {
-                        panic!("{:?}({:?}) changed state unexpectedly", Q::default(), key,);
-                    }
+                None => {
+                    // Since we started verifying inputs, somebody
+                    // else has come along and removed this
+                    // value. The GC can do this, for example.
+                    // Tht's fine.
                 }
             }
         }
@@ -804,7 +860,9 @@ where
         let revision_now = db.salsa_runtime().current_revision();
         map_write.retain(|key, query_state| {
             match query_state {
-                // Leave stuff that is currently being computed.
+                // Leave stuff that is currently being computed -- the
+                // other thread doing that work has unique access to
+                // this slot and we should not interfere.
                 QueryState::InProgress { .. } => {
                     debug!("sweep({:?}({:?})): in-progress", Q::default(), key);
                     true
@@ -850,9 +908,7 @@ where
         let key = key.clone();
 
         let mut map_write = self.map.write();
-
         let current_revision = db.salsa_runtime().current_revision();
-
         map_write.insert(
             key,
             QueryState::Memoized(Memo {
