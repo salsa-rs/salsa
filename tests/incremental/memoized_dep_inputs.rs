@@ -43,6 +43,8 @@ fn dep_derived1(db: &impl MemoizedDepInputsContext) -> usize {
 fn revalidate() {
     let db = &TestContextImpl::default();
 
+    db.query(Input1).set((), 0);
+
     // Initial run starts from Memoized2:
     let v = db.dep_memoized2();
     assert_eq!(v, 0);

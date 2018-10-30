@@ -18,6 +18,7 @@ fn compute_one() {
     let db = db::DatabaseImpl::default();
 
     // Will compute fibonacci(5)
+    db.query(UseTriangular).set(5, false);
     db.compute(5);
 
     db.salsa_runtime().next_revision();
@@ -27,7 +28,7 @@ fn compute_one() {
         Triangular => (),
         Fibonacci => (0, 1, 2, 3, 4, 5),
         Compute => (5),
-        UseTriangular => (),
+        UseTriangular => (5),
         Min => (),
         Max => (),
     }
@@ -41,7 +42,7 @@ fn compute_one() {
         Triangular => (),
         Fibonacci => (5),
         Compute => (5),
-        UseTriangular => (),
+        UseTriangular => (5),
         Min => (),
         Max => (),
     }
@@ -52,6 +53,7 @@ fn compute_switch() {
     let db = db::DatabaseImpl::default();
 
     // Will compute fibonacci(5)
+    db.query(UseTriangular).set(5, false);
     assert_eq!(db.compute(5), 5);
 
     // Change to triangular mode
@@ -107,9 +109,9 @@ fn compute_switch() {
 fn compute_all() {
     let db = db::DatabaseImpl::default();
 
-    db.query(UseTriangular).set(1, true);
-    db.query(UseTriangular).set(3, true);
-    db.query(UseTriangular).set(5, true);
+    for i in 0..6 {
+        db.query(UseTriangular).set(i, (i % 2) != 0);
+    }
 
     db.query(Min).set((), 0);
     db.query(Max).set((), 6);
@@ -125,7 +127,7 @@ fn compute_all() {
         Fibonacci => (0, 2, 4),
         Compute => (0, 1, 2, 3, 4, 5),
         ComputeAll => (()),
-        UseTriangular => (1, 3, 5),
+        UseTriangular => (0, 1, 2, 3, 4, 5),
         Min => (()),
         Max => (()),
     }
@@ -140,7 +142,7 @@ fn compute_all() {
         Fibonacci => (0, 2, 4),
         Compute => (0, 1, 2, 3, 4, 5),
         ComputeAll => (()),
-        UseTriangular => (1, 3, 5),
+        UseTriangular => (0, 1, 2, 3, 4, 5),
         Min => (()),
         Max => (()),
     }
@@ -155,7 +157,7 @@ fn compute_all() {
         Fibonacci => (0, 2, 4),
         Compute => (0, 1, 2, 3, 4),
         ComputeAll => (()),
-        UseTriangular => (1, 3, 5),
+        UseTriangular => (0, 1, 2, 3, 4, 5),
         Min => (()),
         Max => (()),
     }

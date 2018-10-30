@@ -21,7 +21,6 @@ pub struct InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
-    Q::Value: Default,
 {
     map: RwLock<FxHashMap<Q::Key, StampedValue<Q::Value>>>,
 }
@@ -30,7 +29,6 @@ impl<DB, Q> Default for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
-    Q::Value: Default,
 {
     fn default() -> Self {
         InputStorage {
@@ -44,9 +42,7 @@ struct IsConstant(bool);
 impl<DB, Q> InputStorage<DB, Q>
 where
     Q: Query<DB>,
-    Q::Value: Eq,
     DB: Database,
-    Q::Value: Default,
 {
     fn read<'q>(
         &self,
@@ -61,38 +57,17 @@ where
             }
         }
 
-        Ok(StampedValue {
-            value: <Q::Value>::default(),
-            changed_at: ChangedAt {
-                is_constant: false,
-                revision: Revision::ZERO,
-            },
-        })
+        panic!("no value set for {:?}({:?})", Q::default(), key)
     }
 
     fn set_common(&self, db: &DB, key: &Q::Key, value: Q::Value, is_constant: IsConstant) {
-        let map = self.map.upgradable_read();
-
-        if let Some(old_value) = map.get(key) {
-            if old_value.value == value {
-                // If the value did not change, but it is now
-                // considered constant, we can just update
-                // `changed_at`. We don't have to trigger a new
-                // revision for this case: all the derived values are
-                // still intact, they just have conservative
-                // dependencies. The next revision, they may wind up
-                // with something more precise.
-                if is_constant.0 && !old_value.changed_at.is_constant {
-                    let mut map = RwLockUpgradableReadGuard::upgrade(map);
-                    let old_value = map.get_mut(key).unwrap();
-                    old_value.changed_at.is_constant = true;
-                }
-
-                return;
-            }
-        }
-
         let key = key.clone();
+
+        // This upgradable read just serves to gate against other
+        // people invoking `set`; we should probably remove it and
+        // instead acquire the query-write-lock, but that would
+        // require refactoring the `increment_revision` API a bit.
+        let map = self.map.upgradable_read();
 
         // The value is changing, so even if we are setting this to a
         // constant, we still need a new revision.
@@ -141,9 +116,7 @@ where
 impl<DB, Q> QueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
-    Q::Value: Eq,
     DB: Database,
-    Q::Value: Default,
 {
     fn try_fetch(
         &self,
@@ -214,7 +187,6 @@ impl<DB, Q> QueryStorageMassOps<DB> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
-    Q::Value: Default,
 {
     fn sweep(&self, _db: &DB, _strategy: SweepStrategy) {}
 }
@@ -222,9 +194,7 @@ where
 impl<DB, Q> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
-    Q::Value: Eq,
     DB: Database,
-    Q::Value: Default,
 {
     fn set(&self, db: &DB, key: &Q::Key, value: Q::Value) {
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
@@ -243,7 +213,6 @@ impl<DB, Q> UncheckedMutQueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
-    Q::Value: Default,
 {
     fn set_unchecked(&self, db: &DB, key: &Q::Key, value: Q::Value) {
         let key = key.clone();

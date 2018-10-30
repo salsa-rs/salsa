@@ -203,7 +203,7 @@ where
 /// (e.g., `MyQuery`, below) that represents the query, and optionally
 /// other details, such as its storage.
 ///
-/// ### Examples
+/// # Examples
 ///
 /// The simplest example is something like this:
 ///
@@ -225,6 +225,39 @@ where
 ///     }
 /// }
 /// ```
+///
+/// # Storage modes
+///
+/// Here are the possible storage values for each query.  The default
+/// is `storage memoized`.
+///
+/// ## Input queries
+///
+/// Specifying `storage input` will give you an **input
+/// query**. Unlike derived queries, whose value is given by a
+/// function, input queries are explicit set by doing
+/// `db.query(QueryType).set(key, value)` (where `QueryType` is the
+/// `type` specified for the query). Accessing a value that has not
+/// yet been set will panic. Each time you invoke `set`, we assume the
+/// value has changed, and so we will potentially re-execute derived
+/// queries that read (transitively) from this input.
+///
+/// ## Derived queries
+///
+/// Derived queries are specified by a function.
+///
+/// - `storage memoized` -- The result is memoized
+///   between calls.  If the inputs have changed, we will recompute
+///   the value, but then compare against the old memoized value,
+///   which can significantly reduce the amount of recomputation
+///   required in new revisions. This does require that the value
+///   implements `Eq`.
+/// - `storage volatile` -- indicates that the inputs are not fully
+///   captured by salsa. The result will be recomputed once per revision.
+/// - `storage dependencies` -- does not cache the value, so it will
+///   be recomputed every time it is needed. We do track the inputs, however,
+///   so if they have not changed, then things that rely on this query
+///   may be known not to have changed.
 #[macro_export]
 macro_rules! query_group {
     (
@@ -256,7 +289,7 @@ macro_rules! query_group {
                 $(#[$method_attr:meta])*
                 fn $method_name:ident($($key_name:ident: $key_ty:ty),* $(,)*) -> $value_ty:ty {
                     type $QueryType:ident;
-                    $(storage $storage:ident;)* // FIXME(rust-lang/rust#48075) should be `?`
+                    $(storage $storage:tt;)* // FIXME(rust-lang/rust#48075) should be `?`
                     $(use fn $fn_path:path;)* // FIXME(rust-lang/rust#48075) should be `?`
                 }
             )*
@@ -432,6 +465,14 @@ macro_rules! query_group {
         @storage_ty[$DB:ident, $Self:ident, input]
     ) => {
         $crate::plumbing::InputStorage<DB, Self>
+    };
+
+    (
+        @storage_ty[$DB:ident, $Self:ident, $storage:tt]
+    ) => {
+        compile_error! {
+            "invalid storage specification"
+        }
     };
 }
 
