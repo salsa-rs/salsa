@@ -13,7 +13,7 @@ use crate::runtime::StampedValue;
 use crate::{Database, Event, EventKind, SweepStrategy};
 use log::{debug, info};
 use parking_lot::Mutex;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::marker::PhantomData;
@@ -284,24 +284,21 @@ where
         // Check with an upgradable read to see if there is a value
         // already. (This permits other readers but prevents anyone
         // else from running `read_upgrade` at the same time.)
-        let mut old_memo = match self.probe(
-            db,
-            self.map.upgradable_read(),
-            runtime,
-            revision_now,
-            descriptor,
-            key,
-        ) {
-            ProbeState::UpToDate(v) => return v,
-            ProbeState::StaleOrAbsent(map) => {
-                let mut map = RwLockUpgradableReadGuard::upgrade(map);
-                match map.insert(key.clone(), QueryState::in_progress(runtime.id())) {
-                    Some(QueryState::Memoized(old_memo)) => Some(old_memo),
-                    Some(QueryState::InProgress { .. }) => unreachable!(),
-                    None => None,
+        //
+        // FIXME(Amanieu/parking_lot#101) -- we are using a write-lock
+        // and not an upgradable read here because upgradable reads
+        // can sometimes encounter deadlocks.
+        let mut old_memo =
+            match self.probe(db, self.map.write(), runtime, revision_now, descriptor, key) {
+                ProbeState::UpToDate(v) => return v,
+                ProbeState::StaleOrAbsent(mut map) => {
+                    match map.insert(key.clone(), QueryState::in_progress(runtime.id())) {
+                        Some(QueryState::Memoized(old_memo)) => Some(old_memo),
+                        Some(QueryState::InProgress { .. }) => unreachable!(),
+                        None => None,
+                    }
                 }
-            }
-        };
+            };
 
         let panic_guard = PanicGuard::new(&self.map, key, descriptor, runtime);
 
