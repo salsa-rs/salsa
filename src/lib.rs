@@ -236,24 +236,10 @@ where
 /// query**. Unlike derived queries, whose value is given by a
 /// function, input queries are explicit set by doing
 /// `db.query(QueryType).set(key, value)` (where `QueryType` is the
-/// `type` specified for the query).
-///
-/// If you simply specify `storage input`, you will get the default
-/// behavior:
-///
-/// - Accessing a value that has not yet been set will panic.
-/// - Each time you invoke `set`, we assume the value has changed.
-///
-/// You can change either of these two things by choosing one of the following
-/// "extended" options:
-///
-/// - `storage (input default)` -- Attempting to fetch a key that has
-///   not been explicitly `set` will use the `Default` trait to
-///   provide a value. Requires that the value implements `Default`.
-/// - `storage (input eq)` -- Compare new values against the old
-///   values and avoid triggering a new revision if they are
-///   equal. Requires value types to implement the `Eq` trait.
-/// - `storage (input default eq)` -- Both of the above.
+/// `type` specified for the query). Accessing a value that has not
+/// yet been set will panic. Each time you invoke `set`, we assume the
+/// value has changed, and so we will potentially re-execute derived
+/// queries that read (transitively) from this input.
 ///
 /// ## Derived queries
 ///
