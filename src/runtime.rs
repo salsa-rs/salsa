@@ -1,7 +1,7 @@
 use crate::{Database, SweepStrategy};
 use lock_api::RawRwLock;
 use log::debug;
-use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 use std::cell::RefCell;
@@ -90,7 +90,7 @@ where
     /// case, you can wrap the input with a "no-storage" query and
     /// invoke this method from time to time.
     pub fn next_revision(&self) {
-        self.increment_revision();
+        self.with_incremented_revision(|_| ());
     }
 
     /// Default implementation for `Database::sweep_all`.
@@ -182,20 +182,24 @@ where
         }
     }
 
-    /// Increments the current revision counter and returns the new value.
-    pub(crate) fn increment_revision(&self) -> Revision {
+    /// Acquires the **global query write lock** (ensuring that no
+    /// queries are executing) and then increments the current
+    /// revision counter; invokes `op` with the global query write
+    /// lock still held.
+    ///
+    /// While we wait to acquire the global query write lock, this
+    /// method will also increment `pending_revision_increments`, thus
+    /// signalling to queries that their results are "canceled" and
+    /// they should abort as expeditiously as possible.
+    pub(crate) fn with_incremented_revision<R>(&self, op: impl FnOnce(Revision) -> R) -> R {
         log::debug!("increment_revision()");
 
         if self.query_in_progress() {
             panic!("increment_revision invoked during a query computation");
         }
 
-        // Get an (upgradable) read lock, so that we are sure nobody
-        // else is changing the current revision.
-        let lock = self.shared_state.query_lock.upgradable_read();
-
-        // Flag current revision as cancelled.
-        // `increment_revision` calls, they may all set the
+        // Signal that we have a pending increment so that workers can
+        // start to cancel work.
         let old_pending_revision_increments = self
             .shared_state
             .pending_revision_increments
@@ -206,15 +210,14 @@ where
         );
 
         // To modify the revision, we need the lock.
-        let _lock = RwLockUpgradableReadGuard::upgrade(lock);
+        let _lock = self.shared_state.query_lock.write();
 
-        // *Before* updating the revision number, reset
-        // `revision_cancelled` to false.  This way, if anybody should
-        // happen to invoke `is_current_revision_canceled` before we
-        // update the number, they don't get an incorrect result (but
-        // note that, because we hold `query_lock`, no queries can
-        // be currently executing anyhow, so it's sort of a moot
-        // point).
+        // *Before* updating the revision number, decrement the
+        // `pending_revision_increments` counter. This way, if anybody
+        // should happen to invoke `is_current_revision_canceled`
+        // before we update the number, and they read 0, they don't
+        // get an incorrect result -- once they acquire the query
+        // lock, we'll be in the new revision.
         self.shared_state
             .pending_revision_increments
             .fetch_sub(1, Ordering::SeqCst);
@@ -222,13 +225,12 @@ where
         let old_revision = self.shared_state.revision.fetch_add(1, Ordering::SeqCst);
         assert!(old_revision != usize::max_value(), "revision overflow");
 
-        let result = Revision {
+        let new_revision = Revision {
             generation: 1 + old_revision as u64,
         };
+        debug!("increment_revision: incremented to {:?}", new_revision);
 
-        debug!("increment_revision: incremented to {:?}", result);
-
-        result
+        op(new_revision)
     }
 
     pub(crate) fn query_in_progress(&self) -> bool {

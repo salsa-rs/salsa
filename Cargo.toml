@@ -20,3 +20,4 @@ smallvec = "0.6.5"
 [dev-dependencies]
 diff = "0.1.0"
 env_logger = "0.5.13"
+rand = "0.5.5"
