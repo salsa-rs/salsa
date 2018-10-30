@@ -357,32 +357,7 @@ macro_rules! query_group {
 
     (
         @query_fn[
-            storage((input $($flags:tt)*));
-            method_name($method_name:ident);
-            fn_path();
-            $($rest:tt)*
-        ]
-    ) => {
-        // do nothing for `storage input`, presuming they did not write an explicit `use fn`
-    };
-
-    (
-        @query_fn[
             storage(input);
-            method_name($method_name:ident);
-            fn_path($fn_path:path);
-            $($rest:tt)*
-        ]
-    ) => {
-        // error for `storage input` with an explicit `use fn`
-        compile_error! {
-            "cannot have `storage input` combined with `use fn`"
-        }
-    };
-
-    (
-        @query_fn[
-            storage((input $($flags:tt)*));
             method_name($method_name:ident);
             fn_path($fn_path:path);
             $($rest:tt)*
@@ -502,25 +477,7 @@ macro_rules! query_group {
     (
         @storage_ty[$DB:ident, $Self:ident, input]
     ) => {
-        $crate::plumbing::InputStorage<DB, Self, $crate::plumbing::ExplicitInputPolicy>
-    };
-
-    (
-        @storage_ty[$DB:ident, $Self:ident, (input default)]
-    ) => {
-        $crate::plumbing::InputStorage<DB, Self, $crate::plumbing::DefaultValueInputPolicy>
-    };
-
-    (
-        @storage_ty[$DB:ident, $Self:ident, (input eq)]
-    ) => {
-        $crate::plumbing::InputStorage<DB, Self, $crate::plumbing::EqValueInputPolicy>
-    };
-
-    (
-        @storage_ty[$DB:ident, $Self:ident, (input default eq)]
-    ) => {
-        $crate::plumbing::InputStorage<DB, Self, $crate::plumbing::DefaultEqValueInputPolicy>
+        $crate::plumbing::InputStorage<DB, Self>
     };
 
     (

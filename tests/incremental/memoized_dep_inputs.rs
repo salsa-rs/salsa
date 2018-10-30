@@ -15,7 +15,7 @@ salsa::query_group! {
         }
         fn dep_input1() -> usize {
             type Input1;
-            storage (input default);
+            storage input;
         }
         fn dep_input2() -> usize {
             type Input2;
@@ -42,6 +42,8 @@ fn dep_derived1(db: &impl MemoizedDepInputsContext) -> usize {
 #[test]
 fn revalidate() {
     let db = &TestContextImpl::default();
+
+    db.query(Input1).set((), 0);
 
     // Initial run starts from Memoized2:
     let v = db.dep_memoized2();

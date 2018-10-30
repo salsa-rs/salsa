@@ -13,141 +13,36 @@ use log::debug;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
-use std::marker::PhantomData;
 
 /// Input queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
 /// none of those inputs have changed.
-pub struct InputStorage<DB, Q, IP>
+pub struct InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
-    IP: InputPolicy<DB, Q>,
 {
     map: RwLock<FxHashMap<Q::Key, StampedValue<Q::Value>>>,
-    input_policy: PhantomData<IP>,
 }
 
-pub trait InputPolicy<DB, Q>
+impl<DB, Q> Default for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
-{
-    fn compare_values() -> bool {
-        false
-    }
-
-    fn compare_value(_old_value: &Q::Value, _new_value: &Q::Value) -> bool {
-        panic!("should never be asked to compare values")
-    }
-
-    fn missing_value(key: &Q::Key) -> Q::Value {
-        panic!("no value set for {:?}({:?})", Q::default(), key)
-    }
-}
-
-/// The default policy for inputs:
-///
-/// - Each time a new value is set, trigger a new revision.
-/// - On an attempt access a value that is not yet set, panic.
-pub enum ExplicitInputPolicy {}
-impl<DB, Q> InputPolicy<DB, Q> for ExplicitInputPolicy
-where
-    Q: Query<DB>,
-    DB: Database,
-{
-}
-
-/// Alternative policy for inputs:
-///
-/// - Each time a new value is set, trigger a new revision.
-/// - On an attempt access a value that is not yet set, use `Default::default` to find
-///   the value.
-///
-/// Requires that `Q::Value` implements the `Default` trait.
-pub enum DefaultValueInputPolicy {}
-impl<DB, Q> InputPolicy<DB, Q> for DefaultValueInputPolicy
-where
-    Q: Query<DB>,
-    DB: Database,
-    Q::Value: Default,
-{
-    fn missing_value(_key: &Q::Key) -> Q::Value {
-        <Q::Value>::default()
-    }
-}
-
-/// Alternative policy for inputs:
-///
-/// - Each time a new value is set, trigger a new revision
-///   only if it is not equal to the old value.
-/// - On an attempt access a value that is not yet set, panic.
-///
-/// Requires that `Q::Value` implements the `Eq` trait.
-pub enum EqValueInputPolicy {}
-impl<DB, Q> InputPolicy<DB, Q> for EqValueInputPolicy
-where
-    Q: Query<DB>,
-    DB: Database,
-    Q::Value: Eq,
-{
-    fn compare_values() -> bool {
-        true
-    }
-
-    fn compare_value(old_value: &Q::Value, new_value: &Q::Value) -> bool {
-        old_value == new_value
-    }
-}
-
-/// Alternative policy for inputs:
-///
-/// - Each time a new value is set, trigger a new revision
-///   only if it is not equal to the old value.
-/// - On an attempt access a value that is not yet set, use `Default::default`.
-///
-/// Requires that `Q::Value` implements the `Eq` trait.
-pub enum DefaultEqValueInputPolicy {}
-impl<DB, Q> InputPolicy<DB, Q> for DefaultEqValueInputPolicy
-where
-    Q: Query<DB>,
-    DB: Database,
-    Q::Value: Default + Eq,
-{
-    fn compare_values() -> bool {
-        true
-    }
-
-    fn compare_value(old_value: &Q::Value, new_value: &Q::Value) -> bool {
-        old_value == new_value
-    }
-
-    fn missing_value(_key: &Q::Key) -> Q::Value {
-        <Q::Value>::default()
-    }
-}
-
-impl<DB, Q, IP> Default for InputStorage<DB, Q, IP>
-where
-    Q: Query<DB>,
-    DB: Database,
-    IP: InputPolicy<DB, Q>,
 {
     fn default() -> Self {
         InputStorage {
             map: RwLock::new(FxHashMap::default()),
-            input_policy: PhantomData,
         }
     }
 }
 
 struct IsConstant(bool);
 
-impl<DB, Q, IP> InputStorage<DB, Q, IP>
+impl<DB, Q> InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
-    IP: InputPolicy<DB, Q>,
 {
     fn read<'q>(
         &self,
@@ -162,42 +57,17 @@ where
             }
         }
 
-        let value = IP::missing_value(key);
-
-        Ok(StampedValue {
-            value: value,
-            changed_at: ChangedAt {
-                is_constant: false,
-                revision: Revision::ZERO,
-            },
-        })
+        panic!("no value set for {:?}({:?})", Q::default(), key)
     }
 
     fn set_common(&self, db: &DB, key: &Q::Key, value: Q::Value, is_constant: IsConstant) {
-        let map = self.map.upgradable_read();
-
-        if IP::compare_values() {
-            if let Some(old_value) = map.get(key) {
-                if IP::compare_value(&old_value.value, &value) {
-                    // If the value did not change, but it is now
-                    // considered constant, we can just update
-                    // `changed_at`. We don't have to trigger a new
-                    // revision for this case: all the derived values are
-                    // still intact, they just have conservative
-                    // dependencies. The next revision, they may wind up
-                    // with something more precise.
-                    if is_constant.0 && !old_value.changed_at.is_constant {
-                        let mut map = RwLockUpgradableReadGuard::upgrade(map);
-                        let old_value = map.get_mut(key).unwrap();
-                        old_value.changed_at.is_constant = true;
-                    }
-
-                    return;
-                }
-            }
-        }
-
         let key = key.clone();
+
+        // This upgradable read just serves to gate against other
+        // people invoking `set`; we should probably remove it and
+        // instead acquire the query-write-lock, but that would
+        // require refactoring the `increment_revision` API a bit.
+        let map = self.map.upgradable_read();
 
         // The value is changing, so even if we are setting this to a
         // constant, we still need a new revision.
@@ -243,11 +113,10 @@ where
     }
 }
 
-impl<DB, Q, IP> QueryStorageOps<DB, Q> for InputStorage<DB, Q, IP>
+impl<DB, Q> QueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
-    IP: InputPolicy<DB, Q>,
 {
     fn try_fetch(
         &self,
@@ -314,20 +183,18 @@ where
     }
 }
 
-impl<DB, Q, IP> QueryStorageMassOps<DB> for InputStorage<DB, Q, IP>
+impl<DB, Q> QueryStorageMassOps<DB> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
-    IP: InputPolicy<DB, Q>,
 {
     fn sweep(&self, _db: &DB, _strategy: SweepStrategy) {}
 }
 
-impl<DB, Q, IP> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q, IP>
+impl<DB, Q> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
-    IP: InputPolicy<DB, Q>,
 {
     fn set(&self, db: &DB, key: &Q::Key, value: Q::Value) {
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
@@ -342,11 +209,10 @@ where
     }
 }
 
-impl<DB, Q, IP> UncheckedMutQueryStorageOps<DB, Q> for InputStorage<DB, Q, IP>
+impl<DB, Q> UncheckedMutQueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
-    IP: InputPolicy<DB, Q>,
 {
     fn set_unchecked(&self, db: &DB, key: &Q::Key, value: Q::Value) {
         let key = key.clone();

@@ -8,11 +8,11 @@ salsa::query_group! {
         }
         fn input1() -> usize {
             type Input1;
-            storage (input default eq);
+            storage input;
         }
         fn input2() -> usize {
             type Input2;
-            storage (input default eq);
+            storage input;
         }
     }
 }
@@ -25,6 +25,9 @@ fn max(db: &impl MemoizedInputsContext) -> usize {
 #[test]
 fn revalidate() {
     let db = &TestContextImpl::default();
+
+    db.query(Input1).set((), 0);
+    db.query(Input2).set((), 0);
 
     let v = db.max();
     assert_eq!(v, 0);
@@ -61,11 +64,13 @@ fn revalidate() {
     db.assert_log(&[]);
 }
 
-/// Test that invoking `set` on an input with the same value does not
-/// trigger a new revision.
+/// Test that invoking `set` on an input with the same value still
+/// triggers a new revision.
 #[test]
 fn set_after_no_change() {
     let db = &TestContextImpl::default();
+
+    db.query(Input2).set((), 0);
 
     db.query(Input1).set((), 44);
     let v = db.max();
@@ -75,5 +80,5 @@ fn set_after_no_change() {
     db.query(Input1).set((), 44);
     let v = db.max();
     assert_eq!(v, 44);
-    db.assert_log(&[]);
+    db.assert_log(&["Max invoked"]);
 }
