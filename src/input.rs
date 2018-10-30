@@ -10,7 +10,7 @@ use crate::Database;
 use crate::Query;
 use crate::SweepStrategy;
 use log::debug;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 
@@ -63,53 +63,47 @@ where
     fn set_common(&self, db: &DB, key: &Q::Key, value: Q::Value, is_constant: IsConstant) {
         let key = key.clone();
 
-        // This upgradable read just serves to gate against other
-        // people invoking `set`; we should probably remove it and
-        // instead acquire the query-write-lock, but that would
-        // require refactoring the `increment_revision` API a bit.
-        let map = self.map.upgradable_read();
-
         // The value is changing, so even if we are setting this to a
         // constant, we still need a new revision.
         //
         // CAREFUL: This will block until the global revision lock can
         // be acquired. If there are still queries executing, they may
-        // need to read from this input. Therefore, we do not upgrade
-        // our lock (which would prevent them from reading) until
-        // `increment_revision` has finished.
-        let next_revision = db.salsa_runtime().increment_revision();
+        // need to read from this input. Therefore, we wait to acquire
+        // the lock on `map` until we also hold the global query write
+        // lock.
+        db.salsa_runtime().with_incremented_revision(|next_revision| {
+            let mut map = self.map.write();
 
-        let mut map = RwLockUpgradableReadGuard::upgrade(map);
+            // Do this *after* we acquire the lock, so that we are not
+            // racing with somebody else to modify this same cell.
+            // (Otherwise, someone else might write a *newer* revision
+            // into the same cell while we block on the lock.)
+            let changed_at = ChangedAt {
+                is_constant: is_constant.0,
+                revision: next_revision,
+            };
 
-        // Do this *after* we acquire the lock, so that we are not
-        // racing with somebody else to modify this same cell.
-        // (Otherwise, someone else might write a *newer* revision
-        // into the same cell while we block on the lock.)
-        let changed_at = ChangedAt {
-            is_constant: is_constant.0,
-            revision: next_revision,
-        };
+            let stamped_value = StampedValue { value, changed_at };
 
-        let stamped_value = StampedValue { value, changed_at };
+            match map.entry(key) {
+                Entry::Occupied(mut entry) => {
+                    assert!(
+                        !entry.get().changed_at.is_constant,
+                        "modifying `{:?}({:?})`, which was previously marked as constant (old value `{:?}`, new value `{:?}`)",
+                        Q::default(),
+                        entry.key(),
+                        entry.get().value,
+                        stamped_value.value,
+                    );
 
-        match map.entry(key) {
-            Entry::Occupied(mut entry) => {
-                assert!(
-                    !entry.get().changed_at.is_constant,
-                    "modifying `{:?}({:?})`, which was previously marked as constant (old value `{:?}`, new value `{:?}`)",
-                    Q::default(),
-                    entry.key(),
-                    entry.get().value,
-                    stamped_value.value,
-                );
+                    entry.insert(stamped_value);
+                }
 
-                entry.insert(stamped_value);
+                Entry::Vacant(entry) => {
+                    entry.insert(stamped_value);
+                }
             }
-
-            Entry::Vacant(entry) => {
-                entry.insert(stamped_value);
-            }
-        }
+        });
     }
 }
 
