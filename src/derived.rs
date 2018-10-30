@@ -631,7 +631,12 @@ where
                 // has gone horribly wrong. This panic will
                 // (unfortunately) abort the process, but recovery is
                 // not possible.
-                _ => panic!("unexpected query state"),
+                _ => panic!(
+                    "\
+Unexpected panic during query evaluation, aborting the process.
+
+Please report this bug to https://github.com/salsa-rs/salsa/issues."
+                ),
             }
         } else {
             // If no panic occurred, then panic guard ought to be
