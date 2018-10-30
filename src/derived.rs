@@ -826,9 +826,8 @@ where
 
                 None => {
                     // Since we started verifying inputs, somebody
-                    // else has come along and removed this
-                    // value. The GC can do this, for example.
-                    // Tht's fine.
+                    // else has come along and removed this value. The
+                    // GC can do this, for example. That's fine.
                 }
             }
         }
