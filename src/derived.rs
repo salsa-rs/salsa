@@ -10,8 +10,7 @@ use crate::runtime::Revision;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
-use crate::Database;
-use crate::SweepStrategy;
+use crate::{Database, Event, EventKind, SweepStrategy};
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
@@ -258,7 +257,7 @@ where
         );
 
         // First, do a check with a read-lock.
-        match self.probe(self.map.read(), runtime, revision_now, descriptor, key) {
+        match self.probe(db, self.map.read(), runtime, revision_now, descriptor, key) {
             ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(_guard) => (),
         }
@@ -283,6 +282,7 @@ where
         // already. (This permits other readers but prevents anyone
         // else from running `read_upgrade` at the same time.)
         let mut old_memo = match self.probe(
+            db,
             self.map.upgradable_read(),
             runtime,
             revision_now,
@@ -314,6 +314,13 @@ where
                     key
                 );
 
+                db.salsa_event(|| Event {
+                    id: runtime.id(),
+                    kind: EventKind::DidValidateMemoizedValue {
+                        descriptor: descriptor.clone(),
+                    },
+                });
+
                 self.overwrite_placeholder(
                     runtime,
                     descriptor,
@@ -322,13 +329,14 @@ where
                     &value,
                     panic_guard,
                 );
+
                 return Ok(value);
             }
         }
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = runtime.execute_query_implementation(descriptor, || {
+        let mut result = runtime.execute_query_implementation(db, descriptor, || {
             info!("{:?}({:?}): executing query", Q::default(), key);
 
             if !self.should_track_inputs(key) {
@@ -434,6 +442,7 @@ where
     /// `map` will have been released.
     fn probe<MapGuard>(
         &self,
+        db: &DB,
         map: MapGuard,
         runtime: &Runtime<DB>,
         revision_now: Revision,
@@ -453,6 +462,14 @@ where
                         // Release our lock on `self.map`, so other thread
                         // can complete.
                         std::mem::drop(map);
+
+                        db.salsa_event(|| Event {
+                            id: db.salsa_runtime().id(),
+                            kind: EventKind::WillBlockOn {
+                                other_id,
+                                descriptor: descriptor.clone(),
+                            },
+                        });
 
                         let value = rx.recv().unwrap();
                         ProbeState::UpToDate(Ok(value))

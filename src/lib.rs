@@ -17,11 +17,12 @@ use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::plumbing::UncheckedMutQueryStorageOps;
 use derive_new::new;
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::hash::Hash;
 
-pub use crate::runtime::Runtime;
 pub use crate::runtime::RevisionGuard;
+pub use crate::runtime::Runtime;
+pub use crate::runtime::RuntimeId;
 
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
@@ -61,6 +62,86 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
         Self: plumbing::GetQueryTable<Q>,
     {
         <Self as plumbing::GetQueryTable<Q>>::get_query_table(self)
+    }
+
+    /// This function is invoked at key points in the salsa
+    /// runtime. It permits the database to be customized and to
+    /// inject logging or other custom behavior.
+    fn salsa_event(&self, event_fn: impl Fn() -> Event<Self>) {
+        #![allow(unused_variables)]
+    }
+}
+
+pub struct Event<DB: Database> {
+    pub id: RuntimeId,
+    pub kind: EventKind<DB>,
+}
+
+impl<DB: Database> fmt::Debug for Event<DB> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.debug_struct("Event")
+            .field("id", &self.id)
+            .field("kind", &self.kind)
+            .finish()
+    }
+}
+
+pub enum EventKind<DB: Database> {
+    /// Occurs when we found that all inputs to a memoized value are
+    /// up-to-date and hence the value can be re-used without
+    /// executing the closure.
+    ///
+    /// Executes before the "re-used" value is returned.
+    DidValidateMemoizedValue { descriptor: DB::QueryDescriptor },
+
+    /// Indicates that another thread (with id `other_id`) is processing the
+    /// given query (`descriptor`), so we will block until they
+    /// finish.
+    ///
+    /// Executes after we have registered with the other thread but
+    /// before they have answered us.
+    ///
+    /// (NB: you can find the `id` of the current thread via the
+    /// `salsa_runtime`)
+    WillBlockOn {
+        other_id: RuntimeId,
+        descriptor: DB::QueryDescriptor,
+    },
+
+    /// Indicates that the input value will change after this
+    /// callback, e.g. due to a call to `set`.
+    WillChangeInputValue { descriptor: DB::QueryDescriptor },
+
+    /// Indicates that the function for this query will be executed.
+    /// This is either because it has never executed before or because
+    /// its inputs may be out of date.
+    WillExecute { descriptor: DB::QueryDescriptor },
+}
+
+impl<DB: Database> fmt::Debug for EventKind<DB> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EventKind::DidValidateMemoizedValue { descriptor } => fmt
+                .debug_struct("DidValidateMemoizedValue")
+                .field("descriptor", descriptor)
+                .finish(),
+            EventKind::WillBlockOn {
+                other_id,
+                descriptor,
+            } => fmt
+                .debug_struct("WillBlockOn")
+                .field("other_id", other_id)
+                .field("descriptor", descriptor)
+                .finish(),
+            EventKind::WillChangeInputValue { descriptor } => fmt
+                .debug_struct("WillChangeInputValue")
+                .field("descriptor", descriptor)
+                .finish(),
+            EventKind::WillExecute { descriptor } => fmt
+                .debug_struct("WillExecute")
+                .field("descriptor", descriptor)
+                .finish(),
+        }
     }
 }
 
@@ -149,7 +230,8 @@ where
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
-        self.storage.set(self.db, &key, value);
+        self.storage
+            .set(self.db, &key, &self.descriptor(&key), value);
     }
 
     /// Assign a value to an "input query", with the additional
@@ -159,7 +241,8 @@ where
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
-        self.storage.set_constant(self.db, &key, value);
+        self.storage
+            .set_constant(self.db, &key, &self.descriptor(&key), value);
     }
 
     /// Assigns a value to the query **bypassing the normal
