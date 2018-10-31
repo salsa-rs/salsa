@@ -1,4 +1,4 @@
-use salsa::Database;
+use salsa::{Database, Frozen, ParallelDatabase};
 use std::panic::{self, AssertUnwindSafe};
 
 salsa::query_group! {
@@ -29,6 +29,14 @@ impl salsa::Database for DatabaseStruct {
     }
 }
 
+impl salsa::ParallelDatabase for DatabaseStruct {
+    fn fork(&self) -> Frozen<Self> {
+        Frozen::new(DatabaseStruct {
+            runtime: self.runtime.fork(self),
+        })
+    }
+}
+
 salsa::database_storage! {
     struct DatabaseStorage for DatabaseStruct {
         impl PanicSafelyDatabase {
@@ -44,7 +52,10 @@ fn should_panic_safely() {
 
     // Invoke `db.panic_safely() without having set `db.one`. `db.one` will
     // default to 0 and we should catch the panic.
-    let result = panic::catch_unwind(AssertUnwindSafe(|| db.panic_safely()));
+    let result = panic::catch_unwind(AssertUnwindSafe({
+        let db = db.fork();
+        move || db.panic_safely()
+    }));
     assert!(result.is_err());
 
     // Set `db.one` to 1 and assert ok
