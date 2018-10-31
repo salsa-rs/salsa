@@ -14,9 +14,8 @@ fn in_par_get_set_cancellation() {
 
     let signal = Arc::new(Signal::default());
 
-    let lock = db.salsa_runtime().lock_revision();
     let thread1 = std::thread::spawn({
-        let db = db.fork_mut();
+        let db = db.fork();
         let signal = signal.clone();
         move || {
             // Check that cancellation flag is not yet set, because
@@ -35,11 +34,8 @@ fn in_par_get_set_cancellation() {
             // see 1 here.
             let v = db.input('a');
 
-            // Release the lock.
-            std::mem::drop(lock);
-
-            // This could come before or after the `set` in the other
-            // thread.
+            // Since this is a forked database, we are in a consistent
+            // revision, so this must yield the same value.
             let w = db.input('a');
 
             (v, w)
@@ -61,11 +57,9 @@ fn in_par_get_set_cancellation() {
         }
     });
 
-    // The first read is done with the revision lock, so it *must* see
-    // `1`; the second read could see either `1` or `2`.
     let (a, b) = thread1.join().unwrap();
     assert_eq!(a, 1);
-    assert!(b == 1 || b == 2, "saw unexpected value for b: {}", b);
+    assert_eq!(b, 1);
 
     let c = thread2.join().unwrap();
     assert_eq!(c, 2);
