@@ -73,14 +73,14 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
 }
 
 pub struct Event<DB: Database> {
-    pub id: RuntimeId,
+    pub runtime_id: RuntimeId,
     pub kind: EventKind<DB>,
 }
 
 impl<DB: Database> fmt::Debug for Event<DB> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("Event")
-            .field("id", &self.id)
+            .field("runtime_id", &self.runtime_id)
             .field("kind", &self.kind)
             .finish()
     }
@@ -94,7 +94,7 @@ pub enum EventKind<DB: Database> {
     /// Executes before the "re-used" value is returned.
     DidValidateMemoizedValue { descriptor: DB::QueryDescriptor },
 
-    /// Indicates that another thread (with id `other_id`) is processing the
+    /// Indicates that another thread (with id `other_runtime_id`) is processing the
     /// given query (`descriptor`), so we will block until they
     /// finish.
     ///
@@ -104,7 +104,7 @@ pub enum EventKind<DB: Database> {
     /// (NB: you can find the `id` of the current thread via the
     /// `salsa_runtime`)
     WillBlockOn {
-        other_id: RuntimeId,
+        other_runtime_id: RuntimeId,
         descriptor: DB::QueryDescriptor,
     },
 
@@ -126,11 +126,11 @@ impl<DB: Database> fmt::Debug for EventKind<DB> {
                 .field("descriptor", descriptor)
                 .finish(),
             EventKind::WillBlockOn {
-                other_id,
+                other_runtime_id,
                 descriptor,
             } => fmt
                 .debug_struct("WillBlockOn")
-                .field("other_id", other_id)
+                .field("other_runtime_id", other_runtime_id)
                 .field("descriptor", descriptor)
                 .finish(),
             EventKind::WillChangeInputValue { descriptor } => fmt

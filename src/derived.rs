@@ -315,7 +315,7 @@ where
                 );
 
                 db.salsa_event(|| Event {
-                    id: runtime.id(),
+                    runtime_id: runtime.id(),
                     kind: EventKind::DidValidateMemoizedValue {
                         descriptor: descriptor.clone(),
                     },
@@ -464,9 +464,9 @@ where
                         std::mem::drop(map);
 
                         db.salsa_event(|| Event {
-                            id: db.salsa_runtime().id(),
+                            runtime_id: db.salsa_runtime().id(),
                             kind: EventKind::WillBlockOn {
-                                other_id,
+                                other_runtime_id: other_id,
                                 descriptor: descriptor.clone(),
                             },
                         });

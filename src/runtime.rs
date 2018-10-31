@@ -258,7 +258,7 @@ where
         debug!("{:?}: execute_query_implementation invoked", descriptor);
 
         db.salsa_event(|| Event {
-            id: db.salsa_runtime().id(),
+            runtime_id: db.salsa_runtime().id(),
             kind: EventKind::WillExecute {
                 descriptor: descriptor.clone(),
             },

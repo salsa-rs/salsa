@@ -84,7 +84,7 @@ where
             let mut map = self.map.write();
 
             db.salsa_event(|| Event {
-                id: db.salsa_runtime().id(),
+                runtime_id: db.salsa_runtime().id(),
                 kind: EventKind::WillChangeInputValue {
                     descriptor: descriptor.clone(),
                 },
