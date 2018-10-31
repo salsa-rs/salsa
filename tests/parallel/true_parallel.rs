@@ -1,6 +1,6 @@
 use crate::setup::{Input, Knobs, ParDatabase, ParDatabaseImpl, WithValue};
-use salsa::Database;
-use salsa::ParallelDatabase;
+use salsa::{Database, ParallelDatabase};
+use std::panic::{self, AssertUnwindSafe};
 
 /// Test where two threads are executing sum. We show that they can
 /// both be executing sum in parallel by having thread1 wait for
@@ -82,4 +82,38 @@ fn true_parallel_same_keys() {
 
     assert_eq!(thread1.join().unwrap(), 111);
     assert_eq!(thread2.join().unwrap(), 111);
+}
+
+#[test]
+fn true_parallel_propagate_panic() {
+    let db = ParDatabaseImpl::default();
+
+    db.query(Input).set('a', 1);
+
+    let thread1 = std::thread::spawn({
+        let db = db.fork();
+        move || {
+            let v = db.knobs().sum_signal_on_entry.with_value(1, || {
+                db.knobs().sum_wait_for_on_exit.with_value(2, || {
+                    db.knobs().sum_should_panic.with_value(true, || db.sum("a"))
+                })
+            });
+            v
+        }
+    });
+
+    let thread2 = std::thread::spawn({
+        let db = db.fork();
+        move || {
+            db.knobs().signal.wait_for(1);
+            db.knobs().signal.signal(2);
+            db.sum("a")
+        }
+    });
+
+    let result1 = panic::catch_unwind(AssertUnwindSafe(|| thread1.join().unwrap()));
+    let result2 = panic::catch_unwind(AssertUnwindSafe(|| thread2.join().unwrap()));
+
+    assert!(result1.is_err());
+    assert!(result2.is_err());
 }

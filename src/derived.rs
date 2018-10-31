@@ -628,36 +628,38 @@ where
             // panicked before it could be removed. At this point, we
             // therefore "own" unique access to our slot, so we can just
             // remove the `InProgress` marker.
+            let waiting = {
+                let mut map = self.map.write();
+                match map.remove(self.key) {
+                    Some(QueryState::InProgress { id, waiting }) => {
+                        assert_eq!(id, self.my_id);
 
-            let mut map = self.map.write();
-            let old_value = map.remove(self.key);
-            match old_value {
-                Some(QueryState::InProgress { id, waiting }) => {
-                    assert_eq!(id, self.my_id);
+                        let waiting = waiting.into_inner();
 
-                    let waiting = waiting.into_inner();
-
-                    if !waiting.is_empty() {
-                        // FIXME(#24) -- handle parallel case. In
-                        // particular, we ought to notify those
-                        // waiting on us that a panic occurred (they
-                        // can then propagate the panic themselves; or
-                        // perhaps re-execute?).
-                        panic!("FIXME(#24) -- handle parallel case");
+                        if waiting.is_empty() {
+                            // if nobody is waiting, we are done here
+                            return;
+                        } else {
+                            waiting
+                        }
                     }
-                }
 
-                // If we don't see an `InProgress` marker, something
-                // has gone horribly wrong. This panic will
-                // (unfortunately) abort the process, but recovery is
-                // not possible.
-                _ => panic!(
-                    "\
+                    // If we don't see an `InProgress` marker, something
+                    // has gone horribly wrong. This panic will
+                    // (unfortunately) abort the process, but recovery is
+                    // not possible.
+                    _ => panic!(
+                        "\
 Unexpected panic during query evaluation, aborting the process.
 
 Please report this bug to https://github.com/salsa-rs/salsa/issues."
-                ),
-            }
+                    ),
+                }
+            };
+
+            // We want to propagate our panic to those waiting on us. By dropping
+            // `waiting`, others will panic in `.recv`.
+            std::mem::drop(waiting)
         } else {
             // If no panic occurred, then panic guard ought to be
             // "forgotten" and so this Drop code should never run.
@@ -790,8 +792,7 @@ where
                     key,
                     input
                 )
-            })
-            .next()
+            }).next()
             .is_some();
 
         // Either way, we have to update our entry.
