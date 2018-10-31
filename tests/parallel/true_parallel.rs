@@ -84,12 +84,17 @@ fn true_parallel_same_keys() {
     assert_eq!(thread2.join().unwrap(), 111);
 }
 
+/// Add a test that tries to trigger a conflict, where we fetch `sum("a")`
+/// from two threads simultaneously. After `thread2` begins blocking,
+/// we force `thread1` to panic and should see that propagate to `thread2`.
 #[test]
 fn true_parallel_propagate_panic() {
     let db = ParDatabaseImpl::default();
 
     db.query(Input).set('a', 1);
 
+    // `thread1` will wait_for a barrier in the start of `sum`. Once it can
+    // continue, it will panic.
     let thread1 = std::thread::spawn({
         let db = db.fork();
         move || {
@@ -102,11 +107,13 @@ fn true_parallel_propagate_panic() {
         }
     });
 
+    // `thread2` will wait until `thread1` has entered sum and then -- once it
+    // has set itself to block -- signal `thread1` to continue.
     let thread2 = std::thread::spawn({
         let db = db.fork();
         move || {
             db.knobs().signal.wait_for(1);
-            db.knobs().signal.signal(2);
+            db.knobs().signal_on_will_block.set(2);
             db.sum("a")
         }
     });
