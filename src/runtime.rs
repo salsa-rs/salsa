@@ -89,6 +89,10 @@ where
             "invoked `fork` with a non-matching database"
         );
 
+        if self.local_state.borrow().query_in_progress() {
+            panic!("it is not legal to `fork` during a query (see salsa-rs/salsa#80)");
+        }
+
         let revision_guard = RevisionGuard::new(&self.shared_state);
 
         let id = RuntimeId {
@@ -226,7 +230,7 @@ where
     }
 
     pub(crate) fn permits_increment(&self) -> bool {
-        self.revision_guard.is_none() && self.local_state.borrow().query_stack.is_empty()
+        self.revision_guard.is_none() && !self.local_state.borrow().query_in_progress()
     }
 
     pub(crate) fn execute_query_implementation<V>(
@@ -403,6 +407,12 @@ impl<DB: Database> Default for LocalState<DB> {
         LocalState {
             query_stack: Default::default(),
         }
+    }
+}
+
+impl<DB: Database> LocalState<DB> {
+    fn query_in_progress(&self) -> bool {
+        !self.query_stack.is_empty()
     }
 }
 
