@@ -67,7 +67,7 @@ fn true_parallel_same_keys() {
     });
 
     // Thread 2 will wait until Thread 1 has entered sum and then --
-    // once it has set tself to block -- signal Thread 1 to
+    // once it has set itself to block -- signal Thread 1 to
     // continue. This way, we test out the mechanism of one thread
     // blocking on another.
     let thread2 = std::thread::spawn({
