@@ -245,8 +245,11 @@ where
     ) -> Result<StampedValue<Q::Value>, CycleDetected> {
         let runtime = db.salsa_runtime();
 
-        let _read_lock = runtime.start_query();
-
+        // NB: We don't need to worry about people modifying the
+        // revision out from under our feet. Either `db` is a frozen
+        // database, in which case there is a lock, or the mutator
+        // thread is the current thread, and it will be prevented from
+        // doing any `set` invocations while the query function runs.
         let revision_now = runtime.current_revision();
 
         info!(
@@ -691,12 +694,6 @@ where
     ) -> bool {
         let runtime = db.salsa_runtime();
         let revision_now = runtime.current_revision();
-
-        // If a query is in progress, we know that the current
-        // revision is not changing.
-        if !runtime.query_in_progress() {
-            panic!("maybe_changed_since invoked outside of query execution")
-        }
 
         debug!(
             "{:?}({:?})::maybe_changed_since(revision={:?}, revision_now={:?})",

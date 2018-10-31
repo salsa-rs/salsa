@@ -130,26 +130,6 @@ where
         db.for_each_query(|query_storage| query_storage.sweep(db, strategy));
     }
 
-    /// Indicates that a derived query has begun to execute; if this is the
-    /// first derived query on this thread, then acquires a read-lock on the
-    /// runtime to prevent us from moving to a new revision until that query
-    /// completes.
-    ///
-    /// (However, if other threads invoke `increment_revision`, then
-    /// the current revision may be considered cancelled, which can be
-    /// observed through `is_current_revision_canceled`.)
-    pub(crate) fn start_query(&self) -> Option<QueryGuard<'_, DB>> {
-        let mut local_state = self.local_state.borrow_mut();
-        if !local_state.query_in_progress {
-            local_state.query_in_progress = true;
-            let guard = self.shared_state.query_lock.read();
-
-            Some(QueryGuard::new(self, guard))
-        } else {
-            None
-        }
-    }
-
     /// The unique identifier attached to this `SalsaRuntime`. Each
     /// forked runtime has a distinct identifier.
     #[inline]
