@@ -16,7 +16,7 @@ fn in_par_get_set_cancellation() {
 
     let lock = db.salsa_runtime().lock_revision();
     let thread1 = std::thread::spawn({
-        let db = db.fork();
+        let db = db.fork_mut();
         let signal = signal.clone();
         move || {
             // Check that cancellation flag is not yet set, because
@@ -47,7 +47,7 @@ fn in_par_get_set_cancellation() {
     });
 
     let thread2 = std::thread::spawn({
-        let db = db.fork();
+        let db = db.fork_mut();
         let signal = signal.clone();
         move || {
             // Wait until thread 1 has asserted that they are not cancelled

@@ -14,7 +14,7 @@ fn in_par_get_set_cancellation() {
     db.query(Input).set('d', 0);
 
     let thread1 = std::thread::spawn({
-        let db = db.fork();
+        let db = db.fork_mut();
         move || {
             let v1 = db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
@@ -38,7 +38,7 @@ fn in_par_get_set_cancellation() {
     });
 
     let thread2 = std::thread::spawn({
-        let db = db.fork();
+        let db = db.fork_mut();
         move || {
             // Wait until we have entered `sum` in the other thread.
             db.wait_for(1);
@@ -68,7 +68,7 @@ fn in_par_get_set_transitive_cancellation() {
     db.query(Input).set('d', 0);
 
     let thread1 = std::thread::spawn({
-        let db = db.fork();
+        let db = db.fork_mut();
         move || {
             let v1 = db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
@@ -92,7 +92,7 @@ fn in_par_get_set_transitive_cancellation() {
     });
 
     let thread2 = std::thread::spawn({
-        let db = db.fork();
+        let db = db.fork_mut();
         move || {
             // Wait until we have entered `sum` in the other thread.
             db.wait_for(1);

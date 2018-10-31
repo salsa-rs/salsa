@@ -131,9 +131,9 @@ impl Database for ParDatabaseImpl {
 }
 
 impl ParallelDatabase for ParDatabaseImpl {
-    fn fork(&self) -> Self {
+    fn fork_mut(&self) -> Self {
         ParDatabaseImpl {
-            runtime: self.runtime.fork(),
+            runtime: self.runtime.fork_mut(),
             knobs: self.knobs.clone(),
         }
     }

@@ -183,7 +183,7 @@ pub trait ParallelDatabase: Database + Send {
     /// **Warning.** This second handle is intended to be used from a
     /// separate thread. Using two database handles from the **same
     /// thread** can lead to deadlock.
-    fn fork(&self) -> Self;
+    fn fork_mut(&self) -> Self;
 }
 
 pub trait Query<DB: Database>: Debug + Default + Sized + 'static {

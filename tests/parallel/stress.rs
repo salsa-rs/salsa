@@ -38,7 +38,7 @@ fn c(db: &impl StressDatabase, key: usize) -> Cancelable<usize> {
 
 #[derive(Default)]
 struct StressDatabaseImpl {
-    runtime: salsa::Runtime<StressDatabaseImpl>
+    runtime: salsa::Runtime<StressDatabaseImpl>,
 }
 
 impl salsa::Database for StressDatabaseImpl {
@@ -48,8 +48,10 @@ impl salsa::Database for StressDatabaseImpl {
 }
 
 impl salsa::ParallelDatabase for StressDatabaseImpl {
-    fn fork(&self) -> StressDatabaseImpl {
-        StressDatabaseImpl { runtime: self.runtime.fork() }
+    fn fork_mut(&self) -> StressDatabaseImpl {
+        StressDatabaseImpl {
+            runtime: self.runtime.fork_mut(),
+        }
     }
 }
 
@@ -64,7 +66,11 @@ salsa::database_storage! {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Query { A, B, C }
+enum Query {
+    A,
+    B,
+    C,
+}
 
 #[derive(Debug)]
 enum Op {
@@ -111,32 +117,28 @@ fn db_thread(db: StressDatabaseImpl, ops: Vec<Op>) {
             Op::SetA(key, value) => {
                 db.query(A).set(key, value);
             }
-            Op::Get(query, key) => {
-                match query {
-                    Query::A => {
-                        db.a(key);
-                    },
-                    Query::B => {
-                        let _ = db.b(key);
-                    },
-                    Query::C => {
-                        let _ = db.c(key);
-                    },
+            Op::Get(query, key) => match query {
+                Query::A => {
+                    db.a(key);
                 }
-            }
-            Op::Gc(query, strategy) => {
-                match query {
-                    Query::A => {
-                        db.query(A).sweep(strategy);
-                    },
-                    Query::B => {
-                        db.query(B).sweep(strategy);
-                    },
-                    Query::C => {
-                        db.query(C).sweep(strategy);
-                    },
+                Query::B => {
+                    let _ = db.b(key);
                 }
-            }
+                Query::C => {
+                    let _ = db.c(key);
+                }
+            },
+            Op::Gc(query, strategy) => match query {
+                Query::A => {
+                    db.query(A).sweep(strategy);
+                }
+                Query::B => {
+                    db.query(B).sweep(strategy);
+                }
+                Query::C => {
+                    db.query(C).sweep(strategy);
+                }
+            },
             Op::GcAll(strategy) => {
                 db.sweep_all(strategy);
             }
@@ -151,17 +153,20 @@ fn random_ops(n_ops: usize) -> Vec<Op> {
 
 #[test]
 fn stress_test() {
-    let db =  StressDatabaseImpl::default();
+    let db = StressDatabaseImpl::default();
     for i in 0..10 {
         db.query(A).set(i, i);
     }
     let n_threads = 20;
     let n_ops = 100;
     let ops = (0..n_threads).map(|_| random_ops(n_ops));
-    let threads = ops.into_iter().map(|ops| {
-        let db = db.fork();
-        std::thread::spawn(move || db_thread(db, ops))
-    }).collect::<Vec<_>>();
+    let threads = ops
+        .into_iter()
+        .map(|ops| {
+            let db = db.fork_mut();
+            std::thread::spawn(move || db_thread(db, ops))
+        })
+        .collect::<Vec<_>>();
     std::mem::drop(db);
     for thread in threads {
         thread.join().unwrap();

@@ -69,7 +69,7 @@ where
     /// **Warning.** This second handle is intended to be used from a
     /// separate thread. Using two database handles from the **same
     /// thread** can lead to deadlock.
-    pub fn fork(&self) -> Self {
+    pub fn fork_mut(&self) -> Self {
         Runtime {
             id: RuntimeId {
                 counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),

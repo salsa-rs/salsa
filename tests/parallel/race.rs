@@ -6,7 +6,7 @@ use salsa::{Database, ParallelDatabase};
 #[test]
 fn in_par_get_set_race() {
     let db1 = ParDatabaseImpl::default();
-    let db2 = db1.fork();
+    let db2 = db1.fork_mut();
 
     db1.query(Input).set('a', 100);
     db1.query(Input).set('b', 010);
