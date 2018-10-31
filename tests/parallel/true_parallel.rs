@@ -66,13 +66,15 @@ fn true_parallel_same_keys() {
         }
     });
 
-    // Thread 2 will sync barrier *just* before calling `sum`. Doesn't
-    // guarantee the race we want but makes it highly likely.
+    // Thread 2 will wait until Thread 1 has entered sum and then --
+    // once it has set itself to block -- signal Thread 1 to
+    // continue. This way, we test out the mechanism of one thread
+    // blocking on another.
     let thread2 = std::thread::spawn({
         let db = db.fork();
         move || {
             db.knobs().signal.wait_for(1);
-            db.knobs().signal.signal(2);
+            db.knobs().signal_on_will_block.set(2);
             db.sum("abc")
         }
     });

@@ -1,4 +1,4 @@
-use crate::{Database, SweepStrategy};
+use crate::{Database, Event, EventKind, SweepStrategy};
 use lock_api::RawRwLock;
 use log::debug;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
@@ -147,9 +147,21 @@ where
         RevisionGuard::new(&self.shared_state)
     }
 
+    /// The unique identifier attached to this `SalsaRuntime`. Each
+    /// forked runtime has a distinct identifier.
     #[inline]
-    pub(crate) fn id(&self) -> RuntimeId {
+    pub fn id(&self) -> RuntimeId {
         self.id
+    }
+
+    /// Returns the descriptor for the query that this thread is
+    /// actively executing (if any).
+    pub fn active_query(&self) -> Option<DB::QueryDescriptor> {
+        self.local_state
+            .borrow()
+            .query_stack
+            .last()
+            .map(|active_query| active_query.descriptor.clone())
     }
 
     /// Read current value of the revision counter.
@@ -239,10 +251,18 @@ where
 
     pub(crate) fn execute_query_implementation<V>(
         &self,
+        db: &DB,
         descriptor: &DB::QueryDescriptor,
         execute: impl FnOnce() -> V,
     ) -> ComputedQueryResult<DB, V> {
         debug!("{:?}: execute_query_implementation invoked", descriptor);
+
+        db.salsa_event(|| Event {
+            runtime_id: db.salsa_runtime().id(),
+            kind: EventKind::WillExecute {
+                descriptor: descriptor.clone(),
+            },
+        });
 
         // Push the active query onto the stack.
         let push_len = {
@@ -524,7 +544,7 @@ impl<DB: Database> ActiveQuery<DB> {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct RuntimeId {
+pub struct RuntimeId {
     counter: usize,
 }
 

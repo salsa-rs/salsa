@@ -56,6 +56,9 @@ pub(crate) struct KnobsStruct {
     /// threads to ensure we reach various weird states.
     pub(crate) signal: Arc<Signal>,
 
+    /// When this database is about to block, send a signal.
+    pub(crate) signal_on_will_block: Cell<usize>,
+
     /// Invocations of `sum` will signal this stage on entry.
     pub(crate) sum_signal_on_entry: Cell<usize>,
 
@@ -113,6 +116,17 @@ pub struct ParDatabaseImpl {
 impl Database for ParDatabaseImpl {
     fn salsa_runtime(&self) -> &salsa::Runtime<ParDatabaseImpl> {
         &self.runtime
+    }
+
+    fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event<Self>) {
+        let event = event_fn();
+        match event.kind {
+            salsa::EventKind::WillBlockOn { .. } => {
+                self.signal(self.knobs().signal_on_will_block.get());
+            }
+
+            _ => {}
+        }
     }
 }
 

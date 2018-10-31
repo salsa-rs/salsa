@@ -7,6 +7,8 @@ use crate::runtime::ChangedAt;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::Database;
+use crate::Event;
+use crate::EventKind;
 use crate::Query;
 use crate::SweepStrategy;
 use log::debug;
@@ -60,7 +62,14 @@ where
         panic!("no value set for {:?}({:?})", Q::default(), key)
     }
 
-    fn set_common(&self, db: &DB, key: &Q::Key, value: Q::Value, is_constant: IsConstant) {
+    fn set_common(
+        &self,
+        db: &DB,
+        key: &Q::Key,
+        descriptor: &DB::QueryDescriptor,
+        value: Q::Value,
+        is_constant: IsConstant,
+    ) {
         let key = key.clone();
 
         // The value is changing, so even if we are setting this to a
@@ -73,6 +82,13 @@ where
         // lock.
         db.salsa_runtime().with_incremented_revision(|next_revision| {
             let mut map = self.map.write();
+
+            db.salsa_event(|| Event {
+                runtime_id: db.salsa_runtime().id(),
+                kind: EventKind::WillChangeInputValue {
+                    descriptor: descriptor.clone(),
+                },
+            });
 
             // Do this *after* we acquire the lock, so that we are not
             // racing with somebody else to modify this same cell.
@@ -190,16 +206,22 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    fn set(&self, db: &DB, key: &Q::Key, value: Q::Value) {
+    fn set(&self, db: &DB, key: &Q::Key, descriptor: &DB::QueryDescriptor, value: Q::Value) {
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
 
-        self.set_common(db, key, value, IsConstant(false))
+        self.set_common(db, key, descriptor, value, IsConstant(false))
     }
 
-    fn set_constant(&self, db: &DB, key: &Q::Key, value: Q::Value) {
+    fn set_constant(
+        &self,
+        db: &DB,
+        key: &Q::Key,
+        descriptor: &DB::QueryDescriptor,
+        value: Q::Value,
+    ) {
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
 
-        self.set_common(db, key, value, IsConstant(true))
+        self.set_common(db, key, descriptor, value, IsConstant(true))
     }
 }
 

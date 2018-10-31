@@ -121,9 +121,15 @@ where
     DB: Database,
     Q: Query<DB>,
 {
-    fn set(&self, db: &DB, key: &Q::Key, new_value: Q::Value);
+    fn set(&self, db: &DB, key: &Q::Key, descriptor: &DB::QueryDescriptor, new_value: Q::Value);
 
-    fn set_constant(&self, db: &DB, key: &Q::Key, new_value: Q::Value);
+    fn set_constant(
+        &self,
+        db: &DB,
+        key: &Q::Key,
+        descriptor: &DB::QueryDescriptor,
+        new_value: Q::Value,
+    );
 }
 
 /// An optional trait that is implemented for "user mutable" storage:
