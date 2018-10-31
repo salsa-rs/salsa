@@ -5,19 +5,24 @@ use salsa::{Database, ParallelDatabase};
 /// threads. Really just a test that `fork` etc compiles.
 #[test]
 fn in_par_two_independent_queries() {
-    let db1 = ParDatabaseImpl::default();
-    let db2 = db1.fork_mut();
+    let db = ParDatabaseImpl::default();
 
-    db1.query(Input).set('a', 100);
-    db1.query(Input).set('b', 010);
-    db1.query(Input).set('c', 001);
-    db1.query(Input).set('d', 200);
-    db1.query(Input).set('e', 020);
-    db1.query(Input).set('f', 002);
+    db.query(Input).set('a', 100);
+    db.query(Input).set('b', 010);
+    db.query(Input).set('c', 001);
+    db.query(Input).set('d', 200);
+    db.query(Input).set('e', 020);
+    db.query(Input).set('f', 002);
 
-    let thread1 = std::thread::spawn(move || db1.sum("abc"));
+    let thread1 = std::thread::spawn({
+        let db = db.fork();
+        move || db.sum("abc")
+    });
 
-    let thread2 = std::thread::spawn(move || db2.sum("def"));
+    let thread2 = std::thread::spawn({
+        let db = db.fork();
+        move || db.sum("def")
+    });;
 
     assert_eq!(thread1.join().unwrap(), 111);
     assert_eq!(thread2.join().unwrap(), 222);

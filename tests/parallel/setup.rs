@@ -1,5 +1,6 @@
 use crate::signal::Signal;
 use salsa::Database;
+use salsa::Frozen;
 use salsa::ParallelDatabase;
 use std::cell::Cell;
 use std::sync::Arc;
@@ -104,7 +105,7 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
 }
 
 fn sum2(db: &impl ParDatabase, key: &'static str) -> usize {
-    sum(db, key)
+    db.sum(key)
 }
 
 #[derive(Default)]
@@ -131,11 +132,11 @@ impl Database for ParDatabaseImpl {
 }
 
 impl ParallelDatabase for ParDatabaseImpl {
-    fn fork_mut(&self) -> Self {
-        ParDatabaseImpl {
-            runtime: self.runtime.fork_mut(),
+    fn fork(&self) -> Frozen<Self> {
+        Frozen::new(ParDatabaseImpl {
+            runtime: self.runtime.fork(self),
             knobs: self.knobs.clone(),
-        }
+        })
     }
 }
 

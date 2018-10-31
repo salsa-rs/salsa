@@ -1,4 +1,4 @@
-use crate::{Database, Event, EventKind, ParallelDatabase, SweepStrategy};
+use crate::{Database, Event, EventKind, SweepStrategy};
 use lock_api::{RawRwLock, RawRwLockRecursive};
 use log::debug;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
@@ -20,9 +20,19 @@ pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHashe
 /// associated with it. Normally, therefore, you only do this once, at
 /// the start of your application.
 pub struct Runtime<DB: Database> {
+    /// Our unique runtime id.
     id: RuntimeId,
-    shared_state: Arc<SharedState<DB>>,
+
+    /// If this is a "forked" runtime, then the `revision_guard` will
+    /// be `Some`; this guard holds a read-lock on the global query
+    /// lock.
+    revision_guard: Option<RevisionGuard<DB>>,
+
+    /// Local state that is specific to this runtime (thread).
     local_state: RefCell<LocalState<DB>>,
+
+    /// Shared state that is accessible via all runtimes.
+    shared_state: Arc<SharedState<DB>>,
 }
 
 impl<DB> Default for Runtime<DB>
@@ -32,6 +42,7 @@ where
     fn default() -> Self {
         Runtime {
             id: RuntimeId { counter: 0 },
+            revision_guard: None,
             shared_state: Default::default(),
             local_state: Default::default(),
         }
@@ -63,19 +74,35 @@ where
         &self.shared_state.storage
     }
 
-    /// As with `Database::fork_mut`, creates a second handle to this
-    /// runtime meant to be used from another thread.
+    /// Returns a "forked" runtime, suitable for use in a forked
+    /// database. "Forked" runtimes hold a read-lock on the global
+    /// state, which means that any attempt to `set` an input will
+    /// block until the forked runtime is dropped. See
+    /// `ParallelDatabase::fork` for more information.
     ///
     /// **Warning.** This second handle is intended to be used from a
     /// separate thread. Using two database handles from the **same
     /// thread** can lead to deadlock.
-    pub fn fork_mut(&self) -> Self {
+    pub fn fork(&self, from_db: &DB) -> Self {
+        assert!(
+            Arc::ptr_eq(&self.shared_state, &from_db.salsa_runtime().shared_state),
+            "invoked `fork` with a non-matching database"
+        );
+
+        let revision_guard = RevisionGuard::new(&self.shared_state);
+
+        let id = RuntimeId {
+            counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),
+        };
+
+        let mut local_state = LocalState::default();
+        local_state.query_in_progress = true;
+
         Runtime {
-            id: RuntimeId {
-                counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),
-            },
+            id,
+            revision_guard: Some(revision_guard),
             shared_state: self.shared_state.clone(),
-            local_state: Default::default(),
+            local_state: RefCell::new(local_state),
         }
     }
 
@@ -595,113 +622,44 @@ impl<DB: Database> DependencyGraph<DB> {
     }
 }
 
-/// The `Frozen` struct indicates a database handle which is locked at
-/// a particular revision: any attempt to set the value of an input
-/// (e.g., from another database handle) will block until the `Frozen`
-/// database is dropped.
-///
-/// # Deadlock warning
-///
-/// Since attempts to set inputs are blocked until the `Frozen<DB>` is
-/// dropped, this implies that any attempt to set an input *using* the
-/// `Frozen<DB>` will deadlock instantly (because it will block the
-/// thread that owns the `Frozen<DB>` and thus not permit the
-/// `Frozen<DB>` to be dropped). In the future, we plan to refactor
-/// the API to make such "instant deadlocks" impossible.
-pub struct Frozen<DB>
-where
-    DB: ParallelDatabase,
-{
+struct RevisionGuard<DB: Database> {
     shared_state: Arc<SharedState<DB>>,
-    db: DB,
 }
 
-impl<DB> Frozen<DB>
+impl<DB> RevisionGuard<DB>
 where
-    DB: ParallelDatabase,
+    DB: Database,
 {
-    /// Creates and returns a frozen handle to `source_db`.
-    pub(crate) fn new(source_db: &DB) -> Self {
-        let source_runtime = source_db.salsa_runtime();
-
-        // Subtle point: if the source database is already executing a
-        // query, then we want to use a "recursive read" lock.  Using
-        // an ordinary read lock [may deadlock], since it could wind
-        // up blocking indefinitely if there is a pending write (thus
-        // preventing our caller from releasing their read lock, which
-        // in turn ensures that the pending write will never
-        // complete).
+    fn new(shared_state: &Arc<SharedState<DB>>) -> Self {
+        // Subtle: we use a "recursive" lock here so that it is not an
+        // error to acquire a read-lock when one is already held (this
+        // happens when a query uses `fork` to spawn off parallel
+        // workers, for example).
         //
-        // We could just use recursive reads *always*, but that could
-        // lead to starvation in the case where you have various
-        // threads invoking get and set willy nilly. Not sure how
-        // important it is to ensure that case works -- it's not a
-        // recommended pattern -- but it seems (for now at least) easy
-        // enough to do so.
+        // This has the side-effect that we are responsible to ensure
+        // that people contending for the write lock do not starve,
+        // but this is what we achieve via the cancellation mechanism.
         //
-        // [may deadlock]: https://docs.rs/lock_api/0.1.3/lock_api/struct.RwLock.html#method.read
-        let use_recursive_lock = source_runtime.query_in_progress();
-
-        // Fork off a new database for us to use.
-        let our_db = source_db.fork_mut();
-        let our_runtime = our_db.salsa_runtime();
-
-        // Set the `query_in_progress` flag permanently true for our
-        // database to prevent queries that execute against it from
-        // acquiring the read lock.
-        {
-            let mut local_state = our_runtime.local_state.borrow_mut();
-            if local_state.query_in_progress {
-                panic!("cannot use `Frozen::new` with a query in progress")
-            }
-            local_state.query_in_progress = true;
-        }
-
-        // OK, this is paranoia. *Technically speaking*, we don't
-        // control the DB type, so it may "yield up" different
-        // runtimes at different points. So we will save the
-        // shared-state that we are operating on to be sure it does
-        // not. This way, we are sure that we are invoking the "unpaired"
-        // lock and unlock operations on the same lock.
-        //
-        // (Note that -- if people are being wacky -- we might be
-        // changing the `query_in_progress` flag on the wrong local
-        // state. That I believe can only trigger *deadlock* so I'm
-        // not as worried, but perhaps I should be.)
-        let shared_state = our_runtime.shared_state.clone();
-
-        // Acquire the read-lock without using RAII. This requires the
-        // unsafe keyword because, if we were to unlock the lock this
-        // way, we would screw up other people using the safe APIs.
+        // (In particular, since we only ever have one "mutating
+        // handle" to the database, the only contention for the global
+        // query lock occurs when there are "futures" evaluating
+        // queries in parallel, and those futures hold a read-lock
+        // already, so the starvation problem is more about them bring
+        // themselves to a close, versus preventing other people from
+        // *starting* work).
         unsafe {
-            if use_recursive_lock {
-                shared_state.query_lock.raw().lock_shared_recursive();
-            } else {
-                shared_state.query_lock.raw().lock_shared();
-            }
+            shared_state.query_lock.raw().lock_shared_recursive();
         }
 
-        Frozen {
-            shared_state,
-            db: our_db,
+        Self {
+            shared_state: shared_state.clone(),
         }
     }
 }
 
-impl<DB> std::ops::Deref for Frozen<DB>
+impl<DB> Drop for RevisionGuard<DB>
 where
-    DB: ParallelDatabase,
-{
-    type Target = DB;
-
-    fn deref(&self) -> &DB {
-        &self.db
-    }
-}
-
-impl<DB> Drop for Frozen<DB>
-where
-    DB: ParallelDatabase,
+    DB: Database,
 {
     fn drop(&mut self) {
         // Release our read-lock without using RAII. As documented in

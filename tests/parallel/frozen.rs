@@ -43,7 +43,6 @@ fn in_par_get_set_cancellation() {
     });
 
     let thread2 = std::thread::spawn({
-        let db = db.fork_mut();
         let signal = signal.clone();
         move || {
             // Wait until thread 1 has asserted that they are not cancelled

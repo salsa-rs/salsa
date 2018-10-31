@@ -1,8 +1,12 @@
 use rand::Rng;
-
 use salsa::Database;
+use salsa::Frozen;
 use salsa::ParallelDatabase;
 use salsa::SweepStrategy;
+
+// Number of operations a reader performs
+const N_MUTATOR_OPS: usize = 100;
+const N_READER_OPS: usize = 100;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Canceled;
@@ -48,10 +52,10 @@ impl salsa::Database for StressDatabaseImpl {
 }
 
 impl salsa::ParallelDatabase for StressDatabaseImpl {
-    fn fork_mut(&self) -> StressDatabaseImpl {
-        StressDatabaseImpl {
-            runtime: self.runtime.fork_mut(),
-        }
+    fn fork(&self) -> Frozen<StressDatabaseImpl> {
+        Frozen::new(StressDatabaseImpl {
+            runtime: self.runtime.fork(self),
+        })
     }
 }
 
@@ -72,9 +76,21 @@ enum Query {
     C,
 }
 
+enum MutatorOp {
+    WriteOp(WriteOp),
+    LaunchReader {
+        ops: Vec<ReadOp>,
+        check_cancellation: bool,
+    },
+}
+
 #[derive(Debug)]
-enum Op {
+enum WriteOp {
     SetA(usize, usize),
+}
+
+#[derive(Debug)]
+enum ReadOp {
     Get(Query, usize),
     Gc(Query, SweepStrategy),
     GcAll(SweepStrategy),
@@ -86,38 +102,71 @@ impl rand::distributions::Distribution<Query> for rand::distributions::Standard 
     }
 }
 
-impl rand::distributions::Distribution<Op> for rand::distributions::Standard {
-    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Op {
+impl rand::distributions::Distribution<MutatorOp> for rand::distributions::Standard {
+    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> MutatorOp {
+        if rng.gen_bool(0.5) {
+            MutatorOp::WriteOp(rng.gen())
+        } else {
+            MutatorOp::LaunchReader {
+                ops: (0..N_READER_OPS).map(|_| rng.gen()).collect(),
+                check_cancellation: rng.gen(),
+            }
+        }
+    }
+}
+
+impl rand::distributions::Distribution<WriteOp> for rand::distributions::Standard {
+    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> WriteOp {
+        let key = rng.gen::<usize>() % 10;
+        let value = rng.gen::<usize>() % 10;
+        return WriteOp::SetA(key, value);
+    }
+}
+
+impl rand::distributions::Distribution<ReadOp> for rand::distributions::Standard {
+    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> ReadOp {
         if rng.gen_bool(0.5) {
             let query = rng.gen::<Query>();
             let key = rng.gen::<usize>() % 10;
-            return Op::Get(query, key);
-        }
-        if rng.gen_bool(0.5) {
-            let key = rng.gen::<usize>() % 10;
-            let value = rng.gen::<usize>() % 10;
-            return Op::SetA(key, value);
+            return ReadOp::Get(query, key);
         }
         let mut strategy = SweepStrategy::default();
         if rng.gen_bool(0.5) {
             strategy = strategy.discard_values();
         }
         if rng.gen_bool(0.5) {
-            Op::Gc(rng.gen::<Query>(), strategy)
+            ReadOp::Gc(rng.gen::<Query>(), strategy)
         } else {
-            Op::GcAll(strategy)
+            ReadOp::GcAll(strategy)
         }
     }
 }
 
-fn db_thread(db: StressDatabaseImpl, ops: Vec<Op>) {
+fn db_reader_thread(db: &StressDatabaseImpl, ops: Vec<ReadOp>, check_cancellation: bool) {
     for op in ops {
-        // eprintln!("{:02?}: {:?}", std::thread::current().id(), op);
-        match op {
-            Op::SetA(key, value) => {
+        if check_cancellation {
+            if db.salsa_runtime().is_current_revision_canceled() {
+                return;
+            }
+        }
+        op.execute(db);
+    }
+}
+
+impl WriteOp {
+    fn execute(self, db: &mut StressDatabaseImpl) {
+        match self {
+            WriteOp::SetA(key, value) => {
                 db.query(A).set(key, value);
             }
-            Op::Get(query, key) => match query {
+        }
+    }
+}
+
+impl ReadOp {
+    fn execute(self, db: &StressDatabaseImpl) {
+        match self {
+            ReadOp::Get(query, key) => match query {
                 Query::A => {
                     db.a(key);
                 }
@@ -128,7 +177,7 @@ fn db_thread(db: StressDatabaseImpl, ops: Vec<Op>) {
                     let _ = db.c(key);
                 }
             },
-            Op::Gc(query, strategy) => match query {
+            ReadOp::Gc(query, strategy) => match query {
                 Query::A => {
                     db.query(A).sweep(strategy);
                 }
@@ -139,36 +188,41 @@ fn db_thread(db: StressDatabaseImpl, ops: Vec<Op>) {
                     db.query(C).sweep(strategy);
                 }
             },
-            Op::GcAll(strategy) => {
+            ReadOp::GcAll(strategy) => {
                 db.sweep_all(strategy);
             }
         }
     }
 }
 
-fn random_ops(n_ops: usize) -> Vec<Op> {
-    let mut rng = rand::thread_rng();
-    (0..n_ops).map(|_| rng.gen::<Op>()).collect()
-}
-
 #[test]
 fn stress_test() {
-    let db = StressDatabaseImpl::default();
+    let mut db = StressDatabaseImpl::default();
     for i in 0..10 {
         db.query(A).set(i, i);
     }
-    let n_threads = 20;
-    let n_ops = 100;
-    let ops = (0..n_threads).map(|_| random_ops(n_ops));
-    let threads = ops
-        .into_iter()
-        .map(|ops| {
-            let db = db.fork_mut();
-            std::thread::spawn(move || db_thread(db, ops))
-        })
-        .collect::<Vec<_>>();
-    std::mem::drop(db);
-    for thread in threads {
+
+    let mut rng = rand::thread_rng();
+
+    // generate the ops that the mutator thread will perform
+    let write_ops: Vec<MutatorOp> = (0..N_MUTATOR_OPS).map(|_| rng.gen()).collect();
+
+    // execute the "main thread", which sometimes forks off other threads
+    let mut all_threads = vec![];
+    for op in write_ops {
+        match op {
+            MutatorOp::WriteOp(w) => w.execute(&mut db),
+            MutatorOp::LaunchReader {
+                ops,
+                check_cancellation,
+            } => all_threads.push(std::thread::spawn({
+                let db = db.fork();
+                move || db_reader_thread(&db, ops, check_cancellation)
+            })),
+        }
+    }
+
+    for thread in all_threads {
         thread.join().unwrap();
     }
 }

@@ -20,7 +20,6 @@ use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 
-pub use crate::runtime::Frozen;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
 
@@ -196,34 +195,71 @@ pub trait ParallelDatabase: Database + Send {
     ///
     /// [`is_current_revision_canceled`]: struct.Runtime.html#method.is_current_revision_canceled
     ///
+    /// # How to implement this
+    ///
+    /// Typically, this method will create a second copy of your
+    /// database type (`MyDatabaseType`, in the example below),
+    /// cloning over each of the fields from `self` into this new
+    /// copy. For the field that stores the salsa runtime, you should
+    /// use [the `Runtime::fork` method][rfm] to create a fork of the
+    /// runtime. Finally, package up the result using `Frozen::new`,
+    /// which is a simple wrapper type that only gives `&self` access
+    /// to the database within (thus preventing the use of methods
+    /// that may mutate the inputs):
+    ///
+    /// [rfm]: struct.Runtime.html#method.fork
+    ///
+    /// ```rust,ignore
+    /// impl ParallelDatabase for MyDatabaseType {
+    ///     fn fork(&self) -> Frozen<Self> {
+    ///         Frozen::new(
+    ///             MyDatabaseType {
+    ///                 runtime: self.runtime.fork(self),
+    ///                 other_field: self.other_field.clone(),
+    ///             }
+    ///         )
+    ///     }
+    /// }
+    /// ```
+    ///
     /// # Deadlock warning
     ///
     /// This second handle is intended to be used from a separate
     /// thread. Using two database handles from the **same thread**
     /// can lead to deadlock.
-    fn fork(&self) -> Frozen<Self> {
-        Frozen::new(self)
-    }
+    fn fork(&self) -> Frozen<Self>;
+}
 
-    /// Creates another handle to this database destined for another
-    /// thread. You are meant to implement this by cloning a second
-    /// handle to all all the state in the database; to clone the
-    /// salsa runtime, use the [`Runtime::fork_mut`] method.
-    ///
-    /// Note to users: you only need this method if you plan to be
-    /// setting inputs on the other thread. Otherwise, it is preferred
-    /// to use [`fork`], which will given back a frozen database fixed
-    /// at the current revision.
-    ///
-    /// # Deadlock warning
-    ///
-    /// This second handle is intended to be used from a
-    /// separate thread. Using two database handles from the **same
-    /// thread** can lead to deadlock.
-    ///
-    /// [`Runtime::fork_mut`]: https://docs.rs/salsa/0.7.0/salsa/struct.Runtime.html#method.fork_mut
-    /// [`fork`]: trait.ParallelDatabase.html#tymethod.fork
-    fn fork_mut(&self) -> Self;
+/// Simple wrapper struct that takes ownership of a database `DB`
+/// and only gives `&self` access to it. See [the `fork` method][fm] for
+/// more details.
+///
+/// [fm]: trait.ParallelDatabase#method.fork
+pub struct Frozen<DB>
+where
+    DB: ParallelDatabase,
+{
+    db: DB,
+}
+
+impl<DB> Frozen<DB>
+where
+    DB: ParallelDatabase,
+{
+    pub fn new(db: DB) -> Self {
+        Frozen { db }
+    }
+}
+
+impl<DB> std::ops::Deref for Frozen<DB>
+where
+    DB: ParallelDatabase,
+{
+    type Target = DB;
+
+    fn deref(&self) -> &DB {
+        &self.db
+    }
 }
 
 pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
