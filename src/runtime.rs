@@ -629,7 +629,7 @@ where
 {
     fn drop(&mut self) {
         // Release our read-lock without using RAII. As documented in
-        // `Frozen::new` above, this requires the unsafe keyword.
+        // `Snapshot::new` above, this requires the unsafe keyword.
         unsafe {
             self.shared_state.query_lock.raw().unlock_shared();
         }

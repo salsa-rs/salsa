@@ -1,7 +1,7 @@
 use rand::Rng;
 use salsa::Database;
-use salsa::Frozen;
 use salsa::ParallelDatabase;
+use salsa::Snapshot;
 use salsa::SweepStrategy;
 
 // Number of operations a reader performs
@@ -52,8 +52,8 @@ impl salsa::Database for StressDatabaseImpl {
 }
 
 impl salsa::ParallelDatabase for StressDatabaseImpl {
-    fn snapshot(&self) -> Frozen<StressDatabaseImpl> {
-        Frozen::new(StressDatabaseImpl {
+    fn snapshot(&self) -> Snapshot<StressDatabaseImpl> {
+        Snapshot::new(StressDatabaseImpl {
             runtime: self.runtime.snapshot(self),
         })
     }

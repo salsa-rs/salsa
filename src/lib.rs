@@ -202,7 +202,7 @@ pub trait ParallelDatabase: Database + Send {
     /// cloning over each of the fields from `self` into this new
     /// copy. For the field that stores the salsa runtime, you should
     /// use [the `Runtime::snapshot` method][rfm] to create a snapshot of the
-    /// runtime. Finally, package up the result using `Frozen::new`,
+    /// runtime. Finally, package up the result using `Snapshot::new`,
     /// which is a simple wrapper type that only gives `&self` access
     /// to the database within (thus preventing the use of methods
     /// that may mutate the inputs):
@@ -211,8 +211,8 @@ pub trait ParallelDatabase: Database + Send {
     ///
     /// ```rust,ignore
     /// impl ParallelDatabase for MyDatabaseType {
-    ///     fn snapshot(&self) -> Frozen<Self> {
-    ///         Frozen::new(
+    ///     fn snapshot(&self) -> Snapshot<Self> {
+    ///         Snapshot::new(
     ///             MyDatabaseType {
     ///                 runtime: self.runtime.snapshot(self),
     ///                 other_field: self.other_field.clone(),
@@ -227,7 +227,7 @@ pub trait ParallelDatabase: Database + Send {
     /// This second handle is intended to be used from a separate
     /// thread. Using two database handles from the **same thread**
     /// can lead to deadlock.
-    fn snapshot(&self) -> Frozen<Self>;
+    fn snapshot(&self) -> Snapshot<Self>;
 }
 
 /// Simple wrapper struct that takes ownership of a database `DB`
@@ -235,23 +235,23 @@ pub trait ParallelDatabase: Database + Send {
 /// more details.
 ///
 /// [fm]: trait.ParallelDatabase#method.snapshot
-pub struct Frozen<DB>
+pub struct Snapshot<DB>
 where
     DB: ParallelDatabase,
 {
     db: DB,
 }
 
-impl<DB> Frozen<DB>
+impl<DB> Snapshot<DB>
 where
     DB: ParallelDatabase,
 {
     pub fn new(db: DB) -> Self {
-        Frozen { db }
+        Snapshot { db }
     }
 }
 
-impl<DB> std::ops::Deref for Frozen<DB>
+impl<DB> std::ops::Deref for Snapshot<DB>
 where
     DB: ParallelDatabase,
 {

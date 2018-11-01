@@ -1,7 +1,7 @@
 use crate::signal::Signal;
 use salsa::Database;
-use salsa::Frozen;
 use salsa::ParallelDatabase;
+use salsa::Snapshot;
 use std::cell::Cell;
 use std::sync::Arc;
 
@@ -141,8 +141,8 @@ impl Database for ParDatabaseImpl {
 }
 
 impl ParallelDatabase for ParDatabaseImpl {
-    fn snapshot(&self) -> Frozen<Self> {
-        Frozen::new(ParDatabaseImpl {
+    fn snapshot(&self) -> Snapshot<Self> {
+        Snapshot::new(ParDatabaseImpl {
             runtime: self.runtime.snapshot(self),
             knobs: self.knobs.clone(),
         })

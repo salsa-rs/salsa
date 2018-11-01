@@ -1,4 +1,4 @@
-use salsa::{Database, Frozen, ParallelDatabase};
+use salsa::{Database, ParallelDatabase, Snapshot};
 use std::panic::{self, AssertUnwindSafe};
 
 salsa::query_group! {
@@ -30,8 +30,8 @@ impl salsa::Database for DatabaseStruct {
 }
 
 impl salsa::ParallelDatabase for DatabaseStruct {
-    fn snapshot(&self) -> Frozen<Self> {
-        Frozen::new(DatabaseStruct {
+    fn snapshot(&self) -> Snapshot<Self> {
+        Snapshot::new(DatabaseStruct {
             runtime: self.runtime.snapshot(self),
         })
     }
