@@ -1,11 +1,12 @@
 use crate::signal::Signal;
 use salsa::Database;
 use salsa::ParallelDatabase;
+use salsa::Snapshot;
 use std::cell::Cell;
 use std::sync::Arc;
 
 salsa::query_group! {
-    pub(crate) trait ParDatabase: Knobs + salsa::Database {
+    pub(crate) trait ParDatabase: Knobs + salsa::ParallelDatabase {
         fn input(key: char) -> usize {
             type Input;
             storage input;
@@ -17,6 +18,10 @@ salsa::query_group! {
 
         fn sum2(key: &'static str) -> usize {
             type Sum2;
+        }
+
+        fn snapshot_me() -> () {
+            type SnapshotMe;
         }
     }
 }
@@ -104,7 +109,12 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
 }
 
 fn sum2(db: &impl ParDatabase, key: &'static str) -> usize {
-    sum(db, key)
+    db.sum(key)
+}
+
+fn snapshot_me(db: &impl ParDatabase) {
+    // this should panic
+    db.snapshot();
 }
 
 #[derive(Default)]
@@ -131,11 +141,11 @@ impl Database for ParDatabaseImpl {
 }
 
 impl ParallelDatabase for ParDatabaseImpl {
-    fn fork(&self) -> Self {
-        ParDatabaseImpl {
-            runtime: self.runtime.fork(),
+    fn snapshot(&self) -> Snapshot<Self> {
+        Snapshot::new(ParDatabaseImpl {
+            runtime: self.runtime.snapshot(self),
             knobs: self.knobs.clone(),
-        }
+        })
     }
 }
 
@@ -159,6 +169,7 @@ salsa::database_storage! {
             fn input() for Input;
             fn sum() for Sum;
             fn sum2() for Sum2;
+            fn snapshot_me() for SnapshotMe;
         }
     }
 }

@@ -20,7 +20,6 @@ use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 
-pub use crate::runtime::RevisionGuard;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
 
@@ -177,13 +176,90 @@ impl Default for SweepStrategy {
 /// parallel execution, but for it to work, your query key/value types
 /// must also be `Send`, as must any additional data in your database.
 pub trait ParallelDatabase: Database + Send {
-    /// Creates a copy of this database destined for another
-    /// thread. See also `Runtime::fork`.
+    /// Creates a second handle to the database that holds the
+    /// database fixed at a particular revision. So long as this
+    /// "frozen" handle exists, any attempt to [`set`] an input will
+    /// block.
     ///
-    /// **Warning.** This second handle is intended to be used from a
-    /// separate thread. Using two database handles from the **same
-    /// thread** can lead to deadlock.
-    fn fork(&self) -> Self;
+    /// [`set`]: struct.QueryTable.html#method.set
+    ///
+    /// This is the method you are meant to use most of the time in a
+    /// parallel setting where modifications may arise asynchronously
+    /// (e.g., a language server). In this context, it is common to
+    /// wish to "fork off" a snapshot of the database performing some
+    /// series of queries in parallel and arranging the results. Using
+    /// this method for that purpose ensures that those queries will
+    /// see a consistent view of the database (it is also advisable
+    /// for those queries to use the [`is_current_revision_canceled`]
+    /// method to check for cancellation).
+    ///
+    /// [`is_current_revision_canceled`]: struct.Runtime.html#method.is_current_revision_canceled
+    ///
+    /// # How to implement this
+    ///
+    /// Typically, this method will create a second copy of your
+    /// database type (`MyDatabaseType`, in the example below),
+    /// cloning over each of the fields from `self` into this new
+    /// copy. For the field that stores the salsa runtime, you should
+    /// use [the `Runtime::snapshot` method][rfm] to create a snapshot of the
+    /// runtime. Finally, package up the result using `Snapshot::new`,
+    /// which is a simple wrapper type that only gives `&self` access
+    /// to the database within (thus preventing the use of methods
+    /// that may mutate the inputs):
+    ///
+    /// [rfm]: struct.Runtime.html#method.snapshot
+    ///
+    /// ```rust,ignore
+    /// impl ParallelDatabase for MyDatabaseType {
+    ///     fn snapshot(&self) -> Snapshot<Self> {
+    ///         Snapshot::new(
+    ///             MyDatabaseType {
+    ///                 runtime: self.runtime.snapshot(self),
+    ///                 other_field: self.other_field.clone(),
+    ///             }
+    ///         )
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// # Deadlock warning
+    ///
+    /// This second handle is intended to be used from a separate
+    /// thread. Using two database handles from the **same thread**
+    /// can lead to deadlock.
+    fn snapshot(&self) -> Snapshot<Self>;
+}
+
+/// Simple wrapper struct that takes ownership of a database `DB`
+/// and only gives `&self` access to it. See [the `snapshot` method][fm] for
+/// more details.
+///
+/// [fm]: trait.ParallelDatabase#method.snapshot
+pub struct Snapshot<DB>
+where
+    DB: ParallelDatabase,
+{
+    db: DB,
+}
+
+impl<DB> Snapshot<DB>
+where
+    DB: ParallelDatabase,
+{
+    pub fn new(db: DB) -> Self {
+        Snapshot { db }
+    }
+}
+
+impl<DB> std::ops::Deref for Snapshot<DB>
+where
+    DB: ParallelDatabase,
+{
+    type Target = DB;
+
+    fn deref(&self) -> &DB {
+        &self.db
+    }
 }
 
 pub trait Query<DB: Database>: Debug + Default + Sized + 'static {

@@ -5,7 +5,7 @@ use salsa::{Database, ParallelDatabase};
 /// write. Check that we recompute the result in next revision, even
 /// though none of the inputs have changed.
 #[test]
-fn in_par_get_set_cancellation() {
+fn in_par_get_set_cancellation_immediate() {
     let db = ParDatabaseImpl::default();
 
     db.query(Input).set('a', 100);
@@ -14,52 +14,39 @@ fn in_par_get_set_cancellation() {
     db.query(Input).set('d', 0);
 
     let thread1 = std::thread::spawn({
-        let db = db.fork();
+        let db = db.snapshot();
         move || {
-            let v1 = db.knobs().sum_signal_on_entry.with_value(1, || {
+            // This will not return until it sees cancellation is
+            // signaled.
+            db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
                     .sum_wait_for_cancellation
                     .with_value(true, || db.sum("abc"))
-            });
-
-            // check that we observed cancellation
-            assert_eq!(v1, std::usize::MAX);
-
-            // at this point, we have observed cancellation, so let's
-            // wait until the `set` is known to have occurred.
-            db.wait_for(2);
-
-            // Now when we read we should get the correct sums. Note
-            // in particular that we re-compute the sum of `"abc"`
-            // even though none of our inputs have changed.
-            let v2 = db.sum("abc");
-            (v1, v2)
+            })
         }
     });
 
+    // Wait until we have entered `sum` in the other thread.
+    db.wait_for(1);
+
+    // Try to set the input. This will signal cancellation.
+    db.query(Input).set('d', 1000);
+
+    // This should re-compute the value (even though no input has changed).
     let thread2 = std::thread::spawn({
-        let db = db.fork();
-        move || {
-            // Wait until we have entered `sum` in the other thread.
-            db.wait_for(1);
-
-            db.query(Input).set('d', 1000);
-
-            // Signal that we have *set* `d`
-            db.signal(2);
-
-            db.sum("d")
-        }
+        let db = db.snapshot();
+        move || db.sum("abc")
     });
 
-    assert_eq!(thread1.join().unwrap(), (std::usize::MAX, 111));
-    assert_eq!(thread2.join().unwrap(), 1000);
+    assert_eq!(db.sum("d"), 1000);
+    assert_eq!(thread1.join().unwrap(), std::usize::MAX);
+    assert_eq!(thread2.join().unwrap(), 111);
 }
 
 /// Here, we check that `sum`'s cancellation is propagated
 /// to `sum2` properly.
 #[test]
-fn in_par_get_set_transitive_cancellation() {
+fn in_par_get_set_cancellation_transitive() {
     let db = ParDatabaseImpl::default();
 
     db.query(Input).set('a', 100);
@@ -68,44 +55,31 @@ fn in_par_get_set_transitive_cancellation() {
     db.query(Input).set('d', 0);
 
     let thread1 = std::thread::spawn({
-        let db = db.fork();
+        let db = db.snapshot();
         move || {
-            let v1 = db.knobs().sum_signal_on_entry.with_value(1, || {
+            // This will not return until it sees cancellation is
+            // signaled.
+            db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
                     .sum_wait_for_cancellation
                     .with_value(true, || db.sum2("abc"))
-            });
-
-            // check that we observed cancellation
-            assert_eq!(v1, std::usize::MAX);
-
-            // at this point, we have observed cancellation, so let's
-            // wait until the `set` is known to have occurred.
-            db.wait_for(2);
-
-            // Now when we read we should get the correct sums. Note
-            // in particular that we re-compute the sum of `"abc"`
-            // even though none of our inputs have changed.
-            let v2 = db.sum2("abc");
-            (v1, v2)
+            })
         }
     });
 
+    // Wait until we have entered `sum` in the other thread.
+    db.wait_for(1);
+
+    // Try to set the input. This will signal cancellation.
+    db.query(Input).set('d', 1000);
+
+    // This should re-compute the value (even though no input has changed).
     let thread2 = std::thread::spawn({
-        let db = db.fork();
-        move || {
-            // Wait until we have entered `sum` in the other thread.
-            db.wait_for(1);
-
-            db.query(Input).set('d', 1000);
-
-            // Signal that we have *set* `d`
-            db.signal(2);
-
-            db.sum("d")
-        }
+        let db = db.snapshot();
+        move || db.sum2("abc")
     });
 
-    assert_eq!(thread1.join().unwrap(), (std::usize::MAX, 111));
-    assert_eq!(thread2.join().unwrap(), 1000);
+    assert_eq!(db.sum2("d"), 1000);
+    assert_eq!(thread1.join().unwrap(), std::usize::MAX);
+    assert_eq!(thread2.join().unwrap(), 111);
 }

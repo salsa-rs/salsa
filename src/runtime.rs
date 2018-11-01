@@ -1,7 +1,7 @@
 use crate::{Database, Event, EventKind, SweepStrategy};
-use lock_api::RawRwLock;
+use lock_api::{RawRwLock, RawRwLockRecursive};
 use log::debug;
-use parking_lot::{Mutex, RwLock, RwLockReadGuard};
+use parking_lot::{Mutex, RwLock};
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 use std::cell::RefCell;
@@ -20,9 +20,19 @@ pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHashe
 /// associated with it. Normally, therefore, you only do this once, at
 /// the start of your application.
 pub struct Runtime<DB: Database> {
+    /// Our unique runtime id.
     id: RuntimeId,
-    shared_state: Arc<SharedState<DB>>,
+
+    /// If this is a "forked" runtime, then the `revision_guard` will
+    /// be `Some`; this guard holds a read-lock on the global query
+    /// lock.
+    revision_guard: Option<RevisionGuard<DB>>,
+
+    /// Local state that is specific to this runtime (thread).
     local_state: RefCell<LocalState<DB>>,
+
+    /// Shared state that is accessible via all runtimes.
+    shared_state: Arc<SharedState<DB>>,
 }
 
 impl<DB> Default for Runtime<DB>
@@ -32,6 +42,7 @@ where
     fn default() -> Self {
         Runtime {
             id: RuntimeId { counter: 0 },
+            revision_guard: None,
             shared_state: Default::default(),
             local_state: Default::default(),
         }
@@ -63,17 +74,34 @@ where
         &self.shared_state.storage
     }
 
-    /// As with `Database::fork`, creates a second copy of the runtime
-    /// meant to be used from another thread.
+    /// Returns a "forked" runtime, suitable for use in a forked
+    /// database. "Forked" runtimes hold a read-lock on the global
+    /// state, which means that any attempt to `set` an input will
+    /// block until the forked runtime is dropped. See
+    /// `ParallelDatabase::snapshot` for more information.
     ///
     /// **Warning.** This second handle is intended to be used from a
     /// separate thread. Using two database handles from the **same
     /// thread** can lead to deadlock.
-    pub fn fork(&self) -> Self {
+    pub fn snapshot(&self, from_db: &DB) -> Self {
+        assert!(
+            Arc::ptr_eq(&self.shared_state, &from_db.salsa_runtime().shared_state),
+            "invoked `snapshot` with a non-matching database"
+        );
+
+        if self.local_state.borrow().query_in_progress() {
+            panic!("it is not legal to `snapshot` during a query (see salsa-rs/salsa#80)");
+        }
+
+        let revision_guard = RevisionGuard::new(&self.shared_state);
+
+        let id = RuntimeId {
+            counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),
+        };
+
         Runtime {
-            id: RuntimeId {
-                counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),
-            },
+            id,
+            revision_guard: Some(revision_guard),
             shared_state: self.shared_state.clone(),
             local_state: Default::default(),
         }
@@ -103,52 +131,8 @@ where
         db.for_each_query(|query_storage| query_storage.sweep(db, strategy));
     }
 
-    /// Indicates that a derived query has begun to execute; if this is the
-    /// first derived query on this thread, then acquires a read-lock on the
-    /// runtime to prevent us from moving to a new revision until that query
-    /// completes.
-    ///
-    /// (However, if other threads invoke `increment_revision`, then
-    /// the current revision may be considered cancelled, which can be
-    /// observed through `is_current_revision_canceled`.)
-    pub(crate) fn start_query(&self) -> Option<QueryGuard<'_, DB>> {
-        let mut local_state = self.local_state.borrow_mut();
-        if !local_state.query_in_progress {
-            local_state.query_in_progress = true;
-            let guard = self.shared_state.query_lock.read();
-
-            Some(QueryGuard::new(self, guard))
-        } else {
-            None
-        }
-    }
-
-    /// Locks the current revision and returns a guard object that --
-    /// when dropped -- will unlock it. While a revision is locked,
-    /// queries can execute as normal but calls to `set` will block
-    /// (note that calls to `set` *do* set the cancellation flag,
-    /// which you can can check with
-    /// `is_current_revision_canceled`). The intention is that you can
-    /// lock the revision and then do multiple queries, thus
-    /// guaranteeing that all of those queries execute against a
-    /// consistent "view" of the database.
-    ///
-    /// Note that, unlike most RAII guards, the guard returned by this
-    /// method does not borrow the database or the runtime
-    /// (internally, it uses an `Arc` handle). This means it can be
-    /// sent to other threads without a problem -- the lock persists
-    /// as long as the guard has not yet been dropped.
-    ///
-    /// ### Deadlock warning
-    ///
-    /// If you invoke `lock_revision` and then, from the same thread,
-    /// call `set` on some input, you will get a deadlock.
-    pub fn lock_revision(&self) -> RevisionGuard<DB> {
-        RevisionGuard::new(&self.shared_state)
-    }
-
     /// The unique identifier attached to this `SalsaRuntime`. Each
-    /// forked runtime has a distinct identifier.
+    /// snapshotted runtime has a distinct identifier.
     #[inline]
     pub fn id(&self) -> RuntimeId {
         self.id
@@ -206,7 +190,7 @@ where
     pub(crate) fn with_incremented_revision<R>(&self, op: impl FnOnce(Revision) -> R) -> R {
         log::debug!("increment_revision()");
 
-        if self.query_in_progress() {
+        if !self.permits_increment() {
             panic!("increment_revision invoked during a query computation");
         }
 
@@ -245,8 +229,8 @@ where
         op(new_revision)
     }
 
-    pub(crate) fn query_in_progress(&self) -> bool {
-        self.local_state.borrow().query_in_progress
+    pub(crate) fn permits_increment(&self) -> bool {
+        self.revision_guard.is_none() && !self.local_state.borrow().query_in_progress()
     }
 
     pub(crate) fn execute_query_implementation<V>(
@@ -366,7 +350,7 @@ where
 struct SharedState<DB: Database> {
     storage: DB::DatabaseStorage,
 
-    /// Stores the next id to use for a forked runtime (starts at 1).
+    /// Stores the next id to use for a snapshotted runtime (starts at 1).
     next_id: AtomicUsize,
 
     /// Whenever derived queries are executing, they acquire this lock
@@ -415,67 +399,20 @@ impl<DB: Database> Default for SharedState<DB> {
 /// State that will be specific to a single execution threads (when we
 /// support multiple threads)
 struct LocalState<DB: Database> {
-    query_in_progress: bool,
     query_stack: Vec<ActiveQuery<DB>>,
 }
 
 impl<DB: Database> Default for LocalState<DB> {
     fn default() -> Self {
         LocalState {
-            query_in_progress: false,
             query_stack: Default::default(),
         }
     }
 }
 
-pub(crate) struct QueryGuard<'db, DB: Database + 'db> {
-    db: &'db Runtime<DB>,
-    lock: RwLockReadGuard<'db, ()>,
-}
-
-impl<'db, DB: Database> QueryGuard<'db, DB> {
-    fn new(db: &'db Runtime<DB>, lock: RwLockReadGuard<'db, ()>) -> Self {
-        Self { db, lock }
-    }
-}
-
-impl<'db, DB: Database> Drop for QueryGuard<'db, DB> {
-    fn drop(&mut self) {
-        let mut local_state = self.db.local_state.borrow_mut();
-        assert!(local_state.query_in_progress);
-        local_state.query_in_progress = false;
-    }
-}
-
-/// The guard returned by `lock_revision`. Once this guard is dropped,
-/// the revision will be unlocked, and calls to `set` can proceed.
-pub struct RevisionGuard<DB: Database> {
-    shared_state: Arc<SharedState<DB>>,
-}
-
-impl<DB: Database> RevisionGuard<DB> {
-    /// Creates a new revision guard, acquiring the query read-lock in the process.
-    fn new(shared_state: &Arc<SharedState<DB>>) -> Self {
-        // Acquire the read-lock without using RAII. This requires the
-        // unsafe keyword because, if we were to unlock the lock this way,
-        // we would screw up other people using the safe APIs.
-        unsafe {
-            shared_state.query_lock.raw().lock_shared();
-        }
-
-        Self {
-            shared_state: shared_state.clone(),
-        }
-    }
-}
-
-impl<DB: Database> Drop for RevisionGuard<DB> {
-    fn drop(&mut self) {
-        // Release our read-lock without using RAII. As in `new`
-        // above, this requires the unsafe keyword.
-        unsafe {
-            self.shared_state.query_lock.raw().unlock_shared();
-        }
+impl<DB: Database> LocalState<DB> {
+    fn query_in_progress(&self) -> bool {
+        !self.query_stack.is_empty()
     }
 }
 
@@ -647,6 +584,54 @@ impl<DB: Database> DependencyGraph<DB> {
         for from_id in &vec {
             let to_id1 = self.edges.remove(from_id);
             assert_eq!(Some(to_id), to_id1);
+        }
+    }
+}
+
+struct RevisionGuard<DB: Database> {
+    shared_state: Arc<SharedState<DB>>,
+}
+
+impl<DB> RevisionGuard<DB>
+where
+    DB: Database,
+{
+    fn new(shared_state: &Arc<SharedState<DB>>) -> Self {
+        // Subtle: we use a "recursive" lock here so that it is not an
+        // error to acquire a read-lock when one is already held (this
+        // happens when a query uses `snapshot` to spawn off parallel
+        // workers, for example).
+        //
+        // This has the side-effect that we are responsible to ensure
+        // that people contending for the write lock do not starve,
+        // but this is what we achieve via the cancellation mechanism.
+        //
+        // (In particular, since we only ever have one "mutating
+        // handle" to the database, the only contention for the global
+        // query lock occurs when there are "futures" evaluating
+        // queries in parallel, and those futures hold a read-lock
+        // already, so the starvation problem is more about them bring
+        // themselves to a close, versus preventing other people from
+        // *starting* work).
+        unsafe {
+            shared_state.query_lock.raw().lock_shared_recursive();
+        }
+
+        Self {
+            shared_state: shared_state.clone(),
+        }
+    }
+}
+
+impl<DB> Drop for RevisionGuard<DB>
+where
+    DB: Database,
+{
+    fn drop(&mut self) {
+        // Release our read-lock without using RAII. As documented in
+        // `Snapshot::new` above, this requires the unsafe keyword.
+        unsafe {
+            self.shared_state.query_lock.raw().unlock_shared();
         }
     }
 }

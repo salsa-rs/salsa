@@ -5,21 +5,23 @@ use salsa::{Database, ParallelDatabase};
 /// Should be atomic.
 #[test]
 fn in_par_get_set_race() {
-    let db1 = ParDatabaseImpl::default();
-    let db2 = db1.fork();
+    let db = ParDatabaseImpl::default();
 
-    db1.query(Input).set('a', 100);
-    db1.query(Input).set('b', 010);
-    db1.query(Input).set('c', 001);
+    db.query(Input).set('a', 100);
+    db.query(Input).set('b', 010);
+    db.query(Input).set('c', 001);
 
-    let thread1 = std::thread::spawn(move || {
-        let v = db1.sum("abc");
-        v
+    let thread1 = std::thread::spawn({
+        let db = db.snapshot();
+        move || {
+            let v = db.sum("abc");
+            v
+        }
     });
 
     let thread2 = std::thread::spawn(move || {
-        db2.query(Input).set('a', 1000);
-        db2.sum("a")
+        db.query(Input).set('a', 1000);
+        db.sum("a")
     });
 
     // If the 1st thread runs first, you get 111, otherwise you get
