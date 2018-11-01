@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use crate::Database;
 use crate::Query;
 use crate::QueryTable;

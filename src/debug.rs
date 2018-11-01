@@ -7,7 +7,11 @@ use crate::Query;
 use crate::QueryTable;
 use std::iter::FromIterator;
 
+/// Additional methods on queries that can be used to "peek into"
+/// their current state. These methods are meant for debugging and
+/// observing the effects of garbage collection etc.
 pub trait DebugQueryTable {
+    /// Key of this query.
     type Key;
 
     /// True if salsa thinks that the value for `key` is a

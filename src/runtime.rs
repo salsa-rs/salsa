@@ -65,6 +65,8 @@ impl<DB> Runtime<DB>
 where
     DB: Database,
 {
+    /// Create a new runtime; equivalent to `Self::default`. This is
+    /// used when creating a new database.
     pub fn new() -> Self {
         Self::default()
     }
@@ -480,11 +482,19 @@ impl<DB: Database> ActiveQuery<DB> {
     }
 }
 
+/// A unique identifier for a particular runtime. Each time you create
+/// a snapshot, a fresh `RuntimeId` is generated. Once a snapshot is
+/// complete, its `RuntimeId` may potentially be re-used.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RuntimeId {
     counter: usize,
 }
 
+/// A unique identifier for the current version of the database; each
+/// time an input is changed, the revision number is incremented.
+/// `Revision` is used internally to track which values may need to be
+/// recomputed, but not something you should have to interact with
+/// directly as a user of salsa.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Revision {
     generation: u64,

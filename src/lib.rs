@@ -1,5 +1,12 @@
 #![warn(rust_2018_idioms)]
+#![warn(missing_docs)]
 #![allow(dead_code)]
+
+//! The salsa crate is a crate for incremental recomputation.  It
+//! permits you to define a "database" of queries with both inputs and
+//! values derived from those inputs; as you set the inputs, you can
+//! re-execute the derived queries and it will try to re-use results
+//! from previous invocations as appropriate.
 
 mod derived;
 mod input;
@@ -52,8 +59,11 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
         self.salsa_runtime().sweep_all(self, strategy);
     }
 
-    /// Get access to extra methods pertaining to a given query,
-    /// notably `set` (for inputs).
+    /// Get access to extra methods pertaining to a given query. For
+    /// example, you can use this to run the GC (`sweep`) across a
+    /// single input. You can also use it to invoke a query, though
+    /// it's more common to use the trait method on the database
+    /// itself.
     #[allow(unused_variables)]
     fn query<Q>(&self, query: Q) -> QueryTable<'_, Self, Q>
     where
@@ -63,8 +73,33 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
         <Self as plumbing::GetQueryTable<Q>>::get_query_table(self)
     }
 
-    /// Get access to extra methods pertaining to a given query,
-    /// notably `set` (for inputs).
+    /// Like `query`, but gives access to methods for setting the
+    /// value of an input.
+    ///
+    /// # Threads, cancellation, and blocking
+    ///
+    /// Mutating the value of a query cannot be done while there are
+    /// still other queries executing. If you are using your database
+    /// within a single thread, this is not a problem: you only have
+    /// `&self` access to the database, but this method requires `&mut
+    /// self`.
+    ///
+    /// However, if you have used `snapshot` to create other threads,
+    /// then attempts to `set` will **block the current thread** until
+    /// those snapshots are dropped (usually when those threads
+    /// complete). This also implies that if you create a snapshot but
+    /// do not send it to another thread, then invoking `set` will
+    /// deadlock.
+    ///
+    /// Before blocking, the thread that is attempting to `set` will
+    /// also set a cancellation flag. In the threads operating on
+    /// snapshots, you can use the [`is_current_revision_canceled`]
+    /// method to check for this flag and bring those operations to a
+    /// close, thus allowing the `set` to succeed. Ignoring this flag
+    /// may lead to "starvation", meaning that the thread attempting
+    /// to `set` has to wait a long, long time. =)
+    ///
+    /// [`is_current_revision_canceled`]: struct.Runtime.html#method.is_current_revision_canceled
     #[allow(unused_variables)]
     fn query_mut<Q>(&mut self, query: Q) -> QueryTableMut<'_, Self, Q>
     where
@@ -82,8 +117,15 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     }
 }
 
+/// The `Event` struct identifies various notable things that can
+/// occur during salsa execution. Instances of this struct are given
+/// to `salsa_event`.
 pub struct Event<DB: Database> {
+    /// The id of the snapshot that triggered the event.  Usually
+    /// 1-to-1 with a thread, as well.
     pub runtime_id: RuntimeId,
+
+    /// What sort of event was it.
     pub kind: EventKind<DB>,
 }
 
@@ -96,13 +138,17 @@ impl<DB: Database> fmt::Debug for Event<DB> {
     }
 }
 
+/// An enum identifying the various kinds of events that can occur.
 pub enum EventKind<DB: Database> {
     /// Occurs when we found that all inputs to a memoized value are
     /// up-to-date and hence the value can be re-used without
     /// executing the closure.
     ///
     /// Executes before the "re-used" value is returned.
-    DidValidateMemoizedValue { descriptor: DB::QueryDescriptor },
+    DidValidateMemoizedValue {
+        /// The descriptor for the affected value. Implements `Debug`.
+        descriptor: DB::QueryDescriptor,
+    },
 
     /// Indicates that another thread (with id `other_runtime_id`) is processing the
     /// given query (`descriptor`), so we will block until they
@@ -114,18 +160,27 @@ pub enum EventKind<DB: Database> {
     /// (NB: you can find the `id` of the current thread via the
     /// `salsa_runtime`)
     WillBlockOn {
+        /// The id of the runtime we will block on.
         other_runtime_id: RuntimeId,
+
+        /// The descriptor for the affected value. Implements `Debug`.
         descriptor: DB::QueryDescriptor,
     },
 
     /// Indicates that the input value will change after this
     /// callback, e.g. due to a call to `set`.
-    WillChangeInputValue { descriptor: DB::QueryDescriptor },
+    WillChangeInputValue {
+        /// The descriptor for the affected value. Implements `Debug`.
+        descriptor: DB::QueryDescriptor,
+    },
 
     /// Indicates that the function for this query will be executed.
     /// This is either because it has never executed before or because
     /// its inputs may be out of date.
-    WillExecute { descriptor: DB::QueryDescriptor },
+    WillExecute {
+        /// The descriptor for the affected value. Implements `Debug`.
+        descriptor: DB::QueryDescriptor,
+    },
 }
 
 impl<DB: Database> fmt::Debug for EventKind<DB> {
@@ -241,9 +296,9 @@ pub trait ParallelDatabase: Database + Send {
     fn snapshot(&self) -> Snapshot<Self>;
 }
 
-/// Simple wrapper struct that takes ownership of a database `DB`
-/// and only gives `&self` access to it. See [the `snapshot` method][fm] for
-/// more details.
+/// Simple wrapper struct that takes ownership of a database `DB` and
+/// only gives `&self` access to it. See [the `snapshot` method][fm]
+/// for more details.
 ///
 /// [fm]: trait.ParallelDatabase#method.snapshot
 pub struct Snapshot<DB>
@@ -257,6 +312,9 @@ impl<DB> Snapshot<DB>
 where
     DB: ParallelDatabase,
 {
+    /// Creates a `Snapshot` that wraps the given database handle
+    /// `db`. From this point forward, only shared references to `db`
+    /// will be possible.
     pub fn new(db: DB) -> Self {
         Snapshot { db }
     }
@@ -273,12 +331,24 @@ where
     }
 }
 
+/// Trait implements by all of the "special types" associated with
+/// each of your queries.
 pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
+    /// Type that you you give as a parameter -- for queries with zero
+    /// or more than one input, this will be a tuple.
     type Key: Clone + Debug + Hash + Eq;
+
+    /// What value does the query return?
     type Value: Clone + Debug;
+
+    /// Internal struct storing the values for the query.
     type Storage: plumbing::QueryStorageOps<DB, Self> + Send + Sync;
 }
 
+/// Return value from [the `query` method] on `Database`.
+/// Gives access to various less common operations on queries.
+///
+/// [the `query_mut` method]: trait.Database#method.query
 #[derive(new)]
 pub struct QueryTable<'me, DB, Q>
 where
@@ -295,6 +365,10 @@ where
     DB: Database,
     Q: Query<DB>,
 {
+    /// Execute the query on a given input. Usually it's easier to
+    /// invoke the trait method directly. Note that for variadic
+    /// queries (those with no inputs, or those with more than one
+    /// input) the key will be a tuple.
     pub fn get(&self, key: Q::Key) -> Q::Value {
         let descriptor = self.descriptor(&key);
         self.storage
@@ -304,6 +378,8 @@ where
             })
     }
 
+    /// Remove all values for this query that have not been used in
+    /// the most recent revision.
     pub fn sweep(&self, strategy: SweepStrategy)
     where
         Q::Storage: plumbing::QueryStorageMassOps<DB>,
@@ -316,6 +392,11 @@ where
     }
 }
 
+/// Return value from [the `query_mut` method] on `Database`.
+/// Gives access to the `set` method, notably, that is used to
+/// set the value of an input query.
+///
+/// [the `query_mut` method]: trait.Database#method.query_mut
 #[derive(new)]
 pub struct QueryTableMut<'me, DB, Q>
 where
@@ -338,6 +419,11 @@ where
 
     /// Assign a value to an "input query". Must be used outside of
     /// an active query computation.
+    ///
+    /// If you are using `snapshot`, see the notes on blocking
+    /// and cancellation on [the `query_mut` method].
+    ///
+    /// [the `query_mut` method]: trait.Database#method.query_mut
     pub fn set(&self, key: Q::Key, value: Q::Value)
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
@@ -349,6 +435,11 @@ where
     /// Assign a value to an "input query", with the additional
     /// promise that this value will **never change**. Must be used
     /// outside of an active query computation.
+    ///
+    /// If you are using `snapshot`, see the notes on blocking
+    /// and cancellation on [the `query_mut` method].
+    ///
+    /// [the `query_mut` method]: trait.Database#method.query_mut
     pub fn set_constant(&self, key: Q::Key, value: Q::Value)
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
@@ -667,8 +758,31 @@ macro_rules! query_group {
     };
 }
 
-/// This macro generates the "query storage" that goes into your query
-/// context.
+/// This macro generates the "query storage" that goes into your database.
+/// It requires you to list all of the query groups that you need as well
+/// as the queries within those groups. The format looks like so:
+///
+/// ```rust,ignore
+/// salsa::database_storage! {
+///     struct MyDatabaseStorage for MyDatabase {
+///         impl MyQueryGroup {
+///             fn my_query1() for MyQuery1;
+///             fn my_query2() for MyQuery2;
+///         }
+///         // ... other query groups go here ...
+///     }
+/// }
+/// ```
+///
+/// Here, `MyDatabase` should be the name of your database type.  The
+/// macro will then generate a struct named `MyDatabaseStorage` that
+/// is used by the [`salsa::Runtime`]. `MyQueryGroup` should be the
+/// name of your query group.
+///
+/// See [the `hello_world` example][hw] for more details.
+///
+/// [`salsa::Runtime`]: struct.Runtime.html
+/// [hw]: https://github.com/salsa-rs/salsa/tree/master/examples/hello_world
 #[macro_export]
 macro_rules! database_storage {
     (
