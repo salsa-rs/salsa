@@ -89,9 +89,9 @@ fn true_parallel_same_keys() {
 /// we force `thread1` to panic and should see that propagate to `thread2`.
 #[test]
 fn true_parallel_propagate_panic() {
-    let db = ParDatabaseImpl::default();
+    let mut db = ParDatabaseImpl::default();
 
-    db.query(Input).set('a', 1);
+    db.query_mut(Input).set('a', 1);
 
     // `thread1` will wait_for a barrier in the start of `sum`. Once it can
     // continue, it will panic.
@@ -99,7 +99,7 @@ fn true_parallel_propagate_panic() {
         let db = db.snapshot();
         move || {
             let v = db.knobs().sum_signal_on_entry.with_value(1, || {
-                db.knobs().sum_wait_for_on_exit.with_value(2, || {
+                db.knobs().sum_wait_for_on_entry.with_value(2, || {
                     db.knobs().sum_should_panic.with_value(true, || db.sum("a"))
                 })
             });
