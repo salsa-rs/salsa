@@ -66,10 +66,10 @@ salsa::database_storage! {
 
 #[test]
 fn execute() {
-    let db = DatabaseStruct::default();
+    let mut db = DatabaseStruct::default();
 
     // test what happens with inputs:
-    db.query(Input).set((1, 2), 3);
+    db.query_mut(Input).set((1, 2), 3);
     assert_eq!(db.input(1, 2), 3);
 
     assert_eq!(db.none(), 22);

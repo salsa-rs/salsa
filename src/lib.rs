@@ -63,6 +63,17 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
         <Self as plumbing::GetQueryTable<Q>>::get_query_table(self)
     }
 
+    /// Get access to extra methods pertaining to a given query,
+    /// notably `set` (for inputs).
+    #[allow(unused_variables)]
+    fn query_mut<Q>(&mut self, query: Q) -> QueryTableMut<'_, Self, Q>
+    where
+        Q: Query<Self>,
+        Self: plumbing::GetQueryTable<Q>,
+    {
+        <Self as plumbing::GetQueryTable<Q>>::get_query_table_mut(self)
+    }
+
     /// This function is invoked at key points in the salsa
     /// runtime. It permits the database to be customized and to
     /// inject logging or other custom behavior.
@@ -300,6 +311,31 @@ where
         self.storage.sweep(self.db, strategy);
     }
 
+    fn descriptor(&self, key: &Q::Key) -> DB::QueryDescriptor {
+        (self.descriptor_fn)(self.db, key)
+    }
+}
+
+#[derive(new)]
+pub struct QueryTableMut<'me, DB, Q>
+where
+    DB: Database + 'me,
+    Q: Query<DB> + 'me,
+{
+    db: &'me DB,
+    storage: &'me Q::Storage,
+    descriptor_fn: fn(&DB, &Q::Key) -> DB::QueryDescriptor,
+}
+
+impl<DB, Q> QueryTableMut<'_, DB, Q>
+where
+    DB: Database,
+    Q: Query<DB>,
+{
+    fn descriptor(&self, key: &Q::Key) -> DB::QueryDescriptor {
+        (self.descriptor_fn)(self.db, key)
+    }
+
     /// Assign a value to an "input query". Must be used outside of
     /// an active query computation.
     pub fn set(&self, key: Q::Key, value: Q::Value)
@@ -341,10 +377,6 @@ where
         Q::Storage: plumbing::UncheckedMutQueryStorageOps<DB, Q>,
     {
         self.storage.set_unchecked(self.db, &key, value);
-    }
-
-    fn descriptor(&self, key: &Q::Key) -> DB::QueryDescriptor {
-        (self.descriptor_fn)(self.db, key)
     }
 }
 
@@ -736,6 +768,24 @@ macro_rules! database_storage {
                         db: &Self,
                     ) -> $crate::QueryTable<'_, Self, $QueryType> {
                         $crate::QueryTable::new(
+                            db,
+                            &$crate::Database::salsa_runtime(db)
+                                .storage()
+                                .$query_method,
+                            |_, key| {
+                                let key = std::clone::Clone::clone(key);
+                                __SalsaQueryDescriptor {
+                                    kind: __SalsaQueryDescriptorKind::$query_method(key),
+                                }
+                            },
+                        )
+                    }
+
+                    fn get_query_table_mut(
+                        db: &mut Self,
+                    ) -> $crate::QueryTableMut<'_, Self, $QueryType> {
+                        let db = &*db;
+                        $crate::QueryTableMut::new(
                             db,
                             &$crate::Database::salsa_runtime(db)
                                 .storage()

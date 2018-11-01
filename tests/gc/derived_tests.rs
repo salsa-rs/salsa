@@ -15,10 +15,10 @@ macro_rules! assert_keys {
 
 #[test]
 fn compute_one() {
-    let db = db::DatabaseImpl::default();
+    let mut db = db::DatabaseImpl::default();
 
     // Will compute fibonacci(5)
-    db.query(UseTriangular).set(5, false);
+    db.query_mut(UseTriangular).set(5, false);
     db.compute(5);
 
     db.salsa_runtime().next_revision();
@@ -50,14 +50,14 @@ fn compute_one() {
 
 #[test]
 fn compute_switch() {
-    let db = db::DatabaseImpl::default();
+    let mut db = db::DatabaseImpl::default();
 
     // Will compute fibonacci(5)
-    db.query(UseTriangular).set(5, false);
+    db.query_mut(UseTriangular).set(5, false);
     assert_eq!(db.compute(5), 5);
 
     // Change to triangular mode
-    db.query(UseTriangular).set(5, true);
+    db.query_mut(UseTriangular).set(5, true);
 
     // Now computes triangular(5)
     assert_eq!(db.compute(5), 15);
@@ -107,14 +107,14 @@ fn compute_switch() {
 /// Test a query with multiple layers of keys.
 #[test]
 fn compute_all() {
-    let db = db::DatabaseImpl::default();
+    let mut db = db::DatabaseImpl::default();
 
     for i in 0..6 {
-        db.query(UseTriangular).set(i, (i % 2) != 0);
+        db.query_mut(UseTriangular).set(i, (i % 2) != 0);
     }
 
-    db.query(Min).set((), 0);
-    db.query(Max).set((), 6);
+    db.query_mut(Min).set((), 0);
+    db.query_mut(Max).set((), 6);
 
     db.compute_all();
     db.salsa_runtime().next_revision();
@@ -133,7 +133,7 @@ fn compute_all() {
     }
 
     // Reduce the range to exclude index 5.
-    db.query(Max).set((), 5);
+    db.query_mut(Max).set((), 5);
     db.compute_all();
 
     assert_keys! {

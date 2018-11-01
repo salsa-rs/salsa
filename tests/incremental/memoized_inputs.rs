@@ -24,10 +24,10 @@ fn max(db: &impl MemoizedInputsContext) -> usize {
 
 #[test]
 fn revalidate() {
-    let db = &TestContextImpl::default();
+    let db = &mut TestContextImpl::default();
 
-    db.query(Input1).set((), 0);
-    db.query(Input2).set((), 0);
+    db.query_mut(Input1).set((), 0);
+    db.query_mut(Input2).set((), 0);
 
     let v = db.max();
     assert_eq!(v, 0);
@@ -37,7 +37,7 @@ fn revalidate() {
     assert_eq!(v, 0);
     db.assert_log(&[]);
 
-    db.query(Input1).set((), 44);
+    db.query_mut(Input1).set((), 44);
     db.assert_log(&[]);
 
     let v = db.max();
@@ -48,11 +48,11 @@ fn revalidate() {
     assert_eq!(v, 44);
     db.assert_log(&[]);
 
-    db.query(Input1).set((), 44);
+    db.query_mut(Input1).set((), 44);
     db.assert_log(&[]);
-    db.query(Input2).set((), 66);
+    db.query_mut(Input2).set((), 66);
     db.assert_log(&[]);
-    db.query(Input1).set((), 64);
+    db.query_mut(Input1).set((), 64);
     db.assert_log(&[]);
 
     let v = db.max();
@@ -68,16 +68,16 @@ fn revalidate() {
 /// triggers a new revision.
 #[test]
 fn set_after_no_change() {
-    let db = &TestContextImpl::default();
+    let db = &mut TestContextImpl::default();
 
-    db.query(Input2).set((), 0);
+    db.query_mut(Input2).set((), 0);
 
-    db.query(Input1).set((), 44);
+    db.query_mut(Input1).set((), 44);
     let v = db.max();
     assert_eq!(v, 44);
     db.assert_log(&["Max invoked"]);
 
-    db.query(Input1).set((), 44);
+    db.query_mut(Input1).set((), 44);
     let v = db.max();
     assert_eq!(v, 44);
     db.assert_log(&["Max invoked"]);

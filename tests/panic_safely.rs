@@ -48,7 +48,7 @@ salsa::database_storage! {
 
 #[test]
 fn should_panic_safely() {
-    let db = DatabaseStruct::default();
+    let mut db = DatabaseStruct::default();
 
     // Invoke `db.panic_safely() without having set `db.one`. `db.one` will
     // default to 0 and we should catch the panic.
@@ -59,7 +59,7 @@ fn should_panic_safely() {
     assert!(result.is_err());
 
     // Set `db.one` to 1 and assert ok
-    db.query(One).set((), 1);
+    db.query_mut(One).set((), 1);
     let result = panic::catch_unwind(AssertUnwindSafe(|| db.panic_safely()));
     assert!(result.is_ok())
 }

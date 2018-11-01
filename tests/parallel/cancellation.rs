@@ -6,12 +6,12 @@ use salsa::{Database, ParallelDatabase};
 /// though none of the inputs have changed.
 #[test]
 fn in_par_get_set_cancellation_immediate() {
-    let db = ParDatabaseImpl::default();
+    let mut db = ParDatabaseImpl::default();
 
-    db.query(Input).set('a', 100);
-    db.query(Input).set('b', 010);
-    db.query(Input).set('c', 001);
-    db.query(Input).set('d', 0);
+    db.query_mut(Input).set('a', 100);
+    db.query_mut(Input).set('b', 010);
+    db.query_mut(Input).set('c', 001);
+    db.query_mut(Input).set('d', 0);
 
     let thread1 = std::thread::spawn({
         let db = db.snapshot();
@@ -30,7 +30,7 @@ fn in_par_get_set_cancellation_immediate() {
     db.wait_for(1);
 
     // Try to set the input. This will signal cancellation.
-    db.query(Input).set('d', 1000);
+    db.query_mut(Input).set('d', 1000);
 
     // This should re-compute the value (even though no input has changed).
     let thread2 = std::thread::spawn({
@@ -47,12 +47,12 @@ fn in_par_get_set_cancellation_immediate() {
 /// to `sum2` properly.
 #[test]
 fn in_par_get_set_cancellation_transitive() {
-    let db = ParDatabaseImpl::default();
+    let mut db = ParDatabaseImpl::default();
 
-    db.query(Input).set('a', 100);
-    db.query(Input).set('b', 010);
-    db.query(Input).set('c', 001);
-    db.query(Input).set('d', 0);
+    db.query_mut(Input).set('a', 100);
+    db.query_mut(Input).set('b', 010);
+    db.query_mut(Input).set('c', 001);
+    db.query_mut(Input).set('d', 0);
 
     let thread1 = std::thread::spawn({
         let db = db.snapshot();
@@ -71,7 +71,7 @@ fn in_par_get_set_cancellation_transitive() {
     db.wait_for(1);
 
     // Try to set the input. This will signal cancellation.
-    db.query(Input).set('d', 1000);
+    db.query_mut(Input).set('d', 1000);
 
     // This should re-compute the value (even though no input has changed).
     let thread2 = std::thread::spawn({

@@ -5,14 +5,14 @@ use salsa::{Database, ParallelDatabase};
 /// threads. Really just a test that `snapshot` etc compiles.
 #[test]
 fn in_par_two_independent_queries() {
-    let db = ParDatabaseImpl::default();
+    let mut db = ParDatabaseImpl::default();
 
-    db.query(Input).set('a', 100);
-    db.query(Input).set('b', 010);
-    db.query(Input).set('c', 001);
-    db.query(Input).set('d', 200);
-    db.query(Input).set('e', 020);
-    db.query(Input).set('f', 002);
+    db.query_mut(Input).set('a', 100);
+    db.query_mut(Input).set('b', 010);
+    db.query_mut(Input).set('c', 001);
+    db.query_mut(Input).set('d', 200);
+    db.query_mut(Input).set('e', 020);
+    db.query_mut(Input).set('f', 002);
 
     let thread1 = std::thread::spawn({
         let db = db.snapshot();
