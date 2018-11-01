@@ -786,7 +786,8 @@ where
                     key,
                     input
                 )
-            }).next()
+            })
+            .next()
             .is_some();
 
         // Either way, we have to update our entry.

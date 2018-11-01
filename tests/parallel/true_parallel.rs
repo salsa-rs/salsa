@@ -96,7 +96,7 @@ fn true_parallel_propagate_panic() {
     // `thread1` will wait_for a barrier in the start of `sum`. Once it can
     // continue, it will panic.
     let thread1 = std::thread::spawn({
-        let db = db.fork();
+        let db = db.snapshot();
         move || {
             let v = db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs().sum_wait_for_on_exit.with_value(2, || {
@@ -110,7 +110,7 @@ fn true_parallel_propagate_panic() {
     // `thread2` will wait until `thread1` has entered sum and then -- once it
     // has set itself to block -- signal `thread1` to continue.
     let thread2 = std::thread::spawn({
-        let db = db.fork();
+        let db = db.snapshot();
         move || {
             db.knobs().signal.wait_for(1);
             db.knobs().signal_on_will_block.set(2);
