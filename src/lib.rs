@@ -44,17 +44,6 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// consume are marked as used.  You then invoke this method to
     /// remove other values that were not needed for your main query
     /// results.
-    ///
-    /// **A note on atomicity.** Since `sweep_all` removes data that
-    /// hasn't been actively used since the last revision, executing
-    /// `sweep_all` concurrently with `set` operations is not
-    /// recommended.  It won't do any *harm* -- but it may cause more
-    /// data to be discarded then you expect, leading to more
-    /// re-computation. You can use the [`lock_revision`][] method to
-    /// guarantee atomicity (or execute `sweep_all` from the same
-    /// threads that would be performing a `set`).
-    ///
-    /// [`lock_revision`]: struct.Runtime.html#method.lock_revision
     fn sweep_all(&self, strategy: SweepStrategy) {
         self.salsa_runtime().sweep_all(self, strategy);
     }
