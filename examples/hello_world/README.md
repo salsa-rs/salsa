@@ -163,11 +163,11 @@ start using it:
 
 ```rust
 fn main() {
-    let db = DatabaseStruct::default();
+    let mut db = DatabaseStruct::default();
 
     println!("Initially, the length is {}.", db.length().get(()));
 
-    db.query(InputString)
+    db.query_mut(InputString)
         .set((), Arc::new(format!("Hello, world")));
 
     println!("Now, the length is {}.", db.length().get(()));
@@ -177,16 +177,16 @@ fn main() {
 One thing to notice here is how we set the value for an input query:
 
 ```rust
-    db.query(InputString)
+    db.query_mut(InputString)
         .set((), Arc::new(format!("Hello, world")));
 ```
 
-The `db.query(Foo)` method takes as argument the query type that
-characterizes your query. It gives back a "query table" type, which
-offers you more advanced methods beyond simply executing the query
-(for example, for input queries, you can invoke `set`). In fact, the
-standard call `db.query_name(key)` to access a query is just a
-shorthand for `db.query(QueryType).get(key)`.
+The `db.query_mut(Foo)` method takes as argument the query type that
+characterizes your query. It gives back a "mutable query table" type,
+which lets you invoke `set` to set the value of an input query. There
+is also a `query` method that gives access to other advanced methods
+in fact, the standard call `db.query_name(key)` to access a query is
+just a shorthand for `db.query(QueryType).get(key)`.
 
 Finally, if we run this code:
 
