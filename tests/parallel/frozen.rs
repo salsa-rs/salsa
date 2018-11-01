@@ -15,7 +15,7 @@ fn in_par_get_set_cancellation() {
     let signal = Arc::new(Signal::default());
 
     let thread1 = std::thread::spawn({
-        let db = db.fork();
+        let db = db.snapshot();
         let signal = signal.clone();
         move || {
             // Check that cancellation flag is not yet set, because
@@ -34,7 +34,7 @@ fn in_par_get_set_cancellation() {
             // see 1 here.
             let v = db.input('a');
 
-            // Since this is a forked database, we are in a consistent
+            // Since this is a snapshotted database, we are in a consistent
             // revision, so this must yield the same value.
             let w = db.input('a');
 

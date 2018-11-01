@@ -20,8 +20,8 @@ salsa::query_group! {
             type Sum2;
         }
 
-        fn fork_me() -> () {
-            type ForkMe;
+        fn snapshot_me() -> () {
+            type SnapshotMe;
         }
     }
 }
@@ -112,9 +112,9 @@ fn sum2(db: &impl ParDatabase, key: &'static str) -> usize {
     db.sum(key)
 }
 
-fn fork_me(db: &impl ParDatabase) {
+fn snapshot_me(db: &impl ParDatabase) {
     // this should panic
-    db.fork();
+    db.snapshot();
 }
 
 #[derive(Default)]
@@ -141,9 +141,9 @@ impl Database for ParDatabaseImpl {
 }
 
 impl ParallelDatabase for ParDatabaseImpl {
-    fn fork(&self) -> Frozen<Self> {
+    fn snapshot(&self) -> Frozen<Self> {
         Frozen::new(ParDatabaseImpl {
-            runtime: self.runtime.fork(self),
+            runtime: self.runtime.snapshot(self),
             knobs: self.knobs.clone(),
         })
     }
@@ -169,7 +169,7 @@ salsa::database_storage! {
             fn input() for Input;
             fn sum() for Sum;
             fn sum2() for Sum2;
-            fn fork_me() for ForkMe;
+            fn snapshot_me() for SnapshotMe;
         }
     }
 }

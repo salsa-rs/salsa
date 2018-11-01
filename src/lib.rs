@@ -186,7 +186,7 @@ pub trait ParallelDatabase: Database + Send {
     /// This is the method you are meant to use most of the time in a
     /// parallel setting where modifications may arise asynchronously
     /// (e.g., a language server). In this context, it is common to
-    /// wish to "fork off" a copy of the database performing some
+    /// wish to "fork off" a snapshot of the database performing some
     /// series of queries in parallel and arranging the results. Using
     /// this method for that purpose ensures that those queries will
     /// see a consistent view of the database (it is also advisable
@@ -201,20 +201,20 @@ pub trait ParallelDatabase: Database + Send {
     /// database type (`MyDatabaseType`, in the example below),
     /// cloning over each of the fields from `self` into this new
     /// copy. For the field that stores the salsa runtime, you should
-    /// use [the `Runtime::fork` method][rfm] to create a fork of the
+    /// use [the `Runtime::snapshot` method][rfm] to create a snapshot of the
     /// runtime. Finally, package up the result using `Frozen::new`,
     /// which is a simple wrapper type that only gives `&self` access
     /// to the database within (thus preventing the use of methods
     /// that may mutate the inputs):
     ///
-    /// [rfm]: struct.Runtime.html#method.fork
+    /// [rfm]: struct.Runtime.html#method.snapshot
     ///
     /// ```rust,ignore
     /// impl ParallelDatabase for MyDatabaseType {
-    ///     fn fork(&self) -> Frozen<Self> {
+    ///     fn snapshot(&self) -> Frozen<Self> {
     ///         Frozen::new(
     ///             MyDatabaseType {
-    ///                 runtime: self.runtime.fork(self),
+    ///                 runtime: self.runtime.snapshot(self),
     ///                 other_field: self.other_field.clone(),
     ///             }
     ///         )
@@ -227,14 +227,14 @@ pub trait ParallelDatabase: Database + Send {
     /// This second handle is intended to be used from a separate
     /// thread. Using two database handles from the **same thread**
     /// can lead to deadlock.
-    fn fork(&self) -> Frozen<Self>;
+    fn snapshot(&self) -> Frozen<Self>;
 }
 
 /// Simple wrapper struct that takes ownership of a database `DB`
-/// and only gives `&self` access to it. See [the `fork` method][fm] for
+/// and only gives `&self` access to it. See [the `snapshot` method][fm] for
 /// more details.
 ///
-/// [fm]: trait.ParallelDatabase#method.fork
+/// [fm]: trait.ParallelDatabase#method.snapshot
 pub struct Frozen<DB>
 where
     DB: ParallelDatabase,

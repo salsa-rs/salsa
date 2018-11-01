@@ -30,9 +30,9 @@ impl salsa::Database for DatabaseStruct {
 }
 
 impl salsa::ParallelDatabase for DatabaseStruct {
-    fn fork(&self) -> Frozen<Self> {
+    fn snapshot(&self) -> Frozen<Self> {
         Frozen::new(DatabaseStruct {
-            runtime: self.runtime.fork(self),
+            runtime: self.runtime.snapshot(self),
         })
     }
 }
@@ -53,7 +53,7 @@ fn should_panic_safely() {
     // Invoke `db.panic_safely() without having set `db.one`. `db.one` will
     // default to 0 and we should catch the panic.
     let result = panic::catch_unwind(AssertUnwindSafe({
-        let db = db.fork();
+        let db = db.snapshot();
         move || db.panic_safely()
     }));
     assert!(result.is_err());

@@ -12,7 +12,7 @@ fn in_par_get_set_race() {
     db.query(Input).set('c', 001);
 
     let thread1 = std::thread::spawn({
-        let db = db.fork();
+        let db = db.snapshot();
         move || {
             let v = db.sum("abc");
             v

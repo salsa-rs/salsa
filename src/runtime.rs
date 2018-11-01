@@ -78,19 +78,19 @@ where
     /// database. "Forked" runtimes hold a read-lock on the global
     /// state, which means that any attempt to `set` an input will
     /// block until the forked runtime is dropped. See
-    /// `ParallelDatabase::fork` for more information.
+    /// `ParallelDatabase::snapshot` for more information.
     ///
     /// **Warning.** This second handle is intended to be used from a
     /// separate thread. Using two database handles from the **same
     /// thread** can lead to deadlock.
-    pub fn fork(&self, from_db: &DB) -> Self {
+    pub fn snapshot(&self, from_db: &DB) -> Self {
         assert!(
             Arc::ptr_eq(&self.shared_state, &from_db.salsa_runtime().shared_state),
-            "invoked `fork` with a non-matching database"
+            "invoked `snapshot` with a non-matching database"
         );
 
         if self.local_state.borrow().query_in_progress() {
-            panic!("it is not legal to `fork` during a query (see salsa-rs/salsa#80)");
+            panic!("it is not legal to `snapshot` during a query (see salsa-rs/salsa#80)");
         }
 
         let revision_guard = RevisionGuard::new(&self.shared_state);
@@ -132,7 +132,7 @@ where
     }
 
     /// The unique identifier attached to this `SalsaRuntime`. Each
-    /// forked runtime has a distinct identifier.
+    /// snapshotted runtime has a distinct identifier.
     #[inline]
     pub fn id(&self) -> RuntimeId {
         self.id
@@ -350,7 +350,7 @@ where
 struct SharedState<DB: Database> {
     storage: DB::DatabaseStorage,
 
-    /// Stores the next id to use for a forked runtime (starts at 1).
+    /// Stores the next id to use for a snapshotted runtime (starts at 1).
     next_id: AtomicUsize,
 
     /// Whenever derived queries are executing, they acquire this lock
@@ -599,7 +599,7 @@ where
     fn new(shared_state: &Arc<SharedState<DB>>) -> Self {
         // Subtle: we use a "recursive" lock here so that it is not an
         // error to acquire a read-lock when one is already held (this
-        // happens when a query uses `fork` to spawn off parallel
+        // happens when a query uses `snapshot` to spawn off parallel
         // workers, for example).
         //
         // This has the side-effect that we are responsible to ensure

@@ -52,9 +52,9 @@ impl salsa::Database for StressDatabaseImpl {
 }
 
 impl salsa::ParallelDatabase for StressDatabaseImpl {
-    fn fork(&self) -> Frozen<StressDatabaseImpl> {
+    fn snapshot(&self) -> Frozen<StressDatabaseImpl> {
         Frozen::new(StressDatabaseImpl {
-            runtime: self.runtime.fork(self),
+            runtime: self.runtime.snapshot(self),
         })
     }
 }
@@ -207,7 +207,7 @@ fn stress_test() {
     // generate the ops that the mutator thread will perform
     let write_ops: Vec<MutatorOp> = (0..N_MUTATOR_OPS).map(|_| rng.gen()).collect();
 
-    // execute the "main thread", which sometimes forks off other threads
+    // execute the "main thread", which sometimes snapshots off other threads
     let mut all_threads = vec![];
     for op in write_ops {
         match op {
@@ -216,7 +216,7 @@ fn stress_test() {
                 ops,
                 check_cancellation,
             } => all_threads.push(std::thread::spawn({
-                let db = db.fork();
+                let db = db.snapshot();
                 move || db_reader_thread(&db, ops, check_cancellation)
             })),
         }
