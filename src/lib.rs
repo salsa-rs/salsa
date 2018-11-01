@@ -261,6 +261,21 @@ pub trait ParallelDatabase: Database + Send {
     ///
     /// [`is_current_revision_canceled`]: struct.Runtime.html#method.is_current_revision_canceled
     ///
+    /// # Panics
+    ///
+    /// It is not permitted to create a snapshot from inside of a
+    /// query. Attepting to do so will panic.
+    ///
+    /// # Deadlock warning
+    ///
+    /// The intended pattern for snapshots is that, once created, they
+    /// are sent to another thread and used from there. As such, the
+    /// `snapshot` acquires a "read lock" on the database --
+    /// therefore, so long as the `snapshot` is not dropped, any
+    /// attempt to `set` a value in the database will block. If the
+    /// `snapshot` is owned by the same thread that is attempting to
+    /// `set`, this will cause a problem.
+    ///
     /// # How to implement this
     ///
     /// Typically, this method will create a second copy of your
@@ -287,21 +302,6 @@ pub trait ParallelDatabase: Database + Send {
     ///     }
     /// }
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// It is not permitted to create a snapshot from inside of a
-    /// query. Attepting to do so will panic.
-    ///
-    /// # Deadlock warning
-    ///
-    /// The intended pattern for snapshots is that, once created, they
-    /// are sent to another thread and used from there. As such, the
-    /// `snapshot` acquires a "read lock" on the database --
-    /// therefore, so long as the `snapshot` is not dropped, any
-    /// attempt to `set` a value in the database will block. If the
-    /// `snapshot` is owned by the same thread that is attempting to
-    /// `set`, this will cause a problem.
     fn snapshot(&self) -> Snapshot<Self>;
 }
 
