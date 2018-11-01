@@ -93,11 +93,11 @@ salsa::database_storage! {
 
 // This shows how to use a query.
 fn main() {
-    let db = DatabaseStruct::default();
+    let mut db = DatabaseStruct::default();
 
     println!("Initially, the length is {}.", db.length(()));
 
-    db.query(InputString)
+    db.query_mut(InputString)
         .set((), Arc::new(format!("Hello, world")));
 
     println!("Now, the length is {}.", db.length(()));

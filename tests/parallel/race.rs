@@ -5,11 +5,11 @@ use salsa::{Database, ParallelDatabase};
 /// Should be atomic.
 #[test]
 fn in_par_get_set_race() {
-    let db = ParDatabaseImpl::default();
+    let mut db = ParDatabaseImpl::default();
 
-    db.query(Input).set('a', 100);
-    db.query(Input).set('b', 010);
-    db.query(Input).set('c', 001);
+    db.query_mut(Input).set('a', 100);
+    db.query_mut(Input).set('b', 010);
+    db.query_mut(Input).set('c', 001);
 
     let thread1 = std::thread::spawn({
         let db = db.snapshot();
@@ -20,7 +20,7 @@ fn in_par_get_set_race() {
     });
 
     let thread2 = std::thread::spawn(move || {
-        db.query(Input).set('a', 1000);
+        db.query_mut(Input).set('a', 1000);
         db.sum("a")
     });
 

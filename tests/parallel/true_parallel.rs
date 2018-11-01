@@ -8,11 +8,11 @@ use salsa::ParallelDatabase;
 /// waits for thread1 to send a signal before it enters).
 #[test]
 fn true_parallel_different_keys() {
-    let db = ParDatabaseImpl::default();
+    let mut db = ParDatabaseImpl::default();
 
-    db.query(Input).set('a', 100);
-    db.query(Input).set('b', 010);
-    db.query(Input).set('c', 001);
+    db.query_mut(Input).set('a', 100);
+    db.query_mut(Input).set('b', 010);
+    db.query_mut(Input).set('c', 001);
 
     // Thread 1 will signal stage 1 when it enters and wait for stage 2.
     let thread1 = std::thread::spawn({
@@ -48,11 +48,11 @@ fn true_parallel_different_keys() {
 /// therefore has to block.
 #[test]
 fn true_parallel_same_keys() {
-    let db = ParDatabaseImpl::default();
+    let mut db = ParDatabaseImpl::default();
 
-    db.query(Input).set('a', 100);
-    db.query(Input).set('b', 010);
-    db.query(Input).set('c', 001);
+    db.query_mut(Input).set('a', 100);
+    db.query_mut(Input).set('b', 010);
+    db.query_mut(Input).set('c', 001);
 
     // Thread 1 will wait_for a barrier in the start of `sum`
     let thread1 = std::thread::spawn({

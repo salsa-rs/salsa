@@ -8,9 +8,9 @@ use std::sync::Arc;
 /// though none of the inputs have changed.
 #[test]
 fn in_par_get_set_cancellation() {
-    let db = ParDatabaseImpl::default();
+    let mut db = ParDatabaseImpl::default();
 
-    db.query(Input).set('a', 1);
+    db.query_mut(Input).set('a', 1);
 
     let signal = Arc::new(Signal::default());
 
@@ -50,7 +50,7 @@ fn in_par_get_set_cancellation() {
             signal.wait_for(1);
 
             // This will block until thread1 drops the revision lock.
-            db.query(Input).set('a', 2);
+            db.query_mut(Input).set('a', 2);
 
             db.input('a')
         }

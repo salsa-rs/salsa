@@ -50,10 +50,10 @@ salsa::database_storage! {
 
 #[test]
 fn normal() {
-    let db = DatabaseStruct::default();
-    db.query(Input).set((), format!("Hello, world"));
+    let mut db = DatabaseStruct::default();
+    db.query_mut(Input).set((), format!("Hello, world"));
     assert_eq!(db.double_length(), 24);
-    db.query(Input).set((), format!("Hello, world!"));
+    db.query_mut(Input).set((), format!("Hello, world!"));
     assert_eq!(db.double_length(), 26);
 }
 
@@ -66,30 +66,32 @@ fn use_without_set() {
 
 #[test]
 fn using_set_unchecked_on_input() {
-    let db = DatabaseStruct::default();
-    db.query(Input).set_unchecked((), format!("Hello, world"));
+    let mut db = DatabaseStruct::default();
+    db.query_mut(Input)
+        .set_unchecked((), format!("Hello, world"));
     assert_eq!(db.double_length(), 24);
 }
 
 #[test]
 fn using_set_unchecked_on_input_after() {
-    let db = DatabaseStruct::default();
-    db.query(Input).set((), format!("Hello, world"));
+    let mut db = DatabaseStruct::default();
+    db.query_mut(Input).set((), format!("Hello, world"));
     assert_eq!(db.double_length(), 24);
 
     // If we use `set_unchecked`, we don't notice that `double_length`
     // is out of date. Oh well, don't do that.
-    db.query(Input).set_unchecked((), format!("Hello, world!"));
+    db.query_mut(Input)
+        .set_unchecked((), format!("Hello, world!"));
     assert_eq!(db.double_length(), 24);
 }
 
 #[test]
 fn using_set_unchecked() {
-    let db = DatabaseStruct::default();
+    let mut db = DatabaseStruct::default();
 
     // Use `set_unchecked` to intentionally set the wrong value,
     // demonstrating that the code never runs.
-    db.query(Length).set_unchecked((), 24);
+    db.query_mut(Length).set_unchecked((), 24);
 
     assert_eq!(db.double_length(), 48);
 }

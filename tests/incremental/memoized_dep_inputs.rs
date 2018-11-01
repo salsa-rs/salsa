@@ -41,9 +41,9 @@ fn dep_derived1(db: &impl MemoizedDepInputsContext) -> usize {
 
 #[test]
 fn revalidate() {
-    let db = &TestContextImpl::default();
+    let db = &mut TestContextImpl::default();
 
-    db.query(Input1).set((), 0);
+    db.query_mut(Input1).set((), 0);
 
     // Initial run starts from Memoized2:
     let v = db.dep_memoized2();
@@ -53,19 +53,19 @@ fn revalidate() {
     // After that, we first try to validate Memoized1 but wind up
     // running Memoized2. Note that we don't try to validate
     // Derived1, so it is invoked by Memoized1.
-    db.query(Input1).set((), 44);
+    db.query_mut(Input1).set((), 44);
     let v = db.dep_memoized2();
     assert_eq!(v, 44);
     db.assert_log(&["Memoized1 invoked", "Derived1 invoked", "Memoized2 invoked"]);
 
     // Here validation of Memoized1 succeeds so Memoized2 never runs.
-    db.query(Input1).set((), 45);
+    db.query_mut(Input1).set((), 45);
     let v = db.dep_memoized2();
     assert_eq!(v, 44);
     db.assert_log(&["Memoized1 invoked", "Derived1 invoked"]);
 
     // Here, a change to input2 doesn't affect us, so nothing runs.
-    db.query(Input2).set((), 45);
+    db.query_mut(Input2).set((), 45);
     let v = db.dep_memoized2();
     assert_eq!(v, 44);
     db.assert_log(&[]);

@@ -1,6 +1,9 @@
+#![allow(missing_docs)]
+
 use crate::Database;
 use crate::Query;
 use crate::QueryTable;
+use crate::QueryTableMut;
 use crate::SweepStrategy;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -57,6 +60,8 @@ pub trait QueryFunction<DB: Database>: Query<DB> {
 
 pub trait GetQueryTable<Q: Query<Self>>: Database {
     fn get_query_table(db: &Self) -> QueryTable<'_, Self, Q>;
+
+    fn get_query_table_mut(db: &mut Self) -> QueryTableMut<'_, Self, Q>;
 }
 
 pub trait QueryStorageOps<DB, Q>: Default

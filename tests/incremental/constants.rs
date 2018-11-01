@@ -23,24 +23,24 @@ fn constants_add(db: &impl ConstantsDatabase, (key1, key2): (char, char)) -> usi
 #[test]
 #[should_panic]
 fn invalidate_constant() {
-    let db = &TestContextImpl::default();
-    db.query(ConstantsInput).set_constant('a', 44);
-    db.query(ConstantsInput).set_constant('a', 66);
+    let db = &mut TestContextImpl::default();
+    db.query_mut(ConstantsInput).set_constant('a', 44);
+    db.query_mut(ConstantsInput).set_constant('a', 66);
 }
 
 #[test]
 #[should_panic]
 fn invalidate_constant_1() {
-    let db = &TestContextImpl::default();
+    let db = &mut TestContextImpl::default();
 
     // Not constant:
-    db.query(ConstantsInput).set('a', 44);
+    db.query_mut(ConstantsInput).set('a', 44);
 
     // Becomes constant:
-    db.query(ConstantsInput).set_constant('a', 44);
+    db.query_mut(ConstantsInput).set_constant('a', 44);
 
     // Invalidates:
-    db.query(ConstantsInput).set_constant('a', 66);
+    db.query_mut(ConstantsInput).set_constant('a', 66);
 }
 
 /// Test that invoking `set` on a constant is an error, even if you
@@ -48,55 +48,55 @@ fn invalidate_constant_1() {
 #[test]
 #[should_panic]
 fn set_after_constant_same_value() {
-    let db = &TestContextImpl::default();
-    db.query(ConstantsInput).set_constant('a', 44);
-    db.query(ConstantsInput).set('a', 44);
+    let db = &mut TestContextImpl::default();
+    db.query_mut(ConstantsInput).set_constant('a', 44);
+    db.query_mut(ConstantsInput).set('a', 44);
 }
 
 #[test]
 fn not_constant() {
-    let db = &TestContextImpl::default();
+    let db = &mut TestContextImpl::default();
 
-    db.query(ConstantsInput).set('a', 22);
-    db.query(ConstantsInput).set('b', 44);
+    db.query_mut(ConstantsInput).set('a', 22);
+    db.query_mut(ConstantsInput).set('b', 44);
     assert_eq!(db.constants_add(('a', 'b')), 66);
     assert!(!db.query(ConstantsAdd).is_constant(('a', 'b')));
 }
 
 #[test]
 fn is_constant() {
-    let db = &TestContextImpl::default();
+    let db = &mut TestContextImpl::default();
 
-    db.query(ConstantsInput).set_constant('a', 22);
-    db.query(ConstantsInput).set_constant('b', 44);
+    db.query_mut(ConstantsInput).set_constant('a', 22);
+    db.query_mut(ConstantsInput).set_constant('b', 44);
     assert_eq!(db.constants_add(('a', 'b')), 66);
     assert!(db.query(ConstantsAdd).is_constant(('a', 'b')));
 }
 
 #[test]
 fn mixed_constant() {
-    let db = &TestContextImpl::default();
+    let db = &mut TestContextImpl::default();
 
-    db.query(ConstantsInput).set_constant('a', 22);
-    db.query(ConstantsInput).set('b', 44);
+    db.query_mut(ConstantsInput).set_constant('a', 22);
+    db.query_mut(ConstantsInput).set('b', 44);
     assert_eq!(db.constants_add(('a', 'b')), 66);
     assert!(!db.query(ConstantsAdd).is_constant(('a', 'b')));
 }
 
 #[test]
 fn becomes_constant_with_change() {
-    let db = &TestContextImpl::default();
+    let db = &mut TestContextImpl::default();
 
-    db.query(ConstantsInput).set('a', 22);
-    db.query(ConstantsInput).set('b', 44);
+    db.query_mut(ConstantsInput).set('a', 22);
+    db.query_mut(ConstantsInput).set('b', 44);
     assert_eq!(db.constants_add(('a', 'b')), 66);
     assert!(!db.query(ConstantsAdd).is_constant(('a', 'b')));
 
-    db.query(ConstantsInput).set_constant('a', 23);
+    db.query_mut(ConstantsInput).set_constant('a', 23);
     assert_eq!(db.constants_add(('a', 'b')), 67);
     assert!(!db.query(ConstantsAdd).is_constant(('a', 'b')));
 
-    db.query(ConstantsInput).set_constant('b', 45);
+    db.query_mut(ConstantsInput).set_constant('b', 45);
     assert_eq!(db.constants_add(('a', 'b')), 68);
     assert!(db.query(ConstantsAdd).is_constant(('a', 'b')));
 }
