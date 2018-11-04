@@ -1,5 +1,9 @@
 # salsa
 
+[![Build Status](https://travis-ci.org/salsa-rs/salsa.svg?branch=master)](https://travis-ci.org/salsa-rs/salsa)
+[![Released API docs](https://docs.rs/salsa/badge.svg)](https://docs.rs/salsa)
+[![Crates.io](https://img.shields.io/crates/v/salsa.svg)](https://crates.io/crates/salsa)
+
 *A generic framework for on-demand, incrementalized computation.*
 
 ## Obligatory warning
