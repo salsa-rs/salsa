@@ -70,6 +70,9 @@ pub(crate) struct KnobsStruct {
     /// Invocations of `sum` will wait for this stage on entry.
     pub(crate) sum_wait_for_on_entry: Cell<usize>,
 
+    /// If true, invocations of `sum` will panic before they exit.
+    pub(crate) sum_should_panic: Cell<bool>,
+
     /// If true, invocations of `sum` will wait for cancellation before
     /// they exit.
     pub(crate) sum_wait_for_cancellation: Cell<bool>,
@@ -87,6 +90,10 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
     db.signal(db.knobs().sum_signal_on_entry.get());
 
     db.wait_for(db.knobs().sum_wait_for_on_entry.get());
+
+    if db.knobs().sum_should_panic.get() {
+        panic!("query set to panic before exit")
+    }
 
     for ch in key.chars() {
         sum += db.input(ch);

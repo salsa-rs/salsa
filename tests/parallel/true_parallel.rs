@@ -1,6 +1,6 @@
 use crate::setup::{Input, Knobs, ParDatabase, ParDatabaseImpl, WithValue};
-use salsa::Database;
-use salsa::ParallelDatabase;
+use salsa::{Database, ParallelDatabase};
+use std::panic::{self, AssertUnwindSafe};
 
 /// Test where two threads are executing sum. We show that they can
 /// both be executing sum in parallel by having thread1 wait for
@@ -82,4 +82,45 @@ fn true_parallel_same_keys() {
 
     assert_eq!(thread1.join().unwrap(), 111);
     assert_eq!(thread2.join().unwrap(), 111);
+}
+
+/// Add a test that tries to trigger a conflict, where we fetch `sum("a")`
+/// from two threads simultaneously. After `thread2` begins blocking,
+/// we force `thread1` to panic and should see that propagate to `thread2`.
+#[test]
+fn true_parallel_propagate_panic() {
+    let mut db = ParDatabaseImpl::default();
+
+    db.query_mut(Input).set('a', 1);
+
+    // `thread1` will wait_for a barrier in the start of `sum`. Once it can
+    // continue, it will panic.
+    let thread1 = std::thread::spawn({
+        let db = db.snapshot();
+        move || {
+            let v = db.knobs().sum_signal_on_entry.with_value(1, || {
+                db.knobs().sum_wait_for_on_entry.with_value(2, || {
+                    db.knobs().sum_should_panic.with_value(true, || db.sum("a"))
+                })
+            });
+            v
+        }
+    });
+
+    // `thread2` will wait until `thread1` has entered sum and then -- once it
+    // has set itself to block -- signal `thread1` to continue.
+    let thread2 = std::thread::spawn({
+        let db = db.snapshot();
+        move || {
+            db.knobs().signal.wait_for(1);
+            db.knobs().signal_on_will_block.set(2);
+            db.sum("a")
+        }
+    });
+
+    let result1 = panic::catch_unwind(AssertUnwindSafe(|| thread1.join().unwrap()));
+    let result2 = panic::catch_unwind(AssertUnwindSafe(|| thread2.join().unwrap()));
+
+    assert!(result1.is_err());
+    assert!(result2.is_err());
 }

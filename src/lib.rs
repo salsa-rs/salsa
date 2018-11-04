@@ -351,7 +351,7 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
 #[derive(new)]
 pub struct QueryTable<'me, DB, Q>
 where
-    DB: Database + 'me,
+    DB: Database,
     Q: Query<DB> + 'me,
 {
     db: &'me DB,
@@ -399,7 +399,7 @@ where
 #[derive(new)]
 pub struct QueryTableMut<'me, DB, Q>
 where
-    DB: Database + 'me,
+    DB: Database,
     Q: Query<DB> + 'me,
 {
     db: &'me DB,

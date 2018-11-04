@@ -303,7 +303,7 @@ where
             }
         };
 
-        let panic_guard = PanicGuard::new(&self.map, key, runtime.id());
+        let panic_guard = PanicGuard::new(&self.map, key, descriptor, runtime);
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
@@ -324,14 +324,7 @@ where
                     },
                 });
 
-                self.overwrite_placeholder(
-                    runtime,
-                    descriptor,
-                    key,
-                    old_memo.unwrap(),
-                    &value,
-                    panic_guard,
-                );
+                panic_guard.proceed(old_memo.unwrap(), &value);
 
                 return Ok(value);
             }
@@ -376,49 +369,43 @@ where
             changed_at: result.changed_at,
         };
 
-        {
-            let value = if self.should_memoize_value(key) {
-                Some(new_value.value.clone())
-            } else {
-                None
-            };
+        let value = if self.should_memoize_value(key) {
+            Some(new_value.value.clone())
+        } else {
+            None
+        };
 
-            let inputs = match result.subqueries {
-                None => MemoInputs::Untracked,
+        let inputs = match result.subqueries {
+            None => MemoInputs::Untracked,
 
-                Some(descriptors) => {
-                    // If all things that we read were constants, then
-                    // we don't need to track our inputs: our value
-                    // can never be invalidated.
-                    //
-                    // If OTOH we read at least *some* non-constant
-                    // inputs, then we do track our inputs (even the
-                    // constants), so that if we run the GC, we know
-                    // which constants we looked at.
-                    if descriptors.is_empty() || result.changed_at.is_constant {
-                        MemoInputs::Constant
-                    } else {
-                        MemoInputs::Tracked {
-                            inputs: Arc::new(descriptors),
-                        }
+            Some(descriptors) => {
+                // If all things that we read were constants, then
+                // we don't need to track our inputs: our value
+                // can never be invalidated.
+                //
+                // If OTOH we read at least *some* non-constant
+                // inputs, then we do track our inputs (even the
+                // constants), so that if we run the GC, we know
+                // which constants we looked at.
+                if descriptors.is_empty() || result.changed_at.is_constant {
+                    MemoInputs::Constant
+                } else {
+                    MemoInputs::Tracked {
+                        inputs: Arc::new(descriptors),
                     }
                 }
-            };
+            }
+        };
 
-            self.overwrite_placeholder(
-                runtime,
-                descriptor,
-                key,
-                Memo {
-                    value,
-                    changed_at: result.changed_at.revision,
-                    verified_at: revision_now,
-                    inputs,
-                },
-                &new_value,
-                panic_guard,
-            );
-        }
+        panic_guard.proceed(
+            Memo {
+                value,
+                changed_at: result.changed_at.revision,
+                verified_at: revision_now,
+                inputs,
+            },
+            &new_value,
+        );
 
         Ok(new_value)
     }
@@ -534,52 +521,6 @@ where
         }
     }
 
-    /// Overwrites the `InProgress` placeholder for `key` that we
-    /// inserted; if others were blocked, waiting for us to finish,
-    /// the notify them.
-    fn overwrite_placeholder(
-        &self,
-        runtime: &Runtime<DB>,
-        descriptor: &DB::QueryDescriptor,
-        key: &Q::Key,
-        memo: Memo<DB, Q>,
-        new_value: &StampedValue<Q::Value>,
-        panic_guard: PanicGuard<'_, DB, Q>,
-    ) {
-        // No panic occurred, do not run the panic-guard destructor:
-        panic_guard.forget();
-
-        // Replace the in-progress placeholder that we installed with
-        // the new memo, thus releasing our unique access to this
-        // key. If anybody has installed themselves in our "waiting"
-        // list, notify them that the value is available.
-        let waiting = {
-            let mut write = self.map.write();
-            match write.insert(key.clone(), QueryState::Memoized(memo)) {
-                Some(QueryState::InProgress { id, waiting }) => {
-                    assert_eq!(id, runtime.id());
-
-                    let waiting = waiting.into_inner();
-
-                    if waiting.is_empty() {
-                        // if nobody is waiting, we are done here
-                        return;
-                    }
-
-                    runtime.unblock_queries_blocked_on_self(descriptor);
-
-                    waiting
-                }
-
-                _ => panic!("expected in-progress state"),
-            }
-        };
-
-        for tx in waiting {
-            tx.send(new_value.clone()).unwrap();
-        }
-    }
-
     fn should_memoize_value(&self, key: &Q::Key) -> bool {
         MP::should_memoize_value(key)
     }
@@ -591,12 +532,13 @@ where
 
 struct PanicGuard<'db, DB, Q>
 where
-    DB: Database + 'db,
+    DB: Database,
     Q: QueryFunction<DB>,
 {
-    my_id: RuntimeId,
-    map: &'db RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
+    descriptor: &'db DB::QueryDescriptor,
     key: &'db Q::Key,
+    map: &'db RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
+    runtime: &'db Runtime<DB>,
 }
 
 impl<'db, DB, Q> PanicGuard<'db, DB, Q>
@@ -607,13 +549,76 @@ where
     fn new(
         map: &'db RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
         key: &'db Q::Key,
-        my_id: RuntimeId,
+        descriptor: &'db DB::QueryDescriptor,
+        runtime: &'db Runtime<DB>,
     ) -> Self {
-        Self { map, key, my_id }
+        Self {
+            descriptor,
+            key,
+            map,
+            runtime,
+        }
     }
 
-    fn forget(self) {
+    /// Proceed with our panic guard by overwriting the placeholder for `key`.
+    /// Once that completes, ensure that our deconstructor is not run once we
+    /// are out of scope.
+    fn proceed(self, memo: Memo<DB, Q>, new_value: &StampedValue<Q::Value>) {
+        self.overwrite_placeholder(Some(memo), Some(new_value));
         std::mem::forget(self)
+    }
+
+    /// Overwrites the `InProgress` placeholder for `key` that we
+    /// inserted; if others were blocked, waiting for us to finish,
+    /// then notify them.
+    fn overwrite_placeholder(
+        &self,
+        memo: Option<Memo<DB, Q>>,
+        new_value: Option<&StampedValue<Q::Value>>,
+    ) {
+        let mut write = self.map.write();
+
+        let old_value = match memo {
+            // Replace the `InProgress` marker that we installed with the new
+            // memo, thus releasing our unique access to this key.
+            Some(memo) => write.insert(self.key.clone(), QueryState::Memoized(memo)),
+
+            // We had installed an `InProgress` marker, but we panicked before
+            // it could be removed. At this point, we therefore "own" unique
+            // access to our slot, so we can just remove the key.
+            None => write.remove(self.key),
+        };
+
+        match old_value {
+            Some(QueryState::InProgress { id, waiting }) => {
+                assert_eq!(id, self.runtime.id());
+
+                self.runtime
+                    .unblock_queries_blocked_on_self(self.descriptor);
+
+                match new_value {
+                    // If anybody has installed themselves in our "waiting"
+                    // list, notify them that the value is available.
+                    Some(new_value) => {
+                        for tx in waiting.into_inner() {
+                            tx.send(new_value.clone()).unwrap()
+                        }
+                    }
+
+                    // We have no value to send when we are panicking.
+                    // Therefore, we need to drop the sending half of the
+                    // channel so that our panic propagates to those waiting
+                    // on the receiving half.
+                    None => std::mem::drop(waiting),
+                }
+            }
+            _ => panic!(
+                "\
+Unexpected panic during query evaluation, aborting the process.
+
+Please report this bug to https://github.com/salsa-rs/salsa/issues."
+            ),
+        }
     }
 }
 
@@ -624,40 +629,8 @@ where
 {
     fn drop(&mut self) {
         if std::thread::panicking() {
-            // In this case, we had installed a `InProgress` marker but we
-            // panicked before it could be removed. At this point, we
-            // therefore "own" unique access to our slot, so we can just
-            // remove the `InProgress` marker.
-
-            let mut map = self.map.write();
-            let old_value = map.remove(self.key);
-            match old_value {
-                Some(QueryState::InProgress { id, waiting }) => {
-                    assert_eq!(id, self.my_id);
-
-                    let waiting = waiting.into_inner();
-
-                    if !waiting.is_empty() {
-                        // FIXME(#24) -- handle parallel case. In
-                        // particular, we ought to notify those
-                        // waiting on us that a panic occurred (they
-                        // can then propagate the panic themselves; or
-                        // perhaps re-execute?).
-                        panic!("FIXME(#24) -- handle parallel case");
-                    }
-                }
-
-                // If we don't see an `InProgress` marker, something
-                // has gone horribly wrong. This panic will
-                // (unfortunately) abort the process, but recovery is
-                // not possible.
-                _ => panic!(
-                    "\
-Unexpected panic during query evaluation, aborting the process.
-
-Please report this bug to https://github.com/salsa-rs/salsa/issues."
-                ),
-            }
+            // We panicked before we could proceed and need to remove `key`.
+            self.overwrite_placeholder(None, None)
         } else {
             // If no panic occurred, then panic guard ought to be
             // "forgotten" and so this Drop code should never run.

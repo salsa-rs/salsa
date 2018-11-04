@@ -112,7 +112,7 @@ where
     /// Check if `key` is (currently) believed to be a constant.
     fn is_constant(&self, db: &DB, key: &Q::Key) -> bool;
 
-    /// Check if `key` is (currently) believed to be a constant.
+    /// Get the (current) set of the keys in the query storage
     fn keys<C>(&self, db: &DB) -> C
     where
         C: std::iter::FromIterator<Q::Key>;
