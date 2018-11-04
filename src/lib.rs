@@ -299,6 +299,7 @@ pub trait ParallelDatabase: Database + Send {
 /// for more details.
 ///
 /// [fm]: trait.ParallelDatabase#method.snapshot
+#[derive(Debug)]
 pub struct Snapshot<DB>
 where
     DB: ParallelDatabase,
