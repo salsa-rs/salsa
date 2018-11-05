@@ -243,6 +243,10 @@ where
     ) -> ComputedQueryResult<DB, V> {
         debug!("{:?}: execute_query_implementation invoked", descriptor);
 
+        if self.local_state.borrow().poisoned {
+            panic!("attempted to use a poisoned database")
+        }
+
         db.salsa_event(|| Event {
             runtime_id: db.salsa_runtime().id(),
             kind: EventKind::WillExecute {
@@ -259,8 +263,11 @@ where
             local_state.query_stack.len()
         };
 
-        // Execute user's code, accumulating inputs etc.
+        // Execute user's code, accumulating inputs etc. If user's code
+        // panics, poison the thread's database handle.
+        let panic_guard = PanicGuard::new(&self.local_state);
         let value = execute();
+        std::mem::forget(panic_guard);
 
         // Extract accumulated inputs.
         let ActiveQuery {
@@ -401,12 +408,14 @@ impl<DB: Database> Default for SharedState<DB> {
 /// State that will be specific to a single execution threads (when we
 /// support multiple threads)
 struct LocalState<DB: Database> {
+    poisoned: bool,
     query_stack: Vec<ActiveQuery<DB>>,
 }
 
 impl<DB: Database> Default for LocalState<DB> {
     fn default() -> Self {
         LocalState {
+            poisoned: Default::default(),
             query_stack: Default::default(),
         }
     }
@@ -595,6 +604,34 @@ impl<DB: Database> DependencyGraph<DB> {
             let to_id1 = self.edges.remove(from_id);
             assert_eq!(Some(to_id), to_id1);
         }
+    }
+}
+
+/// Guard that will poison the thread's database handle if it's deconstructor
+/// is executed.
+struct PanicGuard<'db, DB: Database>
+where
+    DB: Database,
+{
+    local_state: &'db RefCell<LocalState<DB>>,
+}
+
+impl<'db, DB> Drop for PanicGuard<'db, DB>
+where
+    DB: Database,
+{
+    fn drop(&mut self) {
+        let mut local_state = self.local_state.borrow_mut();
+        local_state.poisoned = true;
+    }
+}
+
+impl<'db, DB> PanicGuard<'db, DB>
+where
+    DB: Database,
+{
+    fn new(local_state: &'db RefCell<LocalState<DB>>) -> Self {
+        Self { local_state }
     }
 }
 
