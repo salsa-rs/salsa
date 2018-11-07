@@ -1,3 +1,4 @@
+use salsa::Database;
 use std::panic::{self, AssertUnwindSafe};
 
 salsa::query_group! {
@@ -39,7 +40,22 @@ salsa::database_storage! {
 
 #[test]
 #[should_panic(expected = "attempted to use a poisoned database")]
-fn should_poison_handle() {
+fn should_poison_handle_input() {
+    let mut db = DatabaseStruct::default();
+
+    // Invoke `db.panic_if_not_one() without having set `db.input`. `db.input`
+    // will default to 0 and we should catch the panic.
+    let result = panic::catch_unwind(AssertUnwindSafe(|| db.panic_if_not_one()));
+    assert!(result.is_err());
+
+    // The database has been poisoned and any attempt to increment the
+    // revision should panic.
+    db.query_mut(Input).set((), 1)
+}
+
+#[test]
+#[should_panic(expected = "attempted to use a poisoned database")]
+fn should_poison_handle_derived() {
     let db = DatabaseStruct::default();
 
     // Invoke `db.panic_if_not_one() without having set `db.input`. `db.input`
@@ -47,6 +63,7 @@ fn should_poison_handle() {
     let result = panic::catch_unwind(AssertUnwindSafe(|| db.panic_if_not_one()));
     assert!(result.is_err());
 
-    // The database has been poisoned and any attempt to use it should panic
+    // The database has been poisoned and any attempt to execute a derived
+    // query should panic.
     db.panic_if_not_one();
 }

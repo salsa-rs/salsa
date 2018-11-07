@@ -192,6 +192,10 @@ where
     pub(crate) fn with_incremented_revision<R>(&self, op: impl FnOnce(Revision) -> R) -> R {
         log::debug!("increment_revision()");
 
+        if self.local_state.borrow().poisoned {
+            panic!("attempted to use a poisoned database")
+        }
+
         if !self.permits_increment() {
             panic!("increment_revision invoked during a query computation");
         }
