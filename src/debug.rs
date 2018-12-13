@@ -1,6 +1,7 @@
 //! Debugging APIs: these are meant for use when unit-testing or
 //! debugging your application but aren't ordinarily needed.
 
+use crate::plumbing;
 use crate::plumbing::QueryStorageOps;
 use crate::Database;
 use crate::Query;
@@ -27,7 +28,7 @@ pub trait DebugQueryTable {
 
 impl<DB, Q> DebugQueryTable for QueryTable<'_, DB, Q>
 where
-    DB: Database,
+    DB: plumbing::GetQueryTable<Q>,
     Q: Query<DB>,
 {
     type Key = Q::Key;

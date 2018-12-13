@@ -351,17 +351,16 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
 #[derive(new)]
 pub struct QueryTable<'me, DB, Q>
 where
-    DB: Database,
+    DB: plumbing::GetQueryTable<Q>,
     Q: Query<DB> + 'me,
 {
     db: &'me DB,
     storage: &'me Q::Storage,
-    descriptor_fn: fn(&DB, &Q::Key) -> DB::QueryDescriptor,
 }
 
 impl<DB, Q> QueryTable<'_, DB, Q>
 where
-    DB: Database,
+    DB: plumbing::GetQueryTable<Q>,
     Q: Query<DB>,
 {
     /// Execute the query on a given input. Usually it's easier to
@@ -387,7 +386,7 @@ where
     }
 
     fn descriptor(&self, key: &Q::Key) -> DB::QueryDescriptor {
-        (self.descriptor_fn)(self.db, key)
+        <DB as plumbing::GetQueryTable<Q>>::descriptor(&self.db, key.clone())
     }
 }
 
@@ -399,21 +398,20 @@ where
 #[derive(new)]
 pub struct QueryTableMut<'me, DB, Q>
 where
-    DB: Database,
+    DB: plumbing::GetQueryTable<Q>,
     Q: Query<DB> + 'me,
 {
     db: &'me DB,
     storage: &'me Q::Storage,
-    descriptor_fn: fn(&DB, &Q::Key) -> DB::QueryDescriptor,
 }
 
 impl<DB, Q> QueryTableMut<'_, DB, Q>
 where
-    DB: Database,
+    DB: plumbing::GetQueryTable<Q>,
     Q: Query<DB>,
 {
     fn descriptor(&self, key: &Q::Key) -> DB::QueryDescriptor {
-        (self.descriptor_fn)(self.db, key)
+        <DB as plumbing::GetQueryTable<Q>>::descriptor(&self.db, key.clone())
     }
 
     /// Assign a value to an "input query". Must be used outside of
@@ -885,12 +883,6 @@ macro_rules! database_storage {
                             &$crate::Database::salsa_runtime(db)
                                 .storage()
                                 .$query_method,
-                            |_, key| {
-                                let key = std::clone::Clone::clone(key);
-                                __SalsaQueryDescriptor {
-                                    kind: __SalsaQueryDescriptorKind::$query_method(key),
-                                }
-                            },
                         )
                     }
 
@@ -903,13 +895,16 @@ macro_rules! database_storage {
                             &$crate::Database::salsa_runtime(db)
                                 .storage()
                                 .$query_method,
-                            |_, key| {
-                                let key = std::clone::Clone::clone(key);
-                                __SalsaQueryDescriptor {
-                                    kind: __SalsaQueryDescriptorKind::$query_method(key),
-                                }
-                            },
                         )
+                    }
+
+                    fn descriptor(
+                        db: &Self,
+                        key: <$QueryType as $crate::Query<Self>>::Key,
+                    ) -> <Self as $crate::plumbing::DatabaseStorageTypes>::QueryDescriptor {
+                        __SalsaQueryDescriptor {
+                            kind: __SalsaQueryDescriptorKind::$query_method(key),
+                        }
                     }
                 }
             )*
