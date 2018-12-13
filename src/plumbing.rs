@@ -58,10 +58,27 @@ pub trait QueryFunction<DB: Database>: Query<DB> {
     fn execute(db: &DB, key: Self::Key) -> Self::Value;
 }
 
+/// The `GetQueryTable` trait makes the connection the *database type*
+/// `DB` and some specific *query type* `Q` that it supports. Note
+/// that the `Database` trait itself is not specific to any query, and
+/// the impls of the query trait are not specific to any *database*
+/// (in particular, query groups are defined without knowing the final
+/// database type). This trait then serves to put the query in the
+/// context of the full database. It gives access to the storage for
+/// the query and also to creating the query descriptor. For any given
+/// database, impls of this trait are created by the
+/// `database_storage` macro.
 pub trait GetQueryTable<Q: Query<Self>>: Database {
+    /// Create a query table, which has access to the storage for the query
+    /// and offers methods like `get`.
     fn get_query_table(db: &Self) -> QueryTable<'_, Self, Q>;
 
+    /// Create a mutable query table, which has access to the storage
+    /// for the query and offers methods like `set`.
     fn get_query_table_mut(db: &mut Self) -> QueryTableMut<'_, Self, Q>;
+
+    /// Create a query descriptor given a key for this query.
+    fn descriptor(db: &Self, key: Q::Key) -> Self::QueryDescriptor;
 }
 
 pub trait QueryStorageOps<DB, Q>: Default
