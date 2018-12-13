@@ -7,7 +7,6 @@ license = "Apache-2.0 OR MIT"
 repository = "https://github.com/salsa-rs/salsa"
 description = "A generic framework for on-demand, incrementalized computation (experimental)"
 readme = "README.md"
-exclude = ["rust-toolchain"]
 
 [dependencies]
 derive-new = "0.5.5"
