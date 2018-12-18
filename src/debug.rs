@@ -3,7 +3,6 @@
 
 use crate::plumbing;
 use crate::plumbing::QueryStorageOps;
-use crate::Database;
 use crate::Query;
 use crate::QueryTable;
 use std::iter::FromIterator;
