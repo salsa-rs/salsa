@@ -211,9 +211,16 @@ impl<DB: Database> fmt::Debug for EventKind<DB> {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct SweepStrategy {
     keep_values: bool,
+    keep_deps: bool,
+    keep_current_revision: bool,
 }
 
 impl SweepStrategy {
+    /// Fully discards keys not used in the current revision
+    pub fn discard_old() -> SweepStrategy {
+        SweepStrategy::default().discard_deps()
+    }
+
     /// Causes us to discard memoized *values* but keep the
     /// *dependencies*. This means you will have to recompute the
     /// results from any queries you execute but does permit you to
@@ -224,11 +231,32 @@ impl SweepStrategy {
             ..self
         }
     }
+    /// Causes us to discard both memoized *values* and *dependencies*.
+    pub fn discard_deps(self) -> SweepStrategy {
+        SweepStrategy {
+            keep_deps: false,
+            ..self
+        }
+    }
+
+    /// Causes us to collect keys from all revisions.
+    ///
+    /// By default, only keys not used in the current revision are collected.
+    pub fn discard_all_revisions(self) -> SweepStrategy {
+        SweepStrategy {
+            keep_current_revision: false,
+            ..self
+        }
+    }
 }
 
 impl Default for SweepStrategy {
     fn default() -> Self {
-        SweepStrategy { keep_values: true }
+        SweepStrategy {
+            keep_values: true,
+            keep_deps: true,
+            keep_current_revision: true,
+        }
     }
 }
 

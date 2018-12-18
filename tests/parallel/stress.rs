@@ -114,7 +114,7 @@ impl rand::distributions::Distribution<ReadOp> for rand::distributions::Standard
             let key = rng.gen::<usize>() % 10;
             return ReadOp::Get(query, key);
         }
-        let mut strategy = SweepStrategy::default();
+        let mut strategy = SweepStrategy::discard_old();
         if rng.gen_bool(0.5) {
             strategy = strategy.discard_values();
         }

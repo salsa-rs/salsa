@@ -971,12 +971,15 @@ where
                     // revision, since we are holding the write lock
                     // when we read `revision_now`.
                     assert!(memo.verified_at <= revision_now);
+                    if strategy.keep_current_revision && memo.verified_at == revision_now {
+                        return true;
+                    }
 
                     if !strategy.keep_values {
                         memo.value = None;
                     }
 
-                    memo.verified_at == revision_now
+                    strategy.keep_deps
                 }
             }
         });
