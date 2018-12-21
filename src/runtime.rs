@@ -56,7 +56,8 @@ where
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fmt.debug_struct("Runtime")
             .field("id", &self.id())
-            .field("revision", &self.current_revision())
+            .field("forked", &self.revision_guard.is_some())
+            .field("shared_state", &self.shared_state)
             .finish()
     }
 }
@@ -395,6 +396,26 @@ impl<DB: Database> Default for SharedState<DB> {
             dependency_graph: Default::default(),
             pending_revision_increments: Default::default(),
         }
+    }
+}
+
+impl<DB> std::fmt::Debug for SharedState<DB>
+where
+    DB: Database,
+{
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let query_lock = if self.query_lock.try_write().is_some() {
+            "<unlocked>"
+        } else if self.query_lock.try_read().is_some() {
+            "<rlocked>"
+        } else {
+            "<wlocked>"
+        };
+        fmt.debug_struct("SharedState")
+            .field("query_lock", &query_lock)
+            .field("revision", &self.revision)
+            .field("pending_revision_increments", &self.pending_revision_increments)
+            .finish()
     }
 }
 
