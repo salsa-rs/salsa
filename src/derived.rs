@@ -358,8 +358,13 @@ where
         if let Some(old_memo) = &old_memo {
             if let Some(old_value) = &old_memo.value {
                 if MP::memoized_value_eq(&old_value, &result.value) {
-                    assert!(old_memo.changed_at <= result.changed_at.revision);
-                    result.changed_at.revision = old_memo.changed_at;
+                    match (&old_memo.inputs, &result.subqueries) {
+                        (MemoInputs::Untracked, _) | (_, None) => (),
+                        _ => {
+                            assert!(old_memo.changed_at <= result.changed_at.revision);
+                            result.changed_at.revision = old_memo.changed_at;
+                        }
+                    }
                 }
             }
         }
