@@ -13,7 +13,7 @@ but expect frequent breaking changes.
 
 ## Credits
 
-This system is heavily inspired by adapton, glimmer, and rustc's query
+This system is heavily inspired by [adapton](http://adapton.org/), [glimmer](https://github.com/glimmerjs/glimmer-vm), and rustc's query
 system. So credit goes to Eduard-Mihai Burtescu, Matthew Hammer,
 Yehuda Katz, and Michael Woerister.
 
