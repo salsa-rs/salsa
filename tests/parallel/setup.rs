@@ -20,6 +20,10 @@ salsa::query_group! {
             type Sum2;
         }
 
+        fn sum3(key: &'static str) -> usize {
+            type Sum3;
+        }
+
         fn snapshot_me() -> () {
             type SnapshotMe;
         }
@@ -119,6 +123,10 @@ fn sum2(db: &impl ParDatabase, key: &'static str) -> usize {
     db.sum(key)
 }
 
+fn sum3(db: &impl ParDatabase, key: &'static str) -> usize {
+    db.sum2(key)
+}
+
 fn snapshot_me(db: &impl ParDatabase) {
     // this should panic
     db.snapshot();
@@ -176,6 +184,7 @@ salsa::database_storage! {
             fn input() for Input;
             fn sum() for Sum;
             fn sum2() for Sum2;
+            fn sum3() for Sum3;
             fn snapshot_me() for SnapshotMe;
         }
     }

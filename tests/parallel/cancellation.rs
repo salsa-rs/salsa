@@ -83,3 +83,33 @@ fn in_par_get_set_cancellation_transitive() {
     assert_eq!(thread1.join().unwrap(), std::usize::MAX);
     assert_eq!(thread2.join().unwrap(), 111);
 }
+
+/// https://github.com/salsa-rs/salsa/issues/66
+#[test]
+fn no_back_dating_in_cancellation() {
+    let mut db = ParDatabaseImpl::default();
+
+    db.query_mut(Input).set('a', 1);
+    let thread1 = std::thread::spawn({
+        let db = db.snapshot();
+        move || {
+            // Here we compute a long-chain of queries,
+            // but the last one gets cancelled.
+            db.knobs().sum_signal_on_entry.with_value(1, || {
+                db.knobs()
+                    .sum_wait_for_cancellation
+                    .with_value(true, || db.sum3("a"))
+            })
+        }
+    });
+
+    db.wait_for(1);
+    // Set unrelated input to bumpision rev
+    db.query_mut(Input).set('b', 2);
+
+    // Here we should recompuet the whole chain again, clearing the cancellation
+    // state. If we get `usize::max()` here, it is a bug!
+    assert_eq!(db.sum3("a"), 1);
+
+    assert_eq!(thread1.join().unwrap(), std::usize::MAX);
+}
