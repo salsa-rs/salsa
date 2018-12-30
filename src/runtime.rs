@@ -276,6 +276,10 @@ where
 
             local_state.query_stack.pop().unwrap()
         };
+        // Transitively propagete untracked.
+        if subqueries.is_none() {
+            self.report_untracked_read()
+        }
 
         ComputedQueryResult {
             value,
