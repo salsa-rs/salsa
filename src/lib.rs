@@ -782,6 +782,7 @@ macro_rules! query_group {
 /// [hw]: https://github.com/salsa-rs/salsa/tree/master/examples/hello_world
 #[macro_export]
 macro_rules! database_storage {
+    // Variant without lifetime annotation.
     (
         $(#[$attr:meta])*
         $v:vis struct $Storage:ident for $Database:ty {
@@ -794,9 +795,66 @@ macro_rules! database_storage {
             )*
         }
     ) => {
+        $crate::database_storage! {
+            @STRUCT_IMPL
+            $(#[$attr])*
+            $v struct $Storage [] for $Database {
+                $(
+                    impl $TraitName {
+                        $(
+                            fn $query_method() for $QueryType;
+                        )*
+                    }
+                )*
+            }
+        }
+    };
+
+    // Variant with lifetime annotation.
+    (
+        $(#[$attr:meta])*
+        $v:vis struct $Storage:ident<$($lt:lifetime),*> for $Database:ty {
+            $(
+                impl $TraitName:path {
+                    $(
+                        fn $query_method:ident() for $QueryType:path;
+                    )*
+                }
+            )*
+        }
+    ) => {
+        $crate::database_storage! {
+            @STRUCT_IMPL
+            $(#[$attr])*
+            $v struct $Storage [$($lt),*] for $Database {
+                $(
+                    impl $TraitName {
+                        $(
+                            fn $query_method() for $QueryType;
+                        )*
+                    }
+                )*
+            }
+        }
+    };
+
+    // Main implementation of the macro. Not intended to be invoked by the user.
+    (
+        @STRUCT_IMPL
+        $(#[$attr:meta])*
+        $v:vis struct $Storage:ident [$($lts:tt)*] for $Database:ty {
+            $(
+                impl $TraitName:path {
+                    $(
+                        fn $query_method:ident() for $QueryType:path;
+                    )*
+                }
+            )*
+        }
+    ) => {
         #[derive(Default)]
         $(#[$attr])*
-        $v struct $Storage {
+        $v struct $Storage<$($lts)*> {
             $(
                 $(
                     $query_method: <$QueryType as $crate::Query<$Database>>::Storage,
@@ -811,12 +869,13 @@ macro_rules! database_storage {
         /// know any way to hide this with hygiene, so use `__`
         /// instead.
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-        $v struct __SalsaQueryDescriptor {
-            kind: __SalsaQueryDescriptorKind
+        $v struct __SalsaQueryDescriptor<$($lts)*> {
+            kind: __SalsaQueryDescriptorKind<$($lts)*>
         }
 
+        #[allow(non_camel_case_types)]
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-        enum __SalsaQueryDescriptorKind {
+        enum __SalsaQueryDescriptorKind<$($lts)*> {
             $(
                 $(
                     $query_method(<$QueryType as $crate::Query<$Database>>::Key),
@@ -824,12 +883,12 @@ macro_rules! database_storage {
             )*
         }
 
-        impl $crate::plumbing::DatabaseStorageTypes for $Database {
-            type QueryDescriptor = __SalsaQueryDescriptor;
-            type DatabaseStorage = $Storage;
+        impl<$($lts)*> $crate::plumbing::DatabaseStorageTypes for $Database {
+            type QueryDescriptor = __SalsaQueryDescriptor<$($lts)*>;
+            type DatabaseStorage = $Storage<$($lts)*>;
         }
 
-        impl $crate::plumbing::DatabaseOps for $Database {
+        impl<$($lts)*> $crate::plumbing::DatabaseOps for $Database {
             fn for_each_query(
                 &self,
                 mut op: impl FnMut(&dyn $crate::plumbing::QueryStorageMassOps<Self>),
@@ -844,7 +903,7 @@ macro_rules! database_storage {
             }
         }
 
-        impl $crate::plumbing::QueryDescriptor<$Database> for __SalsaQueryDescriptor {
+        impl<$($lts)*> $crate::plumbing::QueryDescriptor<$Database> for __SalsaQueryDescriptor<$($lts)*> {
             fn maybe_changed_since(
                 &self,
                 db: &$Database,
@@ -870,44 +929,114 @@ macro_rules! database_storage {
             }
         }
 
-        $(
-            impl $TraitName for $Database { }
-
+        $crate::database_storage! {
+            @TRAIT_IMPL [$($lts)*] $Database;
             $(
-                impl $crate::plumbing::GetQueryTable<$QueryType> for $Database {
-                    fn get_query_table(
-                        db: &Self,
-                    ) -> $crate::QueryTable<'_, Self, $QueryType> {
-                        $crate::QueryTable::new(
-                            db,
-                            &$crate::Database::salsa_runtime(db)
-                                .storage()
-                                .$query_method,
-                        )
-                    }
-
-                    fn get_query_table_mut(
-                        db: &mut Self,
-                    ) -> $crate::QueryTableMut<'_, Self, $QueryType> {
-                        let db = &*db;
-                        $crate::QueryTableMut::new(
-                            db,
-                            &$crate::Database::salsa_runtime(db)
-                                .storage()
-                                .$query_method,
-                        )
-                    }
-
-                    fn descriptor(
-                        db: &Self,
-                        key: <$QueryType as $crate::Query<Self>>::Key,
-                    ) -> <Self as $crate::plumbing::DatabaseStorageTypes>::QueryDescriptor {
-                        __SalsaQueryDescriptor {
-                            kind: __SalsaQueryDescriptorKind::$query_method(key),
-                        }
-                    }
+                impl $TraitName {
+                    $(
+                        fn $query_method() for $QueryType;
+                    )*
                 }
             )*
+        }
+    };
+
+    // Recursive formulation of trait implementation (induction step).
+    (
+        @TRAIT_IMPL [$($lts:tt)*] $Database:ty;
+        impl $TraitName:path {
+            $(
+                fn $query_method:ident() for $QueryType:path;
+            )*
+        }
+        $(
+            impl $TailTraitName:path {
+                $(
+                    fn $tail_query_method:ident() for $TailQueryType:path;
+                )*
+            }
         )*
+    ) => {
+        impl<$($lts)*> $TraitName for $Database { }
+
+        $crate::database_storage! {
+            @QUERY_IMPL [$($lts)*] $Database;
+            $(
+                fn $query_method() for $QueryType;
+            )*
+        }
+
+        $crate::database_storage! {
+            @TRAIT_IMPL [$($lts)*] $Database;
+            $(
+                impl $TailTraitName {
+                    $(
+                        fn $tail_query_method() for $TailQueryType;
+                    )*
+                }
+            )*
+        }
+    };
+
+    // Recursive formulation of trait implementation (base case).
+    (
+        @TRAIT_IMPL [$($lts:tt)*] $Database:ty;
+    ) => {
+    };
+
+    // Recursive formulation of per-trait query implementation (induction step).
+    (
+        @QUERY_IMPL [$($lts:tt)*] $Database:ty;
+        fn $query_method:ident() for $QueryType:path;
+        $(
+            fn $tail_query_method:ident() for $TailQueryType:path;
+        )*
+    ) => {
+        impl<$($lts)*> $crate::plumbing::GetQueryTable<$QueryType> for $Database {
+            fn get_query_table(
+                db: &Self,
+            ) -> $crate::QueryTable<'_, Self, $QueryType> {
+                $crate::QueryTable::new(
+                    db,
+                    &$crate::Database::salsa_runtime(db)
+                        .storage()
+                        .$query_method,
+                )
+            }
+
+            fn get_query_table_mut(
+                db: &mut Self,
+            ) -> $crate::QueryTableMut<'_, Self, $QueryType> {
+                let db = &*db;
+                $crate::QueryTableMut::new(
+                    db,
+                    &$crate::Database::salsa_runtime(db)
+                        .storage()
+                        .$query_method,
+                )
+            }
+
+            fn descriptor(
+                _db: &Self,
+                key: <$QueryType as $crate::Query<Self>>::Key,
+            ) -> <Self as $crate::plumbing::DatabaseStorageTypes>::QueryDescriptor {
+                __SalsaQueryDescriptor {
+                    kind: __SalsaQueryDescriptorKind::$query_method(key),
+                }
+            }
+        }
+
+        $crate::database_storage! {
+            @QUERY_IMPL [$($lts)*] $Database;
+            $(
+                fn $tail_query_method() for $TailQueryType;
+            )*
+        }
+    };
+
+    // Recursive formulation of per-trait query implementation (base case).
+    (
+        @QUERY_IMPL [$($lts:tt)*] $Database:ty;
+    ) => {
     };
 }
