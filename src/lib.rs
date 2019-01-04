@@ -540,26 +540,28 @@ where
 #[macro_export]
 macro_rules! query_group {
     (
-        $(#[$attr:meta])* $v:vis trait $name:ident { $($t:tt)* }
+        $(#[$attr:meta])* $v:vis trait $name:ident $(<$lt:lifetime>)* { $($t:tt)* }
     ) => {
         $crate::query_group! {
             attr[$(#[$attr])*];
             headers[$v, $name, ];
             tokens[{ $($t)* }];
+            lifetime[$($lt)*];
         }
     };
 
     (
-        $(#[$attr:meta])* $v:vis trait $name:ident : $($t:tt)*
+        $(#[$attr:meta])* $v:vis trait $name:ident $(<$lt:lifetime>)* : $($t:tt)*
     ) => {
         $crate::query_group! {
             attr[$(#[$attr])*];
             headers[$v, $name, ];
             tokens[$($t)*];
+            lifetime[$($lt)*];
         }
     };
 
-    // Base case: found the trait body
+    // Base case without lifetime: found the trait body
     (
         attr[$($trait_attr:tt)*];
         headers[$v:vis, $query_trait:ident, $($header:tt)*];
@@ -573,6 +575,7 @@ macro_rules! query_group {
                 }
             )*
         }];
+        lifetime[];
     ) => {
         $($trait_attr)* $v trait $query_trait: $($crate::plumbing::GetQueryTable<$QueryType> +)* $($header)* {
             $(
@@ -605,6 +608,60 @@ macro_rules! query_group {
                     db_trait($query_trait);
                     query_type($QueryType);
                     key($($key_name: $key_ty),*);
+                    lifetime();
+                ]
+            }
+        )*
+    };
+
+    // Base case with lifetime: found the trait body
+    (
+        attr[$($trait_attr:tt)*];
+        headers[$v:vis, $query_trait:ident, $($header:tt)*];
+        tokens[{
+            $(
+                $(#[$method_attr:meta])*
+                fn $method_name:ident($($key_name:ident: $key_ty:ty),* $(,)*) -> $value_ty:ty {
+                    type $QueryType:ident;
+                    $(storage $storage:tt;)* // FIXME(rust-lang/rust#48075) should be `?`
+                    $(use fn $fn_path:path;)* // FIXME(rust-lang/rust#48075) should be `?`
+                }
+            )*
+        }];
+        lifetime[$lt:lifetime];
+    ) => {
+        $($trait_attr)* $v trait $query_trait<$lt>: $($crate::plumbing::GetQueryTable<$QueryType<$lt>> +)* $($header)* {
+            $(
+                $(#[$method_attr])*
+                fn $method_name(&self, $($key_name: $key_ty),*) -> $value_ty {
+                    <Self as $crate::plumbing::GetQueryTable<$QueryType<$lt>>>::get_query_table(self)
+                        .get(($($key_name),*))
+                }
+            )*
+        }
+
+        $(
+            #[derive(Default, Debug)]
+            $v struct $QueryType<$lt>(std::marker::PhantomData<&$lt ()>);
+
+            impl<$lt, DB> $crate::Query<DB> for $QueryType<$lt>
+            where
+                DB: $query_trait<$lt>,
+            {
+                type Key = ($($key_ty),*);
+                type Value = $value_ty;
+                type Storage = $crate::query_group! { @storage_ty[DB, Self, $($storage)*] };
+            }
+
+            $crate::query_group! {
+                @query_fn[
+                    storage($($storage)*);
+                    method_name($method_name);
+                    fn_path($($fn_path)*);
+                    db_trait($query_trait<$lt>);
+                    query_type($QueryType<$lt>);
+                    key($($key_name: $key_ty),*);
+                    lifetime($lt);
                 ]
             }
         )*
@@ -664,9 +721,10 @@ macro_rules! query_group {
             db_trait($DbTrait:path);
             query_type($QueryType:ty);
             key($key_name:ident: $key_ty:ty);
+            lifetime($($lts:lifetime)*);
         ]
     ) => {
-        impl<DB> $crate::plumbing::QueryFunction<DB> for $QueryType
+        impl<$($lts,)* DB> $crate::plumbing::QueryFunction<DB> for $QueryType
         where DB: $DbTrait
         {
             fn execute(db: &DB, $key_name: <Self as $crate::Query<DB>>::Key)
@@ -687,9 +745,10 @@ macro_rules! query_group {
             db_trait($DbTrait:path);
             query_type($QueryType:ty);
             key($($key_name:ident: $key_ty:ty),*);
+            lifetime($($lts:lifetime)*);
         ]
     ) => {
-        impl<DB> $crate::plumbing::QueryFunction<DB> for $QueryType
+        impl<$($lts,)* DB> $crate::plumbing::QueryFunction<DB> for $QueryType
         where DB: $DbTrait
         {
             fn execute(db: &DB, ($($key_name),*): <Self as $crate::Query<DB>>::Key)
@@ -706,11 +765,13 @@ macro_rules! query_group {
         attr[$($attr:tt)*];
         headers[$($headers:tt)*];
         tokens[$token:tt $($tokens:tt)*];
+        $($rest:tt)*
     ) => {
         $crate::query_group! {
             attr[$($attr)*];
             headers[$($headers)* $token];
             tokens[$($tokens)*];
+            $($rest)*
         }
     };
 
@@ -743,7 +804,7 @@ macro_rules! query_group {
     (
         @storage_ty[$DB:ident, $Self:ident, input]
     ) => {
-        $crate::plumbing::InputStorage<DB, Self>
+        $crate::plumbing::InputStorage<$DB, $Self>
     };
 
     (
