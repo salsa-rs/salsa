@@ -66,10 +66,8 @@ fn revalidate() {
     // Second generation: volatile will change (to 1) but memoized1
     // will not (still 0, as 1/2 = 0)
     query.salsa_runtime().next_revision();
-
     query.memoized2();
     query.assert_log(&["Memoized1 invoked", "Volatile invoked"]);
-
     query.memoized2();
     query.assert_log(&[]);
 

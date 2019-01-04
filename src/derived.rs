@@ -281,6 +281,13 @@ where
     ) -> Result<StampedValue<Q::Value>, CycleDetected> {
         let runtime = db.salsa_runtime();
 
+        debug!(
+            "{:?}({:?}): read_upgrade(revision_now={:?})",
+            Q::default(),
+            key,
+            revision_now,
+        );
+
         // Check with an upgradable read to see if there is a value
         // already. (This permits other readers but prevents anyone
         // else from running `read_upgrade` at the same time.)
@@ -355,6 +362,13 @@ where
         if let Some(old_memo) = &old_memo {
             if let Some(old_value) = &old_memo.value {
                 if MP::memoized_value_eq(&old_value, &result.value) {
+                    debug!(
+                        "read_upgrade({:?}({:?})): value is equal, back-dating to {:?}",
+                        Q::default(),
+                        key,
+                        old_memo.changed_at,
+                    );
+
                     assert!(old_memo.changed_at <= result.changed_at.revision);
                     result.changed_at.revision = old_memo.changed_at;
                 }
@@ -371,6 +385,14 @@ where
         } else {
             None
         };
+
+        debug!(
+            "read_upgrade({:?}({:?})): result.changed_at={:?}, result.subqueries = {:#?}",
+            Q::default(),
+            key,
+            result.changed_at,
+            result.subqueries,
+        );
 
         let inputs = match result.subqueries {
             None => MemoInputs::Untracked,
@@ -666,7 +688,7 @@ where
         let revision_now = runtime.current_revision();
 
         debug!(
-            "{:?}({:?})::maybe_changed_since(revision={:?}, revision_now={:?})",
+            "maybe_changed_since({:?}({:?})) called with revision={:?}, revision_now={:?}",
             Q::default(),
             key,
             revision,
@@ -682,13 +704,26 @@ where
             // If somebody depends on us, but we have no map
             // entry, that must mean that it was found to be out
             // of date and removed.
-            None => return true,
+            None => {
+                debug!(
+                    "maybe_changed_since({:?}({:?}): no value",
+                    Q::default(),
+                    key,
+                );
+                return true;
+            }
 
             // This value is being actively recomputed. Wait for
             // that thread to finish (assuming it's not dependent
             // on us...) and check its associated revision.
             Some(QueryState::InProgress { id, waiting }) => {
                 let other_id = *id;
+                debug!(
+                    "maybe_changed_since({:?}({:?}): blocking on thread `{:?}`",
+                    Q::default(),
+                    key,
+                    other_id,
+                );
                 match self.register_with_in_progress_thread(runtime, descriptor, other_id, waiting)
                 {
                     Ok(rx) => {
@@ -709,6 +744,13 @@ where
         };
 
         if memo.verified_at == revision_now {
+            debug!(
+                "maybe_changed_since({:?}({:?}): {:?} since up-to-date memo that changed at {:?}",
+                Q::default(),
+                key,
+                memo.changed_at > revision,
+                memo.changed_at,
+            );
             return memo.changed_at > revision;
         }
 
@@ -718,6 +760,11 @@ where
                 // inputs, so if there is a new
                 // revision, we must assume it is
                 // dirty
+                debug!(
+                    "maybe_changed_since({:?}({:?}): true since untracked inputs",
+                    Q::default(),
+                    key,
+                );
                 return true;
             }
 
@@ -734,7 +781,16 @@ where
                 if memo.value.is_some() {
                     std::mem::drop(map);
                     return match self.read_upgrade(db, key, descriptor, revision_now) {
-                        Ok(v) => v.changed_at.changed_since(revision),
+                        Ok(v) => {
+                            debug!(
+                                "maybe_changed_since({:?}({:?}): {:?} since (recomputed) value changed at {:?}",
+                                Q::default(),
+                                key,
+                                v.changed_at.changed_since(revision),
+                                v.changed_at,
+                            );
+                            v.changed_at.changed_since(revision)
+                        }
                         Err(CycleDetected) => true,
                     };
                 }
@@ -926,6 +982,12 @@ where
 
         assert!(self.verified_at != revision_now);
         let verified_at = self.verified_at;
+
+        debug!(
+            "validate_memoized_value({:?}): verified_at={:#?}",
+            Q::default(),
+            self.inputs,
+        );
 
         let is_constant = match &mut self.inputs {
             // We can't validate values that had untracked inputs; just have to

@@ -16,8 +16,24 @@ salsa::query_group! {
             type Sum;
         }
 
+        /// Invokes `sum`
         fn sum2(key: &'static str) -> usize {
             type Sum2;
+        }
+
+        /// Invokes `sum` but doesn't really care about the result.
+        fn sum2_drop_sum(key: &'static str) -> usize {
+            type Sum2Drop;
+        }
+
+        /// Invokes `sum2`
+        fn sum3(key: &'static str) -> usize {
+            type Sum3;
+        }
+
+        /// Invokes `sum2_drop_sum`
+        fn sum3_drop_sum(key: &'static str) -> usize {
+            type Sum3Drop;
         }
 
         fn snapshot_me() -> () {
@@ -82,6 +98,9 @@ pub(crate) struct KnobsStruct {
 
     /// Invocations of `sum` will signal this stage prior to exiting.
     pub(crate) sum_signal_on_exit: Cell<usize>,
+
+    /// Invocations of `sum3_drop_sum` will panic unconditionally
+    pub(crate) sum3_drop_sum_should_panic: Cell<bool>,
 }
 
 fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
@@ -105,6 +124,17 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
             std::thread::yield_now();
         }
         log::debug!("cancellation observed");
+    }
+
+    // Check for cancelation and return MAX if so. Note that we check
+    // for cancelation *deterministically* -- but if
+    // `sum_wait_for_cancellation` is set, we will block
+    // beforehand. Deterministic execution is a requirement for valid
+    // salsa user code. It's also important to some tests that `sum`
+    // *attempts* to invoke `is_current_revision_canceled` even if we
+    // know it will not be canceled, because that helps us keep the
+    // accounting up to date.
+    if db.salsa_runtime().is_current_revision_canceled() {
         return std::usize::MAX; // when we are cancelled, we return usize::MAX.
     }
 
@@ -117,6 +147,22 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
 
 fn sum2(db: &impl ParDatabase, key: &'static str) -> usize {
     db.sum(key)
+}
+
+fn sum2_drop_sum(db: &impl ParDatabase, key: &'static str) -> usize {
+    let _ = db.sum(key);
+    22
+}
+
+fn sum3(db: &impl ParDatabase, key: &'static str) -> usize {
+    db.sum2(key)
+}
+
+fn sum3_drop_sum(db: &impl ParDatabase, key: &'static str) -> usize {
+    if db.knobs().sum3_drop_sum_should_panic.get() {
+        panic!("sum3_drop_sum executed")
+    }
+    db.sum2_drop_sum(key)
 }
 
 fn snapshot_me(db: &impl ParDatabase) {
@@ -176,6 +222,9 @@ salsa::database_storage! {
             fn input() for Input;
             fn sum() for Sum;
             fn sum2() for Sum2;
+            fn sum2_drop_sum() for Sum2Drop;
+            fn sum3() for Sum3;
+            fn sum3_drop_sum() for Sum3Drop;
             fn snapshot_me() for SnapshotMe;
         }
     }

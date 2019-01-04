@@ -159,6 +159,14 @@ where
         }
     }
 
+    /// Read current value of the revision counter.
+    #[inline]
+    fn pending_revision(&self) -> Revision {
+        Revision {
+            generation: self.shared_state.pending_revision.load(Ordering::SeqCst) as u64,
+        }
+    }
+
     /// Check if the current revision is canceled. If this method ever
     /// returns true, the currently executing query is also marked as
     /// having an *untracked read* -- this means that, in the next
@@ -169,14 +177,48 @@ where
     /// whatever it likes.
     #[inline]
     pub fn is_current_revision_canceled(&self) -> bool {
-        let pending_revision_increments = self
-            .shared_state
-            .pending_revision_increments
-            .load(Ordering::SeqCst);
-        if pending_revision_increments > 0 {
+        let current_revision = self.current_revision();
+        let pending_revision = self.pending_revision();
+        debug!(
+            "is_current_revision_canceled: current_revision={:?}, pending_revision={:?}",
+            current_revision, pending_revision
+        );
+        if pending_revision > current_revision {
             self.report_untracked_read();
             true
         } else {
+            // Subtle: If the current revision is not canceled, we
+            // still report an **anonymous** read, which will bump up
+            // the revision number to be at least the last
+            // non-canceled revision. This is needed to ensure
+            // deterministic reads and avoid salsa-rs/salsa#66. The
+            // specific scenario we are trying to avoid is tested by
+            // `no_back_dating_in_cancellation`; it works like
+            // this. Imagine we have 3 queries, where Query3 invokes
+            // Query2 which invokes Query1. Then:
+            //
+            // - In Revision R1:
+            //   - Query1: Observes cancelation and returns sentinel S.
+            //     - Recorded inputs: Untracked, because we observed cancelation.
+            //   - Query2: Reads Query1 and propagates sentinel S.
+            //     - Recorded inputs: Query1, changed-at=R1
+            //   - Query3: Reads Query2 and propagates sentinel S. (Inputs = Query2, ChangedAt R1)
+            //     - Recorded inputs: Query2, changed-at=R1
+            // - In Revision R2:
+            //   - Query1: Observes no cancelation. All of its inputs last changed in R0,
+            //     so it returns a valid value with "changed at" of R0.
+            //     - Recorded inputs: ..., changed-at=R0
+            //   - Query2: Recomputes its value and returns correct result.
+            //     - Recorded inputs: Query1, changed-at=R0 <-- key problem!
+            //   - Query3: sees that Query2's result last changed in R0, so it thinks it
+            //     can re-use its value from R1 (which is the sentinel value).
+            //
+            // The anonymous read here prevents that scenario: Query1
+            // winds up with a changed-at setting of R2, which is the
+            // "pending revision", and hence Query2 and Query3
+            // are recomputed.
+            assert_eq!(pending_revision, current_revision);
+            self.report_anon_read(pending_revision);
             false
         }
     }
@@ -190,6 +232,10 @@ where
     /// method will also increment `pending_revision_increments`, thus
     /// signalling to queries that their results are "canceled" and
     /// they should abort as expeditiously as possible.
+    ///
+    /// Note that, given our writer model, we can assume that only one
+    /// thread is attempting to increment the global revision at a
+    /// time.
     pub(crate) fn with_incremented_revision<R>(&self, op: impl FnOnce(Revision) -> R) -> R {
         log::debug!("increment_revision()");
 
@@ -197,36 +243,24 @@ where
             panic!("increment_revision invoked during a query computation");
         }
 
-        // Signal that we have a pending increment so that workers can
-        // start to cancel work.
-        let old_pending_revision_increments = self
+        // Set the `pending_revision` field so that people
+        // know current revision is canceled.
+        let current_revision = self
             .shared_state
-            .pending_revision_increments
+            .pending_revision
             .fetch_add(1, Ordering::SeqCst);
-        assert!(
-            old_pending_revision_increments != usize::max_value(),
-            "pending increment overflow"
-        );
+        assert!(current_revision != usize::max_value(), "revision overflow");
 
         // To modify the revision, we need the lock.
         let _lock = self.shared_state.query_lock.write();
 
-        // *Before* updating the revision number, decrement the
-        // `pending_revision_increments` counter. This way, if anybody
-        // should happen to invoke `is_current_revision_canceled`
-        // before we update the number, and they read 0, they don't
-        // get an incorrect result -- once they acquire the query
-        // lock, we'll be in the new revision.
-        self.shared_state
-            .pending_revision_increments
-            .fetch_sub(1, Ordering::SeqCst);
-
         let old_revision = self.shared_state.revision.fetch_add(1, Ordering::SeqCst);
-        assert!(old_revision != usize::max_value(), "revision overflow");
+        assert_eq!(current_revision, old_revision);
 
         let new_revision = Revision {
-            generation: 1 + old_revision as u64,
+            generation: (current_revision + 1) as u64,
         };
+
         debug!("increment_revision: incremented to {:?}", new_revision);
 
         op(new_revision)
@@ -308,6 +342,20 @@ where
         }
     }
 
+    /// An "anonymous" read is a read that doesn't come from executing
+    /// a query, but from some other internal operation. It just
+    /// modifies the "changed at" to be at least the given revision.
+    /// (It also does not disqualify a query from being considered
+    /// constant, since it is used for queries that don't give back
+    /// actual *data*.)
+    ///
+    /// This is used when queries check if they have been canceled.
+    fn report_anon_read(&self, revision: Revision) {
+        if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
+            top_query.add_anon_read(revision);
+        }
+    }
+
     /// Obviously, this should be user configurable at some point.
     pub(crate) fn report_unexpected_cycle(&self, descriptor: DB::QueryDescriptor) -> ! {
         debug!("report_unexpected_cycle(descriptor={:?})", descriptor);
@@ -374,12 +422,10 @@ struct SharedState<DB: Database> {
     /// (Ideally, this should be `AtomicU64`, but that is currently unstable.)
     revision: AtomicUsize,
 
-    /// Counts the number of pending increments to the revision
-    /// counter. If this is non-zero, it means that the current
-    /// revision is out of date, and hence queries are free to
-    /// "short-circuit" their results if they learn that. See
-    /// `is_current_revision_canceled` for more information.
-    pending_revision_increments: AtomicUsize,
+    /// This is typically equal to `revision` -- set to `revision+1`
+    /// when a new revision is pending (which implies that the current
+    /// revision is canceled).
+    pending_revision: AtomicUsize,
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
@@ -393,8 +439,8 @@ impl<DB: Database> Default for SharedState<DB> {
             storage: Default::default(),
             query_lock: Default::default(),
             revision: Default::default(),
+            pending_revision: Default::default(),
             dependency_graph: Default::default(),
-            pending_revision_increments: Default::default(),
         }
     }
 }
@@ -414,7 +460,7 @@ where
         fmt.debug_struct("SharedState")
             .field("query_lock", &query_lock)
             .field("revision", &self.revision)
-            .field("pending_revision_increments", &self.pending_revision_increments)
+            .field("pending_revision", &self.pending_revision)
             .finish()
     }
 }
@@ -501,6 +547,10 @@ impl<DB: Database> ActiveQuery<DB> {
         self.changed_at.is_constant = false;
         self.changed_at.revision = changed_at;
     }
+
+    fn add_anon_read(&mut self, changed_at: Revision) {
+        self.changed_at.revision = self.changed_at.revision.max(changed_at);
+    }
 }
 
 /// A unique identifier for a particular runtime. Each time you create
@@ -523,6 +573,17 @@ pub struct Revision {
 
 impl Revision {
     pub(crate) const ZERO: Self = Revision { generation: 0 };
+
+    fn next(self) -> Revision {
+        Revision {
+            generation: self.generation + 1,
+        }
+    }
+
+    fn as_usize(self) -> usize {
+        assert!(self.generation < (std::usize::MAX as u64));
+        self.generation as usize
+    }
 }
 
 impl std::fmt::Debug for Revision {
