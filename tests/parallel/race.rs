@@ -25,9 +25,14 @@ fn in_par_get_set_race() {
     });
 
     // If the 1st thread runs first, you get 111, otherwise you get
-    // 1011.
+    // 1011; if they run concurrently and the 1st thread observes the
+    // cancelation, you get back usize::max.
     let value1 = thread1.join().unwrap();
-    assert!(value1 == 111 || value1 == 1011, "illegal result {}", value1);
+    assert!(
+        value1 == 111 || value1 == 1011 || value1 == std::usize::MAX,
+        "illegal result {}",
+        value1
+    );
 
     assert_eq!(thread2.join().unwrap(), 1000);
 }

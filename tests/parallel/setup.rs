@@ -109,6 +109,17 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
             std::thread::yield_now();
         }
         log::debug!("cancellation observed");
+    }
+
+    // Check for cancelation and return MAX if so. Note that we check
+    // for cancelation *deterministically* -- but if
+    // `sum_wait_for_cancellation` is set, we will block
+    // beforehand. Deterministic execution is a requirement for valid
+    // salsa user code. It's also important to some tests that `sum`
+    // *attempts* to invoke `is_current_revision_canceled` even if we
+    // know it will not be canceled, because that helps us keep the
+    // accounting up to date.
+    if db.salsa_runtime().is_current_revision_canceled() {
         return std::usize::MAX; // when we are cancelled, we return usize::MAX.
     }
 
