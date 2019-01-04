@@ -118,3 +118,40 @@ fn no_back_dating_in_cancellation() {
     db.query_mut(Input).set('a', 4);
     assert_eq!(db.sum3("ab"), 6);
 }
+
+/// Here, we compute `sum3_drop_sum` and -- in the process -- observe
+/// a cancellation. As a result, we have to recompute `sum` when we
+/// reinvoke `sum3_drop_sum` and we have to re-execute
+/// `sum2_drop_sum`.  But the result of `sum2_drop_sum` doesn't
+/// change, so we don't have to re-execute `sum3_drop_sum`.
+#[test]
+fn transitive_cancellation() {
+    let mut db = ParDatabaseImpl::default();
+
+    db.query_mut(Input).set('a', 1);
+    let thread1 = std::thread::spawn({
+        let db = db.snapshot();
+        move || {
+            // Here we compute a long-chain of queries,
+            // but the last one gets cancelled.
+            db.knobs().sum_signal_on_entry.with_value(1, || {
+                db.knobs()
+                    .sum_wait_for_cancellation
+                    .with_value(true, || db.sum3_drop_sum("a"))
+            })
+        }
+    });
+
+    db.wait_for(1);
+
+    db.query_mut(Input).set('b', 2);
+
+    // Check that when we call `sum3_drop_sum` we don't wind up having
+    // to actually re-execute it, because the result of `sum2` winds
+    // up not changing.
+    db.knobs().sum3_drop_sum_should_panic.with_value(true, || {
+        assert_eq!(db.sum3_drop_sum("a"), 22);
+    });
+
+    assert_eq!(thread1.join().unwrap(), 22);
+}
