@@ -332,7 +332,7 @@ where
 
 /// Trait implements by all of the "special types" associated with
 /// each of your queries.
-pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
+pub trait Query<DB: Database>: Debug + Default + Sized {
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
     type Key: Clone + Debug + Hash + Eq;
