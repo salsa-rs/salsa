@@ -104,7 +104,8 @@ fn no_back_dating_in_cancellation() {
     });
 
     db.wait_for(1);
-    // Set unrelated input to bumpision rev
+
+    // Set unrelated input to bump revision
     db.query_mut(Input).set('b', 2);
 
     // Here we should recompuet the whole chain again, clearing the cancellation
@@ -112,4 +113,8 @@ fn no_back_dating_in_cancellation() {
     assert_eq!(db.sum3("a"), 1);
 
     assert_eq!(thread1.join().unwrap(), std::usize::MAX);
+
+    db.query_mut(Input).set('a', 3);
+    db.query_mut(Input).set('a', 4);
+    assert_eq!(db.sum3("ab"), 6);
 }
