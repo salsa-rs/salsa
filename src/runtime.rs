@@ -414,7 +414,10 @@ where
         fmt.debug_struct("SharedState")
             .field("query_lock", &query_lock)
             .field("revision", &self.revision)
-            .field("pending_revision_increments", &self.pending_revision_increments)
+            .field(
+                "pending_revision_increments",
+                &self.pending_revision_increments,
+            )
             .finish()
     }
 }
