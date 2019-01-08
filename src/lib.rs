@@ -641,8 +641,14 @@ macro_rules! query_group {
         }
 
         $(
-            #[derive(Default, Debug)]
+            #[derive(Default)]
             $v struct $QueryType<$lt>(std::marker::PhantomData<&$lt ()>);
+
+            impl std::fmt::Debug for $QueryType<'_> {
+                fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    write!(f, "{}", stringify!($QueryType))
+                }
+            }
 
             impl<$lt, DB> $crate::Query<DB> for $QueryType<$lt>
             where
