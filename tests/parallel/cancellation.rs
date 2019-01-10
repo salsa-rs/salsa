@@ -1,5 +1,19 @@
-use crate::setup::{Input, Knobs, ParDatabase, ParDatabaseImpl, WithValue};
+use crate::setup::{
+    CancelationFlag, Canceled, Input, Knobs, ParDatabase, ParDatabaseImpl, WithValue,
+};
 use salsa::{Database, ParallelDatabase};
+
+macro_rules! assert_canceled {
+    ($thread:expr) => {
+        match $thread.join() {
+            Ok(value) => panic!("expected cancelation, got {:?}", value),
+            Err(payload) => match payload.downcast::<Canceled>() {
+                Ok(_) => {}
+                Err(payload) => ::std::panic::resume_unwind(payload),
+            },
+        }
+    };
+}
 
 /// Add test where a call to `sum` is cancelled by a simultaneous
 /// write. Check that we recompute the result in next revision, even
@@ -21,7 +35,7 @@ fn in_par_get_set_cancellation_immediate() {
             db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
                     .sum_wait_for_cancellation
-                    .with_value(true, || db.sum("abc"))
+                    .with_value(CancelationFlag::Panic, || db.sum("abc"))
             })
         }
     });
@@ -39,7 +53,7 @@ fn in_par_get_set_cancellation_immediate() {
     });
 
     assert_eq!(db.sum("d"), 1000);
-    assert_eq!(thread1.join().unwrap(), std::usize::MAX);
+    assert_canceled!(thread1);
     assert_eq!(thread2.join().unwrap(), 111);
 }
 
@@ -62,7 +76,7 @@ fn in_par_get_set_cancellation_transitive() {
             db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
                     .sum_wait_for_cancellation
-                    .with_value(true, || db.sum2("abc"))
+                    .with_value(CancelationFlag::Panic, || db.sum2("abc"))
             })
         }
     });
@@ -80,7 +94,7 @@ fn in_par_get_set_cancellation_transitive() {
     });
 
     assert_eq!(db.sum2("d"), 1000);
-    assert_eq!(thread1.join().unwrap(), std::usize::MAX);
+    assert_canceled!(thread1);
     assert_eq!(thread2.join().unwrap(), 111);
 }
 
@@ -98,7 +112,7 @@ fn no_back_dating_in_cancellation() {
             db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
                     .sum_wait_for_cancellation
-                    .with_value(true, || db.sum3("a"))
+                    .with_value(CancelationFlag::Panic, || db.sum3("a"))
             })
         }
     });
@@ -112,7 +126,7 @@ fn no_back_dating_in_cancellation() {
     // state. If we get `usize::max()` here, it is a bug!
     assert_eq!(db.sum3("a"), 1);
 
-    assert_eq!(thread1.join().unwrap(), std::usize::MAX);
+    assert_canceled!(thread1);
 
     db.query_mut(Input).set('a', 3);
     db.query_mut(Input).set('a', 4);
@@ -137,7 +151,7 @@ fn transitive_cancellation() {
             db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
                     .sum_wait_for_cancellation
-                    .with_value(true, || db.sum3_drop_sum("a"))
+                    .with_value(CancelationFlag::SpecialValue, || db.sum3_drop_sum("a"))
             })
         }
     });
