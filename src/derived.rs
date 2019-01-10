@@ -480,7 +480,7 @@ where
                             },
                         });
 
-                        let value = rx.recv().unwrap();
+                        let value = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
                         ProbeState::UpToDate(Ok(value))
                     }
 
@@ -731,7 +731,7 @@ where
                         // can complete.
                         std::mem::drop(map);
 
-                        let value = rx.recv().unwrap();
+                        let value = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
                         return value.changed_at.changed_since(revision);
                     }
 
