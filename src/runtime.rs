@@ -35,7 +35,12 @@ pub struct Runtime<DB: Database> {
     shared_state: Arc<SharedState<DB>>,
 }
 
-impl<DB> std::panic::RefUnwindSafe for Runtime<DB> where DB: Database {}
+impl<DB> std::panic::RefUnwindSafe for Runtime<DB>
+where
+    DB: Database,
+    DB::DatabaseStorage: std::panic::RefUnwindSafe,
+{
+}
 
 impl<DB> Default for Runtime<DB>
 where

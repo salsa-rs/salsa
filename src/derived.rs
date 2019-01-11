@@ -48,6 +48,16 @@ where
     policy: PhantomData<MP>,
 }
 
+impl<DB, Q, MP> std::panic::RefUnwindSafe for DerivedStorage<DB, Q, MP>
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+    MP: MemoizationPolicy<DB, Q>,
+    Q::Key: std::panic::RefUnwindSafe,
+    Q::Value: std::panic::RefUnwindSafe,
+{
+}
+
 pub trait MemoizationPolicy<DB, Q>
 where
     Q: QueryFunction<DB>,

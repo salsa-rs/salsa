@@ -105,10 +105,10 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
         #![allow(unused_variables)]
     }
 
-    /// This function is invoked when a depndent query is being computed by the
+    /// This function is invoked when a dependent query is being computed by the
     /// other thread, and that thread panics.
     fn on_propagated_panic(&self) -> ! {
-        panic!("concurrent salsa query paniced")
+        panic!("concurrent salsa query panicked")
     }
 }
 
