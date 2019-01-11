@@ -230,16 +230,6 @@ where
         }
     }
 
-    /// Calls the callback if the current revision is cancelled.
-    ///
-    /// Observing cancellation may lead to inconsistencies in database storage,
-    /// so the callback must panic.
-    pub fn if_current_revision_is_canceled(&self, cb: fn() -> !) {
-        if self.pending_revision() > self.current_revision() {
-            cb()
-        }
-    }
-
     /// Acquires the **global query write lock** (ensuring that no
     /// queries are executing) and then increments the current
     /// revision counter; invokes `op` with the global query write

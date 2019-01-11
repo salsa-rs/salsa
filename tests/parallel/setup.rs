@@ -143,21 +143,14 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
 
     match db.knobs().sum_wait_for_cancellation.get() {
         CancelationFlag::Down => (),
-        CancelationFlag::SpecialValue => {
+        flag => {
             log::debug!("waiting for cancellation");
             while !db.salsa_runtime().is_current_revision_canceled() {
                 std::thread::yield_now();
             }
             log::debug!("observed cancelation");
-        }
-        CancelationFlag::Panic => {
-            log::debug!("waiting for cancellation");
-            loop {
-                db.salsa_runtime().if_current_revision_is_canceled(|| {
-                    log::debug!("observed cancelation");
-                    Canceled::throw()
-                });
-                std::thread::yield_now();
+            if flag == CancelationFlag::Panic {
+                Canceled::throw();
             }
         }
     }
