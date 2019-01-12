@@ -1,4 +1,4 @@
-use crate::setup::{Input, ParDatabase, ParDatabaseImpl};
+use crate::setup::{InputQuery, ParDatabase, ParDatabaseImpl};
 use salsa::{Database, ParallelDatabase};
 
 /// Test where a read and a set are racing with one another.
@@ -7,9 +7,9 @@ use salsa::{Database, ParallelDatabase};
 fn in_par_get_set_race() {
     let mut db = ParDatabaseImpl::default();
 
-    db.query_mut(Input).set('a', 100);
-    db.query_mut(Input).set('b', 010);
-    db.query_mut(Input).set('c', 001);
+    db.query_mut(InputQuery).set('a', 100);
+    db.query_mut(InputQuery).set('b', 010);
+    db.query_mut(InputQuery).set('c', 001);
 
     let thread1 = std::thread::spawn({
         let db = db.snapshot();
@@ -20,7 +20,7 @@ fn in_par_get_set_race() {
     });
 
     let thread2 = std::thread::spawn(move || {
-        db.query_mut(Input).set('a', 1000);
+        db.query_mut(InputQuery).set('a', 1000);
         db.sum("a")
     });
 

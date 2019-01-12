@@ -1,10 +1,7 @@
-salsa::query_group! {
-    trait MyDatabase: salsa::Database {
-        fn my_query(key: ()) -> () {
-            type MyQuery;
-            use fn another_module::another_name;
-        }
-    }
+#[salsa::query_group]
+trait MyDatabase: salsa::Database {
+    #[salsa::invoke(another_module::another_name)]
+    fn my_query(&self, key: ()) -> ();
 }
 
 mod another_module {

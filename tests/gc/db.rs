@@ -16,13 +16,13 @@ impl salsa::Database for DatabaseImpl {
 salsa::database_storage! {
     pub struct DatabaseImplStorage for DatabaseImpl {
         impl group::GcDatabase {
-            fn min() for group::Min;
-            fn max() for group::Max;
-            fn use_triangular() for group::UseTriangular;
-            fn fibonacci() for group::Fibonacci;
-            fn triangular() for group::Triangular;
-            fn compute() for group::Compute;
-            fn compute_all() for group::ComputeAll;
+            fn min() for group::MinQuery;
+            fn max() for group::MaxQuery;
+            fn use_triangular() for group::UseTriangularQuery;
+            fn fibonacci() for group::FibonacciQuery;
+            fn triangular() for group::TriangularQuery;
+            fn compute() for group::ComputeQuery;
+            fn compute_all() for group::ComputeAllQuery;
         }
     }
 }

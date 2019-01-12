@@ -1,28 +1,17 @@
 use salsa::Database;
 
-salsa::query_group! {
-    trait HelloWorldDatabase: salsa::Database {
-        fn input(a: u32, b: u32) -> u32 {
-            type Input;
-            storage input;
-        }
+#[salsa::query_group]
+trait HelloWorldDatabase: salsa::Database {
+    #[salsa::input]
+    fn input(&self, a: u32, b: u32) -> u32;
 
-        fn none() -> u32 {
-            type None;
-        }
+    fn none(&self) -> u32;
 
-        fn one(k: u32) -> u32 {
-            type One;
-        }
+    fn one(&self, k: u32) -> u32;
 
-        fn two(a: u32, b: u32) -> u32 {
-            type Two;
-        }
+    fn two(&self, a: u32, b: u32) -> u32;
 
-        fn trailing(a: u32, b: u32,) -> u32 {
-            type Trailing;
-        }
-    }
+    fn trailing(&self, a: u32, b: u32) -> u32;
 }
 
 fn none(_db: &impl HelloWorldDatabase) -> u32 {
@@ -55,11 +44,11 @@ impl salsa::Database for DatabaseStruct {
 salsa::database_storage! {
     struct DatabaseStorage for DatabaseStruct {
         impl HelloWorldDatabase {
-            fn input() for Input;
-            fn none() for None;
-            fn one() for One;
-            fn two() for Two;
-            fn trailing() for Trailing;
+            fn input() for InputQuery;
+            fn none() for NoneQuery;
+            fn one() for OneQuery;
+            fn two() for TwoQuery;
+            fn trailing() for TrailingQuery;
         }
     }
 }
@@ -69,7 +58,7 @@ fn execute() {
     let mut db = DatabaseStruct::default();
 
     // test what happens with inputs:
-    db.query_mut(Input).set((1, 2), 3);
+    db.query_mut(InputQuery).set((1, 2), 3);
     assert_eq!(db.input(1, 2), 3);
 
     assert_eq!(db.none(), 22);

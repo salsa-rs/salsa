@@ -2,16 +2,11 @@ pub(crate) trait Counter: salsa::Database {
     fn increment(&self) -> usize;
 }
 
-salsa::query_group! {
-    pub(crate) trait Database: Counter {
-        fn memoized() -> usize {
-            type Memoized;
-        }
-        fn volatile() -> usize {
-            type Volatile;
-            storage volatile;
-        }
-    }
+#[salsa::query_group]
+pub(crate) trait Database: Counter {
+    fn memoized(&self) -> usize;
+    #[salsa::volatile]
+    fn volatile(&self) -> usize;
 }
 
 /// Because this query is memoized, we only increment the counter

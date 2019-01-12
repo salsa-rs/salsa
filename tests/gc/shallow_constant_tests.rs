@@ -1,5 +1,5 @@
 use crate::db;
-use crate::group::{Fibonacci, GcDatabase};
+use crate::group::{FibonacciQuery, GcDatabase};
 use salsa::debug::DebugQueryTable;
 use salsa::{Database, SweepStrategy};
 
@@ -13,7 +13,7 @@ fn one_rev() {
 
     db.fibonacci(5);
 
-    let k: Vec<_> = db.query(Fibonacci).keys();
+    let k: Vec<_> = db.query(FibonacciQuery).keys();
     assert_eq!(k.len(), 6);
 
     // Everything was used in this revision, so
@@ -28,7 +28,7 @@ fn two_rev_nothing() {
 
     db.fibonacci(5);
 
-    let k: Vec<_> = db.query(Fibonacci).keys();
+    let k: Vec<_> = db.query(FibonacciQuery).keys();
     assert_eq!(k.len(), 6);
 
     db.salsa_runtime().next_revision();
@@ -37,7 +37,7 @@ fn two_rev_nothing() {
     // everything gets collected.
     db.sweep_all(SweepStrategy::default());
 
-    let k: Vec<_> = db.query(Fibonacci).keys();
+    let k: Vec<_> = db.query(FibonacciQuery).keys();
     assert_eq!(k.len(), 0);
 }
 
@@ -47,7 +47,7 @@ fn two_rev_one_use() {
 
     db.fibonacci(5);
 
-    let k: Vec<_> = db.query(Fibonacci).keys();
+    let k: Vec<_> = db.query(FibonacciQuery).keys();
     assert_eq!(k.len(), 6);
 
     db.salsa_runtime().next_revision();
@@ -58,7 +58,7 @@ fn two_rev_one_use() {
     // hence we keep `fibonacci(5)` but remove 0..=4.
     db.sweep_all(SweepStrategy::default());
 
-    let k: Vec<_> = db.query(Fibonacci).keys();
+    let k: Vec<_> = db.query(FibonacciQuery).keys();
     assert_eq!(k, vec![5]);
 }
 
@@ -68,7 +68,7 @@ fn two_rev_two_uses() {
 
     db.fibonacci(5);
 
-    let k: Vec<_> = db.query(Fibonacci).keys();
+    let k: Vec<_> = db.query(FibonacciQuery).keys();
     assert_eq!(k.len(), 6);
 
     db.salsa_runtime().next_revision();
@@ -80,7 +80,7 @@ fn two_rev_two_uses() {
     // hence we keep 3 and 5 but remove the rest.
     db.sweep_all(SweepStrategy::default());
 
-    let mut k: Vec<_> = db.query(Fibonacci).keys();
+    let mut k: Vec<_> = db.query(FibonacciQuery).keys();
     k.sort();
     assert_eq!(k, vec![3, 5]);
 }

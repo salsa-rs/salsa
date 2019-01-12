@@ -1,23 +1,16 @@
 use crate::compiler;
 use std::sync::Arc;
 
-salsa::query_group! {
-    pub trait ClassTableDatabase: compiler::CompilerDatabase {
-        /// Get the fields.
-        fn fields(class: DefId) -> Arc<Vec<DefId>> {
-            type Fields;
-        }
+#[salsa::query_group]
+pub trait ClassTableDatabase: compiler::CompilerDatabase {
+    /// Get the fields.
+    fn fields(&self, class: DefId) -> Arc<Vec<DefId>>;
 
-        /// Get the list of all classes
-        fn all_classes() -> Arc<Vec<DefId>> {
-            type AllClasses;
-        }
+    /// Get the list of all classes
+    fn all_classes(&self) -> Arc<Vec<DefId>>;
 
-        /// Get the list of all fields
-        fn all_fields() -> Arc<Vec<DefId>> {
-            type AllFields;
-        }
-    }
+    /// Get the list of all fields
+    fn all_fields(&self) -> Arc<Vec<DefId>>;
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]

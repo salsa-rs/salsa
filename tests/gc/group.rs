@@ -1,38 +1,23 @@
 use crate::log::HasLog;
 
-salsa::query_group! {
-    pub(crate) trait GcDatabase: salsa::Database + HasLog {
-        fn min() -> usize {
-            type Min;
-            storage input;
-        }
+#[salsa::query_group]
+pub(crate) trait GcDatabase: salsa::Database + HasLog {
+    #[salsa::input]
+    fn min(&self) -> usize;
 
-        fn max() -> usize {
-            type Max;
-            storage input;
-        }
+    #[salsa::input]
+    fn max(&self) -> usize;
 
-        fn use_triangular(key: usize) -> bool {
-            type UseTriangular;
-            storage input;
-        }
+    #[salsa::input]
+    fn use_triangular(&self, key: usize) -> bool;
 
-        fn fibonacci(key: usize) -> usize {
-            type Fibonacci;
-        }
+    fn fibonacci(&self, key: usize) -> usize;
 
-        fn triangular(key: usize) -> usize {
-            type Triangular;
-        }
+    fn triangular(&self, key: usize) -> usize;
 
-        fn compute(key: usize) -> usize {
-            type Compute;
-        }
+    fn compute(&self, key: usize) -> usize;
 
-        fn compute_all() -> Vec<usize> {
-            type ComputeAll;
-        }
-    }
+    fn compute_all(&self) -> Vec<usize>;
 }
 
 fn fibonacci(db: &impl GcDatabase, key: usize) -> usize {

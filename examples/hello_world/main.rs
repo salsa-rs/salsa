@@ -12,34 +12,24 @@ use std::sync::Arc;
 // the queries from A and adds a few more. (These relationships must form
 // a DAG at present, but that is due to Rust's restrictions around
 // supertraits, which are likely to be lifted.)
-salsa::query_group! {
-    trait HelloWorldDatabase: salsa::Database {
-        // For each query, we give the name, input type (here, `()`)
-        // and the output type `Arc<String>`. Inside the "fn body" we
-        // give some other configuration.
-        fn input_string(key: ()) -> Arc<String> {
-            // The type we will generate to represent this query.
-            type InputString;
+#[salsa::query_group]
+trait HelloWorldDatabase: salsa::Database {
+    // For each query, we give the name, input type (here, `()`)
+    // and the output type `Arc<String>`. We can use attributes to
+    // give other configuration:
+    //
+    // - `salsa::input` indicates that this is an "input" to the system,
+    //   which must be explicitly set.
+    // - `salsa::query_type` controls the name of the dummy struct
+    //   that represents this query. We'll see it referenced
+    //   later. The default would have been `InputStringQuery`.
+    #[salsa::input]
+    #[salsa::query_type(InputString)]
+    fn input_string(&self, key: ()) -> Arc<String>;
 
-            // Specify the queries' "storage" -- in this case, this is
-            // an *input query*, which means that its value changes
-            // only when it is explicitly *set* (see the `main`
-            // function below).
-            storage input;
-        }
-
-        // This is a *derived query*, meaning its value is specified by
-        // a function (see Step 2, below).
-        fn length(key: ()) -> usize {
-            type Length;
-
-            // No explicit storage defaults to `storage memoized;`
-            //
-            // The function that defines this query is (by default) a
-            // function with the same name as the query in the
-            // containing module (e.g., `length`).
-        }
-    }
+    // This is a *derived query*, meaning its value is specified by
+    // a function (see Step 2, below).
+    fn length(&self, key: ()) -> usize;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -86,7 +76,7 @@ salsa::database_storage! {
     struct DatabaseStorage for DatabaseStruct {
         impl HelloWorldDatabase {
             fn input_string() for InputString;
-            fn length() for Length;
+            fn length() for LengthQuery;
         }
     }
 }

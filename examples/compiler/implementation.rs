@@ -39,9 +39,9 @@ impl salsa::Database for DatabaseImpl {
 salsa::database_storage! {
     pub struct DatabaseImplStorage for DatabaseImpl {
         impl class_table::ClassTableDatabase {
-            fn all_classes() for class_table::AllClasses;
-            fn all_fields() for class_table::AllFields;
-            fn fields() for class_table::Fields;
+            fn all_classes() for class_table::AllClassesQuery;
+            fn all_fields() for class_table::AllFieldsQuery;
+            fn fields() for class_table::FieldsQuery;
         }
     }
 }

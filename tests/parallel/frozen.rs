@@ -1,4 +1,4 @@
-use crate::setup::{Input, ParDatabase, ParDatabaseImpl};
+use crate::setup::{InputQuery, ParDatabase, ParDatabaseImpl};
 use crate::signal::Signal;
 use salsa::{Database, ParallelDatabase};
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use std::sync::Arc;
 fn in_par_get_set_cancellation() {
     let mut db = ParDatabaseImpl::default();
 
-    db.query_mut(Input).set('a', 1);
+    db.query_mut(InputQuery).set('a', 1);
 
     let signal = Arc::new(Signal::default());
 
@@ -50,7 +50,7 @@ fn in_par_get_set_cancellation() {
             signal.wait_for(1);
 
             // This will block until thread1 drops the revision lock.
-            db.query_mut(Input).set('a', 2);
+            db.query_mut(InputQuery).set('a', 2);
 
             db.input('a')
         }
