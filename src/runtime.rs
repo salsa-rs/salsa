@@ -182,6 +182,35 @@ where
     /// canceled (which indicates that current query results will be
     /// ignored) your query is free to shortcircuit and return
     /// whatever it likes.
+    ///
+    /// This method is useful for implementing cancellation of queries.
+    /// You can do it in one of two ways, via `Result`s or via unwinding.
+    ///
+    /// The `Result` approach looks like this:
+    ///
+    ///   * Some queries invoke `is_current_revision_canceled` and
+    ///     return a special value, like `Err(Canceled)`, if it returns
+    ///     `true`.
+    ///   * Other queries propagate the special value using `?` operator.
+    ///   * API around top-level queries checks if the result is `Ok` or
+    ///     `Err(Canceled)`.
+    ///
+    /// The `panic` approach works in a similar way:
+    ///
+    ///   * Some queries invoke `is_current_revision_canceled` and
+    ///     panic with a special value, like `Canceled`, if it returns
+    ///     true.
+    ///   * The implementation of `Database` trait overrides
+    ///     `on_propagated_panic` to throw this special value as well.
+    ///     This way, panic gets propagated naturally through dependant
+    ///     queries, even across the threads.
+    ///   * API around top-level queries converts a `panic` into `Result` by
+    ///     catching the panic (using either `std::panic::catch_unwind` or
+    ///     threads) and downcasting the payload to `Canceled` (re-raising
+    ///     panic if downcast fails).
+    ///
+    /// Note that salsa is explicitly designed to be panic-safe, so cancellation
+    /// via unwinding is 100% valid approach to cancellation.
     #[inline]
     pub fn is_current_revision_canceled(&self) -> bool {
         let current_revision = self.current_revision();
