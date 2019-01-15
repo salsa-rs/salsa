@@ -63,3 +63,9 @@ fn should_panic_safely() {
     let result = panic::catch_unwind(AssertUnwindSafe(|| db.panic_safely()));
     assert!(result.is_ok())
 }
+
+#[test]
+fn storages_are_unwind_safe() {
+    fn check_unwind_safe<T: std::panic::UnwindSafe>() {}
+    check_unwind_safe::<&DatabaseStruct>();
+}

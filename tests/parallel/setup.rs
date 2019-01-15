@@ -42,6 +42,16 @@ salsa::query_group! {
     }
 }
 
+#[derive(PartialEq, Eq)]
+pub(crate) struct Canceled;
+
+impl Canceled {
+    fn throw() -> ! {
+        // Don't print backtrace
+        std::panic::resume_unwind(Box::new(Canceled));
+    }
+}
+
 /// Various "knobs" and utilities used by tests to force
 /// a certain behavior.
 pub(crate) trait Knobs {
@@ -68,6 +78,19 @@ impl<T> WithValue<T> for Cell<T> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CancelationFlag {
+    Down,
+    Panic,
+    SpecialValue,
+}
+
+impl Default for CancelationFlag {
+    fn default() -> CancelationFlag {
+        CancelationFlag::Down
+    }
+}
+
 /// Various "knobs" that can be used to customize how the queries
 /// behave on one specific thread. Note that this state is
 /// intentionally thread-local (apart from `signal`).
@@ -91,7 +114,7 @@ pub(crate) struct KnobsStruct {
 
     /// If true, invocations of `sum` will wait for cancellation before
     /// they exit.
-    pub(crate) sum_wait_for_cancellation: Cell<bool>,
+    pub(crate) sum_wait_for_cancellation: Cell<CancelationFlag>,
 
     /// Invocations of `sum` will wait for this stage prior to exiting.
     pub(crate) sum_wait_for_on_exit: Cell<usize>,
@@ -118,12 +141,18 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
         sum += db.input(ch);
     }
 
-    if db.knobs().sum_wait_for_cancellation.get() {
-        log::debug!("waiting for cancellation");
-        while !db.salsa_runtime().is_current_revision_canceled() {
-            std::thread::yield_now();
+    match db.knobs().sum_wait_for_cancellation.get() {
+        CancelationFlag::Down => (),
+        flag => {
+            log::debug!("waiting for cancellation");
+            while !db.salsa_runtime().is_current_revision_canceled() {
+                std::thread::yield_now();
+            }
+            log::debug!("observed cancelation");
+            if flag == CancelationFlag::Panic {
+                Canceled::throw();
+            }
         }
-        log::debug!("cancellation observed");
     }
 
     // Check for cancelation and return MAX if so. Note that we check
@@ -190,6 +219,10 @@ impl Database for ParDatabaseImpl {
 
             _ => {}
         }
+    }
+
+    fn on_propagated_panic(&self) -> ! {
+        Canceled::throw()
     }
 }
 

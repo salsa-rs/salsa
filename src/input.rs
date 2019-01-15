@@ -27,6 +27,15 @@ where
     map: RwLock<FxHashMap<Q::Key, StampedValue<Q::Value>>>,
 }
 
+impl<DB, Q> std::panic::RefUnwindSafe for InputStorage<DB, Q>
+where
+    Q: Query<DB>,
+    DB: Database,
+    Q::Key: std::panic::RefUnwindSafe,
+    Q::Value: std::panic::RefUnwindSafe,
+{
+}
+
 impl<DB, Q> Default for InputStorage<DB, Q>
 where
     Q: Query<DB>,

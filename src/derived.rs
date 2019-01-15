@@ -48,6 +48,16 @@ where
     policy: PhantomData<MP>,
 }
 
+impl<DB, Q, MP> std::panic::RefUnwindSafe for DerivedStorage<DB, Q, MP>
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+    MP: MemoizationPolicy<DB, Q>,
+    Q::Key: std::panic::RefUnwindSafe,
+    Q::Value: std::panic::RefUnwindSafe,
+{
+}
+
 pub trait MemoizationPolicy<DB, Q>
 where
     Q: QueryFunction<DB>,
@@ -480,7 +490,7 @@ where
                             },
                         });
 
-                        let value = rx.recv().unwrap();
+                        let value = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
                         ProbeState::UpToDate(Ok(value))
                     }
 
@@ -731,7 +741,7 @@ where
                         // can complete.
                         std::mem::drop(map);
 
-                        let value = rx.recv().unwrap();
+                        let value = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
                         return value.changed_at.changed_since(revision);
                     }
 

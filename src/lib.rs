@@ -104,6 +104,12 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     fn salsa_event(&self, event_fn: impl Fn() -> Event<Self>) {
         #![allow(unused_variables)]
     }
+
+    /// This function is invoked when a dependent query is being computed by the
+    /// other thread, and that thread panics.
+    fn on_propagated_panic(&self) -> ! {
+        panic!("concurrent salsa query panicked")
+    }
 }
 
 /// The `Event` struct identifies various notable things that can
