@@ -16,9 +16,11 @@ lock_api = "0.1.4"
 indexmap = "1.0.1"
 log = "0.4.5"
 smallvec = "0.6.5"
-salsa_macros = { version = "0.9", path = "components/salsa_macros" }
+salsa-macros = { version = "0.9", path = "components/salsa-macros" }
 
 [dev-dependencies]
 diff = "0.1.0"
 env_logger = "0.5.13"
 rand = "0.5.5"
+
+[workspace]
