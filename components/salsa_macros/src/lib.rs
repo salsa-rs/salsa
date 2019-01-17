@@ -34,13 +34,13 @@ use syn::{parse_macro_input, AttributeArgs, FnArg, Ident, ItemTrait, ReturnType,
 /// ```ignore
 /// #[salsa::query_group]
 /// trait TypeckDatabase {
-///     #[salsa::XXX] // see below for legal attributes
+///     #[salsa::input] // see below for other legal attributes
 ///     fn my_query(&self, input: u32) -> u64;
 ///
 ///     /// Queries can have any number of inputs (including zero); if there
 ///     /// is not exactly one input, then the key type will be
 ///     /// a tuple of the input types, so in this case `(u32, f32)`.
-///     fn other_query(input1: u32, input2: f32) -> u64;
+///     fn other_query(&self, input1: u32, input2: f32) -> u64;
 /// }
 /// ```
 ///
@@ -100,7 +100,8 @@ use syn::{parse_macro_input, AttributeArgs, FnArg, Ident, ItemTrait, ReturnType,
 /// Some attributes are mutually exclusive. For example, it is an error to add
 /// multiple storage specifiers:
 ///
-/// ```ignore
+/// ```compile_fail
+/// # use salsa_macros as salsa;
 /// #[salsa::query_group]
 /// trait CodegenDatabase {
 ///     #[salsa::input]
@@ -111,7 +112,8 @@ use syn::{parse_macro_input, AttributeArgs, FnArg, Ident, ItemTrait, ReturnType,
 ///
 /// It is also an error to annotate a function to `invoke` on an `input` query:
 ///
-/// ```compile-fail
+/// ```compile_fail
+/// # use salsa_macros as salsa;
 /// #[salsa::query_group]
 /// trait CodegenDatabase {
 ///     #[salsa::input]
