@@ -1,5 +1,5 @@
 [package]
-name = "salsa_macros"
+name = "salsa-macros"
 version = "0.9.1"
 authors = ["Niko Matsakis <niko@alum.mit.edu>"]
 edition = "2018"
