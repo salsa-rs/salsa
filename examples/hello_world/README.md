@@ -12,34 +12,33 @@ the queries from A and adds a few more. (These relationships must form
 a DAG at present, but that is due to Rust's restrictions around
 supertraits, which are likely to be lifted.)
 
-Each query group is defined via an invocation of `salsa::query_group!`
-macro. This is the invocation used in `hello_world`:
+Each query group is defined via a trait with the
+`#[salsa::query_group]` decorator attached to it. `salsa::query_group`
+is a procedural macro that will process the trait -- it will produce
+not only the trait you specified, but also various additional types
+you can later use and name.
 
 ```rust
-salsa::query_group! {
-    trait HelloWorldDatabase: salsa::Database {
-        fn input_string(key: ()) -> Arc<String> {
-            type InputString;
-            storage input;
-        }
+#[salsa::query_group]
+trait HelloWorldDatabase: salsa::Database {
+    #[salsa::input]
+    #[salsa::query_type(InputString)]
+    fn input_string(&self, key: ()) -> Arc<String>;
 
-        fn length(key: ()) -> usize {
-            type Length;
-        }
-    }
+    fn length(&self, key: ()) -> usize;
 }
 ```
 
-This invocation will in fact expand to a number of things you can
-later use and name. First and foremost is the **query group trait**,
-here called `HelloWorldDatabase`. As the name suggests, this trait
-will ultimately be implemented by the **database**, which is the
-struct in your application that contains the store for all queries and
-any other global state that persists beyond a single query execution.
-In writing your application, though, we never work with a concrete
-database struct: instead we work against a generic struct through
-traits, thus capturing the subset of functionality that we actually
-need.
+Each query group trait represents a self-contained block of queries
+that can invoke each other and so forth. Your final database may
+implement many such traits, thus combining many groups of queries into
+the final program. Query groups are thus kind of analogous to Rust
+crates: they represent a kind of "library" of queries that your final
+program can use. Since we don't know the full set of queries that our
+code may be combined with, when implementing a query group we don't
+with a concrete database struct: instead we work against a generic
+struct through traits, thus capturing the subset of functionality that
+we actually need.
 
 The `HelloWorldDatabase` trait has one supertrait:
 `salsa::Database`. If we were defining more query groups in our
@@ -59,19 +58,19 @@ the "fn body" is obviously not real Rust syntax. Rather, it's just
 used to specify a few bits of metadata about the query. We'll see how
 to define the fn body in the next step.
 
-**For each query.** For each query, we must **always** define a `type`
-(e.g., `type InputString;`).  The macro will define a type with this
-name alongside the trait: you can use this name later to specify which
-query you are talking about. This is needed for some of the more
-advanced methods (we'll discuss them later).
+**For each query.** For each query, the procedural macro will emit a
+"query type", which is a kind of dummy struct that can be used to
+refer to the query (we'll see an example of referencing this struct
+later). For a query `foo_bar`, the struct is by default named
+`FooBarQuery` -- but that name can be overridden with the
+`#[salsa::query_type]` attribute. In our example, we override the
+query type for `input_string` to be `InputString` but left `length`
+alone (so it defaults to `LengthQuery`).
 
-You can also optionally define the **storage** for a query via a
-declaration like `storage <s>;`. The most common kind of storage is
-either *memoized* (the default) or *input*. An *input* is a special
-sort of query that is not defined by a function: rather, it gets its
-values via explicit `set` operations (we'll see them later). In our
-case, we define one input query (`input_string`) and one memoized
-query (`length`).
+You can also use the `#[salsa::input]` attribute to designate
+the "inputs" to the system. The values for input queries are not 
+generated via a function but rather by explicit `set` operations,
+as we'll see later. They are the starting points for your computation.
 
 ### Step 2: Define the query functions
 
@@ -79,9 +78,9 @@ Once you've defined your query group, you have to give the function
 definition for every non-input query. In our case, that is the query
 `length`. To do this, you simply define a function with the
 appropriate name in the same module as the query group; if you would
-prefer to use a different name or location, you write `use fn
-path::to::other_fn;` in the query definition to tell us where to find
-it.
+prefer to use a different name or location, you add an attribute like
+`#[salsa::invoke(path::to::other_fn)]` in the query definition to tell
+us where to find it.
 
 The query function for `length` looks like:
 

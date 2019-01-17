@@ -12,21 +12,14 @@ const N_READER_OPS: usize = 100;
 struct Canceled;
 type Cancelable<T> = Result<T, Canceled>;
 
-salsa::query_group! {
-    trait StressDatabase: salsa::Database {
-        fn a(key: usize) -> usize {
-            type A;
-            storage input;
-        }
+#[salsa::query_group]
+trait StressDatabase: salsa::Database {
+    #[salsa::input]
+    fn a(&self, key: usize) -> usize;
 
-        fn b(key: usize) -> Cancelable<usize> {
-            type B;
-        }
+    fn b(&self, key: usize) -> Cancelable<usize>;
 
-        fn c(key: usize) -> Cancelable<usize> {
-            type C;
-        }
-    }
+    fn c(&self, key: usize) -> Cancelable<usize>;
 }
 
 fn b(db: &impl StressDatabase, key: usize) -> Cancelable<usize> {
@@ -62,9 +55,9 @@ impl salsa::ParallelDatabase for StressDatabaseImpl {
 salsa::database_storage! {
     pub struct DatabaseImplStorage for StressDatabaseImpl {
         impl StressDatabase {
-            fn a() for A;
-            fn b() for B;
-            fn c() for C;
+            fn a() for AQuery;
+            fn b() for BQuery;
+            fn c() for CQuery;
         }
     }
 }
@@ -157,7 +150,7 @@ impl WriteOp {
     fn execute(self, db: &mut StressDatabaseImpl) {
         match self {
             WriteOp::SetA(key, value) => {
-                db.query_mut(A).set(key, value);
+                db.query_mut(AQuery).set(key, value);
             }
         }
     }
@@ -179,13 +172,13 @@ impl ReadOp {
             },
             ReadOp::Gc(query, strategy) => match query {
                 Query::A => {
-                    db.query(A).sweep(strategy);
+                    db.query(AQuery).sweep(strategy);
                 }
                 Query::B => {
-                    db.query(B).sweep(strategy);
+                    db.query(BQuery).sweep(strategy);
                 }
                 Query::C => {
-                    db.query(C).sweep(strategy);
+                    db.query(CQuery).sweep(strategy);
                 }
             },
             ReadOp::GcAll(strategy) => {
@@ -199,7 +192,7 @@ impl ReadOp {
 fn stress_test() {
     let mut db = StressDatabaseImpl::default();
     for i in 0..10 {
-        db.query_mut(A).set(i, i);
+        db.query_mut(AQuery).set(i, i);
     }
 
     let mut rng = rand::thread_rng();

@@ -1,5 +1,5 @@
 use crate::setup::{
-    CancelationFlag, Canceled, Input, Knobs, ParDatabase, ParDatabaseImpl, WithValue,
+    CancelationFlag, Canceled, InputQuery, Knobs, ParDatabase, ParDatabaseImpl, WithValue,
 };
 use salsa::{Database, ParallelDatabase};
 
@@ -34,10 +34,10 @@ fn in_par_get_set_cancellation_immediate() {
     check_cancelation(|flag| {
         let mut db = ParDatabaseImpl::default();
 
-        db.query_mut(Input).set('a', 100);
-        db.query_mut(Input).set('b', 010);
-        db.query_mut(Input).set('c', 001);
-        db.query_mut(Input).set('d', 0);
+        db.query_mut(InputQuery).set('a', 100);
+        db.query_mut(InputQuery).set('b', 010);
+        db.query_mut(InputQuery).set('c', 001);
+        db.query_mut(InputQuery).set('d', 0);
 
         let thread1 = std::thread::spawn({
             let db = db.snapshot();
@@ -56,7 +56,7 @@ fn in_par_get_set_cancellation_immediate() {
         db.wait_for(1);
 
         // Try to set the input. This will signal cancellation.
-        db.query_mut(Input).set('d', 1000);
+        db.query_mut(InputQuery).set('d', 1000);
 
         // This should re-compute the value (even though no input has changed).
         let thread2 = std::thread::spawn({
@@ -77,10 +77,10 @@ fn in_par_get_set_cancellation_transitive() {
     check_cancelation(|flag| {
         let mut db = ParDatabaseImpl::default();
 
-        db.query_mut(Input).set('a', 100);
-        db.query_mut(Input).set('b', 010);
-        db.query_mut(Input).set('c', 001);
-        db.query_mut(Input).set('d', 0);
+        db.query_mut(InputQuery).set('a', 100);
+        db.query_mut(InputQuery).set('b', 010);
+        db.query_mut(InputQuery).set('c', 001);
+        db.query_mut(InputQuery).set('d', 0);
 
         let thread1 = std::thread::spawn({
             let db = db.snapshot();
@@ -99,7 +99,7 @@ fn in_par_get_set_cancellation_transitive() {
         db.wait_for(1);
 
         // Try to set the input. This will signal cancellation.
-        db.query_mut(Input).set('d', 1000);
+        db.query_mut(InputQuery).set('d', 1000);
 
         // This should re-compute the value (even though no input has changed).
         let thread2 = std::thread::spawn({
@@ -119,7 +119,7 @@ fn no_back_dating_in_cancellation() {
     check_cancelation(|flag| {
         let mut db = ParDatabaseImpl::default();
 
-        db.query_mut(Input).set('a', 1);
+        db.query_mut(InputQuery).set('a', 1);
         let thread1 = std::thread::spawn({
             let db = db.snapshot();
             move || {
@@ -136,7 +136,7 @@ fn no_back_dating_in_cancellation() {
         db.wait_for(1);
 
         // Set unrelated input to bump revision
-        db.query_mut(Input).set('b', 2);
+        db.query_mut(InputQuery).set('b', 2);
 
         // Here we should recompuet the whole chain again, clearing the cancellation
         // state. If we get `usize::max()` here, it is a bug!
@@ -144,8 +144,8 @@ fn no_back_dating_in_cancellation() {
 
         assert_canceled!(flag, thread1);
 
-        db.query_mut(Input).set('a', 3);
-        db.query_mut(Input).set('a', 4);
+        db.query_mut(InputQuery).set('a', 3);
+        db.query_mut(InputQuery).set('a', 4);
         assert_eq!(db.sum3("ab"), 6);
     })
 }
@@ -160,7 +160,7 @@ fn no_back_dating_in_cancellation() {
 fn transitive_cancellation() {
     let mut db = ParDatabaseImpl::default();
 
-    db.query_mut(Input).set('a', 1);
+    db.query_mut(InputQuery).set('a', 1);
     let thread1 = std::thread::spawn({
         let db = db.snapshot();
         move || {
@@ -176,7 +176,7 @@ fn transitive_cancellation() {
 
     db.wait_for(1);
 
-    db.query_mut(Input).set('b', 2);
+    db.query_mut(InputQuery).set('b', 2);
 
     // Check that when we call `sum3_drop_sum` we don't wind up having
     // to actually re-execute it, because the result of `sum2` winds

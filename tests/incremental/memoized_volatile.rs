@@ -1,21 +1,14 @@
 use crate::implementation::{TestContext, TestContextImpl};
 use salsa::Database;
 
-salsa::query_group! {
-    pub(crate) trait MemoizedVolatileContext: TestContext {
-        // Queries for testing a "volatile" value wrapped by
-        // memoization.
-        fn memoized2() -> usize {
-            type Memoized2;
-        }
-        fn memoized1() -> usize {
-            type Memoized1;
-        }
-        fn volatile() -> usize {
-            type Volatile;
-            storage volatile;
-        }
-    }
+#[salsa::query_group]
+pub(crate) trait MemoizedVolatileContext: TestContext {
+    // Queries for testing a "volatile" value wrapped by
+    // memoization.
+    fn memoized2(&self) -> usize;
+    fn memoized1(&self) -> usize;
+    #[salsa::volatile]
+    fn volatile(&self) -> usize;
 }
 
 fn memoized2(db: &impl MemoizedVolatileContext) -> usize {

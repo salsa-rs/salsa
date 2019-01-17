@@ -1,17 +1,12 @@
 use salsa::{Database, ParallelDatabase, Snapshot};
 use std::panic::{self, AssertUnwindSafe};
 
-salsa::query_group! {
-    trait PanicSafelyDatabase: salsa::Database {
-        fn one() -> usize {
-            type One;
-            storage input;
-        }
+#[salsa::query_group]
+trait PanicSafelyDatabase: salsa::Database {
+    #[salsa::input]
+    fn one(&self) -> usize;
 
-        fn panic_safely() -> () {
-            type PanicSafely;
-        }
-    }
+    fn panic_safely(&self) -> ();
 }
 
 fn panic_safely(db: &impl PanicSafelyDatabase) -> () {
@@ -40,8 +35,8 @@ impl salsa::ParallelDatabase for DatabaseStruct {
 salsa::database_storage! {
     struct DatabaseStorage for DatabaseStruct {
         impl PanicSafelyDatabase {
-            fn one() for One;
-            fn panic_safely() for PanicSafely;
+            fn one() for OneQuery;
+            fn panic_safely() for PanicSafelyQuery;
         }
     }
 }
@@ -59,7 +54,7 @@ fn should_panic_safely() {
     assert!(result.is_err());
 
     // Set `db.one` to 1 and assert ok
-    db.query_mut(One).set((), 1);
+    db.query_mut(OneQuery).set((), 1);
     let result = panic::catch_unwind(AssertUnwindSafe(|| db.panic_safely()));
     assert!(result.is_ok())
 }

@@ -10,8 +10,8 @@ pub struct DatabaseImpl {
 salsa::database_storage! {
     pub struct DatabaseImplStorage for DatabaseImpl {
         impl queries::Database {
-            fn memoized() for queries::Memoized;
-            fn volatile() for queries::Volatile;
+            fn memoized() for queries::MemoizedQuery;
+            fn volatile() for queries::VolatileQuery;
         }
     }
 }

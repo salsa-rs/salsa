@@ -5,41 +5,26 @@ use salsa::Snapshot;
 use std::cell::Cell;
 use std::sync::Arc;
 
-salsa::query_group! {
-    pub(crate) trait ParDatabase: Knobs + salsa::ParallelDatabase {
-        fn input(key: char) -> usize {
-            type Input;
-            storage input;
-        }
+#[salsa::query_group]
+pub(crate) trait ParDatabase: Knobs + salsa::ParallelDatabase {
+    #[salsa::input]
+    fn input(&self, key: char) -> usize;
 
-        fn sum(key: &'static str) -> usize {
-            type Sum;
-        }
+    fn sum(&self, key: &'static str) -> usize;
 
-        /// Invokes `sum`
-        fn sum2(key: &'static str) -> usize {
-            type Sum2;
-        }
+    /// Invokes `sum`
+    fn sum2(&self, key: &'static str) -> usize;
 
-        /// Invokes `sum` but doesn't really care about the result.
-        fn sum2_drop_sum(key: &'static str) -> usize {
-            type Sum2Drop;
-        }
+    /// Invokes `sum` but doesn't really care about the result.
+    fn sum2_drop_sum(&self, key: &'static str) -> usize;
 
-        /// Invokes `sum2`
-        fn sum3(key: &'static str) -> usize {
-            type Sum3;
-        }
+    /// Invokes `sum2`
+    fn sum3(&self, key: &'static str) -> usize;
 
-        /// Invokes `sum2_drop_sum`
-        fn sum3_drop_sum(key: &'static str) -> usize {
-            type Sum3Drop;
-        }
+    /// Invokes `sum2_drop_sum`
+    fn sum3_drop_sum(&self, key: &'static str) -> usize;
 
-        fn snapshot_me() -> () {
-            type SnapshotMe;
-        }
-    }
+    fn snapshot_me(&self) -> ();
 }
 
 #[derive(PartialEq, Eq)]
@@ -252,13 +237,13 @@ impl Knobs for ParDatabaseImpl {
 salsa::database_storage! {
     pub struct DatabaseImplStorage for ParDatabaseImpl {
         impl ParDatabase {
-            fn input() for Input;
-            fn sum() for Sum;
-            fn sum2() for Sum2;
-            fn sum2_drop_sum() for Sum2Drop;
-            fn sum3() for Sum3;
-            fn sum3_drop_sum() for Sum3Drop;
-            fn snapshot_me() for SnapshotMe;
+            fn input() for InputQuery;
+            fn sum() for SumQuery;
+            fn sum2() for Sum2Query;
+            fn sum2_drop_sum() for Sum2DropSumQuery;
+            fn sum3() for Sum3Query;
+            fn sum3_drop_sum() for Sum3DropSumQuery;
+            fn snapshot_me() for SnapshotMeQuery;
         }
     }
 }

@@ -18,19 +18,19 @@ fn compute_one() {
     let mut db = db::DatabaseImpl::default();
 
     // Will compute fibonacci(5)
-    db.query_mut(UseTriangular).set(5, false);
+    db.query_mut(UseTriangularQuery).set(5, false);
     db.compute(5);
 
     db.salsa_runtime().next_revision();
 
     assert_keys! {
         db,
-        Triangular => (),
-        Fibonacci => (0, 1, 2, 3, 4, 5),
-        Compute => (5),
-        UseTriangular => (5),
-        Min => (),
-        Max => (),
+        TriangularQuery => (),
+        FibonacciQuery => (0, 1, 2, 3, 4, 5),
+        ComputeQuery => (5),
+        UseTriangularQuery => (5),
+        MinQuery => (),
+        MaxQuery => (),
     }
 
     // Memoized, but will compute fibonacci(5) again
@@ -39,12 +39,12 @@ fn compute_one() {
 
     assert_keys! {
         db,
-        Triangular => (),
-        Fibonacci => (5),
-        Compute => (5),
-        UseTriangular => (5),
-        Min => (),
-        Max => (),
+        TriangularQuery => (),
+        FibonacciQuery => (5),
+        ComputeQuery => (5),
+        UseTriangularQuery => (5),
+        MinQuery => (),
+        MaxQuery => (),
     }
 }
 
@@ -53,11 +53,11 @@ fn compute_switch() {
     let mut db = db::DatabaseImpl::default();
 
     // Will compute fibonacci(5)
-    db.query_mut(UseTriangular).set(5, false);
+    db.query_mut(UseTriangularQuery).set(5, false);
     assert_eq!(db.compute(5), 5);
 
     // Change to triangular mode
-    db.query_mut(UseTriangular).set(5, true);
+    db.query_mut(UseTriangularQuery).set(5, true);
 
     // Now computes triangular(5)
     assert_eq!(db.compute(5), 15);
@@ -66,12 +66,12 @@ fn compute_switch() {
     // are not relevant to the most recent value of `Compute`
     assert_keys! {
         db,
-        Triangular => (0, 1, 2, 3, 4, 5),
-        Fibonacci => (0, 1, 2, 3, 4, 5),
-        Compute => (5),
-        UseTriangular => (5),
-        Min => (),
-        Max => (),
+        TriangularQuery => (0, 1, 2, 3, 4, 5),
+        FibonacciQuery => (0, 1, 2, 3, 4, 5),
+        ComputeQuery => (5),
+        UseTriangularQuery => (5),
+        MinQuery => (),
+        MaxQuery => (),
     }
 
     db.sweep_all(SweepStrategy::default());
@@ -79,12 +79,12 @@ fn compute_switch() {
     // Now we just have `Triangular` and not `Fibonacci`
     assert_keys! {
         db,
-        Triangular => (0, 1, 2, 3, 4, 5),
-        Fibonacci => (),
-        Compute => (5),
-        UseTriangular => (5),
-        Min => (),
-        Max => (),
+        TriangularQuery => (0, 1, 2, 3, 4, 5),
+        FibonacciQuery => (),
+        ComputeQuery => (5),
+        UseTriangularQuery => (5),
+        MinQuery => (),
+        MaxQuery => (),
     }
 
     // Now run `compute` *again* in next revision.
@@ -95,12 +95,12 @@ fn compute_switch() {
     // We keep triangular, but just the outermost one.
     assert_keys! {
         db,
-        Triangular => (5),
-        Fibonacci => (),
-        Compute => (5),
-        UseTriangular => (5),
-        Min => (),
-        Max => (),
+        TriangularQuery => (5),
+        FibonacciQuery => (),
+        ComputeQuery => (5),
+        UseTriangularQuery => (5),
+        MinQuery => (),
+        MaxQuery => (),
     }
 }
 
@@ -110,11 +110,11 @@ fn compute_all() {
     let mut db = db::DatabaseImpl::default();
 
     for i in 0..6 {
-        db.query_mut(UseTriangular).set(i, (i % 2) != 0);
+        db.query_mut(UseTriangularQuery).set(i, (i % 2) != 0);
     }
 
-    db.query_mut(Min).set((), 0);
-    db.query_mut(Max).set((), 6);
+    db.query_mut(MinQuery).set((), 0);
+    db.query_mut(MaxQuery).set((), 6);
 
     db.compute_all();
     db.salsa_runtime().next_revision();
@@ -123,42 +123,42 @@ fn compute_all() {
 
     assert_keys! {
         db,
-        Triangular => (1, 3, 5),
-        Fibonacci => (0, 2, 4),
-        Compute => (0, 1, 2, 3, 4, 5),
-        ComputeAll => (()),
-        UseTriangular => (0, 1, 2, 3, 4, 5),
-        Min => (()),
-        Max => (()),
+        TriangularQuery => (1, 3, 5),
+        FibonacciQuery => (0, 2, 4),
+        ComputeQuery => (0, 1, 2, 3, 4, 5),
+        ComputeAllQuery => (()),
+        UseTriangularQuery => (0, 1, 2, 3, 4, 5),
+        MinQuery => (()),
+        MaxQuery => (()),
     }
 
     // Reduce the range to exclude index 5.
-    db.query_mut(Max).set((), 5);
+    db.query_mut(MaxQuery).set((), 5);
     db.compute_all();
 
     assert_keys! {
         db,
-        Triangular => (1, 3, 5),
-        Fibonacci => (0, 2, 4),
-        Compute => (0, 1, 2, 3, 4, 5),
-        ComputeAll => (()),
-        UseTriangular => (0, 1, 2, 3, 4, 5),
-        Min => (()),
-        Max => (()),
+        TriangularQuery => (1, 3, 5),
+        FibonacciQuery => (0, 2, 4),
+        ComputeQuery => (0, 1, 2, 3, 4, 5),
+        ComputeAllQuery => (()),
+        UseTriangularQuery => (0, 1, 2, 3, 4, 5),
+        MinQuery => (()),
+        MaxQuery => (()),
     }
 
     db.sweep_all(SweepStrategy::default());
 
     // We no longer used `Compute(5)` and `Triangular(5)`; note that
-    // `UseTriangular(5)` is not collected, as it is an input.
+    // `UseTriangularQuery(5)` is not collected, as it is an input.
     assert_keys! {
         db,
-        Triangular => (1, 3),
-        Fibonacci => (0, 2, 4),
-        Compute => (0, 1, 2, 3, 4),
-        ComputeAll => (()),
-        UseTriangular => (0, 1, 2, 3, 4, 5),
-        Min => (()),
-        Max => (()),
+        TriangularQuery => (1, 3),
+        FibonacciQuery => (0, 2, 4),
+        ComputeQuery => (0, 1, 2, 3, 4),
+        ComputeAllQuery => (()),
+        UseTriangularQuery => (0, 1, 2, 3, 4, 5),
+        MinQuery => (()),
+        MaxQuery => (()),
     }
 }

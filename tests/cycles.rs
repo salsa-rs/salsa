@@ -12,32 +12,23 @@ impl salsa::Database for DatabaseImpl {
 salsa::database_storage! {
     pub struct DatabaseImplStorage for DatabaseImpl {
         impl Database {
-            fn memoized_a() for MemoizedA;
-            fn memoized_b() for MemoizedB;
-            fn volatile_a() for VolatileA;
-            fn volatile_b() for VolatileB;
+            fn memoized_a() for MemoizedAQuery;
+            fn memoized_b() for MemoizedBQuery;
+            fn volatile_a() for VolatileAQuery;
+            fn volatile_b() for VolatileBQuery;
         }
     }
 }
 
-salsa::query_group! {
-    trait Database: salsa::Database {
-        // `a` and `b` depend on each other and form a cycle
-        fn memoized_a() -> () {
-            type MemoizedA;
-        }
-        fn memoized_b() -> () {
-            type MemoizedB;
-        }
-        fn volatile_a() -> () {
-            type VolatileA;
-            storage volatile;
-        }
-        fn volatile_b() -> () {
-            type VolatileB;
-            storage volatile;
-        }
-    }
+#[salsa::query_group]
+trait Database: salsa::Database {
+    // `a` and `b` depend on each other and form a cycle
+    fn memoized_a(&self) -> ();
+    fn memoized_b(&self) -> ();
+    #[salsa::volatile]
+    fn volatile_a(&self) -> ();
+    #[salsa::volatile]
+    fn volatile_b(&self) -> ();
 }
 
 fn memoized_a(db: &impl Database) -> () {
