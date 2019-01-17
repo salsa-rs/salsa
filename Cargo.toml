@@ -1,6 +1,6 @@
 [package]
 name = "salsa"
-version = "0.9.2"
+version = "0.10.0-alpha1"
 authors = ["Niko Matsakis <niko@alum.mit.edu>"]
 edition = "2018"
 license = "Apache-2.0 OR MIT"
@@ -16,7 +16,7 @@ lock_api = "0.1.4"
 indexmap = "1.0.1"
 log = "0.4.5"
 smallvec = "0.6.5"
-salsa-macros = { version = "0.9", path = "components/salsa-macros" }
+salsa-macros = { version = "0.10.0-alpha1", path = "components/salsa-macros" }
 
 [dev-dependencies]
 diff = "0.1.0"
