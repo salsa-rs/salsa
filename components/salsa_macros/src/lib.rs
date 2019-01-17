@@ -111,7 +111,7 @@ use syn::{parse_macro_input, AttributeArgs, FnArg, Ident, ItemTrait, ReturnType,
 ///
 /// It is also an error to annotate a function to `invoke` on an `input` query:
 ///
-/// ```ignore
+/// ```compile-fail
 /// #[salsa::query_group]
 /// trait CodegenDatabase {
 ///     #[salsa::input]
@@ -234,37 +234,56 @@ pub fn query_group(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     }
 
+    let mut query_fn_declarations = proc_macro2::TokenStream::new();
+    let mut query_fn_definitions = proc_macro2::TokenStream::new();
+    for query in &queries {
+        let key_names: &Vec<_> = &(0..query.keys.len())
+            .map(|i| Ident::new(&format!("key{}", i), Span::call_site()))
+            .collect();
+        let keys = &query.keys;
+        let value = &query.value;
+        let fn_name = &query.fn_name;
+        let qt = &query.query_type;
+        let attrs = &query.attrs;
+
+        query_fn_declarations.extend(quote! {
+            #(#attrs)*
+            fn #fn_name(&self, #(#key_names: #keys),*) -> #value;
+        });
+
+        query_fn_definitions.extend(quote! {
+            fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
+                <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get((#(#key_names),*))
+            }
+        });
+    }
+
     // Emit the trait itself.
     let mut output = {
-        let mut queries_as_tokens = proc_macro2::TokenStream::new();
-        for query in &queries {
-            let key_names: &Vec<_> = &(0..query.keys.len())
-                .map(|i| Ident::new(&format!("key{}", i), Span::call_site()))
-                .collect();
-            let keys = &query.keys;
-            let value = &query.value;
-            let fn_name = &query.fn_name;
-            let qt = &query.query_type;
-            let attrs = &query.attrs;
-            let expanded = quote! {
-                #(#attrs)*
-                fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
-                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get((#(#key_names),*))
-                }
-            };
-            queries_as_tokens.extend(expanded);
-        }
-
         let attrs = &input.attrs;
         let qts = queries.iter().map(|q| &q.query_type);
         let bounds = &input.supertraits;
         quote! {
             #(#attrs)*
             #trait_vis trait #trait_name : #(salsa::plumbing::GetQueryTable<#qts> +)* #bounds {
-                #queries_as_tokens
+                #query_fn_declarations
             }
         }
     };
+
+    // Emit an impl of the trait
+    output.extend({
+        let qts = queries.iter().map(|q| &q.query_type);
+        let bounds = &input.supertraits;
+        quote! {
+            impl<T> #trait_name for T
+            where
+                T: #(salsa::plumbing::GetQueryTable<#qts> +)* #bounds
+            {
+                #query_fn_definitions
+            }
+        }
+    });
 
     // Emit the query types.
     for query in queries {

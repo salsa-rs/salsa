@@ -590,8 +590,6 @@ macro_rules! database_storage {
         }
 
         $(
-            impl $TraitName for $Database { }
-
             $(
                 impl $crate::plumbing::GetQueryTable<$QueryType> for $Database {
                     fn get_query_table(
