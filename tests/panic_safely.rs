@@ -64,3 +64,17 @@ fn storages_are_unwind_safe() {
     fn check_unwind_safe<T: std::panic::UnwindSafe>() {}
     check_unwind_safe::<&DatabaseStruct>();
 }
+
+#[test]
+fn panics_clear_query_stack() {
+    let db = DatabaseStruct::default();
+
+    // Invoke `db.panic_if_not_one() without having set `db.input`. `db.input`
+    // will default to 0 and we should catch the panic.
+    let result = panic::catch_unwind(AssertUnwindSafe(|| db.panic_safely()));
+    assert!(result.is_err());
+
+    // The database has been poisoned and any attempt to increment the
+    // revision should panic.
+    assert_eq!(db.salsa_runtime().active_query(), None);
+}
