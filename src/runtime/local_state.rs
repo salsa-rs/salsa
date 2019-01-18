@@ -109,3 +109,12 @@ where
         query
     }
 }
+
+impl<'me, DB> Drop for ActiveQueryGuard<'me, DB>
+where
+    DB: Database,
+{
+    fn drop(&mut self) {
+        self.pop_helper();
+    }
+}
