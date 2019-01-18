@@ -4,6 +4,7 @@ use log::debug;
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
+use std::cell::Ref;
 use std::cell::RefCell;
 use std::fmt::Write;
 use std::hash::BuildHasherDefault;
@@ -29,7 +30,7 @@ pub struct Runtime<DB: Database> {
     revision_guard: Option<RevisionGuard<DB>>,
 
     /// Local state that is specific to this runtime (thread).
-    local_state: RefCell<LocalState<DB>>,
+    local_state: LocalState<DB>,
 
     /// Shared state that is accessible via all runtimes.
     shared_state: Arc<SharedState<DB>>,
@@ -99,7 +100,7 @@ where
             "invoked `snapshot` with a non-matching database"
         );
 
-        if self.local_state.borrow().query_in_progress() {
+        if self.local_state.query_in_progress() {
             panic!("it is not legal to `snapshot` during a query (see salsa-rs/salsa#80)");
         }
 
@@ -151,11 +152,7 @@ where
     /// Returns the descriptor for the query that this thread is
     /// actively executing (if any).
     pub fn active_query(&self) -> Option<DB::QueryDescriptor> {
-        self.local_state
-            .borrow()
-            .query_stack
-            .last()
-            .map(|active_query| active_query.descriptor.clone())
+        self.local_state.active_query()
     }
 
     /// Read current value of the revision counter.
@@ -303,7 +300,7 @@ where
     }
 
     pub(crate) fn permits_increment(&self) -> bool {
-        self.revision_guard.is_none() && !self.local_state.borrow().query_in_progress()
+        self.revision_guard.is_none() && !self.local_state.query_in_progress()
     }
 
     pub(crate) fn execute_query_implementation<V>(
@@ -322,13 +319,7 @@ where
         });
 
         // Push the active query onto the stack.
-        let push_len = {
-            let mut local_state = self.local_state.borrow_mut();
-            local_state
-                .query_stack
-                .push(ActiveQuery::new(descriptor.clone()));
-            local_state.query_stack.len()
-        };
+        let push_len = self.local_state.push_query(descriptor);
 
         // Execute user's code, accumulating inputs etc.
         let value = execute();
@@ -338,14 +329,7 @@ where
             subqueries,
             changed_at,
             ..
-        } = {
-            let mut local_state = self.local_state.borrow_mut();
-
-            // Sanity check: pushes and pops should be balanced.
-            assert_eq!(local_state.query_stack.len(), push_len);
-
-            local_state.query_stack.pop().unwrap()
-        };
+        } = self.local_state.pop_query(push_len);
 
         ComputedQueryResult {
             value,
@@ -367,15 +351,12 @@ where
         descriptor: &DB::QueryDescriptor,
         changed_at: ChangedAt,
     ) {
-        if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
-            top_query.add_read(descriptor, changed_at);
-        }
+        self.local_state.report_query_read(descriptor, changed_at);
     }
 
     pub(crate) fn report_untracked_read(&self) {
-        if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
-            top_query.add_untracked_read(self.current_revision());
-        }
+        self.local_state
+            .report_untracked_read(self.current_revision());
     }
 
     /// An "anonymous" read is a read that doesn't come from executing
@@ -387,18 +368,14 @@ where
     ///
     /// This is used when queries check if they have been canceled.
     fn report_anon_read(&self, revision: Revision) {
-        if let Some(top_query) = self.local_state.borrow_mut().query_stack.last_mut() {
-            top_query.add_anon_read(revision);
-        }
+        self.local_state.report_anon_read(revision)
     }
 
     /// Obviously, this should be user configurable at some point.
     pub(crate) fn report_unexpected_cycle(&self, descriptor: DB::QueryDescriptor) -> ! {
         debug!("report_unexpected_cycle(descriptor={:?})", descriptor);
 
-        let local_state = self.local_state.borrow();
-        let LocalState { query_stack, .. } = &*local_state;
-
+        let query_stack = self.local_state.borrow_query_stack();
         let start_index = (0..query_stack.len())
             .rev()
             .filter(|&i| query_stack[i].descriptor == descriptor)
@@ -501,10 +478,18 @@ where
     }
 }
 
-/// State that will be specific to a single execution threads (when we
-/// support multiple threads)
+/// State that is specific to a single execution thread.
+///
+/// Internally, this type uses ref-cells.
+///
+/// **Note also that all mutations to the database handle (and hence
+/// to the local-state) must be undone during unwinding.**
 struct LocalState<DB: Database> {
-    query_stack: Vec<ActiveQuery<DB>>,
+    /// Vector of active queries.
+    ///
+    /// Unwinding note: pushes onto this vector must be popped -- even
+    /// during unwinding.
+    query_stack: RefCell<Vec<ActiveQuery<DB>>>,
 }
 
 impl<DB: Database> Default for LocalState<DB> {
@@ -516,8 +501,57 @@ impl<DB: Database> Default for LocalState<DB> {
 }
 
 impl<DB: Database> LocalState<DB> {
+    fn push_query(&self, descriptor: &DB::QueryDescriptor) -> usize {
+        let mut query_stack = self.query_stack.borrow_mut();
+        query_stack.push(ActiveQuery::new(descriptor.clone()));
+        query_stack.len()
+    }
+
+    fn pop_query(&self, push_len: usize) -> ActiveQuery<DB> {
+        let mut query_stack = self.query_stack.borrow_mut();
+
+        // Sanity check: pushes and pops should be balanced.
+        assert_eq!(query_stack.len(), push_len);
+
+        query_stack.pop().unwrap()
+    }
+
+    /// Returns a reference to the active query stack.
+    ///
+    /// **Warning:** Because this reference holds the ref-cell lock,
+    /// you should not use any mutating methods of `LocalState` while
+    /// reading from it.
+    fn borrow_query_stack(&self) -> Ref<'_, Vec<ActiveQuery<DB>>> {
+        self.query_stack.borrow()
+    }
+
     fn query_in_progress(&self) -> bool {
-        !self.query_stack.is_empty()
+        !self.query_stack.borrow().is_empty()
+    }
+
+    fn active_query(&self) -> Option<DB::QueryDescriptor> {
+        self.query_stack
+            .borrow()
+            .last()
+            .map(|active_query| active_query.descriptor.clone())
+    }
+
+    fn report_query_read(&self, descriptor: &DB::QueryDescriptor, changed_at: ChangedAt) {
+        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
+            top_query.add_read(descriptor, changed_at);
+        }
+    }
+
+    fn report_untracked_read(&self, current_revision: Revision) {
+        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
+            top_query.add_untracked_read(current_revision);
+        }
+    }
+
+    fn report_anon_read(&self, revision: Revision) {
+        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
+            top_query.add_anon_read(revision);
+        }
     }
 }
 
