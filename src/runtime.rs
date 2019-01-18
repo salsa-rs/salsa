@@ -439,7 +439,12 @@ struct SharedState<DB: Database> {
     dependency_graph: Mutex<DependencyGraph<DB>>,
 }
 
-impl<DB> std::panic::RefUnwindSafe for SharedState<DB> where DB: Database {}
+impl<DB> std::panic::RefUnwindSafe for SharedState<DB>
+where
+    DB: Database,
+    DB::DatabaseStorage: std::panic::RefUnwindSafe,
+{
+}
 
 impl<DB: Database> Default for SharedState<DB> {
     fn default() -> Self {
