@@ -320,7 +320,7 @@ where
         });
 
         // Push the active query onto the stack.
-        let push_len = self.local_state.push_query(descriptor);
+        let active_query = self.local_state.push_query(descriptor);
 
         // Execute user's code, accumulating inputs etc.
         let value = execute();
@@ -330,7 +330,7 @@ where
             subqueries,
             changed_at,
             ..
-        } = self.local_state.pop_query(push_len);
+        } = active_query.complete();
 
         ComputedQueryResult {
             value,

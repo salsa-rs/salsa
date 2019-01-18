@@ -28,19 +28,13 @@ impl<DB: Database> Default for LocalState<DB> {
 }
 
 impl<DB: Database> LocalState<DB> {
-    pub(super) fn push_query(&self, descriptor: &DB::QueryDescriptor) -> usize {
+    pub(super) fn push_query(&self, descriptor: &DB::QueryDescriptor) -> ActiveQueryGuard<'_, DB> {
         let mut query_stack = self.query_stack.borrow_mut();
         query_stack.push(ActiveQuery::new(descriptor.clone()));
-        query_stack.len()
-    }
-
-    pub(super) fn pop_query(&self, push_len: usize) -> ActiveQuery<DB> {
-        let mut query_stack = self.query_stack.borrow_mut();
-
-        // Sanity check: pushes and pops should be balanced.
-        assert_eq!(query_stack.len(), push_len);
-
-        query_stack.pop().unwrap()
+        ActiveQueryGuard {
+            local_state: self,
+            push_len: query_stack.len(),
+        }
     }
 
     /// Returns a reference to the active query stack.
@@ -83,5 +77,35 @@ impl<DB: Database> LocalState<DB> {
         if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
             top_query.add_anon_read(revision);
         }
+    }
+}
+
+/// When a query is pushed onto the `active_query` stack, this guard
+/// is returned to represent its slot. The guard can be used to pop
+/// the query from the stack -- in the case of unwinding, the guard's
+/// destructor will also remove the query.
+pub(super) struct ActiveQueryGuard<'me, DB: Database> {
+    local_state: &'me LocalState<DB>,
+    push_len: usize,
+}
+
+impl<'me, DB> ActiveQueryGuard<'me, DB>
+where
+    DB: Database,
+{
+    fn pop_helper(&self) -> ActiveQuery<DB> {
+        let mut query_stack = self.local_state.query_stack.borrow_mut();
+
+        // Sanity check: pushes and pops should be balanced.
+        assert_eq!(query_stack.len(), self.push_len);
+
+        query_stack.pop().unwrap()
+    }
+
+    /// Invoked when the query has successfully completed execution.
+    pub(super) fn complete(self) -> ActiveQuery<DB> {
+        let query = self.pop_helper();
+        std::mem::forget(self);
+        query
     }
 }
