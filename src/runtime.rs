@@ -4,14 +4,15 @@ use log::debug;
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
-use std::cell::Ref;
-use std::cell::RefCell;
 use std::fmt::Write;
 use std::hash::BuildHasherDefault;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
+
+mod local_state;
+use local_state::LocalState;
 
 /// The salsa runtime stores the storage for all queries as well as
 /// tracking the query stack and dependencies between cycles.
@@ -475,83 +476,6 @@ where
             .field("revision", &self.revision)
             .field("pending_revision", &self.pending_revision)
             .finish()
-    }
-}
-
-/// State that is specific to a single execution thread.
-///
-/// Internally, this type uses ref-cells.
-///
-/// **Note also that all mutations to the database handle (and hence
-/// to the local-state) must be undone during unwinding.**
-struct LocalState<DB: Database> {
-    /// Vector of active queries.
-    ///
-    /// Unwinding note: pushes onto this vector must be popped -- even
-    /// during unwinding.
-    query_stack: RefCell<Vec<ActiveQuery<DB>>>,
-}
-
-impl<DB: Database> Default for LocalState<DB> {
-    fn default() -> Self {
-        LocalState {
-            query_stack: Default::default(),
-        }
-    }
-}
-
-impl<DB: Database> LocalState<DB> {
-    fn push_query(&self, descriptor: &DB::QueryDescriptor) -> usize {
-        let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push(ActiveQuery::new(descriptor.clone()));
-        query_stack.len()
-    }
-
-    fn pop_query(&self, push_len: usize) -> ActiveQuery<DB> {
-        let mut query_stack = self.query_stack.borrow_mut();
-
-        // Sanity check: pushes and pops should be balanced.
-        assert_eq!(query_stack.len(), push_len);
-
-        query_stack.pop().unwrap()
-    }
-
-    /// Returns a reference to the active query stack.
-    ///
-    /// **Warning:** Because this reference holds the ref-cell lock,
-    /// you should not use any mutating methods of `LocalState` while
-    /// reading from it.
-    fn borrow_query_stack(&self) -> Ref<'_, Vec<ActiveQuery<DB>>> {
-        self.query_stack.borrow()
-    }
-
-    fn query_in_progress(&self) -> bool {
-        !self.query_stack.borrow().is_empty()
-    }
-
-    fn active_query(&self) -> Option<DB::QueryDescriptor> {
-        self.query_stack
-            .borrow()
-            .last()
-            .map(|active_query| active_query.descriptor.clone())
-    }
-
-    fn report_query_read(&self, descriptor: &DB::QueryDescriptor, changed_at: ChangedAt) {
-        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_read(descriptor, changed_at);
-        }
-    }
-
-    fn report_untracked_read(&self, current_revision: Revision) {
-        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_untracked_read(current_revision);
-        }
-    }
-
-    fn report_anon_read(&self, revision: Revision) {
-        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_anon_read(revision);
-        }
     }
 }
 
