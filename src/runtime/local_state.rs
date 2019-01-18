@@ -80,6 +80,8 @@ impl<DB: Database> LocalState<DB> {
     }
 }
 
+impl<DB> std::panic::RefUnwindSafe for LocalState<DB> where DB: Database {}
+
 /// When a query is pushed onto the `active_query` stack, this guard
 /// is returned to represent its slot. The guard can be used to pop
 /// the query from the stack -- in the case of unwinding, the guard's
