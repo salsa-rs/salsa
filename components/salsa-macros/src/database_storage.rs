@@ -1,7 +1,7 @@
 use crate::parenthesized::Parenthesized;
 use proc_macro::TokenStream;
 use syn::parse::{Parse, ParseStream, Peek};
-use syn::{Ident, Path, Token};
+use syn::{Ident, Path, Token, Attribute, Visibility};
 
 /// Implementation for `salsa::database_storage!` macro.
 ///
@@ -24,6 +24,8 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         storage_struct_name,
         database_name,
         query_groups,
+        attributes,
+        visibility,
     } = syn::parse_macro_input!(input as DatabaseStorage);
 
     let each_query = || {
@@ -48,12 +50,16 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         });
     }
 
+    let mut attrs = proc_macro2::TokenStream::new();
+    for attr in attributes {
+        attrs.extend(quote!{ #attr });
+    }
+
     // Create the storage struct defintion
     let mut output = quote! {
         #[derive(Default)]
-        // XXX attributes
-        // XXX visibility
-        struct #storage_struct_name {
+        #attrs
+        #visibility struct #storage_struct_name {
             #fields
         }
     };
@@ -61,8 +67,8 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     // create query descriptor wrapper struct
     output.extend(quote! {
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-        // XXX visibility
-        struct __SalsaQueryDescriptor {
+        #[doc(hidden)]
+        #visibility struct __SalsaQueryDescriptor {
             kind: __SalsaQueryDescriptorKind
         }
     });
@@ -108,7 +114,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         impl ::salsa::plumbing::DatabaseOps for #database_name {
             fn for_each_query(
                 &self,
-                mut op: impl FnMut(&dyn salsa::plumbing::QueryStorageMassOps<Self>),
+                mut op: impl FnMut(&dyn ::salsa::plumbing::QueryStorageMassOps<Self>),
             ) {
                 #for_each_ops
             }
@@ -123,9 +129,9 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     {
         for_each_query_desc.extend(quote! {
             __SalsaQueryDescriptorKind::#query_name(key) => {
-                let runtime = salsa::Database::salsa_runtime(db);
+                let runtime = ::salsa::Database::salsa_runtime(db);
                 let storage = &runtime.storage().#query_name;
-                <_ as salsa::plumbing::QueryStorageOps<#database_name, #query_type>>::maybe_changed_since(
+                <_ as ::salsa::plumbing::QueryStorageOps<#database_name, #query_type>>::maybe_changed_since(
                     storage,
                     db,
                     revision,
@@ -141,7 +147,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
             fn maybe_changed_since(
                 &self,
                 db: &#database_name,
-                revision: salsa::plumbing::Revision,
+                revision: ::salsa::plumbing::Revision,
             ) -> bool {
                 match &self.kind {
                     #for_each_query_desc
@@ -157,13 +163,13 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     } in each_query()
     {
         for_each_query_table.extend(quote! {
-            impl salsa::plumbing::GetQueryTable<#query_type> for #database_name {
+            impl ::salsa::plumbing::GetQueryTable<#query_type> for #database_name {
                 fn get_query_table(
                     db: &Self,
-                ) -> salsa::QueryTable<'_, Self, #query_type> {
-                    salsa::QueryTable::new(
+                ) -> ::salsa::QueryTable<'_, Self, #query_type> {
+                    ::salsa::QueryTable::new(
                         db,
-                        &salsa::Database::salsa_runtime(db)
+                        &::salsa::Database::salsa_runtime(db)
                             .storage()
                             .#query_name,
                     )
@@ -171,11 +177,11 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
 
                 fn get_query_table_mut(
                     db: &mut Self,
-                ) -> salsa::QueryTableMut<'_, Self, #query_type> {
+                ) -> ::salsa::QueryTableMut<'_, Self, #query_type> {
                     let db = &*db;
-                    salsa::QueryTableMut::new(
+                    ::salsa::QueryTableMut::new(
                         db,
-                        &salsa::Database::salsa_runtime(db)
+                        &::salsa::Database::salsa_runtime(db)
                             .storage()
                             .#query_name,
                     )
@@ -183,8 +189,8 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
 
                 fn descriptor(
                     db: &Self,
-                    key: <#query_type as salsa::Query<Self>>::Key,
-                ) -> <Self as salsa::plumbing::DatabaseStorageTypes>::QueryDescriptor {
+                    key: <#query_type as ::salsa::Query<Self>>::Key,
+                ) -> <Self as ::salsa::plumbing::DatabaseStorageTypes>::QueryDescriptor {
                     __SalsaQueryDescriptor {
                         kind: __SalsaQueryDescriptorKind::#query_name(key),
                     }
@@ -202,6 +208,8 @@ struct DatabaseStorage {
     storage_struct_name: Ident,
     database_name: Path,
     query_groups: Vec<QueryGroup>,
+    attributes: Vec<Attribute>,
+    visibility: Visibility,
 }
 
 struct QueryGroup {
@@ -216,6 +224,8 @@ struct Query {
 
 impl Parse for DatabaseStorage {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let attributes = input.call(Attribute::parse_outer)?;
+        let visibility = input.parse()?;
         let _struct_token: Token![struct ] = input.parse()?;
         let storage_struct_name: Ident = input.parse()?;
         let _for_token: Token![for ] = input.parse()?;
@@ -224,6 +234,8 @@ impl Parse for DatabaseStorage {
         syn::braced!(content in input);
         let query_groups: Vec<QueryGroup> = parse_while(Token![impl ], &content)?;
         Ok(DatabaseStorage {
+            attributes,
+            visibility,
             storage_struct_name,
             database_name,
             query_groups,
