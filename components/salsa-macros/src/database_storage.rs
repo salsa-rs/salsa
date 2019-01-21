@@ -7,7 +7,7 @@ use syn::{Attribute, Ident, Path, Token, Visibility};
 ///
 /// Current syntax:
 ///
-/// ```
+/// ```ignore
 ///  salsa::database_storage! {
 ///     struct DatabaseStorage for DatabaseStruct {
 ///         impl HelloWorldDatabase {
