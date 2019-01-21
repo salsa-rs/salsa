@@ -37,13 +37,6 @@ pub struct Runtime<DB: Database> {
     shared_state: Arc<SharedState<DB>>,
 }
 
-impl<DB> std::panic::RefUnwindSafe for Runtime<DB>
-where
-    DB: Database,
-    DB::DatabaseStorage: std::panic::RefUnwindSafe,
-{
-}
-
 impl<DB> Default for Runtime<DB>
 where
     DB: Database,
@@ -444,6 +437,13 @@ struct SharedState<DB: Database> {
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
     dependency_graph: Mutex<DependencyGraph<DB>>,
+}
+
+impl<DB> std::panic::RefUnwindSafe for SharedState<DB>
+where
+    DB: Database,
+    DB::DatabaseStorage: std::panic::RefUnwindSafe,
+{
 }
 
 impl<DB: Database> Default for SharedState<DB> {
