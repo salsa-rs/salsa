@@ -1,7 +1,7 @@
 use crate::parenthesized::Parenthesized;
 use proc_macro::TokenStream;
 use syn::parse::{Parse, ParseStream, Peek};
-use syn::{Ident, Path, Token, Attribute, Visibility};
+use syn::{Attribute, Ident, Path, Token, Visibility};
 
 /// Implementation for `salsa::database_storage!` macro.
 ///
@@ -52,7 +52,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
 
     let mut attrs = proc_macro2::TokenStream::new();
     for attr in attributes {
-        attrs.extend(quote!{ #attr });
+        attrs.extend(quote! { #attr });
     }
 
     // Create the storage struct defintion
@@ -213,7 +213,7 @@ struct DatabaseStorage {
 }
 
 struct QueryGroup {
-    query_group: Path,
+    _query_group: Path,
     queries: Vec<Query>,
 }
 
@@ -257,7 +257,7 @@ impl Parse for QueryGroup {
         syn::braced!(content in input);
         let queries: Vec<Query> = parse_while(Token![fn ], &content)?;
         Ok(QueryGroup {
-            query_group,
+            _query_group: query_group,
             queries,
         })
     }
