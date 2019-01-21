@@ -115,6 +115,86 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         }
     });
 
+    let mut for_each_query_desc = proc_macro2::TokenStream::new();
+    for Query {
+        query_name,
+        query_type,
+    } in each_query()
+    {
+        for_each_query_desc.extend(quote! {
+            __SalsaQueryDescriptorKind::#query_name(key) => {
+                let runtime = $crate::Database::salsa_runtime(db);
+                let storage = &runtime.storage().#query_name;
+                <_ as $crate::plumbing::QueryStorageOps<#database_name, #query_type>>::maybe_changed_since(
+                    storage,
+                    db,
+                    revision,
+                    key,
+                    self,
+                )
+            }
+        });
+    }
+
+    output.extend(quote! {
+        impl ::salsa::plumbing::QueryDescriptor<#database_name> for __SalsaQueryDescriptor {
+            fn maybe_changed_since(
+                &self,
+                db: &#database_name,
+                revision: $crate::plumbing::Revision,
+            ) -> bool {
+                match &self.kind {
+                    #for_each_query_desc
+                }
+            }
+        }
+    });
+
+    let mut for_each_query_table = proc_macro2::TokenStream::new();
+    for Query {
+        query_name,
+        query_type,
+    } in each_query()
+    {
+        for_each_query_table.extend(quote! {
+            impl $crate::plumbing::GetQueryTable<#query_type> for #database_name {
+                fn get_query_table(
+                    db: &Self,
+                ) -> $crate::QueryTable<'_, Self, #query_type> {
+                    $crate::QueryTable::new(
+                        db,
+                        &$crate::Database::salsa_runtime(db)
+                            .storage()
+                            .#query_name,
+                    )
+                }
+
+                fn get_query_table_mut(
+                    db: &mut Self,
+                ) -> $crate::QueryTableMut<'_, Self, #query_type> {
+                    let db = &*db;
+                    $crate::QueryTableMut::new(
+                        db,
+                        &$crate::Database::salsa_runtime(db)
+                            .storage()
+                            .#query_name,
+                    )
+                }
+
+                fn descriptor(
+                    db: &Self,
+                    key: <#query_type as $crate::Query<Self>>::Key,
+                ) -> <Self as $crate::plumbing::DatabaseStorageTypes>::QueryDescriptor {
+                    __SalsaQueryDescriptor {
+                        kind: __SalsaQueryDescriptorKind::#query_name(key),
+                    }
+                }
+            }
+        });
+    }
+
+    output.extend(for_each_query_table);
+
     output.into()
 }
 
