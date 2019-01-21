@@ -9,6 +9,7 @@ extern crate quote;
 
 use proc_macro::TokenStream;
 
+mod database_storage;
 mod parenthesized;
 mod query_group;
 
@@ -123,4 +124,9 @@ mod query_group;
 #[proc_macro_attribute]
 pub fn query_group(args: TokenStream, input: TokenStream) -> TokenStream {
     query_group::query_group(args, input)
+}
+
+#[proc_macro]
+pub fn database_storage(input: TokenStream) -> TokenStream {
+    database_storage::database_storage(input)
 }
