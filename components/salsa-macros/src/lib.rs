@@ -9,6 +9,7 @@ extern crate quote;
 
 use proc_macro::TokenStream;
 
+mod parenthesized;
 mod query_group;
 
 /// The decorator that defines a salsa "query group" trait. This is a
