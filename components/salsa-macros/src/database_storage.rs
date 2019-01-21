@@ -26,25 +26,30 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         query_groups,
     } = syn::parse_macro_input!(input as DatabaseStorage);
 
+    let each_query = || {
+        query_groups
+            .iter()
+            .flat_map(|query_group| &query_group.queries)
+    };
+
     // For each query `fn foo() for FooType` create
     //
     // ```
     // foo: <FooType as ::salsa::Query<#database_name>>::Storage,
     // ```
     let mut fields = proc_macro2::TokenStream::new();
-    for query_group in &query_groups {
-        for Query {
-            query_name,
-            query_type,
-        } in &query_group.queries
-        {
-            fields.extend(quote! {
-                #query_name: <#query_type as ::salsa::Query<#database_name>>::Storage,
-            });
-        }
+    for Query {
+        query_name,
+        query_type,
+    } in each_query()
+    {
+        fields.extend(quote! {
+            #query_name: <#query_type as ::salsa::Query<#database_name>>::Storage,
+        });
     }
 
-    let output = quote! {
+    // Create the storage struct defintion
+    let mut output = quote! {
         #[derive(Default)]
         // XXX attributes
         // XXX visibility
@@ -52,6 +57,63 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
             #fields
         }
     };
+
+    // create query descriptor wrapper struct
+    output.extend(quote! {
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+        // XXX visibility
+        struct __SalsaQueryDescriptor {
+            kind: __SalsaQueryDescriptorKind
+        }
+    });
+
+    // For each query `fn foo() for FooType` create
+    //
+    // ```
+    // foo(<FooType as ::salsa::Query<#database_name>>::Key),
+    // ```
+    let mut variants = proc_macro2::TokenStream::new();
+    for Query {
+        query_name,
+        query_type,
+    } in each_query()
+    {
+        variants.extend(quote!(
+            #query_name(<#query_type as ::salsa::Query<#database_name>>::Key),
+        ));
+    }
+    output.extend(quote! {
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+        enum __SalsaQueryDescriptorKind {
+            #variants
+        }
+    });
+
+    //
+    output.extend(quote! {
+        impl ::salsa::plumbing::DatabaseStorageTypes for #database_name {
+            type QueryDescriptor = __SalsaQueryDescriptor;
+            type DatabaseStorage = #storage_struct_name;
+        }
+    });
+
+    //
+    let mut for_each_ops = proc_macro2::TokenStream::new();
+    for Query { query_name, .. } in each_query() {
+        for_each_ops.extend(quote! {
+            op(&::salsa::Database::salsa_runtime(self).storage().#query_name);
+        });
+    }
+    output.extend(quote! {
+        impl ::salsa::plumbing::DatabaseOps for #database_name {
+            fn for_each_query(
+                &self,
+                mut op: impl FnMut(&dyn $crate::plumbing::QueryStorageMassOps<Self>),
+            ) {
+                #for_each_ops
+            }
+        }
+    });
 
     output.into()
 }
