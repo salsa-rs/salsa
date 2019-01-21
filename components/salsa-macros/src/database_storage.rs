@@ -20,9 +20,40 @@ use syn::{Ident, Path, Token};
 ///
 /// impl Database {
 pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
-    let _input: DatabaseStorage = syn::parse_macro_input!(input as DatabaseStorage);
+    let DatabaseStorage {
+        storage_struct_name,
+        database_name,
+        query_groups,
+    } = syn::parse_macro_input!(input as DatabaseStorage);
 
-    unimplemented!()
+    // For each query `fn foo() for FooType` create
+    //
+    // ```
+    // foo: <FooType as ::salsa::Query<#database_name>>::Storage,
+    // ```
+    let mut fields = proc_macro2::TokenStream::new();
+    for query_group in &query_groups {
+        for Query {
+            query_name,
+            query_type,
+        } in &query_group.queries
+        {
+            fields.extend(quote! {
+                #query_name: <#query_type as ::salsa::Query<#database_name>>::Storage,
+            });
+        }
+    }
+
+    let output = quote! {
+        #[derive(Default)]
+        // XXX attributes
+        // XXX visibility
+        struct #storage_struct_name {
+            #fields
+        }
+    };
+
+    output.into()
 }
 
 struct DatabaseStorage {
