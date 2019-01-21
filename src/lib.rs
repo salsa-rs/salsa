@@ -500,7 +500,7 @@ where
 /// [`salsa::Runtime`]: struct.Runtime.html
 /// [hw]: https://github.com/salsa-rs/salsa/tree/master/examples/hello_world
 #[macro_export]
-macro_rules! database_storage {
+macro_rules! database_storage_old {
     (
         $(#[$attr:meta])*
         $v:vis struct $Storage:ident for $Database:ty {

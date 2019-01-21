@@ -108,7 +108,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         impl ::salsa::plumbing::DatabaseOps for #database_name {
             fn for_each_query(
                 &self,
-                mut op: impl FnMut(&dyn $crate::plumbing::QueryStorageMassOps<Self>),
+                mut op: impl FnMut(&dyn salsa::plumbing::QueryStorageMassOps<Self>),
             ) {
                 #for_each_ops
             }
@@ -123,9 +123,9 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     {
         for_each_query_desc.extend(quote! {
             __SalsaQueryDescriptorKind::#query_name(key) => {
-                let runtime = $crate::Database::salsa_runtime(db);
+                let runtime = salsa::Database::salsa_runtime(db);
                 let storage = &runtime.storage().#query_name;
-                <_ as $crate::plumbing::QueryStorageOps<#database_name, #query_type>>::maybe_changed_since(
+                <_ as salsa::plumbing::QueryStorageOps<#database_name, #query_type>>::maybe_changed_since(
                     storage,
                     db,
                     revision,
@@ -141,7 +141,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
             fn maybe_changed_since(
                 &self,
                 db: &#database_name,
-                revision: $crate::plumbing::Revision,
+                revision: salsa::plumbing::Revision,
             ) -> bool {
                 match &self.kind {
                     #for_each_query_desc
@@ -157,13 +157,13 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     } in each_query()
     {
         for_each_query_table.extend(quote! {
-            impl $crate::plumbing::GetQueryTable<#query_type> for #database_name {
+            impl salsa::plumbing::GetQueryTable<#query_type> for #database_name {
                 fn get_query_table(
                     db: &Self,
-                ) -> $crate::QueryTable<'_, Self, #query_type> {
-                    $crate::QueryTable::new(
+                ) -> salsa::QueryTable<'_, Self, #query_type> {
+                    salsa::QueryTable::new(
                         db,
-                        &$crate::Database::salsa_runtime(db)
+                        &salsa::Database::salsa_runtime(db)
                             .storage()
                             .#query_name,
                     )
@@ -171,11 +171,11 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
 
                 fn get_query_table_mut(
                     db: &mut Self,
-                ) -> $crate::QueryTableMut<'_, Self, #query_type> {
+                ) -> salsa::QueryTableMut<'_, Self, #query_type> {
                     let db = &*db;
-                    $crate::QueryTableMut::new(
+                    salsa::QueryTableMut::new(
                         db,
-                        &$crate::Database::salsa_runtime(db)
+                        &salsa::Database::salsa_runtime(db)
                             .storage()
                             .#query_name,
                     )
@@ -183,8 +183,8 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
 
                 fn descriptor(
                     db: &Self,
-                    key: <#query_type as $crate::Query<Self>>::Key,
-                ) -> <Self as $crate::plumbing::DatabaseStorageTypes>::QueryDescriptor {
+                    key: <#query_type as salsa::Query<Self>>::Key,
+                ) -> <Self as salsa::plumbing::DatabaseStorageTypes>::QueryDescriptor {
                     __SalsaQueryDescriptor {
                         kind: __SalsaQueryDescriptorKind::#query_name(key),
                     }
