@@ -85,7 +85,9 @@ salsa::database_storage! {
 fn main() {
     let mut db = DatabaseStruct::default();
 
-    println!("Initially, the length is {}.", db.length(()));
+    // You cannot access input_string yet, because it does not have a value. If you do, it will
+    // panic. You could create an Option interface by maintaining a HashSet of inserted keys.
+    // println!("Initially, the length is {}.", db.length(()));
 
     db.query_mut(InputString)
         .set((), Arc::new(format!("Hello, world")));
