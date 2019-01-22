@@ -1,3 +1,4 @@
+use crate::debug::TableEntry;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::QueryDescriptor;
 use crate::plumbing::QueryFunction;
@@ -160,6 +161,13 @@ where
         QueryState::InProgress {
             id,
             waiting: Default::default(),
+        }
+    }
+
+    fn value(&self) -> Option<Q::Value> {
+        match self {
+            QueryState::InProgress { .. } => None,
+            QueryState::Memoized(memo) => memo.value.clone(),
         }
     }
 }
@@ -900,6 +908,16 @@ where
     {
         let map = self.map.read();
         map.keys().cloned().collect()
+    }
+
+    fn entries<C>(&self, _db: &DB) -> C
+    where
+        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
+    {
+        let map = self.map.read();
+        map.iter()
+            .map(|(key, query_state)| TableEntry::new(key.clone(), query_state.value()))
+            .collect()
     }
 }
 

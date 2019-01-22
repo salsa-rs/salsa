@@ -1,5 +1,6 @@
 #![allow(missing_docs)]
 
+use crate::debug::TableEntry;
 use crate::Database;
 use crate::Query;
 use crate::QueryTable;
@@ -133,6 +134,11 @@ where
     fn keys<C>(&self, db: &DB) -> C
     where
         C: std::iter::FromIterator<Q::Key>;
+
+    /// Get the (current) set of the entries in the query storage
+    fn entries<C>(&self, db: &DB) -> C
+    where
+        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>;
 }
 
 /// An optional trait that is implemented for "user mutable" storage:
