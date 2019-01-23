@@ -2,7 +2,7 @@ use crate::group;
 use crate::log::{HasLog, Log};
 
 #[derive(Default)]
-pub struct DatabaseImpl {
+pub(crate) struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,
     log: Log,
 }
@@ -14,7 +14,7 @@ impl salsa::Database for DatabaseImpl {
 }
 
 salsa::database_storage! {
-    pub struct DatabaseImplStorage for DatabaseImpl {
+    pub(crate) struct DatabaseImplStorage for DatabaseImpl {
         impl group::GcDatabase {
             fn min() for group::MinQuery;
             fn max() for group::MaxQuery;

@@ -185,7 +185,7 @@ fn snapshot_me(db: &impl ParDatabase) {
 }
 
 #[derive(Default)]
-pub struct ParDatabaseImpl {
+pub(crate) struct ParDatabaseImpl {
     runtime: salsa::Runtime<ParDatabaseImpl>,
     knobs: KnobsStruct,
 }
@@ -235,7 +235,7 @@ impl Knobs for ParDatabaseImpl {
 }
 
 salsa::database_storage! {
-    pub struct DatabaseImplStorage for ParDatabaseImpl {
+    pub(crate) struct DatabaseImplStorage for ParDatabaseImpl {
         impl ParDatabase {
             fn input() for InputQuery;
             fn sum() for SumQuery;

@@ -2,13 +2,13 @@ use crate::queries;
 use std::cell::Cell;
 
 #[derive(Default)]
-pub struct DatabaseImpl {
+pub(crate) struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,
     counter: Cell<usize>,
 }
 
 salsa::database_storage! {
-    pub struct DatabaseImplStorage for DatabaseImpl {
+    pub(crate) struct DatabaseImplStorage for DatabaseImpl {
         impl queries::Database {
             fn memoized() for queries::MemoizedQuery;
             fn volatile() for queries::VolatileQuery;

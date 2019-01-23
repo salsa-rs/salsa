@@ -42,7 +42,7 @@ salsa::database_storage! {
     pub(crate) struct TestContextImplStorage for TestContextImpl {
         impl constants::ConstantsDatabase {
             fn constants_input() for constants::ConstantsInputQuery;
-            fn constants_derived() for constants::ConstantsAddQuery;
+            fn constants_add() for constants::ConstantsAddQuery;
         }
 
         impl memoized_dep_inputs::MemoizedDepInputsContext {
