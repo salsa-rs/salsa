@@ -902,14 +902,6 @@ where
         }
     }
 
-    fn keys<C>(&self, _db: &DB) -> C
-    where
-        C: std::iter::FromIterator<Q::Key>,
-    {
-        let map = self.map.read();
-        map.keys().cloned().collect()
-    }
-
     fn entries<C>(&self, _db: &DB) -> C
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,

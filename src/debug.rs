@@ -22,11 +22,6 @@ pub trait DebugQueryTable {
     /// values the inputs take on from this point.
     fn is_constant(&self, key: Self::Key) -> bool;
 
-    /// Get the (current) set of the keys in the query table.
-    fn keys<C>(&self) -> C
-    where
-        C: FromIterator<Self::Key>;
-
     /// Get the (current) set of the entries in the query table.
     fn entries<C>(&self) -> C
     where
@@ -34,6 +29,7 @@ pub trait DebugQueryTable {
 }
 
 /// An entry from a query table, for debugging and inspecting the table state.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TableEntry<K, V> {
     /// key of the query
     pub key: K,
@@ -62,13 +58,6 @@ where
 
     fn is_constant(&self, key: Q::Key) -> bool {
         self.storage.is_constant(self.db, &key)
-    }
-
-    fn keys<C>(&self) -> C
-    where
-        C: FromIterator<Q::Key>,
-    {
-        self.storage.keys(self.db)
     }
 
     fn entries<C>(&self) -> C

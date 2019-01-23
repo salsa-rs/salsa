@@ -3,16 +3,6 @@ use crate::group::*;
 use salsa::debug::DebugQueryTable;
 use salsa::{Database, SweepStrategy};
 
-macro_rules! assert_keys {
-    ($db:expr, $($query:expr => ($($key:expr),*),)*) => {
-        $(
-            let mut keys = $db.query($query).keys::<Vec<_>>();
-            keys.sort();
-            assert_eq!(keys, vec![$($key),*], "query {:?} had wrong keys", $query);
-        )*
-    };
-}
-
 #[test]
 fn compute_one() {
     let mut db = db::DatabaseImpl::default();
