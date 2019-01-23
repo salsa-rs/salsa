@@ -128,11 +128,11 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
 
     //
     let mut for_each_ops = proc_macro2::TokenStream::new();
-    for (query_group, Query { query_name, .. }) in each_query() {
+    for query_group in &query_groups {
         let group_storage = query_group.group_storage();
         for_each_ops.extend(quote! {
             let storage: &#group_storage<#database_name> = ::salsa::plumbing::GetQueryGroupStorage::from(self);
-            op(&storage.#query_name);
+            storage.for_each_query(self, &mut op);
         });
     }
     output.extend(quote! {

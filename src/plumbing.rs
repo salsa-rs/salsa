@@ -87,6 +87,7 @@ pub trait GetQueryGroupStorage<S>: Database {
 
 pub trait QueryStorageOps<DB, Q>: Default
 where
+    Self: QueryStorageMassOps<DB>,
     DB: Database,
     Q: Query<DB>,
 {

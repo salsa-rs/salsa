@@ -213,7 +213,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     });
 
     // Emit the query types.
-    for query in queries {
+    for query in &queries {
         let qt = &query.query_type;
         let storage = Ident::new(
             match query.storage {
@@ -255,7 +255,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             };
             let invoke = match &query.invoke {
                 Some(i) => i.into_token_stream(),
-                None => query.fn_name.into_token_stream(),
+                None => query.fn_name.clone().into_token_stream(),
             };
             output.extend(quote_spanned! {span=>
                 impl<DB> salsa::plumbing::QueryFunction<DB> for #qt
@@ -296,13 +296,40 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         }
     });
 
+    let mut for_each_ops = proc_macro2::TokenStream::new();
+    for Query { fn_name, .. } in &queries {
+        for_each_ops.extend(quote! {
+            op(&self.#fn_name);
+        });
+    }
+
     // Emit query group storage struct
     output.extend(quote! {
         #[derive(Default)]
         #trait_vis struct #group_storage<DB__: #trait_name> {
             #storage_fields
         }
+
+        impl<DB__> #group_storage<DB__>
+        where
+            DB__: #trait_name,
+            DB__: ::salsa::plumbing::GetQueryGroupStorage<#group_storage<DB__>>,
+        {
+            #trait_vis fn for_each_query(
+                &self,
+                db: &DB__,
+                mut op: &mut dyn FnMut(&dyn ::salsa::plumbing::QueryStorageMassOps<DB__>),
+            ) {
+                #for_each_ops
+            }
+        }
     });
+
+    if std::env::var("SALSA_DUMP").is_ok() {
+        println!("~~~ query_group");
+        println!("{}", output.to_string());
+        println!("~~~ query_group");
+    }
 
     output.into()
 }
