@@ -1,5 +1,6 @@
 use crate::parenthesized::Parenthesized;
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use syn::parse::{Parse, ParseStream, Peek};
 use syn::{Attribute, Ident, Path, Token, Visibility};
 
@@ -21,48 +22,40 @@ use syn::{Attribute, Ident, Path, Token, Visibility};
 /// impl Database {
 pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     let DatabaseStorage {
-        storage_struct_name,
         database_name,
         query_groups,
         attributes,
         visibility,
     } = syn::parse_macro_input!(input as DatabaseStorage);
 
+    let mut output = proc_macro2::TokenStream::new();
     let each_query = || {
         query_groups
             .iter()
-            .flat_map(|query_group| &query_group.queries)
+            .enumerate()
+            .flat_map(|(index, query_group)| query_group.queries.iter().map(move |q| (index, q)))
     };
 
-    // For each query `fn foo() for FooType` create
-    //
-    // ```
-    // foo: <FooType as ::salsa::Query<#database_name>>::Storage,
-    // ```
-    let mut fields = proc_macro2::TokenStream::new();
-    for Query {
-        query_name,
-        query_type,
-    } in each_query()
-    {
-        fields.extend(quote! {
-            #query_name: <#query_type as ::salsa::Query<#database_name>>::Storage,
-        });
+    // For each query group `foo::MyGroup` create a link to its
+    // `foo::MyGroupGroupStorage`
+    let mut storage_tuple_elements = proc_macro2::TokenStream::new();
+    for query_group in &query_groups {
+        // rewrite the last identifier (`MyGroup`, above) to
+        // (e.g.) `MyGroupGroupStorage`.
+        let mut group_storage = query_group.query_group.clone();
+        let last_ident = &group_storage.segments.last().unwrap().value().ident;
+        let storage_ident = Ident::new(
+            &format!("{}GroupStorage", last_ident.to_string()),
+            Span::call_site(),
+        );
+        group_storage.segments.last_mut().unwrap().value_mut().ident = storage_ident;
+        storage_tuple_elements.extend(quote! { #group_storage<Self>, });
     }
 
     let mut attrs = proc_macro2::TokenStream::new();
     for attr in attributes {
         attrs.extend(quote! { #attr });
     }
-
-    // Create the storage struct defintion
-    let mut output = quote! {
-        #[derive(Default)]
-        #attrs
-        #visibility struct #storage_struct_name {
-            #fields
-        }
-    };
 
     // create query descriptor wrapper struct
     output.extend(quote! {
@@ -79,10 +72,13 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     // foo(<FooType as ::salsa::Query<#database_name>>::Key),
     // ```
     let mut variants = proc_macro2::TokenStream::new();
-    for Query {
-        query_name,
-        query_type,
-    } in each_query()
+    for (
+        _,
+        Query {
+            query_name,
+            query_type,
+        },
+    ) in each_query()
     {
         variants.extend(quote!(
             #query_name(<#query_type as ::salsa::Query<#database_name>>::Key),
@@ -99,15 +95,15 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     output.extend(quote! {
         impl ::salsa::plumbing::DatabaseStorageTypes for #database_name {
             type QueryDescriptor = __SalsaQueryDescriptor;
-            type DatabaseStorage = #storage_struct_name;
+            type DatabaseStorage = (#storage_tuple_elements);
         }
     });
 
     //
     let mut for_each_ops = proc_macro2::TokenStream::new();
-    for Query { query_name, .. } in each_query() {
+    for (group_index, Query { query_name, .. }) in each_query() {
         for_each_ops.extend(quote! {
-            op(&::salsa::Database::salsa_runtime(self).storage().#query_name);
+            op(&::salsa::Database::salsa_runtime(self).storage().#group_index.#query_name);
         });
     }
     output.extend(quote! {
@@ -122,15 +118,18 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     });
 
     let mut for_each_query_desc = proc_macro2::TokenStream::new();
-    for Query {
-        query_name,
-        query_type,
-    } in each_query()
+    for (
+        group_index,
+        Query {
+            query_name,
+            query_type,
+        },
+    ) in each_query()
     {
         for_each_query_desc.extend(quote! {
             __SalsaQueryDescriptorKind::#query_name(key) => {
                 let runtime = ::salsa::Database::salsa_runtime(db);
-                let storage = &runtime.storage().#query_name;
+                let storage = &runtime.storage().#group_index.#query_name;
                 <_ as ::salsa::plumbing::QueryStorageOps<#database_name, #query_type>>::maybe_changed_since(
                     storage,
                     db,
@@ -157,10 +156,13 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     });
 
     let mut for_each_query_table = proc_macro2::TokenStream::new();
-    for Query {
-        query_name,
-        query_type,
-    } in each_query()
+    for (
+        group_index,
+        Query {
+            query_name,
+            query_type,
+        },
+    ) in each_query()
     {
         for_each_query_table.extend(quote! {
             impl ::salsa::plumbing::GetQueryTable<#query_type> for #database_name {
@@ -171,6 +173,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
                         db,
                         &::salsa::Database::salsa_runtime(db)
                             .storage()
+                            .#group_index
                             .#query_name,
                     )
                 }
@@ -183,6 +186,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
                         db,
                         &::salsa::Database::salsa_runtime(db)
                             .storage()
+                            .#group_index
                             .#query_name,
                     )
                 }
@@ -205,7 +209,6 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
 }
 
 struct DatabaseStorage {
-    storage_struct_name: Ident,
     database_name: Path,
     query_groups: Vec<QueryGroup>,
     attributes: Vec<Attribute>,
@@ -213,7 +216,7 @@ struct DatabaseStorage {
 }
 
 struct QueryGroup {
-    _query_group: Path,
+    query_group: Path,
     queries: Vec<Query>,
 }
 
@@ -227,7 +230,7 @@ impl Parse for DatabaseStorage {
         let attributes = input.call(Attribute::parse_outer)?;
         let visibility = input.parse()?;
         let _struct_token: Token![struct ] = input.parse()?;
-        let storage_struct_name: Ident = input.parse()?;
+        let _storage_struct_name: Ident = input.parse()?;
         let _for_token: Token![for ] = input.parse()?;
         let database_name: Path = input.parse()?;
         let content;
@@ -236,7 +239,6 @@ impl Parse for DatabaseStorage {
         Ok(DatabaseStorage {
             attributes,
             visibility,
-            storage_struct_name,
             database_name,
             query_groups,
         })
@@ -257,7 +259,7 @@ impl Parse for QueryGroup {
         syn::braced!(content in input);
         let queries: Vec<Query> = parse_while(Token![fn ], &content)?;
         Ok(QueryGroup {
-            _query_group: query_group,
+            query_group,
             queries,
         })
     }

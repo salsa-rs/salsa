@@ -122,6 +122,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
+    let mut query_descriptor_variants = proc_macro2::TokenStream::new();
+    let mut storage_fields = proc_macro2::TokenStream::new();
     for query in &queries {
         let key_names: &Vec<_> = &(0..query.keys.len())
             .map(|i| Ident::new(&format!("key{}", i), Span::call_site()))
@@ -139,8 +141,20 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         query_fn_definitions.extend(quote! {
             fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
-                <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get((#(#key_names),*))
+                <Self as ::salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get((#(#key_names),*))
             }
+        });
+
+        // A variant for the group descriptor below
+        query_descriptor_variants.extend(quote! {
+            #qt(<#qt as ::salsa::Query<__DB>>::Key),
+        });
+
+        // A field for the storage struct
+        //
+        // FIXME(#120): the pub should not be necessary once we complete the transition
+        storage_fields.extend(quote! {
+            pub #fn_name: <#qt as ::salsa::Query<__DB>>::Storage,
         });
     }
 
@@ -229,6 +243,29 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             });
         }
     }
+
+    // Emit query group descriptor
+    //let group_descriptor = Ident::new(
+    //    &format!("{}GroupDescriptor", trait_name.to_string()),
+    //    Span::call_site(),
+    //);
+    //output.extend(quote! {
+    //    #trait_vis enum #group_descriptor<__DB: #trait_name> {
+    //        #query_descriptor_variants
+    //    }
+    //});
+
+    // Emit query group storage struct
+    let group_storage = Ident::new(
+        &format!("{}GroupStorage", trait_name.to_string()),
+        Span::call_site(),
+    );
+    output.extend(quote! {
+        #[derive(Default)]
+        #trait_vis struct #group_storage<__DB: #trait_name> {
+            #storage_fields
+        }
+    });
 
     output.into()
 }

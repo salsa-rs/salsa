@@ -1,5 +1,5 @@
 #[derive(Default)]
-pub struct DatabaseImpl {
+struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,
 }
 
@@ -10,7 +10,7 @@ impl salsa::Database for DatabaseImpl {
 }
 
 salsa::database_storage! {
-    pub struct DatabaseImplStorage for DatabaseImpl {
+    struct DatabaseImplStorage for DatabaseImpl {
         impl Database {
             fn memoized_a() for MemoizedAQuery;
             fn memoized_b() for MemoizedBQuery;
