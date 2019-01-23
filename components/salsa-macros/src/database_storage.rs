@@ -1,4 +1,5 @@
 use crate::parenthesized::Parenthesized;
+use heck::SnakeCase;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use syn::parse::{Parse, ParseStream, Peek};
@@ -29,17 +30,38 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     } = syn::parse_macro_input!(input as DatabaseStorage);
 
     let mut output = proc_macro2::TokenStream::new();
+
+    let query_group_names_camel: Vec<_> = query_groups
+        .iter()
+        .map(|query_group| {
+            let group_storage = query_group.query_group.clone();
+            group_storage.segments.last().unwrap().value().ident.clone()
+        })
+        .collect();
+
+    let query_group_names_snake: Vec<_> = query_group_names_camel
+        .iter()
+        .map(|query_group_name_camel| {
+            Ident::new(
+                &query_group_name_camel.to_string().to_snake_case(),
+                query_group_name_camel.span(),
+            )
+        })
+        .collect();
+
     let each_query = || {
         query_groups
             .iter()
-            .enumerate()
-            .flat_map(|(index, query_group)| query_group.queries.iter().map(move |q| (index, q)))
+            .zip(&query_group_names_snake)
+            .flat_map(|(query_group, name_snake)| {
+                query_group.queries.iter().map(move |q| (name_snake, q))
+            })
     };
 
     // For each query group `foo::MyGroup` create a link to its
     // `foo::MyGroupGroupStorage`
-    let mut storage_tuple_elements = proc_macro2::TokenStream::new();
-    for query_group in &query_groups {
+    let mut storage_fields = proc_macro2::TokenStream::new();
+    for (query_group, query_group_name_snake) in query_groups.iter().zip(&query_group_names_snake) {
         // rewrite the last identifier (`MyGroup`, above) to
         // (e.g.) `MyGroupGroupStorage`.
         let mut group_storage = query_group.query_group.clone();
@@ -49,13 +71,22 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
             Span::call_site(),
         );
         group_storage.segments.last_mut().unwrap().value_mut().ident = storage_ident;
-        storage_tuple_elements.extend(quote! { #group_storage<Self>, });
+        storage_fields.extend(quote! { #query_group_name_snake: #group_storage<#database_name>, });
     }
 
     let mut attrs = proc_macro2::TokenStream::new();
     for attr in attributes {
         attrs.extend(quote! { #attr });
     }
+
+    // create group storage wrapper struct
+    output.extend(quote! {
+        #[derive(Default)]
+        #[doc(hidden)]
+        #visibility struct __SalsaDatabaseStorage {
+            #storage_fields
+        }
+    });
 
     // create query descriptor wrapper struct
     output.extend(quote! {
@@ -95,7 +126,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     output.extend(quote! {
         impl ::salsa::plumbing::DatabaseStorageTypes for #database_name {
             type QueryDescriptor = __SalsaQueryDescriptor;
-            type DatabaseStorage = (#storage_tuple_elements);
+            type DatabaseStorage = __SalsaDatabaseStorage;
         }
     });
 
