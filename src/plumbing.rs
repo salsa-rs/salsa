@@ -81,6 +81,10 @@ pub trait GetQueryTable<Q: Query<Self>>: Database {
     fn descriptor(db: &Self, key: Q::Key) -> Self::QueryDescriptor;
 }
 
+pub trait GetQueryGroupStorage<S>: Database {
+    fn from(db: &Self) -> &S;
+}
+
 pub trait QueryStorageOps<DB, Q>: Default
 where
     DB: Database,
