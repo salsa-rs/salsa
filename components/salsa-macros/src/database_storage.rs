@@ -59,8 +59,11 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     // `foo::MyGroupGroupStorage`
     let mut storage_fields = proc_macro2::TokenStream::new();
     let mut storage_impls = proc_macro2::TokenStream::new();
+    let mut descriptor_impls = proc_macro2::TokenStream::new();
     for (query_group, query_group_name_snake) in query_groups.iter().zip(&query_group_names_snake) {
+        let group_name = query_group.name();
         let group_storage = query_group.group_storage();
+        let group_descriptor = query_group.group_descriptor();
 
         // rewrite the last identifier (`MyGroup`, above) to
         // (e.g.) `MyGroupGroupStorage`.
@@ -70,6 +73,18 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
                 fn from(db: &Self) -> &#group_storage<#database_name> {
                     let runtime = ::salsa::Database::salsa_runtime(db);
                     &runtime.storage().#query_group_name_snake
+                }
+            }
+        });
+
+        // rewrite the last identifier (`MyGroup`, above) to
+        // (e.g.) `MyGroupGroupStorage`.
+        descriptor_impls.extend(quote! {
+            impl ::salsa::plumbing::FromQueryGroupDescriptor<#group_descriptor> for #database_name {
+                fn from(descriptor: #group_descriptor) -> __SalsaQueryDescriptor {
+                    __SalsaQueryDescriptor {
+                        kind: __SalsaQueryDescriptorKind::#group_name(descriptor),
+                    }
                 }
             }
         });
@@ -183,7 +198,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     {
         let group_storage = query_group.group_storage();
         let group_descriptor = query_group.group_descriptor();
-        let group_name = query_group.name();
+
         for_each_query_table.extend(quote! {
             impl ::salsa::plumbing::GetQueryTable<#query_type> for #database_name {
                 fn get_query_table(
@@ -211,11 +226,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
                     db: &Self,
                     key: <#query_type as ::salsa::Query<Self>>::Key,
                 ) -> <Self as ::salsa::plumbing::DatabaseStorageTypes>::QueryDescriptor {
-                    __SalsaQueryDescriptor {
-                        kind: __SalsaQueryDescriptorKind::#group_name(
-                            #group_descriptor::#query_name(key),
-                        ),
-                    }
+                    <Self as ::salsa::plumbing::FromQueryGroupDescriptor<_>>::from(#group_descriptor::#query_name(key))
                 }
             }
         });
@@ -223,6 +234,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
 
     output.extend(for_each_query_table);
     output.extend(storage_impls);
+    output.extend(descriptor_impls);
 
     if std::env::var("SALSA_DUMP").is_ok() {
         println!("~~~ database_storage");
