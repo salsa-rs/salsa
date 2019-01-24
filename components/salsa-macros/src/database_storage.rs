@@ -49,12 +49,6 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         })
         .collect();
 
-    let each_query = || {
-        query_groups
-            .iter()
-            .flat_map(|query_group| query_group.queries.iter().map(move |q| (query_group, q)))
-    };
-
     // For each query group `foo::MyGroup` create a link to its
     // `foo::MyGroupGroupStorage`
     let mut storage_fields = proc_macro2::TokenStream::new();
@@ -187,52 +181,6 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         }
     });
 
-    let mut for_each_query_table = proc_macro2::TokenStream::new();
-    for (
-        query_group,
-        Query {
-            query_name,
-            query_type,
-        },
-    ) in each_query()
-    {
-        let group_storage = query_group.group_storage();
-        let group_descriptor = query_group.group_descriptor();
-
-        for_each_query_table.extend(quote! {
-            impl ::salsa::plumbing::GetQueryTable<#query_type> for #database_name {
-                fn get_query_table(
-                    db: &Self,
-                ) -> ::salsa::QueryTable<'_, Self, #query_type> {
-                    let storage: &#group_storage<#database_name> = ::salsa::plumbing::GetQueryGroupStorage::from(db);
-                    ::salsa::QueryTable::new(
-                        db,
-                        &storage.#query_name,
-                    )
-                }
-
-                fn get_query_table_mut(
-                    db: &mut Self,
-                ) -> ::salsa::QueryTableMut<'_, Self, #query_type> {
-                    let db = &*db;
-                    let storage: &#group_storage<#database_name> = ::salsa::plumbing::GetQueryGroupStorage::from(db);
-                    ::salsa::QueryTableMut::new(
-                        db,
-                        &storage.#query_name,
-                    )
-                }
-
-                fn descriptor(
-                    db: &Self,
-                    key: <#query_type as ::salsa::Query<Self>>::Key,
-                ) -> <Self as ::salsa::plumbing::DatabaseStorageTypes>::QueryDescriptor {
-                    <Self as ::salsa::plumbing::GetDatabaseDescriptor<_>>::from(#group_descriptor::#query_name(key))
-                }
-            }
-        });
-    }
-
-    output.extend(for_each_query_table);
     output.extend(storage_impls);
     output.extend(descriptor_impls);
 
@@ -254,7 +202,6 @@ struct DatabaseStorage {
 
 struct QueryGroup {
     query_group: Path,
-    queries: Vec<Query>,
 }
 
 impl QueryGroup {
@@ -299,6 +246,7 @@ impl QueryGroup {
     }
 }
 
+#[allow(dead_code)]
 struct Query {
     query_name: Ident,
     query_type: Path,
@@ -336,11 +284,8 @@ impl Parse for QueryGroup {
         let query_group: Path = input.parse()?;
         let content;
         syn::braced!(content in input);
-        let queries: Vec<Query> = parse_while(Token![fn ], &content)?;
-        Ok(QueryGroup {
-            query_group,
-            queries,
-        })
+        let _queries: Vec<Query> = parse_while(Token![fn ], &content)?;
+        Ok(QueryGroup { query_group })
     }
 }
 

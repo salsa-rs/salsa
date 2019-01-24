@@ -199,12 +199,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     // Emit an impl of the trait
     output.extend({
-        let qts = queries.iter().map(|q| &q.query_type);
         let bounds = &input.supertraits;
         quote! {
             impl<T> #trait_name for T
             where
-                T: #(salsa::plumbing::GetQueryTable<#qts> +)* #bounds,
+                T: #bounds,
                 T: ::salsa::plumbing::GetQueryGroupStorage<#group_storage<T>>,
                 T: ::salsa::plumbing::GetDatabaseDescriptor<#group_descriptor>,
             {
