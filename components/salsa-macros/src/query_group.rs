@@ -188,11 +188,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     // Emit the trait itself.
     let mut output = {
         let attrs = &input.attrs;
-        let qts = queries.iter().map(|q| &q.query_type);
         let bounds = &input.supertraits;
         quote! {
             #(#attrs)*
-            #trait_vis trait #trait_name : #(salsa::plumbing::GetQueryTable<#qts> +)* #bounds {
+            #trait_vis trait #trait_name : #bounds {
                 #query_fn_declarations
             }
         }
