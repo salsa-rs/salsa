@@ -47,11 +47,11 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     // `foo::MyGroupGroupStorage`
     let mut storage_fields = proc_macro2::TokenStream::new();
     let mut storage_impls = proc_macro2::TokenStream::new();
-    let mut descriptor_impls = proc_macro2::TokenStream::new();
+    let mut database_key_impls = proc_macro2::TokenStream::new();
     for (query_group, query_group_name_snake) in query_groups.iter().zip(&query_group_names_snake) {
         let group_name = query_group.name();
         let group_storage = query_group.group_storage();
-        let group_descriptor = query_group.group_descriptor();
+        let group_key = query_group.group_key();
 
         // rewrite the last identifier (`MyGroup`, above) to
         // (e.g.) `MyGroupGroupStorage`.
@@ -67,11 +67,11 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
 
         // rewrite the last identifier (`MyGroup`, above) to
         // (e.g.) `MyGroupGroupStorage`.
-        descriptor_impls.extend(quote! {
-            impl ::salsa::plumbing::GetDatabaseDescriptor<#group_descriptor> for #database_name {
-                fn from(descriptor: #group_descriptor) -> __SalsaQueryDescriptor {
-                    __SalsaQueryDescriptor {
-                        kind: __SalsaQueryDescriptorKind::#group_name(descriptor),
+        database_key_impls.extend(quote! {
+            impl ::salsa::plumbing::GetDatabaseKey<#group_key> for #database_name {
+                fn from(database_key: #group_key) -> __SalsaDatabaseKey {
+                    __SalsaDatabaseKey {
+                        kind: __SalsaDatabaseKeyKind::#group_name(database_key),
                     }
                 }
             }
@@ -92,12 +92,12 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         }
     });
 
-    // create query descriptor wrapper struct
+    // create query database_key wrapper struct
     output.extend(quote! {
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         #[doc(hidden)]
-        #visibility struct __SalsaQueryDescriptor {
-            kind: __SalsaQueryDescriptorKind
+        #visibility struct __SalsaDatabaseKey {
+            kind: __SalsaDatabaseKeyKind
         }
     });
 
@@ -109,14 +109,14 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     let mut variants = proc_macro2::TokenStream::new();
     for query_group in &query_groups {
         let group_name = query_group.name();
-        let group_descriptor = query_group.group_descriptor();
+        let group_key = query_group.group_key();
         variants.extend(quote!(
-            #group_name(#group_descriptor),
+            #group_name(#group_key),
         ));
     }
     output.extend(quote! {
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-        enum __SalsaQueryDescriptorKind {
+        enum __SalsaDatabaseKeyKind {
             #variants
         }
     });
@@ -124,7 +124,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     //
     output.extend(quote! {
         impl ::salsa::plumbing::DatabaseStorageTypes for #database_name {
-            type QueryDescriptor = __SalsaQueryDescriptor;
+            type DatabaseKey = __SalsaDatabaseKey;
             type DatabaseStorage = __SalsaDatabaseStorage;
         }
     });
@@ -153,7 +153,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     for query_group in &query_groups {
         let group_name = query_group.name();
         for_each_query_desc.extend(quote! {
-            __SalsaQueryDescriptorKind::#group_name(descriptor) => descriptor.maybe_changed_since(
+            __SalsaDatabaseKeyKind::#group_name(database_key) => database_key.maybe_changed_since(
                 db,
                 self,
                 revision,
@@ -162,7 +162,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     }
 
     output.extend(quote! {
-        impl ::salsa::plumbing::QueryDescriptor<#database_name> for __SalsaQueryDescriptor {
+        impl ::salsa::plumbing::DatabaseKey<#database_name> for __SalsaDatabaseKey {
             fn maybe_changed_since(
                 &self,
                 db: &#database_name,
@@ -176,7 +176,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     });
 
     output.extend(storage_impls);
-    output.extend(descriptor_impls);
+    output.extend(database_key_impls);
 
     if std::env::var("SALSA_DUMP").is_ok() {
         println!("~~~ database_storage");
@@ -219,9 +219,9 @@ impl QueryGroup {
 
     /// Construct the path to the group storage for a query group. For
     /// a query group at the path `foo::MyQuery`, this would be
-    /// `foo::MyQueryGroupDescriptor`.
-    fn group_descriptor(&self) -> Path {
-        self.path_with_suffix("GroupDescriptor")
+    /// `foo::MyQueryGroupDatabaseKey`.
+    fn group_key(&self) -> Path {
+        self.path_with_suffix("GroupKey")
     }
 
     /// Construct a path leading to the query group, but with some
