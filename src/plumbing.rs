@@ -81,11 +81,20 @@ pub trait GetQueryTable<Q: Query<Self>>: Database {
     fn descriptor(db: &Self, key: Q::Key) -> Self::QueryDescriptor;
 }
 
+/// Access the "group storage" with type `S` from the database.
+///
+/// This basically moves from the full context of the database to the context
+/// of one query group.
 pub trait GetQueryGroupStorage<S>: Database {
     fn from(db: &Self) -> &S;
 }
 
-pub trait FromQueryGroupDescriptor<D>: Database {
+/// Given a group descriptor of type `D`, convert it to a full
+/// database query descriptor.
+///
+/// This basically moves a descriptor from the context of the query
+/// group into the full context of the database.
+pub trait GetDatabaseDescriptor<D>: Database {
     fn from(descriptor: D) -> Self::QueryDescriptor;
 }
 

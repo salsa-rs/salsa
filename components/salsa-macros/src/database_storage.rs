@@ -80,7 +80,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         // rewrite the last identifier (`MyGroup`, above) to
         // (e.g.) `MyGroupGroupStorage`.
         descriptor_impls.extend(quote! {
-            impl ::salsa::plumbing::FromQueryGroupDescriptor<#group_descriptor> for #database_name {
+            impl ::salsa::plumbing::GetDatabaseDescriptor<#group_descriptor> for #database_name {
                 fn from(descriptor: #group_descriptor) -> __SalsaQueryDescriptor {
                     __SalsaQueryDescriptor {
                         kind: __SalsaQueryDescriptorKind::#group_name(descriptor),
@@ -226,7 +226,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
                     db: &Self,
                     key: <#query_type as ::salsa::Query<Self>>::Key,
                 ) -> <Self as ::salsa::plumbing::DatabaseStorageTypes>::QueryDescriptor {
-                    <Self as ::salsa::plumbing::FromQueryGroupDescriptor<_>>::from(#group_descriptor::#query_name(key))
+                    <Self as ::salsa::plumbing::GetDatabaseDescriptor<_>>::from(#group_descriptor::#query_name(key))
                 }
             }
         });
