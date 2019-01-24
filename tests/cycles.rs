@@ -10,13 +10,8 @@ impl salsa::Database for DatabaseImpl {
 }
 
 salsa::database_storage! {
-    struct DatabaseImplStorage for DatabaseImpl {
-        impl Database {
-            fn memoized_a() for MemoizedAQuery;
-            fn memoized_b() for MemoizedBQuery;
-            fn volatile_a() for VolatileAQuery;
-            fn volatile_b() for VolatileBQuery;
-        }
+    DatabaseImpl {
+        impl Database;
     }
 }
 

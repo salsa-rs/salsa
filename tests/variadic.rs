@@ -42,14 +42,8 @@ impl salsa::Database for DatabaseStruct {
 }
 
 salsa::database_storage! {
-    struct DatabaseStorage for DatabaseStruct {
-        impl HelloWorldDatabase {
-            fn input() for InputQuery;
-            fn none() for NoneQuery;
-            fn one() for OneQuery;
-            fn two() for TwoQuery;
-            fn trailing() for TrailingQuery;
-        }
+    DatabaseStruct {
+        impl HelloWorldDatabase;
     }
 }
 

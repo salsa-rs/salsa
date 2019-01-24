@@ -53,12 +53,8 @@ impl salsa::ParallelDatabase for StressDatabaseImpl {
 }
 
 salsa::database_storage! {
-    pub struct DatabaseImplStorage for StressDatabaseImpl {
-        impl StressDatabase {
-            fn a() for AQuery;
-            fn b() for BQuery;
-            fn c() for CQuery;
-        }
+    pub StressDatabaseImpl {
+        impl StressDatabase;
     }
 }
 

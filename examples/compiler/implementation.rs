@@ -37,12 +37,8 @@ impl salsa::Database for DatabaseImpl {
 /// storage and also generate impls for those traits, so that you
 /// `DatabaseImpl` type implements them.
 salsa::database_storage! {
-    pub struct DatabaseImplStorage for DatabaseImpl {
-        impl class_table::ClassTableDatabase {
-            fn all_classes() for class_table::AllClassesQuery;
-            fn all_fields() for class_table::AllFieldsQuery;
-            fn fields() for class_table::FieldsQuery;
-        }
+    pub DatabaseImpl {
+        impl class_table::ClassTableDatabase;
     }
 }
 

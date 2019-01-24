@@ -1,4 +1,3 @@
-use crate::parenthesized::Parenthesized;
 use heck::SnakeCase;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
@@ -11,12 +10,7 @@ use syn::{Attribute, Ident, Path, Token, Visibility};
 ///
 /// ```ignore
 ///  salsa::database_storage! {
-///     struct DatabaseStorage for DatabaseStruct {
-///         impl HelloWorldDatabase {
-///             fn input_string() for InputString;
-///             fn length() for LengthQuery;
-///         }
-///     }
+///     $vis DatabaseStruct { impl HelloWorldDatabase; }
 /// }
 /// ```
 ///
@@ -246,19 +240,10 @@ impl QueryGroup {
     }
 }
 
-#[allow(dead_code)]
-struct Query {
-    query_name: Ident,
-    query_type: Path,
-}
-
 impl Parse for DatabaseStorage {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let attributes = input.call(Attribute::parse_outer)?;
         let visibility = input.parse()?;
-        let _struct_token: Token![struct ] = input.parse()?;
-        let _storage_struct_name: Ident = input.parse()?;
-        let _for_token: Token![for ] = input.parse()?;
         let database_name: Path = input.parse()?;
         let content;
         syn::braced!(content in input);
@@ -274,36 +259,13 @@ impl Parse for DatabaseStorage {
 
 impl Parse for QueryGroup {
     /// ```ignore
-    ///         impl HelloWorldDatabase {
-    ///             fn input_string() for InputString;
-    ///             fn length() for LengthQuery;
-    ///         }
+    ///         impl HelloWorldDatabase;
     /// ```
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let _fn_token: Token![impl ] = input.parse()?;
+        let _: Token![impl ] = input.parse()?;
         let query_group: Path = input.parse()?;
-        let content;
-        syn::braced!(content in input);
-        let _queries: Vec<Query> = parse_while(Token![fn ], &content)?;
+        let _: Token![;] = input.parse()?;
         Ok(QueryGroup { query_group })
-    }
-}
-
-impl Parse for Query {
-    /// ```ignore
-    ///             fn input_string() for InputString;
-    /// ```
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let _fn_token: Token![fn ] = input.parse()?;
-        let query_name: Ident = input.parse()?;
-        let _unit: Parenthesized<Nothing> = input.parse()?;
-        let _for_token: Token![for ] = input.parse()?;
-        let query_type: Path = input.parse()?;
-        let _for_token: Token![;] = input.parse()?;
-        Ok(Query {
-            query_name,
-            query_type,
-        })
     }
 }
 

@@ -32,12 +32,8 @@ impl salsa::Database for DatabaseStruct {
 }
 
 salsa::database_storage! {
-    struct DatabaseStorage for DatabaseStruct {
-        impl HelloWorldDatabase {
-            fn input() for InputQuery;
-            fn length() for LengthQuery;
-            fn double_length() for DoubleLengthQuery;
-        }
+    DatabaseStruct {
+        impl HelloWorldDatabase;
     }
 }
 

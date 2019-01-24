@@ -39,31 +39,14 @@ impl TestContextImpl {
 }
 
 salsa::database_storage! {
-    pub(crate) struct TestContextImplStorage for TestContextImpl {
-        impl constants::ConstantsDatabase {
-            fn constants_input() for constants::ConstantsInputQuery;
-            fn constants_add() for constants::ConstantsAddQuery;
-        }
+    pub(crate) TestContextImpl {
+        impl constants::ConstantsDatabase;
 
-        impl memoized_dep_inputs::MemoizedDepInputsContext {
-            fn dep_memoized2() for memoized_dep_inputs::DepMemoized2Query;
-            fn dep_memoized1() for memoized_dep_inputs::DepMemoized1Query;
-            fn dep_derived1() for memoized_dep_inputs::DepDerived1Query;
-            fn dep_input1() for memoized_dep_inputs::DepInput1Query;
-            fn dep_input2() for memoized_dep_inputs::DepInput2Query;
-        }
+        impl memoized_dep_inputs::MemoizedDepInputsContext;
 
-        impl memoized_inputs::MemoizedInputsContext {
-            fn max() for memoized_inputs::MaxQuery;
-            fn input1() for memoized_inputs::Input1Query;
-            fn input2() for memoized_inputs::Input2Query;
-        }
+        impl memoized_inputs::MemoizedInputsContext;
 
-        impl memoized_volatile::MemoizedVolatileContext {
-            fn memoized2() for memoized_volatile::Memoized2Query;
-            fn memoized1() for memoized_volatile::Memoized1Query;
-            fn volatile() for memoized_volatile::VolatileQuery;
-        }
+        impl memoized_volatile::MemoizedVolatileContext;
     }
 }
 
