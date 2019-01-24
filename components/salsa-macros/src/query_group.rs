@@ -204,7 +204,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         quote! {
             impl<T> #trait_name for T
             where
-                T: #(salsa::plumbing::GetQueryTable<#qts> +)* #bounds
+                T: #(salsa::plumbing::GetQueryTable<#qts> +)* #bounds,
+                T: ::salsa::plumbing::GetQueryGroupStorage<#group_storage<T>>,
+                T: ::salsa::plumbing::FromQueryGroupDescriptor<#group_descriptor>,
             {
                 #query_fn_definitions
             }
