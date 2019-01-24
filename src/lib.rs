@@ -348,6 +348,18 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
 
     /// Internal struct storing the values for the query.
     type Storage: plumbing::QueryStorageOps<DB, Self> + Send + Sync;
+
+    /// Generated struct that contains storage for all queries in a group.
+    type GroupStorage;
+
+    /// Generated descriptor for all queries in a group.
+    type GroupDescriptor;
+
+    /// Extact storage for this query from the storage for its group.
+    fn storage(group_storage: &Self::GroupStorage) -> &Self::Storage;
+
+    /// Create group descriptor for this query.
+    fn descriptor(key: Self::Key) -> Self::GroupDescriptor;
 }
 
 /// Return value from [the `query` method] on `Database`.
