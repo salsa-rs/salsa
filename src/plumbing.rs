@@ -90,14 +90,14 @@ where
 {
     fn get_query_table(db: &DB) -> QueryTable<'_, DB, Q> {
         let group_storage: &Q::GroupStorage = GetQueryGroupStorage::from(db);
-        let query_storage = Q::storage(group_storage);
+        let query_storage = Q::group_storage(group_storage);
         QueryTable::new(db, query_storage)
     }
 
     fn get_query_table_mut(db: &mut DB) -> QueryTableMut<'_, DB, Q> {
         let db = &*db;
         let group_storage: &Q::GroupStorage = GetQueryGroupStorage::from(db);
-        let query_storage = Q::storage(group_storage);
+        let query_storage = Q::group_storage(group_storage);
         QueryTableMut::new(db, query_storage)
     }
 
@@ -105,7 +105,7 @@ where
         _db: &DB,
         key: <Q as Query<DB>>::Key,
     ) -> <DB as DatabaseStorageTypes>::QueryDescriptor {
-        let group_descriptor = Q::descriptor(key);
+        let group_descriptor = Q::group_descriptor(key);
         <DB as GetDatabaseDescriptor<_>>::from(group_descriptor)
     }
 }

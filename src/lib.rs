@@ -356,10 +356,10 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type GroupDescriptor;
 
     /// Extact storage for this query from the storage for its group.
-    fn storage(group_storage: &Self::GroupStorage) -> &Self::Storage;
+    fn group_storage(group_storage: &Self::GroupStorage) -> &Self::Storage;
 
     /// Create group descriptor for this query.
-    fn descriptor(key: Self::Key) -> Self::GroupDescriptor;
+    fn group_descriptor(key: Self::Key) -> Self::GroupDescriptor;
 }
 
 /// Return value from [the `query` method] on `Database`.

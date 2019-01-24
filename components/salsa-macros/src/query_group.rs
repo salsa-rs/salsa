@@ -243,11 +243,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 type GroupStorage = #group_storage<DB>;
                 type GroupDescriptor = #group_descriptor;
 
-                fn storage(group_storage: &Self::GroupStorage) -> &Self::Storage {
+                fn group_storage(group_storage: &Self::GroupStorage) -> &Self::Storage {
                     &group_storage.#fn_name
                 }
 
-                fn descriptor(key: Self::Key) -> Self::GroupDescriptor {
+                fn group_descriptor(key: Self::Key) -> Self::GroupDescriptor {
                     #group_descriptor::#fn_name(key)
                 }
             }
