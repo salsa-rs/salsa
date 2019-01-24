@@ -28,9 +28,9 @@ impl<DB: Database> Default for LocalState<DB> {
 }
 
 impl<DB: Database> LocalState<DB> {
-    pub(super) fn push_query(&self, descriptor: &DB::QueryDescriptor) -> ActiveQueryGuard<'_, DB> {
+    pub(super) fn push_query(&self, database_key: &DB::DatabaseKey) -> ActiveQueryGuard<'_, DB> {
         let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push(ActiveQuery::new(descriptor.clone()));
+        query_stack.push(ActiveQuery::new(database_key.clone()));
         ActiveQueryGuard {
             local_state: self,
             push_len: query_stack.len(),
@@ -50,20 +50,16 @@ impl<DB: Database> LocalState<DB> {
         !self.query_stack.borrow().is_empty()
     }
 
-    pub(super) fn active_query(&self) -> Option<DB::QueryDescriptor> {
+    pub(super) fn active_query(&self) -> Option<DB::DatabaseKey> {
         self.query_stack
             .borrow()
             .last()
-            .map(|active_query| active_query.descriptor.clone())
+            .map(|active_query| active_query.database_key.clone())
     }
 
-    pub(super) fn report_query_read(
-        &self,
-        descriptor: &DB::QueryDescriptor,
-        changed_at: ChangedAt,
-    ) {
+    pub(super) fn report_query_read(&self, database_key: &DB::DatabaseKey, changed_at: ChangedAt) {
         if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_read(descriptor, changed_at);
+            top_query.add_read(database_key, changed_at);
         }
     }
 

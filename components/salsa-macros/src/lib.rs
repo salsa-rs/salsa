@@ -126,26 +126,25 @@ pub fn query_group(args: TokenStream, input: TokenStream) -> TokenStream {
     query_group::query_group(args, input)
 }
 
-/// This macro generates the "query storage" that goes into your database.
-/// It requires you to list all of the query groups that you need as well
-/// as the queries within those groups. The format looks like so:
+/// This macro generates the "query storage" that goes into your
+/// database.  It requires you to list all of the query groups that
+/// you need. The format looks like so:
 ///
 /// ```rust,ignore
 /// salsa::database_storage! {
-///     struct MyDatabaseStorage for MyDatabase {
-///         impl MyQueryGroup {
-///             fn my_query1() for MyQuery1;
-///             fn my_query2() for MyQuery2;
-///         }
+///     $v MyDatabase {
+///         impl MyQueryGroup;
 ///         // ... other query groups go here ...
 ///     }
 /// }
 /// ```
 ///
-/// Here, `MyDatabase` should be the name of your database type.  The
-/// macro will then generate a struct named `MyDatabaseStorage` that
-/// is used by the [`salsa::Runtime`]. `MyQueryGroup` should be the
-/// name of your query group.
+/// Here, `MyDatabase` should be the name of your database type, and
+/// `$v` should be the "visibility" of that struct (e.g., `pub`,
+/// `pub(crate)`, or just nothing). The macro will then generate a
+/// struct named `MyDatabaseStorage` that is used by the
+/// [`salsa::Runtime`]. `MyQueryGroup` should be the name of your
+/// query group.
 ///
 /// See [the `hello_world` example][hw] for more details.
 ///

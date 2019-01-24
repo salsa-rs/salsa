@@ -235,15 +235,7 @@ impl Knobs for ParDatabaseImpl {
 }
 
 salsa::database_storage! {
-    pub(crate) struct DatabaseImplStorage for ParDatabaseImpl {
-        impl ParDatabase {
-            fn input() for InputQuery;
-            fn sum() for SumQuery;
-            fn sum2() for Sum2Query;
-            fn sum2_drop_sum() for Sum2DropSumQuery;
-            fn sum3() for Sum3Query;
-            fn sum3_drop_sum() for Sum3DropSumQuery;
-            fn snapshot_me() for SnapshotMeQuery;
-        }
+    pub(crate) ParDatabaseImpl {
+        impl ParDatabase;
     }
 }

@@ -141,12 +141,12 @@ pub enum EventKind<DB: Database> {
     ///
     /// Executes before the "re-used" value is returned.
     DidValidateMemoizedValue {
-        /// The descriptor for the affected value. Implements `Debug`.
-        descriptor: DB::QueryDescriptor,
+        /// The database-key for the affected value. Implements `Debug`.
+        database_key: DB::DatabaseKey,
     },
 
     /// Indicates that another thread (with id `other_runtime_id`) is processing the
-    /// given query (`descriptor`), so we will block until they
+    /// given query (`database_key`), so we will block until they
     /// finish.
     ///
     /// Executes after we have registered with the other thread but
@@ -158,48 +158,48 @@ pub enum EventKind<DB: Database> {
         /// The id of the runtime we will block on.
         other_runtime_id: RuntimeId,
 
-        /// The descriptor for the affected value. Implements `Debug`.
-        descriptor: DB::QueryDescriptor,
+        /// The database-key for the affected value. Implements `Debug`.
+        database_key: DB::DatabaseKey,
     },
 
     /// Indicates that the input value will change after this
     /// callback, e.g. due to a call to `set`.
     WillChangeInputValue {
-        /// The descriptor for the affected value. Implements `Debug`.
-        descriptor: DB::QueryDescriptor,
+        /// The database-key for the affected value. Implements `Debug`.
+        database_key: DB::DatabaseKey,
     },
 
     /// Indicates that the function for this query will be executed.
     /// This is either because it has never executed before or because
     /// its inputs may be out of date.
     WillExecute {
-        /// The descriptor for the affected value. Implements `Debug`.
-        descriptor: DB::QueryDescriptor,
+        /// The database-key for the affected value. Implements `Debug`.
+        database_key: DB::DatabaseKey,
     },
 }
 
 impl<DB: Database> fmt::Debug for EventKind<DB> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            EventKind::DidValidateMemoizedValue { descriptor } => fmt
+            EventKind::DidValidateMemoizedValue { database_key } => fmt
                 .debug_struct("DidValidateMemoizedValue")
-                .field("descriptor", descriptor)
+                .field("database_key", database_key)
                 .finish(),
             EventKind::WillBlockOn {
                 other_runtime_id,
-                descriptor,
+                database_key,
             } => fmt
                 .debug_struct("WillBlockOn")
                 .field("other_runtime_id", other_runtime_id)
-                .field("descriptor", descriptor)
+                .field("database_key", database_key)
                 .finish(),
-            EventKind::WillChangeInputValue { descriptor } => fmt
+            EventKind::WillChangeInputValue { database_key } => fmt
                 .debug_struct("WillChangeInputValue")
-                .field("descriptor", descriptor)
+                .field("database_key", database_key)
                 .finish(),
-            EventKind::WillExecute { descriptor } => fmt
+            EventKind::WillExecute { database_key } => fmt
                 .debug_struct("WillExecute")
-                .field("descriptor", descriptor)
+                .field("database_key", database_key)
                 .finish(),
         }
     }
@@ -348,6 +348,18 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
 
     /// Internal struct storing the values for the query.
     type Storage: plumbing::QueryStorageOps<DB, Self> + Send + Sync;
+
+    /// Generated struct that contains storage for all queries in a group.
+    type GroupStorage;
+
+    /// Type that identifies a particular query within the group + its key.
+    type GroupKey;
+
+    /// Extact storage for this query from the storage for its group.
+    fn group_storage(group_storage: &Self::GroupStorage) -> &Self::Storage;
+
+    /// Create group key for this query.
+    fn group_key(key: Self::Key) -> Self::GroupKey;
 }
 
 /// Return value from [the `query` method] on `Database`.
@@ -374,11 +386,13 @@ where
     /// queries (those with no inputs, or those with more than one
     /// input) the key will be a tuple.
     pub fn get(&self, key: Q::Key) -> Q::Value {
-        let descriptor = self.descriptor(&key);
+        let database_key = self.database_key(&key);
         self.storage
-            .try_fetch(self.db, &key, &descriptor)
+            .try_fetch(self.db, &key, &database_key)
             .unwrap_or_else(|CycleDetected| {
-                self.db.salsa_runtime().report_unexpected_cycle(descriptor)
+                self.db
+                    .salsa_runtime()
+                    .report_unexpected_cycle(database_key)
             })
     }
 
@@ -391,8 +405,8 @@ where
         self.storage.sweep(self.db, strategy);
     }
 
-    fn descriptor(&self, key: &Q::Key) -> DB::QueryDescriptor {
-        <DB as plumbing::GetQueryTable<Q>>::descriptor(&self.db, key.clone())
+    fn database_key(&self, key: &Q::Key) -> DB::DatabaseKey {
+        <DB as plumbing::GetQueryTable<Q>>::database_key(&self.db, key.clone())
     }
 }
 
@@ -416,8 +430,8 @@ where
     DB: plumbing::GetQueryTable<Q>,
     Q: Query<DB>,
 {
-    fn descriptor(&self, key: &Q::Key) -> DB::QueryDescriptor {
-        <DB as plumbing::GetQueryTable<Q>>::descriptor(&self.db, key.clone())
+    fn database_key(&self, key: &Q::Key) -> DB::DatabaseKey {
+        <DB as plumbing::GetQueryTable<Q>>::database_key(&self.db, key.clone())
     }
 
     /// Assign a value to an "input query". Must be used outside of
@@ -432,7 +446,7 @@ where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
         self.storage
-            .set(self.db, &key, &self.descriptor(&key), value);
+            .set(self.db, &key, &self.database_key(&key), value);
     }
 
     /// Assign a value to an "input query", with the additional
@@ -448,7 +462,7 @@ where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
         self.storage
-            .set_constant(self.db, &key, &self.descriptor(&key), value);
+            .set_constant(self.db, &key, &self.database_key(&key), value);
     }
 
     /// Assigns a value to the query **bypassing the normal

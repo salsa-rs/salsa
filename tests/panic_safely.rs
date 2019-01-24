@@ -33,11 +33,8 @@ impl salsa::ParallelDatabase for DatabaseStruct {
 }
 
 salsa::database_storage! {
-    struct DatabaseStorage for DatabaseStruct {
-        impl PanicSafelyDatabase {
-            fn one() for OneQuery;
-            fn panic_safely() for PanicSafelyQuery;
-        }
+    DatabaseStruct {
+        impl PanicSafelyDatabase;
     }
 }
 

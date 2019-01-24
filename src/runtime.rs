@@ -143,9 +143,9 @@ where
         self.id
     }
 
-    /// Returns the descriptor for the query that this thread is
+    /// Returns the database-key for the query that this thread is
     /// actively executing (if any).
-    pub fn active_query(&self) -> Option<DB::QueryDescriptor> {
+    pub fn active_query(&self) -> Option<DB::DatabaseKey> {
         self.local_state.active_query()
     }
 
@@ -300,20 +300,20 @@ where
     pub(crate) fn execute_query_implementation<V>(
         &self,
         db: &DB,
-        descriptor: &DB::QueryDescriptor,
+        database_key: &DB::DatabaseKey,
         execute: impl FnOnce() -> V,
     ) -> ComputedQueryResult<DB, V> {
-        debug!("{:?}: execute_query_implementation invoked", descriptor);
+        debug!("{:?}: execute_query_implementation invoked", database_key);
 
         db.salsa_event(|| Event {
             runtime_id: db.salsa_runtime().id(),
             kind: EventKind::WillExecute {
-                descriptor: descriptor.clone(),
+                database_key: database_key.clone(),
             },
         });
 
         // Push the active query onto the stack.
-        let active_query = self.local_state.push_query(descriptor);
+        let active_query = self.local_state.push_query(database_key);
 
         // Execute user's code, accumulating inputs etc.
         let value = execute();
@@ -337,15 +337,11 @@ where
     ///
     /// # Parameters
     ///
-    /// - `descriptor`: the query whose result was read
+    /// - `database_key`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    pub(crate) fn report_query_read(
-        &self,
-        descriptor: &DB::QueryDescriptor,
-        changed_at: ChangedAt,
-    ) {
-        self.local_state.report_query_read(descriptor, changed_at);
+    pub(crate) fn report_query_read(&self, database_key: &DB::DatabaseKey, changed_at: ChangedAt) {
+        self.local_state.report_query_read(database_key, changed_at);
     }
 
     pub(crate) fn report_untracked_read(&self) {
@@ -366,41 +362,37 @@ where
     }
 
     /// Obviously, this should be user configurable at some point.
-    pub(crate) fn report_unexpected_cycle(&self, descriptor: DB::QueryDescriptor) -> ! {
-        debug!("report_unexpected_cycle(descriptor={:?})", descriptor);
+    pub(crate) fn report_unexpected_cycle(&self, database_key: DB::DatabaseKey) -> ! {
+        debug!("report_unexpected_cycle(database_key={:?})", database_key);
 
         let query_stack = self.local_state.borrow_query_stack();
         let start_index = (0..query_stack.len())
             .rev()
-            .filter(|&i| query_stack[i].descriptor == descriptor)
+            .filter(|&i| query_stack[i].database_key == database_key)
             .next()
             .unwrap();
 
         let mut message = format!("Internal error, cycle detected:\n");
         for active_query in &query_stack[start_index..] {
-            writeln!(message, "- {:?}\n", active_query.descriptor).unwrap();
+            writeln!(message, "- {:?}\n", active_query.database_key).unwrap();
         }
         panic!(message)
     }
 
     /// Try to make this runtime blocked on `other_id`. Returns true
     /// upon success or false if `other_id` is already blocked on us.
-    pub(crate) fn try_block_on(
-        &self,
-        descriptor: &DB::QueryDescriptor,
-        other_id: RuntimeId,
-    ) -> bool {
+    pub(crate) fn try_block_on(&self, database_key: &DB::DatabaseKey, other_id: RuntimeId) -> bool {
         self.shared_state
             .dependency_graph
             .lock()
-            .add_edge(self.id(), descriptor, other_id)
+            .add_edge(self.id(), database_key, other_id)
     }
 
-    pub(crate) fn unblock_queries_blocked_on_self(&self, descriptor: &DB::QueryDescriptor) {
+    pub(crate) fn unblock_queries_blocked_on_self(&self, database_key: &DB::DatabaseKey) {
         self.shared_state
             .dependency_graph
             .lock()
-            .remove_edge(descriptor, self.id())
+            .remove_edge(database_key, self.id())
     }
 }
 
@@ -481,7 +473,7 @@ where
 
 struct ActiveQuery<DB: Database> {
     /// What query is executing
-    descriptor: DB::QueryDescriptor,
+    database_key: DB::DatabaseKey,
 
     /// Maximum revision of all inputs thus far;
     /// we also track if all inputs have been constant.
@@ -491,7 +483,7 @@ struct ActiveQuery<DB: Database> {
 
     /// Set of subqueries that were accessed thus far, or `None` if
     /// there was an untracked the read.
-    subqueries: Option<FxIndexSet<DB::QueryDescriptor>>,
+    subqueries: Option<FxIndexSet<DB::DatabaseKey>>,
 }
 
 pub(crate) struct ComputedQueryResult<DB: Database, V> {
@@ -507,13 +499,13 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
 
     /// Complete set of subqueries that were accessed, or `None` if
     /// there was an untracked the read.
-    pub(crate) subqueries: Option<FxIndexSet<DB::QueryDescriptor>>,
+    pub(crate) subqueries: Option<FxIndexSet<DB::DatabaseKey>>,
 }
 
 impl<DB: Database> ActiveQuery<DB> {
-    fn new(descriptor: DB::QueryDescriptor) -> Self {
+    fn new(database_key: DB::DatabaseKey) -> Self {
         ActiveQuery {
-            descriptor,
+            database_key,
             changed_at: ChangedAt {
                 is_constant: true,
                 revision: Revision::ZERO,
@@ -522,7 +514,7 @@ impl<DB: Database> ActiveQuery<DB> {
         }
     }
 
-    fn add_read(&mut self, subquery: &DB::QueryDescriptor, changed_at: ChangedAt) {
+    fn add_read(&mut self, subquery: &DB::DatabaseKey, changed_at: ChangedAt) {
         let ChangedAt {
             is_constant,
             revision,
@@ -619,7 +611,7 @@ struct DependencyGraph<DB: Database> {
     /// This encodes a graph that must be acyclic (or else deadlock
     /// will result).
     edges: FxHashMap<RuntimeId, RuntimeId>,
-    labels: FxHashMap<DB::QueryDescriptor, SmallVec<[RuntimeId; 4]>>,
+    labels: FxHashMap<DB::DatabaseKey, SmallVec<[RuntimeId; 4]>>,
 }
 
 impl<DB: Database> Default for DependencyGraph<DB> {
@@ -636,7 +628,7 @@ impl<DB: Database> DependencyGraph<DB> {
     fn add_edge(
         &mut self,
         from_id: RuntimeId,
-        descriptor: &DB::QueryDescriptor,
+        database_key: &DB::DatabaseKey,
         to_id: RuntimeId,
     ) -> bool {
         assert_ne!(from_id, to_id);
@@ -655,16 +647,16 @@ impl<DB: Database> DependencyGraph<DB> {
 
         self.edges.insert(from_id, to_id);
         self.labels
-            .entry(descriptor.clone())
+            .entry(database_key.clone())
             .or_insert(SmallVec::default())
             .push(from_id);
         true
     }
 
-    fn remove_edge(&mut self, descriptor: &DB::QueryDescriptor, to_id: RuntimeId) {
+    fn remove_edge(&mut self, database_key: &DB::DatabaseKey, to_id: RuntimeId) {
         let vec = self
             .labels
-            .remove(descriptor)
+            .remove(database_key)
             .unwrap_or(SmallVec::default());
 
         for from_id in &vec {

@@ -59,7 +59,7 @@ where
         &self,
         _db: &'q DB,
         key: &Q::Key,
-        _descriptor: &DB::QueryDescriptor,
+        _database_key: &DB::DatabaseKey,
     ) -> Result<StampedValue<Q::Value>, CycleDetected> {
         {
             let map_read = self.map.read();
@@ -75,7 +75,7 @@ where
         &self,
         db: &DB,
         key: &Q::Key,
-        descriptor: &DB::QueryDescriptor,
+        database_key: &DB::DatabaseKey,
         value: Q::Value,
         is_constant: IsConstant,
     ) {
@@ -95,7 +95,7 @@ where
             db.salsa_event(|| Event {
                 runtime_id: db.salsa_runtime().id(),
                 kind: EventKind::WillChangeInputValue {
-                    descriptor: descriptor.clone(),
+                    database_key: database_key.clone(),
                 },
             });
 
@@ -141,11 +141,12 @@ where
         &self,
         db: &DB,
         key: &Q::Key,
-        descriptor: &DB::QueryDescriptor,
+        database_key: &DB::DatabaseKey,
     ) -> Result<Q::Value, CycleDetected> {
-        let StampedValue { value, changed_at } = self.read(db, key, &descriptor)?;
+        let StampedValue { value, changed_at } = self.read(db, key, &database_key)?;
 
-        db.salsa_runtime().report_query_read(descriptor, changed_at);
+        db.salsa_runtime()
+            .report_query_read(database_key, changed_at);
 
         Ok(value)
     }
@@ -155,7 +156,7 @@ where
         _db: &DB,
         revision: Revision,
         key: &Q::Key,
-        _descriptor: &DB::QueryDescriptor,
+        _database_key: &DB::DatabaseKey,
     ) -> bool {
         debug!(
             "{:?}({:?})::maybe_changed_since(revision={:?})",
@@ -215,22 +216,16 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    fn set(&self, db: &DB, key: &Q::Key, descriptor: &DB::QueryDescriptor, value: Q::Value) {
+    fn set(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, value: Q::Value) {
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
 
-        self.set_common(db, key, descriptor, value, IsConstant(false))
+        self.set_common(db, key, database_key, value, IsConstant(false))
     }
 
-    fn set_constant(
-        &self,
-        db: &DB,
-        key: &Q::Key,
-        descriptor: &DB::QueryDescriptor,
-        value: Q::Value,
-    ) {
+    fn set_constant(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, value: Q::Value) {
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
 
-        self.set_common(db, key, descriptor, value, IsConstant(true))
+        self.set_common(db, key, database_key, value, IsConstant(true))
     }
 }
 

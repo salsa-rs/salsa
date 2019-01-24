@@ -16,7 +16,7 @@ pub use crate::runtime::Revision;
 
 pub struct CycleDetected;
 
-/// Defines the `QueryDescriptor` associated type. An impl of this
+/// Defines various associated types. An impl of this
 /// should be generated for your query-context type automatically by
 /// the `database_storage` macro, so you shouldn't need to mess
 /// with this trait directly.
@@ -27,7 +27,7 @@ pub trait DatabaseStorageTypes: Sized {
     /// At runtime, it can be implemented in various ways: a monster enum
     /// works for a fixed set of queries, but a boxed trait object is good
     /// for a more open-ended option.
-    type QueryDescriptor: QueryDescriptor<Self>;
+    type DatabaseKey: DatabaseKey<Self>;
 
     /// Defines the "storage type", where all the query data is kept.
     /// This type is defined by the `database_storage` macro.
@@ -48,7 +48,7 @@ pub trait QueryStorageMassOps<DB: Database> {
     fn sweep(&self, db: &DB, strategy: SweepStrategy);
 }
 
-pub trait QueryDescriptor<DB>: Clone + Debug + Eq + Hash + Send + Sync {
+pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash + Send + Sync {
     /// Returns true if the value of this query may have changed since
     /// the given revision.
     fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool;
@@ -78,11 +78,58 @@ pub trait GetQueryTable<Q: Query<Self>>: Database {
     fn get_query_table_mut(db: &mut Self) -> QueryTableMut<'_, Self, Q>;
 
     /// Create a query descriptor given a key for this query.
-    fn descriptor(db: &Self, key: Q::Key) -> Self::QueryDescriptor;
+    fn database_key(db: &Self, key: Q::Key) -> Self::DatabaseKey;
+}
+
+impl<DB, Q> GetQueryTable<Q> for DB
+where
+    DB: Database,
+    Q: Query<DB>,
+    DB: GetQueryGroupStorage<Q::GroupStorage>,
+    DB: GetDatabaseKey<Q::GroupKey>,
+{
+    fn get_query_table(db: &DB) -> QueryTable<'_, DB, Q> {
+        let group_storage: &Q::GroupStorage = GetQueryGroupStorage::from(db);
+        let query_storage = Q::group_storage(group_storage);
+        QueryTable::new(db, query_storage)
+    }
+
+    fn get_query_table_mut(db: &mut DB) -> QueryTableMut<'_, DB, Q> {
+        let db = &*db;
+        let group_storage: &Q::GroupStorage = GetQueryGroupStorage::from(db);
+        let query_storage = Q::group_storage(group_storage);
+        QueryTableMut::new(db, query_storage)
+    }
+
+    fn database_key(
+        _db: &DB,
+        key: <Q as Query<DB>>::Key,
+    ) -> <DB as DatabaseStorageTypes>::DatabaseKey {
+        let group_key = Q::group_key(key);
+        <DB as GetDatabaseKey<_>>::from(group_key)
+    }
+}
+
+/// Access the "group storage" with type `S` from the database.
+///
+/// This basically moves from the full context of the database to the context
+/// of one query group.
+pub trait GetQueryGroupStorage<S>: Database {
+    fn from(db: &Self) -> &S;
+}
+
+/// Given a group descriptor of type `D`, convert it to a full
+/// database query descriptor.
+///
+/// This basically moves a descriptor from the context of the query
+/// group into the full context of the database.
+pub trait GetDatabaseKey<D>: Database {
+    fn from(group_key: D) -> Self::DatabaseKey;
 }
 
 pub trait QueryStorageOps<DB, Q>: Default
 where
+    Self: QueryStorageMassOps<DB>,
     DB: Database,
     Q: Query<DB>,
 {
@@ -97,7 +144,7 @@ where
         &self,
         db: &DB,
         key: &Q::Key,
-        descriptor: &DB::QueryDescriptor,
+        descriptor: &DB::DatabaseKey,
     ) -> Result<Q::Value, CycleDetected>;
 
     /// True if the query **may** have changed since the given
@@ -123,7 +170,7 @@ where
         db: &DB,
         revision: Revision,
         key: &Q::Key,
-        descriptor: &DB::QueryDescriptor,
+        descriptor: &DB::DatabaseKey,
     ) -> bool;
 
     /// Check if `key` is (currently) believed to be a constant.
@@ -143,13 +190,13 @@ where
     DB: Database,
     Q: Query<DB>,
 {
-    fn set(&self, db: &DB, key: &Q::Key, descriptor: &DB::QueryDescriptor, new_value: Q::Value);
+    fn set(&self, db: &DB, key: &Q::Key, descriptor: &DB::DatabaseKey, new_value: Q::Value);
 
     fn set_constant(
         &self,
         db: &DB,
         key: &Q::Key,
-        descriptor: &DB::QueryDescriptor,
+        descriptor: &DB::DatabaseKey,
         new_value: Q::Value,
     );
 }

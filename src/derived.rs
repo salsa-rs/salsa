@@ -1,5 +1,5 @@
 use crate::plumbing::CycleDetected;
-use crate::plumbing::QueryDescriptor;
+use crate::plumbing::DatabaseKey;
 use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
@@ -192,7 +192,7 @@ pub(crate) enum MemoInputs<DB: Database> {
 
     // Non-empty set of inputs fully known
     Tracked {
-        inputs: Arc<FxIndexSet<DB::QueryDescriptor>>,
+        inputs: Arc<FxIndexSet<DB::DatabaseKey>>,
     },
 
     // Unknown quantity of inputs
@@ -251,7 +251,7 @@ where
         &self,
         db: &DB,
         key: &Q::Key,
-        descriptor: &DB::QueryDescriptor,
+        database_key: &DB::DatabaseKey,
     ) -> Result<StampedValue<Q::Value>, CycleDetected> {
         let runtime = db.salsa_runtime();
 
@@ -270,12 +270,19 @@ where
         );
 
         // First, do a check with a read-lock.
-        match self.probe(db, self.map.read(), runtime, revision_now, descriptor, key) {
+        match self.probe(
+            db,
+            self.map.read(),
+            runtime,
+            revision_now,
+            database_key,
+            key,
+        ) {
             ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(_guard) => (),
         }
 
-        self.read_upgrade(db, key, descriptor, revision_now)
+        self.read_upgrade(db, key, database_key, revision_now)
     }
 
     /// Second phase of a read operation: acquires an upgradable-read
@@ -286,7 +293,7 @@ where
         &self,
         db: &DB,
         key: &Q::Key,
-        descriptor: &DB::QueryDescriptor,
+        database_key: &DB::DatabaseKey,
         revision_now: Revision,
     ) -> Result<StampedValue<Q::Value>, CycleDetected> {
         let runtime = db.salsa_runtime();
@@ -305,19 +312,25 @@ where
         // FIXME(Amanieu/parking_lot#101) -- we are using a write-lock
         // and not an upgradable read here because upgradable reads
         // can sometimes encounter deadlocks.
-        let mut old_memo =
-            match self.probe(db, self.map.write(), runtime, revision_now, descriptor, key) {
-                ProbeState::UpToDate(v) => return v,
-                ProbeState::StaleOrAbsent(mut map) => {
-                    match map.insert(key.clone(), QueryState::in_progress(runtime.id())) {
-                        Some(QueryState::Memoized(old_memo)) => Some(old_memo),
-                        Some(QueryState::InProgress { .. }) => unreachable!(),
-                        None => None,
-                    }
+        let mut old_memo = match self.probe(
+            db,
+            self.map.write(),
+            runtime,
+            revision_now,
+            database_key,
+            key,
+        ) {
+            ProbeState::UpToDate(v) => return v,
+            ProbeState::StaleOrAbsent(mut map) => {
+                match map.insert(key.clone(), QueryState::in_progress(runtime.id())) {
+                    Some(QueryState::Memoized(old_memo)) => Some(old_memo),
+                    Some(QueryState::InProgress { .. }) => unreachable!(),
+                    None => None,
                 }
-            };
+            }
+        };
 
-        let panic_guard = PanicGuard::new(&self.map, key, descriptor, runtime);
+        let panic_guard = PanicGuard::new(&self.map, key, database_key, runtime);
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
@@ -334,7 +347,7 @@ where
                 db.salsa_event(|| Event {
                     runtime_id: runtime.id(),
                     kind: EventKind::DidValidateMemoizedValue {
-                        descriptor: descriptor.clone(),
+                        database_key: database_key.clone(),
                     },
                 });
 
@@ -346,7 +359,7 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = runtime.execute_query_implementation(db, descriptor, || {
+        let mut result = runtime.execute_query_implementation(db, database_key, || {
             info!("{:?}({:?}): executing query", Q::default(), key);
 
             if !self.should_track_inputs(key) {
@@ -407,7 +420,7 @@ where
         let inputs = match result.subqueries {
             None => MemoInputs::Untracked,
 
-            Some(descriptors) => {
+            Some(database_keys) => {
                 // If all things that we read were constants, then
                 // we don't need to track our inputs: our value
                 // can never be invalidated.
@@ -416,11 +429,11 @@ where
                 // inputs, then we do track our inputs (even the
                 // constants), so that if we run the GC, we know
                 // which constants we looked at.
-                if descriptors.is_empty() || result.changed_at.is_constant {
+                if database_keys.is_empty() || result.changed_at.is_constant {
                     MemoInputs::Constant
                 } else {
                     MemoInputs::Tracked {
-                        inputs: Arc::new(descriptors),
+                        inputs: Arc::new(database_keys),
                     }
                 }
             }
@@ -465,7 +478,7 @@ where
         map: MapGuard,
         runtime: &Runtime<DB>,
         revision_now: Revision,
-        descriptor: &DB::QueryDescriptor,
+        database_key: &DB::DatabaseKey,
         key: &Q::Key,
     ) -> ProbeState<StampedValue<Q::Value>, MapGuard>
     where
@@ -474,9 +487,12 @@ where
         match map.get(key) {
             Some(QueryState::InProgress { id, waiting }) => {
                 let other_id = *id;
-                return match self
-                    .register_with_in_progress_thread(runtime, descriptor, other_id, waiting)
-                {
+                return match self.register_with_in_progress_thread(
+                    runtime,
+                    database_key,
+                    other_id,
+                    waiting,
+                ) {
                     Ok(rx) => {
                         // Release our lock on `self.map`, so other thread
                         // can complete.
@@ -486,7 +502,7 @@ where
                             runtime_id: db.salsa_runtime().id(),
                             kind: EventKind::WillBlockOn {
                                 other_runtime_id: other_id,
-                                descriptor: descriptor.clone(),
+                                database_key: database_key.clone(),
                             },
                         });
 
@@ -529,14 +545,14 @@ where
     fn register_with_in_progress_thread(
         &self,
         runtime: &Runtime<DB>,
-        descriptor: &DB::QueryDescriptor,
+        database_key: &DB::DatabaseKey,
         other_id: RuntimeId,
         waiting: &Mutex<SmallVec<[Sender<StampedValue<Q::Value>>; 2]>>,
     ) -> Result<Receiver<StampedValue<Q::Value>>, CycleDetected> {
         if other_id == runtime.id() {
             return Err(CycleDetected);
         } else {
-            if !runtime.try_block_on(descriptor, other_id) {
+            if !runtime.try_block_on(database_key, other_id) {
                 return Err(CycleDetected);
             }
 
@@ -564,7 +580,7 @@ where
     DB: Database,
     Q: QueryFunction<DB>,
 {
-    descriptor: &'db DB::QueryDescriptor,
+    database_key: &'db DB::DatabaseKey,
     key: &'db Q::Key,
     map: &'db RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
     runtime: &'db Runtime<DB>,
@@ -578,11 +594,11 @@ where
     fn new(
         map: &'db RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
         key: &'db Q::Key,
-        descriptor: &'db DB::QueryDescriptor,
+        database_key: &'db DB::DatabaseKey,
         runtime: &'db Runtime<DB>,
     ) -> Self {
         Self {
-            descriptor,
+            database_key,
             key,
             map,
             runtime,
@@ -623,7 +639,7 @@ where
                 assert_eq!(id, self.runtime.id());
 
                 self.runtime
-                    .unblock_queries_blocked_on_self(self.descriptor);
+                    .unblock_queries_blocked_on_self(self.database_key);
 
                 match new_value {
                     // If anybody has installed themselves in our "waiting"
@@ -678,11 +694,12 @@ where
         &self,
         db: &DB,
         key: &Q::Key,
-        descriptor: &DB::QueryDescriptor,
+        database_key: &DB::DatabaseKey,
     ) -> Result<Q::Value, CycleDetected> {
-        let StampedValue { value, changed_at } = self.read(db, key, &descriptor)?;
+        let StampedValue { value, changed_at } = self.read(db, key, &database_key)?;
 
-        db.salsa_runtime().report_query_read(descriptor, changed_at);
+        db.salsa_runtime()
+            .report_query_read(database_key, changed_at);
 
         Ok(value)
     }
@@ -692,7 +709,7 @@ where
         db: &DB,
         revision: Revision,
         key: &Q::Key,
-        descriptor: &DB::QueryDescriptor,
+        database_key: &DB::DatabaseKey,
     ) -> bool {
         let runtime = db.salsa_runtime();
         let revision_now = runtime.current_revision();
@@ -734,8 +751,12 @@ where
                     key,
                     other_id,
                 );
-                match self.register_with_in_progress_thread(runtime, descriptor, other_id, waiting)
-                {
+                match self.register_with_in_progress_thread(
+                    runtime,
+                    database_key,
+                    other_id,
+                    waiting,
+                ) {
                     Ok(rx) => {
                         // Release our lock on `self.map`, so other thread
                         // can complete.
@@ -782,7 +803,7 @@ where
 
             MemoInputs::Tracked { inputs } => {
                 // At this point, the value may be dirty (we have
-                // to check the descriptors). If we have a cached
+                // to check the database-keys). If we have a cached
                 // value, we'll just fall back to invoking `read`,
                 // which will do that checking (and a bit more) --
                 // note that we skip the "pure read" part as we
@@ -790,7 +811,7 @@ where
                 assert!(inputs.len() > 0);
                 if memo.value.is_some() {
                     std::mem::drop(map);
-                    return match self.read_upgrade(db, key, descriptor, revision_now) {
+                    return match self.read_upgrade(db, key, database_key, revision_now) {
                         Ok(v) => {
                             debug!(
                                 "maybe_changed_since({:?}({:?}): {:?} since (recomputed) value changed at {:?}",
@@ -810,7 +831,7 @@ where
         };
 
         // We have a **tracked set of inputs**
-        // (found in `descriptors`) that need to
+        // (found in `database_keys`) that need to
         // be validated.
         std::mem::drop(map);
 

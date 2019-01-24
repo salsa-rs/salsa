@@ -133,23 +133,15 @@ impl salsa::Database for DatabaseStruct {
 }
 ```
 
-Next, you must use the `database_storage!` to define the "storage
-struct" for your type. This storage struct contains all the hashmaps
-and other things that salsa uses to store the values for your
-queries. You won't need to interact with it directly. To use the
-macro, you basically list out all the traits and each of the queries
-within those traits:
+Next, you must use the `database_storage!` to specify the set of query
+groups that your database stores. This macro generates the internal
+storage struct used to store your data. To use the macro, you
+basically list out all the traits:
 
 ```rust
 salsa::database_storage! {
-    struct DatabaseStorage for DatabaseStruct {
-    //     ^^^^^^^^^^^^^^^     --------------
-    //     name of the type    the name of your context type
-    //     we will make
-        impl HelloWorldDatabase {
-            fn input_string() for InputString;
-            fn length() for Length;
-        }
+    DatabaseStruct { // <-- name of your context type
+        impl HelloWorldDatabase;
     }
 }
 ```

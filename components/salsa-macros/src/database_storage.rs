@@ -1,4 +1,4 @@
-use crate::parenthesized::Parenthesized;
+use heck::SnakeCase;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use syn::parse::{Parse, ParseStream, Peek};
@@ -10,12 +10,7 @@ use syn::{Attribute, Ident, Path, Token, Visibility};
 ///
 /// ```ignore
 ///  salsa::database_storage! {
-///     struct DatabaseStorage for DatabaseStruct {
-///         impl HelloWorldDatabase {
-///             fn input_string() for InputString;
-///             fn length() for LengthQuery;
-///         }
-///     }
+///     $vis DatabaseStruct { impl HelloWorldDatabase; }
 /// }
 /// ```
 ///
@@ -29,27 +24,58 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     } = syn::parse_macro_input!(input as DatabaseStorage);
 
     let mut output = proc_macro2::TokenStream::new();
-    let each_query = || {
-        query_groups
-            .iter()
-            .enumerate()
-            .flat_map(|(index, query_group)| query_group.queries.iter().map(move |q| (index, q)))
-    };
+
+    let query_group_names_camel: Vec<_> = query_groups
+        .iter()
+        .map(|query_group| {
+            let group_storage = query_group.query_group.clone();
+            group_storage.segments.last().unwrap().value().ident.clone()
+        })
+        .collect();
+
+    let query_group_names_snake: Vec<_> = query_group_names_camel
+        .iter()
+        .map(|query_group_name_camel| {
+            Ident::new(
+                &query_group_name_camel.to_string().to_snake_case(),
+                query_group_name_camel.span(),
+            )
+        })
+        .collect();
 
     // For each query group `foo::MyGroup` create a link to its
     // `foo::MyGroupGroupStorage`
-    let mut storage_tuple_elements = proc_macro2::TokenStream::new();
-    for query_group in &query_groups {
+    let mut storage_fields = proc_macro2::TokenStream::new();
+    let mut storage_impls = proc_macro2::TokenStream::new();
+    let mut database_key_impls = proc_macro2::TokenStream::new();
+    for (query_group, query_group_name_snake) in query_groups.iter().zip(&query_group_names_snake) {
+        let group_name = query_group.name();
+        let group_storage = query_group.group_storage();
+        let group_key = query_group.group_key();
+
         // rewrite the last identifier (`MyGroup`, above) to
         // (e.g.) `MyGroupGroupStorage`.
-        let mut group_storage = query_group.query_group.clone();
-        let last_ident = &group_storage.segments.last().unwrap().value().ident;
-        let storage_ident = Ident::new(
-            &format!("{}GroupStorage", last_ident.to_string()),
-            Span::call_site(),
-        );
-        group_storage.segments.last_mut().unwrap().value_mut().ident = storage_ident;
-        storage_tuple_elements.extend(quote! { #group_storage<Self>, });
+        storage_fields.extend(quote! { #query_group_name_snake: #group_storage<#database_name>, });
+        storage_impls.extend(quote! {
+            impl ::salsa::plumbing::GetQueryGroupStorage<#group_storage<#database_name>> for #database_name {
+                fn from(db: &Self) -> &#group_storage<#database_name> {
+                    let runtime = ::salsa::Database::salsa_runtime(db);
+                    &runtime.storage().#query_group_name_snake
+                }
+            }
+        });
+
+        // rewrite the last identifier (`MyGroup`, above) to
+        // (e.g.) `MyGroupGroupStorage`.
+        database_key_impls.extend(quote! {
+            impl ::salsa::plumbing::GetDatabaseKey<#group_key> for #database_name {
+                fn from(database_key: #group_key) -> __SalsaDatabaseKey {
+                    __SalsaDatabaseKey {
+                        kind: __SalsaDatabaseKeyKind::#group_name(database_key),
+                    }
+                }
+            }
+        });
     }
 
     let mut attrs = proc_macro2::TokenStream::new();
@@ -57,12 +83,21 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         attrs.extend(quote! { #attr });
     }
 
-    // create query descriptor wrapper struct
+    // create group storage wrapper struct
+    output.extend(quote! {
+        #[derive(Default)]
+        #[doc(hidden)]
+        #visibility struct __SalsaDatabaseStorage {
+            #storage_fields
+        }
+    });
+
+    // create query database_key wrapper struct
     output.extend(quote! {
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
         #[doc(hidden)]
-        #visibility struct __SalsaQueryDescriptor {
-            kind: __SalsaQueryDescriptorKind
+        #visibility struct __SalsaDatabaseKey {
+            kind: __SalsaDatabaseKeyKind
         }
     });
 
@@ -72,21 +107,16 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     // foo(<FooType as ::salsa::Query<#database_name>>::Key),
     // ```
     let mut variants = proc_macro2::TokenStream::new();
-    for (
-        _,
-        Query {
-            query_name,
-            query_type,
-        },
-    ) in each_query()
-    {
+    for query_group in &query_groups {
+        let group_name = query_group.name();
+        let group_key = query_group.group_key();
         variants.extend(quote!(
-            #query_name(<#query_type as ::salsa::Query<#database_name>>::Key),
+            #group_name(#group_key),
         ));
     }
     output.extend(quote! {
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-        enum __SalsaQueryDescriptorKind {
+        enum __SalsaDatabaseKeyKind {
             #variants
         }
     });
@@ -94,16 +124,18 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     //
     output.extend(quote! {
         impl ::salsa::plumbing::DatabaseStorageTypes for #database_name {
-            type QueryDescriptor = __SalsaQueryDescriptor;
-            type DatabaseStorage = (#storage_tuple_elements);
+            type DatabaseKey = __SalsaDatabaseKey;
+            type DatabaseStorage = __SalsaDatabaseStorage;
         }
     });
 
     //
     let mut for_each_ops = proc_macro2::TokenStream::new();
-    for (group_index, Query { query_name, .. }) in each_query() {
+    for query_group in &query_groups {
+        let group_storage = query_group.group_storage();
         for_each_ops.extend(quote! {
-            op(&::salsa::Database::salsa_runtime(self).storage().#group_index.#query_name);
+            let storage: &#group_storage<#database_name> = ::salsa::plumbing::GetQueryGroupStorage::from(self);
+            storage.for_each_query(self, &mut op);
         });
     }
     output.extend(quote! {
@@ -118,31 +150,19 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     });
 
     let mut for_each_query_desc = proc_macro2::TokenStream::new();
-    for (
-        group_index,
-        Query {
-            query_name,
-            query_type,
-        },
-    ) in each_query()
-    {
+    for query_group in &query_groups {
+        let group_name = query_group.name();
         for_each_query_desc.extend(quote! {
-            __SalsaQueryDescriptorKind::#query_name(key) => {
-                let runtime = ::salsa::Database::salsa_runtime(db);
-                let storage = &runtime.storage().#group_index.#query_name;
-                <_ as ::salsa::plumbing::QueryStorageOps<#database_name, #query_type>>::maybe_changed_since(
-                    storage,
-                    db,
-                    revision,
-                    key,
-                    self,
-                )
-            }
+            __SalsaDatabaseKeyKind::#group_name(database_key) => database_key.maybe_changed_since(
+                db,
+                self,
+                revision,
+            ),
         });
     }
 
     output.extend(quote! {
-        impl ::salsa::plumbing::QueryDescriptor<#database_name> for __SalsaQueryDescriptor {
+        impl ::salsa::plumbing::DatabaseKey<#database_name> for __SalsaDatabaseKey {
             fn maybe_changed_since(
                 &self,
                 db: &#database_name,
@@ -155,55 +175,14 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         }
     });
 
-    let mut for_each_query_table = proc_macro2::TokenStream::new();
-    for (
-        group_index,
-        Query {
-            query_name,
-            query_type,
-        },
-    ) in each_query()
-    {
-        for_each_query_table.extend(quote! {
-            impl ::salsa::plumbing::GetQueryTable<#query_type> for #database_name {
-                fn get_query_table(
-                    db: &Self,
-                ) -> ::salsa::QueryTable<'_, Self, #query_type> {
-                    ::salsa::QueryTable::new(
-                        db,
-                        &::salsa::Database::salsa_runtime(db)
-                            .storage()
-                            .#group_index
-                            .#query_name,
-                    )
-                }
+    output.extend(storage_impls);
+    output.extend(database_key_impls);
 
-                fn get_query_table_mut(
-                    db: &mut Self,
-                ) -> ::salsa::QueryTableMut<'_, Self, #query_type> {
-                    let db = &*db;
-                    ::salsa::QueryTableMut::new(
-                        db,
-                        &::salsa::Database::salsa_runtime(db)
-                            .storage()
-                            .#group_index
-                            .#query_name,
-                    )
-                }
-
-                fn descriptor(
-                    db: &Self,
-                    key: <#query_type as ::salsa::Query<Self>>::Key,
-                ) -> <Self as ::salsa::plumbing::DatabaseStorageTypes>::QueryDescriptor {
-                    __SalsaQueryDescriptor {
-                        kind: __SalsaQueryDescriptorKind::#query_name(key),
-                    }
-                }
-            }
-        });
+    if std::env::var("SALSA_DUMP").is_ok() {
+        println!("~~~ database_storage");
+        println!("{}", output.to_string());
+        println!("~~~ database_storage");
     }
-
-    output.extend(for_each_query_table);
 
     output.into()
 }
@@ -217,21 +196,54 @@ struct DatabaseStorage {
 
 struct QueryGroup {
     query_group: Path,
-    queries: Vec<Query>,
 }
 
-struct Query {
-    query_name: Ident,
-    query_type: Path,
+impl QueryGroup {
+    /// The name of the query group trait.
+    fn name(&self) -> Ident {
+        self.query_group
+            .segments
+            .last()
+            .unwrap()
+            .value()
+            .ident
+            .clone()
+    }
+
+    /// Construct the path to the group storage for a query group. For
+    /// a query group at the path `foo::MyQuery`, this would be
+    /// `foo::MyQueryGroupStorage`.
+    fn group_storage(&self) -> Path {
+        self.path_with_suffix("GroupStorage")
+    }
+
+    /// Construct the path to the group storage for a query group. For
+    /// a query group at the path `foo::MyQuery`, this would be
+    /// `foo::MyQueryGroupDatabaseKey`.
+    fn group_key(&self) -> Path {
+        self.path_with_suffix("GroupKey")
+    }
+
+    /// Construct a path leading to the query group, but with some
+    /// suffix. So, for a query group at the path `foo::MyQuery`,
+    /// this would be `foo::MyQueryXXX` where `XXX` is the provided
+    /// suffix.
+    fn path_with_suffix(&self, suffix: &str) -> Path {
+        let mut group_storage = self.query_group.clone();
+        let last_ident = &group_storage.segments.last().unwrap().value().ident;
+        let storage_ident = Ident::new(
+            &format!("{}{}", last_ident.to_string(), suffix),
+            Span::call_site(),
+        );
+        group_storage.segments.last_mut().unwrap().value_mut().ident = storage_ident;
+        group_storage
+    }
 }
 
 impl Parse for DatabaseStorage {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let attributes = input.call(Attribute::parse_outer)?;
         let visibility = input.parse()?;
-        let _struct_token: Token![struct ] = input.parse()?;
-        let _storage_struct_name: Ident = input.parse()?;
-        let _for_token: Token![for ] = input.parse()?;
         let database_name: Path = input.parse()?;
         let content;
         syn::braced!(content in input);
@@ -247,39 +259,13 @@ impl Parse for DatabaseStorage {
 
 impl Parse for QueryGroup {
     /// ```ignore
-    ///         impl HelloWorldDatabase {
-    ///             fn input_string() for InputString;
-    ///             fn length() for LengthQuery;
-    ///         }
+    ///         impl HelloWorldDatabase;
     /// ```
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let _fn_token: Token![impl ] = input.parse()?;
+        let _: Token![impl ] = input.parse()?;
         let query_group: Path = input.parse()?;
-        let content;
-        syn::braced!(content in input);
-        let queries: Vec<Query> = parse_while(Token![fn ], &content)?;
-        Ok(QueryGroup {
-            query_group,
-            queries,
-        })
-    }
-}
-
-impl Parse for Query {
-    /// ```ignore
-    ///             fn input_string() for InputString;
-    /// ```
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let _fn_token: Token![fn ] = input.parse()?;
-        let query_name: Ident = input.parse()?;
-        let _unit: Parenthesized<Nothing> = input.parse()?;
-        let _for_token: Token![for ] = input.parse()?;
-        let query_type: Path = input.parse()?;
-        let _for_token: Token![;] = input.parse()?;
-        Ok(Query {
-            query_name,
-            query_type,
-        })
+        let _: Token![;] = input.parse()?;
+        Ok(QueryGroup { query_group })
     }
 }
 

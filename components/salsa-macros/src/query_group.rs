@@ -120,9 +120,20 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         }
     }
 
+    let group_key = Ident::new(
+        &format!("{}GroupKey", trait_name.to_string()),
+        Span::call_site(),
+    );
+
+    let group_storage = Ident::new(
+        &format!("{}GroupStorage", trait_name.to_string()),
+        Span::call_site(),
+    );
+
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
     let mut query_descriptor_variants = proc_macro2::TokenStream::new();
+    let mut query_descriptor_maybe_change = proc_macro2::TokenStream::new();
     let mut storage_fields = proc_macro2::TokenStream::new();
     for query in &queries {
         let key_names: &Vec<_> = &(0..query.keys.len())
@@ -147,25 +158,40 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         // A variant for the group descriptor below
         query_descriptor_variants.extend(quote! {
-            #qt(<#qt as ::salsa::Query<__DB>>::Key),
+            #fn_name((#(#keys),*)),
+        });
+
+        // A variant for the group descriptor below
+        query_descriptor_maybe_change.extend(quote! {
+            #group_key::#fn_name(key) => {
+                let group_storage: &#group_storage<DB__> = ::salsa::plumbing::GetQueryGroupStorage::from(db);
+                let storage = &group_storage.#fn_name;
+
+                <_ as ::salsa::plumbing::QueryStorageOps<DB__, #qt>>::maybe_changed_since(
+                    storage,
+                    db,
+                    revision,
+                    key,
+                    db_descriptor,
+                )
+            }
         });
 
         // A field for the storage struct
         //
         // FIXME(#120): the pub should not be necessary once we complete the transition
         storage_fields.extend(quote! {
-            pub #fn_name: <#qt as ::salsa::Query<__DB>>::Storage,
+            pub #fn_name: <#qt as ::salsa::Query<DB__>>::Storage,
         });
     }
 
     // Emit the trait itself.
     let mut output = {
         let attrs = &input.attrs;
-        let qts = queries.iter().map(|q| &q.query_type);
         let bounds = &input.supertraits;
         quote! {
             #(#attrs)*
-            #trait_vis trait #trait_name : #(salsa::plumbing::GetQueryTable<#qts> +)* #bounds {
+            #trait_vis trait #trait_name : #bounds {
                 #query_fn_declarations
             }
         }
@@ -173,12 +199,13 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     // Emit an impl of the trait
     output.extend({
-        let qts = queries.iter().map(|q| &q.query_type);
         let bounds = &input.supertraits;
         quote! {
             impl<T> #trait_name for T
             where
-                T: #(salsa::plumbing::GetQueryTable<#qts> +)* #bounds
+                T: #bounds,
+                T: ::salsa::plumbing::GetQueryGroupStorage<#group_storage<T>>,
+                T: ::salsa::plumbing::GetDatabaseKey<#group_key>,
             {
                 #query_fn_definitions
             }
@@ -186,7 +213,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     });
 
     // Emit the query types.
-    for query in queries {
+    for query in &queries {
+        let fn_name = &query.fn_name;
         let qt = &query.query_type;
         let storage = Ident::new(
             match query.storage {
@@ -212,6 +240,16 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 type Key = (#(#keys),*);
                 type Value = #value;
                 type Storage = salsa::plumbing::#storage<DB, Self>;
+                type GroupStorage = #group_storage<DB>;
+                type GroupKey = #group_key;
+
+                fn group_storage(group_storage: &Self::GroupStorage) -> &Self::Storage {
+                    &group_storage.#fn_name
+                }
+
+                fn group_key(key: Self::Key) -> Self::GroupKey {
+                    #group_key::#fn_name(key)
+                }
             }
         });
 
@@ -228,7 +266,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             };
             let invoke = match &query.invoke {
                 Some(i) => i.into_token_stream(),
-                None => query.fn_name.into_token_stream(),
+                None => query.fn_name.clone().into_token_stream(),
             };
             output.extend(quote_spanned! {span=>
                 impl<DB> salsa::plumbing::QueryFunction<DB> for #qt
@@ -245,27 +283,64 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     }
 
     // Emit query group descriptor
-    //let group_descriptor = Ident::new(
-    //    &format!("{}GroupDescriptor", trait_name.to_string()),
-    //    Span::call_site(),
-    //);
-    //output.extend(quote! {
-    //    #trait_vis enum #group_descriptor<__DB: #trait_name> {
-    //        #query_descriptor_variants
-    //    }
-    //});
-
-    // Emit query group storage struct
-    let group_storage = Ident::new(
-        &format!("{}GroupStorage", trait_name.to_string()),
-        Span::call_site(),
-    );
     output.extend(quote! {
-        #[derive(Default)]
-        #trait_vis struct #group_storage<__DB: #trait_name> {
-            #storage_fields
+        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+        #trait_vis enum #group_key {
+            #query_descriptor_variants
+        }
+
+        impl #group_key {
+            #trait_vis fn maybe_changed_since<DB__>(
+                &self,
+                db: &DB__,
+                db_descriptor: &<DB__ as ::salsa::plumbing::DatabaseStorageTypes>::DatabaseKey,
+                revision: ::salsa::plumbing::Revision,
+            ) -> bool
+            where
+                DB__: #trait_name,
+                DB__: ::salsa::plumbing::GetQueryGroupStorage<#group_storage<DB__>>,
+            {
+                match self {
+                    #query_descriptor_maybe_change
+                }
+            }
         }
     });
+
+    let mut for_each_ops = proc_macro2::TokenStream::new();
+    for Query { fn_name, .. } in &queries {
+        for_each_ops.extend(quote! {
+            op(&self.#fn_name);
+        });
+    }
+
+    // Emit query group storage struct
+    output.extend(quote! {
+        #[derive(Default)]
+        #trait_vis struct #group_storage<DB__: #trait_name> {
+            #storage_fields
+        }
+
+        impl<DB__> #group_storage<DB__>
+        where
+            DB__: #trait_name,
+            DB__: ::salsa::plumbing::GetQueryGroupStorage<#group_storage<DB__>>,
+        {
+            #trait_vis fn for_each_query(
+                &self,
+                db: &DB__,
+                mut op: &mut dyn FnMut(&dyn ::salsa::plumbing::QueryStorageMassOps<DB__>),
+            ) {
+                #for_each_ops
+            }
+        }
+    });
+
+    if std::env::var("SALSA_DUMP").is_ok() {
+        println!("~~~ query_group");
+        println!("{}", output.to_string());
+        println!("~~~ query_group");
+    }
 
     output.into()
 }

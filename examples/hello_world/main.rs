@@ -68,16 +68,13 @@ impl salsa::Database for DatabaseStruct {
     }
 }
 
-// Define the full set of queries that your context needs. This would
+// Define the full set of query groups that your context needs. This would
 // in general combine (and implement) all the database traits in
 // your application into one place, allocating storage for all of
-// them.
+// them. But here we have only one.
 salsa::database_storage! {
-    struct DatabaseStorage for DatabaseStruct {
-        impl HelloWorldDatabase {
-            fn input_string() for InputString;
-            fn length() for LengthQuery;
-        }
+    DatabaseStruct {
+        impl HelloWorldDatabase;
     }
 }
 
