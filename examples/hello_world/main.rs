@@ -1,4 +1,3 @@
-use salsa::Database;
 use std::sync::Arc;
 
 ///////////////////////////////////////////////////////////////////////////
@@ -14,17 +13,15 @@ use std::sync::Arc;
 // supertraits, which are likely to be lifted.)
 #[salsa::query_group]
 trait HelloWorldDatabase: salsa::Database {
-    // For each query, we give the name, input type (here, `()`)
-    // and the output type `Arc<String>`. We can use attributes to
-    // give other configuration:
+    // For each query, we give the name, some input keys (here, we
+    // have one key, `()`) and the output type `Arc<String>`. We can
+    // use attributes to give other configuration:
     //
     // - `salsa::input` indicates that this is an "input" to the system,
-    //   which must be explicitly set.
-    // - `salsa::query_type` controls the name of the dummy struct
-    //   that represents this query. We'll see it referenced
-    //   later. The default would have been `InputStringQuery`.
+    //   which must be explicitly set. The `salsa::query_group` method
+    //   will autogenerate a `set_input_string` method that can be
+    //   used to set the input.
     #[salsa::input]
-    #[salsa::query_type(InputString)]
     fn input_string(&self, key: ()) -> Arc<String>;
 
     // This is a *derived query*, meaning its value is specified by
@@ -56,8 +53,9 @@ fn length(db: &impl HelloWorldDatabase, (): ()) -> usize {
 
 // Define the actual database struct. This struct needs to be
 // annotated with `#[salsa::database(..)]`, which contains a list of
-// query groups that this database supports. This attribute macro will generate
-// the necessary impls so that the database implements all of those traits.
+// query groups that this database supports. This attribute macro will
+// generate the necessary impls so that the database implements all of
+// those traits.
 //
 // The database struct can contain basically anything you need, but it
 // must have a `runtime` field as shown, and you must implement the
@@ -79,12 +77,12 @@ impl salsa::Database for DatabaseStruct {
 fn main() {
     let mut db = DatabaseStruct::default();
 
-    // You cannot access input_string yet, because it does not have a value. If you do, it will
-    // panic. You could create an Option interface by maintaining a HashSet of inserted keys.
+    // You cannot access input_string yet, because it does not have a
+    // value. If you do, it will panic. You could create an Option
+    // interface by maintaining a HashSet of inserted keys.
     // println!("Initially, the length is {}.", db.length(()));
 
-    db.query_mut(InputString)
-        .set((), Arc::new(format!("Hello, world")));
+    db.set_input_string((), Arc::new(format!("Hello, world")));
 
     println!("Now, the length is {}.", db.length(()));
 }

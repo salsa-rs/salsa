@@ -156,6 +156,44 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             }
         });
 
+        // For input queries, we need `set_foo` etc
+        if let QueryStorage::Input = query.storage {
+            let set_fn_name = Ident::new(&format!("set_{}", fn_name), fn_name.span());
+            let set_constant_fn_name =
+                Ident::new(&format!("set_constant_{}", fn_name), fn_name.span());
+
+            query_fn_declarations.extend(quote! {
+                /// Set the value of the `#fn_name` input.
+                ///
+                /// See [`#fn_name()`][] for details.
+                ///
+                /// *Note:* Setting values will trigger cancellation
+                /// of any ongoing queries; this method blocks until
+                /// those queries have been cancelled.
+                fn #set_fn_name(&mut self, #(#key_names: #keys,)* value__: #value);
+
+                /// Set the value of the `#fn_name` input and promise
+                /// that its value will never change again.
+                ///
+                /// See [`#fn_name()`][] for details.
+                ///
+                /// *Note:* Setting values will trigger cancellation
+                /// of any ongoing queries; this method blocks until
+                /// those queries have been cancelled.
+                fn #set_constant_fn_name(&mut self, #(#key_names: #keys,)* value__: #value);
+            });
+
+            query_fn_definitions.extend(quote! {
+                fn #set_fn_name(&mut self, #(#key_names: #keys,)* value__: #value) {
+                    <Self as ::salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set((#(#key_names),*), value__)
+                }
+
+                fn #set_constant_fn_name(&mut self, #(#key_names: #keys,)* value__: #value) {
+                    <Self as ::salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set_constant((#(#key_names),*), value__)
+                }
+            });
+        }
+
         // A variant for the group descriptor below
         query_descriptor_variants.extend(quote! {
             #fn_name((#(#keys),*)),
