@@ -1,7 +1,7 @@
 use salsa::{Database, ParallelDatabase, Snapshot};
 use std::panic::{self, AssertUnwindSafe};
 
-#[salsa::query_group]
+#[salsa::query_group(PanicSafelyStruct)]
 trait PanicSafelyDatabase: salsa::Database {
     #[salsa::input]
     fn one(&self) -> usize;
@@ -13,7 +13,7 @@ fn panic_safely(db: &impl PanicSafelyDatabase) -> () {
     assert_eq!(db.one(), 1);
 }
 
-#[salsa::database(PanicSafelyDatabase)]
+#[salsa::database(PanicSafelyStruct)]
 #[derive(Default)]
 struct DatabaseStruct {
     runtime: salsa::Runtime<DatabaseStruct>,

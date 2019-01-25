@@ -1,6 +1,6 @@
 use salsa::Database;
 
-#[salsa::query_group]
+#[salsa::query_group(HelloWorldStruct)]
 trait HelloWorldDatabase: salsa::Database {
     #[salsa::input]
     fn input(&self) -> String;
@@ -20,7 +20,7 @@ fn double_length(db: &impl HelloWorldDatabase) -> usize {
     db.length() * 2
 }
 
-#[salsa::database(HelloWorldDatabase)]
+#[salsa::database(HelloWorldStruct)]
 #[derive(Default)]
 struct DatabaseStruct {
     runtime: salsa::Runtime<DatabaseStruct>,

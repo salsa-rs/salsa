@@ -13,7 +13,7 @@ use crate::compiler::{CompilerDatabase, Interner};
 /// to your context (e.g., a shared counter or some such thing). If
 /// mutations to that shared state affect the results of your queries,
 /// that's going to mess up the incremental results.
-#[salsa::database(class_table::ClassTableDatabase)]
+#[salsa::database(class_table::ClassTable)]
 #[derive(Default)]
 pub struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,

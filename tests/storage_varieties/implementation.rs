@@ -1,7 +1,7 @@
 use crate::queries;
 use std::cell::Cell;
 
-#[salsa::database(queries::Database)]
+#[salsa::database(queries::GroupStruct)]
 #[derive(Default)]
 pub(crate) struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,

@@ -1,6 +1,6 @@
 use crate::log::HasLog;
 
-#[salsa::query_group]
+#[salsa::query_group(Gc)]
 pub(crate) trait GcDatabase: salsa::Database + HasLog {
     #[salsa::input]
     fn min(&self) -> usize;

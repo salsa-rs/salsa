@@ -86,18 +86,17 @@ impl<DB, Q> GetQueryTable<Q> for DB
 where
     DB: Database,
     Q: Query<DB>,
-    DB: GetQueryGroupStorage<Q::GroupStorage>,
-    DB: GetDatabaseKey<Q::GroupKey>,
+    DB: HasQueryGroup<Q::Group>,
 {
     fn get_query_table(db: &DB) -> QueryTable<'_, DB, Q> {
-        let group_storage: &Q::GroupStorage = GetQueryGroupStorage::from(db);
+        let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
         let query_storage = Q::group_storage(group_storage);
         QueryTable::new(db, query_storage)
     }
 
     fn get_query_table_mut(db: &mut DB) -> QueryTableMut<'_, DB, Q> {
         let db = &*db;
-        let group_storage: &Q::GroupStorage = GetQueryGroupStorage::from(db);
+        let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
         let query_storage = Q::group_storage(group_storage);
         QueryTableMut::new(db, query_storage)
     }
@@ -107,25 +106,26 @@ where
         key: <Q as Query<DB>>::Key,
     ) -> <DB as DatabaseStorageTypes>::DatabaseKey {
         let group_key = Q::group_key(key);
-        <DB as GetDatabaseKey<_>>::from(group_key)
+        <DB as HasQueryGroup<_>>::database_key(group_key)
     }
 }
 
-/// Access the "group storage" with type `S` from the database.
-///
-/// This basically moves from the full context of the database to the context
-/// of one query group.
-pub trait GetQueryGroupStorage<S>: Database {
-    fn from(db: &Self) -> &S;
+pub trait QueryGroup<DB: Database> {
+    type GroupStorage;
+    type GroupKey;
 }
 
-/// Given a group descriptor of type `D`, convert it to a full
-/// database query descriptor.
-///
-/// This basically moves a descriptor from the context of the query
-/// group into the full context of the database.
-pub trait GetDatabaseKey<D>: Database {
-    fn from(group_key: D) -> Self::DatabaseKey;
+/// Trait implemented by a database for each group that it supports.
+/// `S` and `K` are the types for *group storage* and *group key*, respectively.
+pub trait HasQueryGroup<G>: Database
+where
+    G: QueryGroup<Self>,
+{
+    /// Access the group storage struct from the database.
+    fn group_storage(db: &Self) -> &G::GroupStorage;
+
+    /// "Upcast" a group key into a database key.
+    fn database_key(group_key: G::GroupKey) -> Self::DatabaseKey;
 }
 
 pub trait QueryStorageOps<DB, Q>: Default

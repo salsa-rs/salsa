@@ -11,10 +11,10 @@ pub(crate) trait TestContext: salsa::Database {
 }
 
 #[salsa::database(
-    constants::ConstantsDatabase,
-    memoized_dep_inputs::MemoizedDepInputsContext,
-    memoized_inputs::MemoizedInputsContext,
-    memoized_volatile::MemoizedVolatileContext
+    constants::Constants,
+    memoized_dep_inputs::MemoizedDepInputs,
+    memoized_inputs::MemoizedInputs,
+    memoized_volatile::MemoizedVolatile
 )]
 #[derive(Default)]
 pub(crate) struct TestContextImpl {
