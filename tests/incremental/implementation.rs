@@ -10,6 +10,12 @@ pub(crate) trait TestContext: salsa::Database {
     fn log(&self) -> &Log;
 }
 
+#[salsa::database(
+    constants::ConstantsDatabase,
+    memoized_dep_inputs::MemoizedDepInputsContext,
+    memoized_inputs::MemoizedInputsContext,
+    memoized_volatile::MemoizedVolatileContext
+)]
 #[derive(Default)]
 pub(crate) struct TestContextImpl {
     runtime: salsa::Runtime<TestContextImpl>,
@@ -35,18 +41,6 @@ impl TestContextImpl {
         }
 
         panic!("incorrect log results");
-    }
-}
-
-salsa::database_storage! {
-    pub(crate) TestContextImpl {
-        impl constants::ConstantsDatabase;
-
-        impl memoized_dep_inputs::MemoizedDepInputsContext;
-
-        impl memoized_inputs::MemoizedInputsContext;
-
-        impl memoized_volatile::MemoizedVolatileContext;
     }
 }
 

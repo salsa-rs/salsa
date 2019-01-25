@@ -20,6 +20,7 @@ fn double_length(db: &impl HelloWorldDatabase) -> usize {
     db.length() * 2
 }
 
+#[salsa::database(HelloWorldDatabase)]
 #[derive(Default)]
 struct DatabaseStruct {
     runtime: salsa::Runtime<DatabaseStruct>,
@@ -28,12 +29,6 @@ struct DatabaseStruct {
 impl salsa::Database for DatabaseStruct {
     fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseStruct> {
         &self.runtime
-    }
-}
-
-salsa::database_storage! {
-    DatabaseStruct {
-        impl HelloWorldDatabase;
     }
 }
 

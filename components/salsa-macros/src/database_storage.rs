@@ -1,29 +1,22 @@
 use heck::SnakeCase;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use syn::parse::{Parse, ParseStream, Peek};
-use syn::{Attribute, Ident, Path, Token, Visibility};
+use syn::parse::{Parse, ParseStream};
+use syn::punctuated::Punctuated;
+use syn::{Ident, ItemStruct, Path, Token};
 
-/// Implementation for `salsa::database_storage!` macro.
-///
-/// Current syntax:
-///
-/// ```ignore
-///  salsa::database_storage! {
-///     $vis DatabaseStruct { impl HelloWorldDatabase; }
-/// }
-/// ```
-///
-/// impl Database {
-pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
-    let DatabaseStorage {
-        database_name,
-        query_groups,
-        attributes,
-        visibility,
-    } = syn::parse_macro_input!(input as DatabaseStorage);
+type PunctuatedQueryGroups = Punctuated<QueryGroup, Token![,]>;
+
+pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
+    let args = syn::parse_macro_input!(args as QueryGroupList);
+    let input = syn::parse_macro_input!(input as ItemStruct);
+
+    let query_groups = &args.query_groups;
+    let database_name = &input.ident;
+    let visibility = &input.vis;
 
     let mut output = proc_macro2::TokenStream::new();
+    output.extend(quote! { #input });
 
     let query_group_names_camel: Vec<_> = query_groups
         .iter()
@@ -78,11 +71,6 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
         });
     }
 
-    let mut attrs = proc_macro2::TokenStream::new();
-    for attr in attributes {
-        attrs.extend(quote! { #attr });
-    }
-
     // create group storage wrapper struct
     output.extend(quote! {
         #[derive(Default)]
@@ -107,7 +95,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     // foo(<FooType as ::salsa::Query<#database_name>>::Key),
     // ```
     let mut variants = proc_macro2::TokenStream::new();
-    for query_group in &query_groups {
+    for query_group in query_groups {
         let group_name = query_group.name();
         let group_key = query_group.group_key();
         variants.extend(quote!(
@@ -131,7 +119,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
 
     //
     let mut for_each_ops = proc_macro2::TokenStream::new();
-    for query_group in &query_groups {
+    for query_group in query_groups {
         let group_storage = query_group.group_storage();
         for_each_ops.extend(quote! {
             let storage: &#group_storage<#database_name> = ::salsa::plumbing::GetQueryGroupStorage::from(self);
@@ -150,7 +138,7 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     });
 
     let mut for_each_query_desc = proc_macro2::TokenStream::new();
-    for query_group in &query_groups {
+    for query_group in query_groups {
         let group_name = query_group.name();
         for_each_query_desc.extend(quote! {
             __SalsaDatabaseKeyKind::#group_name(database_key) => database_key.maybe_changed_since(
@@ -187,13 +175,19 @@ pub(crate) fn database_storage(input: TokenStream) -> TokenStream {
     output.into()
 }
 
-struct DatabaseStorage {
-    database_name: Path,
-    query_groups: Vec<QueryGroup>,
-    attributes: Vec<Attribute>,
-    visibility: Visibility,
+#[derive(Clone, Debug)]
+struct QueryGroupList {
+    query_groups: PunctuatedQueryGroups,
 }
 
+impl Parse for QueryGroupList {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let query_groups: PunctuatedQueryGroups = input.parse_terminated(QueryGroup::parse)?;
+        Ok(QueryGroupList { query_groups })
+    }
+}
+
+#[derive(Clone, Debug)]
 struct QueryGroup {
     query_group: Path,
 }
@@ -240,31 +234,12 @@ impl QueryGroup {
     }
 }
 
-impl Parse for DatabaseStorage {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let attributes = input.call(Attribute::parse_outer)?;
-        let visibility = input.parse()?;
-        let database_name: Path = input.parse()?;
-        let content;
-        syn::braced!(content in input);
-        let query_groups: Vec<QueryGroup> = parse_while(Token![impl ], &content)?;
-        Ok(DatabaseStorage {
-            attributes,
-            visibility,
-            database_name,
-            query_groups,
-        })
-    }
-}
-
 impl Parse for QueryGroup {
     /// ```ignore
     ///         impl HelloWorldDatabase;
     /// ```
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let _: Token![impl ] = input.parse()?;
         let query_group: Path = input.parse()?;
-        let _: Token![;] = input.parse()?;
         Ok(QueryGroup { query_group })
     }
 }
@@ -275,13 +250,4 @@ impl Parse for Nothing {
     fn parse(_input: ParseStream) -> syn::Result<Self> {
         Ok(Nothing)
     }
-}
-
-fn parse_while<P: Peek + Copy, B: Parse>(peek: P, input: ParseStream) -> syn::Result<Vec<B>> {
-    let mut result = vec![];
-    while input.peek(peek) {
-        let body: B = input.parse()?;
-        result.push(body);
-    }
-    Ok(result)
 }

@@ -13,6 +13,7 @@ fn panic_safely(db: &impl PanicSafelyDatabase) -> () {
     assert_eq!(db.one(), 1);
 }
 
+#[salsa::database(PanicSafelyDatabase)]
 #[derive(Default)]
 struct DatabaseStruct {
     runtime: salsa::Runtime<DatabaseStruct>,
@@ -29,12 +30,6 @@ impl salsa::ParallelDatabase for DatabaseStruct {
         Snapshot::new(DatabaseStruct {
             runtime: self.runtime.snapshot(self),
         })
-    }
-}
-
-salsa::database_storage! {
-    DatabaseStruct {
-        impl PanicSafelyDatabase;
     }
 }
 

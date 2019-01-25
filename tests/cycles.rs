@@ -1,3 +1,4 @@
+#[salsa::database(Database)]
 #[derive(Default)]
 struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,
@@ -6,12 +7,6 @@ struct DatabaseImpl {
 impl salsa::Database for DatabaseImpl {
     fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseImpl> {
         &self.runtime
-    }
-}
-
-salsa::database_storage! {
-    DatabaseImpl {
-        impl Database;
     }
 }
 

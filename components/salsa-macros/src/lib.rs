@@ -126,31 +126,26 @@ pub fn query_group(args: TokenStream, input: TokenStream) -> TokenStream {
     query_group::query_group(args, input)
 }
 
-/// This macro generates the "query storage" that goes into your
-/// database.  It requires you to list all of the query groups that
-/// you need. The format looks like so:
+/// This attribute is placed on your database struct. It takes a list of the
+/// query groups that your database supports. The format looks like so:
 ///
 /// ```rust,ignore
-/// salsa::database_storage! {
-///     $v MyDatabase {
-///         impl MyQueryGroup;
-///         // ... other query groups go here ...
-///     }
+/// #[salsa::database(MyQueryGroup1, MyQueryGroup2)]
+/// struct MyDatabase {
+///     runtime: salsa::Runtime<MyDatabase>, // <-- your database will need this field, too
 /// }
 /// ```
 ///
-/// Here, `MyDatabase` should be the name of your database type, and
-/// `$v` should be the "visibility" of that struct (e.g., `pub`,
-/// `pub(crate)`, or just nothing). The macro will then generate a
-/// struct named `MyDatabaseStorage` that is used by the
-/// [`salsa::Runtime`]. `MyQueryGroup` should be the name of your
-/// query group.
+/// Here, the struct `MyDatabase` would support the two query groups
+/// `MyQueryGroup1` and `MyQueryGroup2`. In addition to the `database`
+/// attribute, the struct needs to have a `runtime` field (of type
+/// [`salsa::Runtime`]) and to implement the `salsa::Database` trait.
 ///
 /// See [the `hello_world` example][hw] for more details.
 ///
 /// [`salsa::Runtime`]: struct.Runtime.html
 /// [hw]: https://github.com/salsa-rs/salsa/tree/master/examples/hello_world
-#[proc_macro]
-pub fn database_storage(input: TokenStream) -> TokenStream {
-    database_storage::database_storage(input)
+#[proc_macro_attribute]
+pub fn database(args: TokenStream, input: TokenStream) -> TokenStream {
+    database_storage::database(args, input)
 }

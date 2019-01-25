@@ -1,16 +1,11 @@
 use crate::queries;
 use std::cell::Cell;
 
+#[salsa::database(queries::Database)]
 #[derive(Default)]
 pub(crate) struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,
     counter: Cell<usize>,
-}
-
-salsa::database_storage! {
-    pub(crate) DatabaseImpl {
-        impl queries::Database;
-    }
 }
 
 impl queries::Counter for DatabaseImpl {

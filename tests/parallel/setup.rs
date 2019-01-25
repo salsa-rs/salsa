@@ -184,6 +184,7 @@ fn snapshot_me(db: &impl ParDatabase) {
     db.snapshot();
 }
 
+#[salsa::database(ParDatabase)]
 #[derive(Default)]
 pub(crate) struct ParDatabaseImpl {
     runtime: salsa::Runtime<ParDatabaseImpl>,
@@ -231,11 +232,5 @@ impl Knobs for ParDatabaseImpl {
 
     fn wait_for(&self, stage: usize) {
         self.knobs.signal.wait_for(stage);
-    }
-}
-
-salsa::database_storage! {
-    pub(crate) ParDatabaseImpl {
-        impl ParDatabase;
     }
 }
