@@ -135,6 +135,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     let mut query_descriptor_variants = proc_macro2::TokenStream::new();
     let mut query_descriptor_maybe_change = proc_macro2::TokenStream::new();
     let mut storage_fields = proc_macro2::TokenStream::new();
+    let mut storage_defaults = proc_macro2::TokenStream::new();
     for query in &queries {
         let key_names: &Vec<_> = &(0..query.keys.len())
             .map(|i| Ident::new(&format!("key{}", i), Span::call_site()))
@@ -221,6 +222,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         storage_fields.extend(quote! {
             pub #fn_name: <#qt as salsa::Query<DB__>>::Storage,
         });
+        storage_defaults.extend(quote! { #fn_name: Default::default(), });
     }
 
     // Emit the trait itself.
@@ -366,10 +368,20 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     }
 
     // Emit query group storage struct
+    // It would derive Default, but then all database structs would have to implement Default
+    // as the derived version includes an unused `+ Default` constraint.
     output.extend(quote! {
-        #[derive(Default)]
         #trait_vis struct #group_storage<DB__: #trait_name> {
             #storage_fields
+        }
+
+        impl<DB__: #trait_name> Default for #group_storage<DB__> {
+            #[inline]
+            fn default() -> Self {
+                #group_storage {
+                    #storage_defaults
+                }
+            }
         }
 
         impl<DB__> #group_storage<DB__>
