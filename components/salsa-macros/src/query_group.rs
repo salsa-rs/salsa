@@ -152,7 +152,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         query_fn_definitions.extend(quote! {
             fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
-                <Self as ::salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get((#(#key_names),*))
+                <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get((#(#key_names),*))
             }
         });
 
@@ -185,11 +185,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             query_fn_definitions.extend(quote! {
                 fn #set_fn_name(&mut self, #(#key_names: #keys,)* value__: #value) {
-                    <Self as ::salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set((#(#key_names),*), value__)
+                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set((#(#key_names),*), value__)
                 }
 
                 fn #set_constant_fn_name(&mut self, #(#key_names: #keys,)* value__: #value) {
-                    <Self as ::salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set_constant((#(#key_names),*), value__)
+                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set_constant((#(#key_names),*), value__)
                 }
             });
         }
@@ -202,10 +202,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // A variant for the group descriptor below
         query_descriptor_maybe_change.extend(quote! {
             #group_key::#fn_name(key) => {
-                let group_storage: &#group_storage<DB__> = ::salsa::plumbing::HasQueryGroup::group_storage(db);
+                let group_storage: &#group_storage<DB__> = salsa::plumbing::HasQueryGroup::group_storage(db);
                 let storage = &group_storage.#fn_name;
 
-                <_ as ::salsa::plumbing::QueryStorageOps<DB__, #qt>>::maybe_changed_since(
+                <_ as salsa::plumbing::QueryStorageOps<DB__, #qt>>::maybe_changed_since(
                     storage,
                     db,
                     revision,
@@ -219,7 +219,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         //
         // FIXME(#120): the pub should not be necessary once we complete the transition
         storage_fields.extend(quote! {
-            pub #fn_name: <#qt as ::salsa::Query<DB__>>::Storage,
+            pub #fn_name: <#qt as salsa::Query<DB__>>::Storage,
         });
     }
 
@@ -255,7 +255,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             impl<T> #trait_name for T
             where
                 T: #bounds,
-                T: ::salsa::plumbing::HasQueryGroup<#group_struct>
+                T: salsa::plumbing::HasQueryGroup<#group_struct>
             {
                 #query_fn_definitions
             }
@@ -344,12 +344,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             #trait_vis fn maybe_changed_since<DB__>(
                 &self,
                 db: &DB__,
-                db_descriptor: &<DB__ as ::salsa::plumbing::DatabaseStorageTypes>::DatabaseKey,
-                revision: ::salsa::plumbing::Revision,
+                db_descriptor: &<DB__ as salsa::plumbing::DatabaseStorageTypes>::DatabaseKey,
+                revision: salsa::plumbing::Revision,
             ) -> bool
             where
                 DB__: #trait_name,
-                DB__: ::salsa::plumbing::HasQueryGroup<#group_struct>,
+                DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             {
                 match self {
                     #query_descriptor_maybe_change
@@ -375,12 +375,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         impl<DB__> #group_storage<DB__>
         where
             DB__: #trait_name,
-            DB__: ::salsa::plumbing::HasQueryGroup<#group_struct>,
+            DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
         {
             #trait_vis fn for_each_query(
                 &self,
                 db: &DB__,
-                mut op: &mut dyn FnMut(&dyn ::salsa::plumbing::QueryStorageMassOps<DB__>),
+                mut op: &mut dyn FnMut(&dyn salsa::plumbing::QueryStorageMassOps<DB__>),
             ) {
                 #for_each_ops
             }

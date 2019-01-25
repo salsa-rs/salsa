@@ -62,9 +62,9 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
             #group_name_snake: #group_storage,
         });
         has_group_impls.extend(quote! {
-            impl ::salsa::plumbing::HasQueryGroup<#group_path> for #database_name {
+            impl salsa::plumbing::HasQueryGroup<#group_path> for #database_name {
                 fn group_storage(db: &Self) -> &#group_storage {
-                    let runtime = ::salsa::Database::salsa_runtime(db);
+                    let runtime = salsa::Database::salsa_runtime(db);
                     &runtime.storage().#group_name_snake
                 }
 
@@ -98,7 +98,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     // For each query `fn foo() for FooType` create
     //
     // ```
-    // foo(<FooType as ::salsa::Query<#database_name>>::Key),
+    // foo(<FooType as salsa::Query<#database_name>>::Key),
     // ```
     let mut variants = proc_macro2::TokenStream::new();
     for (query_group, group_key) in query_groups.iter().zip(&query_group_key_names) {
@@ -116,7 +116,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
 
     //
     output.extend(quote! {
-        impl ::salsa::plumbing::DatabaseStorageTypes for #database_name {
+        impl salsa::plumbing::DatabaseStorageTypes for #database_name {
             type DatabaseKey = __SalsaDatabaseKey;
             type DatabaseStorage = __SalsaDatabaseStorage;
         }
@@ -134,10 +134,10 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         });
     }
     output.extend(quote! {
-        impl ::salsa::plumbing::DatabaseOps for #database_name {
+        impl salsa::plumbing::DatabaseOps for #database_name {
             fn for_each_query(
                 &self,
-                mut op: impl FnMut(&dyn ::salsa::plumbing::QueryStorageMassOps<Self>),
+                mut op: impl FnMut(&dyn salsa::plumbing::QueryStorageMassOps<Self>),
             ) {
                 #for_each_ops
             }
@@ -157,11 +157,11 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     }
 
     output.extend(quote! {
-        impl ::salsa::plumbing::DatabaseKey<#database_name> for __SalsaDatabaseKey {
+        impl salsa::plumbing::DatabaseKey<#database_name> for __SalsaDatabaseKey {
             fn maybe_changed_since(
                 &self,
                 db: &#database_name,
-                revision: ::salsa::plumbing::Revision,
+                revision: salsa::plumbing::Revision,
             ) -> bool {
                 match &self.kind {
                     #for_each_query_desc
