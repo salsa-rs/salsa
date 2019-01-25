@@ -1,5 +1,6 @@
 #![allow(missing_docs)]
 
+use crate::debug::TableEntry;
 use crate::Database;
 use crate::Query;
 use crate::QueryTable;
@@ -176,10 +177,10 @@ where
     /// Check if `key` is (currently) believed to be a constant.
     fn is_constant(&self, db: &DB, key: &Q::Key) -> bool;
 
-    /// Get the (current) set of the keys in the query storage
-    fn keys<C>(&self, db: &DB) -> C
+    /// Get the (current) set of the entries in the query storage
+    fn entries<C>(&self, db: &DB) -> C
     where
-        C: std::iter::FromIterator<Q::Key>;
+        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>;
 }
 
 /// An optional trait that is implemented for "user mutable" storage:

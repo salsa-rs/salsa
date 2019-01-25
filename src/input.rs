@@ -1,3 +1,4 @@
+use crate::debug::TableEntry;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
@@ -194,12 +195,16 @@ where
             .unwrap_or(false)
     }
 
-    fn keys<C>(&self, _db: &DB) -> C
+    fn entries<C>(&self, _db: &DB) -> C
     where
-        C: std::iter::FromIterator<Q::Key>,
+        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
     {
         let map = self.map.read();
-        map.keys().cloned().collect()
+        map.iter()
+            .map(|(key, stamped_value)| {
+                TableEntry::new(key.clone(), Some(stamped_value.value.clone()))
+            })
+            .collect()
     }
 }
 
