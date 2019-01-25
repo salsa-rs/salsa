@@ -8,7 +8,7 @@ fn compute_one() {
     let mut db = db::DatabaseImpl::default();
 
     // Will compute fibonacci(5)
-    db.query_mut(UseTriangularQuery).set(5, false);
+    db.set_use_triangular(5, false);
     db.compute(5);
 
     db.salsa_runtime().next_revision();
@@ -43,11 +43,11 @@ fn compute_switch() {
     let mut db = db::DatabaseImpl::default();
 
     // Will compute fibonacci(5)
-    db.query_mut(UseTriangularQuery).set(5, false);
+    db.set_use_triangular(5, false);
     assert_eq!(db.compute(5), 5);
 
     // Change to triangular mode
-    db.query_mut(UseTriangularQuery).set(5, true);
+    db.set_use_triangular(5, true);
 
     // Now computes triangular(5)
     assert_eq!(db.compute(5), 15);
@@ -100,7 +100,7 @@ fn compute_all() {
     let mut db = db::DatabaseImpl::default();
 
     for i in 0..6 {
-        db.query_mut(UseTriangularQuery).set(i, (i % 2) != 0);
+        db.set_use_triangular(i, (i % 2) != 0);
     }
 
     db.query_mut(MinQuery).set((), 0);
