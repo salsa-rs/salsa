@@ -54,8 +54,15 @@ fn length(db: &impl HelloWorldDatabase, (): ()) -> usize {
 ///////////////////////////////////////////////////////////////////////////
 // Step 3. Define the database struct
 
-// Define the actual database struct. This must contain a salsa
-// runtime but can also contain anything else you need.
+// Define the actual database struct. This struct needs to be
+// annotated with `#[salsa::database(..)]`, which contains a list of
+// query groups that this database supports. This attribute macro will generate
+// the necessary impls so that the database implements all of those traits.
+//
+// The database struct can contain basically anything you need, but it
+// must have a `runtime` field as shown, and you must implement the
+// `salsa::Database` trait (as shown below).
+#[salsa::database(HelloWorldDatabase)]
 #[derive(Default)]
 struct DatabaseStruct {
     runtime: salsa::Runtime<DatabaseStruct>,
@@ -65,16 +72,6 @@ struct DatabaseStruct {
 impl salsa::Database for DatabaseStruct {
     fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseStruct> {
         &self.runtime
-    }
-}
-
-// Define the full set of query groups that your context needs. This would
-// in general combine (and implement) all the database traits in
-// your application into one place, allocating storage for all of
-// them. But here we have only one.
-salsa::database_storage! {
-    DatabaseStruct {
-        impl HelloWorldDatabase;
     }
 }
 

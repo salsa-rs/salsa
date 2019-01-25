@@ -33,6 +33,7 @@ fn c(db: &impl StressDatabase, key: usize) -> Cancelable<usize> {
     db.b(key)
 }
 
+#[salsa::database(StressDatabase)]
 #[derive(Default)]
 struct StressDatabaseImpl {
     runtime: salsa::Runtime<StressDatabaseImpl>,
@@ -49,12 +50,6 @@ impl salsa::ParallelDatabase for StressDatabaseImpl {
         Snapshot::new(StressDatabaseImpl {
             runtime: self.runtime.snapshot(self),
         })
-    }
-}
-
-salsa::database_storage! {
-    pub StressDatabaseImpl {
-        impl StressDatabase;
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::group;
 use crate::log::{HasLog, Log};
 
+#[salsa::database(group::GcDatabase)]
 #[derive(Default)]
 pub(crate) struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,
@@ -10,12 +11,6 @@ pub(crate) struct DatabaseImpl {
 impl salsa::Database for DatabaseImpl {
     fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseImpl> {
         &self.runtime
-    }
-}
-
-salsa::database_storage! {
-    pub(crate) DatabaseImpl {
-        impl group::GcDatabase;
     }
 }
 

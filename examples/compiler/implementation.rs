@@ -13,6 +13,7 @@ use crate::compiler::{CompilerDatabase, Interner};
 /// to your context (e.g., a shared counter or some such thing). If
 /// mutations to that shared state affect the results of your queries,
 /// that's going to mess up the incremental results.
+#[salsa::database(class_table::ClassTableDatabase)]
 #[derive(Default)]
 pub struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,
@@ -28,17 +29,6 @@ pub struct DatabaseImpl {
 impl salsa::Database for DatabaseImpl {
     fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseImpl> {
         &self.runtime
-    }
-}
-
-/// Declares the "query storage" for your context. Here, you list out
-/// all of the query traits from your application that you wish to
-/// provide storage for. This macro will generate the appropriate
-/// storage and also generate impls for those traits, so that you
-/// `DatabaseImpl` type implements them.
-salsa::database_storage! {
-    pub DatabaseImpl {
-        impl class_table::ClassTableDatabase;
     }
 }
 
