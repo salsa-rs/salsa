@@ -243,7 +243,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         #trait_vis struct #group_struct { }
 
         impl<DB__> salsa::plumbing::QueryGroup<DB__> for #group_struct
-        where DB__: #trait_name
+        where
+            DB__: #trait_name,
+            DB__: salsa::Database,
         {
             type GroupStorage = #group_storage<DB__>;
             type GroupKey = #group_key;
@@ -288,6 +290,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             impl<DB> salsa::Query<DB> for #qt
             where
                 DB: #trait_name,
+                DB: salsa::Database,
             {
                 type Key = (#(#keys),*);
                 type Value = #value;
@@ -325,6 +328,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 impl<DB> salsa::plumbing::QueryFunction<DB> for #qt
                 where
                     DB: #trait_name,
+                    DB: salsa::Database,
                 {
                     fn execute(db: &DB, #key_pattern: <Self as salsa::Query<DB>>::Key)
                         -> <Self as salsa::Query<DB>>::Value {
@@ -371,11 +375,19 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     // It would derive Default, but then all database structs would have to implement Default
     // as the derived version includes an unused `+ Default` constraint.
     output.extend(quote! {
-        #trait_vis struct #group_storage<DB__: #trait_name> {
+        #trait_vis struct #group_storage<DB__>
+        where
+            DB__: #trait_name,
+            DB__: salsa::Database,
+        {
             #storage_fields
         }
 
-        impl<DB__: #trait_name> Default for #group_storage<DB__> {
+        impl<DB__> Default for #group_storage<DB__>
+        where
+            DB__: #trait_name,
+            DB__: salsa::Database,
+        {
             #[inline]
             fn default() -> Self {
                 #group_storage {
