@@ -1,6 +1,6 @@
 use salsa::Database;
 
-#[salsa::query_group]
+#[salsa::query_group(HelloWorld)]
 trait HelloWorldDatabase: salsa::Database {
     #[salsa::input]
     fn input(&self, a: u32, b: u32) -> u32;
@@ -30,7 +30,7 @@ fn trailing(_db: &impl HelloWorldDatabase, a: u32, b: u32) -> u32 {
     a - b
 }
 
-#[salsa::database(HelloWorldDatabase)]
+#[salsa::database(HelloWorld)]
 #[derive(Default)]
 struct DatabaseStruct {
     runtime: salsa::Runtime<DatabaseStruct>,

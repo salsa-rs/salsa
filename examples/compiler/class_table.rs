@@ -1,7 +1,7 @@
 use crate::compiler;
 use std::sync::Arc;
 
-#[salsa::query_group]
+#[salsa::query_group(ClassTable)]
 pub trait ClassTableDatabase: compiler::CompilerDatabase {
     /// Get the fields.
     fn fields(&self, class: DefId) -> Arc<Vec<DefId>>;

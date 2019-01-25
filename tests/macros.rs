@@ -1,4 +1,4 @@
-#[salsa::query_group]
+#[salsa::query_group(MyStruct)]
 trait MyDatabase: salsa::Database {
     #[salsa::invoke(another_module::another_name)]
     fn my_query(&self, key: ()) -> ();

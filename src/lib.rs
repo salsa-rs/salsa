@@ -349,6 +349,13 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     /// Internal struct storing the values for the query.
     type Storage: plumbing::QueryStorageOps<DB, Self> + Send + Sync;
 
+    /// Associate query group struct.
+    type Group: plumbing::QueryGroup<
+        DB,
+        GroupStorage = Self::GroupStorage,
+        GroupKey = Self::GroupKey,
+    >;
+
     /// Generated struct that contains storage for all queries in a group.
     type GroupStorage;
 

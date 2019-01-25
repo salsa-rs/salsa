@@ -86,7 +86,7 @@ impl<DB, Q> GetQueryTable<Q> for DB
 where
     DB: Database,
     Q: Query<DB>,
-    DB: HasQueryGroup<Q::GroupStorage, Q::GroupKey>,
+    DB: HasQueryGroup<Q::Group>,
 {
     fn get_query_table(db: &DB) -> QueryTable<'_, DB, Q> {
         let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
@@ -106,18 +106,26 @@ where
         key: <Q as Query<DB>>::Key,
     ) -> <DB as DatabaseStorageTypes>::DatabaseKey {
         let group_key = Q::group_key(key);
-        <DB as HasQueryGroup<_, _>>::database_key(group_key)
+        <DB as HasQueryGroup<_>>::database_key(group_key)
     }
+}
+
+pub trait QueryGroup<DB: Database> {
+    type GroupStorage;
+    type GroupKey;
 }
 
 /// Trait implemented by a database for each group that it supports.
 /// `S` and `K` are the types for *group storage* and *group key*, respectively.
-pub trait HasQueryGroup<S, K>: Database {
+pub trait HasQueryGroup<G>: Database
+where
+    G: QueryGroup<Self>,
+{
     /// Access the group storage struct from the database.
-    fn group_storage(db: &Self) -> &S;
+    fn group_storage(db: &Self) -> &G::GroupStorage;
 
     /// "Upcast" a group key into a database key.
-    fn database_key(group_key: K) -> Self::DatabaseKey;
+    fn database_key(group_key: G::GroupKey) -> Self::DatabaseKey;
 }
 
 pub trait QueryStorageOps<DB, Q>: Default

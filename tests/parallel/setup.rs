@@ -5,7 +5,7 @@ use salsa::Snapshot;
 use std::cell::Cell;
 use std::sync::Arc;
 
-#[salsa::query_group]
+#[salsa::query_group(Par)]
 pub(crate) trait ParDatabase: Knobs + salsa::ParallelDatabase {
     #[salsa::input]
     fn input(&self, key: char) -> usize;
@@ -184,7 +184,7 @@ fn snapshot_me(db: &impl ParDatabase) {
     db.snapshot();
 }
 
-#[salsa::database(ParDatabase)]
+#[salsa::database(Par)]
 #[derive(Default)]
 pub(crate) struct ParDatabaseImpl {
     runtime: salsa::Runtime<ParDatabaseImpl>,

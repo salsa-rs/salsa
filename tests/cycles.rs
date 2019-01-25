@@ -1,4 +1,4 @@
-#[salsa::database(Database)]
+#[salsa::database(GroupStruct)]
 #[derive(Default)]
 struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,
@@ -10,7 +10,7 @@ impl salsa::Database for DatabaseImpl {
     }
 }
 
-#[salsa::query_group]
+#[salsa::query_group(GroupStruct)]
 trait Database: salsa::Database {
     // `a` and `b` depend on each other and form a cycle
     fn memoized_a(&self) -> ();

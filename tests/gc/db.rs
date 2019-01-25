@@ -1,7 +1,7 @@
 use crate::group;
 use crate::log::{HasLog, Log};
 
-#[salsa::database(group::GcDatabase)]
+#[salsa::database(group::Gc)]
 #[derive(Default)]
 pub(crate) struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,

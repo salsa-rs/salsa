@@ -12,7 +12,7 @@ const N_READER_OPS: usize = 100;
 struct Canceled;
 type Cancelable<T> = Result<T, Canceled>;
 
-#[salsa::query_group]
+#[salsa::query_group(Stress)]
 trait StressDatabase: salsa::Database {
     #[salsa::input]
     fn a(&self, key: usize) -> usize;
@@ -33,7 +33,7 @@ fn c(db: &impl StressDatabase, key: usize) -> Cancelable<usize> {
     db.b(key)
 }
 
-#[salsa::database(StressDatabase)]
+#[salsa::database(Stress)]
 #[derive(Default)]
 struct StressDatabaseImpl {
     runtime: salsa::Runtime<StressDatabaseImpl>,

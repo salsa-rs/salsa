@@ -3,12 +3,12 @@ use heck::CamelCase;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
-use syn::{parse_macro_input, AttributeArgs, FnArg, Ident, ItemTrait, ReturnType, TraitItem};
+use syn::{parse_macro_input, FnArg, Ident, ItemTrait, ReturnType, TraitItem};
 
 /// Implementation for `[salsa::query_group]` decorator.
 pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream {
-    let _args = parse_macro_input!(args as AttributeArgs);
-    let input = parse_macro_input!(input as ItemTrait);
+    let group_struct: Ident = parse_macro_input!(args as Ident);
+    let input: ItemTrait = parse_macro_input!(input as ItemTrait);
     // println!("args: {:#?}", args);
     // println!("input: {:#?}", input);
 
@@ -121,12 +121,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     }
 
     let group_key = Ident::new(
-        &format!("{}GroupKey", trait_name.to_string()),
+        &format!("{}GroupKey__", trait_name.to_string()),
         Span::call_site(),
     );
 
     let group_storage = Ident::new(
-        &format!("{}GroupStorage", trait_name.to_string()),
+        &format!("{}GroupStorage__", trait_name.to_string()),
         Span::call_site(),
     );
 
@@ -235,6 +235,19 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         }
     };
 
+    // Emit the query group struct and impl of `QueryGroup`.
+    output.extend(quote! {
+        /// Representative struct for the query group.
+        #trait_vis struct #group_struct { }
+
+        impl<DB__> salsa::plumbing::QueryGroup<DB__> for #group_struct
+        where DB__: #trait_name
+        {
+            type GroupStorage = #group_storage<DB__>;
+            type GroupKey = #group_key;
+        }
+    });
+
     // Emit an impl of the trait
     output.extend({
         let bounds = &input.supertraits;
@@ -242,7 +255,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             impl<T> #trait_name for T
             where
                 T: #bounds,
-                T: ::salsa::plumbing::HasQueryGroup<#group_storage<T>, #group_key>,
+                T: ::salsa::plumbing::HasQueryGroup<#group_struct>
             {
                 #query_fn_definitions
             }
@@ -277,6 +290,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 type Key = (#(#keys),*);
                 type Value = #value;
                 type Storage = salsa::plumbing::#storage<DB, Self>;
+                type Group = #group_struct;
                 type GroupStorage = #group_storage<DB>;
                 type GroupKey = #group_key;
 
@@ -335,7 +349,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             ) -> bool
             where
                 DB__: #trait_name,
-                DB__: ::salsa::plumbing::HasQueryGroup<#group_storage<DB__>, #group_key>,
+                DB__: ::salsa::plumbing::HasQueryGroup<#group_struct>,
             {
                 match self {
                     #query_descriptor_maybe_change
@@ -361,7 +375,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         impl<DB__> #group_storage<DB__>
         where
             DB__: #trait_name,
-            DB__: ::salsa::plumbing::HasQueryGroup<#group_storage<DB__>, #group_key>,
+            DB__: ::salsa::plumbing::HasQueryGroup<#group_struct>,
         {
             #trait_vis fn for_each_query(
                 &self,

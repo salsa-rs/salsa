@@ -4,14 +4,23 @@ use std::sync::Arc;
 // Step 1. Define the query group
 
 // A **query group** is a collection of queries (both inputs and
-// functions) that are defined in one particular spot. Each query group
-// represents some subset of the full set of queries you will use in your
-// application. Query groups can also depend on one another: so you might
-// have some basic query group A and then another query group B that uses
-// the queries from A and adds a few more. (These relationships must form
-// a DAG at present, but that is due to Rust's restrictions around
-// supertraits, which are likely to be lifted.)
-#[salsa::query_group]
+// functions) that are defined in one particular spot. Each query
+// group is defined by a representative struct (used internally by
+// Salsa) as well as a representative trait. By convention, for a
+// query group `Foo`, the struct is named `Foo` and the trait is named
+// `FooDatabase`. The name `FooDatabase` reflects the fact that the
+// trait is implemented by **the database**, which stores all the data
+// in the system.  Each query group thus represents a subset of the
+// full data.
+//
+// To define a query group, you annotate a trait definition with the
+// `#[salsa::query_group(Foo)]` attribute macro. In addition to the
+// trait definition, the macro will generate a struct with the name
+// `Foo` that you provide, as well as various other bits of glue.
+//
+// Note that one query group can "include" another by listing the
+// trait for that query group as a supertrait.
+#[salsa::query_group(HelloWorld)]
 trait HelloWorldDatabase: salsa::Database {
     // For each query, we give the name, some input keys (here, we
     // have one key, `()`) and the output type `Arc<String>`. We can
@@ -52,15 +61,17 @@ fn length(db: &impl HelloWorldDatabase, (): ()) -> usize {
 // Step 3. Define the database struct
 
 // Define the actual database struct. This struct needs to be
-// annotated with `#[salsa::database(..)]`, which contains a list of
-// query groups that this database supports. This attribute macro will
-// generate the necessary impls so that the database implements all of
-// those traits.
+// annotated with `#[salsa::database(..)]`. The list `..` will be the
+// paths leading to the query group structs for each query group that
+// this database supports. This attribute macro will generate the
+// necessary impls so that the database implements the corresponding
+// traits as well (so, here, `DatabaseStruct` will implement the
+// `HelloWorldDatabase` trait).
 //
 // The database struct can contain basically anything you need, but it
 // must have a `runtime` field as shown, and you must implement the
 // `salsa::Database` trait (as shown below).
-#[salsa::database(HelloWorldDatabase)]
+#[salsa::database(HelloWorld)]
 #[derive(Default)]
 struct DatabaseStruct {
     runtime: salsa::Runtime<DatabaseStruct>,
