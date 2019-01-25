@@ -202,7 +202,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // A variant for the group descriptor below
         query_descriptor_maybe_change.extend(quote! {
             #group_key::#fn_name(key) => {
-                let group_storage: &#group_storage<DB__> = ::salsa::plumbing::GetQueryGroupStorage::from(db);
+                let group_storage: &#group_storage<DB__> = ::salsa::plumbing::HasQueryGroup::group_storage(db);
                 let storage = &group_storage.#fn_name;
 
                 <_ as ::salsa::plumbing::QueryStorageOps<DB__, #qt>>::maybe_changed_since(
@@ -242,8 +242,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             impl<T> #trait_name for T
             where
                 T: #bounds,
-                T: ::salsa::plumbing::GetQueryGroupStorage<#group_storage<T>>,
-                T: ::salsa::plumbing::GetDatabaseKey<#group_key>,
+                T: ::salsa::plumbing::HasQueryGroup<#group_storage<T>, #group_key>,
             {
                 #query_fn_definitions
             }
@@ -336,7 +335,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             ) -> bool
             where
                 DB__: #trait_name,
-                DB__: ::salsa::plumbing::GetQueryGroupStorage<#group_storage<DB__>>,
+                DB__: ::salsa::plumbing::HasQueryGroup<#group_storage<DB__>, #group_key>,
             {
                 match self {
                     #query_descriptor_maybe_change
@@ -362,7 +361,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         impl<DB__> #group_storage<DB__>
         where
             DB__: #trait_name,
-            DB__: ::salsa::plumbing::GetQueryGroupStorage<#group_storage<DB__>>,
+            DB__: ::salsa::plumbing::HasQueryGroup<#group_storage<DB__>, #group_key>,
         {
             #trait_vis fn for_each_query(
                 &self,

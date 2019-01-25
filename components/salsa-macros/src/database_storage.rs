@@ -39,8 +39,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     // For each query group `foo::MyGroup` create a link to its
     // `foo::MyGroupGroupStorage`
     let mut storage_fields = proc_macro2::TokenStream::new();
-    let mut storage_impls = proc_macro2::TokenStream::new();
-    let mut database_key_impls = proc_macro2::TokenStream::new();
+    let mut has_group_impls = proc_macro2::TokenStream::new();
     for (query_group, query_group_name_snake) in query_groups.iter().zip(&query_group_names_snake) {
         let group_name = query_group.name();
         let group_storage = query_group.group_storage();
@@ -49,22 +48,18 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         // rewrite the last identifier (`MyGroup`, above) to
         // (e.g.) `MyGroupGroupStorage`.
         storage_fields.extend(quote! { #query_group_name_snake: #group_storage<#database_name>, });
-        storage_impls.extend(quote! {
-            impl ::salsa::plumbing::GetQueryGroupStorage<#group_storage<#database_name>> for #database_name {
-                fn from(db: &Self) -> &#group_storage<#database_name> {
+        has_group_impls.extend(quote! {
+            impl ::salsa::plumbing::HasQueryGroup<#group_storage<#database_name>, #group_key>
+                for #database_name
+            {
+                fn group_storage(db: &Self) -> &#group_storage<#database_name> {
                     let runtime = ::salsa::Database::salsa_runtime(db);
                     &runtime.storage().#query_group_name_snake
                 }
-            }
-        });
 
-        // rewrite the last identifier (`MyGroup`, above) to
-        // (e.g.) `MyGroupGroupStorage`.
-        database_key_impls.extend(quote! {
-            impl ::salsa::plumbing::GetDatabaseKey<#group_key> for #database_name {
-                fn from(database_key: #group_key) -> __SalsaDatabaseKey {
+                fn database_key(group_key: #group_key) -> __SalsaDatabaseKey {
                     __SalsaDatabaseKey {
-                        kind: __SalsaDatabaseKeyKind::#group_name(database_key),
+                        kind: __SalsaDatabaseKeyKind::#group_name(group_key),
                     }
                 }
             }
@@ -122,7 +117,8 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     for query_group in query_groups {
         let group_storage = query_group.group_storage();
         for_each_ops.extend(quote! {
-            let storage: &#group_storage<#database_name> = ::salsa::plumbing::GetQueryGroupStorage::from(self);
+            let storage: &#group_storage<#database_name> =
+                ::salsa::plumbing::HasQueryGroup::group_storage(self);
             storage.for_each_query(self, &mut op);
         });
     }
@@ -163,8 +159,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     });
 
-    output.extend(storage_impls);
-    output.extend(database_key_impls);
+    output.extend(has_group_impls);
 
     if std::env::var("SALSA_DUMP").is_ok() {
         println!("~~~ database_storage");
