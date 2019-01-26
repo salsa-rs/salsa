@@ -342,6 +342,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     // Emit query group descriptor
     output.extend(quote! {
         #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+        #[allow(non_camel_case_types)]
         #trait_vis enum #group_key {
             #query_descriptor_variants
         }
