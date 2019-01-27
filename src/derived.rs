@@ -4,7 +4,6 @@ use crate::plumbing::DatabaseKey;
 use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::plumbing::UncheckedMutQueryStorageOps;
 use crate::runtime::ChangedAt;
 use crate::runtime::FxIndexSet;
 use crate::runtime::Revision;
@@ -980,31 +979,6 @@ where
                 }
             }
         });
-    }
-}
-
-impl<DB, Q, MP> UncheckedMutQueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
-where
-    Q: QueryFunction<DB>,
-    DB: Database,
-    MP: MemoizationPolicy<DB, Q>,
-{
-    fn set_unchecked(&self, db: &DB, key: &Q::Key, value: Q::Value) {
-        let key = key.clone();
-
-        let mut map_write = self.map.write();
-        let current_revision = db.salsa_runtime().current_revision();
-        map_write.insert(
-            key,
-            QueryState::Memoized(Memo {
-                value: Some(value),
-                changed_at: current_revision,
-                verified_at: current_revision,
-                inputs: MemoInputs::Tracked {
-                    inputs: Default::default(),
-                },
-            }),
-        );
     }
 }
 

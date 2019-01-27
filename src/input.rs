@@ -3,7 +3,6 @@ use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::plumbing::UncheckedMutQueryStorageOps;
 use crate::runtime::ChangedAt;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
@@ -231,26 +230,5 @@ where
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
 
         self.set_common(db, key, database_key, value, IsConstant(true))
-    }
-}
-
-impl<DB, Q> UncheckedMutQueryStorageOps<DB, Q> for InputStorage<DB, Q>
-where
-    Q: Query<DB>,
-    DB: Database,
-{
-    fn set_unchecked(&self, db: &DB, key: &Q::Key, value: Q::Value) {
-        let key = key.clone();
-
-        let mut map_write = self.map.write();
-
-        // Unlike with `set`, here we use the **current revision** and
-        // do not create a new one.
-        let changed_at = ChangedAt {
-            is_constant: false,
-            revision: db.salsa_runtime().current_revision(),
-        };
-
-        map_write.insert(key, StampedValue { value, changed_at });
     }
 }

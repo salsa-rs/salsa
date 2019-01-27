@@ -201,14 +201,3 @@ where
         new_value: Q::Value,
     );
 }
-
-/// An optional trait that is implemented for "user mutable" storage:
-/// that is, storage whose value is not derived from other storage but
-/// is set independently.
-pub trait UncheckedMutQueryStorageOps<DB, Q>: Default
-where
-    DB: Database,
-    Q: Query<DB>,
-{
-    fn set_unchecked(&self, db: &DB, key: &Q::Key, new_value: Q::Value);
-}
