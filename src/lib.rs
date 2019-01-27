@@ -471,28 +471,6 @@ where
         self.storage
             .set_constant(self.db, &key, &self.database_key(&key), value);
     }
-
-    /// Assigns a value to the query **bypassing the normal
-    /// incremental checking** -- this value becomes the value for the
-    /// query in the current revision. This can even be used on
-    /// "derived" queries (so long as their results are memoized).
-    ///
-    /// Note that once `set_unchecked` is used, the result is
-    /// effectively "fixed" for all future revisions. This "mocking"
-    /// system is pretty primitive and subject to revision; see
-    /// [salsa-rs/salsa#34](https://github.com/salsa-rs/salsa/issues/34)
-    /// for more details.
-    ///
-    /// **This is only meant to be used for "mocking" purposes in
-    /// tests** -- when testing a given query, you can use
-    /// `set_unchecked` to assign the values for its various inputs
-    /// and thus control what it sees when it executes.
-    pub fn set_unchecked(&self, key: Q::Key, value: Q::Value)
-    where
-        Q::Storage: plumbing::UncheckedMutQueryStorageOps<DB, Q>,
-    {
-        self.storage.set_unchecked(self.db, &key, value);
-    }
 }
 
 // Re-export the procedural macros.
