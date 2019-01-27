@@ -141,7 +141,7 @@ impl WriteOp {
     fn execute(self, db: &mut StressDatabaseImpl) {
         match self {
             WriteOp::SetA(key, value) => {
-                db.query_mut(AQuery).set(key, value);
+                db.set_a(key, value);
             }
         }
     }
@@ -183,7 +183,7 @@ impl ReadOp {
 fn stress_test() {
     let mut db = StressDatabaseImpl::default();
     for i in 0..10 {
-        db.query_mut(AQuery).set(i, i);
+        db.set_a(i, i);
     }
 
     let mut rng = rand::thread_rng();

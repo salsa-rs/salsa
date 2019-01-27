@@ -1,5 +1,5 @@
-use crate::setup::{InputQuery, Knobs, ParDatabase, ParDatabaseImpl, WithValue};
-use salsa::{Database, ParallelDatabase};
+use crate::setup::{Knobs, ParDatabase, ParDatabaseImpl, WithValue};
+use salsa::ParallelDatabase;
 use std::panic::{self, AssertUnwindSafe};
 
 /// Test where two threads are executing sum. We show that they can
@@ -10,9 +10,9 @@ use std::panic::{self, AssertUnwindSafe};
 fn true_parallel_different_keys() {
     let mut db = ParDatabaseImpl::default();
 
-    db.query_mut(InputQuery).set('a', 100);
-    db.query_mut(InputQuery).set('b', 010);
-    db.query_mut(InputQuery).set('c', 001);
+    db.set_input('a', 100);
+    db.set_input('b', 010);
+    db.set_input('c', 001);
 
     // Thread 1 will signal stage 1 when it enters and wait for stage 2.
     let thread1 = std::thread::spawn({
@@ -50,9 +50,9 @@ fn true_parallel_different_keys() {
 fn true_parallel_same_keys() {
     let mut db = ParDatabaseImpl::default();
 
-    db.query_mut(InputQuery).set('a', 100);
-    db.query_mut(InputQuery).set('b', 010);
-    db.query_mut(InputQuery).set('c', 001);
+    db.set_input('a', 100);
+    db.set_input('b', 010);
+    db.set_input('c', 001);
 
     // Thread 1 will wait_for a barrier in the start of `sum`
     let thread1 = std::thread::spawn({
@@ -91,7 +91,7 @@ fn true_parallel_same_keys() {
 fn true_parallel_propagate_panic() {
     let mut db = ParDatabaseImpl::default();
 
-    db.query_mut(InputQuery).set('a', 1);
+    db.set_input('a', 1);
 
     // `thread1` will wait_for a barrier in the start of `sum`. Once it can
     // continue, it will panic.

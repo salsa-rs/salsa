@@ -1,5 +1,3 @@
-use salsa::Database;
-
 #[salsa::query_group(HelloWorld)]
 trait HelloWorldDatabase: salsa::Database {
     #[salsa::input]
@@ -47,7 +45,7 @@ fn execute() {
     let mut db = DatabaseStruct::default();
 
     // test what happens with inputs:
-    db.query_mut(InputQuery).set((1, 2), 3);
+    db.set_input(1, 2, 3);
     assert_eq!(db.input(1, 2), 3);
 
     assert_eq!(db.none(), 22);
