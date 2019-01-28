@@ -1,5 +1,4 @@
 use crate::implementation::{TestContext, TestContextImpl};
-use salsa::Database;
 
 #[salsa::query_group(MemoizedDepInputs)]
 pub(crate) trait MemoizedDepInputsContext: TestContext {
@@ -32,7 +31,7 @@ fn dep_derived1(db: &impl MemoizedDepInputsContext) -> usize {
 fn revalidate() {
     let db = &mut TestContextImpl::default();
 
-    db.query_mut(DepInput1Query).set((), 0);
+    db.set_dep_input1(0);
 
     // Initial run starts from Memoized2:
     let v = db.dep_memoized2();
@@ -42,19 +41,19 @@ fn revalidate() {
     // After that, we first try to validate Memoized1 but wind up
     // running Memoized2. Note that we don't try to validate
     // Derived1, so it is invoked by Memoized1.
-    db.query_mut(DepInput1Query).set((), 44);
+    db.set_dep_input1(44);
     let v = db.dep_memoized2();
     assert_eq!(v, 44);
     db.assert_log(&["Memoized1 invoked", "Derived1 invoked", "Memoized2 invoked"]);
 
     // Here validation of Memoized1 succeeds so Memoized2 never runs.
-    db.query_mut(DepInput1Query).set((), 45);
+    db.set_dep_input1(45);
     let v = db.dep_memoized2();
     assert_eq!(v, 44);
     db.assert_log(&["Memoized1 invoked", "Derived1 invoked"]);
 
     // Here, a change to input2 doesn't affect us, so nothing runs.
-    db.query_mut(DepInput2Query).set((), 45);
+    db.set_dep_input2(45);
     let v = db.dep_memoized2();
     assert_eq!(v, 44);
     db.assert_log(&[]);

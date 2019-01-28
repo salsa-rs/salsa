@@ -46,7 +46,7 @@ fn should_panic_safely() {
     assert!(result.is_err());
 
     // Set `db.one` to 1 and assert ok
-    db.query_mut(OneQuery).set((), 1);
+    db.set_one(1);
     let result = panic::catch_unwind(AssertUnwindSafe(|| db.panic_safely()));
     assert!(result.is_ok())
 }

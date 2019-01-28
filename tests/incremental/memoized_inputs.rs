@@ -1,5 +1,4 @@
 use crate::implementation::{TestContext, TestContextImpl};
-use salsa::Database;
 
 #[salsa::query_group(MemoizedInputs)]
 pub(crate) trait MemoizedInputsContext: TestContext {
@@ -19,8 +18,8 @@ fn max(db: &impl MemoizedInputsContext) -> usize {
 fn revalidate() {
     let db = &mut TestContextImpl::default();
 
-    db.query_mut(Input1Query).set((), 0);
-    db.query_mut(Input2Query).set((), 0);
+    db.set_input1(0);
+    db.set_input2(0);
 
     let v = db.max();
     assert_eq!(v, 0);
@@ -30,7 +29,7 @@ fn revalidate() {
     assert_eq!(v, 0);
     db.assert_log(&[]);
 
-    db.query_mut(Input1Query).set((), 44);
+    db.set_input1(44);
     db.assert_log(&[]);
 
     let v = db.max();
@@ -41,11 +40,11 @@ fn revalidate() {
     assert_eq!(v, 44);
     db.assert_log(&[]);
 
-    db.query_mut(Input1Query).set((), 44);
+    db.set_input1(44);
     db.assert_log(&[]);
-    db.query_mut(Input2Query).set((), 66);
+    db.set_input2(66);
     db.assert_log(&[]);
-    db.query_mut(Input1Query).set((), 64);
+    db.set_input1(64);
     db.assert_log(&[]);
 
     let v = db.max();
@@ -63,14 +62,14 @@ fn revalidate() {
 fn set_after_no_change() {
     let db = &mut TestContextImpl::default();
 
-    db.query_mut(Input2Query).set((), 0);
+    db.set_input2(0);
 
-    db.query_mut(Input1Query).set((), 44);
+    db.set_input1(44);
     let v = db.max();
     assert_eq!(v, 44);
     db.assert_log(&["Max invoked"]);
 
-    db.query_mut(Input1Query).set((), 44);
+    db.set_input1(44);
     let v = db.max();
     assert_eq!(v, 44);
     db.assert_log(&["Max invoked"]);

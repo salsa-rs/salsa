@@ -1,5 +1,5 @@
-use crate::setup::{InputQuery, ParDatabase, ParDatabaseImpl};
-use salsa::{Database, ParallelDatabase};
+use crate::setup::{ParDatabase, ParDatabaseImpl};
+use salsa::ParallelDatabase;
 
 /// Test two `sum` queries (on distinct keys) executing in different
 /// threads. Really just a test that `snapshot` etc compiles.
@@ -7,12 +7,12 @@ use salsa::{Database, ParallelDatabase};
 fn in_par_two_independent_queries() {
     let mut db = ParDatabaseImpl::default();
 
-    db.query_mut(InputQuery).set('a', 100);
-    db.query_mut(InputQuery).set('b', 010);
-    db.query_mut(InputQuery).set('c', 001);
-    db.query_mut(InputQuery).set('d', 200);
-    db.query_mut(InputQuery).set('e', 020);
-    db.query_mut(InputQuery).set('f', 002);
+    db.set_input('a', 100);
+    db.set_input('b', 010);
+    db.set_input('c', 001);
+    db.set_input('d', 200);
+    db.set_input('e', 020);
+    db.set_input('f', 002);
 
     let thread1 = std::thread::spawn({
         let db = db.snapshot();

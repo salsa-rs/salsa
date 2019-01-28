@@ -103,8 +103,8 @@ fn compute_all() {
         db.set_use_triangular(i, (i % 2) != 0);
     }
 
-    db.query_mut(MinQuery).set((), 0);
-    db.query_mut(MaxQuery).set((), 6);
+    db.set_min(0);
+    db.set_max(6);
 
     db.compute_all();
     db.salsa_runtime().next_revision();
@@ -123,7 +123,7 @@ fn compute_all() {
     }
 
     // Reduce the range to exclude index 5.
-    db.query_mut(MaxQuery).set((), 5);
+    db.set_max(5);
     db.compute_all();
 
     assert_keys! {
