@@ -10,7 +10,7 @@ use crate::runtime::Revision;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
-use crate::{Database, Event, EventKind, SweepStrategy};
+use crate::{Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy};
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::RwLock;
@@ -952,7 +952,8 @@ where
                     true
                 }
 
-                // Otherwise, keep only if it was used in this revision.
+                // Otherwise, drop only value or the whole memo accoring to the
+                // strategy.
                 QueryState::Memoized(memo) => {
                     debug!(
                         "sweep({:?}({:?})): last verified at {:?}, current revision {:?}",
@@ -970,12 +971,18 @@ where
                     // revision, since we are holding the write lock
                     // when we read `revision_now`.
                     assert!(memo.verified_at <= revision_now);
-
-                    if !strategy.keep_values {
-                        memo.value = None;
+                    match strategy.discard_if {
+                        DiscardIf::Never => true,
+                        DiscardIf::Outdated if memo.verified_at == revision_now => true,
+                        DiscardIf::Outdated | DiscardIf::Always => match strategy.discard_what {
+                            DiscardWhat::Nothing => true,
+                            DiscardWhat::Values => {
+                                memo.value = None;
+                                true
+                            }
+                            DiscardWhat::Everything => false,
+                        },
                     }
-
-                    memo.verified_at == revision_now
                 }
             }
         });

@@ -18,7 +18,7 @@ fn one_rev() {
 
     // Everything was used in this revision, so
     // nothing gets collected.
-    db.sweep_all(SweepStrategy::default());
+    db.sweep_all(SweepStrategy::discard_outdated());
     assert_eq!(k.len(), 6);
 }
 
@@ -35,7 +35,7 @@ fn two_rev_nothing() {
 
     // Nothing was used in this revision, so
     // everything gets collected.
-    db.sweep_all(SweepStrategy::default());
+    db.sweep_all(SweepStrategy::discard_outdated());
 
     let k: Vec<_> = db.query(FibonacciQuery).entries();
     assert_eq!(k.len(), 0);
@@ -56,7 +56,7 @@ fn two_rev_one_use() {
 
     // fibonacci is a constant, so it will not be invalidated,
     // hence we keep `fibonacci(5)` but remove 0..=4.
-    db.sweep_all(SweepStrategy::default());
+    db.sweep_all(SweepStrategy::discard_outdated());
 
     assert_keys! {
         db,
@@ -80,7 +80,7 @@ fn two_rev_two_uses() {
 
     // fibonacci is a constant, so it will not be invalidated,
     // hence we keep 3 and 5 but remove the rest.
-    db.sweep_all(SweepStrategy::default());
+    db.sweep_all(SweepStrategy::discard_outdated());
 
     assert_keys! {
         db,

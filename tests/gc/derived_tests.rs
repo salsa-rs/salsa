@@ -25,7 +25,7 @@ fn compute_one() {
 
     // Memoized, but will compute fibonacci(5) again
     db.compute(5);
-    db.sweep_all(SweepStrategy::default());
+    db.sweep_all(SweepStrategy::discard_outdated());
 
     assert_keys! {
         db,
@@ -64,7 +64,7 @@ fn compute_switch() {
         MaxQuery => (),
     }
 
-    db.sweep_all(SweepStrategy::default());
+    db.sweep_all(SweepStrategy::discard_outdated());
 
     // Now we just have `Triangular` and not `Fibonacci`
     assert_keys! {
@@ -80,7 +80,7 @@ fn compute_switch() {
     // Now run `compute` *again* in next revision.
     db.salsa_runtime().next_revision();
     assert_eq!(db.compute(5), 15);
-    db.sweep_all(SweepStrategy::default());
+    db.sweep_all(SweepStrategy::discard_outdated());
 
     // We keep triangular, but just the outermost one.
     assert_keys! {
@@ -109,7 +109,7 @@ fn compute_all() {
     db.compute_all();
     db.salsa_runtime().next_revision();
     db.compute_all();
-    db.sweep_all(SweepStrategy::default());
+    db.sweep_all(SweepStrategy::discard_outdated());
 
     assert_keys! {
         db,
@@ -137,7 +137,7 @@ fn compute_all() {
         MaxQuery => (()),
     }
 
-    db.sweep_all(SweepStrategy::default());
+    db.sweep_all(SweepStrategy::discard_outdated());
 
     // We no longer used `Compute(5)` and `Triangular(5)`; note that
     // `UseTriangularQuery(5)` is not collected, as it is an input.

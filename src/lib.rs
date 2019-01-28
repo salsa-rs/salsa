@@ -204,30 +204,90 @@ impl<DB: Database> fmt::Debug for EventKind<DB> {
     }
 }
 
-/// The sweep strategy controls what data we will keep/discard when we
-/// do a GC-sweep. The default (`SweepStrategy::default`) is to keep
-/// all memoized values used in the current revision.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct SweepStrategy {
-    keep_values: bool,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum DiscardIf {
+    Never,
+    Outdated,
+    Always,
 }
 
-impl SweepStrategy {
-    /// Causes us to discard memoized *values* but keep the
-    /// *dependencies*. This means you will have to recompute the
-    /// results from any queries you execute but does permit you to
-    /// quickly determine if a value is still up to date.
-    pub fn discard_values(self) -> SweepStrategy {
-        SweepStrategy {
-            keep_values: false,
-            ..self
-        }
+impl Default for DiscardIf {
+    fn default() -> DiscardIf {
+        DiscardIf::Never
     }
 }
 
-impl Default for SweepStrategy {
-    fn default() -> Self {
-        SweepStrategy { keep_values: true }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum DiscardWhat {
+    Nothing,
+    Values,
+    Everything,
+}
+
+impl Default for DiscardWhat {
+    fn default() -> DiscardWhat {
+        DiscardWhat::Nothing
+    }
+}
+
+/// The sweep strategy controls what data we will keep/discard when we
+/// do a GC-sweep. The default (`SweepStrategy::default`) is a no-op,
+/// use `SweepStrategy::discard_outdated` constructor or `discard_*`
+/// and `sweep_*` builder functions to construct useful strategies.
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+pub struct SweepStrategy {
+    discard_if: DiscardIf,
+    discard_what: DiscardWhat,
+}
+
+impl SweepStrategy {
+    /// Convenience function that discards all data not used thus far in the
+    /// current revision.
+    ///
+    /// Equivalent to `SweepStrategy::default().discard_everything()`.
+    pub fn discard_outdated() -> SweepStrategy {
+        SweepStrategy::default()
+            .discard_everything()
+            .sweep_outdated()
+    }
+
+    /// Collects query values.
+    ///
+    /// Query dependencies are left in the database, which allows to quickly
+    /// determine if the query is up to date, and avoid recomputing
+    /// dependencies.
+    pub fn discard_values(self) -> SweepStrategy {
+        SweepStrategy {
+            discard_what: self.discard_what.max(DiscardWhat::Values),
+            ..self
+        }
+    }
+
+    /// Collects both values and information about dependencies.
+    ///
+    /// Dependant queries will be recomputed even if all inputs to this query
+    /// stay the same.
+    pub fn discard_everything(self) -> SweepStrategy {
+        SweepStrategy {
+            discard_what: self.discard_what.max(DiscardWhat::Everything),
+            ..self
+        }
+    }
+
+    /// Process all keys, not verefied at the current revision.
+    pub fn sweep_outdated(self) -> SweepStrategy {
+        SweepStrategy {
+            discard_if: self.discard_if.max(DiscardIf::Outdated),
+            ..self
+        }
+    }
+
+    /// Process all keys.
+    pub fn sweep_all_revisions(self) -> SweepStrategy {
+        SweepStrategy {
+            discard_if: self.discard_if.max(DiscardIf::Always),
+            ..self
+        }
     }
 }
 

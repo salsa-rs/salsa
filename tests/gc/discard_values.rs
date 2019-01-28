@@ -19,7 +19,7 @@ fn sweep_default() {
 
     // fibonacci is a constant, so it will not be invalidated,
     // hence we keep 3 and 5 but remove the rest.
-    db.sweep_all(SweepStrategy::default());
+    db.sweep_all(SweepStrategy::discard_outdated());
     assert_keys! {
         db,
         FibonacciQuery => (3, 5),
@@ -31,8 +31,12 @@ fn sweep_default() {
     db.assert_log(&[]);
 
     // Same but we discard values this time.
-    db.sweep_all(SweepStrategy::default().discard_values());
-    db.sweep_all(SweepStrategy::default());
+    db.sweep_all(
+        SweepStrategy::default()
+            .discard_values()
+            .sweep_all_revisions(),
+    );
+    db.sweep_all(SweepStrategy::discard_outdated());
     assert_keys! {
         db,
         FibonacciQuery => (3, 5),
