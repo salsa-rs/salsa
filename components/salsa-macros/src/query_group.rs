@@ -299,7 +299,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 type GroupStorage = #group_storage<DB>;
                 type GroupKey = #group_key;
 
-                fn group_storage(group_storage: &Self::GroupStorage) -> &Self::Storage {
+                fn query_storage(group_storage: &Self::GroupStorage) -> &Self::Storage {
                     &group_storage.#fn_name
                 }
 

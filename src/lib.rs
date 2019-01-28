@@ -422,7 +422,7 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type GroupKey;
 
     /// Extact storage for this query from the storage for its group.
-    fn group_storage(group_storage: &Self::GroupStorage) -> &Self::Storage;
+    fn query_storage(group_storage: &Self::GroupStorage) -> &Self::Storage;
 
     /// Create group key for this query.
     fn group_key(key: Self::Key) -> Self::GroupKey;
