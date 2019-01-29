@@ -948,6 +948,7 @@ where
                 map_write.clear();
                 return;
             },
+            (DiscardIf::Never, _) | (_, DiscardWhat::Nothing) => return,
             _ => {}
         }
         map_write.retain(|key, query_state| {
@@ -980,10 +981,10 @@ where
                     // when we read `revision_now`.
                     assert!(memo.verified_at <= revision_now);
                     match strategy.discard_if {
-                        DiscardIf::Never => true,
+                        DiscardIf::Never => unreachable!(),
                         DiscardIf::Outdated if memo.verified_at == revision_now => true,
                         DiscardIf::Outdated | DiscardIf::Always => match strategy.discard_what {
-                            DiscardWhat::Nothing => true,
+                            DiscardWhat::Nothing => unreachable!(),
                             DiscardWhat::Values => {
                                 memo.value = None;
                                 true
