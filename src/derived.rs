@@ -942,6 +942,15 @@ where
     fn sweep(&self, db: &DB, strategy: SweepStrategy) {
         let mut map_write = self.map.write();
         let revision_now = db.salsa_runtime().current_revision();
+        match (strategy.discard_if, strategy.discard_what) {
+            (DiscardIf::Always, DiscardWhat::Everything) => {
+                debug!("sweep({:?}): clearing the table", Q::default());
+                map_write.clear();
+                return;
+            },
+            (DiscardIf::Never, _) | (_, DiscardWhat::Nothing) => return,
+            _ => {}
+        }
         map_write.retain(|key, query_state| {
             match query_state {
                 // Leave stuff that is currently being computed -- the
@@ -972,10 +981,10 @@ where
                     // when we read `revision_now`.
                     assert!(memo.verified_at <= revision_now);
                     match strategy.discard_if {
-                        DiscardIf::Never => true,
+                        DiscardIf::Never => unreachable!(),
                         DiscardIf::Outdated if memo.verified_at == revision_now => true,
                         DiscardIf::Outdated | DiscardIf::Always => match strategy.discard_what {
-                            DiscardWhat::Nothing => true,
+                            DiscardWhat::Nothing => unreachable!(),
                             DiscardWhat::Values => {
                                 memo.value = None;
                                 true
