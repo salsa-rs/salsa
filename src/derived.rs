@@ -942,6 +942,14 @@ where
     fn sweep(&self, db: &DB, strategy: SweepStrategy) {
         let mut map_write = self.map.write();
         let revision_now = db.salsa_runtime().current_revision();
+        match (strategy.discard_if, strategy.discard_what) {
+            (DiscardIf::Always, DiscardWhat::Everything) => {
+                debug!("sweep({:?}): clearing the table", Q::default());
+                map_write.clear();
+                return;
+            },
+            _ => {}
+        }
         map_write.retain(|key, query_state| {
             match query_state {
                 // Leave stuff that is currently being computed -- the
