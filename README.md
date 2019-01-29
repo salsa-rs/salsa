@@ -50,7 +50,16 @@ To see an example of this in action, check out [the `hello_world`
 example](examples/hello_world/main.rs), which has a number of comments
 explaining how things work.
 
-Salsa requires at least Rust 1.30 (beta at the time of writing).
+## Videos about Salsa
+
+There are also two videos explaining how Salsa works:
+
+- [How Salsa Works](https://youtu.be/_muY4HjSqVw), which gives a
+  high-level introduction to the key concepts involved and shows how
+  to use salsa;
+- [Salsa In More Depth](https://www.youtube.com/watch?v=i_IhACacPRY),
+  which really digs into the incremental algorithm and explains -- at
+  a high-level -- how Salsa is implemented.
 
 ## Getting in touch
 
