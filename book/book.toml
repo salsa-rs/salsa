@@ -1,0 +1,5 @@
+[book]
+authors = ["Niko Matsakis"]
+multilingual = false
+src = "src"
+title = "Salsa"
