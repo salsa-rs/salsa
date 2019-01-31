@@ -1,12 +1,29 @@
 language: rust
+sudo: false
+
 rust:
   - nightly
   - beta
   - stable
+cache:
+  - cargo
 matrix:
   allow_failures:
       - rust: nightly
+before_script:
+  - (test -x $HOME/.cargo/bin/cargo-install-update || cargo install cargo-update)
+  - (test -x $HOME/.cargo/bin/mdbook || cargo install --vers "^0.1" mdbook)
+  - cargo install-update -a
 script:
-- RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 cargo test --all
-- RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 cargo test --tests --all
-- RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 cargo test --examples --all
+  - RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 cargo test --all
+  - RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 cargo test --tests --all
+  - RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 cargo test --examples --all
+  - cd book && mdbook build && mdbook test
+deploy:
+  provider: pages
+  skip-cleanup: true
+  github-token: $GITHUB_TOKEN
+  local-dir: path/to/mybook/book
+  keep-history: false
+  on:
+    branch: master
