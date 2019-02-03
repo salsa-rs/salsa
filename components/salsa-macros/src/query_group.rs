@@ -60,6 +60,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                             storage = QueryStorage::Input;
                             num_storages += 1;
                         }
+                        "interned" => {
+                            storage = QueryStorage::Interned;
+                            num_storages += 1;
+                        }
                         "invoke" => {
                             invoke = Some(parse_macro_input!(tts as Parenthesized<syn::Path>).0);
                         }
@@ -195,6 +199,23 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             });
         }
 
+        // For interned queries, we need `lookup_foo`
+        if let QueryStorage::Interned = query.storage {
+            let lookup_fn_name = Ident::new(&format!("lookup_{}", fn_name), fn_name.span());
+
+            query_fn_declarations.extend(quote! {
+                /// Lookup the value(s) interned with a specific key.
+                fn #lookup_fn_name(&mut self, value: #value) -> (#(#keys),*);
+            });
+
+            query_fn_definitions.extend(quote! {
+                fn #lookup_fn_name(&mut self, value: #value) -> (#(#keys),*) {
+                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self)
+                        .lookup(value)
+                }
+            });
+        }
+
         // A variant for the group descriptor below
         query_descriptor_variants.extend(quote! {
             #fn_name((#(#keys),*)),
@@ -276,6 +297,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 QueryStorage::Volatile => "VolatileStorage",
                 QueryStorage::Dependencies => "DependencyStorage",
                 QueryStorage::Input => "InputStorage",
+                QueryStorage::Interned => "InternedStorage",
             },
             Span::call_site(),
         );
@@ -310,7 +332,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         });
 
         // Implement the QueryFunction trait for all queries except inputs.
-        if query.storage != QueryStorage::Input {
+        if query.storage.needs_query_function() {
             let span = query.fn_name.span();
             let key_names: &Vec<_> = &(0..query.keys.len())
                 .map(|i| Ident::new(&format!("key{}", i), Span::call_site()))
@@ -446,4 +468,14 @@ enum QueryStorage {
     Volatile,
     Dependencies,
     Input,
+    Interned,
+}
+
+impl QueryStorage {
+    fn needs_query_function(self) -> bool {
+        match self {
+            QueryStorage::Input | QueryStorage::Interned => false,
+            QueryStorage::Memoized | QueryStorage::Volatile | QueryStorage::Dependencies => true,
+        }
+    }
 }
