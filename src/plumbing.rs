@@ -1,11 +1,13 @@
 #![allow(missing_docs)]
 
 use crate::debug::TableEntry;
+use crate::CycleError;
 use crate::durability::Durability;
 use crate::Database;
 use crate::Query;
 use crate::QueryTable;
 use crate::QueryTableMut;
+use crate::RuntimeId;
 use crate::SweepStrategy;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -17,7 +19,11 @@ pub use crate::interned::InternedStorage;
 pub use crate::interned::LookupInternedStorage;
 pub use crate::revision::Revision;
 
-pub struct CycleDetected;
+#[derive(Clone, Debug)]
+pub struct CycleDetected {
+    pub(crate) from: RuntimeId,
+    pub(crate) to: RuntimeId,
+}
 
 /// Defines various associated types. An impl of this
 /// should be generated for your query-context type automatically by
@@ -61,6 +67,10 @@ pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {}
 
 pub trait QueryFunction<DB: Database>: Query<DB> {
     fn execute(db: &DB, key: Self::Key) -> Self::Value;
+    fn recover(db: &DB, cycle: &[DB::DatabaseKey], key: &Self::Key) -> Option<Self::Value> {
+        let _ = (db, cycle, key);
+        None
+    }
 }
 
 /// The `GetQueryTable` trait makes the connection the *database type*
@@ -146,7 +156,7 @@ where
     /// Returns `Err` in the event of a cycle, meaning that computing
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected>;
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>>;
 
     /// Returns the durability associated with a given key.
     fn durability(&self, db: &DB, key: &Q::Key) -> Durability;

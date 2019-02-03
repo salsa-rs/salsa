@@ -1,12 +1,12 @@
 use crate::debug::TableEntry;
 use crate::dependency::DatabaseSlot;
 use crate::durability::Durability;
-use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use crate::runtime::StampedValue;
+use crate::CycleError;
 use crate::Database;
 use crate::Event;
 use crate::EventKind;
@@ -74,7 +74,7 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected> {
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.slot(key).unwrap_or_else(|| {
             panic!("no value set for {:?}({:?})", Q::default(), key)
         });
@@ -95,7 +95,7 @@ where
         match self.slot(key) {
             Some(slot) => slot.stamped_value.read().durability,
             None => panic!("no value set for {:?}({:?})", Q::default(), key),
-        }
+    }
     }
 
     fn entries<C>(&self, _db: &DB) -> C
@@ -184,7 +184,7 @@ where
                     let mut slot_stamped_value = entry.get().stamped_value.write();
                     guard.mark_durability_as_changed(slot_stamped_value.durability);
                     *slot_stamped_value = stamped_value;
-                }
+    }
 
                 Entry::Vacant(entry) => {
                     entry.insert(Arc::new(Slot {

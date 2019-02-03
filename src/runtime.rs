@@ -1,15 +1,15 @@
 use crate::dependency::DatabaseSlot;
 use crate::dependency::Dependency;
 use crate::durability::Durability;
+use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
-use crate::{Database, Event, EventKind, SweepStrategy};
+use crate::{CycleError, Database, Event, EventKind, SweepStrategy};
 use log::debug;
-use parking_lot::{Mutex, RwLock};
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
+use parking_lot::{Mutex, RwLock};
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
-use std::fmt::Write;
-use std::hash::BuildHasherDefault;
+use std::hash::{BuildHasherDefault, Hash};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -355,6 +355,7 @@ where
             dependencies,
             changed_at,
             durability,
+            cycle,
             ..
         } = active_query.complete();
 
@@ -363,6 +364,7 @@ where
             durability,
             changed_at,
             dependencies,
+            cycle,
         }
     }
 
@@ -407,30 +409,100 @@ where
     }
 
     /// Obviously, this should be user configurable at some point.
-    pub(crate) fn report_unexpected_cycle(&self, database_key: DB::DatabaseKey) -> ! {
+    pub(crate) fn report_unexpected_cycle(
+        &self,
+        database_key: &DB::DatabaseKey,
+        error: CycleDetected,
+        changed_at: Revision,
+    ) -> crate::CycleError<DB::DatabaseKey> {
         debug!("report_unexpected_cycle(database_key={:?})", database_key);
 
-        let query_stack = self.local_state.borrow_query_stack();
-        let start_index = (0..query_stack.len())
-            .rev()
-            .filter(|&i| query_stack[i].database_key == database_key)
-            .next()
-            .unwrap();
+        let mut query_stack = self.local_state.borrow_query_stack_mut();
 
-        let mut message = format!("Internal error, cycle detected:\n");
-        for active_query in &query_stack[start_index..] {
-            writeln!(message, "- {:?}\n", active_query.database_key).unwrap();
+        if error.from == error.to {
+            // All queries in the cycle is local
+            let start_index = query_stack
+                .iter()
+                .rposition(|active_query| active_query.database_key == *database_key)
+                .unwrap();
+            let mut cycle = Vec::new();
+            let cycle_participants = &mut query_stack[start_index..];
+            for active_query in &mut *cycle_participants {
+                cycle.push(active_query.database_key.clone());
+            }
+
+            assert!(!cycle.is_empty());
+
+            for active_query in cycle_participants {
+                active_query.cycle = cycle.clone();
+            }
+
+            crate::CycleError {
+                cycle,
+                changed_at,
+                durability: Durability::MAX,
+            }
+        } else {
+            // Part of the cycle is on another thread so we need to lock and inspect the shared
+            // state
+            let dependency_graph = self.shared_state.dependency_graph.lock();
+
+            let mut cycle = Vec::new();
+            {
+                let cycle_iter = dependency_graph
+                    .get_cycle_path(
+                        database_key,
+                        error.to,
+                        query_stack.iter().map(|query| &query.database_key),
+                    )
+                    .chain(Some(database_key));
+
+                for key in cycle_iter {
+                    cycle.push(key.clone());
+                }
+            }
+
+            assert!(!cycle.is_empty());
+
+            for active_query in query_stack
+                .iter_mut()
+                .filter(|query| cycle.iter().any(|key| *key == query.database_key))
+            {
+                active_query.cycle = cycle.clone();
+            }
+
+            crate::CycleError {
+                cycle,
+                changed_at,
+                durability: Durability::MAX,
+            }
         }
-        panic!(message)
+    }
+
+    pub(crate) fn mark_cycle_participants(&self, err: &CycleError<DB::DatabaseKey>) {
+        for active_query in self
+            .local_state
+            .borrow_query_stack_mut()
+            .iter_mut()
+            .rev()
+            .take_while(|active_query| err.cycle.iter().any(|e| *e == active_query.database_key))
+        {
+            active_query.cycle = err.cycle.clone();
+        }
     }
 
     /// Try to make this runtime blocked on `other_id`. Returns true
     /// upon success or false if `other_id` is already blocked on us.
     pub(crate) fn try_block_on(&self, database_key: &DB::DatabaseKey, other_id: RuntimeId) -> bool {
-        self.shared_state
-            .dependency_graph
-            .lock()
-            .add_edge(self.id(), database_key, other_id)
+        self.shared_state.dependency_graph.lock().add_edge(
+            self.id(),
+            database_key,
+            other_id,
+            self.local_state
+                .borrow_query_stack()
+                .iter()
+                .map(|query| query.database_key.clone()),
+        )
     }
 
     pub(crate) fn unblock_queries_blocked_on_self(&self, database_key: &DB::DatabaseKey) {
@@ -508,7 +580,7 @@ struct SharedState<DB: Database> {
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
-    dependency_graph: Mutex<DependencyGraph<DB>>,
+    dependency_graph: Mutex<DependencyGraph<DB::DatabaseKey>>,
 }
 
 impl<DB: Database> SharedState<DB> {
@@ -571,6 +643,8 @@ struct ActiveQuery<DB: Database> {
     /// Set of subqueries that were accessed thus far, or `None` if
     /// there was an untracked the read.
     dependencies: Option<FxIndexSet<Dependency<DB>>>,
+
+    cycle: Vec<DB::DatabaseKey>,
 }
 
 pub(crate) struct ComputedQueryResult<DB: Database, V> {
@@ -587,6 +661,9 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
     /// Complete set of subqueries that were accessed, or `None` if
     /// there was an untracked the read.
     pub(crate) dependencies: Option<FxIndexSet<Dependency<DB>>>,
+
+    /// The cycle if one occured while computing this value
+    pub(crate) cycle: Vec<DB::DatabaseKey>,
 }
 
 impl<DB: Database> ActiveQuery<DB> {
@@ -596,6 +673,7 @@ impl<DB: Database> ActiveQuery<DB> {
             durability: max_durability,
             changed_at: Revision::start(),
             dependencies: Some(FxIndexSet::default()),
+            cycle: Vec::new(),
         }
     }
 
@@ -634,16 +712,26 @@ pub(crate) struct StampedValue<V> {
     pub(crate) changed_at: Revision,
 }
 
-struct DependencyGraph<DB: Database> {
+#[derive(Debug)]
+struct Edge<K> {
+    id: RuntimeId,
+    path: Vec<K>,
+}
+
+#[derive(Debug)]
+struct DependencyGraph<K: Hash + Eq> {
     /// A `(K -> V)` pair in this map indicates that the the runtime
     /// `K` is blocked on some query executing in the runtime `V`.
     /// This encodes a graph that must be acyclic (or else deadlock
     /// will result).
-    edges: FxHashMap<RuntimeId, RuntimeId>,
-    labels: FxHashMap<DB::DatabaseKey, SmallVec<[RuntimeId; 4]>>,
+    edges: FxHashMap<RuntimeId, Edge<K>>,
+    labels: FxHashMap<K, SmallVec<[RuntimeId; 4]>>,
 }
 
-impl<DB: Database> Default for DependencyGraph<DB> {
+impl<K> Default for DependencyGraph<K>
+where
+    K: Hash + Eq,
+{
     fn default() -> Self {
         DependencyGraph {
             edges: Default::default(),
@@ -652,13 +740,17 @@ impl<DB: Database> Default for DependencyGraph<DB> {
     }
 }
 
-impl<DB: Database> DependencyGraph<DB> {
+impl<K> DependencyGraph<K>
+where
+    K: Hash + Eq + Clone,
+{
     /// Attempt to add an edge `from_id -> to_id` into the result graph.
     fn add_edge(
         &mut self,
         from_id: RuntimeId,
-        database_key: &DB::DatabaseKey,
+        database_key: &K,
         to_id: RuntimeId,
+        path: impl IntoIterator<Item = K>,
     ) -> bool {
         assert_ne!(from_id, to_id);
         debug_assert!(!self.edges.contains_key(&from_id));
@@ -666,7 +758,7 @@ impl<DB: Database> DependencyGraph<DB> {
         // First: walk the chain of things that `to_id` depends on,
         // looking for us.
         let mut p = to_id;
-        while let Some(&q) = self.edges.get(&p) {
+        while let Some(q) = self.edges.get(&p).map(|edge| edge.id) {
             if q == from_id {
                 return false;
             }
@@ -674,7 +766,13 @@ impl<DB: Database> DependencyGraph<DB> {
             p = q;
         }
 
-        self.edges.insert(from_id, to_id);
+        self.edges.insert(
+            from_id,
+            Edge {
+                id: to_id,
+                path: path.into_iter().chain(Some(database_key.clone())).collect(),
+            },
+        );
         self.labels
             .entry(database_key.clone())
             .or_default()
@@ -682,16 +780,53 @@ impl<DB: Database> DependencyGraph<DB> {
         true
     }
 
-    fn remove_edge(&mut self, database_key: &DB::DatabaseKey, to_id: RuntimeId) {
-        let vec = self
-            .labels
-            .remove(database_key)
-            .unwrap_or_default();
+    fn remove_edge(&mut self, database_key: &K, to_id: RuntimeId) {
+        let vec = self.labels.remove(database_key).unwrap_or_default();
 
         for from_id in &vec {
-            let to_id1 = self.edges.remove(from_id);
+            let to_id1 = self.edges.remove(from_id).map(|edge| edge.id);
             assert_eq!(Some(to_id), to_id1);
         }
+    }
+
+    fn get_cycle_path<'a>(
+        &'a self,
+        database_key: &'a K,
+        to: RuntimeId,
+        local_path: impl IntoIterator<Item = &'a K>,
+    ) -> impl Iterator<Item = &'a K>
+    where
+        K: std::fmt::Debug,
+    {
+        let mut current = Some((to, std::slice::from_ref(database_key)));
+        let mut last = None;
+        let mut local_path = Some(local_path);
+        std::iter::from_fn(move || match current.take() {
+            Some((id, path)) => {
+                let link_key = path.last().unwrap();
+
+                current = self.edges.get(&id).map(|edge| {
+                    let i = edge.path.iter().rposition(|p| p == link_key).unwrap();
+                    (edge.id, &edge.path[i + 1..])
+                });
+
+                if current.is_none() {
+                    last = local_path.take().map(|local_path| {
+                        local_path
+                            .into_iter()
+                            .skip_while(move |p| *p != link_key)
+                            .skip(1)
+                    });
+                }
+
+                Some(path)
+            }
+            None => match &mut last {
+                Some(iter) => iter.next().map(std::slice::from_ref),
+                None => None,
+            },
+        })
+        .flat_map(|x| x)
     }
 }
 
@@ -740,5 +875,44 @@ where
         unsafe {
             self.shared_state.query_lock.raw().unlock_shared();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dependency_graph_path1() {
+        let mut graph = DependencyGraph::default();
+        let a = RuntimeId { counter: 0 };
+        let b = RuntimeId { counter: 1 };
+        assert!(graph.add_edge(a, &2, b, vec![1]));
+        // assert!(graph.add_edge(b, &1, a, vec![3, 2]));
+        assert_eq!(
+            graph
+                .get_cycle_path(&1, a, &[3, 2][..])
+                .cloned()
+                .collect::<Vec<i32>>(),
+            vec![1, 2]
+        );
+    }
+
+    #[test]
+    fn dependency_graph_path2() {
+        let mut graph = DependencyGraph::default();
+        let a = RuntimeId { counter: 0 };
+        let b = RuntimeId { counter: 1 };
+        let c = RuntimeId { counter: 2 };
+        assert!(graph.add_edge(a, &3, b, vec![1]));
+        assert!(graph.add_edge(b, &4, c, vec![2, 3]));
+        // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
+        assert_eq!(
+            graph
+                .get_cycle_path(&1, a, &[5, 6, 4, 7][..])
+                .cloned()
+                .collect::<Vec<i32>>(),
+            vec![1, 3, 4, 7]
+        );
     }
 }

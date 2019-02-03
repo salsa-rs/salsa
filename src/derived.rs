@@ -1,14 +1,13 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::lru::Lru;
-use crate::plumbing::CycleDetected;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::StampedValue;
-use crate::{Database, SweepStrategy};
+use crate::{CycleError, Database, SweepStrategy};
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use std::marker::PhantomData;
@@ -131,7 +130,7 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected> {
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.slot(key);
         let StampedValue {
             value,
