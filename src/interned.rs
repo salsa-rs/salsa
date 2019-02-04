@@ -1,6 +1,6 @@
 use crate::debug::TableEntry;
 use crate::plumbing::CycleDetected;
-use crate::plumbing::InternedQueryStorageOps;
+use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::ChangedAt;
@@ -23,6 +23,25 @@ where
     DB: Database,
 {
     tables: RwLock<InternTables<Q::Key>>,
+}
+
+/// Storage for the looking up interned things.
+pub struct LookupInternedStorage<DB, Q, IQ>
+where
+    Q: Query<DB>,
+    Q::Key: InternKey,
+    Q::Value: Eq + Hash,
+    IQ: Query<
+        DB,
+        Key = Q::Value,
+        Value = Q::Key,
+        Group = Q::Group,
+        GroupStorage = Q::GroupStorage,
+        GroupKey = Q::GroupKey,
+    >,
+    DB: Database,
+{
+    phantom: std::marker::PhantomData<(DB, Q, IQ)>,
 }
 
 struct InternTables<K> {
@@ -129,6 +148,28 @@ where
     fn default() -> Self {
         InternedStorage {
             tables: RwLock::new(InternTables::default()),
+        }
+    }
+}
+
+impl<DB, Q, IQ> Default for LookupInternedStorage<DB, Q, IQ>
+where
+    Q: Query<DB>,
+    Q::Key: InternKey,
+    Q::Value: Eq + Hash,
+    IQ: Query<
+        DB,
+        Key = Q::Value,
+        Value = Q::Key,
+        Group = Q::Group,
+        GroupStorage = Q::GroupStorage,
+        GroupKey = Q::GroupKey,
+    >,
+    DB: Database,
+{
+    fn default() -> Self {
+        LookupInternedStorage {
+            phantom: std::marker::PhantomData,
         }
     }
 }
@@ -301,7 +342,12 @@ where
 
     /// Given an index, lookup and clone its value, updating the
     /// `accessed_at` time if necessary.
-    fn lookup_value(&self, db: &DB, index: u32) -> StampedValue<Q::Key> {
+    fn lookup_value<R>(
+        &self,
+        db: &DB,
+        index: u32,
+        op: impl FnOnce(&Q::Key) -> R,
+    ) -> StampedValue<R> {
         let index = index as usize;
         let revision_now = db.salsa_runtime().current_revision();
 
@@ -315,7 +361,7 @@ where
                 } => {
                     if *accessed_at == revision_now {
                         return StampedValue {
-                            value: value.clone(),
+                            value: op(value),
                             changed_at: ChangedAt {
                                 is_constant: false,
                                 revision: *interned_at,
@@ -338,7 +384,7 @@ where
                 *accessed_at = revision_now;
 
                 return StampedValue {
-                    value: value.clone(),
+                    value: op(value),
                     changed_at: ChangedAt {
                         is_constant: false,
                         revision: *interned_at,
@@ -406,29 +452,6 @@ where
     }
 }
 
-impl<DB, Q> InternedQueryStorageOps<DB, Q> for InternedStorage<DB, Q>
-where
-    Q: Query<DB>,
-    Q::Value: InternKey,
-    DB: Database,
-{
-    fn lookup(&self, db: &DB, value: Q::Value) -> Q::Key {
-        let index: u32 = value.as_u32();
-        let StampedValue {
-            value,
-            changed_at: _,
-        } = self.lookup_value(db, index);
-
-        // XXX -- this setup is wrong, we can't report the read. We
-        // should create a *second* query that is linked to this query
-        // somehow. Or, at least, we need a distinct entry in the
-        // group key so that we can implement the "maybe changed" and
-        // all that stuff.
-
-        value
-    }
-}
-
 impl<DB, Q> QueryStorageMassOps<DB> for InternedStorage<DB, Q>
 where
     Q: Query<DB>,
@@ -467,4 +490,99 @@ where
             !discard
         });
     }
+}
+
+impl<DB, Q, IQ> QueryStorageOps<DB, Q> for LookupInternedStorage<DB, Q, IQ>
+where
+    Q: Query<DB>,
+    Q::Key: InternKey,
+    Q::Value: Eq + Hash,
+    IQ: Query<
+        DB,
+        Key = Q::Value,
+        Value = Q::Key,
+        Storage = InternedStorage<DB, IQ>,
+        Group = Q::Group,
+        GroupStorage = Q::GroupStorage,
+        GroupKey = Q::GroupKey,
+    >,
+    DB: Database + HasQueryGroup<Q::Group>,
+{
+    fn try_fetch(
+        &self,
+        db: &DB,
+        key: &Q::Key,
+        database_key: &DB::DatabaseKey,
+    ) -> Result<Q::Value, CycleDetected> {
+        let index: u32 = key.as_u32();
+
+        let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
+        let interned_storage = IQ::query_storage(group_storage);
+        let StampedValue { value, changed_at } =
+            interned_storage.lookup_value(db, index, Clone::clone);
+
+        db.salsa_runtime()
+            .report_query_read(database_key, changed_at);
+
+        Ok(value)
+    }
+
+    fn maybe_changed_since(
+        &self,
+        db: &DB,
+        revision: Revision,
+        key: &Q::Key,
+        _database_key: &DB::DatabaseKey,
+    ) -> bool {
+        let index: u32 = key.as_u32();
+
+        // FIXME -- This seems maybe not quite right, as it will panic
+        // if `key` has been removed from the map since, but it should
+        // return true in that event.
+
+        let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
+        let interned_storage = IQ::query_storage(group_storage);
+        let StampedValue {
+            value: (),
+            changed_at,
+        } = interned_storage.lookup_value(db, index, |_| ());
+
+        changed_at.changed_since(revision)
+    }
+
+    fn is_constant(&self, _db: &DB, _key: &Q::Key) -> bool {
+        false
+    }
+
+    fn entries<C>(&self, db: &DB) -> C
+    where
+        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
+    {
+        let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
+        let interned_storage = IQ::query_storage(group_storage);
+        let tables = interned_storage.tables.read();
+        tables
+            .map
+            .iter()
+            .map(|(key, index)| TableEntry::new(<Q::Key>::from_u32(index.index), Some(key.clone())))
+            .collect()
+    }
+}
+
+impl<DB, Q, IQ> QueryStorageMassOps<DB> for LookupInternedStorage<DB, Q, IQ>
+where
+    Q: Query<DB>,
+    Q::Key: InternKey,
+    Q::Value: Eq + Hash,
+    IQ: Query<
+        DB,
+        Key = Q::Value,
+        Value = Q::Key,
+        Group = Q::Group,
+        GroupStorage = Q::GroupStorage,
+        GroupKey = Q::GroupKey,
+    >,
+    DB: Database,
+{
+    fn sweep(&self, _db: &DB, _strategy: SweepStrategy) {}
 }

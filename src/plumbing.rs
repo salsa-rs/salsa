@@ -14,6 +14,7 @@ pub use crate::derived::MemoizedStorage;
 pub use crate::derived::VolatileStorage;
 pub use crate::input::InputStorage;
 pub use crate::interned::InternedStorage;
+pub use crate::interned::LookupInternedStorage;
 pub use crate::runtime::Revision;
 
 pub struct CycleDetected;
@@ -182,15 +183,6 @@ where
     fn entries<C>(&self, db: &DB) -> C
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>;
-}
-
-/// An optional trait that is implemented for "interned" storage.
-pub trait InternedQueryStorageOps<DB, Q>: Default
-where
-    DB: Database,
-    Q: Query<DB>,
-{
-    fn lookup(&self, db: &DB, value: Q::Value) -> Q::Key;
 }
 
 /// An optional trait that is implemented for "user mutable" storage:

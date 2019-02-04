@@ -21,7 +21,6 @@ pub mod plumbing;
 
 use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
-use crate::plumbing::InternedQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use derive_new::new;
@@ -463,17 +462,6 @@ where
                     .salsa_runtime()
                     .report_unexpected_cycle(database_key)
             })
-    }
-
-    /// For `#[salsa::interned]` queries only, does a reverse lookup
-    /// from the interned value (which must be some newtype'd integer)
-    /// to get the key that was interned.
-    pub fn lookup(&self, value: Q::Value) -> Q::Key
-    where
-        Q::Storage: plumbing::InternedQueryStorageOps<DB, Q>,
-        Q::Value: InternKey,
-    {
-        self.storage.lookup(self.db, value)
     }
 
     /// Remove all values for this query that have not been used in

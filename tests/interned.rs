@@ -39,7 +39,7 @@ impl salsa::InternKey for InternKey {
 
 #[test]
 fn test_intern1() {
-    let mut db = Database::default();
+    let db = Database::default();
     let foo0 = db.intern1(format!("foo"));
     let bar0 = db.intern1(format!("bar"));
     let foo1 = db.intern1(format!("foo"));
@@ -55,7 +55,7 @@ fn test_intern1() {
 
 #[test]
 fn test_intern2() {
-    let mut db = Database::default();
+    let db = Database::default();
     let foo0 = db.intern2(format!("x"), format!("foo"));
     let bar0 = db.intern2(format!("x"), format!("bar"));
     let foo1 = db.intern2(format!("x"), format!("foo"));
@@ -71,7 +71,7 @@ fn test_intern2() {
 
 #[test]
 fn test_intern_key() {
-    let mut db = Database::default();
+    let db = Database::default();
     let foo0 = db.intern_key(format!("foo"));
     let bar0 = db.intern_key(format!("bar"));
     let foo1 = db.intern_key(format!("foo"));
