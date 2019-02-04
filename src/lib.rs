@@ -409,7 +409,7 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type Value: Clone + Debug;
 
     /// Internal struct storing the values for the query.
-    type Storage: plumbing::QueryStorageOps<DB, Self> + Send + Sync;
+    type Storage: plumbing::QueryStorageOps<DB, Self>;
 
     /// Associate query group struct.
     type Group: plumbing::QueryGroup<
