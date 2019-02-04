@@ -189,7 +189,6 @@ pub trait InternedQueryStorageOps<DB, Q>: Default
 where
     DB: Database,
     Q: Query<DB>,
-    Q::Value: Into<u32>,
 {
     fn lookup(&self, db: &DB, value: Q::Value) -> Q::Key;
 }

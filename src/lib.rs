@@ -28,6 +28,7 @@ use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 
+pub use crate::interned::InternKey;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
 
@@ -470,7 +471,7 @@ where
     pub fn lookup(&self, value: Q::Value) -> Q::Key
     where
         Q::Storage: plumbing::InternedQueryStorageOps<DB, Q>,
-        Q::Value: Into<u32>,
+        Q::Value: InternKey,
     {
         self.storage.lookup(self.db, value)
     }

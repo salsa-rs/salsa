@@ -27,14 +27,12 @@ trait Intern {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct InternKey(u32);
 
-impl From<u32> for InternKey {
-    fn from(v: u32) -> Self {
+impl salsa::InternKey for InternKey {
+    fn from_u32(v: u32) -> Self {
         InternKey(v)
     }
-}
 
-impl Into<u32> for InternKey {
-    fn into(self) -> u32 {
+    fn as_u32(&self) -> u32 {
         self.0
     }
 }

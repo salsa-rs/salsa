@@ -19,8 +19,7 @@ use std::hash::Hash;
 pub struct InternedStorage<DB, Q>
 where
     Q: Query<DB>,
-    Q::Value: From<u32>,
-    Q::Value: Into<u32>,
+    Q::Value: InternKey,
     DB: Database,
 {
     tables: RwLock<InternTables<Q::Key>>,
@@ -37,6 +36,38 @@ struct InternTables<K> {
 
     /// Index of the first free intern-index, if any.
     first_free: Option<InternIndex>,
+}
+
+/// Trait implemented for the "key" that results from a
+/// `#[salsa::intern]` query.  This is basically meant to be a
+/// "newtype"'d `u32`.
+pub trait InternKey {
+    /// Create an instance of the intern-key from a `u32` value.
+    fn from_u32(v: u32) -> Self;
+
+    /// Extract the `u32` with which the intern-key was created.
+    fn as_u32(&self) -> u32;
+}
+
+impl InternKey for u32 {
+    fn from_u32(v: u32) -> Self {
+        v
+    }
+
+    fn as_u32(&self) -> u32 {
+        *self
+    }
+}
+
+impl InternKey for usize {
+    fn from_u32(v: u32) -> Self {
+        v as usize
+    }
+
+    fn as_u32(&self) -> u32 {
+        assert!(*self < (std::u32::MAX as usize));
+        *self as u32
+    }
 }
 
 /// Newtype indicating an index into the intern table.
@@ -83,8 +114,7 @@ where
     Q: Query<DB>,
     DB: Database,
     Q::Key: std::panic::RefUnwindSafe,
-    Q::Value: From<u32>,
-    Q::Value: Into<u32>,
+    Q::Value: InternKey,
     Q::Value: std::panic::RefUnwindSafe,
 {
 }
@@ -93,8 +123,7 @@ impl<DB, Q> Default for InternedStorage<DB, Q>
 where
     Q: Query<DB>,
     Q::Key: Eq + Hash,
-    Q::Value: From<u32>,
-    Q::Value: Into<u32>,
+    Q::Value: InternKey,
     DB: Database,
 {
     fn default() -> Self {
@@ -121,8 +150,7 @@ impl<DB, Q> InternedStorage<DB, Q>
 where
     Q: Query<DB>,
     Q::Key: Eq + Hash + Clone,
-    Q::Value: From<u32>,
-    Q::Value: Into<u32>,
+    Q::Value: InternKey,
     DB: Database,
 {
     fn intern_index(&self, db: &DB, key: &Q::Key) -> StampedValue<InternIndex> {
@@ -326,10 +354,7 @@ where
 impl<DB, Q> QueryStorageOps<DB, Q> for InternedStorage<DB, Q>
 where
     Q: Query<DB>,
-    Q::Key: ToOwned,
-    <Q::Key as ToOwned>::Owned: Eq + Hash + Clone,
-    Q::Value: From<u32>,
-    Q::Value: Into<u32>,
+    Q::Value: InternKey,
     DB: Database,
 {
     fn try_fetch(
@@ -343,7 +368,7 @@ where
         db.salsa_runtime()
             .report_query_read(database_key, changed_at);
 
-        Ok(<Q::Value>::from(value.index))
+        Ok(<Q::Value>::from_u32(value.index))
     }
 
     fn maybe_changed_since(
@@ -374,7 +399,9 @@ where
         tables
             .map
             .iter()
-            .map(|(key, index)| TableEntry::new(key.clone(), Some(<Q::Value>::from(index.index))))
+            .map(|(key, index)| {
+                TableEntry::new(key.clone(), Some(<Q::Value>::from_u32(index.index)))
+            })
             .collect()
     }
 }
@@ -382,14 +409,11 @@ where
 impl<DB, Q> InternedQueryStorageOps<DB, Q> for InternedStorage<DB, Q>
 where
     Q: Query<DB>,
-    Q::Key: ToOwned,
-    <Q::Key as ToOwned>::Owned: Eq + Hash + Clone,
-    Q::Value: From<u32>,
-    Q::Value: Into<u32>,
+    Q::Value: InternKey,
     DB: Database,
 {
     fn lookup(&self, db: &DB, value: Q::Value) -> Q::Key {
-        let index: u32 = value.into();
+        let index: u32 = value.as_u32();
         let StampedValue {
             value,
             changed_at: _,
@@ -408,9 +432,7 @@ where
 impl<DB, Q> QueryStorageMassOps<DB> for InternedStorage<DB, Q>
 where
     Q: Query<DB>,
-    Q::Key: ToOwned,
-    Q::Value: From<u32>,
-    Q::Value: Into<u32>,
+    Q::Value: InternKey,
     DB: Database,
 {
     fn sweep(&self, db: &DB, strategy: SweepStrategy) {
