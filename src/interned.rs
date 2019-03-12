@@ -479,7 +479,7 @@ where
                         );
                     }
                 },
-                DiscardIf::Always => false,
+                DiscardIf::Always => true,
             };
 
             if discard {
