@@ -90,6 +90,9 @@ impl InternKey for usize {
 }
 
 /// Newtype indicating an index into the intern table.
+///
+/// NB. In some cases, `InternIndex` values come directly from the
+/// user and hence they are not 'trusted' to be valid or in-bounds.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 struct InternIndex {
     index: u32,
@@ -103,8 +106,16 @@ impl InternIndex {
 
 impl From<usize> for InternIndex {
     fn from(v: usize) -> Self {
-        assert!(v < (std::u32::MAX as usize));
-        InternIndex { index: v as u32 }
+        InternIndex { index: v.as_u32() }
+    }
+}
+
+impl<T> From<&T> for InternIndex
+where
+    T: InternKey,
+{
+    fn from(v: &T) -> Self {
+        InternIndex { index: v.as_u32() }
     }
 }
 
@@ -345,10 +356,10 @@ where
     fn lookup_value<R>(
         &self,
         db: &DB,
-        index: u32,
+        index: InternIndex,
         op: impl FnOnce(&Q::Key) -> R,
     ) -> StampedValue<R> {
-        let index = index as usize;
+        let index = index.index();
         let revision_now = db.salsa_runtime().current_revision();
 
         {
@@ -514,7 +525,7 @@ where
         key: &Q::Key,
         database_key: &DB::DatabaseKey,
     ) -> Result<Q::Value, CycleDetected> {
-        let index: u32 = key.as_u32();
+        let index = InternIndex::from(key);
 
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(group_storage);
@@ -534,7 +545,7 @@ where
         key: &Q::Key,
         _database_key: &DB::DatabaseKey,
     ) -> bool {
-        let index: u32 = key.as_u32();
+        let index = InternIndex::from(key);
 
         // FIXME -- This seems maybe not quite right, as it will panic
         // if `key` has been removed from the map since, but it should
