@@ -84,7 +84,7 @@ impl InternKey for usize {
     }
 
     fn as_u32(&self) -> u32 {
-        assert!(*self < (std::u32::MAX as usize));
+        assert!(*self <= (std::u32::MAX as usize));
         *self as u32
     }
 }
