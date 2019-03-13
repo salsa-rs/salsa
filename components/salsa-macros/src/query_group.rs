@@ -379,6 +379,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 impl<DB> salsa::plumbing::QueryFunction<DB> for #qt
                 where
                     DB: #trait_name,
+                    DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                     DB: salsa::Database,
                 {
                     fn execute(db: &DB, #key_pattern: <Self as salsa::Query<DB>>::Key)
