@@ -364,6 +364,12 @@ where
 
         {
             let tables = self.tables.read();
+            debug_assert!(
+                index < tables.values.len(),
+                "interned key ``{:?}({})` is out of bounds",
+                Q::default(),
+                index,
+            );
             match &tables.values[index] {
                 InternValue::Present {
                     accessed_at,
@@ -381,7 +387,11 @@ where
                     }
                 }
 
-                InternValue::Free { .. } => panic!("lookup of index {:?} found a free slot", index),
+                InternValue::Free { .. } => panic!(
+                    "interned key `{:?}({})` has been garbage collected",
+                    Q::default(),
+                    index,
+                ),
             }
         }
 
@@ -403,7 +413,11 @@ where
                 };
             }
 
-            InternValue::Free { .. } => panic!("lookup of index {:?} found a free slot", index),
+            InternValue::Free { .. } => panic!(
+                "interned key `{:?}({})` has been garbage collected",
+                Q::default(),
+                index,
+            ),
         }
     }
 }
@@ -547,9 +561,25 @@ where
     ) -> bool {
         let index = InternIndex::from(key);
 
-        // FIXME -- This seems maybe not quite right, as it will panic
-        // if `key` has been removed from the map since, but it should
-        // return true in that event.
+        // NB. This will **panic** if `key` has been removed from the
+        // map, whereas you might expect it to return true in that
+        // event.  But I think this is ok. You have to ask yourself,
+        // where did this (invalid) key K come from? There are two
+        // options:
+        //
+        // ## Some query Q1 obtained the key K by interning a value:
+        //
+        // In that case, Q1 has a prior input that computes K. This
+        // input must be invalid and hence Q1 must be considered to
+        // have changed, so it shouldn't be asking if we have changed.
+        //
+        // ## Some query Q1 was given K as an input:
+        //
+        // In that case, the query Q1 must be invoked (ultimately) by
+        // some query Q2 that computed K. This implies that K must be
+        // the result of *some* valid interning call, and therefore
+        // that it should be a valid key now (and not pointing at a
+        // free slot or out of bounds).
 
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(group_storage);
