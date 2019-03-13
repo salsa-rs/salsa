@@ -846,7 +846,7 @@ where
         let maybe_changed = inputs
             .iter()
             .flat_map(|inputs| inputs.iter())
-            .filter(|input| input.maybe_changed_since(db, revision))
+            .take_while(|input| input.maybe_changed_since(db, revision))
             .inspect(|input| {
                 debug!(
                     "{:?}({:?}): input `{:?}` may have changed",
@@ -947,7 +947,7 @@ where
                 debug!("sweep({:?}): clearing the table", Q::default());
                 map_write.clear();
                 return;
-            },
+            }
             (DiscardIf::Never, _) | (_, DiscardWhat::Nothing) => return,
             _ => {}
         }
@@ -1042,7 +1042,7 @@ where
             MemoInputs::Tracked { inputs } => {
                 let changed_input = inputs
                     .iter()
-                    .filter(|input| input.maybe_changed_since(db, verified_at))
+                    .take_while(|input| input.maybe_changed_since(db, verified_at))
                     .next();
 
                 if let Some(input) = changed_input {
