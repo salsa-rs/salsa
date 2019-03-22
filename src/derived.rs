@@ -942,15 +942,6 @@ where
     fn sweep(&self, db: &DB, strategy: SweepStrategy) {
         let mut map_write = self.map.write();
         let revision_now = db.salsa_runtime().current_revision();
-        match (strategy.discard_if, strategy.discard_what) {
-            (DiscardIf::Always, DiscardWhat::Everything) => {
-                debug!("sweep({:?}): clearing the table", Q::default());
-                map_write.clear();
-                return;
-            }
-            (DiscardIf::Never, _) | (_, DiscardWhat::Nothing) => return,
-            _ => {}
-        }
         map_write.retain(|key, query_state| {
             match query_state {
                 // Leave stuff that is currently being computed -- the
@@ -972,6 +963,19 @@ where
                         revision_now
                     );
 
+                    // Check if this memo read something "untracked"
+                    // -- meaning non-deterministic.  In this case, we
+                    // can only collect "outdated" data that wasn't
+                    // used in the current revision. This is because
+                    // if we collected something from the current
+                    // revision, we might wind up re-executing the
+                    // query later in the revision and getting a
+                    // distinct result.
+                    let is_volatile = match memo.inputs {
+                        MemoInputs::Untracked => true,
+                        _ => false,
+                    };
+
                     // Since we don't acquire a query lock in this
                     // method, it *is* possible for the revision to
                     // change while we are executing. However, it is
@@ -982,7 +986,19 @@ where
                     assert!(memo.verified_at <= revision_now);
                     match strategy.discard_if {
                         DiscardIf::Never => unreachable!(),
+
+                        // If we are only discarding outdated things,
+                        // and this is not outdated, keep it.
                         DiscardIf::Outdated if memo.verified_at == revision_now => true,
+
+                        // As explained on the `is_volatile` variable
+                        // definition, if this is a volatile entry, we
+                        // can't discard it unless it is outdated.
+                        DiscardIf::Always if is_volatile && memo.verified_at == revision_now => {
+                            true
+                        }
+
+                        // Otherwise, we can discard -- discard whatever the user requested.
                         DiscardIf::Outdated | DiscardIf::Always => match strategy.discard_what {
                             DiscardWhat::Nothing => unreachable!(),
                             DiscardWhat::Values => {

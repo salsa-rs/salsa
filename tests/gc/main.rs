@@ -16,3 +16,4 @@ mod group;
 mod interned;
 mod log;
 mod shallow_constant_tests;
+mod volatile_tests;

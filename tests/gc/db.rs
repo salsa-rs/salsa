@@ -1,8 +1,9 @@
 use crate::group;
 use crate::interned;
 use crate::log::{HasLog, Log};
+use crate::volatile_tests;
 
-#[salsa::database(group::Gc, interned::Intern)]
+#[salsa::database(group::Gc, interned::Intern, volatile_tests::Volatile)]
 #[derive(Default)]
 pub(crate) struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,
