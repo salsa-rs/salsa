@@ -494,7 +494,20 @@ where
         map.retain(|key, intern_index| {
             let discard = match strategy.discard_if {
                 DiscardIf::Never => false,
-                DiscardIf::Outdated => match values[intern_index.index()] {
+
+                // NB: Interned keys *never* discard keys unless they
+                // are outdated, regardless of the sweep strategy. This is
+                // because interned queries are not deterministic;
+                // if we were to remove a value from the current revision,
+                // and the query were later executed again, it would not necessarily
+                // produce the same intern key the second time. This would wreak
+                // havoc. See the test `discard_during_same_revision` for an example.
+                //
+                // Keys that have not (yet) been accessed during this
+                // revision don't have this problem. Anything
+                // dependent on them would regard itself as dirty if
+                // they are removed and also be forced to re-execute.
+                DiscardIf::Always | DiscardIf::Outdated => match values[intern_index.index()] {
                     InternValue::Present { accessed_at, .. } => accessed_at < revision_now,
 
                     InternValue::Free { .. } => {
@@ -504,7 +517,6 @@ where
                         );
                     }
                 },
-                DiscardIf::Always => true,
             };
 
             if discard {
