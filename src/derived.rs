@@ -846,7 +846,7 @@ where
         let maybe_changed = inputs
             .iter()
             .flat_map(|inputs| inputs.iter())
-            .take_while(|input| input.maybe_changed_since(db, revision))
+            .filter(|input| input.maybe_changed_since(db, revision))
             .inspect(|input| {
                 debug!(
                     "{:?}({:?}): input `{:?}` may have changed",
@@ -1042,7 +1042,7 @@ where
             MemoInputs::Tracked { inputs } => {
                 let changed_input = inputs
                     .iter()
-                    .take_while(|input| input.maybe_changed_since(db, verified_at))
+                    .filter(|input| input.maybe_changed_since(db, verified_at))
                     .next();
 
                 if let Some(input) = changed_input {
