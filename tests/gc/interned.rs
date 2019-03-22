@@ -105,4 +105,8 @@ fn discard_outdated() {
     assert_ne!(foo_from_rev0, foo_from_rev1);
     assert_ne!(foo_from_rev1, bar_from_rev1);
     assert_ne!(foo_from_rev1, baz_from_rev1);
+
+    assert_eq!(db.lookup_intern_str(foo_from_rev1), "foo");
+    assert_eq!(db.lookup_intern_str(bar_from_rev1), "bar");
+    assert_eq!(db.lookup_intern_str(baz_from_rev1), "baz");
 }
