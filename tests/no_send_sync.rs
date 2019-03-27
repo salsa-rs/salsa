@@ -3,19 +3,21 @@ extern crate salsa;
 
 use std::rc::Rc;
 
-// #[derive(Clone, PartialEq, Eq, Debug)]
-// struct Dummy;
-
-#[salsa::query_group(NoSendStorage)]
-trait NoSendDatabase: salsa::Database {
-    fn query(&self, key: ()) -> Rc<bool>;
+#[salsa::query_group(NoSendSyncStorage)]
+trait NoSendSyncDatabase: salsa::Database {
+    fn no_send_sync_value(&self, key: bool) -> Rc<bool>;
+    fn no_send_sync_key(&self, key: Rc<bool>) -> bool;
 }
 
-fn query(db: &impl NoSendDatabase, (): ()) -> Rc<bool> {
-    Rc::new(true)
+fn no_send_sync_value(db: &impl NoSendSyncDatabase, key: bool) -> Rc<bool> {
+    Rc::new(key)
 }
 
-#[salsa::database(NoSendStorage)]
+fn no_send_sync_key(db: &impl NoSendSyncDatabase, key: Rc<bool>) -> bool {
+    *key
+}
+
+#[salsa::database(NoSendSyncStorage)]
 #[derive(Default)]
 struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,
@@ -31,5 +33,6 @@ impl salsa::Database for DatabaseImpl {
 fn no_send_sync() {
     let mut db = DatabaseImpl::default();
 
-    db.query(());
+    assert_eq!(db.no_send_sync_value(true), Rc::new(true));
+    assert_eq!(db.no_send_sync_key(Rc::new(false)), false);
 }
