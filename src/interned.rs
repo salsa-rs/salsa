@@ -41,7 +41,7 @@ where
     >,
     DB: Database,
 {
-    phantom: std::marker::PhantomData<(DB, Q, IQ)>,
+    phantom: std::marker::PhantomData<(Q::Key, IQ)>,
 }
 
 struct InternTables<K> {
