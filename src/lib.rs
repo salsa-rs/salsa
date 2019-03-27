@@ -10,6 +10,7 @@
 
 mod derived;
 mod input;
+mod interned;
 mod runtime;
 
 pub mod debug;
@@ -26,6 +27,7 @@ use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 
+pub use crate::interned::InternKey;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
 
@@ -406,7 +408,7 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type Value: Clone + Debug;
 
     /// Internal struct storing the values for the query.
-    type Storage: plumbing::QueryStorageOps<DB, Self> + Send + Sync;
+    type Storage: plumbing::QueryStorageOps<DB, Self>;
 
     /// Associate query group struct.
     type Group: plumbing::QueryGroup<

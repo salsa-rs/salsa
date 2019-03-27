@@ -13,5 +13,7 @@ mod db;
 mod derived_tests;
 mod discard_values;
 mod group;
+mod interned;
 mod log;
 mod shallow_constant_tests;
+mod volatile_tests;

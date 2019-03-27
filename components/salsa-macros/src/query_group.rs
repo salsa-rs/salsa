@@ -3,7 +3,7 @@ use heck::CamelCase;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
-use syn::{parse_macro_input, FnArg, Ident, ItemTrait, ReturnType, TraitItem};
+use syn::{parse_macro_input, parse_quote, FnArg, Ident, ItemTrait, ReturnType, TraitItem, Type};
 
 /// Implementation for `[salsa::query_group]` decorator.
 pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -60,6 +60,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                             storage = QueryStorage::Input;
                             num_storages += 1;
                         }
+                        "interned" => {
+                            storage = QueryStorage::Interned;
+                            num_storages += 1;
+                        }
                         "invoke" => {
                             invoke = Some(parse_macro_input!(tts as Parenthesized<syn::Path>).0);
                         }
@@ -106,15 +110,56 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     ),
                 };
 
+                // For `#[salsa::interned]` keys, we create a "lookup key" automatically.
+                //
+                // For a query like:
+                //
+                //     fn foo(&self, x: Key1, y: Key2) -> u32
+                //
+                // we would create
+                //
+                //     fn lookup_foo(&self, x: u32) -> (Key1, Key2)
+                let lookup_query = if let QueryStorage::Interned = storage {
+                    let lookup_query_type = Ident::new(
+                        &format!(
+                            "{}LookupQuery",
+                            method.sig.ident.to_string().to_camel_case()
+                        ),
+                        Span::call_site(),
+                    );
+                    let lookup_fn_name = Ident::new(
+                        &format!("lookup_{}", method.sig.ident.to_string()),
+                        method.sig.ident.span(),
+                    );
+                    let keys = &keys;
+                    let lookup_value: Type = parse_quote!((#(#keys),*));
+                    let lookup_keys = vec![value.clone()];
+                    Some(Query {
+                        query_type: lookup_query_type,
+                        fn_name: lookup_fn_name,
+                        attrs: vec![], // FIXME -- some automatically generated docs on this method?
+                        storage: QueryStorage::InternedLookup {
+                            intern_query_type: query_type.clone(),
+                        },
+                        keys: lookup_keys,
+                        value: lookup_value,
+                        invoke: None,
+                    })
+                } else {
+                    None
+                };
+
                 queries.push(Query {
                     query_type,
-                    fn_name: method.sig.ident.clone(),
+                    fn_name: method.sig.ident,
                     attrs,
                     storage,
                     keys,
                     value,
                     invoke,
                 });
+
+                queries.extend(lookup_query);
             }
             _ => (),
         }
@@ -245,6 +290,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         impl<DB__> salsa::plumbing::QueryGroup<DB__> for #group_struct
         where
             DB__: #trait_name,
+            DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
             type GroupStorage = #group_storage<DB__>;
@@ -270,15 +316,19 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     for query in &queries {
         let fn_name = &query.fn_name;
         let qt = &query.query_type;
-        let storage = Ident::new(
-            match query.storage {
-                QueryStorage::Memoized => "MemoizedStorage",
-                QueryStorage::Volatile => "VolatileStorage",
-                QueryStorage::Dependencies => "DependencyStorage",
-                QueryStorage::Input => "InputStorage",
-            },
-            Span::call_site(),
-        );
+
+        let db = quote! {DB};
+
+        let storage = match &query.storage {
+            QueryStorage::Memoized => quote!(salsa::plumbing::MemoizedStorage<#db, Self>),
+            QueryStorage::Volatile => quote!(salsa::plumbing::VolatileStorage<#db, Self>),
+            QueryStorage::Dependencies => quote!(salsa::plumbing::DependencyStorage<#db, Self>),
+            QueryStorage::Input => quote!(salsa::plumbing::InputStorage<#db, Self>),
+            QueryStorage::Interned => quote!(salsa::plumbing::InternedStorage<#db, Self>),
+            QueryStorage::InternedLookup { intern_query_type } => {
+                quote!(salsa::plumbing::LookupInternedStorage<#db, Self, #intern_query_type>)
+            }
+        };
         let keys = &query.keys;
         let value = &query.value;
 
@@ -287,16 +337,17 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             #[derive(Default, Debug)]
             #trait_vis struct #qt;
 
-            impl<DB> salsa::Query<DB> for #qt
+            impl<#db> salsa::Query<#db> for #qt
             where
                 DB: #trait_name,
+                DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                 DB: salsa::Database,
             {
                 type Key = (#(#keys),*);
                 type Value = #value;
-                type Storage = salsa::plumbing::#storage<DB, Self>;
+                type Storage = #storage;
                 type Group = #group_struct;
-                type GroupStorage = #group_storage<DB>;
+                type GroupStorage = #group_storage<#db>;
                 type GroupKey = #group_key;
 
                 fn query_storage(group_storage: &Self::GroupStorage) -> &Self::Storage {
@@ -309,8 +360,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             }
         });
 
-        // Implement the QueryFunction trait for all queries except inputs.
-        if query.storage != QueryStorage::Input {
+        // Implement the QueryFunction trait for queries which need it.
+        if query.storage.needs_query_function() {
             let span = query.fn_name.span();
             let key_names: &Vec<_> = &(0..query.keys.len())
                 .map(|i| Ident::new(&format!("key{}", i), Span::call_site()))
@@ -328,6 +379,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 impl<DB> salsa::plumbing::QueryFunction<DB> for #qt
                 where
                     DB: #trait_name,
+                    DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                     DB: salsa::Database,
                 {
                     fn execute(db: &DB, #key_pattern: <Self as salsa::Query<DB>>::Key)
@@ -379,6 +431,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         #trait_vis struct #group_storage<DB__>
         where
             DB__: #trait_name,
+            DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
             #storage_fields
@@ -387,6 +440,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         impl<DB__> Default for #group_storage<DB__>
         where
             DB__: #trait_name,
+            DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
             #[inline]
@@ -440,10 +494,23 @@ struct Query {
     invoke: Option<syn::Path>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum QueryStorage {
     Memoized,
     Volatile,
     Dependencies,
     Input,
+    Interned,
+    InternedLookup { intern_query_type: Ident },
+}
+
+impl QueryStorage {
+    fn needs_query_function(&self) -> bool {
+        match self {
+            QueryStorage::Input | QueryStorage::Interned | QueryStorage::InternedLookup { .. } => {
+                false
+            }
+            QueryStorage::Memoized | QueryStorage::Volatile | QueryStorage::Dependencies => true,
+        }
+    }
 }

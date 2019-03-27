@@ -15,5 +15,5 @@ proc-macro = true
 heck = "0.3"
 proc-macro2 = "0.4"
 quote = "0.6"
-syn = { version = "0.15", features = ["full", "extra-traits"] }
+syn = { version = "0.15.29", features = ["full", "extra-traits"] }
 
