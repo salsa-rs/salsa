@@ -3,6 +3,7 @@ use crate::plumbing::CycleDetected;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
+use crate::raw_id::RawId;
 use crate::runtime::ChangedAt;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
@@ -46,7 +47,7 @@ where
 
 struct InternTables<K> {
     /// Map from the key to the corresponding intern-index.
-    map: FxHashMap<K, InternIndex>,
+    map: FxHashMap<K, RawId>,
 
     /// For each valid intern-index, stores the interned value. When
     /// an interned value is GC'd, the entry is set to
@@ -54,7 +55,7 @@ struct InternTables<K> {
     values: Vec<InternValue<K>>,
 
     /// Index of the first free intern-index, if any.
-    first_free: Option<InternIndex>,
+    first_free: Option<RawId>,
 }
 
 /// Trait implemented for the "key" that results from a
@@ -62,60 +63,19 @@ struct InternTables<K> {
 /// "newtype"'d `u32`.
 pub trait InternKey {
     /// Create an instance of the intern-key from a `u32` value.
-    fn from_u32(v: u32) -> Self;
+    fn from_raw_id(v: RawId) -> Self;
 
     /// Extract the `u32` with which the intern-key was created.
-    fn as_u32(&self) -> u32;
+    fn as_raw_id(&self) -> RawId;
 }
 
-impl InternKey for u32 {
-    fn from_u32(v: u32) -> Self {
+impl InternKey for RawId {
+    fn from_raw_id(v: RawId) -> RawId {
         v
     }
 
-    fn as_u32(&self) -> u32 {
+    fn as_raw_id(&self) -> RawId {
         *self
-    }
-}
-
-impl InternKey for usize {
-    fn from_u32(v: u32) -> Self {
-        v as usize
-    }
-
-    fn as_u32(&self) -> u32 {
-        assert!(*self <= (std::u32::MAX as usize));
-        *self as u32
-    }
-}
-
-/// Newtype indicating an index into the intern table.
-///
-/// NB. In some cases, `InternIndex` values come directly from the
-/// user and hence they are not 'trusted' to be valid or in-bounds.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-struct InternIndex {
-    index: u32,
-}
-
-impl InternIndex {
-    fn index(self) -> usize {
-        self.index as usize
-    }
-}
-
-impl From<usize> for InternIndex {
-    fn from(v: usize) -> Self {
-        InternIndex { index: v.as_u32() }
-    }
-}
-
-impl<T> From<&T> for InternIndex
-where
-    T: InternKey,
-{
-    fn from(v: &T) -> Self {
-        InternIndex { index: v.as_u32() }
     }
 }
 
@@ -136,7 +96,7 @@ enum InternValue<K> {
     },
 
     /// Free-list -- the index is the next
-    Free { next: Option<InternIndex> },
+    Free { next: Option<RawId> },
 }
 
 impl<DB, Q> std::panic::RefUnwindSafe for InternedStorage<DB, Q>
@@ -205,7 +165,7 @@ where
     Q::Value: InternKey,
     DB: Database,
 {
-    fn intern_index(&self, db: &DB, key: &Q::Key) -> StampedValue<InternIndex> {
+    fn intern_index(&self, db: &DB, key: &Q::Key) -> StampedValue<RawId> {
         if let Some(i) = self.intern_check(db, key) {
             return i;
         }
@@ -222,7 +182,7 @@ where
                 // Somebody inserted this key while we were waiting
                 // for the write lock.
                 let index = *entry.get();
-                match &tables.values[index.index()] {
+                match &tables.values[index.as_usize()] {
                     InternValue::Present {
                         value,
                         interned_at,
@@ -248,7 +208,7 @@ where
 
         let index = match tables.first_free {
             None => {
-                let index = InternIndex::from(tables.values.len());
+                let index = RawId::from(tables.values.len());
                 tables.values.push(InternValue::Present {
                     value: owned_key2,
                     interned_at: revision_now,
@@ -258,7 +218,7 @@ where
             }
 
             Some(i) => {
-                let next_free = match &tables.values[i.index()] {
+                let next_free = match &tables.values[i.as_usize()] {
                     InternValue::Free { next } => *next,
                     InternValue::Present { value, .. } => {
                         panic!(
@@ -268,7 +228,7 @@ where
                     }
                 };
 
-                tables.values[i.index()] = InternValue::Present {
+                tables.values[i.as_usize()] = InternValue::Present {
                     value: owned_key2,
                     interned_at: revision_now,
                     accessed_at: revision_now,
@@ -289,14 +249,14 @@ where
         }
     }
 
-    fn intern_check(&self, db: &DB, key: &Q::Key) -> Option<StampedValue<InternIndex>> {
+    fn intern_check(&self, db: &DB, key: &Q::Key) -> Option<StampedValue<RawId>> {
         let revision_now = db.salsa_runtime().current_revision();
 
         // First,
         {
             let tables = self.tables.read();
             let &index = tables.map.get(key)?;
-            match &tables.values[index.index()] {
+            match &tables.values[index.as_usize()] {
                 InternValue::Present {
                     interned_at,
                     accessed_at,
@@ -325,7 +285,7 @@ where
         // Next,
         let mut tables = self.tables.write();
         let &index = tables.map.get(key)?;
-        match &mut tables.values[index.index()] {
+        match &mut tables.values[index.as_usize()] {
             InternValue::Present {
                 interned_at,
                 accessed_at,
@@ -356,10 +316,10 @@ where
     fn lookup_value<R>(
         &self,
         db: &DB,
-        index: InternIndex,
+        index: RawId,
         op: impl FnOnce(&Q::Key) -> R,
     ) -> StampedValue<R> {
-        let index = index.index();
+        let index = index.as_usize();
         let revision_now = db.salsa_runtime().current_revision();
 
         {
@@ -439,7 +399,7 @@ where
         db.salsa_runtime()
             .report_query_read(database_key, changed_at);
 
-        Ok(<Q::Value>::from_u32(value.index))
+        Ok(<Q::Value>::from_raw_id(value))
     }
 
     fn maybe_changed_since(
@@ -470,9 +430,7 @@ where
         tables
             .map
             .iter()
-            .map(|(key, index)| {
-                TableEntry::new(key.clone(), Some(<Q::Value>::from_u32(index.index)))
-            })
+            .map(|(key, index)| TableEntry::new(key.clone(), Some(<Q::Value>::from_raw_id(*index))))
             .collect()
     }
 }
@@ -507,7 +465,7 @@ where
                 // revision don't have this problem. Anything
                 // dependent on them would regard itself as dirty if
                 // they are removed and also be forced to re-execute.
-                DiscardIf::Always | DiscardIf::Outdated => match values[intern_index.index()] {
+                DiscardIf::Always | DiscardIf::Outdated => match values[intern_index.as_usize()] {
                     InternValue::Present { accessed_at, .. } => accessed_at < revision_now,
 
                     InternValue::Free { .. } => {
@@ -520,7 +478,7 @@ where
             };
 
             if discard {
-                values[intern_index.index()] = InternValue::Free { next: *first_free };
+                values[intern_index.as_usize()] = InternValue::Free { next: *first_free };
                 *first_free = Some(*intern_index);
             }
 
@@ -551,7 +509,7 @@ where
         key: &Q::Key,
         database_key: &DB::DatabaseKey,
     ) -> Result<Q::Value, CycleDetected> {
-        let index = InternIndex::from(key);
+        let index = key.as_raw_id();
 
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(group_storage);
@@ -571,7 +529,7 @@ where
         key: &Q::Key,
         _database_key: &DB::DatabaseKey,
     ) -> bool {
-        let index = InternIndex::from(key);
+        let index = key.as_raw_id();
 
         // NB. This will **panic** if `key` has been removed from the
         // map, whereas you might expect it to return true in that
@@ -617,7 +575,7 @@ where
         tables
             .map
             .iter()
-            .map(|(key, index)| TableEntry::new(<Q::Key>::from_u32(index.index), Some(key.clone())))
+            .map(|(key, index)| TableEntry::new(<Q::Key>::from_raw_id(*index), Some(key.clone())))
             .collect()
     }
 }

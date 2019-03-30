@@ -1,5 +1,7 @@
 //! Test that you can implement a query using a `dyn Trait` setup.
 
+use salsa::RawId;
+
 #[salsa::database(InternStorage)]
 #[derive(Default)]
 struct Database {
@@ -23,24 +25,24 @@ impl salsa::ParallelDatabase for Database {
 #[salsa::query_group(InternStorage)]
 trait Intern {
     #[salsa::interned]
-    fn intern1(&self, x: String) -> u32;
+    fn intern1(&self, x: String) -> RawId;
 
     #[salsa::interned]
-    fn intern2(&self, x: String, y: String) -> u32;
+    fn intern2(&self, x: String, y: String) -> RawId;
 
     #[salsa::interned]
     fn intern_key(&self, x: String) -> InternKey;
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct InternKey(u32);
+pub struct InternKey(RawId);
 
 impl salsa::InternKey for InternKey {
-    fn from_u32(v: u32) -> Self {
+    fn from_raw_id(v: RawId) -> Self {
         InternKey(v)
     }
 
-    fn as_u32(&self) -> u32 {
+    fn as_raw_id(&self) -> RawId {
         self.0
     }
 }

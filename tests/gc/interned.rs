@@ -1,5 +1,5 @@
 use crate::db;
-use salsa::{Database, SweepStrategy};
+use salsa::{Database, RawId, SweepStrategy};
 
 /// Query group for tests for how interned keys interact with GC.
 #[salsa::query_group(Intern)]
@@ -10,20 +10,20 @@ pub(crate) trait InternDatabase {
 
     /// Underlying interning query.
     #[salsa::interned]
-    fn intern_str(&self, x: &'static str) -> u32;
+    fn intern_str(&self, x: &'static str) -> RawId;
 
     /// This just executes the intern query and returns the result.
-    fn repeat_intern1(&self, x: &'static str) -> u32;
+    fn repeat_intern1(&self, x: &'static str) -> RawId;
 
     /// Same as `repeat_intern1`. =)
-    fn repeat_intern2(&self, x: &'static str) -> u32;
+    fn repeat_intern2(&self, x: &'static str) -> RawId;
 }
 
-fn repeat_intern1(db: &impl InternDatabase, x: &'static str) -> u32 {
+fn repeat_intern1(db: &impl InternDatabase, x: &'static str) -> RawId {
     db.intern_str(x)
 }
 
-fn repeat_intern2(db: &impl InternDatabase, x: &'static str) -> u32 {
+fn repeat_intern2(db: &impl InternDatabase, x: &'static str) -> RawId {
     db.intern_str(x)
 }
 
