@@ -1,8 +1,9 @@
 use std::fmt;
 
-/// The "raw-id" is used for interned keys in salsa. Typically, it is
-/// wrapped in a type of your own devising. For more information about
-/// interned keys, see [the interned key RFC][rfc].
+/// The "raw-id" is used for interned keys in salsa -- it is basically
+/// a newtype'd integer. Typically, it is wrapped in a type of your
+/// own devising. For more information about interned keys, see [the
+/// interned key RFC][rfc].
 ///
 /// # Creating a `RawId`
 //
@@ -11,15 +12,28 @@ use std::fmt;
 ///
 /// ```
 /// # use salsa::RawId;
-/// let raw_id = RawId::from(22_u32);
+/// let raw_id1 = RawId::from(22_u32);
+/// let raw_id2 = RawId::from(22_usize);
+/// assert_eq!(raw_id1, raw_id2);
 /// ```
 ///
-/// You can then convert back to a `u32` like so:
+/// # Converting to a usize
+///
+/// Normally, there should be no need to access the underlying integer
+/// in a `RawId`. But if you do need to do so, you can convert to a
+/// `usize` using the `as_usize` method or the `From` impl.
 ///
 /// ```
 /// # use salsa::RawId;
-/// # let raw_id = RawId::from(22_u32);
-/// let value = u32::from(raw_id);
+/// let raw_id = RawId::from(22_u32);
+/// let value = raw_id.as_usize();
+/// assert_eq!(value, 22);
+/// ```
+///
+/// ```
+/// # use salsa::RawId;
+/// let raw_id = RawId::from(22_u32);
+/// let value = usize::from(raw_id);
 /// assert_eq!(value, 22);
 /// ```
 ///
@@ -53,20 +67,9 @@ impl RawId {
         RawId { value }
     }
 
-    /// Convert this raw-id into a u32 value.
-    pub fn as_u32(self) -> u32 {
-        self.value
-    }
-
     /// Convert this raw-id into a usize value.
     pub fn as_usize(self) -> usize {
         self.value as usize
-    }
-}
-
-impl From<RawId> for u32 {
-    fn from(raw: RawId) -> u32 {
-        raw.value
     }
 }
 
