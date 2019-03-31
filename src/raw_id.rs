@@ -1,4 +1,5 @@
 use std::fmt;
+use std::num::NonZeroU32;
 
 /// The "raw-id" is used for interned keys in salsa -- it is basically
 /// a newtype'd integer. Typically, it is wrapped in a type of your
@@ -54,7 +55,7 @@ use std::fmt;
 /// [rfc]: https://github.com/salsa-rs/salsa-rfcs/pull/2
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RawId {
-    value: u32,
+    value: NonZeroU32,
 }
 
 impl RawId {
@@ -62,20 +63,24 @@ impl RawId {
     /// releases without affecting semver.
     pub const MAX: u32 = 0xFFFF_FF00;
 
+    /// Creates a new RawId. Unsafe as `value` must be less than `MAX`
+    /// and this is not checked in release builds.
     unsafe fn new_unchecked(value: u32) -> Self {
         debug_assert!(value < RawId::MAX);
-        RawId { value }
+        RawId {
+            value: NonZeroU32::new_unchecked(value + 1),
+        }
     }
 
     /// Convert this raw-id into a usize value.
     pub fn as_usize(self) -> usize {
-        self.value as usize
+        (self.value.get() - 1) as usize
     }
 }
 
 impl From<RawId> for usize {
     fn from(raw: RawId) -> usize {
-        raw.value as usize
+        raw.as_usize()
     }
 }
 
@@ -95,12 +100,12 @@ impl From<usize> for RawId {
 
 impl fmt::Debug for RawId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.value.fmt(f)
+        self.as_usize().fmt(f)
     }
 }
 
 impl fmt::Display for RawId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.value.fmt(f)
+        self.as_usize().fmt(f)
     }
 }
