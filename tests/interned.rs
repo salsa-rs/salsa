@@ -1,6 +1,6 @@
 //! Test that you can implement a query using a `dyn Trait` setup.
 
-use salsa::RawId;
+use salsa::InternId;
 
 #[salsa::database(InternStorage)]
 #[derive(Default)]
@@ -25,24 +25,24 @@ impl salsa::ParallelDatabase for Database {
 #[salsa::query_group(InternStorage)]
 trait Intern {
     #[salsa::interned]
-    fn intern1(&self, x: String) -> RawId;
+    fn intern1(&self, x: String) -> InternId;
 
     #[salsa::interned]
-    fn intern2(&self, x: String, y: String) -> RawId;
+    fn intern2(&self, x: String, y: String) -> InternId;
 
     #[salsa::interned]
     fn intern_key(&self, x: String) -> InternKey;
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct InternKey(RawId);
+pub struct InternKey(InternId);
 
 impl salsa::InternKey for InternKey {
-    fn from_raw_id(v: RawId) -> Self {
+    fn from_intern_id(v: InternId) -> Self {
         InternKey(v)
     }
 
-    fn as_raw_id(&self) -> RawId {
+    fn as_intern_id(&self) -> InternId {
         self.0
     }
 }
