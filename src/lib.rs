@@ -10,8 +10,8 @@
 
 mod derived;
 mod input;
+mod intern_id;
 mod interned;
-mod raw_id;
 mod runtime;
 
 pub mod debug;
@@ -28,8 +28,8 @@ use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 
+pub use crate::intern_id::InternId;
 pub use crate::interned::InternKey;
-pub use crate::raw_id::RawId;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
 

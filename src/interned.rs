@@ -1,9 +1,9 @@
 use crate::debug::TableEntry;
+use crate::intern_id::InternId;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::raw_id::RawId;
 use crate::runtime::ChangedAt;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
@@ -47,7 +47,7 @@ where
 
 struct InternTables<K> {
     /// Map from the key to the corresponding intern-index.
-    map: FxHashMap<K, RawId>,
+    map: FxHashMap<K, InternId>,
 
     /// For each valid intern-index, stores the interned value. When
     /// an interned value is GC'd, the entry is set to
@@ -55,7 +55,7 @@ struct InternTables<K> {
     values: Vec<InternValue<K>>,
 
     /// Index of the first free intern-index, if any.
-    first_free: Option<RawId>,
+    first_free: Option<InternId>,
 }
 
 /// Trait implemented for the "key" that results from a
@@ -63,18 +63,18 @@ struct InternTables<K> {
 /// "newtype"'d `u32`.
 pub trait InternKey {
     /// Create an instance of the intern-key from a `u32` value.
-    fn from_raw_id(v: RawId) -> Self;
+    fn from_intern_id(v: InternId) -> Self;
 
     /// Extract the `u32` with which the intern-key was created.
-    fn as_raw_id(&self) -> RawId;
+    fn as_intern_id(&self) -> InternId;
 }
 
-impl InternKey for RawId {
-    fn from_raw_id(v: RawId) -> RawId {
+impl InternKey for InternId {
+    fn from_intern_id(v: InternId) -> InternId {
         v
     }
 
-    fn as_raw_id(&self) -> RawId {
+    fn as_intern_id(&self) -> InternId {
         *self
     }
 }
@@ -96,7 +96,7 @@ enum InternValue<K> {
     },
 
     /// Free-list -- the index is the next
-    Free { next: Option<RawId> },
+    Free { next: Option<InternId> },
 }
 
 impl<DB, Q> std::panic::RefUnwindSafe for InternedStorage<DB, Q>
@@ -165,7 +165,7 @@ where
     Q::Value: InternKey,
     DB: Database,
 {
-    fn intern_index(&self, db: &DB, key: &Q::Key) -> StampedValue<RawId> {
+    fn intern_index(&self, db: &DB, key: &Q::Key) -> StampedValue<InternId> {
         if let Some(i) = self.intern_check(db, key) {
             return i;
         }
@@ -208,7 +208,7 @@ where
 
         let index = match tables.first_free {
             None => {
-                let index = RawId::from(tables.values.len());
+                let index = InternId::from(tables.values.len());
                 tables.values.push(InternValue::Present {
                     value: owned_key2,
                     interned_at: revision_now,
@@ -249,7 +249,7 @@ where
         }
     }
 
-    fn intern_check(&self, db: &DB, key: &Q::Key) -> Option<StampedValue<RawId>> {
+    fn intern_check(&self, db: &DB, key: &Q::Key) -> Option<StampedValue<InternId>> {
         let revision_now = db.salsa_runtime().current_revision();
 
         // First,
@@ -316,7 +316,7 @@ where
     fn lookup_value<R>(
         &self,
         db: &DB,
-        index: RawId,
+        index: InternId,
         op: impl FnOnce(&Q::Key) -> R,
     ) -> StampedValue<R> {
         let index = index.as_usize();
@@ -399,7 +399,7 @@ where
         db.salsa_runtime()
             .report_query_read(database_key, changed_at);
 
-        Ok(<Q::Value>::from_raw_id(value))
+        Ok(<Q::Value>::from_intern_id(value))
     }
 
     fn maybe_changed_since(
@@ -430,7 +430,9 @@ where
         tables
             .map
             .iter()
-            .map(|(key, index)| TableEntry::new(key.clone(), Some(<Q::Value>::from_raw_id(*index))))
+            .map(|(key, index)| {
+                TableEntry::new(key.clone(), Some(<Q::Value>::from_intern_id(*index)))
+            })
             .collect()
     }
 }
@@ -509,7 +511,7 @@ where
         key: &Q::Key,
         database_key: &DB::DatabaseKey,
     ) -> Result<Q::Value, CycleDetected> {
-        let index = key.as_raw_id();
+        let index = key.as_intern_id();
 
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(group_storage);
@@ -529,7 +531,7 @@ where
         key: &Q::Key,
         _database_key: &DB::DatabaseKey,
     ) -> bool {
-        let index = key.as_raw_id();
+        let index = key.as_intern_id();
 
         // NB. This will **panic** if `key` has been removed from the
         // map, whereas you might expect it to return true in that
@@ -575,7 +577,9 @@ where
         tables
             .map
             .iter()
-            .map(|(key, index)| TableEntry::new(<Q::Key>::from_raw_id(*index), Some(key.clone())))
+            .map(|(key, index)| {
+                TableEntry::new(<Q::Key>::from_intern_id(*index), Some(key.clone()))
+            })
             .collect()
     }
 }
