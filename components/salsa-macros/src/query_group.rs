@@ -208,24 +208,33 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let set_constant_fn_name =
                 Ident::new(&format!("set_constant_{}", fn_name), fn_name.span());
 
+            let set_fn_docs = format!("
+                Set the value of the `{fn_name}` input.
+
+                See `{fn_name}` for details.
+
+                *Note:* Setting values will trigger cancellation
+                of any ongoing queries; this method blocks until
+                those queries have been cancelled.
+            ", fn_name = fn_name);
+
+            let set_constant_fn_docs = format!("
+                Set the value of the `{fn_name}` input and promise
+                that its value will never change again.
+
+                See `{fn_name}` for details.
+
+                *Note:* Setting values will trigger cancellation
+                of any ongoing queries; this method blocks until
+                those queries have been cancelled.
+            ", fn_name = fn_name);
+
             query_fn_declarations.extend(quote! {
-                /// Set the value of the `#fn_name` input.
-                ///
-                /// See [`#fn_name()`][] for details.
-                ///
-                /// *Note:* Setting values will trigger cancellation
-                /// of any ongoing queries; this method blocks until
-                /// those queries have been cancelled.
+                # [doc = #set_fn_docs]
                 fn #set_fn_name(&mut self, #(#key_names: #keys,)* value__: #value);
 
-                /// Set the value of the `#fn_name` input and promise
-                /// that its value will never change again.
-                ///
-                /// See [`#fn_name()`][] for details.
-                ///
-                /// *Note:* Setting values will trigger cancellation
-                /// of any ongoing queries; this method blocks until
-                /// those queries have been cancelled.
+
+                # [doc = #set_constant_fn_docs]
                 fn #set_constant_fn_name(&mut self, #(#key_names: #keys,)* value__: #value);
             });
 
