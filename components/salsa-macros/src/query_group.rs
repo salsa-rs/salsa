@@ -87,7 +87,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 match iter.next() {
                     Some(FnArg::SelfRef(sr)) if sr.mutability.is_none() => (),
                     _ => panic!(
-                        "first argument of query `{}` must be `&self` or `&mut self`",
+                        "first argument of query `{}` must be `&self`",
                         method.sig.ident
                     ),
                 }
