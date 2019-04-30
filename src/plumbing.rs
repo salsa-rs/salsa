@@ -1,6 +1,7 @@
 #![allow(missing_docs)]
 
 use crate::debug::TableEntry;
+use crate::BoxFutureLocal;
 use crate::durability::Durability;
 use crate::CycleError;
 use crate::Database;
@@ -9,6 +10,7 @@ use crate::QueryTable;
 use crate::QueryTableMut;
 use crate::RuntimeId;
 use crate::SweepStrategy;
+use futures::prelude::*;
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -66,7 +68,7 @@ pub trait QueryStorageMassOps<DB: Database> {
 pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {}
 
 pub trait QueryFunction<DB: Database>: Query<DB> {
-    fn execute(db: &DB, key: Self::Key) -> Self::Value;
+    fn execute<'a>(db: &'a DB, key: Self::Key) -> BoxFutureLocal<'a, Self::Value>;
     fn recover(db: &DB, cycle: &[DB::DatabaseKey], key: &Self::Key) -> Option<Self::Value> {
         let _ = (db, cycle, key);
         None
@@ -197,4 +199,31 @@ where
     Q: Query<DB>,
 {
     fn invalidate(&self, db: &mut DB, key: &Q::Key);
+}
+
+/// Calls a future synchronously without an actual way to resume to future.
+pub(crate) fn sync_future<F>(mut f: F) -> F::Output
+where
+    F: Future,
+{
+    use std::{pin::Pin, ptr};
+
+    use futures::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+
+    unsafe {
+        let waker = Waker::from_raw(RawWaker::new(
+            ptr::null(),
+            &RawWakerVTable::new(
+                |_| panic!("Sync context"),
+                |_| panic!("Sync context"),
+                |_| panic!("Sync context"),
+                |_| (),
+            ),
+        ));
+        let mut context = Context::from_waker(&waker);
+        match Pin::new_unchecked(&mut f).poll(&mut context) {
+            Poll::Ready(x) => x,
+            Poll::Pending => unreachable!(),
+        }
+    }
 }

@@ -1,5 +1,6 @@
 #![warn(rust_2018_idioms)]
 #![warn(missing_docs)]
+#![feature(async_await, await_macro)]
 
 //! The salsa crate is a crate for incremental recomputation.  It
 //! permits you to define a "database" of queries with both inputs and
@@ -34,11 +35,15 @@ use std::fmt::{self, Debug};
 use std::hash::Hash;
 use std::sync::Arc;
 
+pub use futures;
+
 pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
 pub use crate::interned::InternKey;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
+
+pub type BoxFutureLocal<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + 'a>>;
 
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query

@@ -176,7 +176,7 @@ where
     #[inline]
     pub(crate) fn current_revision(&self) -> Revision {
         self.shared_state.revisions[0].load()
-    }
+        }
 
     /// The revision in which values with durability `d` may have last
     /// changed.  For D0, this is just the current revision. But for
@@ -194,7 +194,7 @@ where
     #[inline]
     fn pending_revision(&self) -> Revision {
         self.shared_state.pending_revision.load()
-    }
+        }
 
     /// Check if the current revision is canceled. If this method ever
     /// returns true, the currently executing query is also marked as
@@ -329,12 +329,15 @@ where
         self.revision_guard.is_none() && !self.local_state.query_in_progress()
     }
 
-    pub(crate) fn execute_query_implementation<V>(
-        &self,
-        db: &DB,
-        database_key: &DB::DatabaseKey,
+    pub(crate) async fn execute_query_implementation<'a, V>(
+        &'a self,
+        db: &'a DB,
+        database_key: &'a DB::DatabaseKey,
         execute: impl FnOnce() -> V,
-    ) -> ComputedQueryResult<DB, V> {
+    ) -> ComputedQueryResult<DB, V::Output>
+    where
+        V: Future,
+    {
         debug!("{:?}: execute_query_implementation invoked", database_key);
 
         db.salsa_event(|| Event {
@@ -349,7 +352,7 @@ where
         let active_query = self.local_state.push_query(database_key, max_durability);
 
         // Execute user's code, accumulating inputs etc.
-        let value = execute();
+        let value = await!(execute());
 
         // Extract accumulated inputs.
         let ActiveQuery {
@@ -432,7 +435,7 @@ where
             let start_index = query_stack
                 .iter()
                 .rposition(|active_query| active_query.database_key == *database_key)
-                .unwrap();
+            .unwrap();
             let mut cycle = Vec::new();
             let cycle_participants = &mut query_stack[start_index..];
             for active_query in &mut *cycle_participants {
@@ -443,13 +446,13 @@ where
 
             for active_query in cycle_participants {
                 active_query.cycle = cycle.clone();
-            }
+        }
 
             crate::CycleError {
                 cycle,
                 changed_at,
                 durability: Durability::MAX,
-            }
+    }
         } else {
             // Part of the cycle is on another thread so we need to lock and inspect the shared
             // state
@@ -614,7 +617,7 @@ where
 impl<DB: Database> Default for SharedState<DB> {
     fn default() -> Self {
         Self::with_durabilities(Durability::LEN)
-    }
+        }
 }
 
 impl<DB> std::fmt::Debug for SharedState<DB>
@@ -718,8 +721,9 @@ pub struct RuntimeId {
     counter: u64,
 }
 
+#[doc(hidden)]
 #[derive(Clone, Debug)]
-pub(crate) struct StampedValue<V> {
+pub struct StampedValue<V> {
     pub(crate) value: V,
     pub(crate) durability: Durability,
     pub(crate) changed_at: Revision,

@@ -10,6 +10,7 @@ readme = "README.md"
 
 [dependencies]
 crossbeam = "0.7.1"
+futures-preview = "0.3.0-alpha.15"
 indexmap = "1.0.1"
 log = "0.4.5"
 parking_lot = "0.10.0"

@@ -212,8 +212,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // just inline the definition
         if let QueryStorage::Transparent = query.storage {
             let invoke = query.invoke_tt();
-            query_fn_definitions.extend(quote! {
-                fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
+        query_fn_definitions.extend(quote! {
+            fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
                     #invoke(self, #(#key_names),*)
                 }
             });
@@ -435,9 +435,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                     DB: salsa::Database,
                 {
-                    fn execute(db: &DB, #key_pattern: <Self as salsa::Query<DB>>::Key)
-                        -> <Self as salsa::Query<DB>>::Value {
-                        #invoke(db, #(#key_names),*)
+                    fn execute<'a>(db: &'a DB, #key_pattern: <Self as salsa::Query<DB>>::Key)
+                        -> salsa::BoxFutureLocal<'a, <Self as salsa::Query<DB>>::Value> {
+                        Box::pin(salsa::futures::future::ready(#invoke(db, #(#key_names),*)))
                     }
 
                     #recover
@@ -597,6 +597,6 @@ impl QueryStorage {
             | QueryStorage::InternedLookup { .. }
             | QueryStorage::Transparent => false,
             QueryStorage::Memoized | QueryStorage::Dependencies => true,
+            }
         }
-    }
 }
