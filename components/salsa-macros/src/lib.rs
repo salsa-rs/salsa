@@ -1,6 +1,6 @@
 //! This crate provides salsa's macros and attributes.
 
-#![recursion_limit = "128"]
+#![recursion_limit = "256"]
 
 extern crate proc_macro;
 extern crate proc_macro2;

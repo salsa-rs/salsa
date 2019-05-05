@@ -3,11 +3,19 @@ use heck::CamelCase;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
-use syn::{parse_macro_input, parse_quote, FnArg, Ident, ItemTrait, ReturnType, TraitItem, Type};
+use syn::parse::{Parse, ParseStream};
+use syn::punctuated::Punctuated;
+use syn::{
+    parse_macro_input, parse_quote, FnArg, Ident, ItemTrait, Lit, MetaNameValue, Path, TypeParamBound,
+    ReturnType, Token, TraitItem, Type, TraitBound, TraitBoundModifier
+};
 
 /// Implementation for `[salsa::query_group]` decorator.
 pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream {
-    let group_struct: Ident = parse_macro_input!(args as Ident);
+    let GroupDef {
+        group_struct,
+        requires,
+    } = parse_macro_input!(args as GroupDef);
     let input: ItemTrait = parse_macro_input!(input as ItemTrait);
     // println!("args: {:#?}", args);
     // println!("input: {:#?}", input);
@@ -314,7 +322,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         impl<DB__> salsa::plumbing::QueryGroup<DB__> for #group_struct
         where
-            DB__: #trait_name,
+            DB__: #trait_name + #requires,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
@@ -325,7 +333,15 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     // Emit an impl of the trait
     output.extend({
-        let bounds = &input.supertraits;
+        let mut bounds = input.supertraits.clone();
+        for path in requires.clone() {
+            bounds.push(TypeParamBound::Trait(TraitBound {
+                paren_token: None,
+                modifier: TraitBoundModifier::None,
+                lifetimes: None,
+                path,
+            }));
+        }
         quote! {
             impl<T> #trait_name for T
             where
@@ -365,7 +381,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             impl<#db> salsa::Query<#db> for #qt
             where
-                DB: #trait_name,
+                DB: #trait_name + #requires,
                 DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                 DB: salsa::Database,
             {
@@ -401,7 +417,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             output.extend(quote_spanned! {span=>
                 impl<DB> salsa::plumbing::QueryFunction<DB> for #qt
                 where
-                    DB: #trait_name,
+                    DB: #trait_name + #requires,
                     DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                     DB: salsa::Database,
                 {
@@ -430,7 +446,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 revision: salsa::plumbing::Revision,
             ) -> bool
             where
-                DB__: #trait_name,
+                DB__: #trait_name + #requires,
                 DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             {
                 match self {
@@ -456,7 +472,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     output.extend(quote! {
         #trait_vis struct #group_storage<DB__>
         where
-            DB__: #trait_name,
+            DB__: #trait_name + #requires,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
@@ -465,7 +481,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         impl<DB__> Default for #group_storage<DB__>
         where
-            DB__: #trait_name,
+            DB__: #trait_name + #requires,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
@@ -479,7 +495,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         impl<DB__> #group_storage<DB__>
         where
-            DB__: #trait_name,
+            DB__: #trait_name + #requires,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
         {
             #trait_vis fn for_each_query(
@@ -507,6 +523,37 @@ fn is_not_salsa_attr_path(path: &syn::Path) -> bool {
         .map(|s| s.value().ident != "salsa")
         .unwrap_or(true)
         || path.segments.len() != 2
+}
+
+#[derive(Debug)]
+struct GroupDef {
+    group_struct: Ident,
+    requires: Punctuated<Path, Token![+]>,
+}
+
+impl Parse for GroupDef {
+    fn parse(input: ParseStream) -> syn::Result<GroupDef> {
+        let res = GroupDef {
+            group_struct: input.parse()?,
+            requires: {
+                if input.lookahead1().peek(Token![,]) {
+                    input.parse::<Token![,]>()?;
+                    let name_value: MetaNameValue = input.parse()?;
+                    if name_value.ident != "requires" {
+                        return Err(syn::Error::new_spanned(name_value, "invalid attribute"));
+                    }
+                    let str_lit = match name_value.lit {
+                        Lit::Str(it) => it,
+                        _ => return Err(syn::Error::new_spanned(name_value, "invalid attribute")),
+                    };
+                    str_lit.parse_with(Punctuated::<Path, Token![+]>::parse_separated_nonempty)?
+                } else {
+                    Punctuated::new()
+                }
+            },
+        };
+        Ok(res)
+    }
 }
 
 #[derive(Debug)]
