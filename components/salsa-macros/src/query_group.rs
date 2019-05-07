@@ -35,7 +35,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     // Leave non-salsa attributes untouched. These are
                     // attributes that don't start with `salsa::` or don't have
                     // exactly two segments in their path.
-                    if is_salsa_attr_path(&attr.path) {
+                    if is_not_salsa_attr_path(&attr.path) {
                         attrs.push(attr);
                         continue;
                     }
@@ -69,6 +69,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                         }
                         "query_type" => {
                             query_type = parse_macro_input!(tts as Parenthesized<Ident>).0;
+                        }
+                        "transparent" => {
+                            storage = QueryStorage::Transparent;
+                            num_storages += 1;
                         }
                         _ => panic!("unknown salsa attribute `{}`", name),
                     }
@@ -195,6 +199,18 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             #(#attrs)*
             fn #fn_name(&self, #(#key_names: #keys),*) -> #value;
         });
+
+        // Special case: transparent queries don't create actual storage,
+        // just inline the definition
+        if let QueryStorage::Transparent = query.storage {
+            let invoke = query.invoke_tt();
+            query_fn_definitions.extend(quote! {
+                fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
+                    #invoke(self, #(#key_names),*)
+                }
+            });
+            continue;
+        }
 
         query_fn_definitions.extend(quote! {
             fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
@@ -337,6 +353,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             QueryStorage::InternedLookup { intern_query_type } => {
                 quote!(salsa::plumbing::LookupInternedStorage<#db, Self, #intern_query_type>)
             }
+            QueryStorage::Transparent => continue,
         };
         let keys = &query.keys;
         let value = &query.value;
@@ -380,10 +397,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             } else {
                 quote! { (#(#key_names),*) }
             };
-            let invoke = match &query.invoke {
-                Some(i) => i.into_token_stream(),
-                None => query.fn_name.clone().into_token_stream(),
-            };
+            let invoke = query.invoke_tt();
             output.extend(quote_spanned! {span=>
                 impl<DB> salsa::plumbing::QueryFunction<DB> for #qt
                 where
@@ -427,7 +441,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     });
 
     let mut for_each_ops = proc_macro2::TokenStream::new();
-    for Query { fn_name, .. } in &queries {
+    for Query { fn_name, .. } in queries
+        .iter()
+        .filter(|q| q.storage != QueryStorage::Transparent)
+    {
         for_each_ops.extend(quote! {
             op(&self.#fn_name);
         });
@@ -484,7 +501,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     output.into()
 }
 
-fn is_salsa_attr_path(path: &syn::Path) -> bool {
+fn is_not_salsa_attr_path(path: &syn::Path) -> bool {
     path.segments
         .first()
         .map(|s| s.value().ident != "salsa")
@@ -503,6 +520,15 @@ struct Query {
     invoke: Option<syn::Path>,
 }
 
+impl Query {
+    fn invoke_tt(&self) -> proc_macro2::TokenStream {
+        match &self.invoke {
+            Some(i) => i.into_token_stream(),
+            None => self.fn_name.clone().into_token_stream(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum QueryStorage {
     Memoized,
@@ -511,14 +537,16 @@ enum QueryStorage {
     Input,
     Interned,
     InternedLookup { intern_query_type: Ident },
+    Transparent,
 }
 
 impl QueryStorage {
     fn needs_query_function(&self) -> bool {
         match self {
-            QueryStorage::Input | QueryStorage::Interned | QueryStorage::InternedLookup { .. } => {
-                false
-            }
+            | QueryStorage::Input
+            | QueryStorage::Interned
+            | QueryStorage::InternedLookup { .. }
+            | QueryStorage::Transparent => false,
             QueryStorage::Memoized | QueryStorage::Volatile | QueryStorage::Dependencies => true,
         }
     }
