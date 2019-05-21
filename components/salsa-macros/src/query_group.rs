@@ -1,3 +1,5 @@
+use std::convert::TryFrom;
+
 use crate::parenthesized::Parenthesized;
 use heck::CamelCase;
 use proc_macro::TokenStream;
@@ -6,8 +8,8 @@ use quote::ToTokens;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{
-    parse_macro_input, parse_quote, FnArg, Ident, ItemTrait, Lit, MetaNameValue, Path, TypeParamBound,
-    ReturnType, Token, TraitItem, Type, TraitBound, TraitBoundModifier
+    parse_macro_input, parse_quote, Attribute, FnArg, Ident, ItemTrait, Lit, MetaNameValue, Path,
+    ReturnType, Token, TraitBound, TraitBoundModifier, TraitItem, Type, TypeParamBound,
 };
 
 /// Implementation for `[salsa::query_group]` decorator.
@@ -38,19 +40,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 let mut num_storages = 0;
 
                 // Extract attributes.
-                let mut attrs = vec![];
-                for attr in method.attrs {
-                    // Leave non-salsa attributes untouched. These are
-                    // attributes that don't start with `salsa::` or don't have
-                    // exactly two segments in their path.
-                    if is_not_salsa_attr_path(&attr.path) {
-                        attrs.push(attr);
-                        continue;
-                    }
-
-                    // Keep the salsa attributes around.
-                    let name = attr.path.segments[1].ident.to_string();
-                    let tts = attr.tts.into();
+                let (attrs, salsa_attrs) = filter_attrs(method.attrs);
+                for SalsaAttr { name, tts } in salsa_attrs {
                     match name.as_str() {
                         "memoized" => {
                             storage = QueryStorage::Memoized;
@@ -517,12 +508,46 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     output.into()
 }
 
+struct SalsaAttr {
+    name: String,
+    tts: TokenStream,
+}
+
+impl TryFrom<syn::Attribute> for SalsaAttr {
+    type Error = syn::Attribute;
+    fn try_from(attr: syn::Attribute) -> Result<SalsaAttr, syn::Attribute> {
+        if is_not_salsa_attr_path(&attr.path) {
+            return Err(attr);
+        }
+
+        let name = attr.path.segments[1].ident.to_string();
+        let tts = attr.tts.into();
+        Ok(SalsaAttr { name, tts })
+    }
+}
+
 fn is_not_salsa_attr_path(path: &syn::Path) -> bool {
     path.segments
         .first()
         .map(|s| s.value().ident != "salsa")
         .unwrap_or(true)
         || path.segments.len() != 2
+}
+
+fn filter_attrs(attrs: Vec<Attribute>) -> (Vec<Attribute>, Vec<SalsaAttr>) {
+    let mut other = vec![];
+    let mut salsa = vec![];
+    // Leave non-salsa attributes untouched. These are
+    // attributes that don't start with `salsa::` or don't have
+    // exactly two segments in their path.
+    // Keep the salsa attributes around.
+    for attr in attrs {
+        match SalsaAttr::try_from(attr) {
+            Ok(it) => salsa.push(it),
+            Err(it) => other.push(it),
+        }
+    }
+    (other, salsa)
 }
 
 #[derive(Debug)]
