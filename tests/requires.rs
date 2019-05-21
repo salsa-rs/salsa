@@ -26,7 +26,9 @@ mod queries {
         db.input(x)
     }
 
-    #[salsa::query_group(PubGroupStorage, requires = "PrivGroupA + PrivGroupB")]
+    #[salsa::query_group(PubGroupStorage)]
+    #[salsa::requires(PrivGroupA)]
+    #[salsa::requires(PrivGroupB)]
     pub trait PubGroup: InputGroup {
         fn public(&self, x: u32) -> u32;
     }

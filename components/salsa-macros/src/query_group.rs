@@ -5,22 +5,29 @@ use heck::CamelCase;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
-use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{
-    parse_macro_input, parse_quote, Attribute, FnArg, Ident, ItemTrait, Lit, MetaNameValue, Path,
+    parse_macro_input, parse_quote, Attribute, FnArg, Ident, ItemTrait, Path,
     ReturnType, Token, TraitBound, TraitBoundModifier, TraitItem, Type, TypeParamBound,
 };
 
 /// Implementation for `[salsa::query_group]` decorator.
 pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream {
-    let GroupDef {
-        group_struct,
-        requires,
-    } = parse_macro_input!(args as GroupDef);
+    let group_struct = parse_macro_input!(args as Ident);
     let input: ItemTrait = parse_macro_input!(input as ItemTrait);
     // println!("args: {:#?}", args);
     // println!("input: {:#?}", input);
+
+    let (trait_attrs, salsa_attrs) = filter_attrs(input.attrs);
+    let mut requires: Punctuated<Path, Token![+]> = Punctuated::new();
+    for SalsaAttr { name, tts } in salsa_attrs {
+        match name.as_str() {
+            "requires" => {
+                requires.push(parse_macro_input!(tts as Parenthesized<syn::Path>).0);
+            }
+            _ => panic!("unknown salsa attribute `{}`", name),
+        }
+    }
 
     let trait_vis = input.vis;
     let trait_name = input.ident;
@@ -296,10 +303,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     // Emit the trait itself.
     let mut output = {
-        let attrs = &input.attrs;
         let bounds = &input.supertraits;
         quote! {
-            #(#attrs)*
+            #(#trait_attrs)*
             #trait_vis trait #trait_name : #bounds {
                 #query_fn_declarations
             }
@@ -548,37 +554,6 @@ fn filter_attrs(attrs: Vec<Attribute>) -> (Vec<Attribute>, Vec<SalsaAttr>) {
         }
     }
     (other, salsa)
-}
-
-#[derive(Debug)]
-struct GroupDef {
-    group_struct: Ident,
-    requires: Punctuated<Path, Token![+]>,
-}
-
-impl Parse for GroupDef {
-    fn parse(input: ParseStream) -> syn::Result<GroupDef> {
-        let res = GroupDef {
-            group_struct: input.parse()?,
-            requires: {
-                if input.lookahead1().peek(Token![,]) {
-                    input.parse::<Token![,]>()?;
-                    let name_value: MetaNameValue = input.parse()?;
-                    if name_value.ident != "requires" {
-                        return Err(syn::Error::new_spanned(name_value, "invalid attribute"));
-                    }
-                    let str_lit = match name_value.lit {
-                        Lit::Str(it) => it,
-                        _ => return Err(syn::Error::new_spanned(name_value, "invalid attribute")),
-                    };
-                    str_lit.parse_with(Punctuated::<Path, Token![+]>::parse_separated_nonempty)?
-                } else {
-                    Punctuated::new()
-                }
-            },
-        };
-        Ok(res)
-    }
 }
 
 #[derive(Debug)]
