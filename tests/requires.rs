@@ -1,4 +1,5 @@
-//! Test that transparent (uncached) queries work
+//! Test `salsa::requires` attribute for private query dependencies
+//! https://github.com/salsa-rs/salsa-rfcs/pull/3
 
 
 mod queries {
