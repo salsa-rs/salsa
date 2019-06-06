@@ -24,6 +24,7 @@ use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
+use crate::plumbing::LruQueryStorageOps;
 use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
@@ -533,6 +534,21 @@ where
     {
         self.storage
             .set_constant(self.db, &key, &self.database_key(&key), value);
+    }
+
+    /// Sets the size of LRU cache of values for this query table.
+    ///
+    /// That is, at most `cap` values will be preset in the table at the same
+    /// time. This helps with keeping maximum memory usage under control, at the
+    /// cost of potential extra recalculations of evicted values.
+    ///
+    /// If `cap` is zero, all values are preserved, this is the default.
+    pub fn set_lru_capacity(&self, cap: usize)
+    where
+        Q::Storage: plumbing::LruQueryStorageOps,
+    {
+        self.storage
+            .set_lru_capacity(cap);
     }
 }
 

@@ -203,3 +203,14 @@ where
         new_value: Q::Value,
     );
 }
+
+/// An optional trait that is implemented for "user mutable" storage:
+/// that is, storage whose value is not derived from other storage but
+/// is set independently.
+pub trait LruQueryStorageOps: Default
+{
+    fn set_lru_capacity(
+        &self,
+        new_capacity: usize,
+    );
+}

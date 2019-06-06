@@ -1,6 +1,7 @@
 use crate::debug::TableEntry;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::DatabaseKey;
+use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
@@ -11,13 +12,16 @@ use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::{Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy};
+use linked_hash_map::LinkedHashMap;
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::RwLock;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
+use std::hash::BuildHasherDefault;
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 
@@ -36,6 +40,8 @@ pub type DependencyStorage<DB, Q> = DerivedStorage<DB, Q, NeverMemoizeValue>;
 /// storage requirements.
 pub type VolatileStorage<DB, Q> = DerivedStorage<DB, Q, VolatileValue>;
 
+type LinkedHashSet<T> = LinkedHashMap<T, (), BuildHasherDefault<FxHasher>>;
+
 /// Handles storage where the value is 'derived' by executing a
 /// function (in contrast to "inputs").
 pub struct DerivedStorage<DB, Q, MP>
@@ -44,6 +50,10 @@ where
     DB: Database,
     MP: MemoizationPolicy<DB, Q>,
 {
+    lru_cap: AtomicUsize,
+    // if `lru_keys` and `map` are locked togeter,
+    // `lru_keys` is locked first, to prevent deadlocks.
+    lru_keys: Mutex<LinkedHashSet<Q::Key>>,
     map: RwLock<FxHashMap<Q::Key, QueryState<DB, Q>>>,
     policy: PhantomData<MP>,
 }
@@ -237,6 +247,8 @@ where
     fn default() -> Self {
         DerivedStorage {
             map: RwLock::new(FxHashMap::default()),
+            lru_cap: AtomicUsize::new(0),
+            lru_keys: Mutex::new(LinkedHashSet::with_hasher(Default::default())),
             policy: PhantomData,
         }
     }
@@ -702,6 +714,19 @@ where
     ) -> Result<Q::Value, CycleDetected> {
         let StampedValue { value, changed_at } = self.read(db, key, &database_key)?;
 
+        let lru_cap = self.lru_cap.load(Ordering::Relaxed);
+        if lru_cap > 0 {
+            let mut lru_keys = self.lru_keys.lock();
+            lru_keys.insert(key.clone(), ());
+            if lru_keys.len() > lru_cap {
+                if let Some((evicted, ())) = lru_keys.pop_front() {
+                    if let Some(QueryState::Memoized(memo)) = self.map.write().get_mut(&evicted) {
+                        memo.value = None;
+                    }
+                }
+            }
+        }
+
         db.salsa_runtime()
             .report_query_read(database_key, changed_at);
 
@@ -1008,6 +1033,27 @@ where
                 }
             }
         });
+    }
+}
+
+impl<DB, Q, MP> LruQueryStorageOps for DerivedStorage<DB, Q, MP>
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+    MP: MemoizationPolicy<DB, Q>,
+{
+    fn set_lru_capacity(&self, new_capacity: usize) {
+        let mut lru_keys = self.lru_keys.lock();
+        let mut map = self.map.write();
+        self.lru_cap.store(new_capacity, Ordering::SeqCst);
+        while lru_keys.len() > new_capacity {
+            let (evicted, ()) = lru_keys.pop_front().unwrap();
+            if let Some(QueryState::Memoized(memo)) = map.get_mut(&evicted) {
+                memo.value = None;
+            }
+        }
+        let additional_cap = new_capacity - lru_keys.len();
+        lru_keys.reserve(additional_cap);
     }
 }
 
