@@ -1,5 +1,6 @@
 use salsa::{Database, ParallelDatabase, Snapshot};
 use std::panic::{self, AssertUnwindSafe};
+use std::sync::atomic::{AtomicU32, Ordering::SeqCst};
 
 #[salsa::query_group(PanicSafelyStruct)]
 trait PanicSafelyDatabase: salsa::Database {
@@ -7,10 +8,19 @@ trait PanicSafelyDatabase: salsa::Database {
     fn one(&self) -> usize;
 
     fn panic_safely(&self) -> ();
+
+    fn outer(&self) -> ();
 }
 
 fn panic_safely(db: &impl PanicSafelyDatabase) -> () {
     assert_eq!(db.one(), 1);
+}
+
+static OUTER_CALLS: AtomicU32 = AtomicU32::new(0);
+
+fn outer(db: &impl PanicSafelyDatabase) -> () {
+    OUTER_CALLS.fetch_add(1, SeqCst);
+    db.panic_safely();
 }
 
 #[salsa::database(PanicSafelyStruct)]
@@ -36,9 +46,10 @@ impl salsa::ParallelDatabase for DatabaseStruct {
 #[test]
 fn should_panic_safely() {
     let mut db = DatabaseStruct::default();
+    db.set_one(0);
 
     // Invoke `db.panic_safely() without having set `db.one`. `db.one` will
-    // default to 0 and we should catch the panic.
+    // return 0 and we should catch the panic.
     let result = panic::catch_unwind(AssertUnwindSafe({
         let db = db.snapshot();
         move || db.panic_safely()
@@ -48,7 +59,23 @@ fn should_panic_safely() {
     // Set `db.one` to 1 and assert ok
     db.set_one(1);
     let result = panic::catch_unwind(AssertUnwindSafe(|| db.panic_safely()));
-    assert!(result.is_ok())
+    assert!(result.is_ok());
+
+    // Check, that memoized outer is not invalidated by a panic
+    {
+        assert_eq!(OUTER_CALLS.load(SeqCst), 0);
+        db.outer();
+        assert_eq!(OUTER_CALLS.load(SeqCst), 1);
+
+        db.set_one(0);
+        let result = panic::catch_unwind(AssertUnwindSafe(|| db.outer()));
+        assert!(result.is_err());
+        assert_eq!(OUTER_CALLS.load(SeqCst), 1);
+
+        db.set_one(1);
+        db.outer();
+        assert_eq!(OUTER_CALLS.load(SeqCst), 1);
+    }
 }
 
 #[test]
