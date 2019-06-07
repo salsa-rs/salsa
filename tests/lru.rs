@@ -48,7 +48,6 @@ impl salsa::Database for Database {
 #[test]
 fn lru_works() {
     let mut db = Database::default();
-    let cap = 32;
     db.query_mut(GetQuery).set_lru_capacity(32);
     assert_eq!(N_POTATOES.load(Ordering::SeqCst), 0);
 
@@ -56,13 +55,34 @@ fn lru_works() {
         let p = db.get(i);
         assert_eq!(p.0, i)
     }
-    assert_eq!(N_POTATOES.load(Ordering::SeqCst), cap);
+    assert_eq!(N_POTATOES.load(Ordering::SeqCst), 32);
 
     for i in 0..128u32 {
         let p = db.get(i);
         assert_eq!(p.0, i)
     }
-    assert_eq!(N_POTATOES.load(Ordering::SeqCst), cap);
+    assert_eq!(N_POTATOES.load(Ordering::SeqCst), 32);
+
+    db.query_mut(GetQuery).set_lru_capacity(32);
+    assert_eq!(N_POTATOES.load(Ordering::SeqCst), 32);
+
+    db.query_mut(GetQuery).set_lru_capacity(64);
+    assert_eq!(N_POTATOES.load(Ordering::SeqCst), 32);
+    for i in 0..128u32 {
+        let p = db.get(i);
+        assert_eq!(p.0, i)
+    }
+    assert_eq!(N_POTATOES.load(Ordering::SeqCst), 64);
+
+    // Special case: setting capacity to zero disables LRU
+    db.query_mut(GetQuery).set_lru_capacity(0);
+    assert_eq!(N_POTATOES.load(Ordering::SeqCst), 64);
+    for i in 0..128u32 {
+        let p = db.get(i);
+        assert_eq!(p.0, i)
+    }
+    assert_eq!(N_POTATOES.load(Ordering::SeqCst), 128);
+
     drop(db);
     assert_eq!(N_POTATOES.load(Ordering::SeqCst), 0);
 }
