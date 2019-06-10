@@ -6,7 +6,7 @@ use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 use std::fmt::Write;
 use std::hash::BuildHasherDefault;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
@@ -153,7 +153,7 @@ where
     #[inline]
     pub(crate) fn current_revision(&self) -> Revision {
         Revision {
-            generation: self.shared_state.revision.load(Ordering::SeqCst) as u64,
+            generation: self.shared_state.revision.load(Ordering::SeqCst),
         }
     }
 
@@ -161,7 +161,7 @@ where
     #[inline]
     fn pending_revision(&self) -> Revision {
         Revision {
-            generation: self.shared_state.pending_revision.load(Ordering::SeqCst) as u64,
+            generation: self.shared_state.pending_revision.load(Ordering::SeqCst),
         }
     }
 
@@ -276,7 +276,7 @@ where
             .shared_state
             .pending_revision
             .fetch_add(1, Ordering::SeqCst);
-        assert!(current_revision != usize::max_value(), "revision overflow");
+        assert!(current_revision != u64::max_value(), "revision overflow");
 
         // To modify the revision, we need the lock.
         let _lock = self.shared_state.query_lock.write();
@@ -285,7 +285,7 @@ where
         assert_eq!(current_revision, old_revision);
 
         let new_revision = Revision {
-            generation: (current_revision + 1) as u64,
+            generation: current_revision + 1,
         };
 
         debug!("increment_revision: incremented to {:?}", new_revision);
@@ -408,23 +408,21 @@ struct SharedState<DB: Database> {
     /// revision) requires a write lock (thus guaranteeing that no
     /// derived queries are in progress). Note that this is not needed
     /// to prevent **race conditions** -- the revision counter itself
-    /// is stored in an `AtomicUsize` so it can be cheaply read
+    /// is stored in an `AtomicU64` so it can be cheaply read
     /// without acquiring the lock.  Rather, the `query_lock` is used
     /// to ensure a higher-level consistency property.
     query_lock: RwLock<()>,
 
-    /// Stores the current revision. This is an `AtomicUsize` because
+    /// Stores the current revision. This is an `AtomicU64` because
     /// it may be *read* at any point without holding the
     /// `query_lock`. Updates, however, require the `query_lock` to be
     /// acquired. (See `query_lock` for details.)
-    ///
-    /// (Ideally, this should be `AtomicU64`, but that is currently unstable.)
-    revision: AtomicUsize,
+    revision: AtomicU64,
 
     /// This is typically equal to `revision` -- set to `revision+1`
     /// when a new revision is pending (which implies that the current
     /// revision is canceled).
-    pending_revision: AtomicUsize,
+    pending_revision: AtomicU64,
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
@@ -564,11 +562,6 @@ impl Revision {
         Revision {
             generation: self.generation + 1,
         }
-    }
-
-    fn as_usize(self) -> usize {
-        assert!(self.generation < (std::usize::MAX as u64));
-        self.generation as usize
     }
 }
 
