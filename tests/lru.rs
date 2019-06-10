@@ -27,10 +27,17 @@ impl Drop for HotPotato {
 #[salsa::query_group(QueryGroupStorage)]
 trait QueryGroup {
     fn get(&self, x: u32) -> Arc<HotPotato>;
+    #[salsa::volatile]
+    fn get_volatile(&self, x: u32) -> usize;
 }
 
 fn get(_db: &impl QueryGroup, x: u32) -> Arc<HotPotato> {
     Arc::new(HotPotato::new(x))
+}
+
+fn get_volatile(_db: &impl QueryGroup, _x: u32) -> usize {
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
 #[salsa::database(QueryGroupStorage)]
@@ -85,4 +92,17 @@ fn lru_works() {
 
     drop(db);
     assert_eq!(N_POTATOES.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn lru_doesnt_break_volatile_queries() {
+    let mut db = Database::default();
+    db.query_mut(GetVolatileQuery).set_lru_capacity(32);
+    // Here, we check that we execute each volatile query at most once, despite
+    // LRU. That does mean that we have more values in DB than the LRU capacity,
+    // but it's much better than inconsistent results from volatile queries!
+    for i in (0..3).flat_map(|_| 0..128usize) {
+        let x = db.get_volatile(i as u32);
+        assert_eq!(x, i)
+    }
 }

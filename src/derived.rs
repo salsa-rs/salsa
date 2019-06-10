@@ -286,6 +286,13 @@ where
     fn remove_lru(&mut self) {
         if let Some((evicted, ())) = self.lru_keys.pop_front() {
             if let Some(QueryState::Memoized(memo)) = self.data.get_mut(&evicted) {
+                // Similar to GC, evicting a value with an untracked input could
+                // lead to inconsistencies. Note that we can't check
+                // `has_untracked_input` when we add the value to the cache,
+                // because inputs can become untracked in the next revision.
+                if memo.has_untracked_input() {
+                    return;
+                }
                 memo.value = None;
             }
         }
@@ -1044,10 +1051,7 @@ where
                     // revision, we might wind up re-executing the
                     // query later in the revision and getting a
                     // distinct result.
-                    let is_volatile = match memo.inputs {
-                        MemoInputs::Untracked => true,
-                        _ => false,
-                    };
+                    let has_untracked_input = memo.has_untracked_input();
 
                     // Since we don't acquire a query lock in this
                     // method, it *is* possible for the revision to
@@ -1064,10 +1068,12 @@ where
                         // and this is not outdated, keep it.
                         DiscardIf::Outdated if memo.verified_at == revision_now => true,
 
-                        // As explained on the `is_volatile` variable
+                        // As explained on the `has_untracked_input` variable
                         // definition, if this is a volatile entry, we
                         // can't discard it unless it is outdated.
-                        DiscardIf::Always if is_volatile && memo.verified_at == revision_now => {
+                        DiscardIf::Always
+                            if has_untracked_input && memo.verified_at == revision_now =>
+                        {
                             true
                         }
 
@@ -1195,5 +1201,12 @@ where
         }
 
         None
+    }
+
+    fn has_untracked_input(&self) -> bool {
+        match self.inputs {
+            MemoInputs::Untracked => true,
+            _ => false,
+        }
     }
 }
