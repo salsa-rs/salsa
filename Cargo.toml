@@ -17,6 +17,7 @@ indexmap = "1.0.1"
 log = "0.4.5"
 smallvec = "0.6.5"
 salsa-macros = { version = "0.12.1", path = "components/salsa-macros" }
+linked-hash-map = "0.5.2"
 
 [dev-dependencies]
 diff = "0.1.0"
