@@ -418,7 +418,7 @@ where
         }
     }
 
-    fn is_constant(&self, _db: &DB, _key: &Q::Key) -> bool {
+    fn is_constant(&self, _db: &DB, _key: &Q::Key, _database_key: &DB::DatabaseKey) -> bool {
         false
     }
 
@@ -563,7 +563,7 @@ where
         changed_at.changed_since(revision)
     }
 
-    fn is_constant(&self, _db: &DB, _key: &Q::Key) -> bool {
+    fn is_constant(&self, _db: &DB, _key: &Q::Key, _database_key: &DB::DatabaseKey) -> bool {
         false
     }
 

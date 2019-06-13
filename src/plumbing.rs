@@ -146,7 +146,7 @@ where
         &self,
         db: &DB,
         key: &Q::Key,
-        descriptor: &DB::DatabaseKey,
+        database_key: &DB::DatabaseKey,
     ) -> Result<Q::Value, CycleDetected>;
 
     /// True if the query **may** have changed since the given
@@ -172,11 +172,11 @@ where
         db: &DB,
         revision: Revision,
         key: &Q::Key,
-        descriptor: &DB::DatabaseKey,
+        database_key: &DB::DatabaseKey,
     ) -> bool;
 
     /// Check if `key` is (currently) believed to be a constant.
-    fn is_constant(&self, db: &DB, key: &Q::Key) -> bool;
+    fn is_constant(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey) -> bool;
 
     /// Get the (current) set of the entries in the query storage
     fn entries<C>(&self, db: &DB) -> C
@@ -192,13 +192,13 @@ where
     DB: Database,
     Q: Query<DB>,
 {
-    fn set(&self, db: &DB, key: &Q::Key, descriptor: &DB::DatabaseKey, new_value: Q::Value);
+    fn set(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, new_value: Q::Value);
 
     fn set_constant(
         &self,
         db: &DB,
         key: &Q::Key,
-        descriptor: &DB::DatabaseKey,
+        database_key: &DB::DatabaseKey,
         new_value: Q::Value,
     );
 }
@@ -206,10 +206,6 @@ where
 /// An optional trait that is implemented for "user mutable" storage:
 /// that is, storage whose value is not derived from other storage but
 /// is set independently.
-pub trait LruQueryStorageOps: Default
-{
-    fn set_lru_capacity(
-        &self,
-        new_capacity: usize,
-    );
+pub trait LruQueryStorageOps: Default {
+    fn set_lru_capacity(&self, new_capacity: usize);
 }

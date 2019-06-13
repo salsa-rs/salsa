@@ -186,7 +186,7 @@ where
         changed_at.changed_since(revision)
     }
 
-    fn is_constant(&self, _db: &DB, key: &Q::Key) -> bool {
+    fn is_constant(&self, _db: &DB, key: &Q::Key, _database_key: &DB::DatabaseKey) -> bool {
         let map_read = self.map.read();
         map_read
             .get(key)
