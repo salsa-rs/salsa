@@ -9,15 +9,16 @@ description = "A generic framework for on-demand, incrementalized computation (e
 readme = "README.md"
 
 [dependencies]
+arc-swap = "0.3"
 derive-new = "0.5.5"
-rustc-hash = "1.0"
-parking_lot = "0.8.0"
-lock_api = "0.2.0"
 indexmap = "1.0.1"
+linked-hash-map = "0.5.2"
+lock_api = "0.2.0"
 log = "0.4.5"
+parking_lot = "0.8.0"
+rustc-hash = "1.0"
 smallvec = "0.6.5"
 salsa-macros = { version = "0.13.0", path = "components/salsa-macros" }
-linked-hash-map = "0.5.2"
 
 [dev-dependencies]
 diff = "0.1.0"

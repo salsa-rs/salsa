@@ -12,6 +12,7 @@ mod derived;
 mod input;
 mod intern_id;
 mod interned;
+mod lru;
 mod runtime;
 
 pub mod debug;
@@ -22,9 +23,9 @@ pub mod plumbing;
 
 use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
+use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::plumbing::LruQueryStorageOps;
 use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
@@ -547,8 +548,7 @@ where
     where
         Q::Storage: plumbing::LruQueryStorageOps,
     {
-        self.storage
-            .set_lru_capacity(cap);
+        self.storage.set_lru_capacity(cap);
     }
 }
 
