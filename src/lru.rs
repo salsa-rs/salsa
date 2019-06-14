@@ -69,6 +69,19 @@ where
         while self.pop_lru().is_some() {}
     }
 
+    /// Current number of entries
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn record_use(&mut self, node: Arc<Node>, capacity: usize) -> Option<Arc<Node>> {
+        if self.promote(node) > capacity {
+            return self.pop_lru();
+        } else {
+            None
+        }
+    }
+
     /// Removes the least-recently-used item in the list.
     pub fn pop_lru(&mut self) -> Option<Arc<Node>> {
         log::debug!("pop_lru(self={:?})", self);

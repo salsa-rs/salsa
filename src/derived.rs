@@ -1,4 +1,5 @@
 use crate::debug::TableEntry;
+use crate::lru::Lru;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
@@ -8,6 +9,7 @@ use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::{Database, SweepStrategy};
 use linked_hash_map::LinkedHashMap;
+use parking_lot::Mutex;
 use parking_lot::RwLock;
 use rustc_hash::{FxHashMap, FxHasher};
 use std::hash::BuildHasherDefault;
@@ -39,6 +41,7 @@ where
     // `lru_cap` logically belongs to `QueryMap`, but we store it outside, so
     // that we can read it without aquiring the lock.
     lru_cap: AtomicUsize,
+    lru_list: Mutex<Lru<Slot<DB, Q, MP>>>,
     slot_map: RwLock<FxHashMap<Q::Key, Arc<Slot<DB, Q, MP>>>>,
     policy: PhantomData<MP>,
 }
@@ -106,6 +109,7 @@ where
         DerivedStorage {
             lru_cap: AtomicUsize::new(0),
             slot_map: RwLock::new(FxHashMap::default()),
+            lru_list: Mutex::default(),
             policy: PhantomData,
         }
     }
@@ -129,39 +133,7 @@ where
             .clone()
     }
 
-    fn set_lru_capacity(&mut self, _new_capacity: usize) {
-        //TODO        if new_capacity == 0 {
-        //TODO            self.lru_keys.clear();
-        //TODO        } else {
-        //TODO            while self.lru_keys.len() > new_capacity {
-        //TODO                self.remove_lru();
-        //TODO            }
-        //TODO            let additional_cap = new_capacity - self.lru_keys.len();
-        //TODO            self.lru_keys.reserve(additional_cap);
-        //TODO        }
-    }
-
-    fn record_use(&mut self, _key: &Q::Key, _lru_cap: usize) {
-        //TODO        self.lru_keys.insert(key.clone(), ());
-        //TODO        if self.lru_keys.len() > lru_cap {
-        //TODO            self.remove_lru();
-        //TODO        }
-    }
-
-    fn remove_lru(&mut self) {
-        //TODO        if let Some((evicted, ())) = self.lru_keys.pop_front() {
-        //TODO            if let Some(QueryState::Memoized(memo)) = self.data.get_mut(&evicted) {
-        //TODO                // Similar to GC, evicting a value with an untracked input could
-        //TODO                // lead to inconsistencies. Note that we can't check
-        //TODO                // `has_untracked_input` when we add the value to the cache,
-        //TODO                // because inputs can become untracked in the next revision.
-        //TODO                if memo.has_untracked_input() {
-        //TODO                    return;
-        //TODO                }
-        //TODO                memo.value = None;
-        //TODO            }
-        //TODO        }
-    }
+    fn remove_lru(&self) {}
 }
 
 impl<DB, Q, MP> QueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
@@ -179,10 +151,13 @@ where
         let slot = self.slot(key, database_key);
         let StampedValue { value, changed_at } = slot.read(db)?;
 
-        let _lru_cap = self.lru_cap.load(Ordering::Relaxed);
-        //TODO if lru_cap > 0 {
-        //TODO     self.map.write().record_use(key, lru_cap);
-        //TODO }
+        let lru_cap = self.lru_cap.load(Ordering::Relaxed);
+        if lru_cap > 0 {
+            let evicted = self.lru_list.lock().record_use(slot, lru_cap);
+            if let Some(evicted) = evicted {
+                evicted.evict();
+            }
+        }
 
         db.salsa_runtime()
             .report_query_read(database_key, changed_at);
@@ -238,8 +213,17 @@ where
     DB: Database,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn set_lru_capacity(&self, _new_capacity: usize) {
-        //TODO        self.lru_cap.store(new_capacity, Ordering::SeqCst);
-        //TODO        self.map.write().set_lru_capacity(new_capacity);
+    fn set_lru_capacity(&self, new_capacity: usize) {
+        let mut lru_list = self.lru_list.lock();
+        if new_capacity == 0 {
+            lru_list.clear();
+        } else {
+            while lru_list.len() > new_capacity {
+                if let Some(evicted) = lru_list.pop_lru() {
+                    evicted.evict();
+                }
+            }
+        }
+        self.lru_cap.store(new_capacity, Ordering::SeqCst);
     }
 }

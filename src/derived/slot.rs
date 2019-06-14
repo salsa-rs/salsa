@@ -1,5 +1,7 @@
 use crate::debug::TableEntry;
 use crate::derived::MemoizationPolicy;
+use crate::lru::LruLinks;
+use crate::lru::LruNode;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::DatabaseKey;
 use crate::plumbing::QueryFunction;
@@ -34,6 +36,7 @@ where
     database_key: DB::DatabaseKey,
     state: RwLock<QueryState<DB, Q>>,
     policy: PhantomData<MP>,
+    lru_links: LruLinks<Self>,
 }
 
 /// Defines the "current state" of query's memoized results.
@@ -108,6 +111,7 @@ where
             key,
             database_key,
             state: RwLock::new(QueryState::NotComputed),
+            lru_links: LruLinks::default(),
             policy: PhantomData,
         }
     }
@@ -535,6 +539,20 @@ where
         }
     }
 
+    pub(super) fn evict(&self) {
+        let mut state = self.state.write();
+        if let QueryState::Memoized(memo) = &mut *state {
+            // Similar to GC, evicting a value with an untracked input could
+            // lead to inconsistencies. Note that we can't check
+            // `has_untracked_input` when we add the value to the cache,
+            // because inputs can become untracked in the next revision.
+            if memo.has_untracked_input() {
+                return;
+            }
+            memo.value = None;
+        }
+    }
+
     pub(super) fn sweep(&self, revision_now: Revision, strategy: SweepStrategy) {
         let mut state = self.state.write();
         match &mut *state {
@@ -890,5 +908,16 @@ impl<DB: Database> std::fmt::Debug for MemoInputs<DB> {
             }
             MemoInputs::Untracked => fmt.debug_struct("Untracked").finish(),
         }
+    }
+}
+
+impl<DB, Q, MP> LruNode for Slot<DB, Q, MP>
+where
+    Q: QueryFunction<DB>,
+    DB: Database,
+    MP: MemoizationPolicy<DB, Q>,
+{
+    fn links(&self) -> &LruLinks<Self> {
+        &self.lru_links
     }
 }
