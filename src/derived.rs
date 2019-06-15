@@ -1,6 +1,7 @@
 use crate::debug::TableEntry;
 use crate::lru::Lru;
 use crate::plumbing::CycleDetected;
+use crate::plumbing::HasQueryGroup;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
@@ -31,7 +32,7 @@ pub type DependencyStorage<DB, Q> = DerivedStorage<DB, Q, NeverMemoizeValue>;
 pub struct DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
     lru_list: Lru<Slot<DB, Q, MP>>,
@@ -42,7 +43,7 @@ where
 impl<DB, Q, MP> std::panic::RefUnwindSafe for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
     Q::Key: std::panic::RefUnwindSafe,
     Q::Value: std::panic::RefUnwindSafe,
@@ -93,7 +94,7 @@ where
 impl<DB, Q, MP> Default for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
     fn default() -> Self {
@@ -108,10 +109,10 @@ where
 impl<DB, Q, MP> DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn slot(&self, key: &Q::Key, database_key: &DB::DatabaseKey) -> Arc<Slot<DB, Q, MP>> {
+    fn slot(&self, key: &Q::Key) -> Arc<Slot<DB, Q, MP>> {
         if let Some(v) = self.slot_map.read().get(key) {
             return v.clone();
         }
@@ -119,7 +120,7 @@ where
         let mut write = self.slot_map.write();
         write
             .entry(key.clone())
-            .or_insert_with(|| Arc::new(Slot::new(key.clone(), database_key.clone())))
+            .or_insert_with(|| Arc::new(Slot::new(key.clone())))
             .clone()
     }
 
@@ -129,7 +130,7 @@ where
 impl<DB, Q, MP> QueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
     fn try_fetch(
@@ -138,7 +139,7 @@ where
         key: &Q::Key,
         database_key: &DB::DatabaseKey,
     ) -> Result<Q::Value, CycleDetected> {
-        let slot = self.slot(key, database_key);
+        let slot = self.slot(key);
         let StampedValue { value, changed_at } = slot.read(db)?;
 
         if let Some(evicted) = self.lru_list.record_use(&slot) {
@@ -156,14 +157,13 @@ where
         db: &DB,
         revision: Revision,
         key: &Q::Key,
-        database_key: &DB::DatabaseKey,
+        _database_key: &DB::DatabaseKey,
     ) -> bool {
-        self.slot(key, database_key)
-            .maybe_changed_since(db, revision)
+        self.slot(key).maybe_changed_since(db, revision)
     }
 
-    fn is_constant(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey) -> bool {
-        self.slot(key, &database_key).is_constant(db)
+    fn is_constant(&self, db: &DB, key: &Q::Key, _database_key: &DB::DatabaseKey) -> bool {
+        self.slot(key).is_constant(db)
     }
 
     fn entries<C>(&self, _db: &DB) -> C
@@ -181,7 +181,7 @@ where
 impl<DB, Q, MP> QueryStorageMassOps<DB> for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
     fn sweep(&self, db: &DB, strategy: SweepStrategy) {
@@ -196,7 +196,7 @@ where
 impl<DB, Q, MP> LruQueryStorageOps for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
     fn set_lru_capacity(&self, new_capacity: usize) {

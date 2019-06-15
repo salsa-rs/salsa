@@ -4,6 +4,8 @@ use crate::lru::LruIndex;
 use crate::lru::LruNode;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::DatabaseKey;
+use crate::plumbing::GetQueryTable;
+use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryFunction;
 use crate::runtime::ChangedAt;
 use crate::runtime::FxIndexSet;
@@ -24,16 +26,10 @@ use std::sync::Arc;
 pub(super) struct Slot<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
     key: Q::Key,
-
-    /// The "database key" version of key.
-    ///
-    /// FIXME -- it should be possible to synthesize this on demand,
-    /// but too lazy right now.
-    database_key: DB::DatabaseKey,
     state: RwLock<QueryState<DB, Q>>,
     policy: PhantomData<MP>,
     lru_index: LruIndex,
@@ -43,7 +39,7 @@ where
 enum QueryState<DB, Q>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
 {
     NotComputed,
 
@@ -62,7 +58,7 @@ where
 struct Memo<DB, Q>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
 {
     /// The result of the query, if we decide to memoize it.
     value: Option<Q::Value>,
@@ -103,17 +99,20 @@ enum ProbeState<V, G> {
 impl<DB, Q, MP> Slot<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    pub(super) fn new(key: Q::Key, database_key: DB::DatabaseKey) -> Self {
+    pub(super) fn new(key: Q::Key) -> Self {
         Self {
             key,
-            database_key,
             state: RwLock::new(QueryState::NotComputed),
             lru_index: LruIndex::default(),
             policy: PhantomData,
         }
+    }
+
+    pub(super) fn database_key(&self, db: &DB) -> DB::DatabaseKey {
+        <DB as GetQueryTable<Q>>::database_key(db, self.key.clone())
     }
 
     pub(super) fn read(&self, db: &DB) -> Result<StampedValue<Q::Value>, CycleDetected> {
@@ -168,7 +167,7 @@ where
             }
         };
 
-        let mut panic_guard = PanicGuard::new(self, old_memo, runtime);
+        let mut panic_guard = PanicGuard::new(self.database_key(db), self, old_memo, runtime);
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
@@ -181,7 +180,7 @@ where
                 db.salsa_event(|| Event {
                     runtime_id: runtime.id(),
                     kind: EventKind::DidValidateMemoizedValue {
-                        database_key: self.database_key.clone(),
+                        database_key: self.database_key(db),
                     },
                 });
 
@@ -193,7 +192,8 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = runtime.execute_query_implementation(db, &self.database_key, || {
+        let database_key = self.database_key(db);
+        let mut result = runtime.execute_query_implementation(db, &database_key, || {
             info!("{:?}: executing query", self);
 
             Q::execute(db, self.key.clone())
@@ -310,7 +310,7 @@ where
 
             QueryState::InProgress { id, waiting } => {
                 let other_id = *id;
-                return match self.register_with_in_progress_thread(runtime, other_id, waiting) {
+                return match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
                     Ok(rx) => {
                         // Release our lock on `self.map`, so other thread
                         // can complete.
@@ -320,7 +320,7 @@ where
                             runtime_id: db.salsa_runtime().id(),
                             kind: EventKind::WillBlockOn {
                                 other_runtime_id: other_id,
-                                database_key: self.database_key.clone(),
+                                database_key: self.database_key(db),
                             },
                         });
 
@@ -381,7 +381,7 @@ where
                     "maybe_changed_since({:?}: blocking on thread `{:?}`",
                     self, other_id,
                 );
-                match self.register_with_in_progress_thread(runtime, other_id, waiting) {
+                match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
                     Ok(rx) => {
                         // Release our lock on `self.map`, so other thread
                         // can complete.
@@ -628,6 +628,7 @@ where
     /// computed (but first drop the lock on the map).
     fn register_with_in_progress_thread(
         &self,
+        db: &DB,
         runtime: &Runtime<DB>,
         other_id: RuntimeId,
         waiting: &Mutex<SmallVec<[Sender<StampedValue<Q::Value>>; 2]>>,
@@ -635,7 +636,7 @@ where
         if other_id == runtime.id() {
             return Err(CycleDetected);
         } else {
-            if !runtime.try_block_on(&self.database_key, other_id) {
+            if !runtime.try_block_on(&self.database_key(db), other_id) {
                 return Err(CycleDetected);
             }
 
@@ -657,7 +658,7 @@ where
 impl<DB, Q> QueryState<DB, Q>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
 {
     fn in_progress(id: RuntimeId) -> Self {
         QueryState::InProgress {
@@ -669,10 +670,11 @@ where
 
 struct PanicGuard<'me, DB, Q, MP>
 where
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
     Q: QueryFunction<DB>,
     MP: MemoizationPolicy<DB, Q>,
 {
+    database_key: DB::DatabaseKey,
     slot: &'me Slot<DB, Q, MP>,
     memo: Option<Memo<DB, Q>>,
     runtime: &'me Runtime<DB>,
@@ -680,16 +682,18 @@ where
 
 impl<'me, DB, Q, MP> PanicGuard<'me, DB, Q, MP>
 where
-    DB: Database + 'me,
+    DB: Database + HasQueryGroup<Q::Group>,
     Q: QueryFunction<DB>,
     MP: MemoizationPolicy<DB, Q>,
 {
     fn new(
+        database_key: DB::DatabaseKey,
         slot: &'me Slot<DB, Q, MP>,
         memo: Option<Memo<DB, Q>>,
         runtime: &'me Runtime<DB>,
     ) -> Self {
         Self {
+            database_key,
             slot,
             memo,
             runtime,
@@ -726,7 +730,7 @@ where
                 assert_eq!(id, self.runtime.id());
 
                 self.runtime
-                    .unblock_queries_blocked_on_self(&self.slot.database_key);
+                    .unblock_queries_blocked_on_self(&self.database_key);
 
                 match new_value {
                     // If anybody has installed themselves in our "waiting"
@@ -756,7 +760,7 @@ Please report this bug to https://github.com/salsa-rs/salsa/issues."
 
 impl<'me, DB, Q, MP> Drop for PanicGuard<'me, DB, Q, MP>
 where
-    DB: Database + 'me,
+    DB: Database + HasQueryGroup<Q::Group>,
     Q: QueryFunction<DB>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -785,7 +789,7 @@ impl<DB: Database> MemoInputs<DB> {
 impl<DB, Q> Memo<DB, Q>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
 {
     fn validate_memoized_value(
         &mut self,
@@ -891,7 +895,7 @@ where
 impl<DB, Q, MP> std::fmt::Debug for Slot<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -914,7 +918,7 @@ impl<DB: Database> std::fmt::Debug for MemoInputs<DB> {
 impl<DB, Q, MP> LruNode for Slot<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
-    DB: Database,
+    DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
     fn lru_index(&self) -> &LruIndex {
