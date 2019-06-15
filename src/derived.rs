@@ -8,13 +8,9 @@ use crate::plumbing::QueryStorageOps;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::{Database, SweepStrategy};
-use linked_hash_map::LinkedHashMap;
-use parking_lot::Mutex;
 use parking_lot::RwLock;
-use rustc_hash::{FxHashMap, FxHasher};
-use std::hash::BuildHasherDefault;
+use rustc_hash::FxHashMap;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 mod slot;
@@ -38,10 +34,7 @@ where
     DB: Database,
     MP: MemoizationPolicy<DB, Q>,
 {
-    // `lru_cap` logically belongs to `QueryMap`, but we store it outside, so
-    // that we can read it without aquiring the lock.
-    lru_cap: AtomicUsize,
-    lru_list: Mutex<Lru<Slot<DB, Q, MP>>>,
+    lru_list: Lru<Slot<DB, Q, MP>>,
     slot_map: RwLock<FxHashMap<Q::Key, Arc<Slot<DB, Q, MP>>>>,
     policy: PhantomData<MP>,
 }
@@ -97,8 +90,6 @@ where
     }
 }
 
-type LinkedHashSet<T> = LinkedHashMap<T, (), BuildHasherDefault<FxHasher>>;
-
 impl<DB, Q, MP> Default for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
@@ -107,9 +98,8 @@ where
 {
     fn default() -> Self {
         DerivedStorage {
-            lru_cap: AtomicUsize::new(0),
             slot_map: RwLock::new(FxHashMap::default()),
-            lru_list: Mutex::default(),
+            lru_list: Default::default(),
             policy: PhantomData,
         }
     }
@@ -151,12 +141,8 @@ where
         let slot = self.slot(key, database_key);
         let StampedValue { value, changed_at } = slot.read(db)?;
 
-        let lru_cap = self.lru_cap.load(Ordering::Relaxed);
-        if lru_cap > 0 {
-            let evicted = self.lru_list.lock().record_use(slot, lru_cap);
-            if let Some(evicted) = evicted {
-                evicted.evict();
-            }
+        if let Some(evicted) = self.lru_list.record_use(&slot) {
+            evicted.evict();
         }
 
         db.salsa_runtime()
@@ -214,16 +200,6 @@ where
     MP: MemoizationPolicy<DB, Q>,
 {
     fn set_lru_capacity(&self, new_capacity: usize) {
-        let mut lru_list = self.lru_list.lock();
-        if new_capacity == 0 {
-            lru_list.clear();
-        } else {
-            while lru_list.len() > new_capacity {
-                if let Some(evicted) = lru_list.pop_lru() {
-                    evicted.evict();
-                }
-            }
-        }
-        self.lru_cap.store(new_capacity, Ordering::SeqCst);
+        self.lru_list.set_lru_capacity(new_capacity);
     }
 }

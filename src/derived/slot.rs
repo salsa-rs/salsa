@@ -1,6 +1,6 @@
 use crate::debug::TableEntry;
 use crate::derived::MemoizationPolicy;
-use crate::lru::LruLinks;
+use crate::lru::LruIndex;
 use crate::lru::LruNode;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::DatabaseKey;
@@ -36,7 +36,7 @@ where
     database_key: DB::DatabaseKey,
     state: RwLock<QueryState<DB, Q>>,
     policy: PhantomData<MP>,
-    lru_links: LruLinks<Self>,
+    lru_index: LruIndex,
 }
 
 /// Defines the "current state" of query's memoized results.
@@ -111,7 +111,7 @@ where
             key,
             database_key,
             state: RwLock::new(QueryState::NotComputed),
-            lru_links: LruLinks::default(),
+            lru_index: LruIndex::default(),
             policy: PhantomData,
         }
     }
@@ -917,7 +917,7 @@ where
     DB: Database,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn links(&self) -> &LruLinks<Self> {
-        &self.lru_links
+    fn lru_index(&self) -> &LruIndex {
+        &self.lru_index
     }
 }
