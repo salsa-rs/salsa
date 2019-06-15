@@ -15,6 +15,7 @@ use log::debug;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
+use std::sync::Arc;
 
 /// Input queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
@@ -24,7 +25,16 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    map: RwLock<FxHashMap<Q::Key, StampedValue<Q::Value>>>,
+    slots: RwLock<FxHashMap<Q::Key, Arc<Slot<DB, Q>>>>,
+}
+
+struct Slot<DB, Q>
+where
+    Q: Query<DB>,
+    DB: Database,
+{
+    key: Q::Key,
+    stamped_value: RwLock<StampedValue<Q::Value>>,
 }
 
 impl<DB, Q> std::panic::RefUnwindSafe for InputStorage<DB, Q>
@@ -43,7 +53,7 @@ where
 {
     fn default() -> Self {
         InputStorage {
-            map: RwLock::new(FxHashMap::default()),
+            slots: Default::default(),
         }
     }
 }
@@ -55,20 +65,8 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    fn read<'q>(
-        &self,
-        _db: &'q DB,
-        key: &Q::Key,
-        _database_key: &DB::DatabaseKey,
-    ) -> Result<StampedValue<Q::Value>, CycleDetected> {
-        {
-            let map_read = self.map.read();
-            if let Some(value) = map_read.get(key) {
-                return Ok(value.clone());
-            }
-        }
-
-        panic!("no value set for {:?}({:?})", Q::default(), key)
+    fn slot(&self, key: &Q::Key, _database_key: &DB::DatabaseKey) -> Option<Arc<Slot<DB, Q>>> {
+        self.slots.read().get(key).cloned()
     }
 
     fn set_common(
@@ -79,8 +77,6 @@ where
         value: Q::Value,
         is_constant: IsConstant,
     ) {
-        let key = key.clone();
-
         // The value is changing, so even if we are setting this to a
         // constant, we still need a new revision.
         //
@@ -90,7 +86,7 @@ where
         // the lock on `map` until we also hold the global query write
         // lock.
         db.salsa_runtime().with_incremented_revision(|next_revision| {
-            let mut map = self.map.write();
+            let mut slots = self.slots.write();
 
             db.salsa_event(|| Event {
                 runtime_id: db.salsa_runtime().id(),
@@ -110,22 +106,27 @@ where
 
             let stamped_value = StampedValue { value, changed_at };
 
-            match map.entry(key) {
-                Entry::Occupied(mut entry) => {
+            match slots.entry(key.clone()) {
+                Entry::Occupied(entry) => {
+                    let mut slot_stamped_value = entry.get().stamped_value.write();
+
                     assert!(
-                        !entry.get().changed_at.is_constant,
+                        !slot_stamped_value.changed_at.is_constant,
                         "modifying `{:?}({:?})`, which was previously marked as constant (old value `{:?}`, new value `{:?}`)",
                         Q::default(),
                         entry.key(),
-                        entry.get().value,
+                        slot_stamped_value.value,
                         stamped_value.value,
                     );
 
-                    entry.insert(stamped_value);
+                    *slot_stamped_value = stamped_value;
                 }
 
                 Entry::Vacant(entry) => {
-                    entry.insert(stamped_value);
+                    entry.insert(Arc::new(Slot {
+                        key: key.clone(),
+                        stamped_value: RwLock::new(stamped_value),
+                    }));
                 }
             }
         });
@@ -143,7 +144,12 @@ where
         key: &Q::Key,
         database_key: &DB::DatabaseKey,
     ) -> Result<Q::Value, CycleDetected> {
-        let StampedValue { value, changed_at } = self.read(db, key, &database_key)?;
+        let slot = match self.slot(key, database_key) {
+            Some(s) => s.clone(),
+            None => panic!("no value set for {:?}({:?})", Q::default(), key),
+        };
+
+        let StampedValue { value, changed_at } = slot.stamped_value.read().clone();
 
         db.salsa_runtime()
             .report_query_read(database_key, changed_at);
@@ -156,7 +162,7 @@ where
         _db: &DB,
         revision: Revision,
         key: &Q::Key,
-        _database_key: &DB::DatabaseKey,
+        database_key: &DB::DatabaseKey,
     ) -> bool {
         debug!(
             "{:?}({:?})::maybe_changed_since(revision={:?})",
@@ -165,15 +171,12 @@ where
             revision,
         );
 
-        let changed_at = {
-            let map_read = self.map.read();
-            map_read
-                .get(key)
-                .map(|v| v.changed_at)
-                .unwrap_or(ChangedAt {
-                    is_constant: false,
-                    revision: Revision::ZERO,
-                })
+        let changed_at = match self.slot(key, database_key) {
+            Some(slot) => slot.stamped_value.read().changed_at,
+            None => ChangedAt {
+                is_constant: false,
+                revision: Revision::ZERO,
+            },
         };
 
         debug!(
@@ -186,11 +189,9 @@ where
         changed_at.changed_since(revision)
     }
 
-    fn is_constant(&self, _db: &DB, key: &Q::Key, _database_key: &DB::DatabaseKey) -> bool {
-        let map_read = self.map.read();
-        map_read
-            .get(key)
-            .map(|v| v.changed_at.is_constant)
+    fn is_constant(&self, _db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey) -> bool {
+        self.slot(key, database_key)
+            .map(|slot| slot.stamped_value.read().changed_at.is_constant)
             .unwrap_or(false)
     }
 
@@ -198,10 +199,14 @@ where
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
     {
-        let map = self.map.read();
-        map.iter()
-            .map(|(key, stamped_value)| {
-                TableEntry::new(key.clone(), Some(stamped_value.value.clone()))
+        let slots = self.slots.read();
+        slots
+            .values()
+            .map(|slot| {
+                TableEntry::new(
+                    slot.key.clone(),
+                    Some(slot.stamped_value.read().value.clone()),
+                )
             })
             .collect()
     }
