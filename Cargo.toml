@@ -9,6 +9,7 @@ description = "A generic framework for on-demand, incrementalized computation (e
 readme = "README.md"
 
 [dependencies]
+crossbeam = "0.7.1"
 derive-new = "0.5.5"
 indexmap = "1.0.1"
 lock_api = "0.2.0"
