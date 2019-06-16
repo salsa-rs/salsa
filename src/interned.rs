@@ -252,7 +252,7 @@ where
     fn intern_check(&self, db: &DB, key: &Q::Key) -> Option<StampedValue<InternId>> {
         let revision_now = db.salsa_runtime().current_revision();
 
-        // First,
+        // First, try with read lock -- this only works if `accessed_at` is up to date.
         {
             let tables = self.tables.read();
             let &index = tables.map.get(key)?;
@@ -282,7 +282,7 @@ where
             }
         }
 
-        // Next,
+        // Acquire write lock if necessary.
         let mut tables = self.tables.write();
         let &index = tables.map.get(key)?;
         match &mut tables.values[index.as_usize()] {
