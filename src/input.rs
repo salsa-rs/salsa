@@ -1,4 +1,5 @@
 use crate::debug::TableEntry;
+use crate::dependency::DatabaseSlot;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
@@ -65,7 +66,7 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    fn slot(&self, key: &Q::Key, _database_key: &DB::DatabaseKey) -> Option<Arc<Slot<DB, Q>>> {
+    fn slot(&self, key: &Q::Key) -> Option<Arc<Slot<DB, Q>>> {
         self.slots.read().get(key).cloned()
     }
 
@@ -138,59 +139,21 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    fn try_fetch(
-        &self,
-        db: &DB,
-        key: &Q::Key,
-        database_key: &DB::DatabaseKey,
-    ) -> Result<Q::Value, CycleDetected> {
-        let slot = match self.slot(key, database_key) {
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected> {
+        let slot = match self.slot(key) {
             Some(s) => s.clone(),
             None => panic!("no value set for {:?}({:?})", Q::default(), key),
         };
 
         let StampedValue { value, changed_at } = slot.stamped_value.read().clone();
 
-        db.salsa_runtime()
-            .report_query_read(database_key, changed_at);
+        db.salsa_runtime().report_query_read(slot, changed_at);
 
         Ok(value)
     }
 
-    fn maybe_changed_since(
-        &self,
-        _db: &DB,
-        revision: Revision,
-        key: &Q::Key,
-        database_key: &DB::DatabaseKey,
-    ) -> bool {
-        debug!(
-            "{:?}({:?})::maybe_changed_since(revision={:?})",
-            Q::default(),
-            key,
-            revision,
-        );
-
-        let changed_at = match self.slot(key, database_key) {
-            Some(slot) => slot.stamped_value.read().changed_at,
-            None => ChangedAt {
-                is_constant: false,
-                revision: Revision::ZERO,
-            },
-        };
-
-        debug!(
-            "{:?}({:?}): changed_at = {:?}",
-            Q::default(),
-            key,
-            changed_at,
-        );
-
-        changed_at.changed_since(revision)
-    }
-
-    fn is_constant(&self, _db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey) -> bool {
-        self.slot(key, database_key)
+    fn is_constant(&self, _db: &DB, key: &Q::Key) -> bool {
+        self.slot(key)
             .map(|slot| slot.stamped_value.read().changed_at.is_constant)
             .unwrap_or(false)
     }
@@ -235,5 +198,34 @@ where
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
 
         self.set_common(db, key, database_key, value, IsConstant(true))
+    }
+}
+
+impl<DB, Q> DatabaseSlot<DB> for Slot<DB, Q>
+where
+    Q: Query<DB>,
+    DB: Database,
+{
+    fn maybe_changed_since(&self, _db: &DB, revision: Revision) -> bool {
+        debug!(
+            "maybe_changed_since(slot={:?}, revision={:?})",
+            self, revision,
+        );
+
+        let changed_at = self.stamped_value.read().changed_at;
+
+        debug!("maybe_changed_since: changed_at = {:?}", changed_at);
+
+        changed_at.changed_since(revision)
+    }
+}
+
+impl<DB, Q> std::fmt::Debug for Slot<DB, Q>
+where
+    Q: Query<DB>,
+    DB: Database,
+{
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(fmt, "{:?}({:?})", Q::default(), self.key)
     }
 }

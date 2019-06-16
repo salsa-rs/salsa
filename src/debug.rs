@@ -57,8 +57,7 @@ where
     type Value = Q::Value;
 
     fn is_constant(&self, key: Q::Key) -> bool {
-        let database_key = DB::database_key(self.db, key.clone());
-        self.storage.is_constant(self.db, &key, &database_key)
+        self.storage.is_constant(self.db, &key)
     }
 
     fn entries<C>(&self) -> C

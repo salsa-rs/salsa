@@ -6,7 +6,6 @@ use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::{Database, SweepStrategy};
 use parking_lot::RwLock;
@@ -133,12 +132,7 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn try_fetch(
-        &self,
-        db: &DB,
-        key: &Q::Key,
-        database_key: &DB::DatabaseKey,
-    ) -> Result<Q::Value, CycleDetected> {
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected> {
         let slot = self.slot(key);
         let StampedValue { value, changed_at } = slot.read(db)?;
 
@@ -146,23 +140,12 @@ where
             evicted.evict();
         }
 
-        db.salsa_runtime()
-            .report_query_read(database_key, changed_at);
+        db.salsa_runtime().report_query_read(slot, changed_at);
 
         Ok(value)
     }
 
-    fn maybe_changed_since(
-        &self,
-        db: &DB,
-        revision: Revision,
-        key: &Q::Key,
-        _database_key: &DB::DatabaseKey,
-    ) -> bool {
-        self.slot(key).maybe_changed_since(db, revision)
-    }
-
-    fn is_constant(&self, db: &DB, key: &Q::Key, _database_key: &DB::DatabaseKey) -> bool {
+    fn is_constant(&self, db: &DB, key: &Q::Key) -> bool {
         self.slot(key).is_constant(db)
     }
 

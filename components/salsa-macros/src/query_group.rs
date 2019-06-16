@@ -7,8 +7,8 @@ use proc_macro2::Span;
 use quote::ToTokens;
 use syn::punctuated::Punctuated;
 use syn::{
-    parse_macro_input, parse_quote, Attribute, FnArg, Ident, ItemTrait, Path,
-    ReturnType, Token, TraitBound, TraitBoundModifier, TraitItem, Type, TypeParamBound,
+    parse_macro_input, parse_quote, Attribute, FnArg, Ident, ItemTrait, Path, ReturnType, Token,
+    TraitBound, TraitBoundModifier, TraitItem, Type, TypeParamBound,
 };
 
 /// Implementation for `[salsa::query_group]` decorator.
@@ -184,7 +184,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
     let mut query_descriptor_variants = proc_macro2::TokenStream::new();
-    let mut query_descriptor_maybe_change = proc_macro2::TokenStream::new();
     let mut storage_fields = proc_macro2::TokenStream::new();
     let mut storage_defaults = proc_macro2::TokenStream::new();
     for query in &queries {
@@ -226,7 +225,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let set_constant_fn_name =
                 Ident::new(&format!("set_constant_{}", fn_name), fn_name.span());
 
-            let set_fn_docs = format!("
+            let set_fn_docs = format!(
+                "
                 Set the value of the `{fn_name}` input.
 
                 See `{fn_name}` for details.
@@ -234,9 +234,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 *Note:* Setting values will trigger cancellation
                 of any ongoing queries; this method blocks until
                 those queries have been cancelled.
-            ", fn_name = fn_name);
+            ",
+                fn_name = fn_name
+            );
 
-            let set_constant_fn_docs = format!("
+            let set_constant_fn_docs = format!(
+                "
                 Set the value of the `{fn_name}` input and promise
                 that its value will never change again.
 
@@ -245,7 +248,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 *Note:* Setting values will trigger cancellation
                 of any ongoing queries; this method blocks until
                 those queries have been cancelled.
-            ", fn_name = fn_name);
+            ",
+                fn_name = fn_name
+            );
 
             query_fn_declarations.extend(quote! {
                 # [doc = #set_fn_docs]
@@ -270,22 +275,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // A variant for the group descriptor below
         query_descriptor_variants.extend(quote! {
             #fn_name((#(#keys),*)),
-        });
-
-        // A variant for the group descriptor below
-        query_descriptor_maybe_change.extend(quote! {
-            #group_key::#fn_name(key) => {
-                let group_storage: &#group_storage<DB__> = salsa::plumbing::HasQueryGroup::group_storage(db);
-                let storage = &group_storage.#fn_name;
-
-                <_ as salsa::plumbing::QueryStorageOps<DB__, #qt>>::maybe_changed_since(
-                    storage,
-                    db,
-                    revision,
-                    key,
-                    db_descriptor,
-                )
-            }
         });
 
         // A field for the storage struct
@@ -429,23 +418,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         #trait_vis enum #group_key {
             #query_descriptor_variants
         }
-
-        impl #group_key {
-            #trait_vis fn maybe_changed_since<DB__>(
-                &self,
-                db: &DB__,
-                db_descriptor: &<DB__ as salsa::plumbing::DatabaseStorageTypes>::DatabaseKey,
-                revision: salsa::plumbing::Revision,
-            ) -> bool
-            where
-                DB__: #trait_name + #requires,
-                DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
-            {
-                match self {
-                    #query_descriptor_maybe_change
-                }
-            }
-        }
     });
 
     let mut for_each_ops = proc_macro2::TokenStream::new();
@@ -584,7 +556,7 @@ enum QueryStorage {
 impl QueryStorage {
     fn needs_query_function(&self) -> bool {
         match self {
-            | QueryStorage::Input
+            QueryStorage::Input
             | QueryStorage::Interned
             | QueryStorage::InternedLookup { .. }
             | QueryStorage::Transparent => false,

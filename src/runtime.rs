@@ -1,3 +1,5 @@
+use crate::dependency::DatabaseSlot;
+use crate::dependency::Dependency;
 use crate::{Database, Event, EventKind, SweepStrategy};
 use lock_api::{RawRwLock, RawRwLockRecursive};
 use log::debug;
@@ -320,7 +322,7 @@ where
 
         // Extract accumulated inputs.
         let ActiveQuery {
-            subqueries,
+            dependencies,
             changed_at,
             ..
         } = active_query.complete();
@@ -328,7 +330,7 @@ where
         ComputedQueryResult {
             value,
             changed_at,
-            subqueries,
+            dependencies,
         }
     }
 
@@ -340,8 +342,13 @@ where
     /// - `database_key`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    pub(crate) fn report_query_read(&self, database_key: &DB::DatabaseKey, changed_at: ChangedAt) {
-        self.local_state.report_query_read(database_key, changed_at);
+    pub(crate) fn report_query_read<'hack>(
+        &self,
+        database_slot: Arc<dyn DatabaseSlot<DB> + 'hack>,
+        changed_at: ChangedAt,
+    ) {
+        let dependency = Dependency::new(database_slot);
+        self.local_state.report_query_read(dependency, changed_at);
     }
 
     /// Reports that the query depends on some state unknown to salsa.
@@ -485,7 +492,7 @@ struct ActiveQuery<DB: Database> {
 
     /// Set of subqueries that were accessed thus far, or `None` if
     /// there was an untracked the read.
-    subqueries: Option<FxIndexSet<DB::DatabaseKey>>,
+    dependencies: Option<FxIndexSet<Dependency<DB>>>,
 }
 
 pub(crate) struct ComputedQueryResult<DB: Database, V> {
@@ -501,7 +508,7 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
 
     /// Complete set of subqueries that were accessed, or `None` if
     /// there was an untracked the read.
-    pub(crate) subqueries: Option<FxIndexSet<DB::DatabaseKey>>,
+    pub(crate) dependencies: Option<FxIndexSet<Dependency<DB>>>,
 }
 
 impl<DB: Database> ActiveQuery<DB> {
@@ -512,18 +519,18 @@ impl<DB: Database> ActiveQuery<DB> {
                 is_constant: true,
                 revision: Revision::ZERO,
             },
-            subqueries: Some(FxIndexSet::default()),
+            dependencies: Some(FxIndexSet::default()),
         }
     }
 
-    fn add_read(&mut self, subquery: &DB::DatabaseKey, changed_at: ChangedAt) {
+    fn add_read(&mut self, dependency: Dependency<DB>, changed_at: ChangedAt) {
         let ChangedAt {
             is_constant,
             revision,
         } = changed_at;
 
-        if let Some(set) = &mut self.subqueries {
-            set.insert(subquery.clone());
+        if let Some(set) = &mut self.dependencies {
+            set.insert(dependency);
         }
 
         self.changed_at.is_constant &= is_constant;
@@ -531,7 +538,7 @@ impl<DB: Database> ActiveQuery<DB> {
     }
 
     fn add_untracked_read(&mut self, changed_at: Revision) {
-        self.subqueries = None;
+        self.dependencies = None;
         self.changed_at.is_constant = false;
         self.changed_at.revision = changed_at;
     }

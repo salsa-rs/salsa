@@ -144,29 +144,8 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     });
 
-    let mut for_each_query_desc = proc_macro2::TokenStream::new();
-    for query_group in query_groups {
-        let group_name = query_group.name();
-        for_each_query_desc.extend(quote! {
-            __SalsaDatabaseKeyKind::#group_name(database_key) => database_key.maybe_changed_since(
-                db,
-                self,
-                revision,
-            ),
-        });
-    }
-
     output.extend(quote! {
         impl salsa::plumbing::DatabaseKey<#database_name> for __SalsaDatabaseKey {
-            fn maybe_changed_since(
-                &self,
-                db: &#database_name,
-                revision: salsa::plumbing::Revision,
-            ) -> bool {
-                match &self.kind {
-                    #for_each_query_desc
-                }
-            }
         }
     });
 

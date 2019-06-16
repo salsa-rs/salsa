@@ -8,6 +8,7 @@
 //! re-execute the derived queries and it will try to re-use results
 //! from previous invocations as appropriate.
 
+mod dependency;
 mod derived;
 mod input;
 mod intern_id;
@@ -458,10 +459,10 @@ where
     /// queries (those with no inputs, or those with more than one
     /// input) the key will be a tuple.
     pub fn get(&self, key: Q::Key) -> Q::Value {
-        let database_key = self.database_key(&key);
         self.storage
-            .try_fetch(self.db, &key, &database_key)
+            .try_fetch(self.db, &key)
             .unwrap_or_else(|CycleDetected| {
+                let database_key = self.database_key(&key);
                 self.db
                     .salsa_runtime()
                     .report_unexpected_cycle(database_key)

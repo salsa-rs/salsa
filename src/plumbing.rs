@@ -50,11 +50,7 @@ pub trait QueryStorageMassOps<DB: Database> {
     fn sweep(&self, db: &DB, strategy: SweepStrategy);
 }
 
-pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {
-    /// Returns true if the value of this query may have changed since
-    /// the given revision.
-    fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool;
-}
+pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {}
 
 pub trait QueryFunction<DB: Database>: Query<DB> {
     fn execute(db: &DB, key: Self::Key) -> Self::Value;
@@ -142,41 +138,10 @@ where
     /// Returns `Err` in the event of a cycle, meaning that computing
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
-    fn try_fetch(
-        &self,
-        db: &DB,
-        key: &Q::Key,
-        database_key: &DB::DatabaseKey,
-    ) -> Result<Q::Value, CycleDetected>;
-
-    /// True if the query **may** have changed since the given
-    /// revision. The query will answer this question with as much
-    /// precision as it is able to do based on its storage type.  In
-    /// the event of a cycle being detected as part of this function,
-    /// it returns true.
-    ///
-    /// Example: The steps for a memoized query are as follows.
-    ///
-    /// - If the query has already been computed:
-    ///   - Check the inputs that the previous computation used
-    ///     recursively to see if *they* have changed.  If they have
-    ///     not, then return false.
-    ///   - If they have, then the query is re-executed and the new
-    ///     result is compared against the old result. If it is equal,
-    ///     then return false.
-    /// - Return true.
-    ///
-    /// Other storage types will skip some or all of these steps.
-    fn maybe_changed_since(
-        &self,
-        db: &DB,
-        revision: Revision,
-        key: &Q::Key,
-        database_key: &DB::DatabaseKey,
-    ) -> bool;
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected>;
 
     /// Check if `key` is (currently) believed to be a constant.
-    fn is_constant(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey) -> bool;
+    fn is_constant(&self, db: &DB, key: &Q::Key) -> bool;
 
     /// Get the (current) set of the entries in the query storage
     fn entries<C>(&self, db: &DB) -> C

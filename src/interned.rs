@@ -1,4 +1,5 @@
 use crate::debug::TableEntry;
+use crate::dependency::DatabaseSlot;
 use crate::intern_id::InternId;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::HasQueryGroup;
@@ -318,17 +319,12 @@ where
     Q::Value: InternKey,
     DB: Database,
 {
-    fn try_fetch(
-        &self,
-        db: &DB,
-        key: &Q::Key,
-        database_key: &DB::DatabaseKey,
-    ) -> Result<Q::Value, CycleDetected> {
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected> {
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
         let index = slot.index;
         db.salsa_runtime().report_query_read(
-            database_key,
+            slot,
             ChangedAt {
                 is_constant: false,
                 revision: changed_at,
@@ -337,20 +333,7 @@ where
         Ok(<Q::Value>::from_intern_id(index))
     }
 
-    fn maybe_changed_since(
-        &self,
-        db: &DB,
-        revision: Revision,
-        key: &Q::Key,
-        _database_key: &DB::DatabaseKey,
-    ) -> bool {
-        match self.intern_check(db, key) {
-            Some(slot) => slot.interned_at > revision,
-            None => true,
-        }
-    }
-
-    fn is_constant(&self, _db: &DB, _key: &Q::Key, _database_key: &DB::DatabaseKey) -> bool {
+    fn is_constant(&self, _db: &DB, _key: &Q::Key) -> bool {
         false
     }
 
@@ -439,14 +422,8 @@ where
     >,
     DB: Database + HasQueryGroup<Q::Group>,
 {
-    fn try_fetch(
-        &self,
-        db: &DB,
-        key: &Q::Key,
-        database_key: &DB::DatabaseKey,
-    ) -> Result<Q::Value, CycleDetected> {
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected> {
         let index = key.as_intern_id();
-
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(group_storage);
         let slot = interned_storage.lookup_value(db, index);
@@ -455,47 +432,11 @@ where
             revision: slot.interned_at,
         };
         let value = slot.value.clone();
-        db.salsa_runtime()
-            .report_query_read(database_key, changed_at);
+        db.salsa_runtime().report_query_read(slot, changed_at);
         Ok(value)
     }
 
-    fn maybe_changed_since(
-        &self,
-        db: &DB,
-        revision: Revision,
-        key: &Q::Key,
-        _database_key: &DB::DatabaseKey,
-    ) -> bool {
-        let index = key.as_intern_id();
-
-        // NB. This will **panic** if `key` has been removed from the
-        // map, whereas you might expect it to return true in that
-        // event.  But I think this is ok. You have to ask yourself,
-        // where did this (invalid) key K come from? There are two
-        // options:
-        //
-        // ## Some query Q1 obtained the key K by interning a value:
-        //
-        // In that case, Q1 has a prior input that computes K. This
-        // input must be invalid and hence Q1 must be considered to
-        // have changed, so it shouldn't be asking if we have changed.
-        //
-        // ## Some query Q1 was given K as an input:
-        //
-        // In that case, the query Q1 must be invoked (ultimately) by
-        // some query Q2 that computed K. This implies that K must be
-        // the result of *some* valid interning call, and therefore
-        // that it should be a valid key now (and not pointing at a
-        // free slot or out of bounds).
-
-        let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(group_storage);
-        let slot = interned_storage.lookup_value(db, index);
-        slot.interned_at > revision
-    }
-
-    fn is_constant(&self, _db: &DB, _key: &Q::Key, _database_key: &DB::DatabaseKey) -> bool {
+    fn is_constant(&self, _db: &DB, _key: &Q::Key) -> bool {
         false
     }
 
@@ -581,6 +522,23 @@ impl<K> Slot<K> {
             }
         } else {
             false
+        }
+    }
+}
+
+impl<DB, K> DatabaseSlot<DB> for Slot<K>
+where
+    DB: Database,
+    K: Debug,
+{
+    fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
+        let revision_now = db.salsa_runtime().current_revision();
+        if !self.try_update_accessed_at(revision_now) {
+            // if we failed to update accessed-at, then this slot was garbage collected
+            true
+        } else {
+            // otherwise, compare the interning with revision
+            self.interned_at > revision
         }
     }
 }
