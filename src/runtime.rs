@@ -453,8 +453,8 @@ impl<DB: Database> Default for SharedState<DB> {
             next_id: AtomicUsize::new(1),
             storage: Default::default(),
             query_lock: Default::default(),
-            revision: Default::default(),
-            pending_revision: Default::default(),
+            revision: AtomicU64::new(1),
+            pending_revision: AtomicU64::new(1),
             dependency_graph: Default::default(),
         }
     }
@@ -517,7 +517,7 @@ impl<DB: Database> ActiveQuery<DB> {
             database_key,
             changed_at: ChangedAt {
                 is_constant: true,
-                revision: Revision::ZERO,
+                revision: Revision::START,
             },
             dependencies: Some(FxIndexSet::default()),
         }
@@ -567,7 +567,7 @@ pub struct Revision {
 }
 
 impl Revision {
-    pub(crate) const ZERO: Self = Revision { generation: 0 };
+    pub(crate) const START: Self = Revision { generation: 1 };
 
     fn next(self) -> Revision {
         Revision {
