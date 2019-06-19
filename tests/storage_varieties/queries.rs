@@ -5,7 +5,6 @@ pub(crate) trait Counter: salsa::Database {
 #[salsa::query_group(GroupStruct)]
 pub(crate) trait Database: Counter {
     fn memoized(&self) -> usize;
-    #[salsa::volatile]
     fn volatile(&self) -> usize;
 }
 
@@ -18,5 +17,6 @@ fn memoized(db: &impl Database) -> usize {
 /// Because this query is volatile, each time it is invoked,
 /// we will increment the counter.
 fn volatile(db: &impl Database) -> usize {
+    db.salsa_runtime().report_untracked_read();
     db.increment()
 }

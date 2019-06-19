@@ -5,12 +5,11 @@ use std::sync::Arc;
 
 /// Query group for tests for how interned keys interact with GC.
 #[salsa::query_group(Volatile)]
-pub(crate) trait VolatileDatabase {
+pub(crate) trait VolatileDatabase: Database {
     #[salsa::input]
     fn atomic_cell(&self) -> Arc<AtomicUsize>;
 
     /// Underlying volatile query.
-    #[salsa::volatile]
     fn volatile(&self) -> usize;
 
     /// This just executes the intern query and returns the result.
@@ -21,6 +20,7 @@ pub(crate) trait VolatileDatabase {
 }
 
 fn volatile(db: &impl VolatileDatabase) -> usize {
+    db.salsa_runtime().report_untracked_read();
     db.atomic_cell().load(Ordering::SeqCst)
 }
 

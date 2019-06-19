@@ -54,10 +54,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                             storage = QueryStorage::Memoized;
                             num_storages += 1;
                         }
-                        "volatile" => {
-                            storage = QueryStorage::Volatile;
-                            num_storages += 1;
-                        }
                         "dependencies" => {
                             storage = QueryStorage::Dependencies;
                             num_storages += 1;
@@ -359,7 +355,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         let storage = match &query.storage {
             QueryStorage::Memoized => quote!(salsa::plumbing::MemoizedStorage<#db, Self>),
-            QueryStorage::Volatile => quote!(salsa::plumbing::VolatileStorage<#db, Self>),
             QueryStorage::Dependencies => quote!(salsa::plumbing::DependencyStorage<#db, Self>),
             QueryStorage::Input => quote!(salsa::plumbing::InputStorage<#db, Self>),
             QueryStorage::Interned => quote!(salsa::plumbing::InternedStorage<#db, Self>),
@@ -579,7 +574,6 @@ impl Query {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum QueryStorage {
     Memoized,
-    Volatile,
     Dependencies,
     Input,
     Interned,
@@ -594,7 +588,7 @@ impl QueryStorage {
             | QueryStorage::Interned
             | QueryStorage::InternedLookup { .. }
             | QueryStorage::Transparent => false,
-            QueryStorage::Memoized | QueryStorage::Volatile | QueryStorage::Dependencies => true,
+            QueryStorage::Memoized | QueryStorage::Dependencies => true,
         }
     }
 }

@@ -15,9 +15,7 @@ trait Database: salsa::Database {
     // `a` and `b` depend on each other and form a cycle
     fn memoized_a(&self) -> ();
     fn memoized_b(&self) -> ();
-    #[salsa::volatile]
     fn volatile_a(&self) -> ();
-    #[salsa::volatile]
     fn volatile_b(&self) -> ();
 }
 
@@ -30,10 +28,12 @@ fn memoized_b(db: &impl Database) -> () {
 }
 
 fn volatile_a(db: &impl Database) -> () {
+    db.salsa_runtime().report_untracked_read();
     db.volatile_b()
 }
 
 fn volatile_b(db: &impl Database) -> () {
+    db.salsa_runtime().report_untracked_read();
     db.volatile_a()
 }
 

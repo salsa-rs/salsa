@@ -344,7 +344,11 @@ where
         self.local_state.report_query_read(database_key, changed_at);
     }
 
-    pub(crate) fn report_untracked_read(&self) {
+    /// Reports that the query depends on some state unknown to salsa.
+    ///
+    /// If query reports untracked read, it will be reexuted in the next
+    /// revision.
+    pub fn report_untracked_read(&self) {
         self.local_state
             .report_untracked_read(self.current_revision());
     }
