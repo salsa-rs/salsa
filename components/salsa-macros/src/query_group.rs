@@ -184,6 +184,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
     let mut query_descriptor_variants = proc_macro2::TokenStream::new();
+    let mut group_data_elements = vec![];
     let mut storage_fields = proc_macro2::TokenStream::new();
     let mut storage_defaults = proc_macro2::TokenStream::new();
     for query in &queries {
@@ -277,6 +278,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             #fn_name((#(#keys),*)),
         });
 
+        // Entry for the query group data tuple
+        group_data_elements.push(quote! {
+            (#(#keys,)* #value)
+        });
+
         // A field for the storage struct
         //
         // FIXME(#120): the pub should not be necessary once we complete the transition
@@ -310,6 +316,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         {
             type GroupStorage = #group_storage<DB__>;
             type GroupKey = #group_key;
+            type GroupData = (#(#group_data_elements),*);
         }
     });
 

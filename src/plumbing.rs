@@ -31,6 +31,12 @@ pub trait DatabaseStorageTypes: Sized {
     /// for a more open-ended option.
     type DatabaseKey: DatabaseKey<Self>;
 
+    /// An associated type that contains all the query keys/values
+    /// that can appear in the database. This is used as part of the
+    /// slot mechanism to determine when database handles are
+    /// send/sync/'static.
+    type DatabaseData;
+
     /// Defines the "storage type", where all the query data is kept.
     /// This type is defined by the `database_storage` macro.
     type DatabaseStorage: Default;
@@ -110,6 +116,7 @@ where
 pub trait QueryGroup<DB: Database> {
     type GroupStorage;
     type GroupKey;
+    type GroupData;
 }
 
 /// Trait implemented by a database for each group that it supports.
