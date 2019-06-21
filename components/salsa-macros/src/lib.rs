@@ -46,6 +46,14 @@ mod query_group;
 ///
 /// Here is a list of legal `salsa::XXX` attributes:
 ///
+/// - Query group attributes: apply to the trait itself
+///   - `#[salsa::requires(OtherGroup)]` -- makes `OtherGroup` a
+///     private dependency of the current group. That means that
+///     functions that implement queries have `: OutherGropup` bound
+///     on the database argument. This is similar to just making `OtherGroup`
+///     a super trait, with a difference that users of the query group don't
+///     get access to `OtherGroup` automatcally, which would be the case with
+///     a super trait.
 /// - Storage attributes: control how the query data is stored and set. These
 ///   are described in detail in the section below.
 ///   - `#[salsa::input]`
