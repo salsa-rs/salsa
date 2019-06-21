@@ -4,8 +4,11 @@ use std::fmt::Debug;
 use std::hash::Hasher;
 use std::sync::Arc;
 
-/// Each kind of query exports a "slot".
-pub(crate) trait DatabaseSlot<DB: Database>: Debug {
+/// Unsafe proof obligations:
+///
+/// - If `DB::DatabaseData: Send + Sync`, then `Self: Send + Sync`
+/// - If `DB: 'static` and `DB::DatabaseData: 'static`, then `Self: 'static`
+pub(crate) unsafe trait DatabaseSlot<DB: Database>: Debug {
     /// Returns true if the value of this query may have changed since
     /// the given revision.
     fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool;
@@ -13,6 +16,7 @@ pub(crate) trait DatabaseSlot<DB: Database>: Debug {
 
 pub(crate) struct Dependency<DB: Database> {
     slot: Arc<dyn DatabaseSlot<DB> + Send + Sync>,
+    phantom: std::marker::PhantomData<Arc<DB::DatabaseData>>,
 }
 
 impl<DB: Database> Dependency<DB> {
@@ -22,7 +26,10 @@ impl<DB: Database> Dependency<DB> {
         // Hiding these bounds behind a trait object is a total hack
         // but I just want to see how well this works. -nikomatsakis
         let slot: Arc<dyn DatabaseSlot<DB> + Send + Sync> = unsafe { std::mem::transmute(slot) };
-        Self { slot }
+        Self {
+            slot,
+            phantom: std::marker::PhantomData,
+        }
     }
 
     fn raw_slot(&self) -> *const dyn DatabaseSlot<DB> {

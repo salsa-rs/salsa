@@ -10,6 +10,7 @@
 
 mod dependency;
 mod derived;
+mod doctest;
 mod input;
 mod intern_id;
 mod interned;
@@ -404,7 +405,13 @@ where
 
 /// Trait implements by all of the "special types" associated with
 /// each of your queries.
-pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
+///
+/// Unsafe trait obligation: Asserts that the Key/Value associated
+/// types for this trait are a part of the `Group::GroupData` type.
+/// In particular, `Group::GroupData: Send + Sync` must imply that
+/// `Key: Send + Sync` and `Value: Send + Sync`. This is relied upon
+/// by the dependency tracking logic.
+pub unsafe trait Query<DB: Database>: Debug + Default + Sized + 'static {
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
     type Key: Clone + Debug + Hash + Eq;

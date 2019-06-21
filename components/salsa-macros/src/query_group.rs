@@ -367,7 +367,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             #[derive(Default, Debug)]
             #trait_vis struct #qt;
 
-            impl<#db> salsa::Query<#db> for #qt
+            // Unsafe proof obligation: that our key/value are a part
+            // of the `GroupData`.
+            unsafe impl<#db> salsa::Query<#db> for #qt
             where
                 DB: #trait_name + #requires,
                 DB: salsa::plumbing::HasQueryGroup<#group_struct>,

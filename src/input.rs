@@ -201,7 +201,11 @@ where
     }
 }
 
-impl<DB, Q> DatabaseSlot<DB> for Slot<DB, Q>
+// Unsafe proof obligation: `Slot<DB, Q>` is Send + Sync if the query
+// key/value is Send + Sync (also, that we introduce no
+// references). These are tested by the `check_send_sync` and
+// `check_static` helpers below.
+unsafe impl<DB, Q> DatabaseSlot<DB> for Slot<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
@@ -218,6 +222,39 @@ where
 
         changed_at.changed_since(revision)
     }
+}
+
+/// Check that `Slot<DB, Q, MP>: Send + Sync` as long as
+/// `DB::DatabaseData: Send + Sync`, which in turn implies that
+/// `Q::Key: Send + Sync`, `Q::Value: Send + Sync`.
+#[allow(dead_code)]
+fn check_send_sync<DB, Q>()
+where
+    Q: Query<DB>,
+    DB: Database,
+    DB::DatabaseData: Send + Sync,
+    Q::Key: Send + Sync,
+    Q::Value: Send + Sync,
+{
+    fn is_send_sync<T: Send + Sync>() {}
+    is_send_sync::<Slot<DB, Q>>();
+}
+
+/// Check that `Slot<DB, Q, MP>: 'static` as long as
+/// `DB::DatabaseData: 'static`, which in turn implies that
+/// `Q::Key: 'static`, `Q::Value: 'static`.
+#[allow(dead_code)]
+fn check_static<DB, Q>()
+where
+    Q: Query<DB>,
+    DB: Database,
+    DB: 'static,
+    DB::DatabaseData: 'static,
+    Q::Key: 'static,
+    Q::Value: 'static,
+{
+    fn is_static<T: 'static>() {}
+    is_static::<Slot<DB, Q>>();
 }
 
 impl<DB, Q> std::fmt::Debug for Slot<DB, Q>

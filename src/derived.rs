@@ -49,7 +49,7 @@ where
 {
 }
 
-pub trait MemoizationPolicy<DB, Q>
+pub trait MemoizationPolicy<DB, Q>: Send + Sync + 'static
 where
     Q: QueryFunction<DB>,
     DB: Database,

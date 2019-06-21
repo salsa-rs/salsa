@@ -755,7 +755,11 @@ where
     }
 }
 
-impl<DB, Q, MP> DatabaseSlot<DB> for Slot<DB, Q, MP>
+// The unsafe obligation here is for us to assert that `Slot<DB, Q,
+// MP>` is `Send + Sync + 'static`, assuming `Q::Key` and `Q::Value`
+// are. We assert this with the `check_send_sync` and `check_static`
+// functions below.
+unsafe impl<DB, Q, MP> DatabaseSlot<DB> for Slot<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
@@ -932,4 +936,39 @@ where
 
         maybe_changed
     }
+}
+
+/// Check that `Slot<DB, Q, MP>: Send + Sync` as long as
+/// `DB::DatabaseData: Send + Sync`, which in turn implies that
+/// `Q::Key: Send + Sync`, `Q::Value: Send + Sync`.
+#[allow(dead_code)]
+fn check_send_sync<DB, Q, MP>()
+where
+    Q: QueryFunction<DB>,
+    DB: Database + HasQueryGroup<Q::Group>,
+    MP: MemoizationPolicy<DB, Q>,
+    DB::DatabaseData: Send + Sync,
+    Q::Key: Send + Sync,
+    Q::Value: Send + Sync,
+{
+    fn is_send_sync<T: Send + Sync>() {}
+    is_send_sync::<Slot<DB, Q, MP>>();
+}
+
+/// Check that `Slot<DB, Q, MP>: 'static` as long as
+/// `DB::DatabaseData: 'static`, which in turn implies that
+/// `Q::Key: 'static`, `Q::Value: 'static`.
+#[allow(dead_code)]
+fn check_static<DB, Q, MP>()
+where
+    Q: QueryFunction<DB>,
+    DB: Database + HasQueryGroup<Q::Group>,
+    MP: MemoizationPolicy<DB, Q>,
+    DB: 'static,
+    DB::DatabaseData: 'static,
+    Q::Key: 'static,
+    Q::Value: 'static,
+{
+    fn is_static<T: 'static>() {}
+    is_static::<Slot<DB, Q, MP>>();
 }
