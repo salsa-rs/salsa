@@ -71,10 +71,9 @@ where
     /// Last revision when the memoized value was observed to change.
     changed_at: Revision,
 
-    /// If `Some`, then this value was considered constant at the
-    /// given revision. If no constants have changed since then, we
-    /// don't need to check the inputs to see if they've changed.
-    constant_in_revision: Option<Revision>,
+    /// If true, then this value was considered a constant when last
+    /// verified.
+    is_constant: bool,
 
     /// The inputs that went into our query, if we are tracking them.
     inputs: MemoInputs<DB>,
@@ -221,8 +220,7 @@ where
             if let Some(old_value) = &old_memo.value {
                 // Careful: the "constant-ness" must also not have
                 // changed, see the test `constant_to_non_constant`.
-                let memo_was_constant = old_memo.constant_in_revision.is_some();
-                if memo_was_constant == result.is_constant
+                if old_memo.is_constant == result.is_constant
                     && MP::memoized_value_eq(&old_value, &result.value)
                 {
                     debug!(
@@ -249,18 +247,9 @@ where
         };
 
         debug!(
-            "read_upgrade({:?}): result.changed_at={:?}, result.dependencies = {:#?}",
-            self, result.changed_at, result.dependencies,
-        );
-
-        let constant_in_revision = if result.is_constant {
-            Some(revision_now)
-        } else {
-            None
-        };
-        debug!(
-            "read_upgrade({:?}): constant_in_revision={:?}",
-            self, constant_in_revision
+            "read_upgrade({:?}): result.changed_at={:?}, \
+             result.is_constant={:?}, result.dependencies = {:#?}",
+            self, result.changed_at, result.is_constant, result.dependencies,
         );
 
         let inputs = match result.dependencies {
@@ -283,7 +272,7 @@ where
             changed_at: result.changed_at,
             verified_at: revision_now,
             inputs,
-            constant_in_revision,
+            is_constant: result.is_constant,
         });
 
         panic_guard.proceed(&new_value);
@@ -628,17 +617,15 @@ where
     /// True if this memo should still be considered constant
     /// (presuming it ever was).
     fn is_still_constant(&self, db: &DB) -> bool {
-        if let Some(constant_at) = self.constant_in_revision {
+        self.is_constant && {
             let last_changed = db.salsa_runtime().revision_when_constant_last_changed();
             debug!(
-                "is_still_constant(last_changed={:?} <= constant_at={:?}) = {:?}",
+                "is_still_constant(last_changed={:?} <= verified_at={:?}) = {:?}",
                 last_changed,
-                constant_at,
-                last_changed <= constant_at,
+                self.verified_at,
+                last_changed <= self.verified_at,
             );
-            last_changed <= constant_at
-        } else {
-            false
+            last_changed <= self.verified_at
         }
     }
 
@@ -711,13 +698,8 @@ where
         };
         self.verified_at = revision_now;
 
-        let is_constant = self.constant_in_revision.is_some();
-        if is_constant {
-            self.constant_in_revision = Some(revision_now);
-        }
-
         StampedValue {
-            is_constant,
+            is_constant: self.is_constant,
             changed_at: self.changed_at,
             value,
         }
@@ -733,10 +715,8 @@ where
         );
 
         if self.verified_at == revision_now {
-            let is_constant = self.constant_in_revision.is_some();
-
             return Some(StampedValue {
-                is_constant,
+                is_constant: self.is_constant,
                 changed_at: self.changed_at,
                 value: value.clone(),
             });
