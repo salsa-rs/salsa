@@ -355,7 +355,7 @@ where
     pub(crate) fn report_query_read<'hack>(
         &self,
         database_slot: Arc<dyn DatabaseSlot<DB> + 'hack>,
-        is_constant: bool,
+        is_constant: IsConstant,
         changed_at: Revision,
     ) {
         let dependency = Dependency::new(database_slot);
@@ -537,7 +537,7 @@ struct ActiveQuery<DB: Database> {
     database_key: DB::DatabaseKey,
 
     /// True if all inputs were constant (and no untracked inputs).
-    is_constant: bool,
+    is_constant: IsConstant,
 
     /// Maximum revision of all inputs observed. If we observe an
     /// untracked read, this will be set to the most recent revision.
@@ -553,7 +553,7 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
     pub(crate) value: V,
 
     /// True if all inputs were constant (and no untracked inputs).
-    pub(crate) is_constant: bool,
+    pub(crate) is_constant: IsConstant,
 
     /// Maximum revision of all inputs observed. If we observe an
     /// untracked read, this will be set to the most recent revision.
@@ -568,24 +568,29 @@ impl<DB: Database> ActiveQuery<DB> {
     fn new(database_key: DB::DatabaseKey) -> Self {
         ActiveQuery {
             database_key,
-            is_constant: true,
+            is_constant: IsConstant(true),
             changed_at: Revision::start(),
             dependencies: Some(FxIndexSet::default()),
         }
     }
 
-    fn add_read(&mut self, dependency: Dependency<DB>, is_constant: bool, revision: Revision) {
+    fn add_read(
+        &mut self,
+        dependency: Dependency<DB>,
+        is_constant: IsConstant,
+        revision: Revision,
+    ) {
         if let Some(set) = &mut self.dependencies {
             set.insert(dependency);
         }
 
-        self.is_constant &= is_constant;
+        self.is_constant = self.is_constant.and(is_constant);
         self.changed_at = self.changed_at.max(revision);
     }
 
     fn add_untracked_read(&mut self, changed_at: Revision) {
         self.dependencies = None;
-        self.is_constant = false;
+        self.is_constant = IsConstant(false);
         self.changed_at = changed_at;
     }
 
@@ -638,10 +643,19 @@ impl std::fmt::Debug for Revision {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct IsConstant(pub(crate) bool);
+
+impl IsConstant {
+    pub(crate) fn and(self, c: IsConstant) -> IsConstant {
+        IsConstant(self.0 & c.0)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct StampedValue<V> {
     pub(crate) value: V,
-    pub(crate) is_constant: bool,
+    pub(crate) is_constant: IsConstant,
     pub(crate) changed_at: Revision,
 }
 

@@ -4,6 +4,7 @@ use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
+use crate::runtime::IsConstant;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::Database;
@@ -58,8 +59,6 @@ where
     }
 }
 
-struct IsConstant(bool);
-
 impl<DB, Q> InputStorage<DB, Q>
 where
     Q: Query<DB>,
@@ -101,7 +100,7 @@ where
             // into the same cell while we block on the lock.)
             let stamped_value = StampedValue {
                 value,
-                is_constant: is_constant.0,
+                is_constant: is_constant,
                 changed_at: guard.new_revision(),
             };
 
@@ -109,7 +108,7 @@ where
                 Entry::Occupied(entry) => {
                     let mut slot_stamped_value = entry.get().stamped_value.write();
 
-                    if slot_stamped_value.is_constant {
+                    if slot_stamped_value.is_constant.0 {
                         guard.mark_constants_as_changed();
                     }
 
@@ -152,7 +151,7 @@ where
 
     fn is_constant(&self, _db: &DB, key: &Q::Key) -> bool {
         self.slot(key)
-            .map(|slot| slot.stamped_value.read().is_constant)
+            .map(|slot| slot.stamped_value.read().is_constant.0)
             .unwrap_or(false)
     }
 

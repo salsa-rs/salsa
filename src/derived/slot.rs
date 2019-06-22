@@ -9,6 +9,7 @@ use crate::plumbing::GetQueryTable;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryFunction;
 use crate::runtime::FxIndexSet;
+use crate::runtime::IsConstant;
 use crate::runtime::Revision;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
@@ -73,7 +74,7 @@ where
 
     /// If true, then this value was considered a constant when last
     /// verified.
-    is_constant: bool,
+    is_constant: IsConstant,
 
     /// The inputs that went into our query, if we are tracking them.
     inputs: MemoInputs<DB>,
@@ -617,7 +618,7 @@ where
     /// True if this memo should still be considered constant
     /// (presuming it ever was).
     fn is_still_constant(&self, db: &DB) -> bool {
-        self.is_constant && {
+        self.is_constant.0 && {
             let last_changed = db.salsa_runtime().revision_when_constant_last_changed();
             debug!(
                 "is_still_constant(last_changed={:?} <= verified_at={:?}) = {:?}",
