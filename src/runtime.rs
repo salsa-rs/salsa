@@ -1,6 +1,7 @@
 use crate::dependency::DatabaseSlot;
 use crate::dependency::Dependency;
 use crate::{Database, Event, EventKind, SweepStrategy};
+use crossbeam::atomic::AtomicCell;
 use lock_api::{RawRwLock, RawRwLockRecursive};
 use log::debug;
 use parking_lot::{Mutex, RwLock};
@@ -158,6 +159,12 @@ where
         Revision::from(self.shared_state.revision.load(Ordering::SeqCst))
     }
 
+    /// The revision in which constants last changed.
+    #[inline]
+    pub(crate) fn revision_when_constant_last_changed(&self) -> Revision {
+        self.shared_state.constant_revision.load()
+    }
+
     /// Read current value of the revision counter.
     #[inline]
     fn pending_revision(&self) -> Revision {
@@ -262,7 +269,10 @@ where
     /// Note that, given our writer model, we can assume that only one
     /// thread is attempting to increment the global revision at a
     /// time.
-    pub(crate) fn with_incremented_revision<R>(&self, op: impl FnOnce(Revision) -> R) -> R {
+    pub(crate) fn with_incremented_revision<R>(
+        &self,
+        op: impl FnOnce(&DatabaseWriteLockGuard<'_, DB>) -> R,
+    ) -> R {
         log::debug!("increment_revision()");
 
         if !self.permits_increment() {
@@ -287,7 +297,10 @@ where
 
         debug!("increment_revision: incremented to {:?}", new_revision);
 
-        op(new_revision)
+        op(&DatabaseWriteLockGuard {
+            runtime: self,
+            new_revision,
+        })
     }
 
     pub(crate) fn permits_increment(&self) -> bool {
@@ -402,6 +415,39 @@ where
     }
 }
 
+/// Temporary guard that indicates that the database write-lock is
+/// held. You can get one of these by invoking
+/// `with_incremented_revision`. It gives access to the new revision
+/// and a few other operations that only make sense to do while an
+/// update is happening.
+pub(crate) struct DatabaseWriteLockGuard<'db, DB>
+where
+    DB: Database,
+{
+    runtime: &'db Runtime<DB>,
+    new_revision: Revision,
+}
+
+impl<DB> DatabaseWriteLockGuard<'_, DB>
+where
+    DB: Database,
+{
+    pub(crate) fn new_revision(&self) -> Revision {
+        self.new_revision
+    }
+
+    /// Indicates that this update modified an input marked as
+    /// "constant". This will force re-evaluation of anything that was
+    /// dependent on constants (which otherwise might not get
+    /// re-evaluated).
+    pub(crate) fn mark_constants_as_changed(&self) {
+        self.runtime
+            .shared_state
+            .constant_revision
+            .store(self.new_revision);
+    }
+}
+
 /// State that will be common to all threads (when we support multiple threads)
 struct SharedState<DB: Database> {
     storage: DB::DatabaseStorage,
@@ -430,6 +476,12 @@ struct SharedState<DB: Database> {
     /// revision is canceled).
     pending_revision: AtomicU64,
 
+    /// The last time that a value marked as "constant" changed.  Like
+    /// `revision` and `pending_revision`, this is readable without
+    /// any lock but requires the query-lock to be write-locked for
+    /// updates
+    constant_revision: AtomicCell<Revision>,
+
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
     dependency_graph: Mutex<DependencyGraph<DB>>,
@@ -448,8 +500,9 @@ impl<DB: Database> Default for SharedState<DB> {
             next_id: AtomicUsize::new(1),
             storage: Default::default(),
             query_lock: Default::default(),
-            revision: AtomicU64::new(1),
-            pending_revision: AtomicU64::new(1),
+            revision: AtomicU64::new(Revision::START_U64),
+            pending_revision: AtomicU64::new(Revision::START_U64),
+            constant_revision: AtomicCell::new(Revision::start()),
             dependency_graph: Default::default(),
         }
     }
@@ -562,8 +615,12 @@ pub struct Revision {
 }
 
 impl Revision {
+    /// Value if the initial revision, as a u64. We don't use 0
+    /// because we want to use a `NonZeroU64`.
+    const START_U64: u64 = 1;
+
     fn start() -> Self {
-        Self::from(1)
+        Self::from(Self::START_U64)
     }
 
     fn from(g: u64) -> Self {

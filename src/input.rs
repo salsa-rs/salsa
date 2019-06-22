@@ -86,7 +86,7 @@ where
         // need to read from this input. Therefore, we wait to acquire
         // the lock on `map` until we also hold the global query write
         // lock.
-        db.salsa_runtime().with_incremented_revision(|next_revision| {
+        db.salsa_runtime().with_incremented_revision(|guard| {
             let mut slots = self.slots.write();
 
             db.salsa_event(|| Event {
@@ -102,7 +102,7 @@ where
             // into the same cell while we block on the lock.)
             let changed_at = ChangedAt {
                 is_constant: is_constant.0,
-                revision: next_revision,
+                revision: guard.new_revision(),
             };
 
             let stamped_value = StampedValue { value, changed_at };
@@ -111,14 +111,9 @@ where
                 Entry::Occupied(entry) => {
                     let mut slot_stamped_value = entry.get().stamped_value.write();
 
-                    assert!(
-                        !slot_stamped_value.changed_at.is_constant,
-                        "modifying `{:?}({:?})`, which was previously marked as constant (old value `{:?}`, new value `{:?}`)",
-                        Q::default(),
-                        entry.key(),
-                        slot_stamped_value.value,
-                        stamped_value.value,
-                    );
+                    if slot_stamped_value.changed_at.is_constant {
+                        guard.mark_constants_as_changed();
+                    }
 
                     *slot_stamped_value = stamped_value;
                 }
