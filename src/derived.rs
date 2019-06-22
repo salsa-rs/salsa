@@ -134,13 +134,18 @@ where
 {
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected> {
         let slot = self.slot(key);
-        let StampedValue { value, changed_at } = slot.read(db)?;
+        let StampedValue {
+            value,
+            is_constant,
+            changed_at,
+        } = slot.read(db)?;
 
         if let Some(evicted) = self.lru_list.record_use(&slot) {
             evicted.evict();
         }
 
-        db.salsa_runtime().report_query_read(slot, changed_at);
+        db.salsa_runtime()
+            .report_query_read(slot, is_constant, changed_at);
 
         Ok(value)
     }

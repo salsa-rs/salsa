@@ -4,7 +4,6 @@ use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::runtime::ChangedAt;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::Database;
@@ -100,18 +99,17 @@ where
             // racing with somebody else to modify this same cell.
             // (Otherwise, someone else might write a *newer* revision
             // into the same cell while we block on the lock.)
-            let changed_at = ChangedAt {
+            let stamped_value = StampedValue {
+                value,
                 is_constant: is_constant.0,
-                revision: guard.new_revision(),
+                changed_at: guard.new_revision(),
             };
-
-            let stamped_value = StampedValue { value, changed_at };
 
             match slots.entry(key.clone()) {
                 Entry::Occupied(entry) => {
                     let mut slot_stamped_value = entry.get().stamped_value.write();
 
-                    if slot_stamped_value.changed_at.is_constant {
+                    if slot_stamped_value.is_constant {
                         guard.mark_constants_as_changed();
                     }
 
@@ -140,16 +138,21 @@ where
             None => panic!("no value set for {:?}({:?})", Q::default(), key),
         };
 
-        let StampedValue { value, changed_at } = slot.stamped_value.read().clone();
+        let StampedValue {
+            value,
+            is_constant,
+            changed_at,
+        } = slot.stamped_value.read().clone();
 
-        db.salsa_runtime().report_query_read(slot, changed_at);
+        db.salsa_runtime()
+            .report_query_read(slot, is_constant, changed_at);
 
         Ok(value)
     }
 
     fn is_constant(&self, _db: &DB, key: &Q::Key) -> bool {
         self.slot(key)
-            .map(|slot| slot.stamped_value.read().changed_at.is_constant)
+            .map(|slot| slot.stamped_value.read().is_constant)
             .unwrap_or(false)
     }
 
@@ -215,7 +218,7 @@ where
 
         debug!("maybe_changed_since: changed_at = {:?}", changed_at);
 
-        changed_at.changed_since(revision)
+        changed_at > revision
     }
 }
 

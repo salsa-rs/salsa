@@ -332,11 +332,13 @@ where
         let ActiveQuery {
             dependencies,
             changed_at,
+            is_constant,
             ..
         } = active_query.complete();
 
         ComputedQueryResult {
             value,
+            is_constant,
             changed_at,
             dependencies,
         }
@@ -353,10 +355,12 @@ where
     pub(crate) fn report_query_read<'hack>(
         &self,
         database_slot: Arc<dyn DatabaseSlot<DB> + 'hack>,
-        changed_at: ChangedAt,
+        is_constant: bool,
+        changed_at: Revision,
     ) {
         let dependency = Dependency::new(database_slot);
-        self.local_state.report_query_read(dependency, changed_at);
+        self.local_state
+            .report_query_read(dependency, is_constant, changed_at);
     }
 
     /// Reports that the query depends on some state unknown to salsa.
@@ -532,11 +536,12 @@ struct ActiveQuery<DB: Database> {
     /// What query is executing
     database_key: DB::DatabaseKey,
 
-    /// Maximum revision of all inputs thus far;
-    /// we also track if all inputs have been constant.
-    ///
-    /// If we see an untracked input, this is not terribly relevant.
-    changed_at: ChangedAt,
+    /// True if all inputs were constant (and no untracked inputs).
+    is_constant: bool,
+
+    /// Maximum revision of all inputs observed. If we observe an
+    /// untracked read, this will be set to the most recent revision.
+    changed_at: Revision,
 
     /// Set of subqueries that were accessed thus far, or `None` if
     /// there was an untracked the read.
@@ -547,12 +552,12 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
     /// Final value produced
     pub(crate) value: V,
 
-    /// Maximum revision of all inputs observed; `is_constant` is true
-    /// if all inputs were constants.
-    ///
-    /// If we observe an untracked read, this will be set to a
-    /// non-constant value that changed in the most recent revision.
-    pub(crate) changed_at: ChangedAt,
+    /// True if all inputs were constant (and no untracked inputs).
+    pub(crate) is_constant: bool,
+
+    /// Maximum revision of all inputs observed. If we observe an
+    /// untracked read, this will be set to the most recent revision.
+    pub(crate) changed_at: Revision,
 
     /// Complete set of subqueries that were accessed, or `None` if
     /// there was an untracked the read.
@@ -563,36 +568,29 @@ impl<DB: Database> ActiveQuery<DB> {
     fn new(database_key: DB::DatabaseKey) -> Self {
         ActiveQuery {
             database_key,
-            changed_at: ChangedAt {
-                is_constant: true,
-                revision: Revision::start(),
-            },
+            is_constant: true,
+            changed_at: Revision::start(),
             dependencies: Some(FxIndexSet::default()),
         }
     }
 
-    fn add_read(&mut self, dependency: Dependency<DB>, changed_at: ChangedAt) {
-        let ChangedAt {
-            is_constant,
-            revision,
-        } = changed_at;
-
+    fn add_read(&mut self, dependency: Dependency<DB>, is_constant: bool, revision: Revision) {
         if let Some(set) = &mut self.dependencies {
             set.insert(dependency);
         }
 
-        self.changed_at.is_constant &= is_constant;
-        self.changed_at.revision = self.changed_at.revision.max(revision);
+        self.is_constant &= is_constant;
+        self.changed_at = self.changed_at.max(revision);
     }
 
     fn add_untracked_read(&mut self, changed_at: Revision) {
         self.dependencies = None;
-        self.changed_at.is_constant = false;
-        self.changed_at.revision = changed_at;
+        self.is_constant = false;
+        self.changed_at = changed_at;
     }
 
     fn add_anon_read(&mut self, changed_at: Revision) {
-        self.changed_at.revision = self.changed_at.revision.max(changed_at);
+        self.changed_at = self.changed_at.max(changed_at);
     }
 }
 
@@ -640,31 +638,11 @@ impl std::fmt::Debug for Revision {
     }
 }
 
-/// Records when a stamped value changed.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ChangedAt {
-    // Will this value ever change again?
-    pub(crate) is_constant: bool,
-
-    // At which revision did this value last change? (If this value is
-    // the value of a constant input, this indicates when it became
-    // constant.)
-    pub(crate) revision: Revision,
-}
-
-impl ChangedAt {
-    /// True if a value is stored with this `ChangedAt` value has
-    /// changed after `revision`. This is invoked by query storage
-    /// when their dependents are asking them if they have changed.
-    pub(crate) fn changed_since(self, revision: Revision) -> bool {
-        self.revision > revision
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct StampedValue<V> {
     pub(crate) value: V,
-    pub(crate) changed_at: ChangedAt,
+    pub(crate) is_constant: bool,
+    pub(crate) changed_at: Revision,
 }
 
 struct DependencyGraph<DB: Database> {

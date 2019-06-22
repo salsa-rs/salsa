@@ -8,7 +8,6 @@ use crate::plumbing::CycleDetected;
 use crate::plumbing::GetQueryTable;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryFunction;
-use crate::runtime::ChangedAt;
 use crate::runtime::FxIndexSet;
 use crate::runtime::Revision;
 use crate::runtime::Runtime;
@@ -223,7 +222,7 @@ where
                 // Careful: the "constant-ness" must also not have
                 // changed, see the test `constant_to_non_constant`.
                 let memo_was_constant = old_memo.constant_in_revision.is_some();
-                if memo_was_constant == result.changed_at.is_constant
+                if memo_was_constant == result.is_constant
                     && MP::memoized_value_eq(&old_value, &result.value)
                 {
                     debug!(
@@ -231,14 +230,15 @@ where
                         self, old_memo.changed_at,
                     );
 
-                    assert!(old_memo.changed_at <= result.changed_at.revision);
-                    result.changed_at.revision = old_memo.changed_at;
+                    assert!(old_memo.changed_at <= result.changed_at);
+                    result.changed_at = old_memo.changed_at;
                 }
             }
         }
 
         let new_value = StampedValue {
             value: result.value,
+            is_constant: result.is_constant,
             changed_at: result.changed_at,
         };
 
@@ -253,7 +253,7 @@ where
             self, result.changed_at, result.dependencies,
         );
 
-        let constant_in_revision = if result.changed_at.is_constant {
+        let constant_in_revision = if result.is_constant {
             Some(revision_now)
         } else {
             None
@@ -280,7 +280,7 @@ where
 
         panic_guard.memo = Some(Memo {
             value,
-            changed_at: result.changed_at.revision,
+            changed_at: result.changed_at,
             verified_at: revision_now,
             inputs,
             constant_in_revision,
@@ -717,10 +717,8 @@ where
         }
 
         StampedValue {
-            changed_at: ChangedAt {
-                is_constant,
-                revision: self.changed_at,
-            },
+            is_constant,
+            changed_at: self.changed_at,
             value,
         }
     }
@@ -738,10 +736,8 @@ where
             let is_constant = self.constant_in_revision.is_some();
 
             return Some(StampedValue {
-                changed_at: ChangedAt {
-                    is_constant,
-                    revision: self.changed_at,
-                },
+                is_constant,
+                changed_at: self.changed_at,
                 value: value.clone(),
             });
         }
@@ -840,7 +836,7 @@ where
                         std::mem::drop(state);
 
                         let value = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
-                        return value.changed_at.changed_since(revision);
+                        return value.changed_at > revision;
                     }
 
                     // Consider a cycle to have changed.
@@ -903,10 +899,10 @@ where
                                 debug!(
                                     "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
                                     self,
-                                    v.changed_at.changed_since(revision),
+                                    v.changed_at > revision,
                                     v.changed_at,
                                 );
-                                v.changed_at.changed_since(revision)
+                                v.changed_at > revision
                             }
                             Err(CycleDetected) => true,
                         };
