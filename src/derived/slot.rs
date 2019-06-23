@@ -219,9 +219,11 @@ where
         // old value.
         if let Some(old_memo) = &panic_guard.memo {
             if let Some(old_value) = &old_memo.value {
-                // Careful: the "constant-ness" must also not have
-                // changed, see the test `constant_to_non_constant`.
-                if old_memo.durability == result.durability
+                // Careful: if the value became less durable than it
+                // used to be, that is a "breaking change" that our
+                // consumers must be aware of. Becoming *more* durable
+                // is not. See the test `constant_to_non_constant`.
+                if result.durability >= old_memo.durability
                     && MP::memoized_value_eq(&old_value, &result.value)
                 {
                     debug!(
