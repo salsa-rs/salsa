@@ -4,7 +4,7 @@ use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::runtime::IsConstant;
+use crate::runtime::Durability;
 use crate::runtime::Revision;
 use crate::runtime::StampedValue;
 use crate::Database;
@@ -74,7 +74,7 @@ where
         key: &Q::Key,
         database_key: &DB::DatabaseKey,
         value: Q::Value,
-        is_constant: IsConstant,
+        durability: Durability,
     ) {
         // The value is changing, so even if we are setting this to a
         // constant, we still need a new revision.
@@ -100,18 +100,14 @@ where
             // into the same cell while we block on the lock.)
             let stamped_value = StampedValue {
                 value,
-                is_constant: is_constant,
+                durability: durability,
                 changed_at: guard.new_revision(),
             };
 
             match slots.entry(key.clone()) {
                 Entry::Occupied(entry) => {
                     let mut slot_stamped_value = entry.get().stamped_value.write();
-
-                    if slot_stamped_value.is_constant.0 {
-                        guard.mark_constants_as_changed();
-                    }
-
+                    guard.mark_durability_as_changed(slot_stamped_value.durability);
                     *slot_stamped_value = stamped_value;
                 }
 
@@ -139,19 +135,19 @@ where
 
         let StampedValue {
             value,
-            is_constant,
+            durability,
             changed_at,
         } = slot.stamped_value.read().clone();
 
         db.salsa_runtime()
-            .report_query_read(slot, is_constant, changed_at);
+            .report_query_read(slot, durability, changed_at);
 
         Ok(value)
     }
 
     fn is_constant(&self, _db: &DB, key: &Q::Key) -> bool {
         self.slot(key)
-            .map(|slot| slot.stamped_value.read().is_constant.0)
+            .map(|slot| slot.stamped_value.read().durability.is_constant())
             .unwrap_or(false)
     }
 
@@ -188,13 +184,13 @@ where
     fn set(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, value: Q::Value) {
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
 
-        self.set_common(db, key, database_key, value, IsConstant(false))
+        self.set_common(db, key, database_key, value, Durability::MUTABLE);
     }
 
     fn set_constant(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, value: Q::Value) {
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
 
-        self.set_common(db, key, database_key, value, IsConstant(true))
+        self.set_common(db, key, database_key, value, Durability::CONSTANT);
     }
 }
 

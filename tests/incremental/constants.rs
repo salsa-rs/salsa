@@ -73,7 +73,7 @@ fn not_constant() {
 }
 
 #[test]
-fn is_constant() {
+fn durability() {
     let db = &mut TestContextImpl::default();
 
     db.set_constant_input('a', 22);

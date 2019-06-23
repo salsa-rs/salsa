@@ -161,8 +161,12 @@ where
 
     /// The revision in which constants last changed.
     #[inline]
-    pub(crate) fn revision_when_constant_last_changed(&self) -> Revision {
-        self.shared_state.constant_revision.load()
+    pub(crate) fn durability_last_changed_revision(&self, d: Durability) -> Revision {
+        if d == Durability::CONSTANT {
+            self.shared_state.constant_revision.load()
+        } else {
+            self.current_revision()
+        }
     }
 
     /// Read current value of the revision counter.
@@ -332,13 +336,13 @@ where
         let ActiveQuery {
             dependencies,
             changed_at,
-            is_constant,
+            durability,
             ..
         } = active_query.complete();
 
         ComputedQueryResult {
             value,
-            is_constant,
+            durability,
             changed_at,
             dependencies,
         }
@@ -355,12 +359,12 @@ where
     pub(crate) fn report_query_read<'hack>(
         &self,
         database_slot: Arc<dyn DatabaseSlot<DB> + 'hack>,
-        is_constant: IsConstant,
+        durability: Durability,
         changed_at: Revision,
     ) {
         let dependency = Dependency::new(database_slot);
         self.local_state
-            .report_query_read(dependency, is_constant, changed_at);
+            .report_query_read(dependency, durability, changed_at);
     }
 
     /// Reports that the query depends on some state unknown to salsa.
@@ -444,11 +448,13 @@ where
     /// "constant". This will force re-evaluation of anything that was
     /// dependent on constants (which otherwise might not get
     /// re-evaluated).
-    pub(crate) fn mark_constants_as_changed(&self) {
-        self.runtime
-            .shared_state
-            .constant_revision
-            .store(self.new_revision);
+    pub(crate) fn mark_durability_as_changed(&self, d: Durability) {
+        if d == Durability::CONSTANT {
+            self.runtime
+                .shared_state
+                .constant_revision
+                .store(self.new_revision);
+        }
     }
 }
 
@@ -537,7 +543,7 @@ struct ActiveQuery<DB: Database> {
     database_key: DB::DatabaseKey,
 
     /// True if all inputs were constant (and no untracked inputs).
-    is_constant: IsConstant,
+    durability: Durability,
 
     /// Maximum revision of all inputs observed. If we observe an
     /// untracked read, this will be set to the most recent revision.
@@ -553,7 +559,7 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
     pub(crate) value: V,
 
     /// True if all inputs were constant (and no untracked inputs).
-    pub(crate) is_constant: IsConstant,
+    pub(crate) durability: Durability,
 
     /// Maximum revision of all inputs observed. If we observe an
     /// untracked read, this will be set to the most recent revision.
@@ -568,29 +574,24 @@ impl<DB: Database> ActiveQuery<DB> {
     fn new(database_key: DB::DatabaseKey) -> Self {
         ActiveQuery {
             database_key,
-            is_constant: IsConstant(true),
+            durability: Durability::CONSTANT,
             changed_at: Revision::start(),
             dependencies: Some(FxIndexSet::default()),
         }
     }
 
-    fn add_read(
-        &mut self,
-        dependency: Dependency<DB>,
-        is_constant: IsConstant,
-        revision: Revision,
-    ) {
+    fn add_read(&mut self, dependency: Dependency<DB>, durability: Durability, revision: Revision) {
         if let Some(set) = &mut self.dependencies {
             set.insert(dependency);
         }
 
-        self.is_constant = self.is_constant.and(is_constant);
+        self.durability = self.durability.and(durability);
         self.changed_at = self.changed_at.max(revision);
     }
 
     fn add_untracked_read(&mut self, changed_at: Revision) {
         self.dependencies = None;
-        self.is_constant = IsConstant(false);
+        self.durability = Durability::MUTABLE;
         self.changed_at = changed_at;
     }
 
@@ -644,18 +645,25 @@ impl std::fmt::Debug for Revision {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct IsConstant(pub(crate) bool);
+pub(crate) struct Durability(u8);
 
-impl IsConstant {
-    pub(crate) fn and(self, c: IsConstant) -> IsConstant {
-        IsConstant(self.0 & c.0)
+impl Durability {
+    pub(crate) const MUTABLE: Durability = Durability(0);
+    pub(crate) const CONSTANT: Durability = Durability(1);
+
+    pub(crate) fn is_constant(self) -> bool {
+        self == Self::CONSTANT
+    }
+
+    pub(crate) fn and(self, c: Durability) -> Durability {
+        Durability(self.0 & c.0)
     }
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct StampedValue<V> {
     pub(crate) value: V,
-    pub(crate) is_constant: IsConstant,
+    pub(crate) durability: Durability,
     pub(crate) changed_at: Revision,
 }
 

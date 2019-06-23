@@ -8,8 +8,8 @@ use crate::plumbing::CycleDetected;
 use crate::plumbing::GetQueryTable;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryFunction;
+use crate::runtime::Durability;
 use crate::runtime::FxIndexSet;
-use crate::runtime::IsConstant;
 use crate::runtime::Revision;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
@@ -74,7 +74,7 @@ where
 
     /// If true, then this value was considered a constant when last
     /// verified.
-    is_constant: IsConstant,
+    durability: Durability,
 
     /// The inputs that went into our query, if we are tracking them.
     inputs: MemoInputs<DB>,
@@ -221,7 +221,7 @@ where
             if let Some(old_value) = &old_memo.value {
                 // Careful: the "constant-ness" must also not have
                 // changed, see the test `constant_to_non_constant`.
-                if old_memo.is_constant == result.is_constant
+                if old_memo.durability == result.durability
                     && MP::memoized_value_eq(&old_value, &result.value)
                 {
                     debug!(
@@ -237,7 +237,7 @@ where
 
         let new_value = StampedValue {
             value: result.value,
-            is_constant: result.is_constant,
+            durability: result.durability,
             changed_at: result.changed_at,
         };
 
@@ -249,8 +249,8 @@ where
 
         debug!(
             "read_upgrade({:?}): result.changed_at={:?}, \
-             result.is_constant={:?}, result.dependencies = {:#?}",
-            self, result.changed_at, result.is_constant, result.dependencies,
+             result.durability={:?}, result.dependencies = {:#?}",
+            self, result.changed_at, result.durability, result.dependencies,
         );
 
         let inputs = match result.dependencies {
@@ -273,7 +273,7 @@ where
             changed_at: result.changed_at,
             verified_at: revision_now,
             inputs,
-            is_constant: result.is_constant,
+            durability: result.durability,
         });
 
         panic_guard.proceed(&new_value);
@@ -359,7 +359,9 @@ where
         match &*self.state.read() {
             QueryState::NotComputed => false,
             QueryState::InProgress { .. } => panic!("query in progress"),
-            QueryState::Memoized(memo) => memo.is_still_constant(db),
+            QueryState::Memoized(memo) => {
+                memo.durability.is_constant() && memo.is_still_constant(db)
+            }
         }
     }
 
@@ -618,16 +620,16 @@ where
     /// True if this memo should still be considered constant
     /// (presuming it ever was).
     fn is_still_constant(&self, db: &DB) -> bool {
-        self.is_constant.0 && {
-            let last_changed = db.salsa_runtime().revision_when_constant_last_changed();
-            debug!(
-                "is_still_constant(last_changed={:?} <= verified_at={:?}) = {:?}",
-                last_changed,
-                self.verified_at,
-                last_changed <= self.verified_at,
-            );
-            last_changed <= self.verified_at
-        }
+        let last_changed = db
+            .salsa_runtime()
+            .durability_last_changed_revision(self.durability);
+        debug!(
+            "is_still_constant(last_changed={:?} <= verified_at={:?}) = {:?}",
+            last_changed,
+            self.verified_at,
+            last_changed <= self.verified_at,
+        );
+        last_changed <= self.verified_at
     }
 
     fn validate_memoized_value(
@@ -700,7 +702,7 @@ where
         self.verified_at = revision_now;
 
         StampedValue {
-            is_constant: self.is_constant,
+            durability: self.durability,
             changed_at: self.changed_at,
             value,
         }
@@ -717,7 +719,7 @@ where
 
         if self.verified_at == revision_now {
             return Some(StampedValue {
-                is_constant: self.is_constant,
+                durability: self.durability,
                 changed_at: self.changed_at,
                 value: value.clone(),
             });

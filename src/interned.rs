@@ -5,7 +5,7 @@ use crate::plumbing::CycleDetected;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::runtime::IsConstant;
+use crate::runtime::Durability;
 use crate::runtime::Revision;
 use crate::Query;
 use crate::{Database, DiscardIf, SweepStrategy};
@@ -324,7 +324,7 @@ where
         let changed_at = slot.interned_at;
         let index = slot.index;
         db.salsa_runtime()
-            .report_query_read(slot, IsConstant(false), changed_at);
+            .report_query_read(slot, Durability::MUTABLE, changed_at);
         Ok(<Q::Value>::from_intern_id(index))
     }
 
@@ -425,7 +425,7 @@ where
         let value = slot.value.clone();
         let interned_at = slot.interned_at;
         db.salsa_runtime()
-            .report_query_read(slot, IsConstant(false), interned_at);
+            .report_query_read(slot, Durability::MUTABLE, interned_at);
         Ok(value)
     }
 

@@ -136,7 +136,7 @@ where
         let slot = self.slot(key);
         let StampedValue {
             value,
-            is_constant,
+            durability,
             changed_at,
         } = slot.read(db)?;
 
@@ -145,7 +145,7 @@ where
         }
 
         db.salsa_runtime()
-            .report_query_read(slot, is_constant, changed_at);
+            .report_query_read(slot, durability, changed_at);
 
         Ok(value)
     }

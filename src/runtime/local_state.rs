@@ -1,6 +1,6 @@
 use crate::dependency::Dependency;
 use crate::runtime::ActiveQuery;
-use crate::runtime::IsConstant;
+use crate::runtime::Durability;
 use crate::runtime::Revision;
 use crate::Database;
 use std::cell::Ref;
@@ -61,11 +61,11 @@ impl<DB: Database> LocalState<DB> {
     pub(super) fn report_query_read(
         &self,
         dependency: Dependency<DB>,
-        is_constant: IsConstant,
+        durability: Durability,
         changed_at: Revision,
     ) {
         if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_read(dependency, is_constant, changed_at);
+            top_query.add_read(dependency, durability, changed_at);
         }
     }
 
