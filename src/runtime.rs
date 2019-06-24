@@ -158,7 +158,13 @@ where
         self.shared_state.revisions[0].load()
     }
 
-    /// The revision in which constants last changed.
+    /// The revision in which values with durability `d` may have last
+    /// changed.  For D0, this is just the current revision. But for
+    /// higher levels of durability, this value may lag behind the
+    /// current revision. If we encounter a value of durability Di,
+    /// then, we can check this function to get a "bound" on when the
+    /// value may have changed, which allows us to skip walking its
+    /// dependencies.
     #[inline]
     pub(crate) fn durability_last_changed_revision(&self, d: Durability) -> Revision {
         self.shared_state.revisions[d.index()].load()
