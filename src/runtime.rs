@@ -1,7 +1,7 @@
 use crate::dependency::DatabaseSlot;
 use crate::dependency::Dependency;
+use crate::revision::{AtomicRevision, Revision};
 use crate::{Database, Event, EventKind, SweepStrategy};
-use crossbeam::atomic::AtomicCell;
 use lock_api::{RawRwLock, RawRwLockRecursive};
 use log::debug;
 use parking_lot::{Mutex, RwLock};
@@ -9,8 +9,7 @@ use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 use std::fmt::Write;
 use std::hash::BuildHasherDefault;
-use std::num::NonZeroU64;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
@@ -156,7 +155,7 @@ where
     /// Read current value of the revision counter.
     #[inline]
     pub(crate) fn current_revision(&self) -> Revision {
-        Revision::from(self.shared_state.revision.load(Ordering::SeqCst))
+        self.shared_state.revision.load()
     }
 
     /// The revision in which constants last changed.
@@ -172,7 +171,7 @@ where
     /// Read current value of the revision counter.
     #[inline]
     fn pending_revision(&self) -> Revision {
-        Revision::from(self.shared_state.pending_revision.load(Ordering::SeqCst))
+        self.shared_state.pending_revision.load()
     }
 
     /// Check if the current revision is canceled. If this method ever
@@ -285,19 +284,15 @@ where
 
         // Set the `pending_revision` field so that people
         // know current revision is canceled.
-        let current_revision = self
-            .shared_state
-            .pending_revision
-            .fetch_add(1, Ordering::SeqCst);
-        assert!(current_revision != u64::max_value(), "revision overflow");
+        let current_revision = self.shared_state.pending_revision.fetch_then_increment();
 
         // To modify the revision, we need the lock.
         let _lock = self.shared_state.query_lock.write();
 
-        let old_revision = self.shared_state.revision.fetch_add(1, Ordering::SeqCst);
+        let old_revision = self.shared_state.revision.fetch_then_increment();
         assert_eq!(current_revision, old_revision);
 
-        let new_revision = Revision::from(current_revision + 1);
+        let new_revision = current_revision.next();
 
         debug!("increment_revision: incremented to {:?}", new_revision);
 
@@ -479,18 +474,18 @@ struct SharedState<DB: Database> {
     /// it may be *read* at any point without holding the
     /// `query_lock`. Updates, however, require the `query_lock` to be
     /// acquired. (See `query_lock` for details.)
-    revision: AtomicU64,
+    revision: AtomicRevision,
 
     /// This is typically equal to `revision` -- set to `revision+1`
     /// when a new revision is pending (which implies that the current
     /// revision is canceled).
-    pending_revision: AtomicU64,
+    pending_revision: AtomicRevision,
 
     /// The last time that a value marked as "constant" changed.  Like
     /// `revision` and `pending_revision`, this is readable without
     /// any lock but requires the query-lock to be write-locked for
     /// updates
-    constant_revision: AtomicCell<Revision>,
+    constant_revision: AtomicRevision,
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
@@ -510,9 +505,9 @@ impl<DB: Database> Default for SharedState<DB> {
             next_id: AtomicUsize::new(1),
             storage: Default::default(),
             query_lock: Default::default(),
-            revision: AtomicU64::new(Revision::START_U64),
-            pending_revision: AtomicU64::new(Revision::START_U64),
-            constant_revision: AtomicCell::new(Revision::start()),
+            revision: AtomicRevision::start(),
+            pending_revision: AtomicRevision::start(),
+            constant_revision: AtomicRevision::start(),
             dependency_graph: Default::default(),
         }
     }
@@ -606,42 +601,6 @@ impl<DB: Database> ActiveQuery<DB> {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RuntimeId {
     counter: usize,
-}
-
-/// A unique identifier for the current version of the database; each
-/// time an input is changed, the revision number is incremented.
-/// `Revision` is used internally to track which values may need to be
-/// recomputed, but not something you should have to interact with
-/// directly as a user of salsa.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Revision {
-    generation: NonZeroU64,
-}
-
-impl Revision {
-    /// Value if the initial revision, as a u64. We don't use 0
-    /// because we want to use a `NonZeroU64`.
-    const START_U64: u64 = 1;
-
-    fn start() -> Self {
-        Self::from(Self::START_U64)
-    }
-
-    fn from(g: u64) -> Self {
-        Self {
-            generation: NonZeroU64::new(g).unwrap(),
-        }
-    }
-
-    fn next(self) -> Revision {
-        Self::from(self.generation.get() + 1)
-    }
-}
-
-impl std::fmt::Debug for Revision {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(fmt, "R{}", self.generation)
-    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

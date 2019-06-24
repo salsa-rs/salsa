@@ -14,7 +14,7 @@ pub use crate::derived::MemoizedStorage;
 pub use crate::input::InputStorage;
 pub use crate::interned::InternedStorage;
 pub use crate::interned::LookupInternedStorage;
-pub use crate::runtime::Revision;
+pub use crate::revision::Revision;
 
 pub struct CycleDetected;
 

@@ -1,4 +1,4 @@
-use crate::runtime::Revision;
+use crate::revision::Revision;
 use crate::Database;
 use std::fmt::Debug;
 use std::hash::Hasher;

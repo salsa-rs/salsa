@@ -15,6 +15,7 @@ mod input;
 mod intern_id;
 mod interned;
 mod lru;
+mod revision;
 mod runtime;
 
 pub mod debug;
