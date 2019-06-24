@@ -622,9 +622,7 @@ where
     /// True if this memo should still be considered constant
     /// (presuming it ever was).
     fn is_still_constant(&self, db: &DB) -> bool {
-        let last_changed = db
-            .salsa_runtime()
-            .durability_last_changed_revision(self.durability);
+        let last_changed = db.salsa_runtime().last_changed_revision(self.durability);
         debug!(
             "is_still_constant(last_changed={:?} <= verified_at={:?}) = {:?}",
             last_changed,

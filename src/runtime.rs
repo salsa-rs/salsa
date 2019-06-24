@@ -166,7 +166,7 @@ where
     /// value may have changed, which allows us to skip walking its
     /// dependencies.
     #[inline]
-    pub(crate) fn durability_last_changed_revision(&self, d: Durability) -> Revision {
+    pub(crate) fn last_changed_revision(&self, d: Durability) -> Revision {
         self.shared_state.revisions[d.index()].load()
     }
 
