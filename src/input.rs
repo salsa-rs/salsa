@@ -1,11 +1,11 @@
 use crate::debug::TableEntry;
 use crate::dependency::DatabaseSlot;
+use crate::durability::Durability;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
-use crate::runtime::Durability;
 use crate::runtime::StampedValue;
 use crate::Database;
 use crate::Event;
@@ -187,7 +187,7 @@ where
     fn set(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, value: Q::Value) {
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
 
-        self.set_common(db, key, database_key, value, Durability::MUTABLE);
+        self.set_common(db, key, database_key, value, Durability::LOW);
     }
 
     fn set_constant(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, value: Q::Value) {

@@ -1,12 +1,12 @@
 use crate::debug::TableEntry;
 use crate::dependency::DatabaseSlot;
+use crate::durability::Durability;
 use crate::intern_id::InternId;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
-use crate::runtime::Durability;
 use crate::Query;
 use crate::{Database, DiscardIf, SweepStrategy};
 use crossbeam::atomic::AtomicCell;
@@ -324,7 +324,7 @@ where
         let changed_at = slot.interned_at;
         let index = slot.index;
         db.salsa_runtime()
-            .report_query_read(slot, Durability::MUTABLE, changed_at);
+            .report_query_read(slot, Durability::LOW, changed_at);
         Ok(<Q::Value>::from_intern_id(index))
     }
 
@@ -425,7 +425,7 @@ where
         let value = slot.value.clone();
         let interned_at = slot.interned_at;
         db.salsa_runtime()
-            .report_query_read(slot, Durability::MUTABLE, interned_at);
+            .report_query_read(slot, Durability::LOW, interned_at);
         Ok(value)
     }
 

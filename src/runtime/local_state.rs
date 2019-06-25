@@ -1,6 +1,6 @@
 use crate::dependency::Dependency;
+use crate::durability::Durability;
 use crate::runtime::ActiveQuery;
-use crate::runtime::Durability;
 use crate::runtime::Revision;
 use crate::Database;
 use std::cell::Ref;

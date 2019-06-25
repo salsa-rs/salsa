@@ -11,6 +11,7 @@
 mod dependency;
 mod derived;
 mod doctest;
+mod durability;
 mod input;
 mod intern_id;
 mod interned;
@@ -33,6 +34,7 @@ use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 
+pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
 pub use crate::interned::InternKey;
 pub use crate::runtime::Runtime;

@@ -1,5 +1,6 @@
 use crate::dependency::DatabaseSlot;
 use crate::dependency::Dependency;
+use crate::durability::Durability;
 use crate::revision::{AtomicRevision, Revision};
 use crate::{Database, Event, EventKind, SweepStrategy};
 use lock_api::{RawRwLock, RawRwLockRecursive};
@@ -146,7 +147,7 @@ where
 
     /// Returns the max durability, used for constants.
     pub(crate) fn max_durability(&self) -> Durability {
-        Durability((self.shared_state.revisions.len() - 1) as u8)
+        Durability::new(self.shared_state.revisions.len() - 1)
     }
 
     /// The unique identifier attached to this `SalsaRuntime`. Each
@@ -594,13 +595,13 @@ impl<DB: Database> ActiveQuery<DB> {
             set.insert(dependency);
         }
 
-        self.durability = self.durability.and(durability);
+        self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(revision);
     }
 
     fn add_untracked_read(&mut self, changed_at: Revision) {
         self.dependencies = None;
-        self.durability = Durability::MUTABLE;
+        self.durability = Durability::LOW;
         self.changed_at = changed_at;
     }
 
@@ -615,21 +616,6 @@ impl<DB: Database> ActiveQuery<DB> {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RuntimeId {
     counter: usize,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct Durability(u8);
-
-impl Durability {
-    pub(crate) const MUTABLE: Durability = Durability(0);
-
-    pub(crate) fn and(self, c: Durability) -> Durability {
-        self.min(c)
-    }
-
-    fn index(self) -> usize {
-        self.0 as usize
-    }
 }
 
 #[derive(Clone, Debug)]
