@@ -1,7 +1,7 @@
 use crate::db;
 use crate::group::{FibonacciQuery, GcDatabase};
 use salsa::debug::DebugQueryTable;
-use salsa::{Database, SweepStrategy};
+use salsa::{Database, Durability, SweepStrategy};
 
 // For constant values (like `fibonacci`), we only keep the values
 // that were used in the latest revision, not the sub-values that
@@ -31,7 +31,7 @@ fn two_rev_nothing() {
     let k: Vec<_> = db.query(FibonacciQuery).entries();
     assert_eq!(k.len(), 6);
 
-    db.salsa_runtime().next_revision();
+    db.salsa_runtime().synthetic_write(Durability::LOW);
 
     // Nothing was used in this revision, so
     // everything gets collected.
@@ -50,7 +50,7 @@ fn two_rev_one_use() {
     let k: Vec<_> = db.query(FibonacciQuery).entries();
     assert_eq!(k.len(), 6);
 
-    db.salsa_runtime().next_revision();
+    db.salsa_runtime().synthetic_write(Durability::LOW);
 
     db.fibonacci(5);
 
@@ -73,7 +73,7 @@ fn two_rev_two_uses() {
     let k: Vec<_> = db.query(FibonacciQuery).entries();
     assert_eq!(k.len(), 6);
 
-    db.salsa_runtime().next_revision();
+    db.salsa_runtime().synthetic_write(Durability::LOW);
 
     db.fibonacci(5);
     db.fibonacci(3);

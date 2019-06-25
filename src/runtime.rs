@@ -116,18 +116,37 @@ where
         }
     }
 
-    /// Indicates that some input to the system has changed and hence
-    /// that memoized values **may** be invalidated. This cannot be
-    /// invoked while query computation is in progress.
+    /// A "synthetic write" causes the system to act *as though* some
+    /// input of durability `durability` has changed. This is mostly
+    /// useful for profiling scenarios, but it also has interactions
+    /// with garbage collection. In general, a synthetic write to
+    /// durability level D will cause the system to fully trace all
+    /// queries of durability level D and below. When running a GC, then:
     ///
-    /// As a user of the system, you would not normally invoke this
-    /// method directly. Instead, you would use "input" queries and
-    /// invoke their `set` method. But it can be useful if you have a
-    /// "volatile" input that you must poll from time to time; in that
-    /// case, you can wrap the input with a "no-storage" query and
-    /// invoke this method from time to time.
-    pub fn next_revision(&self) {
-        self.with_incremented_revision(|_| ());
+    /// - Synthetic writes will cause more derived values to be
+    ///   *retained*.  This is because derived values are only
+    ///   retained if they are traced, and a synthetic write can cause
+    ///   more things to be traced.
+    /// - Synthetic writes can cause more interned values to be
+    ///   *collected*. This is because interned values can only be
+    ///   collected if they were not yet traced in the current
+    ///   revision. Therefore, if you issue a synthetic write, execute
+    ///   some query Q, and then start collecting interned values, you
+    ///   will be able to recycle interned values not used in Q.
+    ///
+    /// In general, then, one can do a "full GC" that retains only
+    /// those things that are used by some query Q by (a) doing a
+    /// synthetic write at `Durability::HIGH`, (b) executing the query
+    /// Q and then (c) doing a sweep.
+    ///
+    /// **WARNING:** Just like an ordinary write, this method triggers
+    /// cancellation. If you invoke it while a snapshot exists, it
+    /// will block until that snapshot is dropped -- if that snapshot
+    /// is owned by the current thread, this could trigger deadlock.
+    pub fn synthetic_write(&self, durability: Durability) {
+        self.with_incremented_revision(|guard| {
+            guard.mark_durability_as_changed(durability);
+        });
     }
 
     /// Default implementation for `Database::sweep_all`.
