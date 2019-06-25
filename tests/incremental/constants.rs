@@ -1,6 +1,6 @@
 use crate::implementation::{TestContext, TestContextImpl};
 use salsa::debug::DebugQueryTable;
-use salsa::Database;
+use salsa::{Database, Durability};
 
 #[salsa::query_group(Constants)]
 pub(crate) trait ConstantsDatabase: TestContext {
@@ -69,7 +69,7 @@ fn not_constant() {
     db.set_input('a', 22);
     db.set_input('b', 44);
     assert_eq!(db.add('a', 'b'), 66);
-    assert!(!db.query(AddQuery).is_constant(('a', 'b')));
+    assert_eq!(Durability::LOW, db.query(AddQuery).durability(('a', 'b')));
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn durability() {
     db.set_constant_input('a', 22);
     db.set_constant_input('b', 44);
     assert_eq!(db.add('a', 'b'), 66);
-    assert!(db.query(AddQuery).is_constant(('a', 'b')));
+    assert_eq!(Durability::HIGH, db.query(AddQuery).durability(('a', 'b')));
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn mixed_constant() {
     db.set_constant_input('a', 22);
     db.set_input('b', 44);
     assert_eq!(db.add('a', 'b'), 66);
-    assert!(!db.query(AddQuery).is_constant(('a', 'b')));
+    assert_eq!(Durability::LOW, db.query(AddQuery).durability(('a', 'b')));
 }
 
 #[test]
@@ -99,15 +99,15 @@ fn becomes_constant_with_change() {
     db.set_input('a', 22);
     db.set_input('b', 44);
     assert_eq!(db.add('a', 'b'), 66);
-    assert!(!db.query(AddQuery).is_constant(('a', 'b')));
+    assert_eq!(Durability::LOW, db.query(AddQuery).durability(('a', 'b')));
 
     db.set_constant_input('a', 23);
     assert_eq!(db.add('a', 'b'), 67);
-    assert!(!db.query(AddQuery).is_constant(('a', 'b')));
+    assert_eq!(Durability::LOW, db.query(AddQuery).durability(('a', 'b')));
 
     db.set_constant_input('b', 45);
     assert_eq!(db.add('a', 'b'), 68);
-    assert!(db.query(AddQuery).is_constant(('a', 'b')));
+    assert_eq!(Durability::HIGH, db.query(AddQuery).durability(('a', 'b')));
 }
 
 // Test a subtle case in which an input changes from constant to

@@ -524,7 +524,7 @@ where
 
 impl<DB: Database> Default for SharedState<DB> {
     fn default() -> Self {
-        Self::with_durabilities(2)
+        Self::with_durabilities(Durability::LEN)
     }
 }
 

@@ -145,13 +145,10 @@ where
         Ok(value)
     }
 
-    fn is_constant(&self, db: &DB, key: &Q::Key) -> bool {
+    fn durability(&self, _db: &DB, key: &Q::Key) -> Durability {
         self.slot(key)
-            .map(|slot| {
-                db.salsa_runtime()
-                    .is_constant(slot.stamped_value.read().durability)
-            })
-            .unwrap_or(false)
+            .map(|slot| slot.stamped_value.read().durability)
+            .unwrap_or(Durability::LOW)
     }
 
     fn entries<C>(&self, _db: &DB) -> C

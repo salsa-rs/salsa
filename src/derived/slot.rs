@@ -357,12 +357,16 @@ where
         ProbeState::StaleOrAbsent(state)
     }
 
-    pub(super) fn is_constant(&self, db: &DB) -> bool {
+    pub(super) fn durability(&self, db: &DB) -> Durability {
         match &*self.state.read() {
-            QueryState::NotComputed => false,
+            QueryState::NotComputed => Durability::LOW,
             QueryState::InProgress { .. } => panic!("query in progress"),
             QueryState::Memoized(memo) => {
-                db.salsa_runtime().is_constant(memo.durability) && memo.is_still_constant(db)
+                if memo.check_durability(db) {
+                    memo.durability
+                } else {
+                    Durability::LOW
+                }
             }
         }
     }
@@ -619,12 +623,11 @@ where
     Q: QueryFunction<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
 {
-    /// True if this memo should still be considered constant
-    /// (presuming it ever was).
-    fn is_still_constant(&self, db: &DB) -> bool {
+    /// True if this memo is known not to have changed based on its durability.
+    fn check_durability(&self, db: &DB) -> bool {
         let last_changed = db.salsa_runtime().last_changed_revision(self.durability);
         debug!(
-            "is_still_constant(last_changed={:?} <= verified_at={:?}) = {:?}",
+            "check_durability(last_changed={:?} <= verified_at={:?}) = {:?}",
             last_changed,
             self.verified_at,
             last_changed <= self.verified_at,
@@ -651,7 +654,7 @@ where
             self.inputs,
         );
 
-        if self.is_still_constant(db) {
+        if self.check_durability(db) {
             return Some(self.verify_value(revision_now));
         }
 
@@ -845,7 +848,7 @@ where
         // If we only depended on constants, and no constant has been
         // modified since then, we cannot have changed; no need to
         // trace our inputs.
-        if memo.is_still_constant(db) {
+        if memo.check_durability(db) {
             std::mem::drop(state);
             maybe_changed = false;
         } else {

@@ -328,8 +328,8 @@ where
         Ok(<Q::Value>::from_intern_id(index))
     }
 
-    fn is_constant(&self, _db: &DB, _key: &Q::Key) -> bool {
-        false
+    fn durability(&self, _db: &DB, _key: &Q::Key) -> Durability {
+        Durability::LOW
     }
 
     fn entries<C>(&self, _db: &DB) -> C
@@ -429,8 +429,8 @@ where
         Ok(value)
     }
 
-    fn is_constant(&self, _db: &DB, _key: &Q::Key) -> bool {
-        false
+    fn durability(&self, _db: &DB, _key: &Q::Key) -> Durability {
+        Durability::LOW
     }
 
     fn entries<C>(&self, db: &DB) -> C

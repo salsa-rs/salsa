@@ -19,9 +19,24 @@
 pub struct Durability(u8);
 
 impl Durability {
+    /// Low durability: things that change frequently.
+    ///
+    /// Example: part of the crate being edited
     pub const LOW: Durability = Durability(0);
+
+    /// Medium durability: things that change sometimes, but rarely.
+    ///
+    /// Example: a Cargo.toml file
     pub const MEDIUM: Durability = Durability(1);
+
+    /// High durability: things that are not expected to change under
+    /// common usage.
+    ///
+    /// Example: the standard library or something from crates.io
     pub const HIGH: Durability = Durability(2);
+
+    /// Number of durability levels.
+    pub(crate) const LEN: usize = 3;
 
     pub(crate) fn new(v: usize) -> Durability {
         Durability(v as u8)

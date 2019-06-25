@@ -1,6 +1,7 @@
 //! Debugging APIs: these are meant for use when unit-testing or
 //! debugging your application but aren't ordinarily needed.
 
+use crate::durability::Durability;
 use crate::plumbing;
 use crate::plumbing::QueryStorageOps;
 use crate::Query;
@@ -17,10 +18,11 @@ pub trait DebugQueryTable {
     /// Value of this query.
     type Value;
 
-    /// True if salsa thinks that the value for `key` is a
-    /// **constant**, meaning that it can never change, no matter what
-    /// values the inputs take on from this point.
-    fn is_constant(&self, key: Self::Key) -> bool;
+    /// Returns a lower bound on the durability for the given key.
+    /// This is typically the minimum durability of all values that
+    /// the query accessed, but we may return a lower durability in
+    /// some cases.
+    fn durability(&self, key: Self::Key) -> Durability;
 
     /// Get the (current) set of the entries in the query table.
     fn entries<C>(&self) -> C
@@ -56,8 +58,8 @@ where
     type Key = Q::Key;
     type Value = Q::Value;
 
-    fn is_constant(&self, key: Q::Key) -> bool {
-        self.storage.is_constant(self.db, &key)
+    fn durability(&self, key: Q::Key) -> Durability {
+        self.storage.durability(self.db, &key)
     }
 
     fn entries<C>(&self) -> C

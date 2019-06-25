@@ -1,4 +1,5 @@
 use crate::debug::TableEntry;
+use crate::durability::Durability;
 use crate::lru::Lru;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::HasQueryGroup;
@@ -150,8 +151,8 @@ where
         Ok(value)
     }
 
-    fn is_constant(&self, db: &DB, key: &Q::Key) -> bool {
-        self.slot(key).is_constant(db)
+    fn durability(&self, db: &DB, key: &Q::Key) -> Durability {
+        self.slot(key).durability(db)
     }
 
     fn entries<C>(&self, _db: &DB) -> C
