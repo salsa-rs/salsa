@@ -167,12 +167,13 @@ where
 {
     fn set(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, new_value: Q::Value);
 
-    fn set_constant(
+    fn set_with_durability(
         &self,
         db: &DB,
         key: &Q::Key,
         database_key: &DB::DatabaseKey,
         new_value: Q::Value,
+        durability: Durability,
     );
 }
 

@@ -540,12 +540,17 @@ where
     /// and cancellation on [the `query_mut` method].
     ///
     /// [the `query_mut` method]: trait.Database#method.query_mut
-    pub fn set_constant(&self, key: Q::Key, value: Q::Value)
+    pub fn set_with_durability(&self, key: Q::Key, value: Q::Value, durability: Durability)
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
-        self.storage
-            .set_constant(self.db, &key, &self.database_key(&key), value);
+        self.storage.set_with_durability(
+            self.db,
+            &key,
+            &self.database_key(&key),
+            value,
+            durability,
+        );
     }
 
     /// Sets the size of LRU cache of values for this query table.

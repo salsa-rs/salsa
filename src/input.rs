@@ -187,10 +187,16 @@ where
         self.set_common(db, key, database_key, value, Durability::LOW);
     }
 
-    fn set_constant(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, value: Q::Value) {
+    fn set_with_durability(
+        &self,
+        db: &DB,
+        key: &Q::Key,
+        database_key: &DB::DatabaseKey,
+        value: Q::Value,
+        durability: Durability,
+    ) {
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
 
-        let durability = db.salsa_runtime().max_durability();
         self.set_common(db, key, database_key, value, durability);
     }
 }
