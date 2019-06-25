@@ -29,9 +29,13 @@ impl<DB: Database> Default for LocalState<DB> {
 }
 
 impl<DB: Database> LocalState<DB> {
-    pub(super) fn push_query(&self, database_key: &DB::DatabaseKey) -> ActiveQueryGuard<'_, DB> {
+    pub(super) fn push_query(
+        &self,
+        database_key: &DB::DatabaseKey,
+        max_durability: Durability,
+    ) -> ActiveQueryGuard<'_, DB> {
         let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push(ActiveQuery::new(database_key.clone()));
+        query_stack.push(ActiveQuery::new(database_key.clone(), max_durability));
         ActiveQueryGuard {
             local_state: self,
             push_len: query_stack.len(),

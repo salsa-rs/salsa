@@ -139,6 +139,16 @@ where
         db.for_each_query(|query_storage| query_storage.sweep(db, strategy));
     }
 
+    /// True if `d` represents the max durability level.
+    pub(crate) fn is_constant(&self, d: Durability) -> bool {
+        d == self.max_durability()
+    }
+
+    /// Returns the max durability, used for constants.
+    pub(crate) fn max_durability(&self) -> Durability {
+        Durability((self.shared_state.revisions.len() - 1) as u8)
+    }
+
     /// The unique identifier attached to this `SalsaRuntime`. Each
     /// snapshotted runtime has a distinct identifier.
     #[inline]
@@ -324,7 +334,8 @@ where
         });
 
         // Push the active query onto the stack.
-        let active_query = self.local_state.push_query(database_key);
+        let max_durability = self.max_durability();
+        let active_query = self.local_state.push_query(database_key, max_durability);
 
         // Execute user's code, accumulating inputs etc.
         let value = execute();
@@ -569,10 +580,10 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
 }
 
 impl<DB: Database> ActiveQuery<DB> {
-    fn new(database_key: DB::DatabaseKey) -> Self {
+    fn new(database_key: DB::DatabaseKey, max_durability: Durability) -> Self {
         ActiveQuery {
             database_key,
-            durability: Durability::CONSTANT,
+            durability: max_durability,
             changed_at: Revision::start(),
             dependencies: Some(FxIndexSet::default()),
         }
@@ -611,14 +622,9 @@ pub(crate) struct Durability(u8);
 
 impl Durability {
     pub(crate) const MUTABLE: Durability = Durability(0);
-    pub(crate) const CONSTANT: Durability = Durability(1);
-
-    pub(crate) fn is_constant(self) -> bool {
-        self == Self::CONSTANT
-    }
 
     pub(crate) fn and(self, c: Durability) -> Durability {
-        Durability(self.0 & c.0)
+        self.min(c)
     }
 
     fn index(self) -> usize {

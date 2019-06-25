@@ -145,9 +145,12 @@ where
         Ok(value)
     }
 
-    fn is_constant(&self, _db: &DB, key: &Q::Key) -> bool {
+    fn is_constant(&self, db: &DB, key: &Q::Key) -> bool {
         self.slot(key)
-            .map(|slot| slot.stamped_value.read().durability.is_constant())
+            .map(|slot| {
+                db.salsa_runtime()
+                    .is_constant(slot.stamped_value.read().durability)
+            })
             .unwrap_or(false)
     }
 
@@ -190,7 +193,8 @@ where
     fn set_constant(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, value: Q::Value) {
         log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
 
-        self.set_common(db, key, database_key, value, Durability::CONSTANT);
+        let durability = db.salsa_runtime().max_durability();
+        self.set_common(db, key, database_key, value, durability);
     }
 }
 

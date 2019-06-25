@@ -362,7 +362,7 @@ where
             QueryState::NotComputed => false,
             QueryState::InProgress { .. } => panic!("query in progress"),
             QueryState::Memoized(memo) => {
-                memo.durability.is_constant() && memo.is_still_constant(db)
+                db.salsa_runtime().is_constant(memo.durability) && memo.is_still_constant(db)
             }
         }
     }
