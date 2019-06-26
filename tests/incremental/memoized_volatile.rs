@@ -7,7 +7,6 @@ pub(crate) trait MemoizedVolatileContext: TestContext {
     // memoization.
     fn memoized2(&self) -> usize;
     fn memoized1(&self) -> usize;
-    #[salsa::volatile]
     fn volatile(&self) -> usize;
 }
 
@@ -24,6 +23,7 @@ fn memoized1(db: &impl MemoizedVolatileContext) -> usize {
 
 fn volatile(db: &impl MemoizedVolatileContext) -> usize {
     db.log().add("Volatile invoked");
+    db.salsa_runtime().report_untracked_read();
     db.clock().increment()
 }
 

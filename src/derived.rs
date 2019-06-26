@@ -35,11 +35,6 @@ pub type MemoizedStorage<DB, Q> = DerivedStorage<DB, Q, AlwaysMemoizeValue>;
 /// storage requirements.
 pub type DependencyStorage<DB, Q> = DerivedStorage<DB, Q, NeverMemoizeValue>;
 
-/// "Dependency" queries just track their dependencies and not the
-/// actual value (which they produce on demand). This lessens the
-/// storage requirements.
-pub type VolatileStorage<DB, Q> = DerivedStorage<DB, Q, VolatileValue>;
-
 /// Handles storage where the value is 'derived' by executing a
 /// function (in contrast to "inputs").
 pub struct DerivedStorage<DB, Q, MP>
@@ -73,8 +68,6 @@ where
     fn should_memoize_value(key: &Q::Key) -> bool;
 
     fn memoized_value_eq(old_value: &Q::Value, new_value: &Q::Value) -> bool;
-
-    fn should_track_inputs(key: &Q::Key) -> bool;
 }
 
 pub enum AlwaysMemoizeValue {}
@@ -91,10 +84,6 @@ where
     fn memoized_value_eq(old_value: &Q::Value, new_value: &Q::Value) -> bool {
         old_value == new_value
     }
-
-    fn should_track_inputs(_key: &Q::Key) -> bool {
-        true
-    }
 }
 
 pub enum NeverMemoizeValue {}
@@ -109,34 +98,6 @@ where
 
     fn memoized_value_eq(_old_value: &Q::Value, _new_value: &Q::Value) -> bool {
         panic!("cannot reach since we never memoize")
-    }
-
-    fn should_track_inputs(_key: &Q::Key) -> bool {
-        true
-    }
-}
-
-pub enum VolatileValue {}
-impl<DB, Q> MemoizationPolicy<DB, Q> for VolatileValue
-where
-    Q: QueryFunction<DB>,
-    DB: Database,
-{
-    fn should_memoize_value(_key: &Q::Key) -> bool {
-        // Why memoize? Well, if the "volatile" value really is
-        // constantly changing, we still want to capture its value
-        // until the next revision is triggered and ensure it doesn't
-        // change -- otherwise the system gets into an inconsistent
-        // state where the same query reports back different values.
-        true
-    }
-
-    fn memoized_value_eq(_old_value: &Q::Value, _new_value: &Q::Value) -> bool {
-        false
-    }
-
-    fn should_track_inputs(_key: &Q::Key) -> bool {
-        false
     }
 }
 
@@ -443,11 +404,6 @@ where
         // stale, or value is absent. Let's execute!
         let mut result = runtime.execute_query_implementation(db, database_key, || {
             info!("{:?}({:?}): executing query", Q::default(), key);
-
-            if !self.should_track_inputs(key) {
-                runtime.report_untracked_read();
-            }
-
             Q::execute(db, key.clone())
         });
 
@@ -648,10 +604,6 @@ where
 
     fn should_memoize_value(&self, key: &Q::Key) -> bool {
         MP::should_memoize_value(key)
-    }
-
-    fn should_track_inputs(&self, key: &Q::Key) -> bool {
-        MP::should_track_inputs(key)
     }
 }
 

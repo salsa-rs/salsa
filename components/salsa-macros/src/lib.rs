@@ -58,7 +58,6 @@ mod query_group;
 ///   are described in detail in the section below.
 ///   - `#[salsa::input]`
 ///   - `#[salsa::memoized]`
-///   - `#[salsa::volatile]`
 ///   - `#[salsa::dependencies]`
 /// - Query execution:
 ///   - `#[salsa::invoke(path::to::my_fn)]` -- for a non-input, this
@@ -96,8 +95,6 @@ mod query_group;
 ///   which can significantly reduce the amount of recomputation
 ///   required in new revisions. This does require that the value
 ///   implements `Eq`.
-/// - `#[salsa::volatile]` -- indicates that the inputs are not fully
-///   captured by salsa. The result will be recomputed once per revision.
 /// - `#[salsa::dependencies]` -- does not cache the value, so it will
 ///   be recomputed every time it is needed. We do track the inputs, however,
 ///   so if they have not changed, then things that rely on this query
