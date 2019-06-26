@@ -346,7 +346,7 @@ where
 
     /// Reports that the query depends on some state unknown to salsa.
     ///
-    /// If query reports untracked read, it will be reexuted in the next
+    /// Queries which report untracked reads will be re-executed in the next
     /// revision.
     pub fn report_untracked_read(&self) {
         self.local_state
