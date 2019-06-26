@@ -1,7 +1,7 @@
 [package]
 name = "salsa"
 version = "0.12.3"
-authors = ["Niko Matsakis <niko@alum.mit.edu>"]
+authors = ["Salsa developers"]
 edition = "2018"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/salsa-rs/salsa"
