@@ -1,4 +1,6 @@
+use rand::seq::SliceRandom;
 use rand::Rng;
+
 use salsa::Database;
 use salsa::ParallelDatabase;
 use salsa::Snapshot;
@@ -82,7 +84,7 @@ enum ReadOp {
 
 impl rand::distributions::Distribution<Query> for rand::distributions::Standard {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Query {
-        *rng.choose(&[Query::A, Query::B, Query::C]).unwrap()
+        *[Query::A, Query::B, Query::C].choose(rng).unwrap()
     }
 }
 

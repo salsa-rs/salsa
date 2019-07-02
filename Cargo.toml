@@ -17,10 +17,12 @@ log = "0.4.5"
 parking_lot = "0.8.0"
 rustc-hash = "1.0"
 smallvec = "0.6.5"
+rand = { version = "0.7", features = [ "small_rng" ] }
+
 salsa-macros = { version = "0.13.0", path = "components/salsa-macros" }
-rand = "0.6"
 
 [dev-dependencies]
+rand_distr = "0.2.1"
 diff = "0.1.0"
 env_logger = "0.5.13"
 linked-hash-map = "0.5.2"
