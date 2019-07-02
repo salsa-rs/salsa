@@ -25,7 +25,6 @@ impl LruNode for TestNode {
     }
 }
 
-const LRU_SEED: &str = "Hello, Rustaceans";
 const PICK_SEED: &str = "Wippity WIP";
 
 /// Randomly requests nodes and compares the performance of a
@@ -48,7 +47,7 @@ fn compare(
     // it. When the capacity is exceed, we can pop the oldest.
     let mut oracle = LinkedHashMap::new();
 
-    let lru = Lru::with_seed(LRU_SEED);
+    let lru = Lru::with_seed(super::LRU_SEED);
     lru.set_lru_capacity(capacity);
 
     let nodes: Vec<_> = (0..num_nodes).map(|i| TestNode::new(i)).collect();

@@ -1,6 +1,5 @@
 use parking_lot::Mutex;
 use rand::rngs::SmallRng;
-use rand::FromEntropy;
 use rand::Rng;
 use rand::SeedableRng;
 use std::fmt::Debug;
@@ -58,16 +57,17 @@ where
     }
 }
 
+// We always use a fixed seed for our randomness so that we have
+// predictable results.
+const LRU_SEED: &str = "Hello, Rustaceans";
+
 impl<Node> Lru<Node>
 where
     Node: LruNode,
 {
     /// Creates a new LRU list where LRU caching is disabled.
     pub fn new() -> Self {
-        Lru {
-            green_zone: AtomicUsize::new(0),
-            data: Mutex::new(LruData::new()),
-        }
+        Self::with_seed(LRU_SEED)
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
@@ -137,11 +137,6 @@ impl<Node> LruData<Node>
 where
     Node: LruNode,
 {
-    fn new() -> Self {
-        Self::with_rng(SmallRng::from_entropy())
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
     fn with_seed(seed_str: &str) -> Self {
         Self::with_rng(rng_with_seed(seed_str))
     }
