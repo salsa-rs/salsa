@@ -2,7 +2,7 @@
 
 use super::*;
 use linked_hash_map::LinkedHashMap;
-use rand::distributions::{Distribution, Normal};
+use rand_distr::{Distribution, Normal};
 
 #[derive(Debug)]
 struct TestNode {
@@ -56,7 +56,7 @@ fn compare(
     let mut lru_hits = 0;
 
     let mut pick_rng = super::rng_with_seed(PICK_SEED);
-    let normal = Normal::new((num_nodes / 2) as f64, standard_deviation as f64);
+    let normal = Normal::new((num_nodes / 2) as f64, standard_deviation as f64).unwrap();
     for clock in (0..requests).map(|n| n + 1) {
         let request_id = (normal.sample(&mut pick_rng) as usize).min(num_nodes - 1);
         assert!(request_id < num_nodes);
