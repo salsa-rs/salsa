@@ -10,19 +10,16 @@ use std::sync::Arc;
 
 mod test;
 
-/// A very simple concurrent lru list, built using a doubly linked
-/// list of Arcs.
-///
-/// The list uses a very simple locking scheme and will probably
-/// suffer under high contention. This could certainly be improved.
+/// A simple and approximate concurrent lru list.
 ///
 /// We assume but do not verify that each node is only used with one
 /// list. If this is not the case, it is not *unsafe*, but panics and
 /// weird results will ensue.
 ///
 /// Each "node" in the list is of type `Node` and must implement
-/// `LruNode`, which is a trait that gives access to a field of type
-/// `LruLinks<Node>`, which stores the prev/next points.
+/// `LruNode`, which is a trait that gives access to a field that
+/// stores the index in the list. This index gives us a rough idea of
+/// how recently the node has been used.
 #[derive(Debug)]
 pub(crate) struct Lru<Node>
 where

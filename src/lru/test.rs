@@ -2,6 +2,7 @@
 
 use super::*;
 use linked_hash_map::LinkedHashMap;
+use rand::distributions::{Distribution, Normal};
 
 #[derive(Debug)]
 struct TestNode {
@@ -33,7 +34,12 @@ const PICK_SEED: &str = "Wippity WIP";
 /// reproducible. Returns (oracle_hits, lru_hits) -- i.e., the number
 /// of times that the oracle had something in cache vs the number of
 /// times that our LRU did.
-fn compare(num_nodes: usize, capacity: usize, requests: usize) -> (usize, usize) {
+fn compare(
+    standard_deviation: usize,
+    num_nodes: usize,
+    capacity: usize,
+    requests: usize,
+) -> (usize, usize) {
     // Remember the clock each time we access a given element.
     let mut last_access: Vec<usize> = (0..num_nodes).map(|_| 0).collect();
 
@@ -51,8 +57,10 @@ fn compare(num_nodes: usize, capacity: usize, requests: usize) -> (usize, usize)
     let mut lru_hits = 0;
 
     let mut pick_rng = super::rng_with_seed(PICK_SEED);
+    let normal = Normal::new((num_nodes / 2) as f64, standard_deviation as f64);
     for clock in (0..requests).map(|n| n + 1) {
-        let request_id: usize = pick_rng.gen_range(0, num_nodes);
+        let request_id = (normal.sample(&mut pick_rng) as usize).min(num_nodes - 1);
+        assert!(request_id < num_nodes);
 
         last_access[request_id] = clock;
 
@@ -81,9 +89,36 @@ fn compare(num_nodes: usize, capacity: usize, requests: usize) -> (usize, usize)
     (oracle_hits, lru_hits)
 }
 
+// Compare performance of approximate LRU vs the perfect oracle in
+// various scenarios -- different standard deviations and total size.
+// Note that the `lru_hits` variable is just recording the current
+// state and would be expected to change if you tweak the
+// implementation (`oracle_hits` ought not to change).
+
 #[test]
-fn scenario_a() {
-    let (oracle_hits, lru_hits) = compare(1000, 100, 10000);
-    assert_eq!(oracle_hits, 993);
-    assert_eq!(lru_hits, 973);
+fn scenario_20_of_1000() {
+    let (oracle_hits, lru_hits) = compare(20, 1000, 100, 10000);
+    assert_eq!(oracle_hits, 9662);
+    assert_eq!(lru_hits, 9428);
+}
+
+#[test]
+fn scenario_200_of_1000() {
+    let (oracle_hits, lru_hits) = compare(200, 1000, 100, 10000);
+    assert_eq!(oracle_hits, 1496);
+    assert_eq!(lru_hits, 1488);
+}
+
+#[test]
+fn scenario_500_of_1000() {
+    let (oracle_hits, lru_hits) = compare(500, 1000, 100, 10000);
+    assert_eq!(oracle_hits, 3835);
+    assert_eq!(lru_hits, 3839);
+}
+
+#[test]
+fn scenario_2000_of_10000() {
+    let (oracle_hits, lru_hits) = compare(2000, 10000, 100, 10000);
+    assert_eq!(oracle_hits, 256);
+    assert_eq!(lru_hits, 229);
 }
