@@ -21,10 +21,9 @@ pub(crate) struct Dependency<DB: Database> {
 
 impl<DB: Database> Dependency<DB> {
     pub(crate) fn new(slot: Arc<dyn DatabaseSlot<DB> + '_>) -> Self {
-        // Forgive me for I am a horrible monster and pray for death:
-        //
-        // Hiding these bounds behind a trait object is a total hack
-        // but I just want to see how well this works. -nikomatsakis
+        // Unsafety note: It is safe to 'pretend' the trait object is
+        // Send+Sync+'static because the phantom-data will reflect the
+        // reality.
         let slot: Arc<dyn DatabaseSlot<DB> + Send + Sync> = unsafe { std::mem::transmute(slot) };
         Self {
             slot,
