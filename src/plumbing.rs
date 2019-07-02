@@ -31,6 +31,12 @@ pub trait DatabaseStorageTypes: Sized {
     /// for a more open-ended option.
     type DatabaseKey: DatabaseKey<Self>;
 
+    /// An associated type that contains all the query keys/values
+    /// that can appear in the database. This is used as part of the
+    /// slot mechanism to determine when database handles are
+    /// send/sync/'static.
+    type DatabaseData;
+
     /// Defines the "storage type", where all the query data is kept.
     /// This type is defined by the `database_storage` macro.
     type DatabaseStorage: Default;
@@ -50,11 +56,7 @@ pub trait QueryStorageMassOps<DB: Database> {
     fn sweep(&self, db: &DB, strategy: SweepStrategy);
 }
 
-pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {
-    /// Returns true if the value of this query may have changed since
-    /// the given revision.
-    fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool;
-}
+pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {}
 
 pub trait QueryFunction<DB: Database>: Query<DB> {
     fn execute(db: &DB, key: Self::Key) -> Self::Value;
@@ -114,6 +116,7 @@ where
 pub trait QueryGroup<DB: Database> {
     type GroupStorage;
     type GroupKey;
+    type GroupData;
 }
 
 /// Trait implemented by a database for each group that it supports.
@@ -142,38 +145,7 @@ where
     /// Returns `Err` in the event of a cycle, meaning that computing
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
-    fn try_fetch(
-        &self,
-        db: &DB,
-        key: &Q::Key,
-        descriptor: &DB::DatabaseKey,
-    ) -> Result<Q::Value, CycleDetected>;
-
-    /// True if the query **may** have changed since the given
-    /// revision. The query will answer this question with as much
-    /// precision as it is able to do based on its storage type.  In
-    /// the event of a cycle being detected as part of this function,
-    /// it returns true.
-    ///
-    /// Example: The steps for a memoized query are as follows.
-    ///
-    /// - If the query has already been computed:
-    ///   - Check the inputs that the previous computation used
-    ///     recursively to see if *they* have changed.  If they have
-    ///     not, then return false.
-    ///   - If they have, then the query is re-executed and the new
-    ///     result is compared against the old result. If it is equal,
-    ///     then return false.
-    /// - Return true.
-    ///
-    /// Other storage types will skip some or all of these steps.
-    fn maybe_changed_since(
-        &self,
-        db: &DB,
-        revision: Revision,
-        key: &Q::Key,
-        descriptor: &DB::DatabaseKey,
-    ) -> bool;
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected>;
 
     /// Check if `key` is (currently) believed to be a constant.
     fn is_constant(&self, db: &DB, key: &Q::Key) -> bool;
@@ -192,13 +164,13 @@ where
     DB: Database,
     Q: Query<DB>,
 {
-    fn set(&self, db: &DB, key: &Q::Key, descriptor: &DB::DatabaseKey, new_value: Q::Value);
+    fn set(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, new_value: Q::Value);
 
     fn set_constant(
         &self,
         db: &DB,
         key: &Q::Key,
-        descriptor: &DB::DatabaseKey,
+        database_key: &DB::DatabaseKey,
         new_value: Q::Value,
     );
 }
@@ -206,10 +178,6 @@ where
 /// An optional trait that is implemented for "user mutable" storage:
 /// that is, storage whose value is not derived from other storage but
 /// is set independently.
-pub trait LruQueryStorageOps: Default
-{
-    fn set_lru_capacity(
-        &self,
-        new_capacity: usize,
-    );
+pub trait LruQueryStorageOps: Default {
+    fn set_lru_capacity(&self, new_capacity: usize);
 }

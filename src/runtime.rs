@@ -1,3 +1,5 @@
+use crate::dependency::DatabaseSlot;
+use crate::dependency::Dependency;
 use crate::{Database, Event, EventKind, SweepStrategy};
 use lock_api::{RawRwLock, RawRwLockRecursive};
 use log::debug;
@@ -6,6 +8,7 @@ use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 use std::fmt::Write;
 use std::hash::BuildHasherDefault;
+use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -152,17 +155,13 @@ where
     /// Read current value of the revision counter.
     #[inline]
     pub(crate) fn current_revision(&self) -> Revision {
-        Revision {
-            generation: self.shared_state.revision.load(Ordering::SeqCst),
-        }
+        Revision::from(self.shared_state.revision.load(Ordering::SeqCst))
     }
 
     /// Read current value of the revision counter.
     #[inline]
     fn pending_revision(&self) -> Revision {
-        Revision {
-            generation: self.shared_state.pending_revision.load(Ordering::SeqCst),
-        }
+        Revision::from(self.shared_state.pending_revision.load(Ordering::SeqCst))
     }
 
     /// Check if the current revision is canceled. If this method ever
@@ -284,9 +283,7 @@ where
         let old_revision = self.shared_state.revision.fetch_add(1, Ordering::SeqCst);
         assert_eq!(current_revision, old_revision);
 
-        let new_revision = Revision {
-            generation: current_revision + 1,
-        };
+        let new_revision = Revision::from(current_revision + 1);
 
         debug!("increment_revision: incremented to {:?}", new_revision);
 
@@ -320,7 +317,7 @@ where
 
         // Extract accumulated inputs.
         let ActiveQuery {
-            subqueries,
+            dependencies,
             changed_at,
             ..
         } = active_query.complete();
@@ -328,7 +325,7 @@ where
         ComputedQueryResult {
             value,
             changed_at,
-            subqueries,
+            dependencies,
         }
     }
 
@@ -340,8 +337,13 @@ where
     /// - `database_key`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    pub(crate) fn report_query_read(&self, database_key: &DB::DatabaseKey, changed_at: ChangedAt) {
-        self.local_state.report_query_read(database_key, changed_at);
+    pub(crate) fn report_query_read<'hack>(
+        &self,
+        database_slot: Arc<dyn DatabaseSlot<DB> + 'hack>,
+        changed_at: ChangedAt,
+    ) {
+        let dependency = Dependency::new(database_slot);
+        self.local_state.report_query_read(dependency, changed_at);
     }
 
     /// Reports that the query depends on some state unknown to salsa.
@@ -446,8 +448,8 @@ impl<DB: Database> Default for SharedState<DB> {
             next_id: AtomicUsize::new(1),
             storage: Default::default(),
             query_lock: Default::default(),
-            revision: Default::default(),
-            pending_revision: Default::default(),
+            revision: AtomicU64::new(1),
+            pending_revision: AtomicU64::new(1),
             dependency_graph: Default::default(),
         }
     }
@@ -485,7 +487,7 @@ struct ActiveQuery<DB: Database> {
 
     /// Set of subqueries that were accessed thus far, or `None` if
     /// there was an untracked the read.
-    subqueries: Option<FxIndexSet<DB::DatabaseKey>>,
+    dependencies: Option<FxIndexSet<Dependency<DB>>>,
 }
 
 pub(crate) struct ComputedQueryResult<DB: Database, V> {
@@ -501,7 +503,7 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
 
     /// Complete set of subqueries that were accessed, or `None` if
     /// there was an untracked the read.
-    pub(crate) subqueries: Option<FxIndexSet<DB::DatabaseKey>>,
+    pub(crate) dependencies: Option<FxIndexSet<Dependency<DB>>>,
 }
 
 impl<DB: Database> ActiveQuery<DB> {
@@ -510,20 +512,20 @@ impl<DB: Database> ActiveQuery<DB> {
             database_key,
             changed_at: ChangedAt {
                 is_constant: true,
-                revision: Revision::ZERO,
+                revision: Revision::start(),
             },
-            subqueries: Some(FxIndexSet::default()),
+            dependencies: Some(FxIndexSet::default()),
         }
     }
 
-    fn add_read(&mut self, subquery: &DB::DatabaseKey, changed_at: ChangedAt) {
+    fn add_read(&mut self, dependency: Dependency<DB>, changed_at: ChangedAt) {
         let ChangedAt {
             is_constant,
             revision,
         } = changed_at;
 
-        if let Some(set) = &mut self.subqueries {
-            set.insert(subquery.clone());
+        if let Some(set) = &mut self.dependencies {
+            set.insert(dependency);
         }
 
         self.changed_at.is_constant &= is_constant;
@@ -531,7 +533,7 @@ impl<DB: Database> ActiveQuery<DB> {
     }
 
     fn add_untracked_read(&mut self, changed_at: Revision) {
-        self.subqueries = None;
+        self.dependencies = None;
         self.changed_at.is_constant = false;
         self.changed_at.revision = changed_at;
     }
@@ -556,16 +558,22 @@ pub struct RuntimeId {
 /// directly as a user of salsa.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Revision {
-    generation: u64,
+    generation: NonZeroU64,
 }
 
 impl Revision {
-    pub(crate) const ZERO: Self = Revision { generation: 0 };
+    fn start() -> Self {
+        Self::from(1)
+    }
+
+    fn from(g: u64) -> Self {
+        Self {
+            generation: NonZeroU64::new(g).unwrap(),
+        }
+    }
 
     fn next(self) -> Revision {
-        Revision {
-            generation: self.generation + 1,
-        }
+        Self::from(self.generation.get() + 1)
     }
 }
 

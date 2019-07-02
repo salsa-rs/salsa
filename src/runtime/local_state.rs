@@ -1,3 +1,4 @@
+use crate::dependency::Dependency;
 use crate::runtime::ActiveQuery;
 use crate::runtime::ChangedAt;
 use crate::runtime::Revision;
@@ -57,9 +58,9 @@ impl<DB: Database> LocalState<DB> {
             .map(|active_query| active_query.database_key.clone())
     }
 
-    pub(super) fn report_query_read(&self, database_key: &DB::DatabaseKey, changed_at: ChangedAt) {
+    pub(super) fn report_query_read(&self, dependency: Dependency<DB>, changed_at: ChangedAt) {
         if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_read(database_key, changed_at);
+            top_query.add_read(dependency, changed_at);
         }
     }
 

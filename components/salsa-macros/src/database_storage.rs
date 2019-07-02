@@ -114,11 +114,20 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     });
 
+    // Create a tuple (D1, D2, ...) where Di is the data for a given query group.
+    let mut database_data = vec![];
+    for QueryGroup { group_path } in query_groups {
+        database_data.push(quote! {
+            <#group_path as salsa::plumbing::QueryGroup<#database_name>>::GroupData
+        });
+    }
+
     //
     output.extend(quote! {
         impl salsa::plumbing::DatabaseStorageTypes for #database_name {
             type DatabaseKey = __SalsaDatabaseKey;
             type DatabaseStorage = __SalsaDatabaseStorage;
+            type DatabaseData = (#(#database_data),*);
         }
     });
 
@@ -144,29 +153,8 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     });
 
-    let mut for_each_query_desc = proc_macro2::TokenStream::new();
-    for query_group in query_groups {
-        let group_name = query_group.name();
-        for_each_query_desc.extend(quote! {
-            __SalsaDatabaseKeyKind::#group_name(database_key) => database_key.maybe_changed_since(
-                db,
-                self,
-                revision,
-            ),
-        });
-    }
-
     output.extend(quote! {
         impl salsa::plumbing::DatabaseKey<#database_name> for __SalsaDatabaseKey {
-            fn maybe_changed_since(
-                &self,
-                db: &#database_name,
-                revision: salsa::plumbing::Revision,
-            ) -> bool {
-                match &self.kind {
-                    #for_each_query_desc
-                }
-            }
         }
     });
 

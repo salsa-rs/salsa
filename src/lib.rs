@@ -8,10 +8,13 @@
 //! re-execute the derived queries and it will try to re-use results
 //! from previous invocations as appropriate.
 
+mod dependency;
 mod derived;
+mod doctest;
 mod input;
 mod intern_id;
 mod interned;
+mod lru;
 mod runtime;
 
 pub mod debug;
@@ -22,9 +25,9 @@ pub mod plumbing;
 
 use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
+use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::plumbing::LruQueryStorageOps;
 use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
@@ -402,7 +405,13 @@ where
 
 /// Trait implements by all of the "special types" associated with
 /// each of your queries.
-pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
+///
+/// Unsafe trait obligation: Asserts that the Key/Value associated
+/// types for this trait are a part of the `Group::GroupData` type.
+/// In particular, `Group::GroupData: Send + Sync` must imply that
+/// `Key: Send + Sync` and `Value: Send + Sync`. This is relied upon
+/// by the dependency tracking logic.
+pub unsafe trait Query<DB: Database>: Debug + Default + Sized + 'static {
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
     type Key: Clone + Debug + Hash + Eq;
@@ -457,10 +466,10 @@ where
     /// queries (those with no inputs, or those with more than one
     /// input) the key will be a tuple.
     pub fn get(&self, key: Q::Key) -> Q::Value {
-        let database_key = self.database_key(&key);
         self.storage
-            .try_fetch(self.db, &key, &database_key)
+            .try_fetch(self.db, &key)
             .unwrap_or_else(|CycleDetected| {
+                let database_key = self.database_key(&key);
                 self.db
                     .salsa_runtime()
                     .report_unexpected_cycle(database_key)
@@ -547,8 +556,7 @@ where
     where
         Q::Storage: plumbing::LruQueryStorageOps,
     {
-        self.storage
-            .set_lru_capacity(cap);
+        self.storage.set_lru_capacity(cap);
     }
 }
 
