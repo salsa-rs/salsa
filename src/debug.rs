@@ -35,7 +35,7 @@ pub trait DebugQueryTable {
 pub struct TableEntry<K, V> {
     /// key of the query
     pub key: K,
-    /// value of the query, if it =is stored
+    /// value of the query, if it is stored
     pub value: Option<V>,
     _for_future_use: (),
 }
