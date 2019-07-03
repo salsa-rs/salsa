@@ -72,8 +72,7 @@ where
     /// Last revision when the memoized value was observed to change.
     changed_at: Revision,
 
-    /// If true, then this value was considered a constant when last
-    /// verified.
+    /// Minimum durability of the inputs to this query.
     durability: Durability,
 
     /// The inputs that went into our query, if we are tracking them.

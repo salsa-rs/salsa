@@ -571,7 +571,7 @@ struct ActiveQuery<DB: Database> {
     /// What query is executing
     database_key: DB::DatabaseKey,
 
-    /// True if all inputs were constant (and no untracked inputs).
+    /// Minimum durability of inputs observed so far.
     durability: Durability,
 
     /// Maximum revision of all inputs observed. If we observe an
@@ -587,7 +587,7 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
     /// Final value produced
     pub(crate) value: V,
 
-    /// True if all inputs were constant (and no untracked inputs).
+    /// Minimum durability of inputs observed so far.
     pub(crate) durability: Durability,
 
     /// Maximum revision of all inputs observed. If we observe an

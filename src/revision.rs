@@ -1,14 +1,14 @@
 use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Value if the initial revision, as a u64. We don't use 0
+/// Value of the initial revision, as a u64. We don't use 0
 /// because we want to use a `NonZeroU64`.
 const START_U64: u64 = 1;
 
 /// A unique identifier for the current version of the database; each
 /// time an input is changed, the revision number is incremented.
 /// `Revision` is used internally to track which values may need to be
-/// recomputed, but not something you should have to interact with
+/// recomputed, but is not something you should have to interact with
 /// directly as a user of salsa.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Revision {
