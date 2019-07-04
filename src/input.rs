@@ -140,10 +140,9 @@ where
     DB: Database,
 {
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected> {
-        let slot = match self.slot(key) {
-            Some(s) => s.clone(),
-            None => panic!("no value set for {:?}({:?})", Q::default(), key),
-        };
+        let slot = self.slot(key).unwrap_or_else(|| {
+            panic!("no value set for {:?}({:?})", Q::default(), key)
+        });
 
         let StampedValue { value, changed_at } = slot.stamped_value.read().clone();
 
