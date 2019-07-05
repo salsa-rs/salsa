@@ -653,7 +653,7 @@ impl<DB: Database> DependencyGraph<DB> {
         self.edges.insert(from_id, to_id);
         self.labels
             .entry(database_key.clone())
-            .or_insert(SmallVec::default())
+            .or_default()
             .push(from_id);
         true
     }
@@ -662,7 +662,7 @@ impl<DB: Database> DependencyGraph<DB> {
         let vec = self
             .labels
             .remove(database_key)
-            .unwrap_or(SmallVec::default());
+            .unwrap_or_default();
 
         for from_id in &vec {
             let to_id1 = self.edges.remove(from_id);
