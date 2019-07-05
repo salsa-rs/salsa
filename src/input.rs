@@ -76,6 +76,14 @@ where
         value: Q::Value,
         durability: Durability,
     ) {
+        log::debug!(
+            "{:?}({:?}) = {:?} ({:?})",
+            Q::default(),
+            key,
+            value,
+            durability
+        );
+
         // The value is changing, so even if we are setting this to a
         // constant, we still need a new revision.
         //
@@ -182,8 +190,6 @@ where
     DB: Database,
 {
     fn set(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, value: Q::Value) {
-        log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
-
         self.set_common(db, key, database_key, value, Durability::LOW);
     }
 
@@ -195,8 +201,6 @@ where
         value: Q::Value,
         durability: Durability,
     ) {
-        log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
-
         self.set_common(db, key, database_key, value, durability);
     }
 }
