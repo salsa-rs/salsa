@@ -165,9 +165,7 @@ where
     DB: Database,
     Q: Query<DB>,
 {
-    fn set(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, new_value: Q::Value);
-
-    fn set_with_durability(
+    fn set(
         &self,
         db: &DB,
         key: &Q::Key,

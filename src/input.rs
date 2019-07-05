@@ -189,11 +189,7 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    fn set(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, value: Q::Value) {
-        self.set_common(db, key, database_key, value, Durability::LOW);
-    }
-
-    fn set_with_durability(
+    fn set(
         &self,
         db: &DB,
         key: &Q::Key,

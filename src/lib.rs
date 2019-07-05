@@ -527,8 +527,7 @@ where
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
-        self.storage
-            .set(self.db, &key, &self.database_key(&key), value);
+        self.set_with_durability(key, value, Durability::LOW);
     }
 
     /// Assign a value to an "input query", with the additional
@@ -543,13 +542,8 @@ where
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
-        self.storage.set_with_durability(
-            self.db,
-            &key,
-            &self.database_key(&key),
-            value,
-            durability,
-        );
+        self.storage
+            .set(self.db, &key, &self.database_key(&key), value, durability);
     }
 
     /// Sets the size of LRU cache of values for this query table.
