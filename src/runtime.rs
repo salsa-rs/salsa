@@ -159,11 +159,6 @@ where
         db.for_each_query(|query_storage| query_storage.sweep(db, strategy));
     }
 
-    /// Returns the max durability, used for constants.
-    pub(crate) fn max_durability(&self) -> Durability {
-        Durability::new(self.shared_state.revisions.len() - 1)
-    }
-
     /// The unique identifier attached to this `SalsaRuntime`. Each
     /// snapshotted runtime has a distinct identifier.
     #[inline]
@@ -349,7 +344,7 @@ where
         });
 
         // Push the active query onto the stack.
-        let max_durability = self.max_durability();
+        let max_durability = Durability::MAX;
         let active_query = self.local_state.push_query(database_key, max_durability);
 
         // Execute user's code, accumulating inputs etc.

@@ -35,12 +35,13 @@ impl Durability {
     /// Example: the standard library or something from crates.io
     pub const HIGH: Durability = Durability(2);
 
+    /// The maximum possible durability; equivalent to HIGH but
+    /// "conceptually" distinct (i.e., if we add more durability
+    /// levels, this could change).
+    pub(crate) const MAX: Durability = Self::HIGH;
+
     /// Number of durability levels.
     pub(crate) const LEN: usize = 3;
-
-    pub(crate) fn new(v: usize) -> Durability {
-        Durability(v as u8)
-    }
 
     pub(crate) fn index(self) -> usize {
         self.0 as usize
