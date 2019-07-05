@@ -1,6 +1,5 @@
 #![warn(rust_2018_idioms)]
 #![warn(missing_docs)]
-#![allow(dead_code)]
 
 //! The salsa crate is a crate for incremental recomputation.  It
 //! permits you to define a "database" of queries with both inputs and

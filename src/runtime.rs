@@ -159,11 +159,6 @@ where
         db.for_each_query(|query_storage| query_storage.sweep(db, strategy));
     }
 
-    /// True if `d` represents the max durability level.
-    pub(crate) fn is_constant(&self, d: Durability) -> bool {
-        d == self.max_durability()
-    }
-
     /// Returns the max durability, used for constants.
     pub(crate) fn max_durability(&self) -> Durability {
         Durability::new(self.shared_state.revisions.len() - 1)

@@ -123,8 +123,6 @@ where
             .or_insert_with(|| Arc::new(Slot::new(key.clone())))
             .clone()
     }
-
-    fn remove_lru(&self) {}
 }
 
 impl<DB, Q, MP> QueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
