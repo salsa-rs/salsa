@@ -654,7 +654,7 @@ where
         );
 
         if self.check_durability(db) {
-            return Some(self.verify_value(revision_now));
+            return Some(self.mark_value_as_verified(revision_now));
         }
 
         match &mut self.inputs {
@@ -693,10 +693,10 @@ where
             }
         };
 
-        Some(self.verify_value(revision_now))
+        Some(self.mark_value_as_verified(revision_now))
     }
 
-    fn verify_value(&mut self, revision_now: Revision) -> StampedValue<Q::Value> {
+    fn mark_value_as_verified(&mut self, revision_now: Revision) -> StampedValue<Q::Value> {
         let value = match &self.value {
             Some(v) => v.clone(),
             None => panic!("invoked `verify_value` without a value!"),
