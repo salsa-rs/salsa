@@ -144,14 +144,21 @@ where
             durability
         );
 
-        // The value is changing, so even if we are setting this to a
-        // constant, we still need a new revision.
+        // The value is changing, so we need a new revision (*). We also
+        // need to update the 'last changed' revision by invoking
+        // `guard.mark_durability_as_changed`.
         //
         // CAREFUL: This will block until the global revision lock can
         // be acquired. If there are still queries executing, they may
         // need to read from this input. Therefore, we wait to acquire
         // the lock on `map` until we also hold the global query write
         // lock.
+        //
+        // (*) Technically, since you can't presently access an input
+        // for a non-existent key, and you can't enumerate the set of
+        // keys, we only need a new revision if the key used to
+        // exist. But we may add such methods in the future and this
+        // case doesn't generally seem worth optimizing for.
         db.salsa_runtime().with_incremented_revision(|guard| {
             let mut slots = self.slots.write();
 
