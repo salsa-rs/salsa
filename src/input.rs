@@ -93,9 +93,10 @@ where
     }
 
     fn durability(&self, _db: &DB, key: &Q::Key) -> Durability {
-        self.slot(key)
-            .map(|slot| slot.stamped_value.read().durability)
-            .unwrap_or(Durability::LOW)
+        match self.slot(key) {
+            Some(slot) => slot.stamped_value.read().durability,
+            None => panic!("no value set for {:?}({:?})", Q::default(), key),
+        }
     }
 
     fn entries<C>(&self, _db: &DB) -> C
