@@ -100,7 +100,7 @@ where
             // into the same cell while we block on the lock.)
             let stamped_value = StampedValue {
                 value,
-                durability: durability,
+                durability,
                 changed_at: guard.new_revision(),
             };
 
