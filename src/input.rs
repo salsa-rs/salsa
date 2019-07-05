@@ -67,67 +67,6 @@ where
     fn slot(&self, key: &Q::Key) -> Option<Arc<Slot<DB, Q>>> {
         self.slots.read().get(key).cloned()
     }
-
-    fn set_common(
-        &self,
-        db: &DB,
-        key: &Q::Key,
-        database_key: &DB::DatabaseKey,
-        value: Q::Value,
-        durability: Durability,
-    ) {
-        log::debug!(
-            "{:?}({:?}) = {:?} ({:?})",
-            Q::default(),
-            key,
-            value,
-            durability
-        );
-
-        // The value is changing, so even if we are setting this to a
-        // constant, we still need a new revision.
-        //
-        // CAREFUL: This will block until the global revision lock can
-        // be acquired. If there are still queries executing, they may
-        // need to read from this input. Therefore, we wait to acquire
-        // the lock on `map` until we also hold the global query write
-        // lock.
-        db.salsa_runtime().with_incremented_revision(|guard| {
-            let mut slots = self.slots.write();
-
-            db.salsa_event(|| Event {
-                runtime_id: db.salsa_runtime().id(),
-                kind: EventKind::WillChangeInputValue {
-                    database_key: database_key.clone(),
-                },
-            });
-
-            // Do this *after* we acquire the lock, so that we are not
-            // racing with somebody else to modify this same cell.
-            // (Otherwise, someone else might write a *newer* revision
-            // into the same cell while we block on the lock.)
-            let stamped_value = StampedValue {
-                value,
-                durability,
-                changed_at: guard.new_revision(),
-            };
-
-            match slots.entry(key.clone()) {
-                Entry::Occupied(entry) => {
-                    let mut slot_stamped_value = entry.get().stamped_value.write();
-                    guard.mark_durability_as_changed(slot_stamped_value.durability);
-                    *slot_stamped_value = stamped_value;
-                }
-
-                Entry::Vacant(entry) => {
-                    entry.insert(Arc::new(Slot {
-                        key: key.clone(),
-                        stamped_value: RwLock::new(stamped_value),
-                    }));
-                }
-            }
-        });
-    }
 }
 
 impl<DB, Q> QueryStorageOps<DB, Q> for InputStorage<DB, Q>
@@ -197,7 +136,57 @@ where
         value: Q::Value,
         durability: Durability,
     ) {
-        self.set_common(db, key, database_key, value, durability);
+        log::debug!(
+            "{:?}({:?}) = {:?} ({:?})",
+            Q::default(),
+            key,
+            value,
+            durability
+        );
+
+        // The value is changing, so even if we are setting this to a
+        // constant, we still need a new revision.
+        //
+        // CAREFUL: This will block until the global revision lock can
+        // be acquired. If there are still queries executing, they may
+        // need to read from this input. Therefore, we wait to acquire
+        // the lock on `map` until we also hold the global query write
+        // lock.
+        db.salsa_runtime().with_incremented_revision(|guard| {
+            let mut slots = self.slots.write();
+
+            db.salsa_event(|| Event {
+                runtime_id: db.salsa_runtime().id(),
+                kind: EventKind::WillChangeInputValue {
+                    database_key: database_key.clone(),
+                },
+            });
+
+            // Do this *after* we acquire the lock, so that we are not
+            // racing with somebody else to modify this same cell.
+            // (Otherwise, someone else might write a *newer* revision
+            // into the same cell while we block on the lock.)
+            let stamped_value = StampedValue {
+                value,
+                durability,
+                changed_at: guard.new_revision(),
+            };
+
+            match slots.entry(key.clone()) {
+                Entry::Occupied(entry) => {
+                    let mut slot_stamped_value = entry.get().stamped_value.write();
+                    guard.mark_durability_as_changed(slot_stamped_value.durability);
+                    *slot_stamped_value = stamped_value;
+                }
+
+                Entry::Vacant(entry) => {
+                    entry.insert(Arc::new(Slot {
+                        key: key.clone(),
+                        stamped_value: RwLock::new(stamped_value),
+                    }));
+                }
+            }
+        });
     }
 }
 
