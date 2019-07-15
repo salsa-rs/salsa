@@ -1,9 +1,9 @@
 use crate::dependency::DatabaseSlot;
 use crate::dependency::Dependency;
 use crate::{Database, Event, EventKind, SweepStrategy};
-use lock_api::{RawRwLock, RawRwLockRecursive};
 use log::debug;
 use parking_lot::{Mutex, RwLock};
+use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 use std::fmt::Write;
