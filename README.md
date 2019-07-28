@@ -42,7 +42,7 @@ Using salsa is as easy as 1, 2, 3...
    components (or spread your code across crates).
 2. Define the **query functions** where appropriate.
 3. Define the **database**, which contains the storage for all
-   the inputs/queries you will be using. The query struct will contain
+   the inputs/queries you will be using. The database struct will contain
    the storage for all of the inputs/queries and may also contain
    anything else that your code needs (e.g., configuration data).
 
