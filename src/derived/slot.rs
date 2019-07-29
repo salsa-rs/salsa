@@ -340,15 +340,26 @@ where
             }
 
             QueryState::Memoized(memo) => {
-                debug!("{:?}: found memoized value", self);
+                debug!(
+                    "{:?}: found memoized value, verified_at={:?}, changed_at={:?}",
+                    self, memo.verified_at, memo.changed_at,
+                );
 
-                if let Some(value) = memo.probe_memoized_value(revision_now) {
-                    info!(
-                        "{:?}: returning memoized value changed at {:?}",
-                        self, value.changed_at
-                    );
+                if let Some(value) = &memo.value {
+                    if memo.verified_at == revision_now {
+                        let value = StampedValue {
+                            durability: memo.durability,
+                            changed_at: memo.changed_at,
+                            value: value.clone(),
+                        };
 
-                    return ProbeState::UpToDate(Ok(value));
+                        info!(
+                            "{:?}: returning memoized value changed at {:?}",
+                            self, value.changed_at
+                        );
+
+                        return ProbeState::UpToDate(Ok(value));
+                    }
                 }
             }
         }
@@ -708,26 +719,6 @@ where
             changed_at: self.changed_at,
             value,
         }
-    }
-
-    /// Returns the memoized value *if* it is known to be update in the given revision.
-    fn probe_memoized_value(&self, revision_now: Revision) -> Option<StampedValue<Q::Value>> {
-        let value = self.value.as_ref()?;
-
-        debug!(
-            "probe_memoized_value(verified_at={:?}, changed_at={:?})",
-            self.verified_at, self.changed_at,
-        );
-
-        if self.verified_at == revision_now {
-            return Some(StampedValue {
-                durability: self.durability,
-                changed_at: self.changed_at,
-                value: value.clone(),
-            });
-        }
-
-        None
     }
 
     fn has_untracked_input(&self) -> bool {
