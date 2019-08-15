@@ -2,6 +2,7 @@ use crate::revision::Revision;
 use crate::Database;
 use std::fmt::Debug;
 use std::hash::Hasher;
+use std::ptr;
 use std::sync::Arc;
 
 /// Unsafe proof obligations:
@@ -31,10 +32,6 @@ impl<DB: Database> Dependency<DB> {
         }
     }
 
-    fn raw_slot(&self) -> *const dyn DatabaseSlot<DB> {
-        &*self.slot
-    }
-
     pub(crate) fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
         self.slot.maybe_changed_since(db, revision)
     }
@@ -45,13 +42,13 @@ impl<DB: Database> std::hash::Hash for Dependency<DB> {
     where
         H: Hasher,
     {
-        self.raw_slot().hash(state)
+        ptr::hash(&*self.slot, state)
     }
 }
 
 impl<DB: Database> std::cmp::PartialEq for Dependency<DB> {
     fn eq(&self, other: &Self) -> bool {
-        self.raw_slot() == other.raw_slot()
+        ptr::eq(&*self.slot, &*other.slot)
     }
 }
 
