@@ -171,7 +171,8 @@ where
             }
         };
 
-        let mut panic_guard = PanicGuard::new(self.database_key(db), self, old_memo, runtime);
+        let database_key = self.database_key(db);
+        let mut panic_guard = PanicGuard::new(&database_key, self, old_memo, runtime);
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
@@ -184,7 +185,7 @@ where
                 db.salsa_event(|| Event {
                     runtime_id: runtime.id(),
                     kind: EventKind::DidValidateMemoizedValue {
-                        database_key: self.database_key(db),
+                        database_key: database_key.clone(),
                     },
                 });
 
@@ -196,7 +197,6 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let database_key = self.database_key(db);
         let mut result = runtime.execute_query_implementation(db, &database_key, || {
             info!("{:?}: executing query", self);
 
@@ -526,7 +526,7 @@ where
     Q: QueryFunction<DB>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    database_key: DB::DatabaseKey,
+    database_key: &'me DB::DatabaseKey,
     slot: &'me Slot<DB, Q, MP>,
     memo: Option<Memo<DB, Q>>,
     runtime: &'me Runtime<DB>,
@@ -539,7 +539,7 @@ where
     MP: MemoizationPolicy<DB, Q>,
 {
     fn new(
-        database_key: DB::DatabaseKey,
+        database_key: &'me DB::DatabaseKey,
         slot: &'me Slot<DB, Q, MP>,
         memo: Option<Memo<DB, Q>>,
         runtime: &'me Runtime<DB>,
