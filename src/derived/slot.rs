@@ -2,15 +2,15 @@ use crate::debug::TableEntry;
 use crate::dependency::DatabaseSlot;
 use crate::dependency::Dependency;
 use crate::derived::MemoizationPolicy;
+use crate::durability::Durability;
 use crate::lru::LruIndex;
 use crate::lru::LruNode;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::GetQueryTable;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryFunction;
-use crate::runtime::ChangedAt;
+use crate::revision::Revision;
 use crate::runtime::FxIndexSet;
-use crate::runtime::Revision;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
@@ -72,6 +72,9 @@ where
     /// Last revision when the memoized value was observed to change.
     changed_at: Revision,
 
+    /// Minimum durability of the inputs to this query.
+    durability: Durability,
+
     /// The inputs that went into our query, if we are tracking them.
     inputs: MemoInputs<DB>,
 }
@@ -79,15 +82,15 @@ where
 /// An insertion-order-preserving set of queries. Used to track the
 /// inputs accessed during query execution.
 pub(super) enum MemoInputs<DB: Database> {
-    // No inputs
-    Constant,
-
-    // Non-empty set of inputs fully known
+    /// Non-empty set of inputs, fully known
     Tracked {
         inputs: Arc<FxIndexSet<Dependency<DB>>>,
     },
 
-    // Unknown quantity of inputs
+    /// Empty set of inputs, fully known.
+    NoInputs,
+
+    /// Unknown quantity of inputs
     Untracked,
 }
 
@@ -168,7 +171,8 @@ where
             }
         };
 
-        let mut panic_guard = PanicGuard::new(self.database_key(db), self, old_memo, runtime);
+        let database_key = self.database_key(db);
+        let mut panic_guard = PanicGuard::new(&database_key, self, old_memo, runtime);
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
@@ -181,7 +185,7 @@ where
                 db.salsa_event(|| Event {
                     runtime_id: runtime.id(),
                     kind: EventKind::DidValidateMemoizedValue {
-                        database_key: self.database_key(db),
+                        database_key: database_key.clone(),
                     },
                 });
 
@@ -193,7 +197,6 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let database_key = self.database_key(db);
         let mut result = runtime.execute_query_implementation(db, &database_key, || {
             info!("{:?}: executing query", self);
 
@@ -215,20 +218,27 @@ where
         // old value.
         if let Some(old_memo) = &panic_guard.memo {
             if let Some(old_value) = &old_memo.value {
-                if MP::memoized_value_eq(&old_value, &result.value) {
+                // Careful: if the value became less durable than it
+                // used to be, that is a "breaking change" that our
+                // consumers must be aware of. Becoming *more* durable
+                // is not. See the test `constant_to_non_constant`.
+                if result.durability >= old_memo.durability
+                    && MP::memoized_value_eq(&old_value, &result.value)
+                {
                     debug!(
                         "read_upgrade({:?}): value is equal, back-dating to {:?}",
                         self, old_memo.changed_at,
                     );
 
-                    assert!(old_memo.changed_at <= result.changed_at.revision);
-                    result.changed_at.revision = old_memo.changed_at;
+                    assert!(old_memo.changed_at <= result.changed_at);
+                    result.changed_at = old_memo.changed_at;
                 }
             }
         }
 
         let new_value = StampedValue {
             value: result.value,
+            durability: result.durability,
             changed_at: result.changed_at,
         };
 
@@ -239,24 +249,17 @@ where
         };
 
         debug!(
-            "read_upgrade({:?}): result.changed_at={:?}, result.dependencies = {:#?}",
-            self, result.changed_at, result.dependencies,
+            "read_upgrade({:?}): result.changed_at={:?}, \
+             result.durability={:?}, result.dependencies = {:#?}",
+            self, result.changed_at, result.durability, result.dependencies,
         );
 
         let inputs = match result.dependencies {
             None => MemoInputs::Untracked,
 
             Some(dependencies) => {
-                // If all things that we read were constants, then
-                // we don't need to track our inputs: our value
-                // can never be invalidated.
-                //
-                // If OTOH we read at least *some* non-constant
-                // inputs, then we do track our inputs (even the
-                // constants), so that if we run the GC, we know
-                // which constants we looked at.
-                if dependencies.is_empty() || result.changed_at.is_constant {
-                    MemoInputs::Constant
+                if dependencies.is_empty() {
+                    MemoInputs::NoInputs
                 } else {
                     MemoInputs::Tracked {
                         inputs: Arc::new(dependencies),
@@ -264,11 +267,14 @@ where
                 }
             }
         };
+        debug!("read_upgrade({:?}): inputs={:?}", self, inputs);
+
         panic_guard.memo = Some(Memo {
             value,
-            changed_at: result.changed_at.revision,
+            changed_at: result.changed_at,
             verified_at: revision_now,
             inputs,
+            durability: result.durability,
         });
 
         panic_guard.proceed(&new_value);
@@ -334,15 +340,26 @@ where
             }
 
             QueryState::Memoized(memo) => {
-                debug!("{:?}: found memoized value", self);
+                debug!(
+                    "{:?}: found memoized value, verified_at={:?}, changed_at={:?}",
+                    self, memo.verified_at, memo.changed_at,
+                );
 
-                if let Some(value) = memo.probe_memoized_value(revision_now) {
-                    info!(
-                        "{:?}: returning memoized value changed at {:?}",
-                        self, value.changed_at
-                    );
+                if let Some(value) = &memo.value {
+                    if memo.verified_at == revision_now {
+                        let value = StampedValue {
+                            durability: memo.durability,
+                            changed_at: memo.changed_at,
+                            value: value.clone(),
+                        };
 
-                    return ProbeState::UpToDate(Ok(value));
+                        info!(
+                            "{:?}: returning memoized value changed at {:?}",
+                            self, value.changed_at
+                        );
+
+                        return ProbeState::UpToDate(Ok(value));
+                    }
                 }
             }
         }
@@ -350,11 +367,17 @@ where
         ProbeState::StaleOrAbsent(state)
     }
 
-    pub(super) fn is_constant(&self, _db: &DB) -> bool {
+    pub(super) fn durability(&self, db: &DB) -> Durability {
         match &*self.state.read() {
-            QueryState::NotComputed => false,
+            QueryState::NotComputed => Durability::LOW,
             QueryState::InProgress { .. } => panic!("query in progress"),
-            QueryState::Memoized(memo) => memo.inputs.is_constant(),
+            QueryState::Memoized(memo) => {
+                if memo.check_durability(db) {
+                    memo.durability
+                } else {
+                    Durability::LOW
+                }
+            }
         }
     }
 
@@ -503,7 +526,7 @@ where
     Q: QueryFunction<DB>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    database_key: DB::DatabaseKey,
+    database_key: &'me DB::DatabaseKey,
     slot: &'me Slot<DB, Q, MP>,
     memo: Option<Memo<DB, Q>>,
     runtime: &'me Runtime<DB>,
@@ -516,7 +539,7 @@ where
     MP: MemoizationPolicy<DB, Q>,
 {
     fn new(
-        database_key: DB::DatabaseKey,
+        database_key: &'me DB::DatabaseKey,
         slot: &'me Slot<DB, Q, MP>,
         memo: Option<Memo<DB, Q>>,
         runtime: &'me Runtime<DB>,
@@ -605,28 +628,32 @@ where
     }
 }
 
-impl<DB: Database> MemoInputs<DB> {
-    fn is_constant(&self) -> bool {
-        if let MemoInputs::Constant = self {
-            true
-        } else {
-            false
-        }
-    }
-}
-
 impl<DB, Q> Memo<DB, Q>
 where
     Q: QueryFunction<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
 {
+    /// True if this memo is known not to have changed based on its durability.
+    fn check_durability(&self, db: &DB) -> bool {
+        let last_changed = db.salsa_runtime().last_changed_revision(self.durability);
+        debug!(
+            "check_durability(last_changed={:?} <= verified_at={:?}) = {:?}",
+            last_changed,
+            self.verified_at,
+            last_changed <= self.verified_at,
+        );
+        last_changed <= self.verified_at
+    }
+
     fn validate_memoized_value(
         &mut self,
         db: &DB,
         revision_now: Revision,
     ) -> Option<StampedValue<Q::Value>> {
         // If we don't have a memoized value, nothing to validate.
-        let value = self.value.as_ref()?;
+        if self.value.is_none() {
+            return None;
+        }
 
         assert!(self.verified_at != revision_now);
         let verified_at = self.verified_at;
@@ -637,15 +664,18 @@ where
             self.inputs,
         );
 
-        let is_constant = match &mut self.inputs {
+        if self.check_durability(db) {
+            return Some(self.mark_value_as_verified(revision_now));
+        }
+
+        match &self.inputs {
             // We can't validate values that had untracked inputs; just have to
             // re-execute.
             MemoInputs::Untracked { .. } => {
                 return None;
             }
 
-            // Constant: no changed input
-            MemoInputs::Constant => true,
+            MemoInputs::NoInputs => {}
 
             // Check whether any of our inputs changed since the
             // **last point where we were verified** (not since we
@@ -671,46 +701,24 @@ where
 
                     return None;
                 }
-
-                false
             }
         };
 
-        self.verified_at = revision_now;
-        Some(StampedValue {
-            changed_at: ChangedAt {
-                is_constant,
-                revision: self.changed_at,
-            },
-            value: value.clone(),
-        })
+        Some(self.mark_value_as_verified(revision_now))
     }
 
-    /// Returns the memoized value *if* it is known to be update in the given revision.
-    fn probe_memoized_value(&self, revision_now: Revision) -> Option<StampedValue<Q::Value>> {
-        let value = self.value.as_ref()?;
+    fn mark_value_as_verified(&mut self, revision_now: Revision) -> StampedValue<Q::Value> {
+        let value = match &self.value {
+            Some(v) => v.clone(),
+            None => panic!("invoked `verify_value` without a value!"),
+        };
+        self.verified_at = revision_now;
 
-        debug!(
-            "probe_memoized_value(verified_at={:?}, changed_at={:?})",
-            self.verified_at, self.changed_at,
-        );
-
-        if self.verified_at == revision_now {
-            let is_constant = match self.inputs {
-                MemoInputs::Constant => true,
-                _ => false,
-            };
-
-            return Some(StampedValue {
-                changed_at: ChangedAt {
-                    is_constant,
-                    revision: self.changed_at,
-                },
-                value: value.clone(),
-            });
+        StampedValue {
+            durability: self.durability,
+            changed_at: self.changed_at,
+            value,
         }
-
-        None
     }
 
     fn has_untracked_input(&self) -> bool {
@@ -735,10 +743,10 @@ where
 impl<DB: Database> std::fmt::Debug for MemoInputs<DB> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MemoInputs::Constant => fmt.debug_struct("Constant").finish(),
             MemoInputs::Tracked { inputs } => {
                 fmt.debug_struct("Tracked").field("inputs", inputs).finish()
             }
+            MemoInputs::NoInputs => fmt.debug_struct("NoInputs").finish(),
             MemoInputs::Untracked => fmt.debug_struct("Untracked").finish(),
         }
     }
@@ -804,7 +812,7 @@ where
                         std::mem::drop(state);
 
                         let value = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
-                        return value.changed_at.changed_since(revision);
+                        return value.changed_at > revision;
                     }
 
                     // Consider a cycle to have changed.
@@ -825,62 +833,74 @@ where
             return memo.changed_at > revision;
         }
 
-        let inputs = match &memo.inputs {
-            MemoInputs::Untracked => {
-                // we don't know the full set of
-                // inputs, so if there is a new
-                // revision, we must assume it is
-                // dirty
-                debug!(
-                    "maybe_changed_since({:?}: true since untracked inputs",
-                    self,
-                );
-                return true;
-            }
+        let maybe_changed;
 
-            MemoInputs::Constant => None,
-
-            MemoInputs::Tracked { inputs } => {
-                // At this point, the value may be dirty (we have
-                // to check the database-keys). If we have a cached
-                // value, we'll just fall back to invoking `read`,
-                // which will do that checking (and a bit more) --
-                // note that we skip the "pure read" part as we
-                // already know the result.
-                assert!(inputs.len() > 0);
-                if memo.value.is_some() {
-                    std::mem::drop(state);
-                    return match self.read_upgrade(db, revision_now) {
-                        Ok(v) => {
-                            debug!(
-                                "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
-                                self,
-                                v.changed_at.changed_since(revision),
-                                v.changed_at,
-                            );
-                            v.changed_at.changed_since(revision)
-                        }
-                        Err(CycleDetected) => true,
-                    };
+        // If we only depended on constants, and no constant has been
+        // modified since then, we cannot have changed; no need to
+        // trace our inputs.
+        if memo.check_durability(db) {
+            std::mem::drop(state);
+            maybe_changed = false;
+        } else {
+            match &memo.inputs {
+                MemoInputs::Untracked => {
+                    // we don't know the full set of
+                    // inputs, so if there is a new
+                    // revision, we must assume it is
+                    // dirty
+                    debug!(
+                        "maybe_changed_since({:?}: true since untracked inputs",
+                        self,
+                    );
+                    return true;
                 }
 
-                Some(inputs.clone())
+                MemoInputs::NoInputs => {
+                    std::mem::drop(state);
+                    maybe_changed = false;
+                }
+
+                MemoInputs::Tracked { inputs } => {
+                    // At this point, the value may be dirty (we have
+                    // to check the database-keys). If we have a cached
+                    // value, we'll just fall back to invoking `read`,
+                    // which will do that checking (and a bit more) --
+                    // note that we skip the "pure read" part as we
+                    // already know the result.
+                    assert!(inputs.len() > 0);
+                    if memo.value.is_some() {
+                        std::mem::drop(state);
+                        return match self.read_upgrade(db, revision_now) {
+                            Ok(v) => {
+                                debug!(
+                                    "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
+                                    self,
+                                    v.changed_at > revision,
+                                    v.changed_at,
+                                );
+                                v.changed_at > revision
+                            }
+                            Err(CycleDetected) => true,
+                        };
+                    }
+
+                    let inputs = inputs.clone();
+
+                    // We have a **tracked set of inputs**
+                    // (found in `database_keys`) that need to
+                    // be validated.
+                    std::mem::drop(state);
+
+                    // Iterate the inputs and see if any have maybe changed.
+                    maybe_changed = inputs
+                        .iter()
+                        .filter(|input| input.maybe_changed_since(db, revision))
+                        .inspect(|input| debug!("{:?}: input `{:?}` may have changed", self, input))
+                        .next()
+                        .is_some();
+                }
             }
-        };
-
-        // We have a **tracked set of inputs**
-        // (found in `database_keys`) that need to
-        // be validated.
-        std::mem::drop(state);
-
-        // Iterate the inputs and see if any have maybe changed.
-        let maybe_changed = inputs
-            .iter()
-            .flat_map(|inputs| inputs.iter())
-            .filter(|input| input.maybe_changed_since(db, revision))
-            .inspect(|input| debug!("{:?}: input `{:?}` may have changed", self, input))
-            .next()
-            .is_some();
+        }
 
         // Either way, we have to update our entry.
         //

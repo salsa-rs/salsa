@@ -1,7 +1,7 @@
 use crate::db;
 use crate::group::{FibonacciQuery, GcDatabase};
 use salsa::debug::DebugQueryTable;
-use salsa::{Database, SweepStrategy};
+use salsa::{Database, Durability, SweepStrategy};
 
 #[test]
 fn sweep_default() {
@@ -12,7 +12,7 @@ fn sweep_default() {
     let k: Vec<_> = db.query(FibonacciQuery).entries();
     assert_eq!(k.len(), 6);
 
-    db.salsa_runtime().next_revision();
+    db.salsa_runtime().synthetic_write(Durability::LOW);
 
     db.fibonacci(5);
     db.fibonacci(3);

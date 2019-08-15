@@ -1,11 +1,11 @@
 use crate::debug::TableEntry;
 use crate::dependency::DatabaseSlot;
+use crate::durability::Durability;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::runtime::ChangedAt;
-use crate::runtime::Revision;
+use crate::revision::Revision;
 use crate::runtime::StampedValue;
 use crate::Database;
 use crate::Event;
@@ -59,8 +59,6 @@ where
     }
 }
 
-struct IsConstant(bool);
-
 impl<DB, Q> InputStorage<DB, Q>
 where
     Q: Query<DB>,
@@ -68,69 +66,6 @@ where
 {
     fn slot(&self, key: &Q::Key) -> Option<Arc<Slot<DB, Q>>> {
         self.slots.read().get(key).cloned()
-    }
-
-    fn set_common(
-        &self,
-        db: &DB,
-        key: &Q::Key,
-        database_key: &DB::DatabaseKey,
-        value: Q::Value,
-        is_constant: IsConstant,
-    ) {
-        // The value is changing, so even if we are setting this to a
-        // constant, we still need a new revision.
-        //
-        // CAREFUL: This will block until the global revision lock can
-        // be acquired. If there are still queries executing, they may
-        // need to read from this input. Therefore, we wait to acquire
-        // the lock on `map` until we also hold the global query write
-        // lock.
-        db.salsa_runtime().with_incremented_revision(|next_revision| {
-            let mut slots = self.slots.write();
-
-            db.salsa_event(|| Event {
-                runtime_id: db.salsa_runtime().id(),
-                kind: EventKind::WillChangeInputValue {
-                    database_key: database_key.clone(),
-                },
-            });
-
-            // Do this *after* we acquire the lock, so that we are not
-            // racing with somebody else to modify this same cell.
-            // (Otherwise, someone else might write a *newer* revision
-            // into the same cell while we block on the lock.)
-            let changed_at = ChangedAt {
-                is_constant: is_constant.0,
-                revision: next_revision,
-            };
-
-            let stamped_value = StampedValue { value, changed_at };
-
-            match slots.entry(key.clone()) {
-                Entry::Occupied(entry) => {
-                    let mut slot_stamped_value = entry.get().stamped_value.write();
-
-                    assert!(
-                        !slot_stamped_value.changed_at.is_constant,
-                        "modifying `{:?}({:?})`, which was previously marked as constant (old value `{:?}`, new value `{:?}`)",
-                        Q::default(),
-                        entry.key(),
-                        slot_stamped_value.value,
-                        stamped_value.value,
-                    );
-
-                    *slot_stamped_value = stamped_value;
-                }
-
-                Entry::Vacant(entry) => {
-                    entry.insert(Arc::new(Slot {
-                        key: key.clone(),
-                        stamped_value: RwLock::new(stamped_value),
-                    }));
-                }
-            }
-        });
     }
 }
 
@@ -145,17 +80,23 @@ where
             None => panic!("no value set for {:?}({:?})", Q::default(), key),
         };
 
-        let StampedValue { value, changed_at } = slot.stamped_value.read().clone();
+        let StampedValue {
+            value,
+            durability,
+            changed_at,
+        } = slot.stamped_value.read().clone();
 
-        db.salsa_runtime().report_query_read(slot, changed_at);
+        db.salsa_runtime()
+            .report_query_read(slot, durability, changed_at);
 
         Ok(value)
     }
 
-    fn is_constant(&self, _db: &DB, key: &Q::Key) -> bool {
-        self.slot(key)
-            .map(|slot| slot.stamped_value.read().changed_at.is_constant)
-            .unwrap_or(false)
+    fn durability(&self, _db: &DB, key: &Q::Key) -> Durability {
+        match self.slot(key) {
+            Some(slot) => slot.stamped_value.read().durability,
+            None => panic!("no value set for {:?}({:?})", Q::default(), key),
+        }
     }
 
     fn entries<C>(&self, _db: &DB) -> C
@@ -188,16 +129,72 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    fn set(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, value: Q::Value) {
-        log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
+    fn set(
+        &self,
+        db: &DB,
+        key: &Q::Key,
+        database_key: &DB::DatabaseKey,
+        value: Q::Value,
+        durability: Durability,
+    ) {
+        log::debug!(
+            "{:?}({:?}) = {:?} ({:?})",
+            Q::default(),
+            key,
+            value,
+            durability
+        );
 
-        self.set_common(db, key, database_key, value, IsConstant(false))
-    }
+        // The value is changing, so we need a new revision (*). We also
+        // need to update the 'last changed' revision by invoking
+        // `guard.mark_durability_as_changed`.
+        //
+        // CAREFUL: This will block until the global revision lock can
+        // be acquired. If there are still queries executing, they may
+        // need to read from this input. Therefore, we wait to acquire
+        // the lock on `map` until we also hold the global query write
+        // lock.
+        //
+        // (*) Technically, since you can't presently access an input
+        // for a non-existent key, and you can't enumerate the set of
+        // keys, we only need a new revision if the key used to
+        // exist. But we may add such methods in the future and this
+        // case doesn't generally seem worth optimizing for.
+        db.salsa_runtime().with_incremented_revision(|guard| {
+            let mut slots = self.slots.write();
 
-    fn set_constant(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, value: Q::Value) {
-        log::debug!("{:?}({:?}) = {:?}", Q::default(), key, value);
+            db.salsa_event(|| Event {
+                runtime_id: db.salsa_runtime().id(),
+                kind: EventKind::WillChangeInputValue {
+                    database_key: database_key.clone(),
+                },
+            });
 
-        self.set_common(db, key, database_key, value, IsConstant(true))
+            // Do this *after* we acquire the lock, so that we are not
+            // racing with somebody else to modify this same cell.
+            // (Otherwise, someone else might write a *newer* revision
+            // into the same cell while we block on the lock.)
+            let stamped_value = StampedValue {
+                value,
+                durability,
+                changed_at: guard.new_revision(),
+            };
+
+            match slots.entry(key.clone()) {
+                Entry::Occupied(entry) => {
+                    let mut slot_stamped_value = entry.get().stamped_value.write();
+                    guard.mark_durability_as_changed(slot_stamped_value.durability);
+                    *slot_stamped_value = stamped_value;
+                }
+
+                Entry::Vacant(entry) => {
+                    entry.insert(Arc::new(Slot {
+                        key: key.clone(),
+                        stamped_value: RwLock::new(stamped_value),
+                    }));
+                }
+            }
+        });
     }
 }
 
@@ -220,7 +217,7 @@ where
 
         debug!("maybe_changed_since: changed_at = {:?}", changed_at);
 
-        changed_at.changed_since(revision)
+        changed_at > revision
     }
 }
 

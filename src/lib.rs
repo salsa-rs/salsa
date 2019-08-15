@@ -1,6 +1,5 @@
 #![warn(rust_2018_idioms)]
 #![warn(missing_docs)]
-#![allow(dead_code)]
 
 //! The salsa crate is a crate for incremental recomputation.  It
 //! permits you to define a "database" of queries with both inputs and
@@ -11,10 +10,12 @@
 mod dependency;
 mod derived;
 mod doctest;
+mod durability;
 mod input;
 mod intern_id;
 mod interned;
 mod lru;
+mod revision;
 mod runtime;
 
 pub mod debug;
@@ -32,6 +33,7 @@ use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 
+pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
 pub use crate::interned::InternKey;
 pub use crate::runtime::Runtime;
@@ -525,8 +527,7 @@ where
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
-        self.storage
-            .set(self.db, &key, &self.database_key(&key), value);
+        self.set_with_durability(key, value, Durability::LOW);
     }
 
     /// Assign a value to an "input query", with the additional
@@ -537,12 +538,12 @@ where
     /// and cancellation on [the `query_mut` method].
     ///
     /// [the `query_mut` method]: trait.Database#method.query_mut
-    pub fn set_constant(&self, key: Q::Key, value: Q::Value)
+    pub fn set_with_durability(&self, key: Q::Key, value: Q::Value, durability: Durability)
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
         self.storage
-            .set_constant(self.db, &key, &self.database_key(&key), value);
+            .set(self.db, &key, &self.database_key(&key), value, durability);
     }
 
     /// Sets the size of LRU cache of values for this query table.

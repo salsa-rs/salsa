@@ -1,6 +1,7 @@
 #![allow(missing_docs)]
 
 use crate::debug::TableEntry;
+use crate::durability::Durability;
 use crate::Database;
 use crate::Query;
 use crate::QueryTable;
@@ -14,7 +15,7 @@ pub use crate::derived::MemoizedStorage;
 pub use crate::input::InputStorage;
 pub use crate::interned::InternedStorage;
 pub use crate::interned::LookupInternedStorage;
-pub use crate::runtime::Revision;
+pub use crate::revision::Revision;
 
 pub struct CycleDetected;
 
@@ -147,8 +148,8 @@ where
     /// itself.
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected>;
 
-    /// Check if `key` is (currently) believed to be a constant.
-    fn is_constant(&self, db: &DB, key: &Q::Key) -> bool;
+    /// Returns the durability associated with a given key.
+    fn durability(&self, db: &DB, key: &Q::Key) -> Durability;
 
     /// Get the (current) set of the entries in the query storage
     fn entries<C>(&self, db: &DB) -> C
@@ -164,14 +165,13 @@ where
     DB: Database,
     Q: Query<DB>,
 {
-    fn set(&self, db: &DB, key: &Q::Key, database_key: &DB::DatabaseKey, new_value: Q::Value);
-
-    fn set_constant(
+    fn set(
         &self,
         db: &DB,
         key: &Q::Key,
         database_key: &DB::DatabaseKey,
         new_value: Q::Value,
+        durability: Durability,
     );
 }
 

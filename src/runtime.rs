@@ -1,5 +1,7 @@
 use crate::dependency::DatabaseSlot;
 use crate::dependency::Dependency;
+use crate::durability::Durability;
+use crate::revision::{AtomicRevision, Revision};
 use crate::{Database, Event, EventKind, SweepStrategy};
 use lock_api::{RawRwLock, RawRwLockRecursive};
 use log::debug;
@@ -8,8 +10,7 @@ use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 use std::fmt::Write;
 use std::hash::BuildHasherDefault;
-use std::num::NonZeroU64;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
@@ -115,18 +116,37 @@ where
         }
     }
 
-    /// Indicates that some input to the system has changed and hence
-    /// that memoized values **may** be invalidated. This cannot be
-    /// invoked while query computation is in progress.
+    /// A "synthetic write" causes the system to act *as though* some
+    /// input of durability `durability` has changed. This is mostly
+    /// useful for profiling scenarios, but it also has interactions
+    /// with garbage collection. In general, a synthetic write to
+    /// durability level D will cause the system to fully trace all
+    /// queries of durability level D and below. When running a GC, then:
     ///
-    /// As a user of the system, you would not normally invoke this
-    /// method directly. Instead, you would use "input" queries and
-    /// invoke their `set` method. But it can be useful if you have a
-    /// "volatile" input that you must poll from time to time; in that
-    /// case, you can wrap the input with a "no-storage" query and
-    /// invoke this method from time to time.
-    pub fn next_revision(&self) {
-        self.with_incremented_revision(|_| ());
+    /// - Synthetic writes will cause more derived values to be
+    ///   *retained*.  This is because derived values are only
+    ///   retained if they are traced, and a synthetic write can cause
+    ///   more things to be traced.
+    /// - Synthetic writes can cause more interned values to be
+    ///   *collected*. This is because interned values can only be
+    ///   collected if they were not yet traced in the current
+    ///   revision. Therefore, if you issue a synthetic write, execute
+    ///   some query Q, and then start collecting interned values, you
+    ///   will be able to recycle interned values not used in Q.
+    ///
+    /// In general, then, one can do a "full GC" that retains only
+    /// those things that are used by some query Q by (a) doing a
+    /// synthetic write at `Durability::HIGH`, (b) executing the query
+    /// Q and then (c) doing a sweep.
+    ///
+    /// **WARNING:** Just like an ordinary write, this method triggers
+    /// cancellation. If you invoke it while a snapshot exists, it
+    /// will block until that snapshot is dropped -- if that snapshot
+    /// is owned by the current thread, this could trigger deadlock.
+    pub fn synthetic_write(&self, durability: Durability) {
+        self.with_incremented_revision(|guard| {
+            guard.mark_durability_as_changed(durability);
+        });
     }
 
     /// Default implementation for `Database::sweep_all`.
@@ -155,13 +175,25 @@ where
     /// Read current value of the revision counter.
     #[inline]
     pub(crate) fn current_revision(&self) -> Revision {
-        Revision::from(self.shared_state.revision.load(Ordering::SeqCst))
+        self.shared_state.revisions[0].load()
+    }
+
+    /// The revision in which values with durability `d` may have last
+    /// changed.  For D0, this is just the current revision. But for
+    /// higher levels of durability, this value may lag behind the
+    /// current revision. If we encounter a value of durability Di,
+    /// then, we can check this function to get a "bound" on when the
+    /// value may have changed, which allows us to skip walking its
+    /// dependencies.
+    #[inline]
+    pub(crate) fn last_changed_revision(&self, d: Durability) -> Revision {
+        self.shared_state.revisions[d.index()].load()
     }
 
     /// Read current value of the revision counter.
     #[inline]
     fn pending_revision(&self) -> Revision {
-        Revision::from(self.shared_state.pending_revision.load(Ordering::SeqCst))
+        self.shared_state.pending_revision.load()
     }
 
     /// Check if the current revision is canceled. If this method ever
@@ -262,7 +294,10 @@ where
     /// Note that, given our writer model, we can assume that only one
     /// thread is attempting to increment the global revision at a
     /// time.
-    pub(crate) fn with_incremented_revision<R>(&self, op: impl FnOnce(Revision) -> R) -> R {
+    pub(crate) fn with_incremented_revision<R>(
+        &self,
+        op: impl FnOnce(&DatabaseWriteLockGuard<'_, DB>) -> R,
+    ) -> R {
         log::debug!("increment_revision()");
 
         if !self.permits_increment() {
@@ -271,23 +306,22 @@ where
 
         // Set the `pending_revision` field so that people
         // know current revision is canceled.
-        let current_revision = self
-            .shared_state
-            .pending_revision
-            .fetch_add(1, Ordering::SeqCst);
-        assert!(current_revision != u64::max_value(), "revision overflow");
+        let current_revision = self.shared_state.pending_revision.fetch_then_increment();
 
         // To modify the revision, we need the lock.
         let _lock = self.shared_state.query_lock.write();
 
-        let old_revision = self.shared_state.revision.fetch_add(1, Ordering::SeqCst);
+        let old_revision = self.shared_state.revisions[0].fetch_then_increment();
         assert_eq!(current_revision, old_revision);
 
-        let new_revision = Revision::from(current_revision + 1);
+        let new_revision = current_revision.next();
 
         debug!("increment_revision: incremented to {:?}", new_revision);
 
-        op(new_revision)
+        op(&DatabaseWriteLockGuard {
+            runtime: self,
+            new_revision,
+        })
     }
 
     pub(crate) fn permits_increment(&self) -> bool {
@@ -310,7 +344,8 @@ where
         });
 
         // Push the active query onto the stack.
-        let active_query = self.local_state.push_query(database_key);
+        let max_durability = Durability::MAX;
+        let active_query = self.local_state.push_query(database_key, max_durability);
 
         // Execute user's code, accumulating inputs etc.
         let value = execute();
@@ -319,11 +354,13 @@ where
         let ActiveQuery {
             dependencies,
             changed_at,
+            durability,
             ..
         } = active_query.complete();
 
         ComputedQueryResult {
             value,
+            durability,
             changed_at,
             dependencies,
         }
@@ -340,10 +377,12 @@ where
     pub(crate) fn report_query_read<'hack>(
         &self,
         database_slot: Arc<dyn DatabaseSlot<DB> + 'hack>,
-        changed_at: ChangedAt,
+        durability: Durability,
+        changed_at: Revision,
     ) {
         let dependency = Dependency::new(database_slot);
-        self.local_state.report_query_read(dependency, changed_at);
+        self.local_state
+            .report_query_read(dependency, durability, changed_at);
     }
 
     /// Reports that the query depends on some state unknown to salsa.
@@ -402,6 +441,38 @@ where
     }
 }
 
+/// Temporary guard that indicates that the database write-lock is
+/// held. You can get one of these by invoking
+/// `with_incremented_revision`. It gives access to the new revision
+/// and a few other operations that only make sense to do while an
+/// update is happening.
+pub(crate) struct DatabaseWriteLockGuard<'db, DB>
+where
+    DB: Database,
+{
+    runtime: &'db Runtime<DB>,
+    new_revision: Revision,
+}
+
+impl<DB> DatabaseWriteLockGuard<'_, DB>
+where
+    DB: Database,
+{
+    pub(crate) fn new_revision(&self) -> Revision {
+        self.new_revision
+    }
+
+    /// Indicates that this update modified an input marked as
+    /// "constant". This will force re-evaluation of anything that was
+    /// dependent on constants (which otherwise might not get
+    /// re-evaluated).
+    pub(crate) fn mark_durability_as_changed(&self, d: Durability) {
+        for rev in &self.runtime.shared_state.revisions[1..=d.index()] {
+            rev.store(self.new_revision);
+        }
+    }
+}
+
 /// State that will be common to all threads (when we support multiple threads)
 struct SharedState<DB: Database> {
     storage: DB::DatabaseStorage,
@@ -419,20 +490,38 @@ struct SharedState<DB: Database> {
     /// to ensure a higher-level consistency property.
     query_lock: RwLock<()>,
 
-    /// Stores the current revision. This is an `AtomicU64` because
-    /// it may be *read* at any point without holding the
-    /// `query_lock`. Updates, however, require the `query_lock` to be
-    /// acquired. (See `query_lock` for details.)
-    revision: AtomicU64,
-
     /// This is typically equal to `revision` -- set to `revision+1`
     /// when a new revision is pending (which implies that the current
     /// revision is canceled).
-    pending_revision: AtomicU64,
+    pending_revision: AtomicRevision,
+
+    /// Stores the "last change" revision for values of each duration.
+    /// This vector is always of length at least 1 (for Durability 0)
+    /// but its total length depends on the number of durations. The
+    /// element at index 0 is special as it represents the "current
+    /// revision".  In general, we have the invariant that revisions
+    /// in here are *declining* -- that is, `revisions[i] >=
+    /// revisions[i + 1]`, for all `i`. This is because when you
+    /// modify a value with durability D, that implies that values
+    /// with durability less than D may have changed too.
+    revisions: Vec<AtomicRevision>,
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
     dependency_graph: Mutex<DependencyGraph<DB>>,
+}
+
+impl<DB: Database> SharedState<DB> {
+    fn with_durabilities(durabilities: usize) -> Self {
+        SharedState {
+            next_id: AtomicUsize::new(1),
+            storage: Default::default(),
+            query_lock: Default::default(),
+            revisions: (0..durabilities).map(|_| AtomicRevision::start()).collect(),
+            pending_revision: AtomicRevision::start(),
+            dependency_graph: Default::default(),
+        }
+    }
 }
 
 impl<DB> std::panic::RefUnwindSafe for SharedState<DB>
@@ -444,14 +533,7 @@ where
 
 impl<DB: Database> Default for SharedState<DB> {
     fn default() -> Self {
-        SharedState {
-            next_id: AtomicUsize::new(1),
-            storage: Default::default(),
-            query_lock: Default::default(),
-            revision: AtomicU64::new(1),
-            pending_revision: AtomicU64::new(1),
-            dependency_graph: Default::default(),
-        }
+        Self::with_durabilities(Durability::LEN)
     }
 }
 
@@ -469,7 +551,7 @@ where
         };
         fmt.debug_struct("SharedState")
             .field("query_lock", &query_lock)
-            .field("revision", &self.revision)
+            .field("revisions", &self.revisions)
             .field("pending_revision", &self.pending_revision)
             .finish()
     }
@@ -479,11 +561,12 @@ struct ActiveQuery<DB: Database> {
     /// What query is executing
     database_key: DB::DatabaseKey,
 
-    /// Maximum revision of all inputs thus far;
-    /// we also track if all inputs have been constant.
-    ///
-    /// If we see an untracked input, this is not terribly relevant.
-    changed_at: ChangedAt,
+    /// Minimum durability of inputs observed so far.
+    durability: Durability,
+
+    /// Maximum revision of all inputs observed. If we observe an
+    /// untracked read, this will be set to the most recent revision.
+    changed_at: Revision,
 
     /// Set of subqueries that were accessed thus far, or `None` if
     /// there was an untracked the read.
@@ -494,12 +577,12 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
     /// Final value produced
     pub(crate) value: V,
 
-    /// Maximum revision of all inputs observed; `is_constant` is true
-    /// if all inputs were constants.
-    ///
-    /// If we observe an untracked read, this will be set to a
-    /// non-constant value that changed in the most recent revision.
-    pub(crate) changed_at: ChangedAt,
+    /// Minimum durability of inputs observed so far.
+    pub(crate) durability: Durability,
+
+    /// Maximum revision of all inputs observed. If we observe an
+    /// untracked read, this will be set to the most recent revision.
+    pub(crate) changed_at: Revision,
 
     /// Complete set of subqueries that were accessed, or `None` if
     /// there was an untracked the read.
@@ -507,39 +590,32 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
 }
 
 impl<DB: Database> ActiveQuery<DB> {
-    fn new(database_key: DB::DatabaseKey) -> Self {
+    fn new(database_key: DB::DatabaseKey, max_durability: Durability) -> Self {
         ActiveQuery {
             database_key,
-            changed_at: ChangedAt {
-                is_constant: true,
-                revision: Revision::start(),
-            },
+            durability: max_durability,
+            changed_at: Revision::start(),
             dependencies: Some(FxIndexSet::default()),
         }
     }
 
-    fn add_read(&mut self, dependency: Dependency<DB>, changed_at: ChangedAt) {
-        let ChangedAt {
-            is_constant,
-            revision,
-        } = changed_at;
-
+    fn add_read(&mut self, dependency: Dependency<DB>, durability: Durability, revision: Revision) {
         if let Some(set) = &mut self.dependencies {
             set.insert(dependency);
         }
 
-        self.changed_at.is_constant &= is_constant;
-        self.changed_at.revision = self.changed_at.revision.max(revision);
+        self.durability = self.durability.min(durability);
+        self.changed_at = self.changed_at.max(revision);
     }
 
     fn add_untracked_read(&mut self, changed_at: Revision) {
         self.dependencies = None;
-        self.changed_at.is_constant = false;
-        self.changed_at.revision = changed_at;
+        self.durability = Durability::LOW;
+        self.changed_at = changed_at;
     }
 
     fn add_anon_read(&mut self, changed_at: Revision) {
-        self.changed_at.revision = self.changed_at.revision.max(changed_at);
+        self.changed_at = self.changed_at.max(changed_at);
     }
 }
 
@@ -551,63 +627,11 @@ pub struct RuntimeId {
     counter: usize,
 }
 
-/// A unique identifier for the current version of the database; each
-/// time an input is changed, the revision number is incremented.
-/// `Revision` is used internally to track which values may need to be
-/// recomputed, but not something you should have to interact with
-/// directly as a user of salsa.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Revision {
-    generation: NonZeroU64,
-}
-
-impl Revision {
-    fn start() -> Self {
-        Self::from(1)
-    }
-
-    fn from(g: u64) -> Self {
-        Self {
-            generation: NonZeroU64::new(g).unwrap(),
-        }
-    }
-
-    fn next(self) -> Revision {
-        Self::from(self.generation.get() + 1)
-    }
-}
-
-impl std::fmt::Debug for Revision {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(fmt, "R{}", self.generation)
-    }
-}
-
-/// Records when a stamped value changed.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ChangedAt {
-    // Will this value ever change again?
-    pub(crate) is_constant: bool,
-
-    // At which revision did this value last change? (If this value is
-    // the value of a constant input, this indicates when it became
-    // constant.)
-    pub(crate) revision: Revision,
-}
-
-impl ChangedAt {
-    /// True if a value is stored with this `ChangedAt` value has
-    /// changed after `revision`. This is invoked by query storage
-    /// when their dependents are asking them if they have changed.
-    pub(crate) fn changed_since(self, revision: Revision) -> bool {
-        self.revision > revision
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct StampedValue<V> {
     pub(crate) value: V,
-    pub(crate) changed_at: ChangedAt,
+    pub(crate) durability: Durability,
+    pub(crate) changed_at: Revision,
 }
 
 struct DependencyGraph<DB: Database> {

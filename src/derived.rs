@@ -1,4 +1,5 @@
 use crate::debug::TableEntry;
+use crate::durability::Durability;
 use crate::lru::Lru;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::HasQueryGroup;
@@ -122,8 +123,6 @@ where
             .or_insert_with(|| Arc::new(Slot::new(key.clone())))
             .clone()
     }
-
-    fn remove_lru(&self) {}
 }
 
 impl<DB, Q, MP> QueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
@@ -134,19 +133,24 @@ where
 {
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected> {
         let slot = self.slot(key);
-        let StampedValue { value, changed_at } = slot.read(db)?;
+        let StampedValue {
+            value,
+            durability,
+            changed_at,
+        } = slot.read(db)?;
 
         if let Some(evicted) = self.lru_list.record_use(&slot) {
             evicted.evict();
         }
 
-        db.salsa_runtime().report_query_read(slot, changed_at);
+        db.salsa_runtime()
+            .report_query_read(slot, durability, changed_at);
 
         Ok(value)
     }
 
-    fn is_constant(&self, db: &DB, key: &Q::Key) -> bool {
-        self.slot(key).is_constant(db)
+    fn durability(&self, db: &DB, key: &Q::Key) -> Durability {
+        self.slot(key).durability(db)
     }
 
     fn entries<C>(&self, _db: &DB) -> C

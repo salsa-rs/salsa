@@ -1,12 +1,12 @@
 use crate::debug::TableEntry;
 use crate::dependency::DatabaseSlot;
+use crate::durability::Durability;
 use crate::intern_id::InternId;
 use crate::plumbing::CycleDetected;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::runtime::ChangedAt;
-use crate::runtime::Revision;
+use crate::revision::Revision;
 use crate::Query;
 use crate::{Database, DiscardIf, SweepStrategy};
 use crossbeam::atomic::AtomicCell;
@@ -17,6 +17,8 @@ use std::convert::From;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
+
+const INTERN_DURABILITY: Durability = Durability::HIGH;
 
 /// Handles storage where the value is 'derived' by executing a
 /// function (in contrast to "inputs").
@@ -323,18 +325,13 @@ where
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
         let index = slot.index;
-        db.salsa_runtime().report_query_read(
-            slot,
-            ChangedAt {
-                is_constant: false,
-                revision: changed_at,
-            },
-        );
+        db.salsa_runtime()
+            .report_query_read(slot, INTERN_DURABILITY, changed_at);
         Ok(<Q::Value>::from_intern_id(index))
     }
 
-    fn is_constant(&self, _db: &DB, _key: &Q::Key) -> bool {
-        false
+    fn durability(&self, _db: &DB, _key: &Q::Key) -> Durability {
+        INTERN_DURABILITY
     }
 
     fn entries<C>(&self, _db: &DB) -> C
@@ -360,6 +357,7 @@ where
 {
     fn sweep(&self, db: &DB, strategy: SweepStrategy) {
         let mut tables = self.tables.write();
+        let last_changed = db.salsa_runtime().last_changed_revision(INTERN_DURABILITY);
         let revision_now = db.salsa_runtime().current_revision();
         let InternTables {
             map,
@@ -384,7 +382,7 @@ where
                 // they are removed and also be forced to re-execute.
                 DiscardIf::Always | DiscardIf::Outdated => match &values[intern_index.as_usize()] {
                     InternValue::Present { slot, .. } => {
-                        if slot.try_collect(revision_now) {
+                        if slot.try_collect(last_changed, revision_now) {
                             values[intern_index.as_usize()] =
                                 InternValue::Free { next: *first_free };
                             *first_free = Some(*intern_index);
@@ -427,17 +425,15 @@ where
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(group_storage);
         let slot = interned_storage.lookup_value(db, index);
-        let changed_at = ChangedAt {
-            is_constant: false,
-            revision: slot.interned_at,
-        };
         let value = slot.value.clone();
-        db.salsa_runtime().report_query_read(slot, changed_at);
+        let interned_at = slot.interned_at;
+        db.salsa_runtime()
+            .report_query_read(slot, INTERN_DURABILITY, interned_at);
         Ok(value)
     }
 
-    fn is_constant(&self, _db: &DB, _key: &Q::Key) -> bool {
-        false
+    fn durability(&self, _db: &DB, _key: &Q::Key) -> Durability {
+        INTERN_DURABILITY
     }
 
     fn entries<C>(&self, db: &DB) -> C
@@ -504,12 +500,14 @@ impl<K> Slot<K> {
     }
 
     /// Invoked during sweeping to try and collect this slot. Fails if
-    /// the slot has been accessed in the current revision. Note that
-    /// this access could be racing with the attempt to collect (in
+    /// the slot has been accessed since the intern durability last
+    /// changed, because in that case there may be outstanding
+    /// references that are still considered valid. Note that this
+    /// access could be racing with the attempt to collect (in
     /// particular, when verifying dependencies).
-    fn try_collect(&self, revision_now: Revision) -> bool {
+    fn try_collect(&self, last_changed: Revision, revision_now: Revision) -> bool {
         let accessed_at = self.accessed_at.load().unwrap();
-        if accessed_at < revision_now {
+        if accessed_at < last_changed {
             match self.accessed_at.compare_exchange(Some(accessed_at), None) {
                 Ok(_) => true,
                 Err(r) => {

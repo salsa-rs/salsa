@@ -223,8 +223,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // For input queries, we need `set_foo` etc
         if let QueryStorage::Input = query.storage {
             let set_fn_name = Ident::new(&format!("set_{}", fn_name), fn_name.span());
-            let set_constant_fn_name =
-                Ident::new(&format!("set_constant_{}", fn_name), fn_name.span());
+            let set_with_durability_fn_name =
+                Ident::new(&format!("set_{}_with_durability", fn_name), fn_name.span());
 
             let set_fn_docs = format!(
                 "
@@ -259,7 +259,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
 
                 # [doc = #set_constant_fn_docs]
-                fn #set_constant_fn_name(&mut self, #(#key_names: #keys,)* value__: #value);
+                fn #set_with_durability_fn_name(&mut self, #(#key_names: #keys,)* value__: #value, durability__: salsa::Durability);
             });
 
             query_fn_definitions.extend(quote! {
@@ -267,8 +267,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set((#(#key_names),*), value__)
                 }
 
-                fn #set_constant_fn_name(&mut self, #(#key_names: #keys,)* value__: #value) {
-                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set_constant((#(#key_names),*), value__)
+                fn #set_with_durability_fn_name(&mut self, #(#key_names: #keys,)* value__: #value, durability__: salsa::Durability) {
+                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set_with_durability((#(#key_names),*), value__, durability__)
                 }
             });
         }

@@ -1,6 +1,6 @@
 use crate::dependency::Dependency;
+use crate::durability::Durability;
 use crate::runtime::ActiveQuery;
-use crate::runtime::ChangedAt;
 use crate::runtime::Revision;
 use crate::Database;
 use std::cell::Ref;
@@ -29,9 +29,13 @@ impl<DB: Database> Default for LocalState<DB> {
 }
 
 impl<DB: Database> LocalState<DB> {
-    pub(super) fn push_query(&self, database_key: &DB::DatabaseKey) -> ActiveQueryGuard<'_, DB> {
+    pub(super) fn push_query(
+        &self,
+        database_key: &DB::DatabaseKey,
+        max_durability: Durability,
+    ) -> ActiveQueryGuard<'_, DB> {
         let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push(ActiveQuery::new(database_key.clone()));
+        query_stack.push(ActiveQuery::new(database_key.clone(), max_durability));
         ActiveQueryGuard {
             local_state: self,
             push_len: query_stack.len(),
@@ -58,9 +62,14 @@ impl<DB: Database> LocalState<DB> {
             .map(|active_query| active_query.database_key.clone())
     }
 
-    pub(super) fn report_query_read(&self, dependency: Dependency<DB>, changed_at: ChangedAt) {
+    pub(super) fn report_query_read(
+        &self,
+        dependency: Dependency<DB>,
+        durability: Durability,
+        changed_at: Revision,
+    ) {
         if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_read(dependency, changed_at);
+            top_query.add_read(dependency, durability, changed_at);
         }
     }
 
