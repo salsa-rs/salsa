@@ -668,7 +668,7 @@ where
             return Some(self.mark_value_as_verified(revision_now));
         }
 
-        match &mut self.inputs {
+        match &self.inputs {
             // We can't validate values that had untracked inputs; just have to
             // re-execute.
             MemoInputs::Untracked { .. } => {
