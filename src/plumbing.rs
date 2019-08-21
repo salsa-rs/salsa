@@ -1,8 +1,8 @@
 #![allow(missing_docs)]
 
 use crate::debug::TableEntry;
-use crate::CycleError;
 use crate::durability::Durability;
+use crate::CycleError;
 use crate::Database;
 use crate::Query;
 use crate::QueryTable;

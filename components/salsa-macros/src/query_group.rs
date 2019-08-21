@@ -360,9 +360,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             QueryStorage::Dependencies => quote!(salsa::plumbing::DependencyStorage<#db, Self>),
             QueryStorage::Input => quote!(salsa::plumbing::InputStorage<#db, Self>),
             QueryStorage::Interned => quote!(salsa::plumbing::InternedStorage<#db, Self>),
-            QueryStorage::InternedLookup { intern_query_type } => {
-                quote!(salsa::plumbing::LookupInternedStorage<#db, Self, #intern_query_type>)
-            }
+            QueryStorage::InternedLookup { intern_query_type } => quote!(salsa::plumbing::LookupInternedStorage<#db, Self, #intern_query_type>),
             QueryStorage::Transparent => continue,
         };
         let keys = &query.keys;

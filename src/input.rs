@@ -75,9 +75,9 @@ where
     DB: Database,
 {
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
-        let slot = self.slot(key).unwrap_or_else(|| {
-            panic!("no value set for {:?}({:?})", Q::default(), key)
-        });
+        let slot = self
+            .slot(key)
+            .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
 
         let StampedValue {
             value,
@@ -95,7 +95,7 @@ where
         match self.slot(key) {
             Some(slot) => slot.stamped_value.read().durability,
             None => panic!("no value set for {:?}({:?})", Q::default(), key),
-    }
+        }
     }
 
     fn entries<C>(&self, _db: &DB) -> C
@@ -184,7 +184,7 @@ where
                     let mut slot_stamped_value = entry.get().stamped_value.write();
                     guard.mark_durability_as_changed(slot_stamped_value.durability);
                     *slot_stamped_value = stamped_value;
-    }
+                }
 
                 Entry::Vacant(entry) => {
                     entry.insert(Arc::new(Slot {
