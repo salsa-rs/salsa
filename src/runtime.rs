@@ -644,6 +644,7 @@ struct ActiveQuery<DB: Database> {
     /// there was an untracked the read.
     dependencies: Option<FxIndexSet<Dependency<DB>>>,
 
+    /// Stores the entire cycle, if one is found and this query is part of it.
     cycle: Vec<DB::DatabaseKey>,
 }
 
