@@ -193,7 +193,6 @@ impl QueryGroup {
             .segments
             .last()
             .unwrap()
-            .value()
             .ident
             .clone()
     }
