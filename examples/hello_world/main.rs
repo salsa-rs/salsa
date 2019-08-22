@@ -7,7 +7,7 @@ use std::sync::Arc;
 // functions) that are defined in one particular spot. Each query
 // group is defined by a trait decorated with the
 // `#[salsa::query_group]` attribute. The trait defines one method per
-// query, with the argments to the method being the query **keys** and
+// query, with the arguments to the method being the query **keys** and
 // the return value being the query's **value**.
 //
 // Along with the trait, each query group has an associated

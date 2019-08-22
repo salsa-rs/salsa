@@ -18,15 +18,15 @@ revision counters from Glimmer, instead), I still like the name.
 
 You may have noticed that Salsa "feels" a lot like an ECS in some
 ways. That's true -- Salsa's queries are a bit like *components* (and
-the keys to the queries are a bit like *entitites*). But there is one
+the keys to the queries are a bit like *entities*). But there is one
 big difference: **ECS is -- at its heart -- a mutable system**. You
 can get or set a component of some entity whenever you like. In
-contrast, salsa's queries define **define "derived values" via pure
+contrast, salsa's queries **define "derived values" via pure
 computations**.
 
 Partly as a consequence, ECS doesn't handle incremental updates for
 you. When you update some component of some entity, you have to ensure
-that other entities' components are upated appropriately.
+that other entities' components are updated appropriately.
 
 Finally, ECS offers interesting metadata and "aspect-like" facilities,
 such as iterating over all entities that share certain components.
