@@ -89,26 +89,26 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 }
 
                 // Extract keys.
-                let mut iter = method.sig.decl.inputs.iter();
+                let mut iter = method.sig.inputs.iter();
                 match iter.next() {
-                    Some(FnArg::SelfRef(sr)) if sr.mutability.is_none() => (),
+                    Some(FnArg::Receiver(sr)) if sr.mutability.is_none() => (),
                     _ => panic!(
                         "first argument of query `{}` must be `&self`",
                         method.sig.ident
                     ),
                 }
-                let mut keys = vec![];
+                let mut keys: Vec<Type> = vec![];
                 for arg in iter {
                     match *arg {
-                        FnArg::Captured(ref arg) => {
-                            keys.push(arg.ty.clone());
+                        FnArg::Typed(ref arg) => {
+                            keys.push((*arg.ty).clone());
                         }
                         ref a => panic!("unsupported argument `{:?}` of `{}`", a, method.sig.ident),
                     }
                 }
 
                 // Extract value.
-                let value = match method.sig.decl.output {
+                let value = match method.sig.output {
                     ReturnType::Type(_, ref ty) => ty.as_ref().clone(),
                     ref r => panic!(
                         "unsupported return type `{:?}` of `{}`",
@@ -503,7 +503,7 @@ impl TryFrom<syn::Attribute> for SalsaAttr {
         }
 
         let name = attr.path.segments[1].ident.to_string();
-        let tts = attr.tts.into();
+        let tts = attr.tokens.into();
         Ok(SalsaAttr { name, tts })
     }
 }
@@ -511,7 +511,7 @@ impl TryFrom<syn::Attribute> for SalsaAttr {
 fn is_not_salsa_attr_path(path: &syn::Path) -> bool {
     path.segments
         .first()
-        .map(|s| s.value().ident != "salsa")
+        .map(|s| s.ident != "salsa")
         .unwrap_or(true)
         || path.segments.len() != 2
 }

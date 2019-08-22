@@ -1,6 +1,6 @@
 [package]
 name = "salsa-macros"
-version = "0.13.0"
+version = "0.13.1"
 authors = ["Salsa developers"]
 edition = "2018"
 license = "Apache-2.0 OR MIT"
@@ -13,6 +13,6 @@ proc-macro = true
 
 [dependencies]
 heck = "0.3"
-proc-macro2 = "0.4"
-quote = "0.6"
-syn = { version = "0.15.29", features = ["full", "extra-traits"] }
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "1.0", features = ["full", "extra-traits"] }
