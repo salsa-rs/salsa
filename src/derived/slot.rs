@@ -417,7 +417,7 @@ where
                 debug!("sweep({:?}): in-progress", self);
             }
 
-            // Otherwise, drop only value or the whole memo accoring to the
+            // Otherwise, drop only value or the whole memo according to the
             // strategy.
             QueryState::Memoized(memo) => {
                 debug!(
