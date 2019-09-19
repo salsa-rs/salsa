@@ -191,3 +191,11 @@ where
 pub trait LruQueryStorageOps: Default {
     fn set_lru_capacity(&self, new_capacity: usize);
 }
+
+pub trait DerivedQueryStorageOps<DB, Q>: Default
+where
+    DB: Database,
+    Q: Query<DB>,
+{
+    fn invalidate(&self, db: &DB, key: &Q::Key);
+}
