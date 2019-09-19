@@ -39,6 +39,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         match item {
             TraitItem::Method(method) => {
                 let mut storage = QueryStorage::Memoized;
+                let mut cycle = None;
                 let mut invoke = None;
                 let mut query_type = Ident::new(
                     &format!("{}Query", method.sig.ident.to_string().to_camel_case()),
@@ -65,6 +66,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                         "interned" => {
                             storage = QueryStorage::Interned;
                             num_storages += 1;
+                        }
+                        "cycle" => {
+                            cycle = Some(parse_macro_input!(tts as Parenthesized<syn::Path>).0);
                         }
                         "invoke" => {
                             invoke = Some(parse_macro_input!(tts as Parenthesized<syn::Path>).0);
@@ -150,6 +154,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                         keys: lookup_keys,
                         value: lookup_value,
                         invoke: None,
+                        cycle: cycle.clone(),
                     })
                 } else {
                     None
@@ -163,6 +168,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     keys,
                     value,
                     invoke,
+                    cycle,
                 });
 
                 queries.extend(lookup_query);
@@ -354,9 +360,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             QueryStorage::Dependencies => quote!(salsa::plumbing::DependencyStorage<#db, Self>),
             QueryStorage::Input => quote!(salsa::plumbing::InputStorage<#db, Self>),
             QueryStorage::Interned => quote!(salsa::plumbing::InternedStorage<#db, Self>),
-            QueryStorage::InternedLookup { intern_query_type } => {
-                quote!(salsa::plumbing::LookupInternedStorage<#db, Self, #intern_query_type>)
-            }
+            QueryStorage::InternedLookup { intern_query_type } => quote!(salsa::plumbing::LookupInternedStorage<#db, Self, #intern_query_type>),
             QueryStorage::Transparent => continue,
         };
         let keys = &query.keys;
@@ -404,6 +408,22 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 quote! { (#(#key_names),*) }
             };
             let invoke = query.invoke_tt();
+
+            let recover = if let Some(cycle_recovery_fn) = &query.cycle {
+                quote! {
+                    fn recover(db: &DB, cycle: &[DB::DatabaseKey], #key_pattern: &<Self as salsa::Query<DB>>::Key)
+                        -> Option<<Self as salsa::Query<DB>>::Value> {
+                        Some(#cycle_recovery_fn(
+                                db,
+                                &cycle.iter().map(|k| format!("{:?}", k)).collect::<Vec<String>>(),
+                                #(#key_names),*
+                        ))
+                    }
+                }
+            } else {
+                quote! {}
+            };
+
             output.extend(quote_spanned! {span=>
                 impl<DB> salsa::plumbing::QueryFunction<DB> for #qt
                 where
@@ -415,6 +435,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                         -> <Self as salsa::Query<DB>>::Value {
                         #invoke(db, #(#key_names),*)
                     }
+
+                    #recover
                 }
             });
         }
@@ -541,6 +563,7 @@ struct Query {
     keys: Vec<syn::Type>,
     value: syn::Type,
     invoke: Option<syn::Path>,
+    cycle: Option<syn::Path>,
 }
 
 impl Query {

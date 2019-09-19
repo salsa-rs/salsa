@@ -2,13 +2,12 @@ use crate::debug::TableEntry;
 use crate::dependency::DatabaseSlot;
 use crate::durability::Durability;
 use crate::intern_id::InternId;
-use crate::plumbing::CycleDetected;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use crate::Query;
-use crate::{Database, DiscardIf, SweepStrategy};
+use crate::{CycleError, Database, DiscardIf, SweepStrategy};
 use crossbeam::atomic::AtomicCell;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
@@ -321,7 +320,7 @@ where
     Q::Value: InternKey,
     DB: Database,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected> {
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
         let index = slot.index;
@@ -420,7 +419,7 @@ where
     >,
     DB: Database + HasQueryGroup<Q::Group>,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleDetected> {
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let index = key.as_intern_id();
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(group_storage);

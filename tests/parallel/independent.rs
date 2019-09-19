@@ -22,7 +22,7 @@ fn in_par_two_independent_queries() {
     let thread2 = std::thread::spawn({
         let db = db.snapshot();
         move || db.sum("def")
-    });;
+    });
 
     assert_eq!(thread1.join().unwrap(), 111);
     assert_eq!(thread2.join().unwrap(), 222);

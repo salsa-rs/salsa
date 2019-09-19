@@ -24,11 +24,11 @@ pub mod debug;
 #[doc(hidden)]
 pub mod plumbing;
 
-use crate::plumbing::CycleDetected;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
+use crate::revision::Revision;
 use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
@@ -468,14 +468,11 @@ where
     /// queries (those with no inputs, or those with more than one
     /// input) the key will be a tuple.
     pub fn get(&self, key: Q::Key) -> Q::Value {
-        self.storage
-            .try_fetch(self.db, &key)
-            .unwrap_or_else(|CycleDetected| {
-                let database_key = self.database_key(&key);
-                self.db
-                    .salsa_runtime()
-                    .report_unexpected_cycle(database_key)
-            })
+        self.try_get(key).unwrap_or_else(|err| panic!("{}", err))
+    }
+
+    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+        self.storage.try_fetch(self.db, &key)
     }
 
     /// Remove all values for this query that have not been used in
@@ -485,10 +482,6 @@ where
         Q::Storage: plumbing::QueryStorageMassOps<DB>,
     {
         self.storage.sweep(self.db, strategy);
-    }
-
-    fn database_key(&self, key: &Q::Key) -> DB::DatabaseKey {
-        <DB as plumbing::GetQueryTable<Q>>::database_key(&self.db, key.clone())
     }
 }
 
@@ -558,6 +551,28 @@ where
         Q::Storage: plumbing::LruQueryStorageOps,
     {
         self.storage.set_lru_capacity(cap);
+    }
+}
+
+/// The error returned when a query could not be resolved due to a cycle
+#[derive(Eq, PartialEq, Clone, Debug)]
+pub struct CycleError<K> {
+    /// The queries that were part of the cycle
+    cycle: Vec<K>,
+    changed_at: Revision,
+    durability: Durability,
+}
+
+impl<K> fmt::Display for CycleError<K>
+where
+    K: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Internal error, cycle detected:\n")?;
+        for i in &self.cycle {
+            writeln!(f, "{:?}", i)?;
+        }
+        Ok(())
     }
 }
 

@@ -14,7 +14,7 @@ use crate::runtime::FxIndexSet;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
-use crate::{Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy};
+use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy};
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::RwLock;
@@ -36,6 +36,12 @@ where
     lru_index: LruIndex,
 }
 
+#[derive(Clone)]
+struct WaitResult<V, K> {
+    value: StampedValue<V>,
+    cycle: Vec<K>,
+}
+
 /// Defines the "current state" of query's memoized results.
 enum QueryState<DB, Q>
 where
@@ -49,7 +55,7 @@ where
     /// indeeds a cycle.
     InProgress {
         id: RuntimeId,
-        waiting: Mutex<SmallVec<[Sender<StampedValue<Q::Value>>; 2]>>,
+        waiting: Mutex<SmallVec<[Sender<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
     },
 
     /// We have computed the query already, and here is the result.
@@ -95,8 +101,8 @@ pub(super) enum MemoInputs<DB: Database> {
 }
 
 /// Return value of `probe` helper.
-enum ProbeState<V, G> {
-    UpToDate(Result<V, CycleDetected>),
+enum ProbeState<V, K, G> {
+    UpToDate(Result<V, CycleError<K>>),
     StaleOrAbsent(G),
 }
 
@@ -119,7 +125,10 @@ where
         <DB as GetQueryTable<Q>>::database_key(db, self.key.clone())
     }
 
-    pub(super) fn read(&self, db: &DB) -> Result<StampedValue<Q::Value>, CycleDetected> {
+    pub(super) fn read(
+        &self,
+        db: &DB,
+    ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
         let runtime = db.salsa_runtime();
 
         // NB: We don't need to worry about people modifying the
@@ -148,7 +157,7 @@ where
         &self,
         db: &DB,
         revision_now: Revision,
-    ) -> Result<StampedValue<Q::Value>, CycleDetected> {
+    ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
         let runtime = db.salsa_runtime();
 
         debug!("{:?}: read_upgrade(revision_now={:?})", self, revision_now,);
@@ -189,7 +198,15 @@ where
                     },
                 });
 
-                panic_guard.proceed(&value);
+                panic_guard.proceed(
+                    &value,
+                    // The returned value could have been produced as part of a cycle but since
+                    // we returned the memoized value we know we short-circuited the execution
+                    // just as we entered the cycle. Therefore there is no values to invalidate
+                    // and no need to call a cycle handler so we do not need to return the
+                    // actual cycle
+                    Vec::new(),
+                );
 
                 return Ok(value);
             }
@@ -202,6 +219,21 @@ where
 
             Q::execute(db, self.key.clone())
         });
+
+        if !result.cycle.is_empty() {
+            result.value = match Q::recover(db, &result.cycle, &self.key) {
+                Some(v) => v,
+                None => {
+                    let err = CycleError {
+                        cycle: result.cycle,
+                        durability: result.durability,
+                        changed_at: result.changed_at,
+                    };
+                    panic_guard.report_unexpected_cycle();
+                    return Err(err);
+                }
+            };
+        }
 
         // We assume that query is side-effect free -- that is, does
         // not mutate the "inputs" to the query system. Sanity check
@@ -277,7 +309,7 @@ where
             durability: result.durability,
         });
 
-        panic_guard.proceed(&new_value);
+        panic_guard.proceed(&new_value, result.cycle);
 
         Ok(new_value)
     }
@@ -308,7 +340,7 @@ where
         state: StateGuard,
         runtime: &Runtime<DB>,
         revision_now: Revision,
-    ) -> ProbeState<StampedValue<Q::Value>, StateGuard>
+    ) -> ProbeState<StampedValue<Q::Value>, DB::DatabaseKey, StateGuard>
     where
         StateGuard: Deref<Target = QueryState<DB, Q>>,
     {
@@ -331,11 +363,42 @@ where
                             },
                         });
 
-                        let value = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
-                        ProbeState::UpToDate(Ok(value))
+                        let result = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
+                        ProbeState::UpToDate(if result.cycle.is_empty() {
+                            Ok(result.value)
+                        } else {
+                            let err = CycleError {
+                                cycle: result.cycle,
+                                changed_at: result.value.changed_at,
+                                durability: result.value.durability,
+                            };
+                            runtime.mark_cycle_participants(&err);
+                            Q::recover(db, &err.cycle, &self.key)
+                                .map(|value| StampedValue {
+                                    value,
+                                    durability: err.durability,
+                                    changed_at: err.changed_at,
+                                })
+                                .ok_or_else(|| err)
+                        })
                     }
 
-                    Err(CycleDetected) => ProbeState::UpToDate(Err(CycleDetected)),
+                    Err(err) => {
+                        let err = runtime.report_unexpected_cycle(
+                            &self.database_key(db),
+                            err,
+                            revision_now,
+                        );
+                        ProbeState::UpToDate(
+                            Q::recover(db, &err.cycle, &self.key)
+                                .map(|value| StampedValue {
+                                    value,
+                                    changed_at: err.changed_at,
+                                    durability: err.durability,
+                                })
+                                .ok_or_else(|| err),
+                        )
+                    }
                 };
             }
 
@@ -483,13 +546,17 @@ where
         db: &DB,
         runtime: &Runtime<DB>,
         other_id: RuntimeId,
-        waiting: &Mutex<SmallVec<[Sender<StampedValue<Q::Value>>; 2]>>,
-    ) -> Result<Receiver<StampedValue<Q::Value>>, CycleDetected> {
-        if other_id == runtime.id() {
-            return Err(CycleDetected);
+        waiting: &Mutex<SmallVec<[Sender<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
+    ) -> Result<Receiver<WaitResult<Q::Value, DB::DatabaseKey>>, CycleDetected> {
+        let id = runtime.id();
+        if other_id == id {
+            return Err(CycleDetected { from: id, to: id });
         } else {
             if !runtime.try_block_on(&self.database_key(db), other_id) {
-                return Err(CycleDetected);
+                return Err(CycleDetected {
+                    from: id,
+                    to: other_id,
+                });
             }
 
             let (tx, rx) = mpsc::channel();
@@ -555,15 +622,23 @@ where
     /// Proceed with our panic guard by overwriting the placeholder for `key`.
     /// Once that completes, ensure that our deconstructor is not run once we
     /// are out of scope.
-    fn proceed(mut self, new_value: &StampedValue<Q::Value>) {
-        self.overwrite_placeholder(Some(new_value));
+    fn proceed(mut self, new_value: &StampedValue<Q::Value>, cycle: Vec<DB::DatabaseKey>) {
+        self.overwrite_placeholder(Some((new_value, cycle)));
+        std::mem::forget(self)
+    }
+
+    fn report_unexpected_cycle(mut self) {
+        self.overwrite_placeholder(None);
         std::mem::forget(self)
     }
 
     /// Overwrites the `InProgress` placeholder for `key` that we
     /// inserted; if others were blocked, waiting for us to finish,
     /// then notify them.
-    fn overwrite_placeholder(&mut self, new_value: Option<&StampedValue<Q::Value>>) {
+    fn overwrite_placeholder(
+        &mut self,
+        new_value: Option<(&StampedValue<Q::Value>, Vec<DB::DatabaseKey>)>,
+    ) {
         let mut write = self.slot.state.write();
 
         let old_value = match self.memo.take() {
@@ -587,9 +662,13 @@ where
                 match new_value {
                     // If anybody has installed themselves in our "waiting"
                     // list, notify them that the value is available.
-                    Some(new_value) => {
+                    Some((new_value, ref cycle)) => {
                         for tx in waiting.into_inner() {
-                            tx.send(new_value.clone()).unwrap()
+                            tx.send(WaitResult {
+                                value: new_value.clone(),
+                                cycle: cycle.clone(),
+                            })
+                            .unwrap();
                         }
                     }
 
@@ -811,12 +890,12 @@ where
                         // can complete.
                         std::mem::drop(state);
 
-                        let value = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
-                        return value.changed_at > revision;
+                        let result = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
+                        return !result.cycle.is_empty() || result.value.changed_at > revision;
                     }
 
                     // Consider a cycle to have changed.
-                    Err(CycleDetected) => return true,
+                    Err(_) => return true,
                 }
             }
 
@@ -873,14 +952,14 @@ where
                         return match self.read_upgrade(db, revision_now) {
                             Ok(v) => {
                                 debug!(
-                                    "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
-                                    self,
+                                "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
+                                self,
                                     v.changed_at > revision,
-                                    v.changed_at,
-                                );
+                                v.changed_at,
+                            );
                                 v.changed_at > revision
                             }
-                            Err(CycleDetected) => true,
+                            Err(_) => true,
                         };
                     }
 
@@ -968,6 +1047,7 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
     DB::DatabaseData: Send + Sync,
+    DB::DatabaseKey: Send + Sync,
     Q::Key: Send + Sync,
     Q::Value: Send + Sync,
 {

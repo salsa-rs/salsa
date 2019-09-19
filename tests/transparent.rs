@@ -17,7 +17,6 @@ fn get(db: &impl QueryGroup, x: u32) -> u32 {
     db.wrap(x)
 }
 
-
 #[salsa::database(QueryGroupStorage)]
 #[derive(Default)]
 struct Database {

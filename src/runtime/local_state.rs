@@ -3,8 +3,7 @@ use crate::durability::Durability;
 use crate::runtime::ActiveQuery;
 use crate::runtime::Revision;
 use crate::Database;
-use std::cell::Ref;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell, RefMut};
 
 /// State that is specific to a single execution thread.
 ///
@@ -49,6 +48,10 @@ impl<DB: Database> LocalState<DB> {
     /// reading from it.
     pub(super) fn borrow_query_stack(&self) -> Ref<'_, Vec<ActiveQuery<DB>>> {
         self.query_stack.borrow()
+    }
+
+    pub(super) fn borrow_query_stack_mut(&self) -> RefMut<'_, Vec<ActiveQuery<DB>>> {
+        self.query_stack.borrow_mut()
     }
 
     pub(super) fn query_in_progress(&self) -> bool {

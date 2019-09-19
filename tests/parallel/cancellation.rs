@@ -1,6 +1,4 @@
-use crate::setup::{
-    CancelationFlag, Canceled, Knobs, ParDatabase, ParDatabaseImpl, WithValue,
-};
+use crate::setup::{CancelationFlag, Canceled, Knobs, ParDatabase, ParDatabaseImpl, WithValue};
 use salsa::ParallelDatabase;
 
 macro_rules! assert_canceled {

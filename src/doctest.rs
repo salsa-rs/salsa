@@ -45,6 +45,7 @@ fn test_key_not_send_db_not_send() {}
 ///
 /// ```compile_fail,E0277
 /// use std::rc::Rc;
+/// use std::cell::Cell;
 ///
 /// #[salsa::query_group(NoSendSyncStorage)]
 /// trait NoSendSyncDatabase: salsa::Database {

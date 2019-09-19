@@ -1,7 +1,6 @@
 //! Test `salsa::requires` attribute for private query dependencies
 //! https://github.com/salsa-rs/salsa-rfcs/pull/3
 
-
 mod queries {
     #[salsa::query_group(InputGroupStorage)]
     pub trait InputGroup {
@@ -14,7 +13,7 @@ mod queries {
         fn private_a(&self, x: u32) -> u32;
     }
 
-    fn private_a(db: &impl PrivGroupA, x: u32) -> u32{
+    fn private_a(db: &impl PrivGroupA, x: u32) -> u32 {
         db.input(x)
     }
 
@@ -23,7 +22,7 @@ mod queries {
         fn private_b(&self, x: u32) -> u32;
     }
 
-    fn private_b(db: &impl PrivGroupB, x: u32) -> u32{
+    fn private_b(db: &impl PrivGroupB, x: u32) -> u32 {
         db.input(x)
     }
 
@@ -34,7 +33,6 @@ mod queries {
         fn public(&self, x: u32) -> u32;
     }
 
-
     fn public(db: &(impl PubGroup + PrivGroupA + PrivGroupB), x: u32) -> u32 {
         db.private_a(x) + db.private_b(x)
     }
@@ -44,7 +42,7 @@ mod queries {
     queries::InputGroupStorage,
     queries::PrivGroupAStorage,
     queries::PrivGroupBStorage,
-    queries::PubGroupStorage,
+    queries::PubGroupStorage
 )]
 #[derive(Default)]
 struct Database {
