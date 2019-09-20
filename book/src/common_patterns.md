@@ -16,8 +16,7 @@ That is, when someone requests the text of a file for the first time:
 This is possible to achive in salsa, using a derived query and `report_synthetic_read` and `invalidate` queries.
 The setup looks roughtly like this:
 
-```rust
-
+```rust,ignore
 #[salsa::query_group(VfsDatabaseStorage)]
 trait VfsDatabase: salsa::Database + FileWathcer {
     fn read(&self, path: PathBuf) -> String;

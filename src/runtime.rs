@@ -396,7 +396,7 @@ where
             .report_untracked_read(self.current_revision());
     }
 
-    /// Fores the durebility of the current query to at most `durability`.
+    /// Fores the durability of the current query to at most `durability`.
     ///
     /// This is mostly useful to lower durability level of derived queries with
     /// zero inputs.
