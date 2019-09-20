@@ -396,6 +396,15 @@ where
             .report_untracked_read(self.current_revision());
     }
 
+    /// Fores the durebility of the current query to at most `durability`.
+    ///
+    /// This is mostly useful to lower durability level of derived queries with
+    /// zero inputs.
+    pub fn report_synthetic_read(&self, durability: Durability) {
+        self.local_state
+            .report_synthetic_read(durability);
+    }
+
     /// An "anonymous" read is a read that doesn't come from executing
     /// a query, but from some other internal operation. It just
     /// modifies the "changed at" to be at least the given revision.
@@ -691,6 +700,10 @@ impl<DB: Database> ActiveQuery<DB> {
         self.dependencies = None;
         self.durability = Durability::LOW;
         self.changed_at = changed_at;
+    }
+
+    fn add_synthetic_read(&mut self, durability: Durability) {
+        self.durability = self.durability.min(durability);
     }
 
     fn add_anon_read(&mut self, changed_at: Revision) {

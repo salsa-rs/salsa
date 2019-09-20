@@ -82,6 +82,12 @@ impl<DB: Database> LocalState<DB> {
         }
     }
 
+    pub(super) fn report_synthetic_read(&self, durability: Durability) {
+        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
+            top_query.add_synthetic_read(durability);
+        }
+    }
+
     pub(super) fn report_anon_read(&self, revision: Revision) {
         if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
             top_query.add_anon_read(revision);
