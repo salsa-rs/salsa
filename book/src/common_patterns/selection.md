@@ -10,8 +10,8 @@ when Qbase changes.
 
 ## Example: the base query
 
-For example, imagine that you have a query `parse` that parses the input text of a request to return a
-only consume small parts of itheader and a body:
+For example, imagine that you have a query `parse` that parses the input text of a request
+and returns a `ParsedResult`, which contains a header and a body:
 
 ```rust,ignore
 {{#include ../../../examples/selection/main.rs:request}} 
