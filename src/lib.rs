@@ -24,6 +24,7 @@ pub mod debug;
 #[doc(hidden)]
 pub mod plumbing;
 
+use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
@@ -551,6 +552,19 @@ where
         Q::Storage: plumbing::LruQueryStorageOps,
     {
         self.storage.set_lru_capacity(cap);
+    }
+
+    /// Marks the computed value as outdated.
+    ///
+    /// This causes salsa to re-execute the query function on the next access to
+    /// the query, even if all dependencies are up to date.
+    ///
+    /// This is most commonly used for invaliding on-demand inputs; see the [Salsa Book](https://salsa-rs.github.io/salsa/) for more information.
+    pub fn invalidate(&self, key: &Q::Key)
+    where
+        Q::Storage: plumbing::DerivedQueryStorageOps<DB, Q>,
+    {
+        self.storage.invalidate(self.db, key)
     }
 }
 

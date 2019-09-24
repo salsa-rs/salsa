@@ -1,6 +1,7 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::lru::Lru;
+use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
@@ -187,5 +188,24 @@ where
 {
     fn set_lru_capacity(&self, new_capacity: usize) {
         self.lru_list.set_lru_capacity(new_capacity);
+    }
+}
+
+impl<DB, Q, MP> DerivedQueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
+where
+    Q: QueryFunction<DB>,
+    DB: Database + HasQueryGroup<Q::Group>,
+    MP: MemoizationPolicy<DB, Q>,
+{
+    fn invalidate(&self, db: &DB, key: &Q::Key) {
+        db.salsa_runtime().with_incremented_revision(|guard| {
+            let map_read = self.slot_map.read();
+
+            if let Some(slot) = map_read.get(key) {
+                if let Some(durability) = slot.invalidate() {
+                    guard.mark_durability_as_changed(durability);
+                }
+            }
+        })
     }
 }

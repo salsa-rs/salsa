@@ -534,6 +534,15 @@ where
         }
     }
 
+    pub(super) fn invalidate(&self) -> Option<Durability> {
+        if let QueryState::Memoized(memo) = &mut *self.state.write() {
+            memo.inputs = MemoInputs::Untracked;
+            Some(memo.durability)
+        } else {
+            None
+        }
+    }
+
     /// Helper:
     ///
     /// When we encounter an `InProgress` indicator, we need to either

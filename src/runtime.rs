@@ -396,6 +396,14 @@ where
             .report_untracked_read(self.current_revision());
     }
 
+    /// Acts as though the current query had read an input with the given durability; this will force the current query's durability to be at most `durability`.
+    ///
+    /// This is mostly useful to control the durability level for on-demand inputs, as described in [the salsa book](https://salsa-rs.github.io/salsa/).
+    pub fn report_synthetic_read(&self, durability: Durability) {
+        self.local_state
+            .report_synthetic_read(durability);
+    }
+
     /// An "anonymous" read is a read that doesn't come from executing
     /// a query, but from some other internal operation. It just
     /// modifies the "changed at" to be at least the given revision.
@@ -691,6 +699,10 @@ impl<DB: Database> ActiveQuery<DB> {
         self.dependencies = None;
         self.durability = Durability::LOW;
         self.changed_at = changed_at;
+    }
+
+    fn add_synthetic_read(&mut self, durability: Durability) {
+        self.durability = self.durability.min(durability);
     }
 
     fn add_anon_read(&mut self, changed_at: Revision) {
