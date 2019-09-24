@@ -1,5 +1,17 @@
 [book]
-authors = ["Niko Matsakis"]
+authors = ["Salsa Contributors"]
 multilingual = false
 src = "src"
 title = "Salsa"
+
+[build]
+create-missing = false
+
+[preprocess.links]
+
+[output.html]
+
+[output.linkcheck]
+follow-web-links = true
+traverse-parent-directories = false
+

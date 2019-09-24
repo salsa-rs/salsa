@@ -398,10 +398,9 @@ where
 
     /// Acts as though the current query had read an input with the given durability; this will force the current query's durability to be at most `durability`.
     ///
-    /// This is mostly useful to control the durability level for on-demand inputs, as described in [the salsa book](https://salsa-rs.github.io/salsa/).
+    /// This is mostly useful to control the durability level for [on-demand inputs](https://salsa-rs.github.io/salsa/common_patterns/on_demand_inputs.html).
     pub fn report_synthetic_read(&self, durability: Durability) {
-        self.local_state
-            .report_synthetic_read(durability);
+        self.local_state.report_synthetic_read(durability);
     }
 
     /// An "anonymous" read is a read that doesn't come from executing

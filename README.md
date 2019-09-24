@@ -32,34 +32,13 @@ varieties:
   we'll figure out (fairly intelligently) when we can re-use these
   memoized values and when we have to recompute them.
 
-## How to use Salsa in three easy steps
+## Want to learn more?
 
-Using salsa is as easy as 1, 2, 3...
+To learn more about Salsa, try one of the following:
 
-1. Define one or more **query groups** that contain the inputs
-   and queries you will need. We'll start with one such group, but
-   later on you can use more than one to break up your system into
-   components (or spread your code across crates).
-2. Define the **query functions** where appropriate.
-3. Define the **database**, which contains the storage for all
-   the inputs/queries you will be using. The query struct will contain
-   the storage for all of the inputs/queries and may also contain
-   anything else that your code needs (e.g., configuration data).
-
-To see an example of this in action, check out [the `hello_world`
-example](examples/hello_world/main.rs), which has a number of comments
-explaining how things work.
-
-## Videos about Salsa
-
-There are also two videos explaining how Salsa works:
-
-- [How Salsa Works](https://youtu.be/_muY4HjSqVw), which gives a
-  high-level introduction to the key concepts involved and shows how
-  to use salsa;
-- [Salsa In More Depth](https://www.youtube.com/watch?v=i_IhACacPRY),
-  which really digs into the incremental algorithm and explains -- at
-  a high-level -- how Salsa is implemented.
+- read the [heavily commented `hello_world` example](examples/hello_world/main.rs);
+- check out the [Salsa book](https://salsa-rs.github.io/salsa);
+- watch one of our [videos](https://salsa-rs.github.io/salsa/videos.html).
 
 ## Getting in touch
 

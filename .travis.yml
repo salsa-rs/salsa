@@ -10,10 +10,9 @@ cache:
 matrix:
   allow_failures:
       - rust: nightly
-before_script:
-  - (test -x $HOME/.cargo/bin/cargo-install-update || cargo install cargo-update)
-  - (test -x $HOME/.cargo/bin/mdbook || cargo install --vers "^0.1" mdbook)
-  - cargo install-update -a
+before_install:
+  - cargo install mdbook --vers '0.3.1' --debug --force
+  - cargo install mdbook-linkcheck --vers '0.4.0' --debug --force
 script:
   - RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 cargo test --all
   - RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 cargo test --tests --all
