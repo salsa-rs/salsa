@@ -396,10 +396,9 @@ where
             .report_untracked_read(self.current_revision());
     }
 
-    /// Fores the durability of the current query to at most `durability`.
+    /// Acts as though the current query had read an input with the given durability; this will force the current query's durability to be at most `durability`.
     ///
-    /// This is mostly useful to lower durability level of derived queries with
-    /// zero inputs.
+    /// This is mostly useful to control the durability level for on-demand inputs, as described in [the salsa book](https://salsa-rs.github.io/salsa/).
     pub fn report_synthetic_read(&self, durability: Durability) {
         self.local_state
             .report_synthetic_read(durability);

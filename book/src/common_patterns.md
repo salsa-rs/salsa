@@ -1,19 +1,19 @@
 # Common patterns
 
-## On Demnd (Lazy) Inputs
+## On Demand (Lazy) Inputs
 
 Salsa input quries work best if you can easily provide all of the inputs upfront.
 However sometimes the set of inputs is not known beforehand.
 
 A typical example is reading files from disk.
-While it is possible to eagarly scan a particular directory and create an in-memory file tree in a salsa input query, a more straight forward approach is to read the files lazily.
+While it is possible to eagerly scan a particular directory and create an in-memory file tree in a salsa input query, a more straight-forward approach is to read the files lazily.
 That is, when someone requests the text of a file for the first time:
 
 1. Read the file from disk and cache it.
 2. Setup a file-system watcher for this path.
-3. Innvalidate the cached file once the watcher sends a change notification.
+3. Invalidate the cached file once the watcher sends a change notification.
 
-This is possible to achive in salsa, using a derived query and `report_synthetic_read` and `invalidate` queries.
+This is possible to achieve in salsa, using a derived query and `report_synthetic_read` and `invalidate` queries.
 The setup looks roughtly like this:
 
 ```rust,ignore

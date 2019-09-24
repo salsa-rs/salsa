@@ -559,7 +559,7 @@ where
     /// This causes salsa to re-execute the query function on the next access to
     /// the query, even if all dependencies are up to date.
     ///
-    /// This is most commonly used for queries with zero inputs.
+    /// This is most commonly used for invaliding on-demand inputs; see the [Salsa Book](https://salsa-rs.github.io/salsa/) for more information.
     pub fn invalidate(&self, key: &Q::Key)
     where
         Q::Storage: plumbing::DerivedQueryStorageOps<DB, Q>,
