@@ -74,6 +74,5 @@ and we cloned them quite frequently. This will work just fine in Salsa,
 but it may not be the most efficient choice. This is because each clone
 is going to produce a deep copy of the result. As a simple fix, you
 might convert your data structures to use `Arc` (e.g., `Arc<Vec<ParsedHeader>>`),
-which makes cloning cheap. Or you might prefer to adopt persistent data
-structures such as those found in [the `im` crate](https://crates.io/crates/im).
+which makes cloning cheap.
 
