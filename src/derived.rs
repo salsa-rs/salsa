@@ -112,7 +112,7 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn slot(&self, key: &Q::Key) -> Arc<Slot<DB, Q, MP>> {
+    fn get_or_create_slot(&self, key: &Q::Key) -> Arc<Slot<DB, Q, MP>> {
         if let Some(v) = self.slot_map.read().get(key) {
             return v.clone();
         }
@@ -123,6 +123,10 @@ where
             .or_insert_with(|| Arc::new(Slot::new(key.clone())))
             .clone()
     }
+
+    fn get_slot(&self, key: &Q::Key) -> Option<Arc<Slot<DB, Q, MP>>> {
+        self.slot_map.read().get(key).cloned()
+    }
 }
 
 impl<DB, Q, MP> QueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
@@ -132,7 +136,7 @@ where
     MP: MemoizationPolicy<DB, Q>,
 {
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
-        let slot = self.slot(key);
+        let slot = self.get_or_create_slot(key);
         let StampedValue {
             value,
             durability,
@@ -153,7 +157,10 @@ where
     }
 
     fn durability(&self, db: &DB, key: &Q::Key) -> Durability {
-        self.slot(key).durability(db)
+        match self.get_slot(key) {
+            Some(slot) => slot.durability(db),
+            None => Durability::LOW,
+        }
     }
 
     fn entries<C>(&self, _db: &DB) -> C
