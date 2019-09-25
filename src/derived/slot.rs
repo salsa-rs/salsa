@@ -101,7 +101,7 @@ pub(super) enum MemoInputs<DB: Database> {
 }
 
 /// Return value of `probe` helper.
-enum ProbeState<V, K, G> {
+enum ProbeResult<V, K, G> {
     UpToDate(Result<V, CycleError<K>>),
     StaleOrAbsent(G),
 }
@@ -142,8 +142,8 @@ where
 
         // First, do a check with a read-lock.
         match self.probe(db, self.state.read(), runtime, revision_now) {
-            ProbeState::UpToDate(v) => return v,
-            ProbeState::StaleOrAbsent(_guard) => (),
+            ProbeResult::UpToDate(v) => return v,
+            ProbeResult::StaleOrAbsent(_guard) => (),
         }
 
         self.read_upgrade(db, revision_now)
@@ -170,8 +170,8 @@ where
         // and not an upgradable read here because upgradable reads
         // can sometimes encounter deadlocks.
         let old_memo = match self.probe(db, self.state.write(), runtime, revision_now) {
-            ProbeState::UpToDate(v) => return v,
-            ProbeState::StaleOrAbsent(mut state) => {
+            ProbeResult::UpToDate(v) => return v,
+            ProbeResult::StaleOrAbsent(mut state) => {
                 match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
                     QueryState::Memoized(old_memo) => Some(old_memo),
                     QueryState::InProgress { .. } => unreachable!(),
@@ -317,21 +317,21 @@ where
     /// Helper for `read` that does a shallow check (not recursive) if we have an up-to-date value.
     ///
     /// Invoked with the guard `state` corresponding to the `QueryState` of some `Slot` (the guard
-    /// can be either read or write). Returns a suitable `ProbeState`:
+    /// can be either read or write). Returns a suitable `ProbeResult`:
     ///
-    /// - `ProbeState::UpToDate(r)` if the table has an up-to-date value (or we blocked on another
+    /// - `ProbeResult::UpToDate(r)` if the table has an up-to-date value (or we blocked on another
     ///   thread that produced such a value).
-    /// - `ProbeState::StaleOrAbsent(g)` if either (a) there is no memo for this key, (b) the memo
+    /// - `ProbeResult::StaleOrAbsent(g)` if either (a) there is no memo for this key, (b) the memo
     ///   has no value; or (c) the memo has not been verified at the current revision.
     ///
-    /// Note that in case `ProbeState::UpToDate`, the lock will have been released.
+    /// Note that in case `ProbeResult::UpToDate`, the lock will have been released.
     fn probe<StateGuard>(
         &self,
         db: &DB,
         state: StateGuard,
         runtime: &Runtime<DB>,
         revision_now: Revision,
-    ) -> ProbeState<StampedValue<Q::Value>, DB::DatabaseKey, StateGuard>
+    ) -> ProbeResult<StampedValue<Q::Value>, DB::DatabaseKey, StateGuard>
     where
         StateGuard: Deref<Target = QueryState<DB, Q>>,
     {
@@ -354,7 +354,7 @@ where
                         });
 
                         let result = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
-                        ProbeState::UpToDate(if result.cycle.is_empty() {
+                        ProbeResult::UpToDate(if result.cycle.is_empty() {
                             Ok(result.value)
                         } else {
                             let err = CycleError {
@@ -379,7 +379,7 @@ where
                             err,
                             revision_now,
                         );
-                        ProbeState::UpToDate(
+                        ProbeResult::UpToDate(
                             Q::recover(db, &err.cycle, &self.key)
                                 .map(|value| StampedValue {
                                     value,
@@ -411,13 +411,13 @@ where
                             self, value.changed_at
                         );
 
-                        return ProbeState::UpToDate(Ok(value));
+                        return ProbeResult::UpToDate(Ok(value));
                     }
                 }
             }
         }
 
-        ProbeState::StaleOrAbsent(state)
+        ProbeResult::StaleOrAbsent(state)
     }
 
     pub(super) fn durability(&self, db: &DB) -> Durability {
