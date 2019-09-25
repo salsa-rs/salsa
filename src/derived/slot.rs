@@ -102,8 +102,14 @@ pub(super) enum MemoInputs<DB: Database> {
 
 /// Return value of `probe` helper.
 enum ProbeResult<V, K, G> {
-    UpToDate(Result<V, CycleError<K>>),
+    UpToDate(ReadResult<V, K>),
     StaleOrAbsent(G),
+}
+
+/// Return value of `probe` helper.
+pub(super) enum ReadResult<V, K> {
+    Ok(StampedValue<V>),
+    CycleError(CycleError<K>),
 }
 
 impl<DB, Q, MP> Slot<DB, Q, MP>
@@ -125,10 +131,7 @@ where
         <DB as GetQueryTable<Q>>::database_key(db, self.key.clone())
     }
 
-    pub(super) fn read(
-        &self,
-        db: &DB,
-    ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
+    pub(super) fn read(&self, db: &DB) -> ReadResult<Q::Value, DB::DatabaseKey> {
         let runtime = db.salsa_runtime();
 
         // NB: We don't need to worry about people modifying the
@@ -157,7 +160,7 @@ where
         &self,
         db: &DB,
         revision_now: Revision,
-    ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
+    ) -> ReadResult<Q::Value, DB::DatabaseKey> {
         let runtime = db.salsa_runtime();
 
         debug!("{:?}: read_upgrade(revision_now={:?})", self, revision_now,);
@@ -208,7 +211,7 @@ where
                     Vec::new(),
                 );
 
-                return Ok(value);
+                return ReadResult::Ok(value);
             }
         }
 
@@ -230,7 +233,7 @@ where
                         changed_at: result.changed_at,
                     };
                     panic_guard.report_unexpected_cycle();
-                    return Err(err);
+                    return ReadResult::CycleError(err);
                 }
             };
         }
@@ -311,7 +314,7 @@ where
 
         panic_guard.proceed(&new_value, result.cycle);
 
-        Ok(new_value)
+        ReadResult::Ok(new_value)
     }
 
     /// Helper for `read` that does a shallow check (not recursive) if we have an up-to-date value.
@@ -331,7 +334,7 @@ where
         state: StateGuard,
         runtime: &Runtime<DB>,
         revision_now: Revision,
-    ) -> ProbeResult<StampedValue<Q::Value>, DB::DatabaseKey, StateGuard>
+    ) -> ProbeResult<Q::Value, DB::DatabaseKey, StateGuard>
     where
         StateGuard: Deref<Target = QueryState<DB, Q>>,
     {
@@ -355,7 +358,7 @@ where
 
                         let result = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
                         ProbeResult::UpToDate(if result.cycle.is_empty() {
-                            Ok(result.value)
+                            ReadResult::Ok(result.value)
                         } else {
                             let err = CycleError {
                                 cycle: result.cycle,
@@ -363,13 +366,14 @@ where
                                 durability: result.value.durability,
                             };
                             runtime.mark_cycle_participants(&err);
-                            Q::recover(db, &err.cycle, &self.key)
-                                .map(|value| StampedValue {
+                            match Q::recover(db, &err.cycle, &self.key) {
+                                Some(value) => ReadResult::Ok(StampedValue {
                                     value,
                                     durability: err.durability,
                                     changed_at: err.changed_at,
-                                })
-                                .ok_or_else(|| err)
+                                }),
+                                None => ReadResult::CycleError(err),
+                            }
                         })
                     }
 
@@ -379,15 +383,14 @@ where
                             err,
                             revision_now,
                         );
-                        ProbeResult::UpToDate(
-                            Q::recover(db, &err.cycle, &self.key)
-                                .map(|value| StampedValue {
-                                    value,
-                                    changed_at: err.changed_at,
-                                    durability: err.durability,
-                                })
-                                .ok_or_else(|| err),
-                        )
+                        ProbeResult::UpToDate(match Q::recover(db, &err.cycle, &self.key) {
+                            Some(value) => ReadResult::Ok(StampedValue {
+                                value,
+                                changed_at: err.changed_at,
+                                durability: err.durability,
+                            }),
+                            None => ReadResult::CycleError(err),
+                        })
                     }
                 };
             }
@@ -411,7 +414,7 @@ where
                             self, value.changed_at
                         );
 
-                        return ProbeResult::UpToDate(Ok(value));
+                        return ProbeResult::UpToDate(ReadResult::Ok(value));
                     }
                 }
             }
@@ -948,16 +951,16 @@ where
                     if memo.value.is_some() {
                         std::mem::drop(state);
                         return match self.read_upgrade(db, revision_now) {
-                            Ok(v) => {
+                            ReadResult::Ok(v) => {
                                 debug!(
-                                "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
-                                self,
+                                    "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
+                                    self,
                                     v.changed_at > revision,
-                                v.changed_at,
-                            );
+                                    v.changed_at,
+                                );
                                 v.changed_at > revision
                             }
-                            Err(_) => true,
+                            ReadResult::CycleError(_) => true,
                         };
                     }
 

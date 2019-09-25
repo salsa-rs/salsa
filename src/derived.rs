@@ -15,7 +15,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 mod slot;
-use slot::Slot;
+use slot::{ReadResult, Slot};
 
 /// Memoized queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
@@ -137,7 +137,10 @@ where
             value,
             durability,
             changed_at,
-        } = slot.read(db)?;
+        } = match slot.read(db) {
+            ReadResult::Ok(v) => v,
+            ReadResult::CycleError(e) => return Err(e),
+        };
 
         if let Some(evicted) = self.lru_list.record_use(&slot) {
             evicted.evict();
