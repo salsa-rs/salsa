@@ -50,6 +50,11 @@ where
 {
     NotComputed,
 
+    /// Indicates that this slot has been garbage collected or
+    /// otherwise invalidated. An invalidated slot should be discarded
+    /// and the caller should go fetch a new one.
+    Invalidated,
+
     /// The runtime with the given id is currently computing the
     /// result of this query; if we see this value in the table, it
     /// indeeds a cycle.
@@ -104,6 +109,7 @@ pub(super) enum MemoInputs<DB: Database> {
 enum ProbeResult<V, K, G> {
     UpToDate(ReadResult<V, K>),
     StaleOrAbsent(G),
+    Invalidated,
 }
 
 /// Return value of `probe` helper.
@@ -150,6 +156,7 @@ where
         // First, do a check with a read-lock.
         match self.probe(db, self.state.read(), runtime, revision_now) {
             ProbeResult::UpToDate(v) => return v,
+            ProbeResult::Invalidated => return ReadResult::Invalidated,
             ProbeResult::StaleOrAbsent(_guard) => (),
         }
 
@@ -178,10 +185,12 @@ where
         // can sometimes encounter deadlocks.
         let old_memo = match self.probe(db, self.state.write(), runtime, revision_now) {
             ProbeResult::UpToDate(v) => return v,
+            ProbeResult::Invalidated => return ReadResult::Invalidated,
             ProbeResult::StaleOrAbsent(mut state) => {
                 match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
                     QueryState::Memoized(old_memo) => Some(old_memo),
                     QueryState::InProgress { .. } => unreachable!(),
+                    QueryState::Invalidated { .. } => unreachable!(),
                     QueryState::NotComputed => None,
                 }
             }
@@ -345,6 +354,8 @@ where
         match &*state {
             QueryState::NotComputed => { /* fall through */ }
 
+            QueryState::Invalidated => return ProbeResult::Invalidated,
+
             QueryState::InProgress { id, waiting } => {
                 let other_id = *id;
                 return match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
@@ -429,7 +440,7 @@ where
 
     pub(super) fn durability(&self, db: &DB) -> Durability {
         match &*self.state.read() {
-            QueryState::NotComputed => Durability::LOW,
+            QueryState::NotComputed | QueryState::Invalidated => Durability::LOW,
             QueryState::InProgress { .. } => panic!("query in progress"),
             QueryState::Memoized(memo) => {
                 if memo.check_durability(db) {
@@ -443,7 +454,7 @@ where
 
     pub(super) fn as_table_entry(&self) -> Option<TableEntry<Q::Key, Q::Value>> {
         match &*self.state.read() {
-            QueryState::NotComputed => None,
+            QueryState::NotComputed | QueryState::Invalidated => None,
             QueryState::InProgress { .. } => Some(TableEntry::new(self.key.clone(), None)),
             QueryState::Memoized(memo) => {
                 Some(TableEntry::new(self.key.clone(), memo.value.clone()))
@@ -468,7 +479,7 @@ where
     pub(super) fn sweep(&self, revision_now: Revision, strategy: SweepStrategy) {
         let mut state = self.state.write();
         match &mut *state {
-            QueryState::NotComputed => (),
+            QueryState::Invalidated | QueryState::NotComputed => (),
 
             // Leave stuff that is currently being computed -- the
             // other thread doing that work has unique access to
@@ -876,7 +887,7 @@ where
             // If somebody depends on us, but we have no map
             // entry, that must mean that it was found to be out
             // of date and removed.
-            QueryState::NotComputed => {
+            QueryState::Invalidated | QueryState::NotComputed => {
                 debug!("maybe_changed_since({:?}: no value", self);
                 return true;
             }
@@ -1027,7 +1038,7 @@ where
                     // whatever `maybe_changed` value we computed.
                 }
 
-                QueryState::NotComputed => {
+                QueryState::Invalidated | QueryState::NotComputed => {
                     // Since we started verifying inputs, somebody
                     // else has come along and removed this value. The
                     // GC can do this, for example. That's fine.
