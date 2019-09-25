@@ -136,14 +136,18 @@ where
     MP: MemoizationPolicy<DB, Q>,
 {
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
-        let slot = self.get_or_create_slot(key);
+        let mut slot;
         let StampedValue {
             value,
             durability,
             changed_at,
-        } = match slot.read(db) {
-            ReadResult::Ok(v) => v,
-            ReadResult::CycleError(e) => return Err(e),
+        } = loop {
+            slot = self.get_or_create_slot(key);
+            match slot.read(db) {
+                ReadResult::Ok(v) => break v,
+                ReadResult::CycleError(e) => return Err(e),
+                ReadResult::Invalidated => { /* loop around */ }
+            }
         };
 
         if let Some(evicted) = self.lru_list.record_use(&slot) {

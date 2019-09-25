@@ -110,6 +110,10 @@ enum ProbeResult<V, K, G> {
 pub(super) enum ReadResult<V, K> {
     Ok(StampedValue<V>),
     CycleError(CycleError<K>),
+
+    /// This slot was marked as invalidated and a fresh one must be
+    /// created.
+    Invalidated,
 }
 
 impl<DB, Q, MP> Slot<DB, Q, MP>
@@ -960,7 +964,7 @@ where
                                 );
                                 v.changed_at > revision
                             }
-                            ReadResult::CycleError(_) => true,
+                            ReadResult::Invalidated | ReadResult::CycleError(_) => true,
                         };
                     }
 
