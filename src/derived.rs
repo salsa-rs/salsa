@@ -186,11 +186,9 @@ where
     MP: MemoizationPolicy<DB, Q>,
 {
     fn sweep(&self, db: &DB, strategy: SweepStrategy) {
-        let map_read = self.slot_map.read();
+        let mut map_write = self.slot_map.write();
         let revision_now = db.salsa_runtime().current_revision();
-        for slot in map_read.values() {
-            slot.sweep(revision_now, strategy);
-        }
+        map_write.retain(|_key, slot| !slot.sweep(revision_now, strategy));
     }
 }
 

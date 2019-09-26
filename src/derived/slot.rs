@@ -476,16 +476,25 @@ where
         }
     }
 
-    pub(super) fn sweep(&self, revision_now: Revision, strategy: SweepStrategy) {
+    /// Attempt to clear the data from this slot, if strategy
+    /// applies. Returns true if this slot is fully invalidated and
+    /// should be removed from the hashtable of slots.
+    pub(super) fn sweep(&self, revision_now: Revision, strategy: SweepStrategy) -> bool {
         let mut state = self.state.write();
         match &mut *state {
-            QueryState::Invalidated | QueryState::NotComputed => (),
+            // We haven't even started computing the data yet.
+            // Do not sweep.
+            QueryState::NotComputed => false,
+
+            // Data was invalidated at some point. Sweep.
+            QueryState::Invalidated => true,
 
             // Leave stuff that is currently being computed -- the
             // other thread doing that work has unique access to
             // this slot and we should not interfere.
             QueryState::InProgress { .. } => {
                 debug!("sweep({:?}): in-progress", self);
+                false
             }
 
             // Otherwise, drop only value or the whole memo according to the
@@ -519,22 +528,27 @@ where
 
                     // If we are only discarding outdated things,
                     // and this is not outdated, keep it.
-                    DiscardIf::Outdated if memo.verified_at == revision_now => (),
+                    DiscardIf::Outdated if memo.verified_at == revision_now => false,
 
                     // As explained on the `has_untracked_input` variable
                     // definition, if this is a volatile entry, we
                     // can't discard it unless it is outdated.
                     DiscardIf::Always
-                        if has_untracked_input && memo.verified_at == revision_now => {}
+                        if has_untracked_input && memo.verified_at == revision_now =>
+                    {
+                        false
+                    }
 
                     // Otherwise, we can discard -- discard whatever the user requested.
                     DiscardIf::Outdated | DiscardIf::Always => match strategy.discard_what {
                         DiscardWhat::Nothing => unreachable!(),
                         DiscardWhat::Values => {
                             memo.value = None;
+                            false
                         }
                         DiscardWhat::Everything => {
-                            *state = QueryState::NotComputed;
+                            *state = QueryState::Invalidated;
+                            true
                         }
                     },
                 }
