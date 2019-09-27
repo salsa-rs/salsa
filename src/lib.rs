@@ -33,6 +33,7 @@ use crate::revision::Revision;
 use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
+use std::sync::Arc;
 
 pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
@@ -439,7 +440,7 @@ pub unsafe trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type GroupKey;
 
     /// Extact storage for this query from the storage for its group.
-    fn query_storage(group_storage: &Self::GroupStorage) -> &Self::Storage;
+    fn query_storage(group_storage: &Self::GroupStorage) -> &Arc<Self::Storage>;
 
     /// Create group key for this query.
     fn group_key(key: Self::Key) -> Self::GroupKey;
@@ -498,7 +499,7 @@ where
     Q: Query<DB> + 'me,
 {
     db: &'me DB,
-    storage: &'me Q::Storage,
+    storage: Arc<Q::Storage>,
 }
 
 impl<DB, Q> QueryTableMut<'_, DB, Q>

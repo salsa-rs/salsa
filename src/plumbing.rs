@@ -104,14 +104,14 @@ where
 {
     fn get_query_table(db: &DB) -> QueryTable<'_, DB, Q> {
         let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-        let query_storage = Q::query_storage(group_storage);
+        let query_storage: &Q::Storage = Q::query_storage(group_storage);
         QueryTable::new(db, query_storage)
     }
 
     fn get_query_table_mut(db: &mut DB) -> QueryTableMut<'_, DB, Q> {
         let db = &*db;
         let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-        let query_storage = Q::query_storage(group_storage);
+        let query_storage = Q::query_storage(group_storage).clone();
         QueryTableMut::new(db, query_storage)
     }
 
