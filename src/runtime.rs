@@ -143,7 +143,7 @@ where
     /// cancellation. If you invoke it while a snapshot exists, it
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
-    pub fn synthetic_write(&self, durability: Durability) {
+    pub fn synthetic_write(&mut self, durability: Durability) {
         self.with_incremented_revision(|guard| {
             guard.mark_durability_as_changed(durability);
         });

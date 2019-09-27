@@ -74,13 +74,13 @@ fn discard_during_same_revision() {
 /// exercises precisely that scenario.
 #[test]
 fn discard_outdated() {
-    let db = db::DatabaseImpl::default();
+    let mut db = db::DatabaseImpl::default();
 
     let foo_from_rev0 = db.repeat_intern1("foo");
     let bar_from_rev0 = db.repeat_intern1("bar");
 
     // Trigger a new revision.
-    db.salsa_runtime().synthetic_write(Durability::HIGH);
+    db.salsa_runtime_mut().synthetic_write(Durability::HIGH);
 
     // In this revision, we use "bar".
     let bar_from_rev1 = db.repeat_intern1("bar");
@@ -117,7 +117,7 @@ fn discard_outdated() {
 /// keys (which are considered durability HIGH).
 #[test]
 fn discard_durability_after_synthetic_write_low() {
-    let db = db::DatabaseImpl::default();
+    let mut db = db::DatabaseImpl::default();
 
     // This will assign index 0 for "foo".
     let foo1a = db.repeat_intern1("foo");
@@ -127,7 +127,7 @@ fn discard_durability_after_synthetic_write_low() {
     );
 
     // Trigger a new revision.
-    db.salsa_runtime().synthetic_write(Durability::LOW);
+    db.salsa_runtime_mut().synthetic_write(Durability::LOW);
 
     // If we are not careful, this would remove the interned key for
     // "foo".
@@ -157,7 +157,7 @@ fn discard_durability_after_synthetic_write_low() {
 /// `Durability::HIGH`.
 #[test]
 fn discard_durability_after_synthetic_write_high() {
-    let db = db::DatabaseImpl::default();
+    let mut db = db::DatabaseImpl::default();
 
     // This will assign index 0 for "foo".
     let foo1a = db.repeat_intern1("foo");
@@ -167,7 +167,7 @@ fn discard_durability_after_synthetic_write_high() {
     );
 
     // Trigger a new revision -- marking even high things as having changed.
-    db.salsa_runtime().synthetic_write(Durability::HIGH);
+    db.salsa_runtime_mut().synthetic_write(Durability::HIGH);
 
     // We are now able to collect "collect".
     db.query(InternStrQuery).sweep(

@@ -5,14 +5,14 @@ use salsa::{Database, Durability, SweepStrategy};
 
 #[test]
 fn sweep_default() {
-    let db = db::DatabaseImpl::default();
+    let mut db = db::DatabaseImpl::default();
 
     db.fibonacci(5);
 
     let k: Vec<_> = db.query(FibonacciQuery).entries();
     assert_eq!(k.len(), 6);
 
-    db.salsa_runtime().synthetic_write(Durability::LOW);
+    db.salsa_runtime_mut().synthetic_write(Durability::LOW);
 
     db.fibonacci(5);
     db.fibonacci(3);

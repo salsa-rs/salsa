@@ -100,13 +100,13 @@ fn on_demand_input_durability() {
         }
     }));
 
-    db.salsa_runtime().synthetic_write(Durability::LOW);
+    db.salsa_runtime_mut().synthetic_write(Durability::LOW);
     validated.set(0);
     assert_eq!(db.c(1), 10);
     assert_eq!(db.c(2), 20);
     assert_eq!(validated.get(), 2);
 
-    db.salsa_runtime().synthetic_write(Durability::HIGH);
+    db.salsa_runtime_mut().synthetic_write(Durability::HIGH);
     validated.set(0);
     assert_eq!(db.c(1), 10);
     assert_eq!(db.c(2), 20);
