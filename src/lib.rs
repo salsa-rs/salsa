@@ -501,7 +501,7 @@ where
     DB: plumbing::GetQueryTable<Q>,
     Q: Query<DB> + 'me,
 {
-    db: &'me DB,
+    db: &'me mut DB,
     storage: Arc<Q::Storage>,
 }
 

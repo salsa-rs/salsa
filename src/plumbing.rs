@@ -109,7 +109,6 @@ where
     }
 
     fn get_query_table_mut(db: &mut DB) -> QueryTableMut<'_, DB, Q> {
-        let db = &*db;
         let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
         let query_storage = Q::query_storage(group_storage).clone();
         QueryTableMut::new(db, query_storage)
