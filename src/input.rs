@@ -144,6 +144,13 @@ where
             durability
         );
 
+        db.salsa_event(|| Event {
+            runtime_id: db.salsa_runtime().id(),
+            kind: EventKind::WillChangeInputValue {
+                database_key: database_key.clone(),
+            },
+        });
+
         // The value is changing, so we need a new revision (*). We also
         // need to update the 'last changed' revision by invoking
         // `guard.mark_durability_as_changed`.
@@ -161,13 +168,6 @@ where
         // case doesn't generally seem worth optimizing for.
         db.salsa_runtime().with_incremented_revision(|guard| {
             let mut slots = self.slots.write();
-
-            db.salsa_event(|| Event {
-                runtime_id: db.salsa_runtime().id(),
-                kind: EventKind::WillChangeInputValue {
-                    database_key: database_key.clone(),
-                },
-            });
 
             // Do this *after* we acquire the lock, so that we are not
             // racing with somebody else to modify this same cell.
