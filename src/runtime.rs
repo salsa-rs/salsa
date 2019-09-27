@@ -295,7 +295,7 @@ where
     /// thread is attempting to increment the global revision at a
     /// time.
     pub(crate) fn with_incremented_revision<R>(
-        &self,
+        &mut self,
         op: impl FnOnce(&DatabaseWriteLockGuard<'_, DB>) -> R,
     ) -> R {
         log::debug!("increment_revision()");
@@ -309,7 +309,8 @@ where
         let current_revision = self.shared_state.pending_revision.fetch_then_increment();
 
         // To modify the revision, we need the lock.
-        let _lock = self.shared_state.query_lock.write();
+        let shared_state = self.shared_state.clone();
+        let _lock = shared_state.query_lock.write();
 
         let old_revision = self.shared_state.revisions[0].fetch_then_increment();
         assert_eq!(current_revision, old_revision);
@@ -529,7 +530,7 @@ pub(crate) struct DatabaseWriteLockGuard<'db, DB>
 where
     DB: Database,
 {
-    runtime: &'db Runtime<DB>,
+    runtime: &'db mut Runtime<DB>,
     new_revision: Revision,
 }
 

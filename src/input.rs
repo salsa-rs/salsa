@@ -130,7 +130,7 @@ where
 {
     fn set(
         &self,
-        db: &DB,
+        db: &mut DB,
         key: &Q::Key,
         database_key: &DB::DatabaseKey,
         value: Q::Value,
@@ -166,7 +166,7 @@ where
         // keys, we only need a new revision if the key used to
         // exist. But we may add such methods in the future and this
         // case doesn't generally seem worth optimizing for.
-        db.salsa_runtime().with_incremented_revision(|guard| {
+        db.salsa_runtime_mut().with_incremented_revision(|guard| {
             let mut slots = self.slots.write();
 
             // Do this *after* we acquire the lock, so that we are not

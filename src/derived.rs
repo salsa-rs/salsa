@@ -197,8 +197,8 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn invalidate(&self, db: &DB, key: &Q::Key) {
-        db.salsa_runtime().with_incremented_revision(|guard| {
+    fn invalidate(&self, db: &mut DB, key: &Q::Key) {
+        db.salsa_runtime_mut().with_incremented_revision(|guard| {
             let map_read = self.slot_map.read();
 
             if let Some(slot) = map_read.get(key) {

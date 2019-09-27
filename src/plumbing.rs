@@ -176,7 +176,7 @@ where
 {
     fn set(
         &self,
-        db: &DB,
+        db: &mut DB,
         key: &Q::Key,
         database_key: &DB::DatabaseKey,
         new_value: Q::Value,
@@ -196,5 +196,5 @@ where
     DB: Database,
     Q: Query<DB>,
 {
-    fn invalidate(&self, db: &DB, key: &Q::Key);
+    fn invalidate(&self, db: &mut DB, key: &Q::Key);
 }
