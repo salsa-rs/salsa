@@ -521,7 +521,7 @@ where
     /// and cancellation on [the `query_mut` method].
     ///
     /// [the `query_mut` method]: trait.Database#method.query_mut
-    pub fn set(&self, key: Q::Key, value: Q::Value)
+    pub fn set(&mut self, key: Q::Key, value: Q::Value)
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
@@ -536,7 +536,7 @@ where
     /// and cancellation on [the `query_mut` method].
     ///
     /// [the `query_mut` method]: trait.Database#method.query_mut
-    pub fn set_with_durability(&self, key: Q::Key, value: Q::Value, durability: Durability)
+    pub fn set_with_durability(&mut self, key: Q::Key, value: Q::Value, durability: Durability)
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
@@ -565,7 +565,7 @@ where
     ///
     /// This is most commonly used as part of the [on-demand input
     /// pattern](https://salsa-rs.github.io/salsa/common_patterns/on_demand_inputs.html).
-    pub fn invalidate(&self, key: &Q::Key)
+    pub fn invalidate(&mut self, key: &Q::Key)
     where
         Q::Storage: plumbing::DerivedQueryStorageOps<DB, Q>,
     {
