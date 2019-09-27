@@ -293,7 +293,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         //
         // FIXME(#120): the pub should not be necessary once we complete the transition
         storage_fields.extend(quote! {
-            pub #fn_name: <#qt as salsa::Query<DB__>>::Storage,
+            pub #fn_name: std::sync::Arc<<#qt as salsa::Query<DB__>>::Storage>,
         });
         storage_defaults.extend(quote! { #fn_name: Default::default(), });
     }
@@ -360,7 +360,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             QueryStorage::Dependencies => quote!(salsa::plumbing::DependencyStorage<#db, Self>),
             QueryStorage::Input => quote!(salsa::plumbing::InputStorage<#db, Self>),
             QueryStorage::Interned => quote!(salsa::plumbing::InternedStorage<#db, Self>),
-            QueryStorage::InternedLookup { intern_query_type } => quote!(salsa::plumbing::LookupInternedStorage<#db, Self, #intern_query_type>),
+            QueryStorage::InternedLookup { intern_query_type } => {
+                quote!(salsa::plumbing::LookupInternedStorage<#db, Self, #intern_query_type>)
+            }
             QueryStorage::Transparent => continue,
         };
         let keys = &query.keys;
@@ -386,7 +388,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 type GroupStorage = #group_storage<#db>;
                 type GroupKey = #group_key;
 
-                fn query_storage(group_storage: &Self::GroupStorage) -> &Self::Storage {
+                fn query_storage(
+                    group_storage: &Self::GroupStorage,
+                ) -> &std::sync::Arc<Self::Storage> {
                     &group_storage.#fn_name
                 }
 
@@ -457,7 +461,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         .filter(|q| q.storage != QueryStorage::Transparent)
     {
         for_each_ops.extend(quote! {
-            op(&self.#fn_name);
+            op(&*self.#fn_name);
         });
     }
 

@@ -79,8 +79,12 @@ struct DatabaseStruct {
 
 // Tell salsa where to find the runtime in your context.
 impl salsa::Database for DatabaseStruct {
-    fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseStruct> {
+    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
         &self.runtime
+    }
+
+    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
+        &mut self.runtime
     }
 }
 

@@ -11,7 +11,7 @@ fn compute_one_write_low() {
     db.set_use_triangular(5, false);
     db.compute(5);
 
-    db.salsa_runtime().synthetic_write(Durability::LOW);
+    db.salsa_runtime_mut().synthetic_write(Durability::LOW);
 
     assert_keys! {
         db,
@@ -49,7 +49,7 @@ fn compute_one_write_high() {
     // Doing a synthetic write with durability *high* means that we
     // will revalidate the things `compute(5)` uses, and hence they
     // are not discarded.
-    db.salsa_runtime().synthetic_write(Durability::HIGH);
+    db.salsa_runtime_mut().synthetic_write(Durability::HIGH);
 
     assert_keys! {
         db,
@@ -116,7 +116,7 @@ fn compute_switch() {
     }
 
     // Now run `compute` *again* in next revision.
-    db.salsa_runtime().synthetic_write(Durability::LOW);
+    db.salsa_runtime_mut().synthetic_write(Durability::LOW);
     assert_eq!(db.compute(5), 15);
     db.sweep_all(SweepStrategy::discard_outdated());
 
@@ -145,7 +145,7 @@ fn compute_all() {
     db.set_max(6);
 
     db.compute_all();
-    db.salsa_runtime().synthetic_write(Durability::LOW);
+    db.salsa_runtime_mut().synthetic_write(Durability::LOW);
     db.compute_all();
     db.sweep_all(SweepStrategy::discard_outdated());
 

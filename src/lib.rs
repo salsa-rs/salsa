@@ -33,6 +33,7 @@ use crate::revision::Revision;
 use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
+use std::sync::Arc;
 
 pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
@@ -46,6 +47,9 @@ pub use crate::runtime::RuntimeId;
 pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &Runtime<Self>;
+
+    /// Gives access to the underlying salsa runtime.
+    fn salsa_runtime_mut(&mut self) -> &mut Runtime<Self>;
 
     /// Iterates through all query storage and removes any values that
     /// have not been used since the last revision was created. The
@@ -439,7 +443,7 @@ pub unsafe trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type GroupKey;
 
     /// Extact storage for this query from the storage for its group.
-    fn query_storage(group_storage: &Self::GroupStorage) -> &Self::Storage;
+    fn query_storage(group_storage: &Self::GroupStorage) -> &Arc<Self::Storage>;
 
     /// Create group key for this query.
     fn group_key(key: Self::Key) -> Self::GroupKey;
@@ -497,8 +501,8 @@ where
     DB: plumbing::GetQueryTable<Q>,
     Q: Query<DB> + 'me,
 {
-    db: &'me DB,
-    storage: &'me Q::Storage,
+    db: &'me mut DB,
+    storage: Arc<Q::Storage>,
 }
 
 impl<DB, Q> QueryTableMut<'_, DB, Q>
@@ -517,7 +521,7 @@ where
     /// and cancellation on [the `query_mut` method].
     ///
     /// [the `query_mut` method]: trait.Database#method.query_mut
-    pub fn set(&self, key: Q::Key, value: Q::Value)
+    pub fn set(&mut self, key: Q::Key, value: Q::Value)
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
@@ -532,7 +536,7 @@ where
     /// and cancellation on [the `query_mut` method].
     ///
     /// [the `query_mut` method]: trait.Database#method.query_mut
-    pub fn set_with_durability(&self, key: Q::Key, value: Q::Value, durability: Durability)
+    pub fn set_with_durability(&mut self, key: Q::Key, value: Q::Value, durability: Durability)
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
@@ -561,7 +565,7 @@ where
     ///
     /// This is most commonly used as part of the [on-demand input
     /// pattern](https://salsa-rs.github.io/salsa/common_patterns/on_demand_inputs.html).
-    pub fn invalidate(&self, key: &Q::Key)
+    pub fn invalidate(&mut self, key: &Q::Key)
     where
         Q::Storage: plumbing::DerivedQueryStorageOps<DB, Q>,
     {

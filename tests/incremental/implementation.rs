@@ -55,7 +55,11 @@ impl TestContext for TestContextImpl {
 }
 
 impl salsa::Database for TestContextImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<TestContextImpl> {
+    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
         &self.runtime
+    }
+
+    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
+        &mut self.runtime
     }
 }

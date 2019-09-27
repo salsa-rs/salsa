@@ -47,8 +47,12 @@ struct Database {
 }
 
 impl salsa::Database for Database {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Database> {
+    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
         &self.runtime
+    }
+
+    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
+        &mut self.runtime
     }
 }
 

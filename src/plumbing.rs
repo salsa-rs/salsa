@@ -104,14 +104,13 @@ where
 {
     fn get_query_table(db: &DB) -> QueryTable<'_, DB, Q> {
         let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-        let query_storage = Q::query_storage(group_storage);
+        let query_storage: &Q::Storage = Q::query_storage(group_storage);
         QueryTable::new(db, query_storage)
     }
 
     fn get_query_table_mut(db: &mut DB) -> QueryTableMut<'_, DB, Q> {
-        let db = &*db;
         let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-        let query_storage = Q::query_storage(group_storage);
+        let query_storage = Q::query_storage(group_storage).clone();
         QueryTableMut::new(db, query_storage)
     }
 
@@ -177,7 +176,7 @@ where
 {
     fn set(
         &self,
-        db: &DB,
+        db: &mut DB,
         key: &Q::Key,
         database_key: &DB::DatabaseKey,
         new_value: Q::Value,
@@ -197,5 +196,5 @@ where
     DB: Database,
     Q: Query<DB>,
 {
-    fn invalidate(&self, db: &DB, key: &Q::Key);
+    fn invalidate(&self, db: &mut DB, key: &Q::Key);
 }

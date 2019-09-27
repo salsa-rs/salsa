@@ -24,14 +24,14 @@ fn one_rev() {
 
 #[test]
 fn two_rev_nothing() {
-    let db = db::DatabaseImpl::default();
+    let mut db = db::DatabaseImpl::default();
 
     db.fibonacci(5);
 
     let k: Vec<_> = db.query(FibonacciQuery).entries();
     assert_eq!(k.len(), 6);
 
-    db.salsa_runtime().synthetic_write(Durability::LOW);
+    db.salsa_runtime_mut().synthetic_write(Durability::LOW);
 
     // Nothing was used in this revision, so
     // everything gets collected.
@@ -43,14 +43,14 @@ fn two_rev_nothing() {
 
 #[test]
 fn two_rev_one_use() {
-    let db = db::DatabaseImpl::default();
+    let mut db = db::DatabaseImpl::default();
 
     db.fibonacci(5);
 
     let k: Vec<_> = db.query(FibonacciQuery).entries();
     assert_eq!(k.len(), 6);
 
-    db.salsa_runtime().synthetic_write(Durability::LOW);
+    db.salsa_runtime_mut().synthetic_write(Durability::LOW);
 
     db.fibonacci(5);
 
@@ -66,14 +66,14 @@ fn two_rev_one_use() {
 
 #[test]
 fn two_rev_two_uses() {
-    let db = db::DatabaseImpl::default();
+    let mut db = db::DatabaseImpl::default();
 
     db.fibonacci(5);
 
     let k: Vec<_> = db.query(FibonacciQuery).entries();
     assert_eq!(k.len(), 6);
 
-    db.salsa_runtime().synthetic_write(Durability::LOW);
+    db.salsa_runtime_mut().synthetic_write(Durability::LOW);
 
     db.fibonacci(5);
     db.fibonacci(3);

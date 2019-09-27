@@ -48,7 +48,7 @@ fn volatile_x2() {
 /// - On the first run of R2, we recompute everything (since Memoized1 result *did* change).
 #[test]
 fn revalidate() {
-    let query = TestContextImpl::default();
+    let mut query = TestContextImpl::default();
 
     query.memoized2();
     query.assert_log(&["Memoized2 invoked", "Memoized1 invoked", "Volatile invoked"]);
@@ -58,7 +58,7 @@ fn revalidate() {
 
     // Second generation: volatile will change (to 1) but memoized1
     // will not (still 0, as 1/2 = 0)
-    query.salsa_runtime().synthetic_write(Durability::LOW);
+    query.salsa_runtime_mut().synthetic_write(Durability::LOW);
     query.memoized2();
     query.assert_log(&["Memoized1 invoked", "Volatile invoked"]);
     query.memoized2();
@@ -67,7 +67,7 @@ fn revalidate() {
     // Third generation: volatile will change (to 2) and memoized1
     // will too (to 1).  Therefore, after validating that Memoized1
     // changed, we now invoke Memoized2.
-    query.salsa_runtime().synthetic_write(Durability::LOW);
+    query.salsa_runtime_mut().synthetic_write(Durability::LOW);
 
     query.memoized2();
     query.assert_log(&["Memoized1 invoked", "Volatile invoked", "Memoized2 invoked"]);

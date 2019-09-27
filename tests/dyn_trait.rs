@@ -7,8 +7,12 @@ struct DynTraitDatabase {
 }
 
 impl salsa::Database for DynTraitDatabase {
-    fn salsa_runtime(&self) -> &salsa::Runtime<DynTraitDatabase> {
+    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
         &self.runtime
+    }
+
+    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
+        &mut self.runtime
     }
 }
 

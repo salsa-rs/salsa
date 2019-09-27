@@ -143,7 +143,7 @@ where
     /// cancellation. If you invoke it while a snapshot exists, it
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
-    pub fn synthetic_write(&self, durability: Durability) {
+    pub fn synthetic_write(&mut self, durability: Durability) {
         self.with_incremented_revision(|guard| {
             guard.mark_durability_as_changed(durability);
         });
@@ -295,7 +295,7 @@ where
     /// thread is attempting to increment the global revision at a
     /// time.
     pub(crate) fn with_incremented_revision<R>(
-        &self,
+        &mut self,
         op: impl FnOnce(&DatabaseWriteLockGuard<'_, DB>) -> R,
     ) -> R {
         log::debug!("increment_revision()");
@@ -309,7 +309,8 @@ where
         let current_revision = self.shared_state.pending_revision.fetch_then_increment();
 
         // To modify the revision, we need the lock.
-        let _lock = self.shared_state.query_lock.write();
+        let shared_state = self.shared_state.clone();
+        let _lock = shared_state.query_lock.write();
 
         let old_revision = self.shared_state.revisions[0].fetch_then_increment();
         assert_eq!(current_revision, old_revision);
@@ -529,7 +530,7 @@ pub(crate) struct DatabaseWriteLockGuard<'db, DB>
 where
     DB: Database,
 {
-    runtime: &'db Runtime<DB>,
+    runtime: &'db mut Runtime<DB>,
     new_revision: Revision,
 }
 
