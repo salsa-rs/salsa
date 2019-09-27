@@ -48,6 +48,9 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &Runtime<Self>;
 
+    /// Gives access to the underlying salsa runtime.
+    fn salsa_runtime_mut(&mut self) -> &mut Runtime<Self>;
+
     /// Iterates through all query storage and removes any values that
     /// have not been used since the last revision was created. The
     /// intended use-cycle is that you first execute all of your

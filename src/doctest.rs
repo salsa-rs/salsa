@@ -27,8 +27,12 @@
 /// }
 ///
 /// impl salsa::Database for DatabaseImpl {
-///     fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseImpl> {
+///     fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
 ///         &self.runtime
+///     }
+///
+///     fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
+///         &mut self.runtime
 ///     }
 /// }
 ///
@@ -68,8 +72,12 @@ fn test_key_not_send_db_not_send() {}
 /// }
 ///
 /// impl salsa::Database for DatabaseImpl {
-///     fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseImpl> {
+///     fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
 ///         &self.runtime
+///     }
+///
+///     fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
+///         &mut self.runtime
 ///     }
 /// }
 ///
@@ -108,8 +116,12 @@ fn test_key_not_sync_db_not_send() {}
 /// }
 ///
 /// impl salsa::Database for DatabaseImpl {
-///     fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseImpl> {
+///     fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
 ///         &self.runtime
+///     }
+///
+///     fn salsa_runtime(&mut self) -> &mut salsa::Runtime<Self> {
+///         &mut self.runtime
 ///     }
 /// }
 ///

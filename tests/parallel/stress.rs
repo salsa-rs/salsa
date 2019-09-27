@@ -45,6 +45,10 @@ impl salsa::Database for StressDatabaseImpl {
     fn salsa_runtime(&self) -> &salsa::Runtime<StressDatabaseImpl> {
         &self.runtime
     }
+
+    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<StressDatabaseImpl> {
+        &mut self.runtime
+    }
 }
 
 impl salsa::ParallelDatabase for StressDatabaseImpl {

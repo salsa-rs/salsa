@@ -27,8 +27,12 @@ pub struct DatabaseImpl {
 
 /// This impl tells salsa where to find the salsa runtime.
 impl salsa::Database for DatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseImpl> {
+    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
         &self.runtime
+    }
+
+    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
+        &mut self.runtime
     }
 }
 

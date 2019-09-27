@@ -192,8 +192,12 @@ pub(crate) struct ParDatabaseImpl {
 }
 
 impl Database for ParDatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<ParDatabaseImpl> {
+    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
         &self.runtime
+    }
+
+    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
+        &mut self.runtime
     }
 
     fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event<Self>) {

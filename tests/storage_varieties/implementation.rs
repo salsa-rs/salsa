@@ -20,4 +20,8 @@ impl salsa::Database for DatabaseImpl {
     fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseImpl> {
         &self.runtime
     }
+
+    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<DatabaseImpl> {
+        &mut self.runtime
+    }
 }
