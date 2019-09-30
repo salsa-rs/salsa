@@ -22,7 +22,7 @@ trait VfsDatabase: salsa::Database + FileWatcher {
 
 trait FileWatcher {
     fn watch(&self, path: &Path);
-    fn did_change_file(&self, path: &Path);
+    fn did_change_file(&mut self, path: &Path);
 }
 
 fn read(db: &impl salsa::Database, path: PathBuf) -> String {
@@ -37,7 +37,7 @@ struct MyDatabase { ... }
 
 impl FileWatcher for MyDatabase {
     fn watch(&self, path: &Path) { ... }
-    fn did_change_file(&self, path: &Path) {
+    fn did_change_file(&mut self, path: &Path) {
         self.query_mut(ReadQuery).invalidate(path);
     }
 }
