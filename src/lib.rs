@@ -30,7 +30,6 @@ use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
-use derive_new::new;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 use std::sync::Arc;
@@ -453,7 +452,6 @@ pub unsafe trait Query<DB: Database>: Debug + Default + Sized + 'static {
 /// Gives access to various less common operations on queries.
 ///
 /// [the `query_mut` method]: trait.Database#method.query
-#[derive(new)]
 pub struct QueryTable<'me, DB, Q>
 where
     DB: plumbing::GetQueryTable<Q>,
@@ -463,11 +461,16 @@ where
     storage: &'me Q::Storage,
 }
 
-impl<DB, Q> QueryTable<'_, DB, Q>
+impl<'me, DB, Q> QueryTable<'me, DB, Q>
 where
     DB: plumbing::GetQueryTable<Q>,
     Q: Query<DB>,
 {
+    /// Constructs a new `QueryTable`.
+    pub fn new(db: &'me DB, storage: &'me Q::Storage) -> Self {
+        Self { db, storage }
+    }
+
     /// Execute the query on a given input. Usually it's easier to
     /// invoke the trait method directly. Note that for variadic
     /// queries (those with no inputs, or those with more than one
@@ -495,7 +498,6 @@ where
 /// set the value of an input query.
 ///
 /// [the `query_mut` method]: trait.Database#method.query_mut
-#[derive(new)]
 pub struct QueryTableMut<'me, DB, Q>
 where
     DB: plumbing::GetQueryTable<Q>,
@@ -505,11 +507,16 @@ where
     storage: Arc<Q::Storage>,
 }
 
-impl<DB, Q> QueryTableMut<'_, DB, Q>
+impl<'me, DB, Q> QueryTableMut<'me, DB, Q>
 where
     DB: plumbing::GetQueryTable<Q>,
     Q: Query<DB>,
 {
+    /// Constructs a new `QueryTableMut`.
+    pub fn new(db: &'me mut DB, storage: Arc<Q::Storage>) -> Self {
+        Self { db, storage }
+    }
+
     fn database_key(&self, key: &Q::Key) -> DB::DatabaseKey {
         <DB as plumbing::GetQueryTable<Q>>::database_key(&self.db, key.clone())
     }
