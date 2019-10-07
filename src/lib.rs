@@ -377,7 +377,7 @@ pub trait ParallelDatabase: Database + Send {
 /// only gives `&self` access to it. See [the `snapshot` method][fm]
 /// for more details.
 ///
-/// [fm]: trait.ParallelDatabase#method.snapshot
+/// [fm]: trait.ParallelDatabase.html#method.snapshot
 #[derive(Debug)]
 pub struct Snapshot<DB>
 where
@@ -451,7 +451,7 @@ pub unsafe trait Query<DB: Database>: Debug + Default + Sized + 'static {
 /// Return value from [the `query` method] on `Database`.
 /// Gives access to various less common operations on queries.
 ///
-/// [the `query_mut` method]: trait.Database#method.query
+/// [the `query` method]: trait.Database.html#method.query
 pub struct QueryTable<'me, DB, Q>
 where
     DB: plumbing::GetQueryTable<Q>,
@@ -497,7 +497,7 @@ where
 /// Gives access to the `set` method, notably, that is used to
 /// set the value of an input query.
 ///
-/// [the `query_mut` method]: trait.Database#method.query_mut
+/// [the `query_mut` method]: trait.Database.html#method.query_mut
 pub struct QueryTableMut<'me, DB, Q>
 where
     DB: plumbing::GetQueryTable<Q>,
@@ -527,7 +527,7 @@ where
     /// If you are using `snapshot`, see the notes on blocking
     /// and cancellation on [the `query_mut` method].
     ///
-    /// [the `query_mut` method]: trait.Database#method.query_mut
+    /// [the `query_mut` method]: trait.Database.html#method.query_mut
     pub fn set(&mut self, key: Q::Key, value: Q::Value)
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
@@ -542,7 +542,7 @@ where
     /// If you are using `snapshot`, see the notes on blocking
     /// and cancellation on [the `query_mut` method].
     ///
-    /// [the `query_mut` method]: trait.Database#method.query_mut
+    /// [the `query_mut` method]: trait.Database.html#method.query_mut
     pub fn set_with_durability(&mut self, key: Q::Key, value: Q::Value, durability: Durability)
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
