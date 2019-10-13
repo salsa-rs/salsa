@@ -212,7 +212,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // just inline the definition
         if let QueryStorage::Transparent = query.storage {
             let invoke = query.invoke_tt();
-        query_fn_definitions.extend(quote! {
+            query_fn_definitions.extend(quote! {
             fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
                     #invoke(self, #(#key_names),*)
                 }
@@ -597,6 +597,6 @@ impl QueryStorage {
             | QueryStorage::InternedLookup { .. }
             | QueryStorage::Transparent => false,
             QueryStorage::Memoized | QueryStorage::Dependencies => true,
-            }
         }
+    }
 }

@@ -6,7 +6,6 @@ use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
-use crate::BoxFutureLocal;
 use crate::Query;
 use crate::{CycleError, Database, DiscardIf, SweepStrategy};
 use crossbeam::atomic::AtomicCell;
@@ -315,13 +314,14 @@ where
     }
 }
 
+#[async_trait::async_trait(?Send)]
 impl<DB, Q> QueryStorageOps<DB, Q> for InternedStorage<DB, Q>
 where
     Q: Query<DB>,
     Q::Value: InternKey,
     DB: Database,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    async fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
         let index = slot.index;
@@ -404,6 +404,7 @@ where
     }
 }
 
+#[async_trait::async_trait(?Send)]
 impl<DB, Q, IQ> QueryStorageOps<DB, Q> for LookupInternedStorage<DB, Q, IQ>
 where
     Q: Query<DB>,
@@ -420,7 +421,7 @@ where
     >,
     DB: Database + HasQueryGroup<Q::Group>,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    async fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let index = key.as_intern_id();
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(group_storage);
@@ -528,12 +529,13 @@ impl<K> Slot<K> {
 // key/value is Send + Sync (also, that we introduce no
 // references). These are tested by the `check_send_sync` and
 // `check_static` helpers below.
+#[async_trait::async_trait(?Send)]
 unsafe impl<DB, K> DatabaseSlot<DB> for Slot<K>
 where
     DB: Database,
     K: Debug,
 {
-    fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
+    async fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
         let revision_now = db.salsa_runtime().current_revision();
         if !self.try_update_accessed_at(revision_now) {
             // if we failed to update accessed-at, then this slot was garbage collected

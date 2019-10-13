@@ -14,15 +14,14 @@ use crate::runtime::FxIndexSet;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
-use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy, Channel, Sender, Receiver};
-use futures::prelude::*;
+use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy};
+use futures::{prelude::*, channel::mpsc::{self, UnboundedReceiver as Receiver, UnboundedSender as Sender}};
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::RwLock;
 use smallvec::SmallVec;
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::sync::mpsc;
 use std::sync::Arc;
 
 
@@ -58,7 +57,7 @@ where
     /// indeeds a cycle.
     InProgress {
         id: RuntimeId,
-        waiting: Mutex<SmallVec<[<DB::Channel as Channel<DB>>::Sender; 2]>>,
+        waiting: Mutex<SmallVec<[Sender<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
     },
 
     /// We have computed the query already, and here is the result.
@@ -191,7 +190,7 @@ where
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
         if let Some(memo) = &mut panic_guard.memo {
-            if let Some(value) = memo.validate_memoized_value(db, revision_now) {
+            if let Some(value) = memo.validate_memoized_value(db, revision_now).await {
                 info!("{:?}: validated old memoized value", self,);
 
                 db.salsa_event(|| Event {
@@ -353,7 +352,7 @@ where
             QueryState::InProgress { id, waiting } => {
                 let other_id = *id;
                 return match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
-                    Ok(rx) => {
+                    Ok(mut rx) => {
                         // Release our lock on `self.map`, so other thread
                         // can complete.
                         std::mem::drop(state);
@@ -366,7 +365,7 @@ where
                             },
                         });
 
-                        let result = rx.recv().await.unwrap_or_else(|_| db.on_propagated_panic());
+                        let result = rx.next().await.unwrap_or_else(|| db.on_propagated_panic());
                         ProbeState::UpToDate(if result.cycle.is_empty() {
                             Ok(result.value)
                         } else {
@@ -558,8 +557,8 @@ where
         db: &DB,
         runtime: &Runtime<DB>,
         other_id: RuntimeId,
-        waiting: &Mutex<SmallVec<[<DB::Channel as Channel<DB>>::Sender; 2]>>,
-    ) -> Result<<DB::Channel as Channel<DB>>::Receiver, CycleDetected> {
+        waiting: &Mutex<SmallVec<[Sender<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
+    ) -> Result<Receiver<WaitResult<Q::Value, DB::DatabaseKey>>, CycleDetected> {
         let id = runtime.id();
         if other_id == id {
             return Err(CycleDetected { from: id, to: id });
@@ -571,7 +570,7 @@ where
                 });
             }
 
-            let (tx, rx) = mpsc::channel();
+            let (tx, rx) = mpsc::unbounded();
 
             // The reader of this will have to acquire map
             // lock, we don't need any particular ordering.
@@ -676,7 +675,7 @@ where
                     // list, notify them that the value is available.
                     Some((new_value, ref cycle)) => {
                         for tx in waiting.into_inner() {
-                            tx.send(WaitResult {
+                            tx.unbounded_send(WaitResult {
                                 value: new_value.clone(),
                                 cycle: cycle.clone(),
                             })
@@ -736,7 +735,7 @@ where
         last_changed <= self.verified_at
     }
 
-    fn validate_memoized_value(
+    async fn validate_memoized_value(
         &mut self,
         db: &DB,
         revision_now: Revision,
@@ -778,10 +777,13 @@ where
             // are only interested in finding out whether the
             // input changed *again*.
             MemoInputs::Tracked { inputs } => {
-                let changed_input = inputs
-                    .iter()
+                let f = stream::iter(inputs
+                    .iter())
                     .filter(|input| input.maybe_changed_since(db, verified_at))
-                    .next();
+                    ;
+                futures::pin_mut!(f);
+                let changed_input = f.next()
+                    .await;
 
                 if let Some(input) = changed_input {
                     debug!(
@@ -858,7 +860,7 @@ where
 // MP>` is `Send + Sync + 'static`, assuming `Q::Key` and `Q::Value`
 // are. We assert this with the `check_send_sync` and `check_static`
 // functions below.
-#[async_trait::async_trait]
+#[async_trait::async_trait(?Send)]
 unsafe impl<DB, Q, MP> DatabaseSlot<DB> for Slot<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
@@ -898,12 +900,12 @@ where
                     self, other_id,
                 );
                 match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
-                    Ok(rx) => {
+                    Ok(mut rx) => {
                         // Release our lock on `self.map`, so other thread
                         // can complete.
                         std::mem::drop(state);
 
-                        let result = rx.recv().await.unwrap_or_else(|_| db.on_propagated_panic());
+                        let result = rx.next().await.unwrap_or_else(|| db.on_propagated_panic());
                         return !result.cycle.is_empty() || result.value.changed_at > revision;
                     }
 
@@ -984,11 +986,12 @@ where
                     std::mem::drop(state);
 
                     // Iterate the inputs and see if any have maybe changed.
-                    maybe_changed = futures::stream::iter(inputs
+                    let f = futures::stream::iter(inputs
                         .iter())
                         .filter(|input| input.maybe_changed_since(db, revision))
-                        .inspect(|input| debug!("{:?}: input `{:?}` may have changed", self, input))
-                        .next()
+                        .inspect(|input| debug!("{:?}: input `{:?}` may have changed", self, input));
+                    futures::pin_mut!(f);
+                    maybe_changed = f.next()
                         .await
                         .is_some();
                 }

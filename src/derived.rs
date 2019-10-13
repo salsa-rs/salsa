@@ -8,17 +8,14 @@ use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::StampedValue;
-use crate::{CycleError, Database, SweepStrategy, Sender};
+use crate::{CycleError, Database, SweepStrategy};
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use std::marker::PhantomData;
-use std::sync::mpsc;
 use std::sync::Arc;
 
 mod slot;
 use slot::Slot;
-
-pub use slot::WaitResult;
 
 /// Memoized queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when

@@ -69,12 +69,13 @@ where
     }
 }
 
+#[async_trait::async_trait(?Send)]
 impl<DB, Q> QueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    async fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self
             .slot(key)
             .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
@@ -201,12 +202,13 @@ where
 // key/value is Send + Sync (also, that we introduce no
 // references). These are tested by the `check_send_sync` and
 // `check_static` helpers below.
+#[async_trait::async_trait(?Send)]
 unsafe impl<DB, Q> DatabaseSlot<DB> for Slot<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
 {
-    fn maybe_changed_since(&self, _db: &DB, revision: Revision) -> bool {
+    async fn maybe_changed_since(&self, _db: &DB, revision: Revision) -> bool {
         debug!(
             "maybe_changed_since(slot={:?}, revision={:?})",
             self, revision,
