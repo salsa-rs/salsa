@@ -9,10 +9,11 @@ use std::sync::Arc;
 ///
 /// - If `DB::DatabaseData: Send + Sync`, then `Self: Send + Sync`
 /// - If `DB: 'static` and `DB::DatabaseData: 'static`, then `Self: 'static`
+#[async_trait::async_trait]
 pub(crate) unsafe trait DatabaseSlot<DB: Database>: Debug {
     /// Returns true if the value of this query may have changed since
     /// the given revision.
-    fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool;
+    async fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool;
 }
 
 pub(crate) struct Dependency<DB: Database> {
@@ -32,8 +33,8 @@ impl<DB: Database> Dependency<DB> {
         }
     }
 
-    pub(crate) fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
-        self.slot.maybe_changed_since(db, revision)
+    pub(crate) async fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
+        self.slot.maybe_changed_since(db, revision).await
     }
 }
 

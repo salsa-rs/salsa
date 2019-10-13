@@ -8,14 +8,17 @@ use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::StampedValue;
-use crate::{CycleError, Database, SweepStrategy};
+use crate::{CycleError, Database, SweepStrategy, Sender};
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use std::marker::PhantomData;
+use std::sync::mpsc;
 use std::sync::Arc;
 
 mod slot;
 use slot::Slot;
+
+pub use slot::WaitResult;
 
 /// Memoized queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
@@ -125,19 +128,20 @@ where
     }
 }
 
+#[async_trait::async_trait(?Send)]
 impl<DB, Q, MP> QueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    async fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.slot(key);
         let StampedValue {
             value,
             durability,
             changed_at,
-        } = slot.read(db)?;
+        } = slot.read(db).await?;
 
         if let Some(evicted) = self.lru_list.record_use(&slot) {
             evicted.evict();

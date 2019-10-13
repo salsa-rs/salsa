@@ -1,6 +1,5 @@
 #![warn(rust_2018_idioms)]
 #![warn(missing_docs)]
-#![feature(async_await, await_macro)]
 
 //! The salsa crate is a crate for incremental recomputation.  It
 //! permits you to define a "database" of queries with both inputs and
@@ -25,6 +24,7 @@ pub mod debug;
 #[doc(hidden)]
 pub mod plumbing;
 
+use crate::derived::WaitResult;
 use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
@@ -43,12 +43,88 @@ pub use crate::interned::InternKey;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
 
+#[doc(hidden)]
+pub trait Receiver<T>: Sized {
+    fn recv(self) -> BoxFutureLocal<'static, Result<T, ()>>;
+}
+
+impl<T> Receiver<T> for std::sync::mpsc::Receiver<T>
+where
+    T: 'static,
+{
+    fn recv(self) -> BoxFutureLocal<'static, Result<T, ()>> {
+        Box::pin(futures::future::ready(
+            std::sync::mpsc::Receiver::recv(&self).map_err(|_| ()),
+        ))
+    }
+}
+
+impl<T> Receiver<T> for futures::channel::oneshot::Receiver<T>
+where
+    T: 'static,
+{
+    fn recv(self) -> BoxFutureLocal<'static, Result<T, ()>> {
+        Box::pin(self.map_err(|_| ()))
+    }
+}
+
+#[doc(hidden)]
+pub trait Sender<T>: Sized {
+    fn send(self, value: T);
+}
+
+impl<T> Sender<T> for std::sync::mpsc::Sender<T>
+where
+    T: 'static,
+{
+    fn send(self, value: T) {
+        std::sync::mpsc::Sender::send(&self, value).unwrap()
+    }
+}
+
+impl<T> Sender<T> for futures::channel::oneshot::Sender<T>
+where
+    T: 'static,
+{
+    fn send(self, value: T) {
+        futures::channel::oneshot::Sender::send(self, value)
+            .ok()
+            .unwrap()
+    }
+}
+
+#[doc(hidden)]
+pub trait Channel<DB: Database>: Send + Sync {
+    type Receiver: Receiver<WaitResult<DB::DatabaseKey, DB::DatabaseKey>>;
+    type Sender: Sender<WaitResult<DB::DatabaseKey, DB::DatabaseKey>>;
+    fn channel() -> (Self::Sender, Self::Receiver);
+}
+
+struct SyncChannel;
+impl<DB: Database> Channel<DB> for SyncChannel {
+    type Receiver = std::sync::mpsc::Receiver<WaitResult<(), ()>>;
+    type Sender = std::sync::mpsc::Sender<()>;
+    fn channel() -> (Self::Sender, Self::Receiver) {
+        std::sync::mpsc::channel()
+    }
+}
+
+struct AsyncChannel;
+impl<DB: Database> Channel<DB> for AsyncChannel {
+    type Receiver = futures::channel::mpsc::Receiver<()>;
+    type Sender = futures::channel::mpsc::Sender<()>;
+    fn channel() -> (Self::Sender, Self::Receiver) {
+        futures::channel::oneshot::channel()
+    }
+}
+
 pub type BoxFutureLocal<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + 'a>>;
 
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
 pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
+    type Channel: Channel<Self>;
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &Runtime<Self>;
 

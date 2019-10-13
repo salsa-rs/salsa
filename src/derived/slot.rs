@@ -14,15 +14,18 @@ use crate::runtime::FxIndexSet;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
-use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy};
+use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy, Channel, Sender, Receiver};
+use futures::prelude::*;
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::RwLock;
 use smallvec::SmallVec;
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc;
 use std::sync::Arc;
+
+
 
 pub(super) struct Slot<DB, Q, MP>
 where
@@ -37,7 +40,7 @@ where
 }
 
 #[derive(Clone)]
-struct WaitResult<V, K> {
+pub struct WaitResult<V, K> {
     value: StampedValue<V>,
     cycle: Vec<K>,
 }
@@ -55,7 +58,7 @@ where
     /// indeeds a cycle.
     InProgress {
         id: RuntimeId,
-        waiting: Mutex<SmallVec<[Sender<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
+        waiting: Mutex<SmallVec<[<DB::Channel as Channel<DB>>::Sender; 2]>>,
     },
 
     /// We have computed the query already, and here is the result.
@@ -125,7 +128,7 @@ where
         <DB as GetQueryTable<Q>>::database_key(db, self.key.clone())
     }
 
-    pub(super) fn read(
+    pub(super) async fn read(
         &self,
         db: &DB,
     ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
@@ -141,19 +144,19 @@ where
         info!("{:?}: invoked at {:?}", self, revision_now,);
 
         // First, do a check with a read-lock.
-        match self.probe(db, self.state.read(), runtime, revision_now) {
+        match self.probe(db, self.state.read(), runtime, revision_now).await {
             ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(_guard) => (),
         }
 
-        self.read_upgrade(db, revision_now)
+        self.read_upgrade(db, revision_now).await
     }
 
     /// Second phase of a read operation: acquires an upgradable-read
     /// and -- if needed -- validates whether inputs have changed,
     /// recomputes value, etc. This is invoked after our initial probe
     /// shows a potentially out of date value.
-    fn read_upgrade(
+    async fn read_upgrade(
         &self,
         db: &DB,
         revision_now: Revision,
@@ -169,7 +172,7 @@ where
         // FIXME(Amanieu/parking_lot#101) -- we are using a write-lock
         // and not an upgradable read here because upgradable reads
         // can sometimes encounter deadlocks.
-        let old_memo = match self.probe(db, self.state.write(), runtime, revision_now) {
+        let old_memo = match self.probe(db, self.state.write(), runtime, revision_now).await {
             ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(mut state) => {
                 match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
@@ -218,7 +221,7 @@ where
             info!("{:?}: executing query", self);
 
             Q::execute(db, self.key.clone())
-        });
+        }).await;
 
         if !result.cycle.is_empty() {
             result.value = match Q::recover(db, &result.cycle, &self.key) {
@@ -334,7 +337,7 @@ where
     ///
     /// Note that in all cases **except** for `StaleOrAbsent`, the lock on
     /// `map` will have been released.
-    fn probe<StateGuard>(
+    async fn probe<StateGuard>(
         &self,
         db: &DB,
         state: StateGuard,
@@ -363,7 +366,7 @@ where
                             },
                         });
 
-                        let result = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
+                        let result = rx.recv().await.unwrap_or_else(|_| db.on_propagated_panic());
                         ProbeState::UpToDate(if result.cycle.is_empty() {
                             Ok(result.value)
                         } else {
@@ -555,8 +558,8 @@ where
         db: &DB,
         runtime: &Runtime<DB>,
         other_id: RuntimeId,
-        waiting: &Mutex<SmallVec<[Sender<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
-    ) -> Result<Receiver<WaitResult<Q::Value, DB::DatabaseKey>>, CycleDetected> {
+        waiting: &Mutex<SmallVec<[<DB::Channel as Channel<DB>>::Sender; 2]>>,
+    ) -> Result<<DB::Channel as Channel<DB>>::Receiver, CycleDetected> {
         let id = runtime.id();
         if other_id == id {
             return Err(CycleDetected { from: id, to: id });
@@ -855,13 +858,14 @@ where
 // MP>` is `Send + Sync + 'static`, assuming `Q::Key` and `Q::Value`
 // are. We assert this with the `check_send_sync` and `check_static`
 // functions below.
+#[async_trait::async_trait]
 unsafe impl<DB, Q, MP> DatabaseSlot<DB> for Slot<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
+    async fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
         let runtime = db.salsa_runtime();
         let revision_now = runtime.current_revision();
 
@@ -899,7 +903,7 @@ where
                         // can complete.
                         std::mem::drop(state);
 
-                        let result = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
+                        let result = rx.recv().await.unwrap_or_else(|_| db.on_propagated_panic());
                         return !result.cycle.is_empty() || result.value.changed_at > revision;
                     }
 
@@ -958,7 +962,7 @@ where
                     assert!(inputs.len() > 0);
                     if memo.value.is_some() {
                         std::mem::drop(state);
-                        return match self.read_upgrade(db, revision_now) {
+                        return match self.read_upgrade(db, revision_now).await {
                             Ok(v) => {
                                 debug!(
                                 "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
@@ -980,11 +984,12 @@ where
                     std::mem::drop(state);
 
                     // Iterate the inputs and see if any have maybe changed.
-                    maybe_changed = inputs
-                        .iter()
+                    maybe_changed = futures::stream::iter(inputs
+                        .iter())
                         .filter(|input| input.maybe_changed_since(db, revision))
                         .inspect(|input| debug!("{:?}: input `{:?}` may have changed", self, input))
                         .next()
+                        .await
                         .is_some();
                 }
             }

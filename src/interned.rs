@@ -1,4 +1,3 @@
-use crate::BoxFutureLocal;
 use crate::debug::TableEntry;
 use crate::dependency::DatabaseSlot;
 use crate::durability::Durability;
@@ -7,6 +6,7 @@ use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
+use crate::BoxFutureLocal;
 use crate::Query;
 use crate::{CycleError, Database, DiscardIf, SweepStrategy};
 use crossbeam::atomic::AtomicCell;
@@ -99,16 +99,16 @@ struct Slot<K> {
     index: InternId,
 
     /// Value that was interned.
-        value: K,
+    value: K,
 
-        /// When was this intern'd?
-        ///
-        /// (This informs the "changed-at" result)
-        interned_at: Revision,
+    /// When was this intern'd?
+    ///
+    /// (This informs the "changed-at" result)
+    interned_at: Revision,
 
     /// When was it accessed? Equal to `None` if this slot has
     /// been garbage collected.
-        ///
+    ///
     /// This has a subtle interaction with the garbage
     /// collector. First, we will never GC anything accessed in the
     /// current revision.
@@ -261,8 +261,8 @@ where
         let create_slot = |index: InternId| {
             Arc::new(Slot {
                 index,
-                    value: owned_key2,
-                    interned_at: revision_now,
+                value: owned_key2,
+                interned_at: revision_now,
                 accessed_at: AtomicCell::new(Some(revision_now)),
             })
         };
@@ -299,20 +299,20 @@ where
         entry.insert(index);
 
         slot
-        }
+    }
 
     fn intern_check(&self, db: &DB, key: &Q::Key) -> Option<Arc<Slot<Q::Key>>> {
         let revision_now = db.salsa_runtime().current_revision();
         let slot = self.tables.read().slot_for_key(key, revision_now)?;
         Some(slot)
-                    }
+    }
 
     /// Given an index, lookup and clone its value, updating the
     /// `accessed_at` time if necessary.
     fn lookup_value(&self, db: &DB, index: InternId) -> Arc<Slot<Q::Key>> {
         let revision_now = db.salsa_runtime().current_revision();
         self.tables.read().slot_for_index(index, revision_now)
-                    }
+    }
 }
 
 impl<DB, Q> QueryStorageOps<DB, Q> for InternedStorage<DB, Q>
@@ -434,7 +434,6 @@ where
 
     fn durability(&self, _db: &DB, _key: &Q::Key) -> Durability {
         INTERN_DURABILITY
-        })
     }
 
     fn entries<C>(&self, db: &DB) -> C

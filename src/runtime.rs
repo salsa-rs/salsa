@@ -9,6 +9,7 @@ use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
+use futures::prelude::*;
 use std::hash::{BuildHasherDefault, Hash};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -352,7 +353,7 @@ where
         let active_query = self.local_state.push_query(database_key, max_durability);
 
         // Execute user's code, accumulating inputs etc.
-        let value = await!(execute());
+        let value = execute().await;
 
         // Extract accumulated inputs.
         let ActiveQuery {

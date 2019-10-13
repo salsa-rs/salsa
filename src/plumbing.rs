@@ -144,6 +144,7 @@ where
     fn database_key(group_key: G::GroupKey) -> Self::DatabaseKey;
 }
 
+#[async_trait::async_trait(?Send)]
 pub trait QueryStorageOps<DB, Q>: Default
 where
     Self: QueryStorageMassOps<DB>,
@@ -157,7 +158,7 @@ where
     /// Returns `Err` in the event of a cycle, meaning that computing
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>>;
+    async fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>>;
 
     /// Returns the durability associated with a given key.
     fn durability(&self, db: &DB, key: &Q::Key) -> Durability;

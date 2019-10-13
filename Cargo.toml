@@ -9,8 +9,9 @@ description = "A generic framework for on-demand, incrementalized computation (e
 readme = "README.md"
 
 [dependencies]
+async-trait = "0.1"
 crossbeam = "0.7.1"
-futures-preview = "0.3.0-alpha.15"
+futures = { version = "0.3.0-alpha.19", package = "futures-preview" }
 indexmap = "1.0.1"
 log = "0.4.5"
 parking_lot = "0.10.0"
