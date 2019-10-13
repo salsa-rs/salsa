@@ -75,7 +75,11 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    async fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    async fn try_fetch(
+        &self,
+        db: &DB,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self
             .slot(key)
             .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));

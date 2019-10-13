@@ -321,7 +321,11 @@ where
     Q::Value: InternKey,
     DB: Database,
 {
-    async fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    async fn try_fetch(
+        &self,
+        db: &DB,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
         let index = slot.index;
@@ -421,7 +425,11 @@ where
     >,
     DB: Database + HasQueryGroup<Q::Group>,
 {
-    async fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    async fn try_fetch(
+        &self,
+        db: &DB,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let index = key.as_intern_id();
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(group_storage);

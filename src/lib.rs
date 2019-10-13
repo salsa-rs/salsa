@@ -42,7 +42,6 @@ pub use crate::interned::InternKey;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
 
-
 #[doc(hidden)]
 pub type BoxFutureLocal<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + 'a>>;
 
@@ -490,7 +489,9 @@ where
     /// queries (those with no inputs, or those with more than one
     /// input) the key will be a tuple.
     pub async fn get_async(&self, key: Q::Key) -> Q::Value {
-        self.try_get(key).await.unwrap_or_else(|err| panic!("{}", err))
+        self.try_get(key)
+            .await
+            .unwrap_or_else(|err| panic!("{}", err))
     }
 
     async fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {

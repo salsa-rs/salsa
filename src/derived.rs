@@ -132,7 +132,11 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    async fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    async fn try_fetch(
+        &self,
+        db: &DB,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.slot(key);
         let StampedValue {
             value,

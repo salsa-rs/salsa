@@ -189,12 +189,7 @@ struct QueryGroup {
 impl QueryGroup {
     /// The name of the query group trait.
     fn name(&self) -> Ident {
-        self.group_path
-            .segments
-            .last()
-            .unwrap()
-            .ident
-            .clone()
+        self.group_path.segments.last().unwrap().ident.clone()
     }
 }
 

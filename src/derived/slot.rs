@@ -15,7 +15,10 @@ use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy};
-use futures::{prelude::*, channel::mpsc::{self, UnboundedReceiver as Receiver, UnboundedSender as Sender}};
+use futures::{
+    channel::mpsc::{self, UnboundedReceiver as Receiver, UnboundedSender as Sender},
+    prelude::*,
+};
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::RwLock;
@@ -23,8 +26,6 @@ use smallvec::SmallVec;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
-
-
 
 pub(super) struct Slot<DB, Q, MP>
 where
@@ -143,7 +144,10 @@ where
         info!("{:?}: invoked at {:?}", self, revision_now,);
 
         // First, do a check with a read-lock.
-        match self.probe(db, self.state.read(), runtime, revision_now).await {
+        match self
+            .probe(db, self.state.read(), runtime, revision_now)
+            .await
+        {
             ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(_guard) => (),
         }
@@ -171,7 +175,10 @@ where
         // FIXME(Amanieu/parking_lot#101) -- we are using a write-lock
         // and not an upgradable read here because upgradable reads
         // can sometimes encounter deadlocks.
-        let old_memo = match self.probe(db, self.state.write(), runtime, revision_now).await {
+        let old_memo = match self
+            .probe(db, self.state.write(), runtime, revision_now)
+            .await
+        {
             ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(mut state) => {
                 match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
@@ -216,11 +223,13 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = runtime.execute_query_implementation(db, &database_key, || {
-            info!("{:?}: executing query", self);
+        let mut result = runtime
+            .execute_query_implementation(db, &database_key, || {
+                info!("{:?}: executing query", self);
 
-            Q::execute(db, self.key.clone())
-        }).await;
+                Q::execute(db, self.key.clone())
+            })
+            .await;
 
         if !result.cycle.is_empty() {
             result.value = match Q::recover(db, &result.cycle, &self.key) {
@@ -777,13 +786,10 @@ where
             // are only interested in finding out whether the
             // input changed *again*.
             MemoInputs::Tracked { inputs } => {
-                let f = stream::iter(inputs
-                    .iter())
-                    .filter(|input| input.maybe_changed_since(db, verified_at))
-                    ;
+                let f = stream::iter(inputs.iter())
+                    .filter(|input| input.maybe_changed_since(db, verified_at));
                 futures::pin_mut!(f);
-                let changed_input = f.next()
-                    .await;
+                let changed_input = f.next().await;
 
                 if let Some(input) = changed_input {
                     debug!(
@@ -986,14 +992,13 @@ where
                     std::mem::drop(state);
 
                     // Iterate the inputs and see if any have maybe changed.
-                    let f = futures::stream::iter(inputs
-                        .iter())
+                    let f = futures::stream::iter(inputs.iter())
                         .filter(|input| input.maybe_changed_since(db, revision))
-                        .inspect(|input| debug!("{:?}: input `{:?}` may have changed", self, input));
+                        .inspect(|input| {
+                            debug!("{:?}: input `{:?}` may have changed", self, input)
+                        });
                     futures::pin_mut!(f);
-                    maybe_changed = f.next()
-                        .await
-                        .is_some();
+                    maybe_changed = f.next().await.is_some();
                 }
             }
         }

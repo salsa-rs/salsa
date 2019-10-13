@@ -4,12 +4,12 @@ use crate::durability::Durability;
 use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
 use crate::{CycleError, Database, Event, EventKind, SweepStrategy};
+use futures::prelude::*;
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
-use futures::prelude::*;
 use std::hash::{BuildHasherDefault, Hash};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -177,7 +177,7 @@ where
     #[inline]
     pub(crate) fn current_revision(&self) -> Revision {
         self.shared_state.revisions[0].load()
-        }
+    }
 
     /// The revision in which values with durability `d` may have last
     /// changed.  For D0, this is just the current revision. But for
@@ -195,7 +195,7 @@ where
     #[inline]
     fn pending_revision(&self) -> Revision {
         self.shared_state.pending_revision.load()
-        }
+    }
 
     /// Check if the current revision is canceled. If this method ever
     /// returns true, the currently executing query is also marked as
@@ -436,7 +436,7 @@ where
             let start_index = query_stack
                 .iter()
                 .rposition(|active_query| active_query.database_key == *database_key)
-            .unwrap();
+                .unwrap();
             let mut cycle = Vec::new();
             let cycle_participants = &mut query_stack[start_index..];
             for active_query in &mut *cycle_participants {
@@ -447,13 +447,13 @@ where
 
             for active_query in cycle_participants {
                 active_query.cycle = cycle.clone();
-        }
+            }
 
             crate::CycleError {
                 cycle,
                 changed_at,
                 durability: Durability::MAX,
-    }
+            }
         } else {
             // Part of the cycle is on another thread so we need to lock and inspect the shared
             // state
@@ -618,7 +618,7 @@ where
 impl<DB: Database> Default for SharedState<DB> {
     fn default() -> Self {
         Self::with_durabilities(Durability::LEN)
-        }
+    }
 }
 
 impl<DB> std::fmt::Debug for SharedState<DB>
