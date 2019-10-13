@@ -1,8 +1,8 @@
 #![allow(missing_docs)]
 
 use crate::debug::TableEntry;
-use crate::BoxFutureLocal;
 use crate::durability::Durability;
+use crate::BoxFutureLocal;
 use crate::CycleError;
 use crate::Database;
 use crate::Query;
@@ -158,7 +158,11 @@ where
     /// Returns `Err` in the event of a cycle, meaning that computing
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
-    async fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>>;
+    async fn try_fetch(
+        &self,
+        db: &DB,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>>;
 
     /// Returns the durability associated with a given key.
     fn durability(&self, db: &DB, key: &Q::Key) -> Durability;
@@ -207,25 +211,30 @@ pub(crate) fn sync_future<F>(mut f: F) -> F::Output
 where
     F: Future,
 {
-    use std::{pin::Pin, sync::{Condvar, Mutex, Arc}};
+    use std::{
+        pin::Pin,
+        sync::{Condvar, Mutex},
+    };
 
     use futures::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
     unsafe {
         type WakerState = Condvar;
 
-        static VTABLE: RawWakerVTable =
-            RawWakerVTable::new(
-                |p| RawWaker::new(p, &VTABLE),
-                |p| unsafe { Arc::from_raw(p as *const WakerState).notify_one(); },
-                |p| unsafe { (&*(p as *const WakerState)).notify_one(); },
-                |p| unsafe { Arc::from_raw(p as * const WakerState); }
-            )
-        ;
+        static VTABLE: RawWakerVTable = RawWakerVTable::new(
+            |p| RawWaker::new(p, &VTABLE),
+            |p| unsafe {
+                (&*(p as *const WakerState)).notify_one();
+            },
+            |p| unsafe {
+                (&*(p as *const WakerState)).notify_one();
+            },
+            |_| (),
+        );
 
-        let waker_state = Arc::new(Condvar::new());
+        let waker_state = WakerState::new();
         let waker = Waker::from_raw(RawWaker::new(
-            Arc::into_raw(waker_state.clone()) as *const (),
+            &waker_state as *const WakerState as *const (),
             &VTABLE,
         ));
         let mut context = Context::from_waker(&waker);
