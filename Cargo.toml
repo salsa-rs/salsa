@@ -22,6 +22,7 @@ rand = { version = "0.7", features = [ "small_rng" ] }
 salsa-macros = { version = "0.14.1", path = "components/salsa-macros" }
 
 [dev-dependencies]
+futures = { version = "0.3.0-alpha.19", package = "futures-preview", features = ["async-await"] }
 rand_distr = "0.2.1"
 diff = "0.1.0"
 env_logger = "0.5.13"

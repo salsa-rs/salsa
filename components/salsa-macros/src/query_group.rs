@@ -146,6 +146,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     let lookup_keys = vec![value.clone()];
                     Some(Query {
                         query_type: lookup_query_type,
+                        is_async: method.sig.asyncness.is_some(),
                         fn_name: lookup_fn_name,
                         attrs: vec![], // FIXME -- some automatically generated docs on this method?
                         storage: QueryStorage::InternedLookup {
@@ -162,6 +163,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
                 queries.push(Query {
                     query_type,
+                    is_async: method.sig.asyncness.is_some(),
                     fn_name: method.sig.ident,
                     attrs,
                     storage,
@@ -203,10 +205,17 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         let qt = &query.query_type;
         let attrs = &query.attrs;
 
-        query_fn_declarations.extend(quote! {
-            #(#attrs)*
-            fn #fn_name(&self, #(#key_names: #keys),*) -> #value;
-        });
+        if query.is_async {
+            query_fn_declarations.extend(quote! {
+                #(#attrs)*
+                fn #fn_name<'s>(&'s self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + 's>>;
+            });
+        } else {
+            query_fn_declarations.extend(quote! {
+                #(#attrs)*
+                fn #fn_name(&self, #(#key_names: #keys),*) -> #value;
+            });
+        }
 
         // Special case: transparent queries don't create actual storage,
         // just inline the definition
@@ -220,11 +229,21 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             continue;
         }
 
-        query_fn_definitions.extend(quote! {
-            fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
-                <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get((#(#key_names),*))
-            }
-        });
+        if query.is_async {
+            query_fn_definitions.extend(quote! {
+                fn #fn_name<'s>(&'s self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + 's>> {
+                    Box::pin(async move {
+                        <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get_async((#(#key_names),*)).await
+                    })
+                }
+            });
+        } else {
+            query_fn_definitions.extend(quote! {
+                fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
+                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get((#(#key_names),*))
+                }
+            });
+        }
 
         // For input queries, we need `set_foo` etc
         if let QueryStorage::Input = query.storage {
@@ -428,6 +447,16 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 quote! {}
             };
 
+            let future = if query.is_async {
+                quote_spanned! {span=>
+                    #invoke(db, #(#key_names),*)
+                }
+            } else {
+                quote_spanned! {span=>
+                    salsa::futures::future::ready(#invoke(db, #(#key_names),*))
+                }
+            };
+
             output.extend(quote_spanned! {span=>
                 impl<DB> salsa::plumbing::QueryFunction<DB> for #qt
                 where
@@ -437,7 +466,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 {
                     fn execute<'a>(db: &'a DB, #key_pattern: <Self as salsa::Query<DB>>::Key)
                         -> salsa::BoxFutureLocal<'a, <Self as salsa::Query<DB>>::Value> {
-                        Box::pin(salsa::futures::future::ready(#invoke(db, #(#key_names),*)))
+                        Box::pin(#future)
                     }
 
                     #recover
@@ -562,6 +591,7 @@ fn filter_attrs(attrs: Vec<Attribute>) -> (Vec<Attribute>, Vec<SalsaAttr>) {
 struct Query {
     fn_name: Ident,
     attrs: Vec<syn::Attribute>,
+    is_async: bool,
     query_type: Ident,
     storage: QueryStorage,
     keys: Vec<syn::Type>,

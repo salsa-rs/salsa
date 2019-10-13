@@ -485,6 +485,14 @@ where
         crate::plumbing::sync_future(self.try_get(key)).unwrap_or_else(|err| panic!("{}", err))
     }
 
+    /// Execute the query on a given input. Usually it's easier to
+    /// invoke the trait method directly. Note that for variadic
+    /// queries (those with no inputs, or those with more than one
+    /// input) the key will be a tuple.
+    pub async fn get_async(&self, key: Q::Key) -> Q::Value {
+        self.try_get(key).await.unwrap_or_else(|err| panic!("{}", err))
+    }
+
     async fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         self.storage.try_fetch(self.db, &key).await
     }
