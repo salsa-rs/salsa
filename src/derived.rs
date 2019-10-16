@@ -134,7 +134,7 @@ where
 {
     async fn try_fetch(
         &self,
-        db: &DB,
+        db: &mut DB,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.slot(key);

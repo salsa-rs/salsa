@@ -130,24 +130,19 @@ where
 
     pub(super) async fn read(
         &self,
-        db: &DB,
+        db: &mut DB,
     ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
-        let runtime = db.salsa_runtime();
-
         // NB: We don't need to worry about people modifying the
         // revision out from under our feet. Either `db` is a frozen
         // database, in which case there is a lock, or the mutator
         // thread is the current thread, and it will be prevented from
         // doing any `set` invocations while the query function runs.
-        let revision_now = runtime.current_revision();
+        let revision_now = db.salsa_runtime().current_revision();
 
         info!("{:?}: invoked at {:?}", self, revision_now,);
 
         // First, do a check with a read-lock.
-        match self
-            .probe(db, self.state.read(), runtime, revision_now)
-            .await
-        {
+        match self.probe(db, self.state.read(), revision_now).await {
             ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(_guard) => (),
         }
@@ -161,11 +156,9 @@ where
     /// shows a potentially out of date value.
     async fn read_upgrade(
         &self,
-        db: &DB,
+        db: &mut DB,
         revision_now: Revision,
     ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
-        let runtime = db.salsa_runtime();
-
         debug!("{:?}: read_upgrade(revision_now={:?})", self, revision_now,);
 
         // Check with an upgradable read to see if there is a value
@@ -175,12 +168,10 @@ where
         // FIXME(Amanieu/parking_lot#101) -- we are using a write-lock
         // and not an upgradable read here because upgradable reads
         // can sometimes encounter deadlocks.
-        let old_memo = match self
-            .probe(db, self.state.write(), runtime, revision_now)
-            .await
-        {
+        let old_memo = match self.probe(db, self.state.write(), revision_now).await {
             ProbeState::UpToDate(v) => return v,
             ProbeState::StaleOrAbsent(mut state) => {
+                let runtime = db.salsa_runtime();
                 match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
                     QueryState::Memoized(old_memo) => Some(old_memo),
                     QueryState::InProgress { .. } => unreachable!(),
@@ -190,7 +181,8 @@ where
         };
 
         let database_key = self.database_key(db);
-        let mut panic_guard = PanicGuard::new(&database_key, self, old_memo, runtime);
+        let mut panic_guard = PanicGuard::new(&database_key, self, old_memo, db);
+        let db = &mut *panic_guard.db;
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
@@ -201,7 +193,7 @@ where
                 info!("{:?}: validated old memoized value", self,);
 
                 db.salsa_event(|| Event {
-                    runtime_id: runtime.id(),
+                    runtime_id: db.salsa_runtime().id(),
                     kind: EventKind::DidValidateMemoizedValue {
                         database_key: database_key.clone(),
                     },
@@ -223,13 +215,12 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = runtime
-            .execute_query_implementation(db, &database_key, || {
-                info!("{:?}: executing query", self);
+        let mut result = Runtime::execute_query_implementation(db, &database_key, |db| {
+            info!("{:?}: executing query", self);
 
-                Q::execute(db, self.key.clone())
-            })
-            .await;
+            Q::execute(db, self.key.clone())
+        })
+        .await;
 
         if !result.cycle.is_empty() {
             result.value = match Q::recover(db, &result.cycle, &self.key) {
@@ -245,6 +236,7 @@ where
                 }
             };
         }
+        let runtime = db.salsa_runtime();
 
         // We assume that query is side-effect free -- that is, does
         // not mutate the "inputs" to the query system. Sanity check
@@ -347,14 +339,14 @@ where
     /// `map` will have been released.
     async fn probe<StateGuard>(
         &self,
-        db: &DB,
+        db: &mut DB,
         state: StateGuard,
-        runtime: &Runtime<DB>,
         revision_now: Revision,
     ) -> ProbeState<StampedValue<Q::Value>, DB::DatabaseKey, StateGuard>
     where
         StateGuard: Deref<Target = QueryState<DB, Q>>,
     {
+        let runtime = db.salsa_runtime();
         match &*state {
             QueryState::NotComputed => { /* fall through */ }
 
@@ -616,7 +608,7 @@ where
     database_key: &'me DB::DatabaseKey,
     slot: &'me Slot<DB, Q, MP>,
     memo: Option<Memo<DB, Q>>,
-    runtime: &'me Runtime<DB>,
+    db: &'me mut DB,
 }
 
 impl<'me, DB, Q, MP> PanicGuard<'me, DB, Q, MP>
@@ -629,13 +621,13 @@ where
         database_key: &'me DB::DatabaseKey,
         slot: &'me Slot<DB, Q, MP>,
         memo: Option<Memo<DB, Q>>,
-        runtime: &'me Runtime<DB>,
+        db: &'me mut DB,
     ) -> Self {
         Self {
             database_key,
             slot,
             memo,
-            runtime,
+            db,
         }
     }
 
@@ -674,9 +666,10 @@ where
 
         match old_value {
             QueryState::InProgress { id, waiting } => {
-                assert_eq!(id, self.runtime.id());
+                assert_eq!(id, self.db.salsa_runtime().id());
 
-                self.runtime
+                self.db
+                    .salsa_runtime()
                     .unblock_queries_blocked_on_self(&self.database_key);
 
                 match new_value {
@@ -746,7 +739,7 @@ where
 
     async fn validate_memoized_value(
         &mut self,
-        db: &DB,
+        db: &mut DB,
         revision_now: Revision,
     ) -> Option<StampedValue<Q::Value>> {
         // If we don't have a memoized value, nothing to validate.
@@ -786,10 +779,13 @@ where
             // are only interested in finding out whether the
             // input changed *again*.
             MemoInputs::Tracked { inputs } => {
-                let f = stream::iter(inputs.iter())
-                    .filter(|input| input.maybe_changed_since(db, verified_at));
-                futures::pin_mut!(f);
-                let changed_input = f.next().await;
+                let mut changed_input = None;
+                for input in inputs.iter() {
+                    if input.maybe_changed_since(db, verified_at).await {
+                        changed_input = Some(input);
+                        break;
+                    }
+                }
 
                 if let Some(input) = changed_input {
                     debug!(
@@ -873,7 +869,7 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    async fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
+    async fn maybe_changed_since(&self, db: &mut DB, revision: Revision) -> bool {
         let runtime = db.salsa_runtime();
         let revision_now = runtime.current_revision();
 
@@ -992,13 +988,14 @@ where
                     std::mem::drop(state);
 
                     // Iterate the inputs and see if any have maybe changed.
-                    let f = futures::stream::iter(inputs.iter())
-                        .filter(|input| input.maybe_changed_since(db, revision))
-                        .inspect(|input| {
-                            debug!("{:?}: input `{:?}` may have changed", self, input)
-                        });
-                    futures::pin_mut!(f);
-                    maybe_changed = f.next().await.is_some();
+                    let mut changed = false;
+                    for input in inputs.iter() {
+                        if input.maybe_changed_since(db, revision).await {
+                            changed = true;
+                            break;
+                        }
+                    }
+                    maybe_changed = changed;
                 }
             }
         }

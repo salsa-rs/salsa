@@ -4,7 +4,7 @@ use crate::durability::Durability;
 use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
 use crate::{CycleError, Database, Event, EventKind, SweepStrategy};
-use futures::prelude::*;
+use futures::{future::BoxFuture, prelude::*};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
@@ -330,15 +330,11 @@ where
         self.revision_guard.is_none() && !self.local_state.query_in_progress()
     }
 
-    pub(crate) async fn execute_query_implementation<'a, V>(
-        &'a self,
-        db: &'a DB,
-        database_key: &'a DB::DatabaseKey,
-        execute: impl FnOnce() -> V,
-    ) -> ComputedQueryResult<DB, V::Output>
-    where
-        V: Future,
-    {
+    pub(crate) async fn execute_query_implementation<V>(
+        db: &mut DB,
+        database_key: &DB::DatabaseKey,
+        execute: impl for<'a> FnOnce(&'a mut DB) -> crate::BoxFutureLocal<'a, V>,
+    ) -> ComputedQueryResult<DB, V> {
         debug!("{:?}: execute_query_implementation invoked", database_key);
 
         db.salsa_event(|| Event {
@@ -350,10 +346,10 @@ where
 
         // Push the active query onto the stack.
         let max_durability = Durability::MAX;
-        let active_query = self.local_state.push_query(database_key, max_durability);
+        let active_query = LocalState::push_query(db, database_key, max_durability);
 
         // Execute user's code, accumulating inputs etc.
-        let value = execute().await;
+        let value = execute(active_query.db).await;
 
         // Extract accumulated inputs.
         let ActiveQuery {

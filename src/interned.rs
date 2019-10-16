@@ -323,13 +323,13 @@ where
 {
     async fn try_fetch(
         &self,
-        db: &DB,
+        db: &mut DB,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
         let index = slot.index;
-        db.salsa_runtime()
+        db.salsa_runtime_mut()
             .report_query_read(slot, INTERN_DURABILITY, changed_at);
         Ok(<Q::Value>::from_intern_id(index))
     }
@@ -427,7 +427,7 @@ where
 {
     async fn try_fetch(
         &self,
-        db: &DB,
+        db: &mut DB,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let index = key.as_intern_id();
@@ -436,7 +436,7 @@ where
         let slot = interned_storage.lookup_value(db, index);
         let value = slot.value.clone();
         let interned_at = slot.interned_at;
-        db.salsa_runtime()
+        db.salsa_runtime_mut()
             .report_query_read(slot, INTERN_DURABILITY, interned_at);
         Ok(value)
     }
@@ -543,7 +543,7 @@ where
     DB: Database,
     K: Debug,
 {
-    async fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
+    async fn maybe_changed_since(&self, db: &mut DB, revision: Revision) -> bool {
         let revision_now = db.salsa_runtime().current_revision();
         if !self.try_update_accessed_at(revision_now) {
             // if we failed to update accessed-at, then this slot was garbage collected

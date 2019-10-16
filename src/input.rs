@@ -77,7 +77,7 @@ where
 {
     async fn try_fetch(
         &self,
-        db: &DB,
+        db: &mut DB,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self
@@ -90,7 +90,7 @@ where
             changed_at,
         } = slot.stamped_value.read().clone();
 
-        db.salsa_runtime()
+        db.salsa_runtime_mut()
             .report_query_read(slot, durability, changed_at);
 
         Ok(value)
@@ -212,7 +212,7 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    async fn maybe_changed_since(&self, _db: &DB, revision: Revision) -> bool {
+    async fn maybe_changed_since(&self, _db: &mut DB, revision: Revision) -> bool {
         debug!(
             "maybe_changed_since(slot={:?}, revision={:?})",
             self, revision,

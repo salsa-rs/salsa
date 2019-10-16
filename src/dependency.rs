@@ -13,7 +13,7 @@ use std::sync::Arc;
 pub(crate) unsafe trait DatabaseSlot<DB: Database>: Debug {
     /// Returns true if the value of this query may have changed since
     /// the given revision.
-    async fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool;
+    async fn maybe_changed_since(&self, db: &mut DB, revision: Revision) -> bool;
 }
 
 pub(crate) struct Dependency<DB: Database> {
@@ -33,7 +33,7 @@ impl<DB: Database> Dependency<DB> {
         }
     }
 
-    pub(crate) async fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
+    pub(crate) async fn maybe_changed_since(&self, db: &mut DB, revision: Revision) -> bool {
         self.slot.maybe_changed_since(db, revision).await
     }
 }

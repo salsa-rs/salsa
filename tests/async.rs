@@ -19,10 +19,10 @@ trait AsyncTrait {
     #[salsa::input]
     fn input(&self, x: String) -> u32;
 
-    async fn output(&self, x: String) -> u32;
+    async fn output(&mut self, x: String) -> u32;
 }
 
-async fn output(db: &impl AsyncTrait, x: String) -> u32 {
+async fn output(db: &mut impl AsyncTrait, x: String) -> u32 {
     if x == "a" {
         let (b, c) = futures::join!(db.output("b".into()), db.output("c".into()));
         b + c
@@ -37,4 +37,15 @@ fn basic() {
     query.set_input("b".into(), 2);
     query.set_input("c".into(), 3);
     assert_eq!(futures::executor::block_on(query.output("a".into())), 2 + 3);
+}
+
+fn assert_send<T: Send>(t: T) -> T {
+    t
+}
+
+async fn function(_: &mut AsyncDatabase) {}
+
+#[test]
+fn test_send() {
+    assert_send(function(&mut AsyncDatabase::default()));
 }

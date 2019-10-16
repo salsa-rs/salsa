@@ -28,17 +28,17 @@ impl<DB: Database> Default for LocalState<DB> {
 }
 
 impl<DB: Database> LocalState<DB> {
-    pub(super) fn push_query(
-        &self,
+    pub(super) fn push_query<'db>(
+        db: &'db mut DB,
         database_key: &DB::DatabaseKey,
         max_durability: Durability,
-    ) -> ActiveQueryGuard<'_, DB> {
-        let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push(ActiveQuery::new(database_key.clone(), max_durability));
-        ActiveQueryGuard {
-            local_state: self,
-            push_len: query_stack.len(),
-        }
+    ) -> ActiveQueryGuard<'db, DB> {
+        let push_len = {
+            let mut query_stack = db.salsa_runtime().local_state.query_stack.borrow_mut();
+            query_stack.push(ActiveQuery::new(database_key.clone(), max_durability));
+            query_stack.len()
+        };
+        ActiveQueryGuard { db, push_len }
     }
 
     /// Returns a reference to the active query stack.
@@ -102,7 +102,7 @@ impl<DB> std::panic::RefUnwindSafe for LocalState<DB> where DB: Database {}
 /// the query from the stack -- in the case of unwinding, the guard's
 /// destructor will also remove the query.
 pub(super) struct ActiveQueryGuard<'me, DB: Database> {
-    local_state: &'me LocalState<DB>,
+    pub(super) db: &'me mut DB,
     push_len: usize,
 }
 
@@ -111,7 +111,7 @@ where
     DB: Database,
 {
     fn pop_helper(&self) -> ActiveQuery<DB> {
-        let mut query_stack = self.local_state.query_stack.borrow_mut();
+        let mut query_stack = self.db.salsa_runtime().local_state.query_stack.borrow_mut();
 
         // Sanity check: pushes and pops should be balanced.
         assert_eq!(query_stack.len(), self.push_len);
