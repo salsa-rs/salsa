@@ -334,6 +334,10 @@ where
         Ok(<Q::Value>::from_intern_id(index))
     }
 
+    fn peek(&self, _db: &DB, _key: &Q::Key) -> Option<Q::Value> {
+        None // TODO ?
+    }
+
     fn durability(&self, _db: &DB, _key: &Q::Key) -> Durability {
         INTERN_DURABILITY
     }
@@ -439,6 +443,10 @@ where
         db.salsa_runtime_mut()
             .report_query_read(slot, INTERN_DURABILITY, interned_at);
         Ok(value)
+    }
+
+    fn peek(&self, _db: &DB, _key: &Q::Key) -> Option<Q::Value> {
+        None // TODO ?
     }
 
     fn durability(&self, _db: &DB, _key: &Q::Key) -> Durability {

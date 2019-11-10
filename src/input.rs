@@ -96,6 +96,14 @@ where
         Ok(value)
     }
 
+    fn peek(&self, db: &DB, key: &Q::Key) -> Option<Q::Value> {
+        let slot = self.slot(key)?;
+
+        let StampedValue { value, .. } = slot.stamped_value.read().clone();
+
+        Some(value)
+    }
+
     fn durability(&self, _db: &DB, key: &Q::Key) -> Durability {
         match self.slot(key) {
             Some(slot) => slot.stamped_value.read().durability,

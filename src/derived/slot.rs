@@ -128,6 +128,37 @@ where
         <DB as GetQueryTable<Q>>::database_key(db, self.key.clone())
     }
 
+    pub(super) fn peek(&self, db: &DB) -> Option<StampedValue<Q::Value>> {
+        // NB: We don't need to worry about people modifying the
+        // revision out from under our feet. Either `db` is a frozen
+        // database, in which case there is a lock, or the mutator
+        // thread is the current thread, and it will be prevented from
+        // doing any `set` invocations while the query function runs.
+        let revision_now = db.salsa_runtime().current_revision();
+
+        info!("{:?}: invoked at {:?}", self, revision_now,);
+
+        if let QueryState::Memoized(memo) = &*self.state.read() {
+            if let Some(value) = &memo.value {
+                if memo.verified_at == revision_now {
+                    let value = StampedValue {
+                        durability: memo.durability,
+                        changed_at: memo.changed_at,
+                        value: value.clone(),
+                    };
+
+                    info!(
+                        "{:?}: returning memoized value changed at {:?}",
+                        self, value.changed_at
+                    );
+
+                    return Some(value);
+                }
+            }
+        }
+        None
+    }
+
     pub(super) async fn read(
         &self,
         db: &mut DB,

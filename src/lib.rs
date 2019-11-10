@@ -72,7 +72,7 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// it's more common to use the trait method on the database
     /// itself.
     #[allow(unused_variables)]
-    fn query<Q>(&mut self, query: Q) -> QueryTable<'_, Self, Q>
+    fn query<Q>(&self, query: Q) -> QueryTable<'_, Self, Q>
     where
         Q: Query<Self>,
         Self: plumbing::GetQueryTable<Q>,
@@ -482,6 +482,10 @@ where
     /// input) the key will be a tuple.
     pub fn get(&self, key: Q::Key) -> Q::Value {
         self.try_get(key).unwrap_or_else(|err| panic!("{}", err))
+    }
+
+    pub fn peek(&self, key: &Q::Key) -> Option<Q::Value> {
+        self.storage.peek(self.db, key)
     }
 
     fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {

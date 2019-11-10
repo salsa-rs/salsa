@@ -164,6 +164,8 @@ where
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DB::DatabaseKey>>;
 
+    fn peek(&self, db: &DB, key: &Q::Key) -> Option<Q::Value>;
+
     /// Returns the durability associated with a given key.
     fn durability(&self, db: &DB, key: &Q::Key) -> Durability;
 

@@ -154,6 +154,10 @@ where
         Ok(value)
     }
 
+    fn peek(&self, db: &DB, key: &Q::Key) -> Option<Q::Value> {
+        self.slot(key).peek(db).map(|v| v.value)
+    }
+
     fn durability(&self, db: &DB, key: &Q::Key) -> Durability {
         self.slot(key).durability(db)
     }
