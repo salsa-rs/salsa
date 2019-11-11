@@ -26,7 +26,7 @@ use local_state::LocalState;
 /// `Runtime::default`) will have an independent set of query storage
 /// associated with it. Normally, therefore, you only do this once, at
 /// the start of your application.
-pub struct Runtime<DB: Database> {
+pub struct Runtime<'parent, DB: Database> {
     /// Our unique runtime id.
     id: RuntimeId,
 
@@ -38,11 +38,13 @@ pub struct Runtime<DB: Database> {
     /// Local state that is specific to this runtime (thread).
     local_state: LocalState<DB>,
 
+    parent: Option<&'parent Runtime<'parent, DB>>,
+
     /// Shared state that is accessible via all runtimes.
     shared_state: Arc<SharedState<DB>>,
 }
 
-impl<DB> Default for Runtime<DB>
+impl<DB> Default for Runtime<'_, DB>
 where
     DB: Database,
 {
@@ -52,11 +54,12 @@ where
             revision_guard: None,
             shared_state: Default::default(),
             local_state: Default::default(),
+            parent: None,
         }
     }
 }
 
-impl<DB> std::fmt::Debug for Runtime<DB>
+impl<DB> std::fmt::Debug for Runtime<'_, DB>
 where
     DB: Database,
 {
@@ -69,7 +72,7 @@ where
     }
 }
 
-impl<DB> Runtime<DB>
+impl<'parent, DB> Runtime<'parent, DB>
 where
     DB: Database,
 {
@@ -114,6 +117,28 @@ where
             revision_guard: Some(revision_guard),
             shared_state: self.shared_state.clone(),
             local_state: Default::default(),
+            parent: self.parent.clone(),
+        }
+    }
+
+    pub fn fork(&'parent self, from_db: &DB) -> Self {
+        assert!(
+            Arc::ptr_eq(&self.shared_state, &from_db.salsa_runtime().shared_state),
+            "invoked `snapshot` with a non-matching database"
+        );
+
+        let revision_guard = RevisionGuard::new(&self.shared_state);
+
+        let id = RuntimeId {
+            counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),
+        };
+
+        Runtime {
+            id,
+            revision_guard: Some(revision_guard),
+            shared_state: self.shared_state.clone(),
+            local_state: Default::default(),
+            parent: Some(self),
         }
     }
 
@@ -165,6 +190,15 @@ where
     #[inline]
     pub fn id(&self) -> RuntimeId {
         self.id
+    }
+
+    pub fn ids<'a>(&'a self) -> impl Iterator<Item = RuntimeId> + 'a {
+        let mut current = Some(self);
+        std::iter::from_fn(move || {
+            let runtime = current?;
+            current = runtime.parent;
+            Some(runtime.id)
+        })
     }
 
     /// Returns the database-key for the query that this thread is
@@ -297,7 +331,7 @@ where
     /// time.
     pub(crate) fn with_incremented_revision<R>(
         &mut self,
-        op: impl FnOnce(&DatabaseWriteLockGuard<'_, DB>) -> R,
+        op: impl FnOnce(&DatabaseWriteLockGuard<'_, '_, DB>) -> R,
     ) -> R {
         log::debug!("increment_revision()");
 
@@ -502,22 +536,31 @@ where
     /// Try to make this runtime blocked on `other_id`. Returns true
     /// upon success or false if `other_id` is already blocked on us.
     pub(crate) fn try_block_on(&self, database_key: &DB::DatabaseKey, other_id: RuntimeId) -> bool {
-        self.shared_state.dependency_graph.lock().add_edge(
-            self.id(),
-            database_key,
-            other_id,
-            self.local_state
-                .borrow_query_stack()
-                .iter()
-                .map(|query| query.database_key.clone()),
-        )
+        let mut graph = self.shared_state.dependency_graph.lock();
+
+        if self.ids().all(|id| graph.can_add_edge(id, other_id)) {
+            for id in self.ids() {
+                graph.add_edge(
+                    id,
+                    database_key,
+                    other_id,
+                    self.local_state
+                        .borrow_query_stack()
+                        .iter()
+                        .map(|query| query.database_key.clone()),
+                );
+            }
+            true
+        } else {
+            false
+        }
     }
 
     pub(crate) fn unblock_queries_blocked_on_self(&self, database_key: &DB::DatabaseKey) {
-        self.shared_state
-            .dependency_graph
-            .lock()
-            .remove_edge(database_key, self.id())
+        let mut graph = self.shared_state.dependency_graph.lock();
+        for id in self.ids() {
+            graph.remove_edge(database_key, id)
+        }
     }
 }
 
@@ -526,15 +569,15 @@ where
 /// `with_incremented_revision`. It gives access to the new revision
 /// and a few other operations that only make sense to do while an
 /// update is happening.
-pub(crate) struct DatabaseWriteLockGuard<'db, DB>
+pub(crate) struct DatabaseWriteLockGuard<'db, 'parent, DB>
 where
     DB: Database,
 {
-    runtime: &'db mut Runtime<DB>,
+    runtime: &'db mut Runtime<'parent, DB>,
     new_revision: Revision,
 }
 
-impl<DB> DatabaseWriteLockGuard<'_, DB>
+impl<DB> DatabaseWriteLockGuard<'_, '_, DB>
 where
     DB: Database,
 {
@@ -758,6 +801,20 @@ impl<K> DependencyGraph<K>
 where
     K: Hash + Eq + Clone,
 {
+    fn can_add_edge(&self, from_id: RuntimeId, to_id: RuntimeId) -> bool {
+        // First: walk the chain of things that `to_id` depends on,
+        // looking for us.
+        let mut p = to_id;
+        while let Some(q) = self.edges.get(&p).map(|edge| edge.id) {
+            if q == from_id {
+                return false;
+            }
+
+            p = q;
+        }
+        true
+    }
+
     /// Attempt to add an edge `from_id -> to_id` into the result graph.
     fn add_edge(
         &mut self,
@@ -769,15 +826,8 @@ where
         assert_ne!(from_id, to_id);
         debug_assert!(!self.edges.contains_key(&from_id));
 
-        // First: walk the chain of things that `to_id` depends on,
-        // looking for us.
-        let mut p = to_id;
-        while let Some(q) = self.edges.get(&p).map(|edge| edge.id) {
-            if q == from_id {
-                return false;
-            }
-
-            p = q;
+        if !self.can_add_edge(from_id, to_id) {
+            return false;
         }
 
         self.edges.insert(

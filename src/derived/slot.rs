@@ -591,11 +591,12 @@ where
         other_id: RuntimeId,
         waiting: &Mutex<SmallVec<[Sender<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
     ) -> Result<Receiver<WaitResult<Q::Value, DB::DatabaseKey>>, CycleDetected> {
-        let id = runtime.id();
-        if other_id == id {
+        if runtime.ids().any(|id| other_id == id) {
+            let id = runtime.id();
             return Err(CycleDetected { from: id, to: id });
         } else {
             if !runtime.try_block_on(&self.database_key(db), other_id) {
+                let id = runtime.id();
                 return Err(CycleDetected {
                     from: id,
                     to: other_id,

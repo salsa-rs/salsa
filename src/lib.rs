@@ -376,6 +376,8 @@ pub trait ParallelDatabase: Database + Send {
     /// }
     /// ```
     fn snapshot(&self) -> Snapshot<Self>;
+
+    fn fork(&self) -> Fork<Self>;
 }
 
 /// Simple wrapper struct that takes ownership of a database `DB` and
@@ -411,6 +413,43 @@ where
 
     fn deref(&self) -> &DB {
         &self.db
+    }
+}
+
+#[derive(Debug)]
+pub struct Fork<DB>
+where
+    DB: ParallelDatabase,
+{
+    db: DB,
+}
+
+impl<DB> Fork<DB>
+where
+    DB: ParallelDatabase,
+{
+    pub fn new(db: DB) -> Self {
+        Fork { db }
+    }
+}
+
+impl<DB> std::ops::Deref for Fork<DB>
+where
+    DB: ParallelDatabase,
+{
+    type Target = DB;
+
+    fn deref(&self) -> &DB {
+        &self.db
+    }
+}
+
+impl<DB> std::ops::DerefMut for Fork<DB>
+where
+    DB: ParallelDatabase,
+{
+    fn deref_mut(&mut self) -> &mut DB {
+        &mut self.db
     }
 }
 
