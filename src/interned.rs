@@ -314,7 +314,7 @@ where
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl<DB, Q> QueryStorageOps<DB, Q> for InternedStorage<DB, Q>
 where
     Q: Query<DB>,
@@ -412,12 +412,12 @@ where
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl<DB, Q, IQ> QueryStorageOps<DB, Q> for LookupInternedStorage<DB, Q, IQ>
 where
     Q: Query<DB>,
     Q::Key: InternKey,
-    Q::Value: Eq + Hash,
+    Q::Value: Eq + Hash + Send + Sync,
     IQ: Query<
         DB,
         Key = Q::Value,
@@ -545,11 +545,11 @@ impl<K> Slot<K> {
 // key/value is Send + Sync (also, that we introduce no
 // references). These are tested by the `check_send_sync` and
 // `check_static` helpers below.
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 unsafe impl<DB, K> DatabaseSlot<DB> for Slot<K>
 where
     DB: Database,
-    K: Debug,
+    K: Debug + Send + Sync,
 {
     async fn maybe_changed_since(&self, db: &mut DB, revision: Revision) -> bool {
         let revision_now = db.salsa_runtime().current_revision();

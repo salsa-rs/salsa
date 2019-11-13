@@ -3,7 +3,7 @@ use crate::dependency::Dependency;
 use crate::durability::Durability;
 use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
-use crate::{CycleError, Database, Event, EventKind, SweepStrategy};
+use crate::{CycleError, Database, Event, EventKind, ForkState, SweepStrategy};
 use futures::{future::BoxFuture, prelude::*};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
@@ -26,7 +26,7 @@ use local_state::LocalState;
 /// `Runtime::default`) will have an independent set of query storage
 /// associated with it. Normally, therefore, you only do this once, at
 /// the start of your application.
-pub struct Runtime<'parent, DB: Database> {
+pub struct Runtime<DB: Database> {
     /// Our unique runtime id.
     id: RuntimeId,
 
@@ -38,13 +38,13 @@ pub struct Runtime<'parent, DB: Database> {
     /// Local state that is specific to this runtime (thread).
     local_state: LocalState<DB>,
 
-    parent: Option<&'parent Runtime<'parent, DB>>,
+    pub(super) parent: Option<Arc<ForkState<DB>>>,
 
     /// Shared state that is accessible via all runtimes.
     shared_state: Arc<SharedState<DB>>,
 }
 
-impl<DB> Default for Runtime<'_, DB>
+impl<DB> Default for Runtime<DB>
 where
     DB: Database,
 {
@@ -54,12 +54,12 @@ where
             revision_guard: None,
             shared_state: Default::default(),
             local_state: Default::default(),
-            parent: None,
+            parent: Default::default(),
         }
     }
 }
 
-impl<DB> std::fmt::Debug for Runtime<'_, DB>
+impl<DB> std::fmt::Debug for Runtime<DB>
 where
     DB: Database,
 {
@@ -72,7 +72,7 @@ where
     }
 }
 
-impl<'parent, DB> Runtime<'parent, DB>
+impl<DB> Runtime<DB>
 where
     DB: Database,
 {
@@ -121,7 +121,7 @@ where
         }
     }
 
-    pub fn fork(&'parent self, from_db: &DB) -> Self {
+    pub fn fork(&self, from_db: &DB, state: Arc<ForkState<DB>>) -> Self {
         assert!(
             Arc::ptr_eq(&self.shared_state, &from_db.salsa_runtime().shared_state),
             "invoked `snapshot` with a non-matching database"
@@ -138,7 +138,7 @@ where
             revision_guard: Some(revision_guard),
             shared_state: self.shared_state.clone(),
             local_state: Default::default(),
-            parent: Some(self),
+            parent: Some(state),
         }
     }
 
@@ -193,12 +193,10 @@ where
     }
 
     pub fn ids<'a>(&'a self) -> impl Iterator<Item = RuntimeId> + 'a {
-        let mut current = Some(self);
-        std::iter::from_fn(move || {
-            let runtime = current?;
-            current = runtime.parent;
-            Some(runtime.id)
-        })
+        self.parent
+            .iter()
+            .flat_map(|state| state.parents.iter().cloned())
+            .chain(Some(self.id()))
     }
 
     /// Returns the database-key for the query that this thread is
@@ -269,7 +267,7 @@ where
     /// Note that salsa is explicitly designed to be panic-safe, so cancellation
     /// via unwinding is 100% valid approach to cancellation.
     #[inline]
-    pub fn is_current_revision_canceled(&self) -> bool {
+    pub fn is_current_revision_canceled(&mut self) -> bool {
         let current_revision = self.current_revision();
         let pending_revision = self.pending_revision();
         debug!(
@@ -331,7 +329,7 @@ where
     /// time.
     pub(crate) fn with_incremented_revision<R>(
         &mut self,
-        op: impl FnOnce(&DatabaseWriteLockGuard<'_, '_, DB>) -> R,
+        op: impl FnOnce(&DatabaseWriteLockGuard<'_, DB>) -> R,
     ) -> R {
         log::debug!("increment_revision()");
 
@@ -412,7 +410,7 @@ where
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
     pub(crate) fn report_query_read<'hack>(
-        &self,
+        &mut self,
         database_slot: Arc<dyn DatabaseSlot<DB> + 'hack>,
         durability: Durability,
         changed_at: Revision,
@@ -426,7 +424,7 @@ where
     ///
     /// Queries which report untracked reads will be re-executed in the next
     /// revision.
-    pub fn report_untracked_read(&self) {
+    pub fn report_untracked_read(&mut self) {
         self.local_state
             .report_untracked_read(self.current_revision());
     }
@@ -434,7 +432,7 @@ where
     /// Acts as though the current query had read an input with the given durability; this will force the current query's durability to be at most `durability`.
     ///
     /// This is mostly useful to control the durability level for [on-demand inputs](https://salsa-rs.github.io/salsa/common_patterns/on_demand_inputs.html).
-    pub fn report_synthetic_read(&self, durability: Durability) {
+    pub fn report_synthetic_read(&mut self, durability: Durability) {
         self.local_state.report_synthetic_read(durability);
     }
 
@@ -446,32 +444,32 @@ where
     /// actual *data*.)
     ///
     /// This is used when queries check if they have been canceled.
-    fn report_anon_read(&self, revision: Revision) {
+    fn report_anon_read(&mut self, revision: Revision) {
         self.local_state.report_anon_read(revision)
     }
 
     /// Obviously, this should be user configurable at some point.
     pub(crate) fn report_unexpected_cycle(
-        &self,
+        &mut self,
         database_key: &DB::DatabaseKey,
         error: CycleDetected,
         changed_at: Revision,
     ) -> crate::CycleError<DB::DatabaseKey> {
         debug!("report_unexpected_cycle(database_key={:?})", database_key);
 
-        let mut query_stack = self.local_state.borrow_query_stack_mut();
+        let query_stack = self.local_state.borrow_query_stack_mut();
 
         if error.from == error.to {
             // All queries in the cycle is local
             let start_index = query_stack
                 .iter()
                 .rposition(|active_query| active_query.database_key == *database_key)
-                .unwrap();
-            let mut cycle = Vec::new();
+                .expect("bug: query is not on the stack");
             let cycle_participants = &mut query_stack[start_index..];
-            for active_query in &mut *cycle_participants {
-                cycle.push(active_query.database_key.clone());
-            }
+            let cycle: Vec<_> = cycle_participants
+                .iter()
+                .map(|active_query| active_query.database_key.clone())
+                .collect();
 
             assert!(!cycle.is_empty());
 
@@ -521,15 +519,15 @@ where
         }
     }
 
-    pub(crate) fn mark_cycle_participants(&self, err: &CycleError<DB::DatabaseKey>) {
+    pub(crate) fn mark_cycle_participants(&mut self, cycle: &[DB::DatabaseKey]) {
         for active_query in self
             .local_state
             .borrow_query_stack_mut()
             .iter_mut()
             .rev()
-            .take_while(|active_query| err.cycle.iter().any(|e| *e == active_query.database_key))
+            .take_while(|active_query| cycle.iter().any(|e| *e == active_query.database_key))
         {
-            active_query.cycle = err.cycle.clone();
+            active_query.cycle = cycle.to_owned();
         }
     }
 
@@ -558,9 +556,8 @@ where
 
     pub(crate) fn unblock_queries_blocked_on_self(&self, database_key: &DB::DatabaseKey) {
         let mut graph = self.shared_state.dependency_graph.lock();
-        for id in self.ids() {
-            graph.remove_edge(database_key, id)
-        }
+        let id = self.id();
+        graph.remove_edge(database_key, id);
     }
 }
 
@@ -569,15 +566,15 @@ where
 /// `with_incremented_revision`. It gives access to the new revision
 /// and a few other operations that only make sense to do while an
 /// update is happening.
-pub(crate) struct DatabaseWriteLockGuard<'db, 'parent, DB>
+pub(crate) struct DatabaseWriteLockGuard<'db, DB>
 where
     DB: Database,
 {
-    runtime: &'db mut Runtime<'parent, DB>,
+    runtime: &'db mut Runtime<DB>,
     new_revision: Revision,
 }
 
-impl<DB> DatabaseWriteLockGuard<'_, '_, DB>
+impl<DB> DatabaseWriteLockGuard<'_, DB>
 where
     DB: Database,
 {

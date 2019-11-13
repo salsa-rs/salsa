@@ -32,7 +32,7 @@ use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub use futures;
 
@@ -43,12 +43,13 @@ pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
 
 #[doc(hidden)]
-pub type BoxFutureLocal<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + 'a>>;
+pub type BoxFutureLocal<'a, T> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
+pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps + Send + Sync {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &Runtime<Self>;
 
@@ -377,8 +378,70 @@ pub trait ParallelDatabase: Database + Send {
     /// ```
     fn snapshot(&self) -> Snapshot<Self>;
 
-    fn fork(&self) -> Fork<Self>;
+    fn fork(&self, state: Arc<ForkState<Self>>) -> Fork<Self>;
+
+    fn forker(&mut self) -> Forker<'_, Self> {
+        let runtime = self.salsa_runtime();
+        Forker {
+            state: Arc::new(ForkState {
+                parents: runtime
+                    .parent
+                    .iter()
+                    .flat_map(|state| state.parents.iter())
+                    .cloned()
+                    .chain(Some(runtime.id()))
+                    .collect(),
+                cycle: Default::default(),
+            }),
+            db: self,
+        }
+    }
 }
+
+pub struct Forker<'a, DB>
+where
+    DB: Database,
+{
+    db: &'a mut DB,
+    state: Arc<ForkState<DB>>,
+}
+
+pub struct ForkState<DB: Database> {
+    parents: Vec<RuntimeId>,
+    cycle: Mutex<Vec<DB::DatabaseKey>>,
+}
+
+impl<DB> Drop for Forker<'_, DB>
+where
+    DB: Database,
+{
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            let cycle = std::mem::replace(
+                Arc::get_mut(&mut self.state)
+                    .expect("Forker dropped before joining forked databases!")
+                    .cycle
+                    .get_mut()
+                    .unwrap(),
+                Vec::new(),
+            );
+            if !cycle.is_empty() {
+                self.db.salsa_runtime_mut().mark_cycle_participants(&cycle);
+            }
+        }
+    }
+}
+
+impl<DB> Forker<'_, DB>
+where
+    DB: ParallelDatabase,
+{
+    pub fn fork(&self) -> Snapshot<DB> {
+        self.db.fork(self.state.clone())
+    }
+}
+
+pub type Fork<DB> = Snapshot<DB>;
 
 /// Simple wrapper struct that takes ownership of a database `DB` and
 /// only gives `&self` access to it. See [the `snapshot` method][fm]
@@ -398,8 +461,7 @@ where
     DB: ParallelDatabase,
 {
     /// Creates a `Snapshot` that wraps the given database handle
-    /// `db`. From this point forward, only shared references to `db`
-    /// will be possible.
+    /// `db`.
     pub fn new(db: DB) -> Self {
         Snapshot { db }
     }
@@ -416,35 +478,7 @@ where
     }
 }
 
-#[derive(Debug)]
-pub struct Fork<DB>
-where
-    DB: ParallelDatabase,
-{
-    db: DB,
-}
-
-impl<DB> Fork<DB>
-where
-    DB: ParallelDatabase,
-{
-    pub fn new(db: DB) -> Self {
-        Fork { db }
-    }
-}
-
-impl<DB> std::ops::Deref for Fork<DB>
-where
-    DB: ParallelDatabase,
-{
-    type Target = DB;
-
-    fn deref(&self) -> &DB {
-        &self.db
-    }
-}
-
-impl<DB> std::ops::DerefMut for Fork<DB>
+impl<DB> std::ops::DerefMut for Snapshot<DB>
 where
     DB: ParallelDatabase,
 {
@@ -461,13 +495,15 @@ where
 /// In particular, `Group::GroupData: Send + Sync` must imply that
 /// `Key: Send + Sync` and `Value: Send + Sync`. This is relied upon
 /// by the dependency tracking logic.
-pub unsafe trait Query<DB: Database>: Debug + Default + Sized + 'static {
+pub unsafe trait Query<DB: Database>:
+    Debug + Default + Send + Sync + Sized + 'static
+{
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
-    type Key: Clone + Debug + Hash + Eq;
+    type Key: Clone + Debug + Hash + Eq + Send + Sync;
 
     /// What value does the query return?
-    type Value: Clone + Debug;
+    type Value: Clone + Debug + Send + Sync;
 
     /// Internal struct storing the values for the query.
     type Storage: plumbing::QueryStorageOps<DB, Self>;
@@ -567,6 +603,10 @@ where
 
     fn database_key(&self, key: &Q::Key) -> DB::DatabaseKey {
         <DB as plumbing::GetQueryTable<Q>>::database_key(&self.db, key.clone())
+    }
+
+    pub fn get(&mut self, key: Q::Key) -> Q::Value {
+        crate::plumbing::sync_future(self.try_get(key)).unwrap_or_else(|err| panic!("{}", err))
     }
 
     /// Execute the query on a given input. Usually it's easier to

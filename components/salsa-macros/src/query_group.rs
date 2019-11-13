@@ -208,7 +208,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         if query.is_async {
             query_fn_declarations.extend(quote! {
                 #(#attrs)*
-                fn #fn_name<'s>(&'s mut self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + 's>>;
+                fn #fn_name<'s>(&'s mut self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + Send + 's>>;
             });
         } else {
             query_fn_declarations.extend(quote! {
@@ -223,7 +223,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let invoke = query.invoke_tt();
             if query.is_async {
                 query_fn_definitions.extend(quote! {
-                    fn #fn_name<'s>(&'s mut self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + 's>> {
+                    fn #fn_name<'s>(&'s mut self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + Send + 's>> {
                         Box::pin(#invoke(self, #(#key_names),*))
                     }
                 });
@@ -239,7 +239,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         if query.is_async {
             query_fn_definitions.extend(quote! {
-                fn #fn_name<'s>(&'s mut self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + 's>> {
+                fn #fn_name<'s>(&'s mut self, #(#key_names: #keys),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = #value> + Send + 's>> {
                     Box::pin(async move {
                         <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).get_async((#(#key_names),*)).await
                     })
@@ -248,7 +248,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         } else {
             query_fn_definitions.extend(quote! {
                 fn #fn_name(&mut self, #(#key_names: #keys),*) -> #value {
-                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get((#(#key_names),*))
+                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).get((#(#key_names),*))
                 }
             });
         }

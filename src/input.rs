@@ -69,7 +69,7 @@ where
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl<DB, Q> QueryStorageOps<DB, Q> for InputStorage<DB, Q>
 where
     Q: Query<DB>,
@@ -214,7 +214,7 @@ where
 // key/value is Send + Sync (also, that we introduce no
 // references). These are tested by the `check_send_sync` and
 // `check_static` helpers below.
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 unsafe impl<DB, Q> DatabaseSlot<DB> for Slot<DB, Q>
 where
     Q: Query<DB>,

@@ -38,17 +38,17 @@ pub trait DatabaseStorageTypes: Sized {
     /// At runtime, it can be implemented in various ways: a monster enum
     /// works for a fixed set of queries, but a boxed trait object is good
     /// for a more open-ended option.
-    type DatabaseKey: DatabaseKey<Self>;
+    type DatabaseKey: DatabaseKey<Self> + Send + Sync;
 
     /// An associated type that contains all the query keys/values
     /// that can appear in the database. This is used as part of the
     /// slot mechanism to determine when database handles are
     /// send/sync/'static.
-    type DatabaseData;
+    type DatabaseData: Send + Sync;
 
     /// Defines the "storage type", where all the query data is kept.
     /// This type is defined by the `database_storage` macro.
-    type DatabaseStorage: Default;
+    type DatabaseStorage: Default + Send + Sync;
 }
 
 /// Internal operations that the runtime uses to operate on the database.
@@ -144,7 +144,7 @@ where
     fn database_key(group_key: G::GroupKey) -> Self::DatabaseKey;
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 pub trait QueryStorageOps<DB, Q>: Default
 where
     Self: QueryStorageMassOps<DB>,
