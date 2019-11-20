@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 #[salsa::database(AsyncTraitStorage)]
 #[derive(Default)]
 struct AsyncDatabase {
@@ -14,17 +16,33 @@ impl salsa::Database for AsyncDatabase {
     }
 }
 
+impl salsa::ParallelDatabase for AsyncDatabase {
+    fn snapshot(&self) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
+            runtime: self.runtime.snapshot(self),
+        })
+    }
+    fn fork(&self, forker: Arc<salsa::ForkState<Self>>) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
+            runtime: self.runtime.fork(self, forker),
+        })
+    }
+}
+
 #[salsa::query_group(AsyncTraitStorage)]
-trait AsyncTrait {
+trait AsyncTrait: salsa::ParallelDatabase {
     #[salsa::input]
-    fn input(&self, x: String) -> u32;
+    fn input(&mut self, x: String) -> u32;
 
     async fn output(&mut self, x: String) -> u32;
 }
 
 async fn output(db: &mut impl AsyncTrait, x: String) -> u32 {
     if x == "a" {
-        let (b, c) = futures::join!(db.output("b".into()), db.output("c".into()));
+        let forker = db.forker();
+        let mut db1 = forker.fork();
+        let mut db2 = forker.fork();
+        let (b, c) = futures::join!(db1.output("b".into()), db2.output("c".into()));
         b + c
     } else {
         db.input(x)
