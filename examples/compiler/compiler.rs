@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::{interner::Interner, values::*};
 
 #[salsa::query_group(CompilerDatabase)]
-#[salsa::requires(Interner)]
 pub trait Compiler: Interner {
     #[salsa::input]
     fn input_string(&self) -> Arc<String>;
