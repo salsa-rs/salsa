@@ -11,7 +11,7 @@ matrix:
   allow_failures:
       - rust: nightly
 before_install:
-  - cargo install mdbook --version '0.3.1' --debug --force
+  - cargo install mdbook --no-default-features --features output --version '0.3.1' --debug --force
   - cargo install mdbook-linkcheck --version '0.4.0' --debug --force
 script:
   - RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 cargo test --all
