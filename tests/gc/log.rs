@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::sync::Mutex;
 
 pub(crate) trait HasLog {
     fn log(&self) -> &Log;
@@ -6,15 +6,15 @@ pub(crate) trait HasLog {
 
 #[derive(Default)]
 pub(crate) struct Log {
-    data: RefCell<Vec<String>>,
+    data: Mutex<Vec<String>>,
 }
 
 impl Log {
     pub(crate) fn add(&self, text: impl Into<String>) {
-        self.data.borrow_mut().push(text.into());
+        self.data.lock().unwrap().push(text.into());
     }
 
     pub(crate) fn take(&self) -> Vec<String> {
-        std::mem::replace(&mut *self.data.borrow_mut(), vec![])
+        std::mem::replace(&mut *self.data.lock().unwrap(), vec![])
     }
 }

@@ -1,8 +1,8 @@
 use crate::signal::Signal;
+use crossbeam::atomic::AtomicCell as Cell;
 use salsa::Database;
 use salsa::ParallelDatabase;
 use salsa::Snapshot;
-use std::cell::Cell;
 use std::sync::Arc;
 
 #[salsa::query_group(Par)]
