@@ -378,7 +378,7 @@ pub trait ParallelDatabase: Database + Send {
     /// ```
     fn snapshot(&self) -> Snapshot<Self>;
 
-    fn fork(&self, state: Arc<ForkState<Self>>) -> Fork<Self>;
+    fn fork(&self, state: Arc<ForkState<Self>>) -> Snapshot<Self>;
 
     fn forker(&mut self) -> Forker<'_, Self> {
         let runtime = self.salsa_runtime();
@@ -440,8 +440,6 @@ where
         self.db.fork(self.state.clone())
     }
 }
-
-pub type Fork<DB> = Snapshot<DB>;
 
 /// Simple wrapper struct that takes ownership of a database `DB` and
 /// only gives `&self` access to it. See [the `snapshot` method][fm]
