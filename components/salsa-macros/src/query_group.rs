@@ -31,6 +31,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     let trait_vis = input.vis;
     let trait_name = input.ident;
+    let trait_name_mut = Ident::new(&format!("{}Mut", trait_name), trait_name.span());
     let _generics = input.generics.clone();
 
     // Decompose the trait into the corresponding queries.
@@ -190,7 +191,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     );
 
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
+    let mut query_fn_declarations_mut = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
+    let mut query_fn_definitions_mut = proc_macro2::TokenStream::new();
     let mut query_descriptor_variants = proc_macro2::TokenStream::new();
     let mut group_data_elements = vec![];
     let mut storage_fields = proc_macro2::TokenStream::new();
@@ -286,7 +289,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 fn_name = fn_name
             );
 
-            query_fn_declarations.extend(quote! {
+            query_fn_declarations_mut.extend(quote! {
                 # [doc = #set_fn_docs]
                 fn #set_fn_name(&mut self, #(#key_names: #keys,)* value__: #value);
 
@@ -295,7 +298,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 fn #set_with_durability_fn_name(&mut self, #(#key_names: #keys,)* value__: #value, durability__: salsa::Durability);
             });
 
-            query_fn_definitions.extend(quote! {
+            query_fn_definitions_mut.extend(quote! {
                 fn #set_fn_name(&mut self, #(#key_names: #keys,)* value__: #value) {
                     <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set((#(#key_names),*), value__)
                 }
@@ -332,6 +335,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             #(#trait_attrs)*
             #trait_vis trait #trait_name : #bounds {
                 #query_fn_declarations
+            }
+
+            #trait_vis trait #trait_name_mut : #bounds {
+                #query_fn_declarations_mut
             }
         }
     };
@@ -371,6 +378,14 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 T: salsa::plumbing::HasQueryGroup<#group_struct>
             {
                 #query_fn_definitions
+            }
+
+            impl<T> #trait_name_mut for T
+            where
+                T: #bounds,
+                T: salsa::plumbing::HasQueryGroup<#group_struct>
+            {
+                #query_fn_definitions_mut
             }
         }
     });
