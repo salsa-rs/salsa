@@ -30,13 +30,13 @@ trait QueryGroup: salsa::Database {
     fn get_volatile(&self, x: u32) -> usize;
 }
 
-fn get(_db: &impl QueryGroup, x: u32) -> Arc<HotPotato> {
+fn get(_db: &mut impl QueryGroup, x: u32) -> Arc<HotPotato> {
     Arc::new(HotPotato::new(x))
 }
 
-fn get_volatile(db: &impl QueryGroup, _x: u32) -> usize {
+fn get_volatile(db: &mut impl QueryGroup, _x: u32) -> usize {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
-    db.salsa_runtime().report_untracked_read();
+    db.salsa_runtime_mut().report_untracked_read();
     COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 

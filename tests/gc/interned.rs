@@ -20,11 +20,11 @@ pub(crate) trait InternDatabase {
     fn repeat_intern2(&self, x: &'static str) -> InternId;
 }
 
-fn repeat_intern1(db: &impl InternDatabase, x: &'static str) -> InternId {
+fn repeat_intern1(db: &mut impl InternDatabase, x: &'static str) -> InternId {
     db.intern_str(x)
 }
 
-fn repeat_intern2(db: &impl InternDatabase, x: &'static str) -> InternId {
+fn repeat_intern2(db: &mut impl InternDatabase, x: &'static str) -> InternId {
     db.intern_str(x)
 }
 
@@ -37,7 +37,7 @@ fn repeat_intern2(db: &impl InternDatabase, x: &'static str) -> InternId {
 /// exercises precisely that scenario.
 #[test]
 fn discard_during_same_revision() {
-    let db = db::DatabaseImpl::default();
+    let mut db = db::DatabaseImpl::default();
 
     // This will assign index 0 for "foo".
     let foo1a = db.repeat_intern1("foo");

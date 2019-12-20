@@ -9,7 +9,7 @@ use salsa::{Database, Durability, SweepStrategy};
 
 #[test]
 fn one_rev() {
-    let db = db::DatabaseImpl::default();
+    let mut db = db::DatabaseImpl::default();
 
     db.fibonacci(5);
 

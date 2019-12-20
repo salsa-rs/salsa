@@ -10,26 +10,26 @@ pub(crate) trait MemoizedVolatileContext: TestContext {
     fn volatile(&self) -> usize;
 }
 
-fn memoized2(db: &impl MemoizedVolatileContext) -> usize {
+fn memoized2(db: &mut impl MemoizedVolatileContext) -> usize {
     db.log().add("Memoized2 invoked");
     db.memoized1()
 }
 
-fn memoized1(db: &impl MemoizedVolatileContext) -> usize {
+fn memoized1(db: &mut impl MemoizedVolatileContext) -> usize {
     db.log().add("Memoized1 invoked");
     let v = db.volatile();
     v / 2
 }
 
-fn volatile(db: &impl MemoizedVolatileContext) -> usize {
+fn volatile(db: &mut impl MemoizedVolatileContext) -> usize {
     db.log().add("Volatile invoked");
-    db.salsa_runtime().report_untracked_read();
+    db.salsa_runtime_mut().report_untracked_read();
     db.clock().increment()
 }
 
 #[test]
 fn volatile_x2() {
-    let query = TestContextImpl::default();
+    let mut query = TestContextImpl::default();
 
     // Invoking volatile twice doesn't execute twice, because volatile
     // queries are memoized by default.

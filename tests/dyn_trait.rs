@@ -24,7 +24,7 @@ trait DynTrait {
     fn output(&self, x: u32) -> u32;
 }
 
-fn output(db: &dyn DynTrait, x: u32) -> u32 {
+fn output(db: &mut dyn DynTrait, x: u32) -> u32 {
     db.input(x) * 2
 }
 

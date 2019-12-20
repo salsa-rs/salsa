@@ -1,4 +1,4 @@
-use crate::setup::{ParDatabase, ParDatabaseImpl};
+use crate::setup::{ParDatabase, ParDatabaseImpl, ParDatabaseMut};
 use crate::signal::Signal;
 use salsa::{Database, ParallelDatabase};
 use std::sync::Arc;
@@ -15,18 +15,18 @@ fn in_par_get_set_cancellation() {
     let signal = Arc::new(Signal::default());
 
     let thread1 = std::thread::spawn({
-        let db = db.snapshot();
+        let mut db = db.snapshot();
         let signal = signal.clone();
         move || {
             // Check that cancellation flag is not yet set, because
             // `set` cannot have been called yet.
-            assert!(!db.salsa_runtime().is_current_revision_canceled());
+            assert!(!db.salsa_runtime_mut().is_current_revision_canceled());
 
             // Signal other thread to proceed.
             signal.signal(1);
 
             // Wait for other thread to signal cancellation
-            while !db.salsa_runtime().is_current_revision_canceled() {
+            while !db.salsa_runtime_mut().is_current_revision_canceled() {
                 std::thread::yield_now();
             }
 

@@ -1,18 +1,16 @@
 use crate::queries;
-use std::cell::Cell;
+use crossbeam::atomic::AtomicCell;
 
 #[salsa::database(queries::GroupStruct)]
 #[derive(Default)]
 pub(crate) struct DatabaseImpl {
     runtime: salsa::Runtime<DatabaseImpl>,
-    counter: Cell<usize>,
+    counter: AtomicCell<usize>,
 }
 
 impl queries::Counter for DatabaseImpl {
     fn increment(&self) -> usize {
-        let v = self.counter.get();
-        self.counter.set(v + 1);
-        v
+        self.counter.fetch_add(1)
     }
 }
 

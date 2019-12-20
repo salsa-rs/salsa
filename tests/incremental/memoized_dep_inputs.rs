@@ -12,17 +12,17 @@ pub(crate) trait MemoizedDepInputsContext: TestContext {
     fn dep_input2(&self) -> usize;
 }
 
-fn dep_memoized2(db: &impl MemoizedDepInputsContext) -> usize {
+fn dep_memoized2(db: &mut impl MemoizedDepInputsContext) -> usize {
     db.log().add("Memoized2 invoked");
     db.dep_memoized1()
 }
 
-fn dep_memoized1(db: &impl MemoizedDepInputsContext) -> usize {
+fn dep_memoized1(db: &mut impl MemoizedDepInputsContext) -> usize {
     db.log().add("Memoized1 invoked");
     db.dep_derived1() * 2
 }
 
-fn dep_derived1(db: &impl MemoizedDepInputsContext) -> usize {
+fn dep_derived1(db: &mut impl MemoizedDepInputsContext) -> usize {
     db.log().add("Derived1 invoked");
     db.dep_input1() / 2
 }

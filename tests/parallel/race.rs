@@ -1,4 +1,4 @@
-use crate::setup::{ParDatabase, ParDatabaseImpl};
+use crate::setup::{ParDatabase, ParDatabaseImpl, ParDatabaseMut};
 use salsa::ParallelDatabase;
 
 /// Test where a read and a set are racing with one another.
@@ -12,7 +12,7 @@ fn in_par_get_set_race() {
     db.set_input('c', 001);
 
     let thread1 = std::thread::spawn({
-        let db = db.snapshot();
+        let mut db = db.snapshot();
         move || {
             let v = db.sum("abc");
             v

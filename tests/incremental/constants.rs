@@ -12,12 +12,12 @@ pub(crate) trait ConstantsDatabase: TestContext {
     fn add3(&self, key1: char, key2: char, key3: char) -> usize;
 }
 
-fn add(db: &impl ConstantsDatabase, key1: char, key2: char) -> usize {
+fn add(db: &mut impl ConstantsDatabase, key1: char, key2: char) -> usize {
     db.log().add(format!("add({}, {})", key1, key2));
     db.input(key1) + db.input(key2)
 }
 
-fn add3(db: &impl ConstantsDatabase, key1: char, key2: char, key3: char) -> usize {
+fn add3(db: &mut impl ConstantsDatabase, key1: char, key2: char, key3: char) -> usize {
     db.log().add(format!("add3({}, {}, {})", key1, key2, key3));
     db.add(key1, key2) + db.input(key3)
 }

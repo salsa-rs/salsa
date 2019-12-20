@@ -1,4 +1,6 @@
-use crate::setup::{CancelationFlag, Canceled, Knobs, ParDatabase, ParDatabaseImpl, WithValue};
+use crate::setup::{
+    CancelationFlag, Canceled, Knobs, ParDatabase, ParDatabaseImpl, ParDatabaseMut, WithValue,
+};
 use salsa::ParallelDatabase;
 
 macro_rules! assert_canceled {
@@ -38,7 +40,7 @@ fn in_par_get_set_cancellation_immediate() {
         db.set_input('d', 0);
 
         let thread1 = std::thread::spawn({
-            let db = db.snapshot();
+            let mut db = db.snapshot();
             move || {
                 // This will not return until it sees cancellation is
                 // signaled.
@@ -58,7 +60,7 @@ fn in_par_get_set_cancellation_immediate() {
 
         // This should re-compute the value (even though no input has changed).
         let thread2 = std::thread::spawn({
-            let db = db.snapshot();
+            let mut db = db.snapshot();
             move || db.sum("abc")
         });
 
@@ -81,7 +83,7 @@ fn in_par_get_set_cancellation_transitive() {
         db.set_input('d', 0);
 
         let thread1 = std::thread::spawn({
-            let db = db.snapshot();
+            let mut db = db.snapshot();
             move || {
                 // This will not return until it sees cancellation is
                 // signaled.
@@ -101,7 +103,7 @@ fn in_par_get_set_cancellation_transitive() {
 
         // This should re-compute the value (even though no input has changed).
         let thread2 = std::thread::spawn({
-            let db = db.snapshot();
+            let mut db = db.snapshot();
             move || db.sum2("abc")
         });
 
@@ -119,7 +121,7 @@ fn no_back_dating_in_cancellation() {
 
         db.set_input('a', 1);
         let thread1 = std::thread::spawn({
-            let db = db.snapshot();
+            let mut db = db.snapshot();
             move || {
                 // Here we compute a long-chain of queries,
                 // but the last one gets cancelled.
@@ -160,7 +162,7 @@ fn transitive_cancellation() {
 
     db.set_input('a', 1);
     let thread1 = std::thread::spawn({
-        let db = db.snapshot();
+        let mut db = db.snapshot();
         move || {
             // Here we compute a long-chain of queries,
             // but the last one gets cancelled.

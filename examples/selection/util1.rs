@@ -6,7 +6,7 @@ trait RequestUtil: RequestParser {
     fn content_type(&self) -> Option<String>;
 }
 
-fn content_type(db: &impl RequestUtil) -> Option<String> {
+fn content_type(db: &mut impl RequestUtil) -> Option<String> {
     db.parse()
         .header
         .iter()

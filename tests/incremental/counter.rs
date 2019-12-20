@@ -1,14 +1,12 @@
-use std::cell::Cell;
+use crossbeam::atomic::AtomicCell;
 
 #[derive(Default)]
 pub(crate) struct Counter {
-    value: Cell<usize>,
+    value: AtomicCell<usize>,
 }
 
 impl Counter {
     pub(crate) fn increment(&self) -> usize {
-        let v = self.value.get();
-        self.value.set(v + 1);
-        v
+        self.value.fetch_add(1)
     }
 }

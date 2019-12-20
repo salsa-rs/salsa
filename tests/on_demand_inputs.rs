@@ -4,7 +4,9 @@
 //! via a b query with zero inputs, which uses `add_synthetic_read` to
 //! tweak durability and `invalidate` to clear the input.
 
-use std::{cell::Cell, collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
+
+use crossbeam::atomic::AtomicCell;
 
 use salsa::{Database as _, Durability};
 
@@ -15,22 +17,22 @@ trait QueryGroup: salsa::Database + AsRef<HashMap<u32, u32>> {
     fn c(&self, x: u32) -> u32;
 }
 
-fn a(db: &impl QueryGroup, x: u32) -> u32 {
+fn a(db: &mut impl QueryGroup, x: u32) -> u32 {
     let durability = if x % 2 == 0 {
         Durability::LOW
     } else {
         Durability::HIGH
     };
-    db.salsa_runtime().report_synthetic_read(durability);
+    db.salsa_runtime_mut().report_synthetic_read(durability);
     let external_state: &HashMap<u32, u32> = db.as_ref();
     external_state[&x]
 }
 
-fn b(db: &impl QueryGroup, x: u32) -> u32 {
+fn b(db: &mut impl QueryGroup, x: u32) -> u32 {
     db.a(x)
 }
 
-fn c(db: &impl QueryGroup, x: u32) -> u32 {
+fn c(db: &mut impl QueryGroup, x: u32) -> u32 {
     db.b(x)
 }
 
@@ -39,7 +41,7 @@ fn c(db: &impl QueryGroup, x: u32) -> u32 {
 struct Database {
     runtime: salsa::Runtime<Database>,
     external_state: HashMap<u32, u32>,
-    on_event: Option<Box<dyn Fn(salsa::Event<Database>)>>,
+    on_event: Option<Box<dyn Fn(salsa::Event<Database>) + Send + Sync>>,
 }
 
 impl salsa::Database for Database {
@@ -91,24 +93,26 @@ fn on_demand_input_durability() {
     assert_eq!(db.b(1), 10);
     assert_eq!(db.b(2), 20);
 
-    let validated = Rc::new(Cell::new(0));
+    let validated = Arc::new(AtomicCell::new(0i32));
     db.on_event = Some(Box::new({
-        let validated = Rc::clone(&validated);
+        let validated = Arc::clone(&validated);
         move |event| match event.kind {
-            salsa::EventKind::DidValidateMemoizedValue { .. } => validated.set(validated.get() + 1),
+            salsa::EventKind::DidValidateMemoizedValue { .. } => {
+                validated.fetch_add(1);
+            }
             _ => (),
         }
     }));
 
     db.salsa_runtime_mut().synthetic_write(Durability::LOW);
-    validated.set(0);
+    validated.store(0);
     assert_eq!(db.c(1), 10);
     assert_eq!(db.c(2), 20);
-    assert_eq!(validated.get(), 2);
+    assert_eq!(validated.load(), 2);
 
     db.salsa_runtime_mut().synthetic_write(Durability::HIGH);
-    validated.set(0);
+    validated.store(0);
     assert_eq!(db.c(1), 10);
     assert_eq!(db.c(2), 20);
-    assert_eq!(validated.get(), 4);
+    assert_eq!(validated.load(), 4);
 }

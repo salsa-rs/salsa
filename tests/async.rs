@@ -30,9 +30,9 @@ impl salsa::ParallelDatabase for AsyncDatabase {
 #[salsa::query_group(AsyncTraitStorage)]
 trait AsyncTrait: salsa::ParallelDatabase {
     #[salsa::input]
-    fn input(&mut self, x: String) -> u32;
+    fn input(&self, x: String) -> u32;
 
-    async fn output(&mut self, x: String) -> u32;
+    async fn output(&self, x: String) -> u32;
 }
 
 async fn output(db: &mut impl AsyncTrait, x: String) -> u32 {

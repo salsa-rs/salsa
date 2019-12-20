@@ -5,7 +5,7 @@ mod implementation;
 mod interner;
 mod values;
 
-use self::compiler::Compiler;
+use self::compiler::{Compiler, CompilerMut};
 use self::implementation::DatabaseImpl;
 use self::interner::Interner;
 

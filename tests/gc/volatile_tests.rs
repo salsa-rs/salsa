@@ -19,16 +19,16 @@ pub(crate) trait VolatileDatabase: Database {
     fn repeat2(&self) -> usize;
 }
 
-fn volatile(db: &impl VolatileDatabase) -> usize {
-    db.salsa_runtime().report_untracked_read();
+fn volatile(db: &mut impl VolatileDatabase) -> usize {
+    db.salsa_runtime_mut().report_untracked_read();
     db.atomic_cell().load(Ordering::SeqCst)
 }
 
-fn repeat1(db: &impl VolatileDatabase) -> usize {
+fn repeat1(db: &mut impl VolatileDatabase) -> usize {
     db.volatile()
 }
 
-fn repeat2(db: &impl VolatileDatabase) -> usize {
+fn repeat2(db: &mut impl VolatileDatabase) -> usize {
     db.volatile()
 }
 

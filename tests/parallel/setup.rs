@@ -1,5 +1,5 @@
 use crate::signal::Signal;
-use crossbeam::atomic::AtomicCell as Cell;
+use crossbeam::atomic::AtomicCell;
 use salsa::Database;
 use salsa::ParallelDatabase;
 use salsa::Snapshot;
@@ -40,7 +40,7 @@ impl Canceled {
 /// Various "knobs" and utilities used by tests to force
 /// a certain behavior.
 pub(crate) trait Knobs {
-    fn knobs(&self) -> &KnobsStruct;
+    fn knobs(&self) -> Arc<KnobsStruct>;
 
     fn signal(&self, stage: usize);
 
@@ -51,13 +51,16 @@ pub(crate) trait WithValue<T> {
     fn with_value<R>(&self, value: T, closure: impl FnOnce() -> R) -> R;
 }
 
-impl<T> WithValue<T> for Cell<T> {
+impl<T> WithValue<T> for AtomicCell<T>
+where
+    T: Copy,
+{
     fn with_value<R>(&self, value: T, closure: impl FnOnce() -> R) -> R {
-        let old_value = self.replace(value);
+        let old_value = self.swap(value);
 
         let result = closure();
 
-        self.set(old_value);
+        self.store(old_value);
 
         result
     }
@@ -79,46 +82,62 @@ impl Default for CancelationFlag {
 /// Various "knobs" that can be used to customize how the queries
 /// behave on one specific thread. Note that this state is
 /// intentionally thread-local (apart from `signal`).
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub(crate) struct KnobsStruct {
     /// A kind of flexible barrier used to coordinate execution across
     /// threads to ensure we reach various weird states.
     pub(crate) signal: Arc<Signal>,
 
     /// When this database is about to block, send a signal.
-    pub(crate) signal_on_will_block: Cell<usize>,
+    pub(crate) signal_on_will_block: AtomicCell<usize>,
 
     /// Invocations of `sum` will signal this stage on entry.
-    pub(crate) sum_signal_on_entry: Cell<usize>,
+    pub(crate) sum_signal_on_entry: AtomicCell<usize>,
 
     /// Invocations of `sum` will wait for this stage on entry.
-    pub(crate) sum_wait_for_on_entry: Cell<usize>,
+    pub(crate) sum_wait_for_on_entry: AtomicCell<usize>,
 
     /// If true, invocations of `sum` will panic before they exit.
-    pub(crate) sum_should_panic: Cell<bool>,
+    pub(crate) sum_should_panic: AtomicCell<bool>,
 
     /// If true, invocations of `sum` will wait for cancellation before
     /// they exit.
-    pub(crate) sum_wait_for_cancellation: Cell<CancelationFlag>,
+    pub(crate) sum_wait_for_cancellation: AtomicCell<CancelationFlag>,
 
     /// Invocations of `sum` will wait for this stage prior to exiting.
-    pub(crate) sum_wait_for_on_exit: Cell<usize>,
+    pub(crate) sum_wait_for_on_exit: AtomicCell<usize>,
 
     /// Invocations of `sum` will signal this stage prior to exiting.
-    pub(crate) sum_signal_on_exit: Cell<usize>,
+    pub(crate) sum_signal_on_exit: AtomicCell<usize>,
 
     /// Invocations of `sum3_drop_sum` will panic unconditionally
-    pub(crate) sum3_drop_sum_should_panic: Cell<bool>,
+    pub(crate) sum3_drop_sum_should_panic: AtomicCell<bool>,
 }
 
-fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
+impl Clone for KnobsStruct {
+    fn clone(&self) -> Self {
+        KnobsStruct {
+            signal: self.signal.clone(),
+            signal_on_will_block: AtomicCell::new(self.signal_on_will_block.load()),
+            sum_signal_on_entry: AtomicCell::new(self.sum_signal_on_entry.load()),
+            sum_wait_for_on_entry: AtomicCell::new(self.sum_wait_for_on_entry.load()),
+            sum_should_panic: AtomicCell::new(self.sum_should_panic.load()),
+            sum_wait_for_cancellation: AtomicCell::new(self.sum_wait_for_cancellation.load()),
+            sum_wait_for_on_exit: AtomicCell::new(self.sum_wait_for_on_exit.load()),
+            sum_signal_on_exit: AtomicCell::new(self.sum_signal_on_exit.load()),
+            sum3_drop_sum_should_panic: AtomicCell::new(self.sum3_drop_sum_should_panic.load()),
+        }
+    }
+}
+
+fn sum(db: &mut impl ParDatabase, key: &'static str) -> usize {
     let mut sum = 0;
 
-    db.signal(db.knobs().sum_signal_on_entry.get());
+    db.signal(db.knobs().sum_signal_on_entry.load());
 
-    db.wait_for(db.knobs().sum_wait_for_on_entry.get());
+    db.wait_for(db.knobs().sum_wait_for_on_entry.load());
 
-    if db.knobs().sum_should_panic.get() {
+    if db.knobs().sum_should_panic.load() {
         panic!("query set to panic before exit")
     }
 
@@ -126,11 +145,11 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
         sum += db.input(ch);
     }
 
-    match db.knobs().sum_wait_for_cancellation.get() {
+    match db.knobs().sum_wait_for_cancellation.load() {
         CancelationFlag::Down => (),
         flag => {
             log::debug!("waiting for cancellation");
-            while !db.salsa_runtime().is_current_revision_canceled() {
+            while !db.salsa_runtime_mut().is_current_revision_canceled() {
                 std::thread::yield_now();
             }
             log::debug!("observed cancelation");
@@ -148,38 +167,38 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
     // *attempts* to invoke `is_current_revision_canceled` even if we
     // know it will not be canceled, because that helps us keep the
     // accounting up to date.
-    if db.salsa_runtime().is_current_revision_canceled() {
+    if db.salsa_runtime_mut().is_current_revision_canceled() {
         return std::usize::MAX; // when we are cancelled, we return usize::MAX.
     }
 
-    db.wait_for(db.knobs().sum_wait_for_on_exit.get());
+    db.wait_for(db.knobs().sum_wait_for_on_exit.load());
 
-    db.signal(db.knobs().sum_signal_on_exit.get());
+    db.signal(db.knobs().sum_signal_on_exit.load());
 
     sum
 }
 
-fn sum2(db: &impl ParDatabase, key: &'static str) -> usize {
+fn sum2(db: &mut impl ParDatabase, key: &'static str) -> usize {
     db.sum(key)
 }
 
-fn sum2_drop_sum(db: &impl ParDatabase, key: &'static str) -> usize {
+fn sum2_drop_sum(db: &mut impl ParDatabase, key: &'static str) -> usize {
     let _ = db.sum(key);
     22
 }
 
-fn sum3(db: &impl ParDatabase, key: &'static str) -> usize {
+fn sum3(db: &mut impl ParDatabase, key: &'static str) -> usize {
     db.sum2(key)
 }
 
-fn sum3_drop_sum(db: &impl ParDatabase, key: &'static str) -> usize {
-    if db.knobs().sum3_drop_sum_should_panic.get() {
+fn sum3_drop_sum(db: &mut impl ParDatabase, key: &'static str) -> usize {
+    if db.knobs().sum3_drop_sum_should_panic.load() {
         panic!("sum3_drop_sum executed")
     }
     db.sum2_drop_sum(key)
 }
 
-fn snapshot_me(db: &impl ParDatabase) {
+fn snapshot_me(db: &mut impl ParDatabase) {
     // this should panic
     db.snapshot();
 }
@@ -188,7 +207,7 @@ fn snapshot_me(db: &impl ParDatabase) {
 #[derive(Default)]
 pub(crate) struct ParDatabaseImpl {
     runtime: salsa::Runtime<ParDatabaseImpl>,
-    knobs: KnobsStruct,
+    knobs: Arc<KnobsStruct>,
 }
 
 impl Database for ParDatabaseImpl {
@@ -204,7 +223,7 @@ impl Database for ParDatabaseImpl {
         let event = event_fn();
         match event.kind {
             salsa::EventKind::WillBlockOn { .. } => {
-                self.signal(self.knobs().signal_on_will_block.get());
+                self.signal(self.knobs().signal_on_will_block.load());
             }
 
             _ => {}
@@ -220,14 +239,20 @@ impl ParallelDatabase for ParDatabaseImpl {
     fn snapshot(&self) -> Snapshot<Self> {
         Snapshot::new(ParDatabaseImpl {
             runtime: self.runtime.snapshot(self),
-            knobs: self.knobs.clone(),
+            knobs: Arc::new(KnobsStruct::clone(&self.knobs)),
+        })
+    }
+    fn fork(&self, forker: salsa::ForkState<Self>) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
+            runtime: self.runtime.fork(self, forker),
+            knobs: Arc::new(KnobsStruct::clone(&self.knobs)),
         })
     }
 }
 
 impl Knobs for ParDatabaseImpl {
-    fn knobs(&self) -> &KnobsStruct {
-        &self.knobs
+    fn knobs(&self) -> Arc<KnobsStruct> {
+        self.knobs.clone()
     }
 
     fn signal(&self, stage: usize) {

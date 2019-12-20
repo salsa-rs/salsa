@@ -1,4 +1,4 @@
-use crate::setup::{Knobs, ParDatabase, ParDatabaseImpl, WithValue};
+use crate::setup::{Knobs, ParDatabase, ParDatabaseImpl, ParDatabaseMut, WithValue};
 use salsa::ParallelDatabase;
 use std::panic::{self, AssertUnwindSafe};
 
@@ -16,7 +16,7 @@ fn true_parallel_different_keys() {
 
     // Thread 1 will signal stage 1 when it enters and wait for stage 2.
     let thread1 = std::thread::spawn({
-        let db = db.snapshot();
+        let mut db = db.snapshot();
         move || {
             let v = db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
@@ -30,7 +30,7 @@ fn true_parallel_different_keys() {
     // Thread 2 will wait_for stage 1 when it enters and signal stage 2
     // when it leaves.
     let thread2 = std::thread::spawn({
-        let db = db.snapshot();
+        let mut db = db.snapshot();
         move || {
             let v = db.knobs().sum_wait_for_on_entry.with_value(1, || {
                 db.knobs().sum_signal_on_exit.with_value(2, || db.sum("b"))
@@ -56,7 +56,7 @@ fn true_parallel_same_keys() {
 
     // Thread 1 will wait_for a barrier in the start of `sum`
     let thread1 = std::thread::spawn({
-        let db = db.snapshot();
+        let mut db = db.snapshot();
         move || {
             let v = db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
@@ -72,10 +72,10 @@ fn true_parallel_same_keys() {
     // continue. This way, we test out the mechanism of one thread
     // blocking on another.
     let thread2 = std::thread::spawn({
-        let db = db.snapshot();
+        let mut db = db.snapshot();
         move || {
             db.knobs().signal.wait_for(1);
-            db.knobs().signal_on_will_block.set(2);
+            db.knobs().signal_on_will_block.store(2);
             db.sum("abc")
         }
     });
@@ -96,7 +96,7 @@ fn true_parallel_propagate_panic() {
     // `thread1` will wait_for a barrier in the start of `sum`. Once it can
     // continue, it will panic.
     let thread1 = std::thread::spawn({
-        let db = db.snapshot();
+        let mut db = db.snapshot();
         move || {
             let v = db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs().sum_wait_for_on_entry.with_value(2, || {
@@ -110,10 +110,10 @@ fn true_parallel_propagate_panic() {
     // `thread2` will wait until `thread1` has entered sum and then -- once it
     // has set itself to block -- signal `thread1` to continue.
     let thread2 = std::thread::spawn({
-        let db = db.snapshot();
+        let mut db = db.snapshot();
         move || {
             db.knobs().signal.wait_for(1);
-            db.knobs().signal_on_will_block.set(2);
+            db.knobs().signal_on_will_block.store(2);
             db.sum("a")
         }
     });

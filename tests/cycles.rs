@@ -27,6 +27,12 @@ impl ParallelDatabase for DatabaseImpl {
             runtime: self.runtime.snapshot(self),
         })
     }
+
+    fn fork(&self, forker: salsa::ForkState<Self>) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
+            runtime: self.runtime.fork(self, forker),
+        })
+    }
 }
 
 #[salsa::query_group(GroupStruct)]
@@ -47,76 +53,76 @@ trait Database: salsa::Database {
     fn cycle_c(&self) -> Result<(), Error>;
 }
 
-fn recover_a(_db: &impl Database, cycle: &[String]) -> Result<(), Error> {
+fn recover_a(_db: &mut impl Database, cycle: &[String]) -> Result<(), Error> {
     Err(Error {
         cycle: cycle.to_owned(),
     })
 }
 
-fn recover_b(_db: &impl Database, cycle: &[String]) -> Result<(), Error> {
+fn recover_b(_db: &mut impl Database, cycle: &[String]) -> Result<(), Error> {
     Err(Error {
         cycle: cycle.to_owned(),
     })
 }
 
-fn memoized_a(db: &impl Database) -> () {
+fn memoized_a(db: &mut impl Database) -> () {
     db.memoized_b()
 }
 
-fn memoized_b(db: &impl Database) -> () {
+fn memoized_b(db: &mut impl Database) -> () {
     db.memoized_a()
 }
 
-fn volatile_a(db: &impl Database) -> () {
-    db.salsa_runtime().report_untracked_read();
+fn volatile_a(db: &mut impl Database) -> () {
+    db.salsa_runtime_mut().report_untracked_read();
     db.volatile_b()
 }
 
-fn volatile_b(db: &impl Database) -> () {
-    db.salsa_runtime().report_untracked_read();
+fn volatile_b(db: &mut impl Database) -> () {
+    db.salsa_runtime_mut().report_untracked_read();
     db.volatile_a()
 }
 
-fn cycle_leaf(_db: &impl Database) -> () {}
+fn cycle_leaf(_db: &mut impl Database) -> () {}
 
-fn cycle_a(db: &impl Database) -> Result<(), Error> {
+fn cycle_a(db: &mut impl Database) -> Result<(), Error> {
     let _ = db.cycle_b();
     Ok(())
 }
 
-fn cycle_b(db: &impl Database) -> Result<(), Error> {
+fn cycle_b(db: &mut impl Database) -> Result<(), Error> {
     db.cycle_leaf();
     let _ = db.cycle_a();
     Ok(())
 }
 
-fn cycle_c(db: &impl Database) -> Result<(), Error> {
+fn cycle_c(db: &mut impl Database) -> Result<(), Error> {
     db.cycle_b()
 }
 
 #[test]
 #[should_panic(expected = "cycle detected")]
 fn cycle_memoized() {
-    let query = DatabaseImpl::default();
+    let mut query = DatabaseImpl::default();
     query.memoized_a();
 }
 
 #[test]
 #[should_panic(expected = "cycle detected")]
 fn cycle_volatile() {
-    let query = DatabaseImpl::default();
+    let mut query = DatabaseImpl::default();
     query.volatile_a();
 }
 
 #[test]
 fn cycle_cycle() {
-    let query = DatabaseImpl::default();
+    let mut query = DatabaseImpl::default();
     assert!(query.cycle_a().is_err());
 }
 
 #[test]
 fn inner_cycle() {
-    let query = DatabaseImpl::default();
+    let mut query = DatabaseImpl::default();
     let err = query.cycle_c();
     assert!(err.is_err());
     let cycle = err.unwrap_err().cycle;
@@ -134,9 +140,9 @@ fn inner_cycle() {
 fn parallel_cycle() {
     let _ = env_logger::try_init();
 
-    let db = DatabaseImpl::default();
+    let mut db = DatabaseImpl::default();
     let thread1 = std::thread::spawn({
-        let db = db.snapshot();
+        let mut db = db.snapshot();
         move || {
             let result = db.cycle_a();
             assert!(result.is_err(), "Expected cycle error");

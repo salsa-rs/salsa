@@ -24,6 +24,11 @@ impl salsa::ParallelDatabase for Database {
             runtime: self.runtime.snapshot(self),
         })
     }
+    fn fork(&self, forker: salsa::ForkState<Self>) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
+            runtime: self.runtime.fork(self, forker),
+        })
+    }
 }
 
 #[salsa::query_group(InternStorage)]
@@ -53,7 +58,7 @@ impl salsa::InternKey for InternKey {
 
 #[test]
 fn test_intern1() {
-    let db = Database::default();
+    let mut db = Database::default();
     let foo0 = db.intern1(format!("foo"));
     let bar0 = db.intern1(format!("bar"));
     let foo1 = db.intern1(format!("foo"));
@@ -69,7 +74,7 @@ fn test_intern1() {
 
 #[test]
 fn test_intern2() {
-    let db = Database::default();
+    let mut db = Database::default();
     let foo0 = db.intern2(format!("x"), format!("foo"));
     let bar0 = db.intern2(format!("x"), format!("bar"));
     let foo1 = db.intern2(format!("x"), format!("foo"));
@@ -85,7 +90,7 @@ fn test_intern2() {
 
 #[test]
 fn test_intern_key() {
-    let db = Database::default();
+    let mut db = Database::default();
     let foo0 = db.intern_key(format!("foo"));
     let bar0 = db.intern_key(format!("bar"));
     let foo1 = db.intern_key(format!("foo"));

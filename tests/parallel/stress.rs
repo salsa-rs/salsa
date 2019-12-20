@@ -24,14 +24,14 @@ trait StressDatabase: salsa::Database {
     fn c(&self, key: usize) -> Cancelable<usize>;
 }
 
-fn b(db: &impl StressDatabase, key: usize) -> Cancelable<usize> {
-    if db.salsa_runtime().is_current_revision_canceled() {
+fn b(db: &mut impl StressDatabase, key: usize) -> Cancelable<usize> {
+    if db.salsa_runtime_mut().is_current_revision_canceled() {
         return Err(Canceled);
     }
     Ok(db.a(key))
 }
 
-fn c(db: &impl StressDatabase, key: usize) -> Cancelable<usize> {
+fn c(db: &mut impl StressDatabase, key: usize) -> Cancelable<usize> {
     db.b(key)
 }
 
@@ -55,6 +55,11 @@ impl salsa::ParallelDatabase for StressDatabaseImpl {
     fn snapshot(&self) -> Snapshot<StressDatabaseImpl> {
         Snapshot::new(StressDatabaseImpl {
             runtime: self.runtime.snapshot(self),
+        })
+    }
+    fn fork(&self, forker: salsa::ForkState<Self>) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
+            runtime: self.runtime.fork(self, forker),
         })
     }
 }
@@ -132,10 +137,10 @@ impl rand::distributions::Distribution<ReadOp> for rand::distributions::Standard
     }
 }
 
-fn db_reader_thread(db: &StressDatabaseImpl, ops: Vec<ReadOp>, check_cancellation: bool) {
+fn db_reader_thread(db: &mut StressDatabaseImpl, ops: Vec<ReadOp>, check_cancellation: bool) {
     for op in ops {
         if check_cancellation {
-            if db.salsa_runtime().is_current_revision_canceled() {
+            if db.salsa_runtime_mut().is_current_revision_canceled() {
                 return;
             }
         }
@@ -154,7 +159,7 @@ impl WriteOp {
 }
 
 impl ReadOp {
-    fn execute(self, db: &StressDatabaseImpl) {
+    fn execute(self, db: &mut StressDatabaseImpl) {
         match self {
             ReadOp::Get(query, key) => match query {
                 Query::A => {
@@ -206,8 +211,8 @@ fn stress_test() {
                 ops,
                 check_cancellation,
             } => all_threads.push(std::thread::spawn({
-                let db = db.snapshot();
-                move || db_reader_thread(&db, ops, check_cancellation)
+                let mut db = db.snapshot();
+                move || db_reader_thread(&mut db, ops, check_cancellation)
             })),
         }
     }

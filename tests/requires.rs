@@ -13,7 +13,7 @@ mod queries {
         fn private_a(&self, x: u32) -> u32;
     }
 
-    fn private_a(db: &impl PrivGroupA, x: u32) -> u32 {
+    fn private_a(db: &mut impl PrivGroupA, x: u32) -> u32 {
         db.input(x)
     }
 
@@ -22,7 +22,7 @@ mod queries {
         fn private_b(&self, x: u32) -> u32;
     }
 
-    fn private_b(db: &impl PrivGroupB, x: u32) -> u32 {
+    fn private_b(db: &mut impl PrivGroupB, x: u32) -> u32 {
         db.input(x)
     }
 
@@ -33,7 +33,7 @@ mod queries {
         fn public(&self, x: u32) -> u32;
     }
 
-    fn public(db: &(impl PubGroup + PrivGroupA + PrivGroupB), x: u32) -> u32 {
+    fn public(db: &mut (impl PubGroup + PrivGroupA + PrivGroupB), x: u32) -> u32 {
         db.private_a(x) + db.private_b(x)
     }
 }
@@ -61,7 +61,7 @@ impl salsa::Database for Database {
 
 #[test]
 fn require_clauses_work() {
-    use queries::{InputGroup, PubGroup};
+    use queries::{InputGroup, InputGroupMut, PubGroup};
     let mut db = Database::default();
 
     db.set_input(1, 10);

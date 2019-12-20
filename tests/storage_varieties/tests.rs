@@ -7,7 +7,7 @@ use salsa::Durability;
 
 #[test]
 fn memoized_twice() {
-    let db = DatabaseImpl::default();
+    let mut db = DatabaseImpl::default();
     let v1 = db.memoized();
     let v2 = db.memoized();
     assert_eq!(v1, v2);
