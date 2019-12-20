@@ -61,7 +61,7 @@ impl salsa::Database for Database {
 
 #[test]
 fn require_clauses_work() {
-    use queries::{InputGroup, InputGroupMut, PubGroup};
+    use queries::{InputGroupMut, PubGroup};
     let mut db = Database::default();
 
     db.set_input(1, 10);

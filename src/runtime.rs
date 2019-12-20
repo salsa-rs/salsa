@@ -120,6 +120,7 @@ where
         }
     }
 
+    /// Returns a "forked" runtime, suitable to call concurrent queries.
     pub fn fork(&self, from_db: &DB, state: ForkState<DB>) -> Self {
         assert!(
             Arc::ptr_eq(&self.shared_state, &from_db.salsa_runtime().shared_state),
@@ -191,6 +192,8 @@ where
         self.id
     }
 
+    /// The unique identifier attached to this `SalsaRuntime` and the ids of its parents.
+    /// Each snapshotted runtime has a distinct identifier.
     pub fn ids<'a>(&'a self) -> impl Iterator<Item = RuntimeId> + 'a {
         self.parent
             .iter()

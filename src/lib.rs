@@ -378,8 +378,12 @@ pub trait ParallelDatabase: Database + Send {
     /// ```
     fn snapshot(&self) -> Snapshot<Self>;
 
+    /// Returns a `Snapshot` which can be used to run a query concurrently
     fn fork(&self, state: ForkState<Self>) -> Snapshot<Self>;
 
+    /// Returns a [`Forker`] object which can be used to fork new `DB` references that are able to
+    /// query the database concurrently. All queries run this way must complete before the
+    /// [`Forker`] object goes out of scope or its `Drop` impl will panic.
     fn forker(&mut self) -> Forker<'_, Self> {
         let runtime = self.salsa_runtime();
         Forker {
@@ -398,6 +402,8 @@ pub trait ParallelDatabase: Database + Send {
     }
 }
 
+/// Returned from calling [`ParallelDatabase::forker`]. Used to fork on a database so that
+/// multiple queries can run concurrently
 pub struct Forker<'a, DB>
 where
     DB: Database,
@@ -406,6 +412,7 @@ where
     state: ForkState<DB>,
 }
 
+///
 pub struct ForkState<DB: Database>(Arc<ForkStateInner<DB>>);
 
 struct ForkStateInner<DB: Database> {
@@ -444,6 +451,7 @@ impl<DB> Forker<'_, DB>
 where
     DB: ParallelDatabase,
 {
+    /// Returns a `Snapshot` which can be used to run a query concurrently
     pub fn fork(&self) -> Snapshot<DB> {
         self.db.fork(self.state.clone())
     }
@@ -557,20 +565,10 @@ where
         Self { db, storage }
     }
 
-    /// Execute the query on a given input. Usually it's easier to
-    /// invoke the trait method directly. Note that for variadic
-    /// queries (those with no inputs, or those with more than one
-    /// input) the key will be a tuple.
-    pub fn get(&self, key: Q::Key) -> Q::Value {
-        self.try_get(key).unwrap_or_else(|err| panic!("{}", err))
-    }
-
+    /// Peeks at the value at `Q::Key`. If it is currently in cache then it returns
+    /// `Some`, otherwise `None`
     pub fn peek(&self, key: &Q::Key) -> Option<Q::Value> {
         self.storage.peek(self.db, key)
-    }
-
-    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
-        unimplemented!() // self.storage.try_fetch(self.db, &key)
     }
 
     /// Remove all values for this query that have not been used in
@@ -611,6 +609,10 @@ where
         <DB as plumbing::GetQueryTable<Q>>::database_key(&self.db, key.clone())
     }
 
+    /// Execute the query on a given input. Usually it's easier to
+    /// invoke the trait method directly. Note that for variadic
+    /// queries (those with no inputs, or those with more than one
+    /// input) the key will be a tuple.
     pub fn get(&mut self, key: Q::Key) -> Q::Value {
         crate::plumbing::sync_future(self.try_get(key)).unwrap_or_else(|err| panic!("{}", err))
     }
