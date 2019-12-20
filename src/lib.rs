@@ -378,21 +378,21 @@ pub trait ParallelDatabase: Database + Send {
     /// ```
     fn snapshot(&self) -> Snapshot<Self>;
 
-    fn fork(&self, state: Arc<ForkState<Self>>) -> Snapshot<Self>;
+    fn fork(&self, state: ForkState<Self>) -> Snapshot<Self>;
 
     fn forker(&mut self) -> Forker<'_, Self> {
         let runtime = self.salsa_runtime();
         Forker {
-            state: Arc::new(ForkState {
+            state: ForkState(Arc::new(ForkStateInner {
                 parents: runtime
                     .parent
                     .iter()
-                    .flat_map(|state| state.parents.iter())
+                    .flat_map(|state| state.0.parents.iter())
                     .cloned()
                     .chain(Some(runtime.id()))
                     .collect(),
                 cycle: Default::default(),
-            }),
+            })),
             db: self,
         }
     }
@@ -403,12 +403,20 @@ where
     DB: Database,
 {
     db: &'a mut DB,
-    state: Arc<ForkState<DB>>,
+    state: ForkState<DB>,
 }
 
-pub struct ForkState<DB: Database> {
+pub struct ForkState<DB: Database>(Arc<ForkStateInner<DB>>);
+
+struct ForkStateInner<DB: Database> {
     parents: Vec<RuntimeId>,
     cycle: Mutex<Vec<DB::DatabaseKey>>,
+}
+
+impl<DB: Database> Clone for ForkState<DB> {
+    fn clone(&self) -> Self {
+        ForkState(self.0.clone())
+    }
 }
 
 impl<DB> Drop for Forker<'_, DB>
@@ -418,7 +426,7 @@ where
     fn drop(&mut self) {
         if !std::thread::panicking() {
             let cycle = std::mem::replace(
-                Arc::get_mut(&mut self.state)
+                Arc::get_mut(&mut self.state.0)
                     .expect("Forker dropped before joining forked databases!")
                     .cycle
                     .get_mut()

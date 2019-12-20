@@ -3,8 +3,7 @@ use crate::dependency::Dependency;
 use crate::durability::Durability;
 use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
-use crate::{CycleError, Database, Event, EventKind, ForkState, SweepStrategy};
-use futures::{future::BoxFuture, prelude::*};
+use crate::{Database, Event, EventKind, ForkState, SweepStrategy};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
@@ -38,7 +37,7 @@ pub struct Runtime<DB: Database> {
     /// Local state that is specific to this runtime (thread).
     local_state: LocalState<DB>,
 
-    pub(super) parent: Option<Arc<ForkState<DB>>>,
+    pub(super) parent: Option<ForkState<DB>>,
 
     /// Shared state that is accessible via all runtimes.
     shared_state: Arc<SharedState<DB>>,
@@ -121,7 +120,7 @@ where
         }
     }
 
-    pub fn fork(&self, from_db: &DB, state: Arc<ForkState<DB>>) -> Self {
+    pub fn fork(&self, from_db: &DB, state: ForkState<DB>) -> Self {
         assert!(
             Arc::ptr_eq(&self.shared_state, &from_db.salsa_runtime().shared_state),
             "invoked `snapshot` with a non-matching database"
@@ -195,7 +194,7 @@ where
     pub fn ids<'a>(&'a self) -> impl Iterator<Item = RuntimeId> + 'a {
         self.parent
             .iter()
-            .flat_map(|state| state.parents.iter().cloned())
+            .flat_map(|state| state.0.parents.iter().cloned())
             .chain(Some(self.id()))
     }
 

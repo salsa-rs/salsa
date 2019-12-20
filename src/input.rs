@@ -96,7 +96,7 @@ where
         Ok(value)
     }
 
-    fn peek(&self, db: &DB, key: &Q::Key) -> Option<Q::Value> {
+    fn peek(&self, _db: &DB, key: &Q::Key) -> Option<Q::Value> {
         let slot = self.slot(key)?;
 
         let StampedValue { value, .. } = slot.stamped_value.read().clone();

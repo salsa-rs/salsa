@@ -12,13 +12,13 @@ trait PanicSafelyDatabase: salsa::Database {
     fn outer(&self) -> ();
 }
 
-fn panic_safely(db: &impl PanicSafelyDatabase) -> () {
+fn panic_safely(db: &mut impl PanicSafelyDatabase) -> () {
     assert_eq!(db.one(), 1);
 }
 
 static OUTER_CALLS: AtomicU32 = AtomicU32::new(0);
 
-fn outer(db: &impl PanicSafelyDatabase) -> () {
+fn outer(db: &mut impl PanicSafelyDatabase) -> () {
     OUTER_CALLS.fetch_add(1, SeqCst);
     db.panic_safely();
 }
@@ -45,6 +45,11 @@ impl salsa::ParallelDatabase for DatabaseStruct {
             runtime: self.runtime.snapshot(self),
         })
     }
+    fn fork(&self, forker: salsa::ForkState<Self>) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
+            runtime: self.runtime.fork(self, forker),
+        })
+    }
 }
 
 #[test]
@@ -55,7 +60,7 @@ fn should_panic_safely() {
     // Invoke `db.panic_safely() without having set `db.one`. `db.one` will
     // return 0 and we should catch the panic.
     let result = panic::catch_unwind(AssertUnwindSafe({
-        let db = db.snapshot();
+        let mut db = db.snapshot();
         move || db.panic_safely()
     }));
     assert!(result.is_err());
@@ -90,7 +95,7 @@ fn storages_are_unwind_safe() {
 
 #[test]
 fn panics_clear_query_stack() {
-    let db = DatabaseStruct::default();
+    let mut db = DatabaseStruct::default();
 
     // Invoke `db.panic_if_not_one() without having set `db.input`. `db.input`
     // will default to 0 and we should catch the panic.

@@ -96,9 +96,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 // Extract keys.
                 let mut iter = method.sig.inputs.iter();
                 match iter.next() {
-                    Some(FnArg::Receiver(sr)) if sr.mutability.is_some() => (),
+                    Some(FnArg::Receiver(sr)) if sr.mutability.is_none() => (),
                     _ => panic!(
-                        "first argument of query `{}` must be `&mut self`",
+                        "first argument of query `{}` must be `&self`",
                         method.sig.ident
                     ),
                 }

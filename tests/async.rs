@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 #[salsa::database(AsyncTraitStorage)]
 #[derive(Default)]
 struct AsyncDatabase {
@@ -22,7 +20,7 @@ impl salsa::ParallelDatabase for AsyncDatabase {
             runtime: self.runtime.snapshot(self),
         })
     }
-    fn fork(&self, forker: Arc<salsa::ForkState<Self>>) -> salsa::Snapshot<Self> {
+    fn fork(&self, forker: salsa::ForkState<Self>) -> salsa::Snapshot<Self> {
         salsa::Snapshot::new(Self {
             runtime: self.runtime.fork(self, forker),
         })
