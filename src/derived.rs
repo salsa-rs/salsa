@@ -8,7 +8,7 @@ use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::StampedValue;
-use crate::{CycleError, Database, SweepStrategy};
+use crate::{CycleError, Database, Query, SweepStrategy};
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use std::marker::PhantomData;
@@ -31,7 +31,7 @@ pub type DependencyStorage<DB, Q> = DerivedStorage<DB, Q, NeverMemoizeValue>;
 /// function (in contrast to "inputs").
 pub struct DerivedStorage<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -42,7 +42,7 @@ where
 
 impl<DB, Q, MP> std::panic::RefUnwindSafe for DerivedStorage<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
     Q::Key: std::panic::RefUnwindSafe,
@@ -52,7 +52,7 @@ where
 
 pub trait MemoizationPolicy<DB, Q>: Send + Sync + 'static
 where
-    Q: QueryFunction<DB>,
+    Q: Query<DB>,
     DB: Database,
 {
     fn should_memoize_value(key: &Q::Key) -> bool;
@@ -63,7 +63,7 @@ where
 pub enum AlwaysMemoizeValue {}
 impl<DB, Q> MemoizationPolicy<DB, Q> for AlwaysMemoizeValue
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     Q::Value: Eq,
     DB: Database,
 {
@@ -79,7 +79,7 @@ where
 pub enum NeverMemoizeValue {}
 impl<DB, Q> MemoizationPolicy<DB, Q> for NeverMemoizeValue
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database,
 {
     fn should_memoize_value(_key: &Q::Key) -> bool {
@@ -93,7 +93,7 @@ where
 
 impl<DB, Q, MP> Default for DerivedStorage<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -108,7 +108,7 @@ where
 
 impl<DB, Q, MP> DerivedStorage<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -128,7 +128,7 @@ where
 #[async_trait::async_trait]
 impl<DB, Q, MP> QueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -176,7 +176,7 @@ where
 
 impl<DB, Q, MP> QueryStorageMassOps<DB> for DerivedStorage<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -191,7 +191,7 @@ where
 
 impl<DB, Q, MP> LruQueryStorageOps for DerivedStorage<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -202,7 +202,7 @@ where
 
 impl<DB, Q, MP> DerivedQueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {

@@ -16,7 +16,7 @@ use std::sync::Arc;
 pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
 
 mod local_state;
-use local_state::LocalState;
+use local_state::{ActiveQueryGuard, LocalState};
 
 /// The salsa runtime stores the storage for all queries as well as
 /// tracking the query stack and dependencies between cycles.
@@ -364,12 +364,11 @@ where
         self.revision_guard.is_none() && !self.local_state.query_in_progress()
     }
 
-    pub(crate) async fn execute_query_implementation<V>(
-        db: &mut DB,
+    pub(crate) fn prepare_query_execute<'db>(
+        db: &'db mut DB,
         database_key: &DB::DatabaseKey,
-        execute: impl for<'a> FnOnce(&'a mut DB) -> crate::BoxFutureLocal<'a, V>,
-    ) -> ComputedQueryResult<DB, V> {
-        debug!("{:?}: execute_query_implementation invoked", database_key);
+    ) -> ActiveQueryGuard<'db, DB> {
+        debug!("{:?}: prepare_query_execute invoked", database_key);
 
         db.salsa_event(|| Event {
             runtime_id: db.salsa_runtime().id(),
@@ -380,27 +379,7 @@ where
 
         // Push the active query onto the stack.
         let max_durability = Durability::MAX;
-        let active_query = LocalState::push_query(db, database_key, max_durability);
-
-        // Execute user's code, accumulating inputs etc.
-        let value = execute(active_query.db).await;
-
-        // Extract accumulated inputs.
-        let ActiveQuery {
-            dependencies,
-            changed_at,
-            durability,
-            cycle,
-            ..
-        } = active_query.complete();
-
-        ComputedQueryResult {
-            value,
-            durability,
-            changed_at,
-            dependencies,
-            cycle,
-        }
+        LocalState::push_query(db, database_key, max_durability)
     }
 
     /// Reports that the currently active query read the result from

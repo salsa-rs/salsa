@@ -14,7 +14,7 @@ use crate::runtime::FxIndexSet;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
-use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy};
+use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, Query, SweepStrategy};
 use futures::{
     channel::mpsc::{self, UnboundedReceiver as Receiver, UnboundedSender as Sender},
     future::{ready, Either},
@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 pub(super) struct Slot<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: Query<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -49,7 +49,7 @@ pub struct WaitResult<V, K> {
 /// Defines the "current state" of query's memoized results.
 enum QueryState<DB, Q>
 where
-    Q: QueryFunction<DB>,
+    Q: Query<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
 {
     NotComputed,
@@ -68,7 +68,7 @@ where
 
 struct Memo<DB, Q>
 where
-    Q: QueryFunction<DB>,
+    Q: Query<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
 {
     /// The result of the query, if we decide to memoize it.
@@ -112,7 +112,7 @@ enum ProbeState<F, G> {
 
 impl<DB, Q, MP> Slot<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -251,12 +251,16 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = Runtime::execute_query_implementation(db, &database_key, |db| {
-            info!("{:?}: executing query", self);
+        let mut result = {
+            let active_query = Runtime::prepare_query_execute(db, &database_key);
 
-            Q::execute(db, self.key.clone())
-        })
-        .await;
+            // Execute user's code, accumulating inputs etc.
+            info!("{:?}: executing query", self);
+            let value = Q::execute(active_query.db, self.key.clone()).await;
+
+            // Extract accumulated inputs.
+            active_query.complete_as_computed(value)
+        };
 
         if !result.cycle.is_empty() {
             result.value = match Q::recover(db, &result.cycle, &self.key) {
@@ -635,7 +639,7 @@ where
 
 impl<DB, Q> QueryState<DB, Q>
 where
-    Q: QueryFunction<DB>,
+    Q: Query<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
 {
     fn in_progress(id: RuntimeId) -> Self {
@@ -649,7 +653,7 @@ where
 struct PanicGuard<'me, DB, Q, MP>
 where
     DB: Database + HasQueryGroup<Q::Group>,
-    Q: QueryFunction<DB>,
+    Q: Query<DB>,
     MP: MemoizationPolicy<DB, Q>,
 {
     database_key: &'me DB::DatabaseKey,
@@ -661,7 +665,7 @@ where
 impl<'me, DB, Q, MP> PanicGuard<'me, DB, Q, MP>
 where
     DB: Database + HasQueryGroup<Q::Group>,
-    Q: QueryFunction<DB>,
+    Q: Query<DB>,
     MP: MemoizationPolicy<DB, Q>,
 {
     fn new(
@@ -752,7 +756,7 @@ Please report this bug to https://github.com/salsa-rs/salsa/issues."
 impl<'me, DB, Q, MP> Drop for PanicGuard<'me, DB, Q, MP>
 where
     DB: Database + HasQueryGroup<Q::Group>,
-    Q: QueryFunction<DB>,
+    Q: Query<DB>,
     MP: MemoizationPolicy<DB, Q>,
 {
     fn drop(&mut self) {
@@ -769,7 +773,7 @@ where
 
 impl<DB, Q> Memo<DB, Q>
 where
-    Q: QueryFunction<DB>,
+    Q: Query<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
 {
     /// True if this memo is known not to have changed based on its durability.
@@ -873,7 +877,7 @@ where
 
 impl<DB, Q, MP> std::fmt::Debug for Slot<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: Query<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -896,7 +900,7 @@ impl<DB: Database> std::fmt::Debug for MemoInputs<DB> {
 
 impl<DB, Q, MP> LruNode for Slot<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: Query<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -912,7 +916,7 @@ where
 #[async_trait::async_trait]
 unsafe impl<DB, Q, MP> DatabaseSlot<DB> for Slot<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -923,7 +927,7 @@ where
 
 impl<DB, Q, MP> Slot<DB, Q, MP>
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
@@ -1131,7 +1135,7 @@ where
 #[allow(dead_code)]
 fn check_send_sync<DB, Q, MP>()
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
     DB::DatabaseData: Send + Sync,
@@ -1149,7 +1153,7 @@ where
 #[allow(dead_code)]
 fn check_static<DB, Q, MP>()
 where
-    Q: QueryFunction<DB>,
+    Q: for<'f> QueryFunction<'f, DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
     DB: 'static,

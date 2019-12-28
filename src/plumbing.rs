@@ -2,7 +2,6 @@
 
 use crate::debug::TableEntry;
 use crate::durability::Durability;
-use crate::BoxFutureLocal;
 use crate::CycleError;
 use crate::Database;
 use crate::Query;
@@ -67,8 +66,12 @@ pub trait QueryStorageMassOps<DB: Database> {
 
 pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {}
 
-pub trait QueryFunction<DB: Database>: Query<DB> {
-    fn execute<'a>(db: &'a mut DB, key: Self::Key) -> BoxFutureLocal<'a, Self::Value>;
+pub trait QueryFunction<'f, DB: Database>: Query<DB> {
+    /// The future type returned by executing this query
+    type Future: std::future::Future<Output = Self::Value> + Send + 'f;
+
+    fn execute(db: &'f mut DB, key: Self::Key) -> Self::Future;
+
     fn recover(db: &mut DB, cycle: &[DB::DatabaseKey], key: &Self::Key) -> Option<Self::Value> {
         let _ = (db, cycle, key);
         None

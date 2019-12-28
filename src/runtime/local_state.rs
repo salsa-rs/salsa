@@ -99,8 +99,8 @@ impl<DB> std::panic::RefUnwindSafe for LocalState<DB> where DB: Database {}
 /// is returned to represent its slot. The guard can be used to pop
 /// the query from the stack -- in the case of unwinding, the guard's
 /// destructor will also remove the query.
-pub(super) struct ActiveQueryGuard<'me, DB: Database> {
-    pub(super) db: &'me mut DB,
+pub(crate) struct ActiveQueryGuard<'me, DB: Database> {
+    pub(crate) db: &'me mut DB,
     push_len: usize,
 }
 
@@ -122,6 +122,24 @@ where
         let query = self.pop_helper();
         std::mem::forget(self);
         query
+    }
+
+    pub(crate) fn complete_as_computed<V>(self, value: V) -> super::ComputedQueryResult<DB, V> {
+        let ActiveQuery {
+            dependencies,
+            changed_at,
+            durability,
+            cycle,
+            ..
+        } = self.complete();
+
+        super::ComputedQueryResult {
+            value,
+            durability,
+            changed_at,
+            dependencies,
+            cycle,
+        }
     }
 }
 

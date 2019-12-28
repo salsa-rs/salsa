@@ -472,24 +472,31 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             let future = if query.is_async {
                 quote_spanned! {span=>
-                    #invoke(db, #(#key_names),*)
+                    Box::pin(#invoke(db, #(#key_names),*))
                 }
             } else {
                 quote_spanned! {span=>
                     salsa::futures::future::ready(#invoke(db, #(#key_names),*))
                 }
             };
+            let future_ty = if query.is_async {
+                quote!( salsa::BoxFutureLocal<'f, #value> )
+            } else {
+                quote!( futures::future::Ready<#value> )
+            };
 
             output.extend(quote_spanned! {span=>
-                impl<DB> salsa::plumbing::QueryFunction<DB> for #qt
+                impl<'f, DB> salsa::plumbing::QueryFunction<'f, DB> for #qt
                 where
                     DB: #trait_name + #requires,
                     DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                     DB: salsa::Database,
                 {
-                    fn execute<'a>(db: &'a mut DB, #key_pattern: <Self as salsa::Query<DB>>::Key)
-                        -> salsa::BoxFutureLocal<'a, <Self as salsa::Query<DB>>::Value> {
-                        Box::pin(#future)
+                    type Future = #future_ty;
+
+                    fn execute(db: &'f mut DB, #key_pattern: <Self as salsa::Query<DB>>::Key)
+                        -> #future_ty {
+                        #future
                     }
 
                     #recover
