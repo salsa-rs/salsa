@@ -408,8 +408,10 @@ pub struct Forker<'a, DB>
 where
     DB: Database,
 {
-    db: &'a mut DB,
-    state: ForkState<DB>,
+    /// The database
+    pub db: &'a mut DB,
+    /// The state used to tracked forked queries
+    pub state: ForkState<DB>,
 }
 
 ///

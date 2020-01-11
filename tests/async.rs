@@ -1,3 +1,7 @@
+use std::task::Poll;
+
+use salsa::ParallelDatabase;
+
 #[salsa::database(AsyncTraitStorage)]
 #[derive(Default)]
 struct AsyncDatabase {
@@ -33,6 +37,7 @@ trait AsyncTrait: salsa::ParallelDatabase {
     fn input(&self, x: String) -> u32;
 
     async fn output(&self, x: String) -> u32;
+    async fn query2(&self, x: String) -> u32;
 }
 
 async fn output(db: &mut impl AsyncTrait, x: String) -> u32 {
@@ -47,6 +52,30 @@ async fn output(db: &mut impl AsyncTrait, x: String) -> u32 {
     }
 }
 
+async fn yield_() {
+    let mut yielded = false;
+    futures::future::poll_fn(|cx| {
+        if yielded {
+            Poll::Ready(())
+        } else {
+            yielded = true;
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        }
+    })
+    .await;
+}
+
+async fn query2(db: &mut impl AsyncTrait, x: String) -> u32 {
+    if x == "depends" {
+        yield_().await;
+        db.query2("base".into()).await + db.input(x)
+    } else {
+        yield_().await;
+        db.input(x)
+    }
+}
+
 #[test]
 fn basic() {
     let mut query = AsyncDatabase::default();
@@ -55,9 +84,23 @@ fn basic() {
     assert_eq!(futures::executor::block_on(query.output("a".into())), 2 + 3);
 }
 
-fn assert_send<T: Send>(t: T) -> T {
-    t
+#[test]
+fn dependency_on_concurrent() {
+    let mut query = AsyncDatabase::default();
+    query.set_input("base".into(), 2);
+    query.set_input("depends".into(), 1);
+    assert_eq!(
+        futures::executor::block_on(async {
+            let forker = query.forker();
+            let mut db1 = forker.fork();
+            let mut db2 = forker.fork();
+            futures::join!(db1.query2("depends".into()), db2.query2("base".into()))
+        }),
+        (3, 2)
+    );
 }
+
+fn assert_send<T: Send>(_: T) {}
 
 async fn function(_: &mut AsyncDatabase) {}
 

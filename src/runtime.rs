@@ -43,6 +43,17 @@ pub struct Runtime<DB: Database> {
     shared_state: Arc<SharedState<DB>>,
 }
 
+impl<DB> Drop for Runtime<DB>
+where
+    DB: Database,
+{
+    fn drop(&mut self) {
+        if self.parent.is_some() {
+            self.unblock_queries_blocked_on_self(None);
+        }
+    }
+}
+
 impl<DB> Default for Runtime<DB>
 where
     DB: Database,
@@ -132,6 +143,8 @@ where
         let id = RuntimeId {
             counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),
         };
+
+        assert!(self.try_block_on_fork(id));
 
         Runtime {
             id,
@@ -517,25 +530,32 @@ where
     pub(crate) fn try_block_on(&self, database_key: &DB::DatabaseKey, other_id: RuntimeId) -> bool {
         let mut graph = self.shared_state.dependency_graph.lock();
 
-        if self.ids().all(|id| graph.can_add_edge(id, other_id)) {
-            for id in self.ids() {
-                graph.add_edge(
-                    id,
-                    database_key,
-                    other_id,
-                    self.local_state
-                        .borrow_query_stack()
-                        .iter()
-                        .map(|query| query.database_key.clone()),
-                );
-            }
-            true
-        } else {
-            false
-        }
+        graph.add_edge(
+            self.id(),
+            Some(database_key),
+            other_id,
+            self.local_state
+                .borrow_query_stack()
+                .iter()
+                .map(|query| query.database_key.clone()),
+        )
     }
 
-    pub(crate) fn unblock_queries_blocked_on_self(&self, database_key: &DB::DatabaseKey) {
+    pub(crate) fn try_block_on_fork(&self, other_id: RuntimeId) -> bool {
+        let mut graph = self.shared_state.dependency_graph.lock();
+
+        graph.add_edge(
+            self.id(),
+            None,
+            other_id,
+            self.local_state
+                .borrow_query_stack()
+                .iter()
+                .map(|query| query.database_key.clone()),
+        )
+    }
+
+    pub(crate) fn unblock_queries_blocked_on_self(&self, database_key: Option<&DB::DatabaseKey>) {
         let mut graph = self.shared_state.dependency_graph.lock();
         let id = self.id();
         graph.remove_edge(database_key, id);
@@ -759,8 +779,9 @@ struct DependencyGraph<K: Hash + Eq> {
     /// `K` is blocked on some query executing in the runtime `V`.
     /// This encodes a graph that must be acyclic (or else deadlock
     /// will result).
-    edges: FxHashMap<RuntimeId, Edge<K>>,
+    edges: FxHashMap<RuntimeId, SmallVec<[Edge<K>; 1]>>,
     labels: FxHashMap<K, SmallVec<[RuntimeId; 4]>>,
+    forks: FxHashMap<RuntimeId, SmallVec<[RuntimeId; 4]>>,
 }
 
 impl<K> Default for DependencyGraph<K>
@@ -771,6 +792,7 @@ where
         DependencyGraph {
             edges: Default::default(),
             labels: Default::default(),
+            forks: Default::default(),
         }
     }
 }
@@ -782,13 +804,11 @@ where
     fn can_add_edge(&self, from_id: RuntimeId, to_id: RuntimeId) -> bool {
         // First: walk the chain of things that `to_id` depends on,
         // looking for us.
-        let mut p = to_id;
-        while let Some(q) = self.edges.get(&p).map(|edge| edge.id) {
-            if q == from_id {
-                return false;
-            }
-
-            p = q;
+        if from_id == to_id {
+            return false;
+        }
+        if let Some(qs) = self.edges.get(&to_id) {
+            return qs.iter().all(|q| self.can_add_edge(from_id, q.id));
         }
         true
     }
@@ -797,37 +817,42 @@ where
     fn add_edge(
         &mut self,
         from_id: RuntimeId,
-        database_key: &K,
+        database_key: Option<&K>,
         to_id: RuntimeId,
         path: impl IntoIterator<Item = K>,
     ) -> bool {
         assert_ne!(from_id, to_id);
-        debug_assert!(!self.edges.contains_key(&from_id));
 
         if !self.can_add_edge(from_id, to_id) {
             return false;
         }
 
-        self.edges.insert(
-            from_id,
-            Edge {
-                id: to_id,
-                path: path.into_iter().chain(Some(database_key.clone())).collect(),
-            },
-        );
-        self.labels
-            .entry(database_key.clone())
-            .or_default()
-            .push(from_id);
+        self.edges.entry(from_id).or_default().push(Edge {
+            id: to_id,
+            path: path.into_iter().chain(database_key.cloned()).collect(),
+        });
+
+        if let Some(database_key) = database_key.cloned() {
+            self.labels.entry(database_key).or_default().push(from_id);
+        } else {
+            self.forks.entry(to_id).or_default().push(from_id);
+        }
         true
     }
 
-    fn remove_edge(&mut self, database_key: &K, to_id: RuntimeId) {
-        let vec = self.labels.remove(database_key).unwrap_or_default();
+    fn remove_edge(&mut self, database_key: Option<&K>, to_id: RuntimeId) {
+        let vec = match database_key {
+            Some(database_key) => self.labels.remove(database_key).unwrap_or_default(),
+            None => self.forks.remove(&to_id).unwrap_or_default(),
+        };
 
         for from_id in &vec {
-            let to_id1 = self.edges.remove(from_id).map(|edge| edge.id);
-            assert_eq!(Some(to_id), to_id1);
+            let edges = self.edges.get_mut(from_id).expect("remove_edge");
+            let i = edges
+                .iter()
+                .position(|edge| edge.id == to_id)
+                .expect("Tried to remove edge which did not exist in the edge list");
+            edges.swap_remove(i);
         }
     }
 
@@ -847,8 +872,16 @@ where
             Some((id, path)) => {
                 let link_key = path.last().unwrap();
 
-                current = self.edges.get(&id).map(|edge| {
-                    let i = edge.path.iter().rposition(|p| p == link_key).unwrap();
+                current = self.edges.get(&id).map(|out_edges| {
+                    let (edge, i) = out_edges
+                        .iter()
+                        .find_map(|edge| {
+                            edge.path
+                                .iter()
+                                .rposition(|p| p == link_key)
+                                .map(|i| (edge, i))
+                        })
+                        .unwrap();
                     (edge.id, &edge.path[i + 1..])
                 });
 
@@ -929,7 +962,7 @@ mod tests {
         let mut graph = DependencyGraph::default();
         let a = RuntimeId { counter: 0 };
         let b = RuntimeId { counter: 1 };
-        assert!(graph.add_edge(a, &2, b, vec![1]));
+        assert!(graph.add_edge(a, Some(&2), b, vec![1]));
         // assert!(graph.add_edge(b, &1, a, vec![3, 2]));
         assert_eq!(
             graph
@@ -946,8 +979,8 @@ mod tests {
         let a = RuntimeId { counter: 0 };
         let b = RuntimeId { counter: 1 };
         let c = RuntimeId { counter: 2 };
-        assert!(graph.add_edge(a, &3, b, vec![1]));
-        assert!(graph.add_edge(b, &4, c, vec![2, 3]));
+        assert!(graph.add_edge(a, Some(&3), b, vec![1]));
+        assert!(graph.add_edge(b, Some(&4), c, vec![2, 3]));
         // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
         assert_eq!(
             graph

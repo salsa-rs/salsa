@@ -16,7 +16,7 @@ use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, Query, SweepStrategy};
 use futures::{
-    channel::mpsc::{self, UnboundedReceiver as Receiver, UnboundedSender as Sender},
+    channel::oneshot::{self, Receiver, Sender},
     future::{ready, Either},
     prelude::*,
 };
@@ -396,7 +396,7 @@ where
             QueryState::InProgress { id, waiting } => {
                 let other_id = *id;
                 return match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
-                    Ok(mut rx) => {
+                    Ok(rx) => {
                         // Release our lock on `self.map`, so other thread
                         // can complete.
                         std::mem::drop(state);
@@ -410,8 +410,7 @@ where
                         });
 
                         ProbeState::UpToDate(Either::Left(async move {
-                            let result =
-                                rx.next().await.unwrap_or_else(|| db.on_propagated_panic());
+                            let result = rx.await.unwrap_or_else(|_| db.on_propagated_panic());
                             if result.cycle.is_empty() {
                                 Ok(result.value)
                             } else {
@@ -607,22 +606,18 @@ where
         other_id: RuntimeId,
         waiting: &Mutex<SmallVec<[Sender<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
     ) -> Result<Receiver<WaitResult<Q::Value, DB::DatabaseKey>>, CycleDetected> {
-        if runtime.ids().any(|id| other_id == id) {
-            let id = runtime.id();
-            return Err(CycleDetected {
-                from: id,
-                to: other_id,
-            });
+        let id = runtime.id();
+        if other_id == id {
+            return Err(CycleDetected { from: id, to: id });
         } else {
             if !runtime.try_block_on(&self.database_key(db), other_id) {
-                let id = runtime.id();
                 return Err(CycleDetected {
                     from: id,
                     to: other_id,
                 });
             }
 
-            let (tx, rx) = mpsc::unbounded();
+            let (tx, rx) = oneshot::channel();
 
             // The reader of this will have to acquire map
             // lock, we don't need any particular ordering.
@@ -717,22 +712,21 @@ where
 
         match old_value {
             QueryState::InProgress { id, waiting } => {
-                assert_eq!(id, self.db.salsa_runtime().id());
+                assert_eq!(id, self.db.salsa_runtime().id(),);
 
                 self.db
                     .salsa_runtime()
-                    .unblock_queries_blocked_on_self(&self.database_key);
+                    .unblock_queries_blocked_on_self(Some(&self.database_key));
 
                 match new_value {
                     // If anybody has installed themselves in our "waiting"
                     // list, notify them that the value is available.
                     Some((new_value, ref cycle)) => {
                         for tx in waiting.into_inner() {
-                            tx.unbounded_send(WaitResult {
+                            let _ = tx.send(WaitResult {
                                 value: new_value.clone(),
                                 cycle: cycle.clone(),
-                            })
-                            .unwrap();
+                            });
                         }
                     }
 
@@ -973,9 +967,8 @@ where
                     return match self
                         .register_with_in_progress_thread(db, runtime, other_id, waiting)
                     {
-                        Ok(mut rx) => Either::Left(Either::Right(async move {
-                            let result =
-                                rx.next().await.unwrap_or_else(|| db.on_propagated_panic());
+                        Ok(rx) => Either::Left(Either::Right(async move {
+                            let result = rx.await.unwrap_or_else(|_| db.on_propagated_panic());
                             !result.cycle.is_empty() || result.value.changed_at > revision
                         })),
 
