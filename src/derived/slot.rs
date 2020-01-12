@@ -314,26 +314,17 @@ where
         Ok(new_value)
     }
 
-    /// Helper for `read`:
+    /// Helper for `read` that does a shallow check (not recursive) if we have an up-to-date value.
     ///
-    /// Invoked with the guard `map` of some lock on `self.map` (read
-    /// or write) as well as details about the key to look up.  Looks
-    /// in the map to see if we have an up-to-date value or a
-    /// cycle. Returns a suitable `ProbeState`:
+    /// Invoked with the guard `state` corresponding to the `QueryState` of some `Slot` (the guard
+    /// can be either read or write). Returns a suitable `ProbeState`:
     ///
-    /// - `ProbeState::UpToDate(r)` if the table has an up-to-date
-    ///   value (or we blocked on another thread that produced such a value).
-    /// - `ProbeState::CycleDetected` if this thread is (directly or
-    ///   indirectly) already computing this value.
-    /// - `ProbeState::BlockedOnOtherThread` if some other thread
-    ///   (which does not depend on us) was already computing this
-    ///   value; caller should re-acquire the lock and try again.
-    /// - `ProbeState::StaleOrAbsent` if either (a) there is no memo
-    ///    for this key, (b) the memo has no value; or (c) the memo
-    ///    has not been verified at the current revision.
+    /// - `ProbeState::UpToDate(r)` if the table has an up-to-date value (or we blocked on another
+    ///   thread that produced such a value).
+    /// - `ProbeState::StaleOrAbsent(g)` if either (a) there is no memo for this key, (b) the memo
+    ///   has no value; or (c) the memo has not been verified at the current revision.
     ///
-    /// Note that in all cases **except** for `StaleOrAbsent`, the lock on
-    /// `map` will have been released.
+    /// Note that in case `ProbeState::UpToDate`, the lock will have been released.
     fn probe<StateGuard>(
         &self,
         db: &DB,
@@ -351,8 +342,7 @@ where
                 let other_id = *id;
                 return match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
                     Ok(rx) => {
-                        // Release our lock on `self.map`, so other thread
-                        // can complete.
+                        // Release our lock on `self.state`, so other thread can complete.
                         std::mem::drop(state);
 
                         db.salsa_event(|| Event {
@@ -895,8 +885,7 @@ where
                 );
                 match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
                     Ok(rx) => {
-                        // Release our lock on `self.map`, so other thread
-                        // can complete.
+                        // Release our lock on `self.state`, so other thread can complete.
                         std::mem::drop(state);
 
                         let result = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
@@ -972,11 +961,9 @@ where
                         };
                     }
 
+                    // We have a **tracked set of inputs** that need to be validated.
                     let inputs = inputs.clone();
-
-                    // We have a **tracked set of inputs**
-                    // (found in `database_keys`) that need to
-                    // be validated.
+                    // We'll need to update the state anyway (see below), so release the read-lock.
                     std::mem::drop(state);
 
                     // Iterate the inputs and see if any have maybe changed.
@@ -992,10 +979,9 @@ where
 
         // Either way, we have to update our entry.
         //
-        // Keep in mind, though, we only acquired a read lock so a lot
-        // could have happened in the interim. =) Therefore, we have
-        // to probe the current state of `key` and in some cases we
-        // ought to do nothing.
+        // Keep in mind, though, that we released the lock before checking the ipnuts and a lot
+        // could have happened in the interim. =) Therefore, we have to probe the current
+        // `self.state`  again and in some cases we ought to do nothing.
         {
             let mut state = self.state.write();
             match &mut *state {
