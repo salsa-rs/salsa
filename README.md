@@ -36,7 +36,7 @@ varieties:
 
 To learn more about Salsa, try one of the following:
 
-- read the [heavily commented `hello_world` example](examples/hello_world/main.rs);
+- read the [heavily commented `hello_world` example](https://github.com/salsa-rs/salsa/blob/master/examples/hello_world/main.rs);
 - check out the [Salsa book](https://salsa-rs.github.io/salsa);
 - watch one of our [videos](https://salsa-rs.github.io/salsa/videos.html).
 
