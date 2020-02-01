@@ -18,6 +18,8 @@ pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHashe
 mod local_state;
 use local_state::LocalState;
 
+pub(crate) use self::local_state::QueryStack;
+
 /// The salsa runtime stores the storage for all queries as well as
 /// tracking the query stack and dependencies between cycles.
 ///

@@ -1,5 +1,6 @@
 use crate::revision::Revision;
 use crate::Database;
+use crate::DbQuery;
 use std::fmt::Debug;
 use std::hash::Hasher;
 use std::ptr;
@@ -12,7 +13,7 @@ use std::sync::Arc;
 pub(crate) unsafe trait DatabaseSlot<DB: Database>: Debug {
     /// Returns true if the value of this query may have changed since
     /// the given revision.
-    fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool;
+    fn maybe_changed_since(&self, db: &DbQuery<'_, DB>, revision: Revision) -> bool;
 }
 
 pub(crate) struct Dependency<DB: Database> {
@@ -32,7 +33,7 @@ impl<DB: Database> Dependency<DB> {
         }
     }
 
-    pub(crate) fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
+    pub(crate) fn maybe_changed_since(&self, db: &DbQuery<'_, DB>, revision: Revision) -> bool {
         self.slot.maybe_changed_since(db, revision)
     }
 }

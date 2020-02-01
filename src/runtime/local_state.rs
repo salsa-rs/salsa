@@ -4,6 +4,22 @@ use crate::runtime::ActiveQuery;
 use crate::runtime::Revision;
 use crate::Database;
 use std::cell::{Ref, RefCell, RefMut};
+use std::sync::Arc;
+
+pub(crate) struct QueryStack<DB: Database>(Arc<QueryStackInner<DB>>);
+enum QueryStackInner<DB: Database> {
+    Top,
+    Query {
+        query: ActiveQuery<DB>,
+        next: QueryStack<DB>,
+    },
+}
+
+impl<DB: Database> Default for QueryStack<DB> {
+    fn default() -> Self {
+        QueryStack(Arc::new(QueryStackInner::Top))
+    }
+}
 
 /// State that is specific to a single execution thread.
 ///

@@ -4,6 +4,7 @@ use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::CycleError;
 use crate::Database;
+use crate::DbQuery;
 use crate::Query;
 use crate::QueryTable;
 use crate::QueryTableMut;
@@ -66,8 +67,12 @@ pub trait QueryStorageMassOps<DB: Database> {
 pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {}
 
 pub trait QueryFunction<DB: Database>: Query<DB> {
-    fn execute(db: &DB, key: Self::Key) -> Self::Value;
-    fn recover(db: &DB, cycle: &[DB::DatabaseKey], key: &Self::Key) -> Option<Self::Value> {
+    fn execute(db: &DbQuery<DB>, key: Self::Key) -> Self::Value;
+    fn recover(
+        db: &DbQuery<DB>,
+        cycle: &[DB::DatabaseKey],
+        key: &Self::Key,
+    ) -> Option<Self::Value> {
         let _ = (db, cycle, key);
         None
     }
@@ -86,7 +91,7 @@ pub trait QueryFunction<DB: Database>: Query<DB> {
 pub trait GetQueryTable<Q: Query<Self>>: Database {
     /// Create a query table, which has access to the storage for the query
     /// and offers methods like `get`.
-    fn get_query_table(db: &Self) -> QueryTable<'_, Self, Q>;
+    fn get_query_table(db: DbQuery<'_, Self>) -> QueryTable<'_, Self, Q>;
 
     /// Create a mutable query table, which has access to the storage
     /// for the query and offers methods like `set`.
@@ -102,8 +107,8 @@ where
     Q: Query<DB>,
     DB: HasQueryGroup<Q::Group>,
 {
-    fn get_query_table(db: &DB) -> QueryTable<'_, DB, Q> {
-        let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
+    fn get_query_table(db: DbQuery<'_, DB>) -> QueryTable<'_, DB, Q> {
+        let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db.db);
         let query_storage: &Q::Storage = Q::query_storage(group_storage);
         QueryTable::new(db, query_storage)
     }
@@ -155,7 +160,11 @@ where
     /// Returns `Err` in the event of a cycle, meaning that computing
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>>;
+    fn try_fetch(
+        &self,
+        db: &DbQuery<DB>,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>>;
 
     /// Returns the durability associated with a given key.
     fn durability(&self, db: &DB, key: &Q::Key) -> Durability;

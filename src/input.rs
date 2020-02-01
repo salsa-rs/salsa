@@ -8,6 +8,7 @@ use crate::revision::Revision;
 use crate::runtime::StampedValue;
 use crate::CycleError;
 use crate::Database;
+use crate::DbQuery;
 use crate::Event;
 use crate::EventKind;
 use crate::Query;
@@ -74,7 +75,11 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    fn try_fetch(
+        &self,
+        db: &DbQuery<DB>,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self
             .slot(key)
             .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
@@ -206,7 +211,7 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    fn maybe_changed_since(&self, _db: &DB, revision: Revision) -> bool {
+    fn maybe_changed_since(&self, _db: &DbQuery<DB>, revision: Revision) -> bool {
         debug!(
             "maybe_changed_since(slot={:?}, revision={:?})",
             self, revision,

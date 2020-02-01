@@ -47,50 +47,50 @@ trait Database: salsa::Database {
     fn cycle_c(&self) -> Result<(), Error>;
 }
 
-fn recover_a(_db: &impl Database, cycle: &[String]) -> Result<(), Error> {
+fn recover_a(_db: &salsa::DbQuery<impl Database>, cycle: &[String]) -> Result<(), Error> {
     Err(Error {
         cycle: cycle.to_owned(),
     })
 }
 
-fn recover_b(_db: &impl Database, cycle: &[String]) -> Result<(), Error> {
+fn recover_b(_db: &salsa::DbQuery<impl Database>, cycle: &[String]) -> Result<(), Error> {
     Err(Error {
         cycle: cycle.to_owned(),
     })
 }
 
-fn memoized_a(db: &impl Database) -> () {
+fn memoized_a(db: &salsa::DbQuery<impl Database>) -> () {
     db.memoized_b()
 }
 
-fn memoized_b(db: &impl Database) -> () {
+fn memoized_b(db: &salsa::DbQuery<impl Database>) -> () {
     db.memoized_a()
 }
 
-fn volatile_a(db: &impl Database) -> () {
+fn volatile_a(db: &salsa::DbQuery<impl Database>) -> () {
     db.salsa_runtime().report_untracked_read();
     db.volatile_b()
 }
 
-fn volatile_b(db: &impl Database) -> () {
+fn volatile_b(db: &salsa::DbQuery<impl Database>) -> () {
     db.salsa_runtime().report_untracked_read();
     db.volatile_a()
 }
 
-fn cycle_leaf(_db: &impl Database) -> () {}
+fn cycle_leaf(_db: &salsa::DbQuery<impl Database>) -> () {}
 
-fn cycle_a(db: &impl Database) -> Result<(), Error> {
+fn cycle_a(db: &salsa::DbQuery<impl Database>) -> Result<(), Error> {
     let _ = db.cycle_b();
     Ok(())
 }
 
-fn cycle_b(db: &impl Database) -> Result<(), Error> {
+fn cycle_b(db: &salsa::DbQuery<impl Database>) -> Result<(), Error> {
     db.cycle_leaf();
     let _ = db.cycle_a();
     Ok(())
 }
 
-fn cycle_c(db: &impl Database) -> Result<(), Error> {
+fn cycle_c(db: &salsa::DbQuery<impl Database>) -> Result<(), Error> {
     db.cycle_b()
 }
 

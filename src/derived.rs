@@ -8,6 +8,7 @@ use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::StampedValue;
+use crate::DbQuery;
 use crate::{CycleError, Database, SweepStrategy};
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
@@ -131,7 +132,11 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    fn try_fetch(
+        &self,
+        db: &DbQuery<DB>,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.slot(key);
         let StampedValue {
             value,

@@ -50,17 +50,6 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime_mut(&mut self) -> &mut Runtime<Self>;
 
-    /// Iterates through all query storage and removes any values that
-    /// have not been used since the last revision was created. The
-    /// intended use-cycle is that you first execute all of your
-    /// "main" queries; this will ensure that all query values they
-    /// consume are marked as used.  You then invoke this method to
-    /// remove other values that were not needed for your main query
-    /// results.
-    fn sweep_all(&self, strategy: SweepStrategy) {
-        self.salsa_runtime().sweep_all(self, strategy);
-    }
-
     /// Get access to extra methods pertaining to a given query. For
     /// example, you can use this to run the GC (`sweep`) across a
     /// single input. You can also use it to invoke a query, though
@@ -72,7 +61,10 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
         Q: Query<Self>,
         Self: plumbing::GetQueryTable<Q>,
     {
-        <Self as plumbing::GetQueryTable<Q>>::get_query_table(self)
+        <Self as plumbing::GetQueryTable<Q>>::get_query_table(DbQuery {
+            query_stack: Default::default(),
+            db: self,
+        })
     }
 
     /// Like `query`, but gives access to methods for setting the
@@ -109,6 +101,17 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
         Self: plumbing::GetQueryTable<Q>,
     {
         <Self as plumbing::GetQueryTable<Q>>::get_query_table_mut(self)
+    }
+
+    /// Iterates through all query storage and removes any values that
+    /// have not been used since the last revision was created. The
+    /// intended use-cycle is that you first execute all of your
+    /// "main" queries; this will ensure that all query values they
+    /// consume are marked as used.  You then invoke this method to
+    /// remove other values that were not needed for your main query
+    /// results.
+    fn sweep_all(&self, strategy: SweepStrategy) {
+        self.salsa_runtime().sweep_all(self, strategy);
     }
 
     /// This function is invoked at key points in the salsa
@@ -457,7 +460,7 @@ where
     DB: plumbing::GetQueryTable<Q>,
     Q: Query<DB> + 'me,
 {
-    db: &'me DB,
+    db: DbQuery<'me, DB>,
     storage: &'me Q::Storage,
 }
 
@@ -467,7 +470,7 @@ where
     Q: Query<DB>,
 {
     /// Constructs a new `QueryTable`.
-    pub fn new(db: &'me DB, storage: &'me Q::Storage) -> Self {
+    pub fn new(db: DbQuery<'me, DB>, storage: &'me Q::Storage) -> Self {
         Self { db, storage }
     }
 
@@ -480,7 +483,7 @@ where
     }
 
     fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
-        self.storage.try_fetch(self.db, &key)
+        self.storage.try_fetch(&self.db, &key)
     }
 
     /// Remove all values for this query that have not been used in
@@ -489,7 +492,7 @@ where
     where
         Q::Storage: plumbing::QueryStorageMassOps<DB>,
     {
-        self.storage.sweep(self.db, strategy);
+        self.storage.sweep(&self.db, strategy);
     }
 }
 
@@ -547,8 +550,9 @@ where
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
+        let database_key = self.database_key(&key);
         self.storage
-            .set(self.db, &key, &self.database_key(&key), value, durability);
+            .set(self.db, &key, &database_key, value, durability);
     }
 
     /// Sets the size of LRU cache of values for this query table.
@@ -599,6 +603,34 @@ where
             writeln!(f, "{:?}", i)?;
         }
         Ok(())
+    }
+}
+
+use crate::runtime::QueryStack;
+pub struct DbQuery<'db, DB: Database> {
+    query_stack: QueryStack<DB>,
+    db: &'db DB,
+}
+
+impl<'db, DB: Database> std::ops::Deref for DbQuery<'db, DB> {
+    type Target = &'db DB;
+    fn deref(&self) -> &Self::Target {
+        &self.db
+    }
+}
+
+impl<DB: Database> std::ops::DerefMut for DbQuery<'_, DB> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.db
+    }
+}
+
+impl<'db, DB: Database> DbQuery<'db, DB> {
+    pub fn top(db: &'db DB) -> Self {
+        Self {
+            query_stack: Default::default(),
+            db,
+        }
     }
 }
 

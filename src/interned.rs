@@ -6,6 +6,7 @@ use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
+use crate::DbQuery;
 use crate::Query;
 use crate::{CycleError, Database, DiscardIf, SweepStrategy};
 use crossbeam::atomic::AtomicCell;
@@ -320,7 +321,11 @@ where
     Q::Value: InternKey,
     DB: Database,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    fn try_fetch(
+        &self,
+        db: &DbQuery<DB>,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
         let index = slot.index;
@@ -419,7 +424,11 @@ where
     >,
     DB: Database + HasQueryGroup<Q::Group>,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    fn try_fetch(
+        &self,
+        db: &DbQuery<DB>,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let index = key.as_intern_id();
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(group_storage);
@@ -532,7 +541,7 @@ where
     DB: Database,
     K: Debug,
 {
-    fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
+    fn maybe_changed_since(&self, db: &DbQuery<DB>, revision: Revision) -> bool {
         let revision_now = db.salsa_runtime().current_revision();
         if !self.try_update_accessed_at(revision_now) {
             // if we failed to update accessed-at, then this slot was garbage collected

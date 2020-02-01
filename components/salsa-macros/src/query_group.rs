@@ -222,7 +222,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         query_fn_definitions.extend(quote! {
             fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
-                <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(self).get((#(#key_names),*))
+                <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(salsa::DbQuery::top(self)).get((#(#key_names),*))
             }
         });
 
@@ -415,7 +415,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             let recover = if let Some(cycle_recovery_fn) = &query.cycle {
                 quote! {
-                    fn recover(db: &DB, cycle: &[DB::DatabaseKey], #key_pattern: &<Self as salsa::Query<DB>>::Key)
+                    fn recover(db: &salsa::DbQuery<DB>, cycle: &[DB::DatabaseKey], #key_pattern: &<Self as salsa::Query<DB>>::Key)
                         -> Option<<Self as salsa::Query<DB>>::Value> {
                         Some(#cycle_recovery_fn(
                                 db,
@@ -435,7 +435,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                     DB: salsa::Database,
                 {
-                    fn execute(db: &DB, #key_pattern: <Self as salsa::Query<DB>>::Key)
+                    fn execute(db: &salsa::DbQuery<DB>, #key_pattern: <Self as salsa::Query<DB>>::Key)
                         -> <Self as salsa::Query<DB>>::Value {
                         #invoke(db, #(#key_names),*)
                     }

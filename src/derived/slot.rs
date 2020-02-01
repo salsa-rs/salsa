@@ -14,6 +14,7 @@ use crate::runtime::FxIndexSet;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
+use crate::DbQuery;
 use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy};
 use log::{debug, info};
 use parking_lot::Mutex;
@@ -127,7 +128,7 @@ where
 
     pub(super) fn read(
         &self,
-        db: &DB,
+        db: &DbQuery<'_, DB>,
     ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
         let runtime = db.salsa_runtime();
 
@@ -155,7 +156,7 @@ where
     /// shows a potentially out of date value.
     fn read_upgrade(
         &self,
-        db: &DB,
+        db: &DbQuery<'_, DB>,
         revision_now: Revision,
     ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
         let runtime = db.salsa_runtime();
@@ -327,7 +328,7 @@ where
     /// Note that in case `ProbeState::UpToDate`, the lock will have been released.
     fn probe<StateGuard>(
         &self,
-        db: &DB,
+        db: &DbQuery<'_, DB>,
         state: StateGuard,
         runtime: &Runtime<DB>,
         revision_now: Revision,
@@ -725,7 +726,7 @@ where
 
     fn validate_memoized_value(
         &mut self,
-        db: &DB,
+        db: &DbQuery<'_, DB>,
         revision_now: Revision,
     ) -> Option<StampedValue<Q::Value>> {
         // If we don't have a memoized value, nothing to validate.
@@ -851,7 +852,7 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
+    fn maybe_changed_since(&self, db: &DbQuery<'_, DB>, revision: Revision) -> bool {
         let runtime = db.salsa_runtime();
         let revision_now = runtime.current_revision();
 
