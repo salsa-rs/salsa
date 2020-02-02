@@ -21,6 +21,12 @@ impl<DB: Database> Default for QueryStack<DB> {
     }
 }
 
+impl<DB: Database> Clone for QueryStack<DB> {
+    fn clone(&self) -> Self {
+        QueryStack(self.0.clone())
+    }
+}
+
 /// State that is specific to a single execution thread.
 ///
 /// Internally, this type uses ref-cells.

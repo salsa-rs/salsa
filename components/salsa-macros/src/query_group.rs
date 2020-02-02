@@ -31,6 +31,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     let trait_vis = input.vis;
     let trait_name = input.ident;
+    let outer_trait_name = Ident::new(&format!("{}Outer", trait_name), Span::call_site());
     let _generics = input.generics.clone();
 
     // Decompose the trait into the corresponding queries.
@@ -188,7 +189,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     );
 
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
+    let mut set_query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
+    let mut set_query_fn_definitions = proc_macro2::TokenStream::new();
     let mut query_descriptor_variants = proc_macro2::TokenStream::new();
     let mut group_data_elements = vec![];
     let mut storage_fields = proc_macro2::TokenStream::new();
@@ -222,7 +225,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         query_fn_definitions.extend(quote! {
             fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
-                <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(salsa::DbQuery::top(self)).get((#(#key_names),*))
+                <T as salsa::plumbing::GetQueryTable<#qt>>::get_query_table(salsa::DbQuery::<T>::from(self)).get((#(#key_names),*))
             }
         });
 
@@ -259,7 +262,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 fn_name = fn_name
             );
 
-            query_fn_declarations.extend(quote! {
+            set_query_fn_declarations.extend(quote! {
                 # [doc = #set_fn_docs]
                 fn #set_fn_name(&mut self, #(#key_names: #keys,)* value__: #value);
 
@@ -268,13 +271,13 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 fn #set_with_durability_fn_name(&mut self, #(#key_names: #keys,)* value__: #value, durability__: salsa::Durability);
             });
 
-            query_fn_definitions.extend(quote! {
+            set_query_fn_definitions.extend(quote! {
                 fn #set_fn_name(&mut self, #(#key_names: #keys,)* value__: #value) {
-                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set((#(#key_names),*), value__)
+                    <T as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set((#(#key_names),*), value__)
                 }
 
                 fn #set_with_durability_fn_name(&mut self, #(#key_names: #keys,)* value__: #value, durability__: salsa::Durability) {
-                    <Self as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set_with_durability((#(#key_names),*), value__, durability__)
+                    <T as salsa::plumbing::GetQueryTable<#qt>>::get_query_table_mut(self).set_with_durability((#(#key_names),*), value__, durability__)
                 }
             });
         }
@@ -303,8 +306,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         let bounds = &input.supertraits;
         quote! {
             #(#trait_attrs)*
-            #trait_vis trait #trait_name : #bounds {
+            #trait_vis trait #outer_trait_name {
                 #query_fn_declarations
+            }
+            #trait_vis trait #trait_name: #bounds {
+                #query_fn_declarations
+                #set_query_fn_declarations
             }
         }
     };
@@ -341,7 +348,17 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             impl<T> #trait_name for T
             where
                 T: #bounds,
-                T: salsa::plumbing::HasQueryGroup<#group_struct>
+                T: salsa::plumbing::HasQueryGroup<#group_struct>,
+                T: salsa::Database,
+            {
+                #query_fn_definitions
+                #set_query_fn_definitions
+            }
+            impl<T> #outer_trait_name for salsa::DbQuery<'_, T>
+            where
+                T: #bounds,
+                T: salsa::plumbing::HasQueryGroup<#group_struct>,
+                T: salsa::Database,
             {
                 #query_fn_definitions
             }

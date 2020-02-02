@@ -612,6 +612,15 @@ pub struct DbQuery<'db, DB: Database> {
     db: &'db DB,
 }
 
+impl<'db, DB: Database> Clone for DbQuery<'db, DB> {
+    fn clone(&self) -> Self {
+        DbQuery {
+            query_stack: self.query_stack.clone(),
+            db: self.db,
+        }
+    }
+}
+
 impl<'db, DB: Database> std::ops::Deref for DbQuery<'db, DB> {
     type Target = &'db DB;
     fn deref(&self) -> &Self::Target {
@@ -631,6 +640,18 @@ impl<'db, DB: Database> DbQuery<'db, DB> {
             query_stack: Default::default(),
             db,
         }
+    }
+}
+
+impl<'db, DB: Database> From<&'_ Self> for DbQuery<'db, DB> {
+    fn from(db: &Self) -> Self {
+        db.clone()
+    }
+}
+
+impl<'db, DB: Database> From<&'db DB> for DbQuery<'db, DB> {
+    fn from(db: &'db DB) -> Self {
+        Self::top(db)
     }
 }
 
