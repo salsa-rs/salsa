@@ -622,15 +622,9 @@ impl<'db, DB: Database> Clone for DbQuery<'db, DB> {
 }
 
 impl<'db, DB: Database> std::ops::Deref for DbQuery<'db, DB> {
-    type Target = &'db DB;
+    type Target = DB;
     fn deref(&self) -> &Self::Target {
-        &self.db
-    }
-}
-
-impl<DB: Database> std::ops::DerefMut for DbQuery<'_, DB> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.db
+        self.db
     }
 }
 

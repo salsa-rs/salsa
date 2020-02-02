@@ -31,7 +31,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     let trait_vis = input.vis;
     let trait_name = input.ident;
-    let outer_trait_name = Ident::new(&format!("{}Outer", trait_name), Span::call_site());
+    let inner_trait_name = Ident::new(&format!("{}Inner", trait_name), Span::call_site());
     let _generics = input.generics.clone();
 
     // Decompose the trait into the corresponding queries.
@@ -306,10 +306,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         let bounds = &input.supertraits;
         quote! {
             #(#trait_attrs)*
-            #trait_vis trait #outer_trait_name {
+            #trait_vis trait #trait_name {
+                type DB: salsa::Database;
+                fn salsa_runtime(&self) -> &salsa::Runtime<Self::DB>;
                 #query_fn_declarations
             }
-            #trait_vis trait #trait_name: #bounds {
+            #trait_vis trait #inner_trait_name: #bounds {
                 #query_fn_declarations
                 #set_query_fn_declarations
             }
@@ -323,7 +325,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         impl<DB__> salsa::plumbing::QueryGroup<DB__> for #group_struct
         where
-            DB__: #trait_name + #requires,
+            DB__: #inner_trait_name + #requires,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
@@ -345,7 +347,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             }));
         }
         quote! {
-            impl<T> #trait_name for T
+            impl<T> #inner_trait_name for T
             where
                 T: #bounds,
                 T: salsa::plumbing::HasQueryGroup<#group_struct>,
@@ -354,12 +356,16 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 #query_fn_definitions
                 #set_query_fn_definitions
             }
-            impl<T> #outer_trait_name for salsa::DbQuery<'_, T>
+            impl<T> #trait_name for salsa::DbQuery<'_, T>
             where
                 T: #bounds,
                 T: salsa::plumbing::HasQueryGroup<#group_struct>,
                 T: salsa::Database,
             {
+                type DB = T;
+                fn salsa_runtime(&self) -> &salsa::Runtime<Self::DB> {
+                    (**self).salsa_runtime()
+                }
                 #query_fn_definitions
             }
         }
@@ -394,7 +400,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             // of the `GroupData`.
             unsafe impl<#db> salsa::Query<#db> for #qt
             where
-                DB: #trait_name + #requires,
+                DB: #inner_trait_name + #requires,
                 DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                 DB: salsa::Database,
             {
@@ -448,7 +454,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             output.extend(quote_spanned! {span=>
                 impl<DB> salsa::plumbing::QueryFunction<DB> for #qt
                 where
-                    DB: #trait_name + #requires,
+                    DB: #inner_trait_name + #requires,
                     DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                     DB: salsa::Database,
                 {
@@ -488,7 +494,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     output.extend(quote! {
         #trait_vis struct #group_storage<DB__>
         where
-            DB__: #trait_name + #requires,
+            DB__: #inner_trait_name + #requires,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
@@ -497,7 +503,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         impl<DB__> Default for #group_storage<DB__>
         where
-            DB__: #trait_name + #requires,
+            DB__: #inner_trait_name + #requires,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
@@ -511,7 +517,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         impl<DB__> #group_storage<DB__>
         where
-            DB__: #trait_name + #requires,
+            DB__: #inner_trait_name + #requires,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
         {
             #trait_vis fn for_each_query(
