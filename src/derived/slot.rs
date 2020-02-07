@@ -429,55 +429,29 @@ where
             self, revision, revision_now,
         );
 
-        // Acquire read lock to start. In some of the arms below, we
-        // drop this explicitly.
-        let state = self.state.read();
+        // Check the current state and potentially block if there's a computation in progress.
+        let state = match self.probe(db, self.state.read(), runtime, revision_now) {
+            ProbeState::UpToDate(Ok(v)) => return v.changed_at > revision,
+            ProbeState::UpToDate(Err(_)) => return true,
+            ProbeState::StaleOrAbsent(state) => state,
+        };
 
         // Look for a memoized value.
         let memo = match &*state {
-            // If somebody depends on us, but we have no map
-            // entry, that must mean that it was found to be out
-            // of date and removed.
+            QueryState::InProgress { .. } => {
+                unreachable!("QueryState changed while holding a read-lock!")
+            }
             QueryState::NotComputed => {
                 debug!("maybe_changed_since({:?}: no value", self);
                 return true;
             }
-
-            // This value is being actively recomputed. Wait for
-            // that thread to finish (assuming it's not dependent
-            // on us...) and check its associated revision.
-            QueryState::InProgress { id, waiting } => {
-                let other_id = *id;
-                debug!(
-                    "maybe_changed_since({:?}: blocking on thread `{:?}`",
-                    self, other_id,
-                );
-                match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
-                    Ok(rx) => {
-                        // Release our lock on `self.state`, so other thread can complete.
-                        std::mem::drop(state);
-
-                        let result = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
-                        return !result.cycle.is_empty() || result.value.changed_at > revision;
-                    }
-
-                    // Consider a cycle to have changed.
-                    Err(_) => return true,
-                }
-            }
-
             QueryState::Memoized(memo) => memo,
         };
 
-        if memo.verified_at == revision_now {
-            debug!(
-                "maybe_changed_since({:?}: {:?} since up-to-date memo that changed at {:?}",
-                self,
-                memo.changed_at > revision,
-                memo.changed_at,
-            );
-            return memo.changed_at > revision;
-        }
+        assert!(
+            memo.verified_at < revision_now,
+            "Memo verified, but self.probe returned StaleOrAbsent"
+        );
 
         let maybe_changed;
 
