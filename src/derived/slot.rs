@@ -522,53 +522,51 @@ where
         }
 
         // Either way, we have to update our entry.
-        //
-        // Keep in mind, though, that we released the lock before checking the ipnuts and a lot
-        // could have happened in the interim. =) Therefore, we have to probe the current
-        // `self.state`  again and in some cases we ought to do nothing.
-        {
-            let mut state = self.state.write();
-            match &mut *state {
-                QueryState::Memoized(memo) => {
-                    if memo.verified_at == revision_now {
-                        // Since we started verifying inputs, somebody
-                        // else has come along and updated this value
-                        // (they may even have recomputed
-                        // it). Therefore, we should not touch this
-                        // memo.
-                        //
-                        // FIXME: Should we still return whatever
-                        // `maybe_changed` value we computed,
-                        // however..? It seems .. harmless to indicate
-                        // that the value has changed, but possibly
-                        // less efficient? (It may cause some
-                        // downstream value to be recomputed that
-                        // wouldn't otherwise have to be?)
-                    } else if maybe_changed {
-                        // We found this entry is out of date and
-                        // nobody touch it in the meantime. Just
-                        // remove it.
-                        *state = QueryState::NotComputed;
-                    } else {
-                        // We found this entry is valid. Update the
-                        // `verified_at` to reflect the current
-                        // revision.
-                        memo.verified_at = revision_now;
-                    }
-                }
+        self.update_maybe_changed_since(db, revision, maybe_changed)
+    }
 
-                QueryState::InProgress { .. } => {
-                    // Since we started verifying inputs, somebody
-                    // else has come along and started updated this
-                    // value. Just leave their marker alone and return
-                    // whatever `maybe_changed` value we computed.
+    fn update_maybe_changed_since(
+        &self,
+        db: &DB,
+        revision_since: Revision,
+        maybe_changed: bool,
+    ) -> bool {
+        let revision_now = db.salsa_runtime().current_revision();
+        // We need to acquire write-lock before updating the state and a lot could have happened in
+        // the interim. =) Therefore, we have to probe the current `self.state`  again and in some
+        // cases we ought to do nothing.
+        let mut state = self.state.write();
+        match &mut *state {
+            QueryState::Memoized(memo) => {
+                if memo.verified_at == revision_now {
+                    // Since we started verifying inputs, somebody else has come along and updated
+                    // this value (they may even have recomputed it). Therefore, we should not touch
+                    // this memo.
+                    return memo.changed_at > revision_since;
+                } else if maybe_changed {
+                    // We found this entry is out of date and
+                    // nobody touch it in the meantime. Just
+                    // remove it.
+                    *state = QueryState::NotComputed;
+                } else {
+                    // We found this entry is valid. Update the
+                    // `verified_at` to reflect the current
+                    // revision.
+                    memo.verified_at = revision_now;
                 }
+            }
 
-                QueryState::NotComputed => {
-                    // Since we started verifying inputs, somebody
-                    // else has come along and removed this value. The
-                    // GC can do this, for example. That's fine.
-                }
+            QueryState::InProgress { .. } => {
+                // Since we started verifying inputs, somebody
+                // else has come along and started updated this
+                // value. Just leave their marker alone and return
+                // whatever `maybe_changed` value we computed.
+            }
+
+            QueryState::NotComputed => {
+                // Since we started verifying inputs, somebody
+                // else has come along and removed this value. The
+                // GC can do this, for example. That's fine.
             }
         }
 
