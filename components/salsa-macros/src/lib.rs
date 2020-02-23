@@ -52,7 +52,7 @@ mod query_group;
 ///     functions that implement queries have `: OutherGropup` bound
 ///     on the database argument. This is similar to just making `OtherGroup`
 ///     a super trait, with a difference that users of the query group don't
-///     get access to `OtherGroup` automatcally, which would be the case with
+///     get access to `OtherGroup` automatically, which would be the case with
 ///     a super trait.
 /// - Storage attributes: control how the query data is stored and set. These
 ///   are described in detail in the section below.
