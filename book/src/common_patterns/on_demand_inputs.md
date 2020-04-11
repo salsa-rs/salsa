@@ -1,6 +1,6 @@
 # On-Demand (Lazy) Inputs
 
-Salsa input quries work best if you can easily provide all of the inputs upfront.
+Salsa input queries work best if you can easily provide all of the inputs upfront.
 However sometimes the set of inputs is not known beforehand.
 
 A typical example is reading files from disk.
