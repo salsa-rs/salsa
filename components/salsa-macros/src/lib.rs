@@ -65,7 +65,7 @@ mod query_group;
 ///     recomputed. The default is to call a function in the same
 ///     module with the same name as the query.
 ///   - `#[query_type(MyQueryTypeName)]` specifies the name of the
-///     dummy struct created fo the query. Default is the name of the
+///     dummy struct created for the query. Default is the name of the
 ///     query, in camel case, plus the word "Query" (e.g.,
 ///     `MyQueryQuery` and `OtherQueryQuery` in the examples above).
 ///
