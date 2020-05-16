@@ -12,7 +12,7 @@ That is, when someone requests the text of a file for the first time:
 3. Invalidate the cached file once the watcher sends a change notification.
 
 This is possible to achieve in salsa, using a derived query and `report_synthetic_read` and `invalidate` queries.
-The setup looks roughtly like this:
+The setup looks roughly like this:
 
 ```rust,ignore
 #[salsa::query_group(VfsDatabaseStorage)]

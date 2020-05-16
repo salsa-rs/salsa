@@ -62,8 +62,8 @@ This will result in a dependency graph like so:
 request_text  -->  parse  -->  header -->  content_type  -->  (other queries)
 ``` 
 
-The advantage of this is that changes that only effect the "body" of
-only consume small parts of itthe request will
+The advantage of this is that changes that only effect the "body" or
+only consume small parts of the request will
 not require us to re-execute `content_type` at all. This would be particularly
 valuable if there are a lot of dependent headers.
 
