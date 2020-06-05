@@ -158,7 +158,7 @@ where
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>>;
 
     /// Returns the durability associated with a given key.
-    fn durability(&self, db: &DB, key: &Q::Key) -> Durability;
+    fn durability(&self, db: &DB, key: &Q::Key) -> Option<Durability>;
 
     /// Get the (current) set of the entries in the query storage
     fn entries<C>(&self, db: &DB) -> C

@@ -91,11 +91,8 @@ where
         Ok(value)
     }
 
-    fn durability(&self, _db: &DB, key: &Q::Key) -> Durability {
-        match self.slot(key) {
-            Some(slot) => slot.stamped_value.read().durability,
-            None => panic!("no value set for {:?}({:?})", Q::default(), key),
-        }
+    fn durability(&self, _db: &DB, key: &Q::Key) -> Option<Durability> {
+        Some(self.slot(key)?.stamped_value.read().durability)
     }
 
     fn entries<C>(&self, _db: &DB) -> C

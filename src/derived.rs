@@ -160,11 +160,8 @@ where
         Ok(value)
     }
 
-    fn durability(&self, db: &DB, key: &Q::Key) -> Durability {
-        match self.get_slot(key) {
-            Some(slot) => slot.durability(db),
-            None => Durability::LOW,
-        }
+    fn durability(&self, db: &DB, key: &Q::Key) -> Option<Durability> {
+        Some(self.get_slot(key)?.durability(db))
     }
 
     fn entries<C>(&self, _db: &DB) -> C
