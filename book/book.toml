@@ -14,4 +14,7 @@ create-missing = false
 [output.linkcheck]
 follow-web-links = true
 traverse-parent-directories = false
+[preprocessor]
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
 
