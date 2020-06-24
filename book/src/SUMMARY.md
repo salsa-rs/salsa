@@ -7,3 +7,4 @@
     - [Selection](./common_patterns/selection.md)
     - [On-demand (Lazy) inputs](./common_patterns/on_demand_inputs.md)
 - [YouTube videos](./videos.md)
+- [Plumbing](./plumbing.md)
