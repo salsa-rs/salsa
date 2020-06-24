@@ -1,10 +1,14 @@
 # Plumbing
 
+**Last updated:** 2020-06-24
+
 This chapter documents the code that salsa generates and its "inner workings".
 We refer to this as the "plumbing".
 
 This page walks through the ["Hello, World!"] example and explains the code that
-it generates.
+it generates. Please take it with a grain of salt: while we make an effort to
+keep this documentation up to date, this sort of thing can fall out of date
+easily.
 
 ["Hello, World!"]: https://github.com/salsa-rs/salsa/blob/master/examples/hello_world/main.rs
 
@@ -30,10 +34,11 @@ the `salsa::query_group` macro generates a number of things:
 * a group key, an enum that can identify any query within the group and store its key
 * the associated storage struct, which contains the actual hashmaps that store the data for all queries in the group
 
-Note that there are a number of structs and types (e.g., the query structs, or
-the group descriptor) that represent things which don't have "public" names. We
-currently generate mangled names but those names are not meant to be exposed to
-the user (ideally we'd use hygiene to enforce this).
+Note that there are a number of structs and types (e.g., the group descriptor
+and associated storage struct) that represent things which don't have "public"
+names. We currently generate mangled names with `__` afterwards, but those names
+are not meant to be exposed to the user (ideally we'd use hygiene to enforce
+this).
 
 So the generated code looks something like this. We'll go into more detail on
 each part in the following sections.
@@ -61,8 +66,8 @@ where
 }
 
 // Next, a series of query structs and query impls
-struct InputString__ { }
-unsafe impl<DB> salsa::Query<DB> for InputString__
+struct InputQuery { }
+unsafe impl<DB> salsa::Query<DB> for InputQuery
 where
     DB: HelloWorld,
     DB: salsa::plumbing::HasQueryGroup<#group_struct>,
@@ -70,8 +75,8 @@ where
 {
     ...
 }
-struct Length__ { }
-unsafe impl<DB> salsa::Query<DB> for Length__
+struct LengthQuery { }
+unsafe impl<DB> salsa::Query<DB> for LengthQuery
 where
     DB: HelloWorld,
     DB: salsa::plumbing::HasQueryGroup<#group_struct>,
@@ -82,7 +87,7 @@ where
 
 // For derived queries, those include implementations
 // of additional traits like `QueryFunction`
-unsafe impl<DB> salsa::QueryFunction<DB> for Length__
+unsafe impl<DB> salsa::QueryFunction<DB> for LengthQuery
 where
     DB: HelloWorld,
     DB: salsa::plumbing::HasQueryGroup<#group_struct>,
@@ -163,11 +168,13 @@ check for a valid result, etc.
 ### For each query, a query struct
 
 As we referenced in the previous section, each query in the trait gets a struct
-with a "hidden name". This name is not used outside of the current crate/module.
+that represents it. This struct is named after the query, converted into snake
+case and with the word `Query` appended. In typical Salsa workflows, these
+structs are not meant to be named or used, but in some cases it may be required.
 For e.g. the `length` query, this structs might look something like:
 
 ```rust
-struct HelloWorldLength__ { }
+struct LengthQuery { }
 ```
 
 The struct also implements the `plumbing::Query` trait, which defines
@@ -175,7 +182,7 @@ a bunch of metadata about the query (and repeats, for convenience,
 some of the data about the group that the query is in):
 
 ```rust
-unsafe impl<DB> salsa::Query<DB> for HelloWorldLength__
+unsafe impl<DB> salsa::Query<DB> for LengthQuery
 where
     DB: HelloWorld,
     DB: salsa::plumbing::HasQueryGroup<#group_struct>,
@@ -196,7 +203,7 @@ where
     // query.
     type Storage = salsa::derived::DerivedStorage<
         DB,
-        HelloWorldLength__,
+        LengthQuery,
         salsa::plumbing::MemoizedStorage,
     >;
 
@@ -258,8 +265,8 @@ final database type:
 
 ```rust
 struct HelloWorldGroupStorage__<DB> {
-    input: <Input as Query<DB>>::Storage,
-    length: <Length as Query<DB>>::Storage,
+    input: <InputQuery as Query<DB>>::Storage,
+    length: <LengthQuery as Query<DB>>::Storage,
 }
 ```
 
