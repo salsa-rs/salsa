@@ -20,7 +20,7 @@ output to stdout. I recommend piping the output through rustfmt.
 
 When you define a query group trait:
 
-```rust,no_run,no_playground
+```rust,ignore
 {{#include ../../examples/hello_world/main.rs:trait}}
 ```
 
@@ -43,7 +43,7 @@ this).
 So the generated code looks something like this. We'll go into more detail on
 each part in the following sections.
 
-```rust,no_run,no_playground
+```rust,ignore
 // First, a copy of the trait, though sometimes with some extra
 // methods (e.g., `set_input_string`)
 trait HelloWorld: salsa::Database {
@@ -114,7 +114,7 @@ implement the `QueryGroup` trait. This *trait* has a number of associated types
 that reference various bits of the query group, including the actual "group
 storage" struct:
 
-```rust,no_run
+```rust,ignore
 struct HelloWorldStorage { }
 impl<DB> salsa::plumbing::QueryGroup<DB> for HelloWorldStorage {
     type GroupStorage = HelloWorldGroupStorage__; // generated struct
@@ -145,7 +145,7 @@ data for the query group and a few other things.
 
 Thus we can generate an impl that looks like:
 
-```rust,no_run
+```rust,ignore
 impl<DB> HelloWorld for DB
 where
     DB: salsa::Database,
@@ -173,7 +173,7 @@ case and with the word `Query` appended. In typical Salsa workflows, these
 structs are not meant to be named or used, but in some cases it may be required.
 For e.g. the `length` query, this structs might look something like:
 
-```rust
+```rust,ignore
 struct LengthQuery { }
 ```
 
@@ -181,7 +181,7 @@ The struct also implements the `plumbing::Query` trait, which defines
 a bunch of metadata about the query (and repeats, for convenience,
 some of the data about the group that the query is in):
 
-```rust
+```rust,ignore
 unsafe impl<DB> salsa::Query<DB> for LengthQuery
 where
     DB: HelloWorld,
@@ -245,7 +245,7 @@ of just `()` the group key would encode (e.g.) `Length(())` (the "length" query
 applied to the `()` key). It is represented as an enum, which we generate,
 with one variant per query:
 
-```rust
+```rust,ignore
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum HelloWorldGroupKey__ {
   input(()),
@@ -263,7 +263,7 @@ so forth for each query. The types of these are ultimately defined by the
 `Storage` associated type for each query type. The struct is generic over the
 final database type:
 
-```rust
+```rust,ignore
 struct HelloWorldGroupStorage__<DB> {
     input: <InputQuery as Query<DB>>::Storage,
     length: <LengthQuery as Query<DB>>::Storage,
@@ -276,11 +276,10 @@ method on it. This method is called by some of the code we generate for the
 database in order to implement debugging methods that "sweep" over all the
 queries.
 
-```rust
+```rust,ignore
 impl<DB> HelloWorldGroupStorage__<DB> {
     fn for_each_query(&self, db: &DB, method: &mut dyn FnMut(...)) {
         ...
     }
-
 }
 ```
