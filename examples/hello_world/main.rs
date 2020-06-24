@@ -20,6 +20,7 @@ use std::sync::Arc;
 //
 // Note that one query group can "include" another by listing the
 // trait for that query group as a supertrait.
+// ANCHOR:trait
 #[salsa::query_group(HelloWorldStorage)]
 trait HelloWorld: salsa::Database {
     // For each query, we give the name, some input keys (here, we
@@ -37,6 +38,7 @@ trait HelloWorld: salsa::Database {
     // a function (see Step 2, below).
     fn length(&self, key: ()) -> usize;
 }
+// ANCHOR_END:trait
 
 ///////////////////////////////////////////////////////////////////////////
 // Step 2. Define the queries.

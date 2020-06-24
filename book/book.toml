@@ -10,6 +10,8 @@ create-missing = false
 [preprocess.links]
 
 [output.html]
+additional-css =["mermaid.css"]
+additional-js =["mermaid.min.js", "mermaid-init.js"]
 
 [output.linkcheck]
 follow-web-links = true
