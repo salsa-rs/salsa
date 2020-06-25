@@ -1,0 +1,40 @@
+name: Test
+
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+    paths:
+    - '**.rs'
+    - '**/Cargo.*'
+
+jobs:
+  test:
+    name: Test
+    strategy:
+      matrix:
+        rust:
+        - stable
+        - beta
+        experimental:
+        - false
+        include:
+        - rust: nightly
+          experimental: true
+    continue-on-error: ${{ matrix.experimental }}
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.rust }}
+        default: true
+    - uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --all-features --all-targets
+    - uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --all-features --doc
