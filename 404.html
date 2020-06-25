@@ -3,8 +3,10 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>On-demand (Lazy) inputs - Salsa</title>
+        <title></title>
         
+        
+        <base href="/">
         
 
 
@@ -17,27 +19,27 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
-        <link rel="icon" href="../favicon.svg">
-        <link rel="shortcut icon" href="../favicon.png">
-        <link rel="stylesheet" href="../css/variables.css">
-        <link rel="stylesheet" href="../css/general.css">
-        <link rel="stylesheet" href="../css/chrome.css">
-        <link rel="stylesheet" href="../css/print.css" media="print">
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
         
-        <link rel="stylesheet" href="../fonts/fonts.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
         
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" href="../highlight.css">
-        <link rel="stylesheet" href="../tomorrow-night.css">
-        <link rel="stylesheet" href="../ayu-highlight.css">
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
 
         <!-- Custom theme stylesheets -->
         
-        <link rel="stylesheet" href="../mermaid.css">
+        <link rel="stylesheet" href="mermaid.css">
         
 
         
@@ -45,7 +47,7 @@
     <body>
         <!-- Provide site root to javascript -->
         <script type="text/javascript">
-            var path_to_root = "../";
+            var path_to_root = "";
             var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
         </script>
 
@@ -91,7 +93,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html" class="active"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -126,7 +128,7 @@
                     <h1 class="menu-title">Salsa</h1>
 
                     <div class="right-buttons">
-                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         
@@ -157,67 +159,15 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#on-demand-lazy-inputs" id="on-demand-lazy-inputs">On-Demand (Lazy) Inputs</a></h1>
-<p>Salsa input queries work best if you can easily provide all of the inputs upfront.
-However sometimes the set of inputs is not known beforehand.</p>
-<p>A typical example is reading files from disk.
-While it is possible to eagerly scan a particular directory and create an in-memory file tree in a salsa input query, a more straight-forward approach is to read the files lazily.
-That is, when someone requests the text of a file for the first time:</p>
-<ol>
-<li>Read the file from disk and cache it.</li>
-<li>Setup a file-system watcher for this path.</li>
-<li>Invalidate the cached file once the watcher sends a change notification.</li>
-</ol>
-<p>This is possible to achieve in salsa, using a derived query and <code>report_synthetic_read</code> and <code>invalidate</code> queries.
-The setup looks roughly like this:</p>
-<pre><code class="language-rust ignore">#[salsa::query_group(VfsDatabaseStorage)]
-trait VfsDatabase: salsa::Database + FileWatcher {
-    fn read(&amp;self, path: PathBuf) -&gt; String;
-}
-
-trait FileWatcher {
-    fn watch(&amp;self, path: &amp;Path);
-    fn did_change_file(&amp;mut self, path: &amp;Path);
-}
-
-fn read(db: &amp;impl salsa::Database, path: PathBuf) -&gt; String {
-    db.salsa_runtime()
-        .report_synthetic_read(salsa::Durability::LOW);
-    db.watch(&amp;path);
-    std::fs::read_to_string(&amp;path).unwrap_or_default()
-}
-
-#[salsa::database(VfsDatabaseStorage)]
-struct MyDatabase { ... }
-
-impl FileWatcher for MyDatabase {
-    fn watch(&amp;self, path: &amp;Path) { ... }
-    fn did_change_file(&amp;mut self, path: &amp;Path) {
-        self.query_mut(ReadQuery).invalidate(path);
-    }
-}
-</code></pre>
-<ul>
-<li>We declare the query as a derived query (which is the default).</li>
-<li>In the query implementation, we don't call any other query and just directly read file from disk.</li>
-<li>Because the query doesn't read any inputs, it will be assigned a <code>HIGH</code> durability by default, which we override with <code>report_synthetic_read</code>.</li>
-<li>The result of the query is cached, and we must call <code>invalidate</code> to clear this cache.</li>
-</ul>
+                        <h1><a class="header" href="#document-not-found-404" id="document-not-found-404">Document not found (404)</a></h1>
+<p>This URL is invalid, sorry. Please use the navigation bar or search to continue.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
-                            <a rel="prev" href="../common_patterns/selection.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
-                                <i class="fa fa-angle-left"></i>
-                            </a>
-                        
 
-                        
-                            <a rel="next" href="../videos.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                                <i class="fa fa-angle-right"></i>
-                            </a>
                         
 
                         <div style="clear: both"></div>
@@ -227,15 +177,7 @@ impl FileWatcher for MyDatabase {
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
-                    <a rel="prev" href="../common_patterns/selection.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
-                        <i class="fa fa-angle-left"></i>
-                    </a>
-                
 
-                
-                    <a rel="next" href="../videos.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                        <i class="fa fa-angle-right"></i>
-                    </a>
                 
             </nav>
 
@@ -256,20 +198,20 @@ impl FileWatcher for MyDatabase {
         
 
         
-        <script src="../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
-        <script src="../mark.min.js" type="text/javascript" charset="utf-8"></script>
-        <script src="../searcher.js" type="text/javascript" charset="utf-8"></script>
+        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
         
 
-        <script src="../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
-        <script src="../highlight.js" type="text/javascript" charset="utf-8"></script>
-        <script src="../book.js" type="text/javascript" charset="utf-8"></script>
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
 
         <!-- Custom JS scripts -->
         
-        <script type="text/javascript" src="../mermaid.min.js"></script>
+        <script type="text/javascript" src="mermaid.min.js"></script>
         
-        <script type="text/javascript" src="../mermaid-init.js"></script>
+        <script type="text/javascript" src="mermaid-init.js"></script>
         
 
         
