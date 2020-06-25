@@ -50,6 +50,11 @@ where
 {
     NotComputed,
 
+    /// Indicates that this slot has been garbage collected or
+    /// otherwise invalidated. An invalidated slot should be discarded
+    /// and the caller should go fetch a new one.
+    Invalidated,
+
     /// The runtime with the given id is currently computing the
     /// result of this query; if we see this value in the table, it
     /// indeeds a cycle.
@@ -101,9 +106,20 @@ pub(super) enum MemoInputs<DB: Database> {
 }
 
 /// Return value of `probe` helper.
-enum ProbeState<V, K, G> {
-    UpToDate(Result<V, CycleError<K>>),
+enum ProbeResult<V, K, G> {
+    UpToDate(ReadResult<V, K>),
     StaleOrAbsent(G),
+    Invalidated,
+}
+
+/// Return value of `probe` helper.
+pub(super) enum ReadResult<V, K> {
+    Ok(StampedValue<V>),
+    CycleError(CycleError<K>),
+
+    /// This slot was marked as invalidated and a fresh one must be
+    /// created.
+    Invalidated,
 }
 
 impl<DB, Q, MP> Slot<DB, Q, MP>
@@ -125,10 +141,7 @@ where
         <DB as GetQueryTable<Q>>::database_key(db, self.key.clone())
     }
 
-    pub(super) fn read(
-        &self,
-        db: &DB,
-    ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
+    pub(super) fn read(&self, db: &DB) -> ReadResult<Q::Value, DB::DatabaseKey> {
         let runtime = db.salsa_runtime();
 
         // NB: We don't need to worry about people modifying the
@@ -142,8 +155,9 @@ where
 
         // First, do a check with a read-lock.
         match self.probe(db, self.state.read(), runtime, revision_now) {
-            ProbeState::UpToDate(v) => return v,
-            ProbeState::StaleOrAbsent(_guard) => (),
+            ProbeResult::UpToDate(v) => return v,
+            ProbeResult::Invalidated => return ReadResult::Invalidated,
+            ProbeResult::StaleOrAbsent(_guard) => (),
         }
 
         self.read_upgrade(db, revision_now)
@@ -157,7 +171,7 @@ where
         &self,
         db: &DB,
         revision_now: Revision,
-    ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
+    ) -> ReadResult<Q::Value, DB::DatabaseKey> {
         let runtime = db.salsa_runtime();
 
         debug!("{:?}: read_upgrade(revision_now={:?})", self, revision_now,);
@@ -170,11 +184,13 @@ where
         // and not an upgradable read here because upgradable reads
         // can sometimes encounter deadlocks.
         let old_memo = match self.probe(db, self.state.write(), runtime, revision_now) {
-            ProbeState::UpToDate(v) => return v,
-            ProbeState::StaleOrAbsent(mut state) => {
+            ProbeResult::UpToDate(v) => return v,
+            ProbeResult::Invalidated => return ReadResult::Invalidated,
+            ProbeResult::StaleOrAbsent(mut state) => {
                 match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
                     QueryState::Memoized(old_memo) => Some(old_memo),
                     QueryState::InProgress { .. } => unreachable!(),
+                    QueryState::Invalidated { .. } => unreachable!(),
                     QueryState::NotComputed => None,
                 }
             }
@@ -208,7 +224,7 @@ where
                     Vec::new(),
                 );
 
-                return Ok(value);
+                return ReadResult::Ok(value);
             }
         }
 
@@ -230,7 +246,7 @@ where
                         changed_at: result.changed_at,
                     };
                     panic_guard.report_unexpected_cycle();
-                    return Err(err);
+                    return ReadResult::CycleError(err);
                 }
             };
         }
@@ -311,32 +327,34 @@ where
 
         panic_guard.proceed(&new_value, result.cycle);
 
-        Ok(new_value)
+        ReadResult::Ok(new_value)
     }
 
     /// Helper for `read` that does a shallow check (not recursive) if we have an up-to-date value.
     ///
     /// Invoked with the guard `state` corresponding to the `QueryState` of some `Slot` (the guard
-    /// can be either read or write). Returns a suitable `ProbeState`:
+    /// can be either read or write). Returns a suitable `ProbeResult`:
     ///
-    /// - `ProbeState::UpToDate(r)` if the table has an up-to-date value (or we blocked on another
+    /// - `ProbeResult::UpToDate(r)` if the table has an up-to-date value (or we blocked on another
     ///   thread that produced such a value).
-    /// - `ProbeState::StaleOrAbsent(g)` if either (a) there is no memo for this key, (b) the memo
+    /// - `ProbeResult::StaleOrAbsent(g)` if either (a) there is no memo for this key, (b) the memo
     ///   has no value; or (c) the memo has not been verified at the current revision.
     ///
-    /// Note that in case `ProbeState::UpToDate`, the lock will have been released.
+    /// Note that in case `ProbeResult::UpToDate`, the lock will have been released.
     fn probe<StateGuard>(
         &self,
         db: &DB,
         state: StateGuard,
         runtime: &Runtime<DB>,
         revision_now: Revision,
-    ) -> ProbeState<StampedValue<Q::Value>, DB::DatabaseKey, StateGuard>
+    ) -> ProbeResult<Q::Value, DB::DatabaseKey, StateGuard>
     where
         StateGuard: Deref<Target = QueryState<DB, Q>>,
     {
         match &*state {
             QueryState::NotComputed => { /* fall through */ }
+
+            QueryState::Invalidated => return ProbeResult::Invalidated,
 
             QueryState::InProgress { id, waiting } => {
                 let other_id = *id;
@@ -354,8 +372,8 @@ where
                         });
 
                         let result = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
-                        ProbeState::UpToDate(if result.cycle.is_empty() {
-                            Ok(result.value)
+                        ProbeResult::UpToDate(if result.cycle.is_empty() {
+                            ReadResult::Ok(result.value)
                         } else {
                             let err = CycleError {
                                 cycle: result.cycle,
@@ -363,13 +381,14 @@ where
                                 durability: result.value.durability,
                             };
                             runtime.mark_cycle_participants(&err);
-                            Q::recover(db, &err.cycle, &self.key)
-                                .map(|value| StampedValue {
+                            match Q::recover(db, &err.cycle, &self.key) {
+                                Some(value) => ReadResult::Ok(StampedValue {
                                     value,
                                     durability: err.durability,
                                     changed_at: err.changed_at,
-                                })
-                                .ok_or_else(|| err)
+                                }),
+                                None => ReadResult::CycleError(err),
+                            }
                         })
                     }
 
@@ -379,15 +398,14 @@ where
                             err,
                             revision_now,
                         );
-                        ProbeState::UpToDate(
-                            Q::recover(db, &err.cycle, &self.key)
-                                .map(|value| StampedValue {
-                                    value,
-                                    changed_at: err.changed_at,
-                                    durability: err.durability,
-                                })
-                                .ok_or_else(|| err),
-                        )
+                        ProbeResult::UpToDate(match Q::recover(db, &err.cycle, &self.key) {
+                            Some(value) => ReadResult::Ok(StampedValue {
+                                value,
+                                changed_at: err.changed_at,
+                                durability: err.durability,
+                            }),
+                            None => ReadResult::CycleError(err),
+                        })
                     }
                 };
             }
@@ -411,18 +429,18 @@ where
                             self, value.changed_at
                         );
 
-                        return ProbeState::UpToDate(Ok(value));
+                        return ProbeResult::UpToDate(ReadResult::Ok(value));
                     }
                 }
             }
         }
 
-        ProbeState::StaleOrAbsent(state)
+        ProbeResult::StaleOrAbsent(state)
     }
 
     pub(super) fn durability(&self, db: &DB) -> Durability {
         match &*self.state.read() {
-            QueryState::NotComputed => Durability::LOW,
+            QueryState::NotComputed | QueryState::Invalidated => Durability::LOW,
             QueryState::InProgress { .. } => panic!("query in progress"),
             QueryState::Memoized(memo) => {
                 if memo.check_durability(db) {
@@ -436,7 +454,7 @@ where
 
     pub(super) fn as_table_entry(&self) -> Option<TableEntry<Q::Key, Q::Value>> {
         match &*self.state.read() {
-            QueryState::NotComputed => None,
+            QueryState::NotComputed | QueryState::Invalidated => None,
             QueryState::InProgress { .. } => Some(TableEntry::new(self.key.clone(), None)),
             QueryState::Memoized(memo) => {
                 Some(TableEntry::new(self.key.clone(), memo.value.clone()))
@@ -458,16 +476,25 @@ where
         }
     }
 
-    pub(super) fn sweep(&self, revision_now: Revision, strategy: SweepStrategy) {
+    /// Attempt to clear the data from this slot, if strategy
+    /// applies. Returns true if this slot is fully invalidated and
+    /// should be removed from the hashtable of slots.
+    pub(super) fn sweep(&self, revision_now: Revision, strategy: SweepStrategy) -> bool {
         let mut state = self.state.write();
         match &mut *state {
-            QueryState::NotComputed => (),
+            // We haven't even started computing the data yet.
+            // Do not sweep.
+            QueryState::NotComputed => false,
+
+            // Data was invalidated at some point. Sweep.
+            QueryState::Invalidated => true,
 
             // Leave stuff that is currently being computed -- the
             // other thread doing that work has unique access to
             // this slot and we should not interfere.
             QueryState::InProgress { .. } => {
                 debug!("sweep({:?}): in-progress", self);
+                false
             }
 
             // Otherwise, drop only value or the whole memo according to the
@@ -501,22 +528,27 @@ where
 
                     // If we are only discarding outdated things,
                     // and this is not outdated, keep it.
-                    DiscardIf::Outdated if memo.verified_at == revision_now => (),
+                    DiscardIf::Outdated if memo.verified_at == revision_now => false,
 
                     // As explained on the `has_untracked_input` variable
                     // definition, if this is a volatile entry, we
                     // can't discard it unless it is outdated.
                     DiscardIf::Always
-                        if has_untracked_input && memo.verified_at == revision_now => {}
+                        if has_untracked_input && memo.verified_at == revision_now =>
+                    {
+                        false
+                    }
 
                     // Otherwise, we can discard -- discard whatever the user requested.
                     DiscardIf::Outdated | DiscardIf::Always => match strategy.discard_what {
                         DiscardWhat::Nothing => unreachable!(),
                         DiscardWhat::Values => {
                             memo.value = None;
+                            false
                         }
                         DiscardWhat::Everything => {
-                            *state = QueryState::NotComputed;
+                            *state = QueryState::Invalidated;
+                            true
                         }
                     },
                 }
@@ -869,7 +901,7 @@ where
             // If somebody depends on us, but we have no map
             // entry, that must mean that it was found to be out
             // of date and removed.
-            QueryState::NotComputed => {
+            QueryState::Invalidated | QueryState::NotComputed => {
                 debug!("maybe_changed_since({:?}: no value", self);
                 return true;
             }
@@ -948,16 +980,16 @@ where
                     if memo.value.is_some() {
                         std::mem::drop(state);
                         return match self.read_upgrade(db, revision_now) {
-                            Ok(v) => {
+                            ReadResult::Ok(v) => {
                                 debug!(
-                                "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
-                                self,
+                                    "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
+                                    self,
                                     v.changed_at > revision,
-                                v.changed_at,
-                            );
+                                    v.changed_at,
+                                );
                                 v.changed_at > revision
                             }
-                            Err(_) => true,
+                            ReadResult::Invalidated | ReadResult::CycleError(_) => true,
                         };
                     }
 
@@ -1020,7 +1052,7 @@ where
                     // whatever `maybe_changed` value we computed.
                 }
 
-                QueryState::NotComputed => {
+                QueryState::Invalidated | QueryState::NotComputed => {
                     // Since we started verifying inputs, somebody
                     // else has come along and removed this value. The
                     // GC can do this, for example. That's fine.

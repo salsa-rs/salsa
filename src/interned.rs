@@ -329,8 +329,8 @@ where
         Ok(<Q::Value>::from_intern_id(index))
     }
 
-    fn durability(&self, _db: &DB, _key: &Q::Key) -> Durability {
-        INTERN_DURABILITY
+    fn durability(&self, _db: &DB, _key: &Q::Key) -> Option<Durability> {
+        Some(INTERN_DURABILITY)
     }
 
     fn entries<C>(&self, _db: &DB) -> C
@@ -431,8 +431,8 @@ where
         Ok(value)
     }
 
-    fn durability(&self, _db: &DB, _key: &Q::Key) -> Durability {
-        INTERN_DURABILITY
+    fn durability(&self, _db: &DB, _key: &Q::Key) -> Option<Durability> {
+        Some(INTERN_DURABILITY)
     }
 
     fn entries<C>(&self, db: &DB) -> C

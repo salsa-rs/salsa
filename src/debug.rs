@@ -21,8 +21,8 @@ pub trait DebugQueryTable {
     /// Returns a lower bound on the durability for the given key.
     /// This is typically the minimum durability of all values that
     /// the query accessed, but we may return a lower durability in
-    /// some cases.
-    fn durability(&self, key: Self::Key) -> Durability;
+    /// some cases, or `None` if no value for `key` has been computed.
+    fn durability(&self, key: Self::Key) -> Option<Durability>;
 
     /// Get the (current) set of the entries in the query table.
     fn entries<C>(&self) -> C
@@ -58,7 +58,7 @@ where
     type Key = Q::Key;
     type Value = Q::Value;
 
-    fn durability(&self, key: Q::Key) -> Durability {
+    fn durability(&self, key: Q::Key) -> Option<Durability> {
         self.storage.durability(self.db, &key)
     }
 

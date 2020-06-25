@@ -15,7 +15,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 mod slot;
-use slot::Slot;
+use slot::{ReadResult, Slot};
 
 /// Memoized queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
@@ -112,7 +112,7 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn slot(&self, key: &Q::Key) -> Arc<Slot<DB, Q, MP>> {
+    fn get_or_create_slot(&self, key: &Q::Key) -> Arc<Slot<DB, Q, MP>> {
         if let Some(v) = self.slot_map.read().get(key) {
             return v.clone();
         }
@@ -123,6 +123,10 @@ where
             .or_insert_with(|| Arc::new(Slot::new(key.clone())))
             .clone()
     }
+
+    fn get_slot(&self, key: &Q::Key) -> Option<Arc<Slot<DB, Q, MP>>> {
+        self.slot_map.read().get(key).cloned()
+    }
 }
 
 impl<DB, Q, MP> QueryStorageOps<DB, Q> for DerivedStorage<DB, Q, MP>
@@ -132,12 +136,19 @@ where
     MP: MemoizationPolicy<DB, Q>,
 {
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
-        let slot = self.slot(key);
+        let mut slot;
         let StampedValue {
             value,
             durability,
             changed_at,
-        } = slot.read(db)?;
+        } = loop {
+            slot = self.get_or_create_slot(key);
+            match slot.read(db) {
+                ReadResult::Ok(v) => break v,
+                ReadResult::CycleError(e) => return Err(e),
+                ReadResult::Invalidated => { /* loop around */ }
+            }
+        };
 
         if let Some(evicted) = self.lru_list.record_use(&slot) {
             evicted.evict();
@@ -149,8 +160,8 @@ where
         Ok(value)
     }
 
-    fn durability(&self, db: &DB, key: &Q::Key) -> Durability {
-        self.slot(key).durability(db)
+    fn durability(&self, db: &DB, key: &Q::Key) -> Option<Durability> {
+        Some(self.get_slot(key)?.durability(db))
     }
 
     fn entries<C>(&self, _db: &DB) -> C
@@ -172,11 +183,9 @@ where
     MP: MemoizationPolicy<DB, Q>,
 {
     fn sweep(&self, db: &DB, strategy: SweepStrategy) {
-        let map_read = self.slot_map.read();
+        let mut map_write = self.slot_map.write();
         let revision_now = db.salsa_runtime().current_revision();
-        for slot in map_read.values() {
-            slot.sweep(revision_now, strategy);
-        }
+        map_write.retain(|_key, slot| !slot.sweep(revision_now, strategy));
     }
 }
 

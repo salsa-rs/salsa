@@ -122,7 +122,7 @@ fn discard_durability_after_synthetic_write_low() {
     // This will assign index 0 for "foo".
     let foo1a = db.repeat_intern1("foo");
     assert_eq!(
-        Durability::HIGH,
+        Some(Durability::HIGH),
         db.query(RepeatIntern1Query).durability("foo")
     );
 
@@ -163,7 +163,7 @@ fn discard_durability_after_synthetic_write_high() {
     let foo1a = db.repeat_intern1("foo");
     assert_eq!(
         Durability::HIGH,
-        db.query(RepeatIntern1Query).durability("foo")
+        db.query(RepeatIntern1Query).durability("foo").unwrap()
     );
 
     // Trigger a new revision -- marking even high things as having changed.

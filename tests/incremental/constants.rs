@@ -69,7 +69,10 @@ fn not_constant() {
     db.set_input('a', 22);
     db.set_input('b', 44);
     assert_eq!(db.add('a', 'b'), 66);
-    assert_eq!(Durability::LOW, db.query(AddQuery).durability(('a', 'b')));
+    assert_eq!(
+        Some(Durability::LOW),
+        db.query(AddQuery).durability(('a', 'b'))
+    );
 }
 
 #[test]
@@ -79,7 +82,10 @@ fn durability() {
     db.set_input_with_durability('a', 22, Durability::HIGH);
     db.set_input_with_durability('b', 44, Durability::HIGH);
     assert_eq!(db.add('a', 'b'), 66);
-    assert_eq!(Durability::HIGH, db.query(AddQuery).durability(('a', 'b')));
+    assert_eq!(
+        Some(Durability::HIGH),
+        db.query(AddQuery).durability(('a', 'b'))
+    );
 }
 
 #[test]
@@ -89,7 +95,10 @@ fn mixed_constant() {
     db.set_input_with_durability('a', 22, Durability::HIGH);
     db.set_input('b', 44);
     assert_eq!(db.add('a', 'b'), 66);
-    assert_eq!(Durability::LOW, db.query(AddQuery).durability(('a', 'b')));
+    assert_eq!(
+        Some(Durability::LOW),
+        db.query(AddQuery).durability(('a', 'b'))
+    );
 }
 
 #[test]
@@ -99,20 +108,29 @@ fn becomes_constant_with_change() {
     db.set_input('a', 22);
     db.set_input('b', 44);
     assert_eq!(db.add('a', 'b'), 66);
-    assert_eq!(Durability::LOW, db.query(AddQuery).durability(('a', 'b')));
+    assert_eq!(
+        Some(Durability::LOW),
+        db.query(AddQuery).durability(('a', 'b'))
+    );
 
     db.set_input_with_durability('a', 23, Durability::HIGH);
     assert_eq!(db.add('a', 'b'), 67);
-    assert_eq!(Durability::LOW, db.query(AddQuery).durability(('a', 'b')));
+    assert_eq!(
+        Some(Durability::LOW),
+        db.query(AddQuery).durability(('a', 'b'))
+    );
 
     db.set_input_with_durability('b', 45, Durability::HIGH);
     assert_eq!(db.add('a', 'b'), 68);
-    assert_eq!(Durability::HIGH, db.query(AddQuery).durability(('a', 'b')));
+    assert_eq!(
+        Some(Durability::HIGH),
+        db.query(AddQuery).durability(('a', 'b'))
+    );
 
     db.set_input_with_durability('b', 45, Durability::MEDIUM);
     assert_eq!(db.add('a', 'b'), 68);
     assert_eq!(
-        Durability::MEDIUM,
+        Some(Durability::MEDIUM),
         db.query(AddQuery).durability(('a', 'b'))
     );
 }
