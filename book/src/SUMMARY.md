@@ -9,3 +9,4 @@
 - [YouTube videos](./videos.md)
 - [Plumbing](./plumbing.md)
   - [Query groups](./plumbing/query_groups.md)
+  - [Database](./plumbing/database.md)
