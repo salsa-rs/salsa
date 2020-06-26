@@ -12,7 +12,7 @@ Question --- ["Red or green?"][nm] --- which refers to chile
 (salsa). Although this version no longer uses colors (we borrowed
 revision counters from Glimmer, instead), I still like the name.
 
-[nm]: http://www.sos.state.nm.us/Kids_Corner/State_Symbols.aspx#question
+[nm]: https://www.sos.state.nm.us/about-new-mexico/state-question/
 
 ## What is the relationship between salsa and an Entity-Component System (ECS)?
 
