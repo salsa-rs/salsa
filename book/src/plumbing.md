@@ -256,7 +256,7 @@ enum HelloWorldGroupKey__ {
 The `Query` trait that we saw earlier includes a method `group_key` for wrapping
 the key for some individual query into the group key.
 
-### Group storege
+### Group storage
 
 The "group storage" is the actual struct that contains all the hashtables and
 so forth for each query. The types of these are ultimately defined by the
