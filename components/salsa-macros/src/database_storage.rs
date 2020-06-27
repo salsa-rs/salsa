@@ -61,6 +61,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         storage_fields.extend(quote! {
             #group_name_snake: #group_storage,
         });
+        // ANCHOR:HasQueryGroup
         has_group_impls.extend(quote! {
             impl salsa::plumbing::HasQueryGroup<#group_path> for #database_name {
                 fn group_storage(db: &Self) -> &#group_storage {
@@ -75,6 +76,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
                 }
             }
         });
+        // ANCHOR_END:HasQueryGroup
     }
 
     // create group storage wrapper struct
@@ -122,7 +124,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         });
     }
 
-    //
+    // ANCHOR:DatabaseStorageTypes
     output.extend(quote! {
         impl salsa::plumbing::DatabaseStorageTypes for #database_name {
             type DatabaseKey = __SalsaDatabaseKey;
@@ -130,8 +132,9 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
             type DatabaseData = (#(#database_data),*);
         }
     });
+    // ANCHOR_END:DatabaseStorageTypes
 
-    //
+    // ANCHOR:DatabaseOps
     let mut for_each_ops = proc_macro2::TokenStream::new();
     for (QueryGroup { group_path }, group_storage) in
         query_groups.iter().zip(&query_group_storage_names)
@@ -152,11 +155,14 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
             }
         }
     });
+    // ANCHOR_END:DatabaseOps
 
+    // ANCHOR:DatabaseKey
     output.extend(quote! {
         impl salsa::plumbing::DatabaseKey<#database_name> for __SalsaDatabaseKey {
         }
     });
+    // ANCHOR_END:DatabaseKey
 
     output.extend(has_group_impls);
 
@@ -189,12 +195,7 @@ struct QueryGroup {
 impl QueryGroup {
     /// The name of the query group trait.
     fn name(&self) -> Ident {
-        self.group_path
-            .segments
-            .last()
-            .unwrap()
-            .ident
-            .clone()
+        self.group_path.segments.last().unwrap().ident.clone()
     }
 }
 

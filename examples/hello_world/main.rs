@@ -73,6 +73,7 @@ fn length(db: &impl HelloWorld, (): ()) -> usize {
 // The database struct can contain basically anything you need, but it
 // must have a `runtime` field as shown, and you must implement the
 // `salsa::Database` trait (as shown below).
+// ANCHOR:database
 #[salsa::database(HelloWorldStorage)]
 #[derive(Default)]
 struct DatabaseStruct {
@@ -89,6 +90,7 @@ impl salsa::Database for DatabaseStruct {
         &mut self.runtime
     }
 }
+// ANCHOR_END:database
 
 // This shows how to use a query.
 fn main() {
