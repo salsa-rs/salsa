@@ -1,0 +1,470 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>RFC 0002: Intern queries - Salsa</title>
+        
+        
+
+
+        <!-- Custom HTML head -->
+        
+
+
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        
+        <link rel="stylesheet" href="../fonts/fonts.css">
+        
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+        <link rel="stylesheet" href="../mermaid.css">
+        
+
+        
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.1.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.2.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html" class="active"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li></ol></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                        
+                    </div>
+
+                    <h1 class="menu-title">Salsa</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1><a class="header" href="#summary" id="summary">Summary</a></h1>
+<ul>
+<li>We introduce <code>#[salsa::interned]</code> queries which convert a <code>Key</code> type
+into a numeric index of type <code>Value</code>, where <code>Value</code> is either the
+type <code>InternId</code> (defined by a salsa) or some newtype thereof.</li>
+<li>Each interned query <code>foo</code> also produces an inverse <code>lookup_foo</code>
+method that converts back from the <code>Value</code> to the <code>Key</code> that was
+interned.</li>
+<li>The <code>InternId</code> type (defined by salsa) is basically a newtype'd integer,
+but it internally uses <code>NonZeroU32</code> to enable space-saving optimizations
+in memory layout.</li>
+<li>The <code>Value</code> types can be any type that implements the
+<code>salsa::InternIndex</code> trait, also introduced by this RFC. This trait
+has two methods, <code>from_intern_id</code> and <code>as_intern_id</code>.</li>
+<li>The interning is integrated into the GC and tracked like any other
+query, which means that interned values can be garbage-collected,
+and any computation that was dependent on them will be collected.</li>
+</ul>
+<h1><a class="header" href="#motivation" id="motivation">Motivation</a></h1>
+<h2><a class="header" href="#the-need-for-interning" id="the-need-for-interning">The need for interning</a></h2>
+<p>Many salsa applications wind up needing the ability to construct
+&quot;interned keys&quot;. Frequently this pattern emerges because we wish to
+construct identifiers for things in the input. These identifiers
+generally have a &quot;tree-like shape&quot;. For example, in a compiler, there
+may be some set of input files -- these are enumerated in the inputs
+and serve as the &quot;base&quot; for a path that leads to items in the user's
+input. But within an input file, there are additional structures, such
+as <code>struct</code> or <code>impl</code> declarations, and these structures may contain
+further structures within them (such as fields or methods). This gives
+rise to a path like so that can be used to identify a given item:</p>
+<pre><code>PathData = &lt;file-name&gt;
+         | PathData / &lt;identifier&gt;
+</code></pre>
+<p>These paths <em>could</em> be represented in the compiler with an <code>Arc</code>, but
+because they are omnipresent, it is convenient to intern them instead
+and use an integer. Integers are <code>Copy</code> types, which is convenient,
+and they are also small (32 bits typically suffices in practice).</p>
+<h2><a class="header" href="#why-interning-is-difficult-today-garbage-collection" id="why-interning-is-difficult-today-garbage-collection">Why interning is difficult today: garbage collection</a></h2>
+<p>Unfortunately, integrating interning into salsa at present presents
+some hard choices, particularly with a long-lived application. You can
+easily add an interning table into the database, but unless you do
+something clever, <strong>it will simply grow and grow forever</strong>. But as the
+user edits their programs, some paths that used to exist will no
+longer be relevant -- for example, a given file or impl may be
+removed, invalidating all those paths that were based on it. </p>
+<p>Due to the nature of salsa's recomputation model, it is not easy to
+detect when paths that used to exist in a prior revision are no longer
+relevant in the next revision. <strong>This is because salsa never
+explicitly computes &quot;diffs&quot; of this kind between revisions -- it just
+finds subcomputations that might have gone differently and re-executes
+them.</strong> Therefore, if the code that created the paths (e.g., that
+processed the result of the parser) is part of a salsa query, it will
+simply not re-create the invalidated paths -- there is no explicit
+&quot;deletion&quot; point.</p>
+<p>In fact, the same is true of all of salsa's memoized query values. We
+may find that in a new revision, some memoized query values are no
+longer relevant. For example, in revision R1, perhaps we computed
+<code>foo(22)</code> and <code>foo(44)</code>, but in the new input, we now only need to
+compute <code>foo(22)</code>. The <code>foo(44)</code> value is still memoized, we just
+never asked for its value. <strong>This is why salsa includes a garbage
+collector, which can be used to cleanup these memoized values that are
+no longer relevant.</strong></p>
+<p>But using a garbage collection strategy with a hand-rolled interning
+scheme is not easy. You <em>could</em> trace through all the values in
+salsa's memoization tables to implement a kind of mark-and-sweep
+scheme, but that would require for salsa to add such a mechanism. It
+might also be quite a lot of tracing! The current salsa GC mechanism has no
+need to walk through the values themselves in a memoization table, it only
+examines the keys and the metadata (unless we are freeing a value, of course).</p>
+<h2><a class="header" href="#how-this-rfc-changes-the-situation" id="how-this-rfc-changes-the-situation">How this RFC changes the situation</a></h2>
+<p>This RFC presents an alternative. The idea is to move the interning
+into salsa itself by creating special &quot;interning
+queries&quot;. Dependencies on these queries are tracked like any other
+query and hence they integrate naturally with salsa's garbage
+collection mechanisms.</p>
+<h1><a class="header" href="#users-guide" id="users-guide">User's guide</a></h1>
+<p>This section covers how interned queries are expected to be used.</p>
+<h2><a class="header" href="#declaring-an-interned-query" id="declaring-an-interned-query">Declaring an interned query</a></h2>
+<p>You can declare an interned query like so:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[salsa::query_group]
+trait Foo {
+  #[salsa::interned]
+  fn intern_path_data(&amp;self, data: PathData) -&gt; salsa::InternId;
+]
+<span class="boring">}
+</span></code></pre></pre>
+<p><strong>Query keys.</strong> Like any query, these queries can take any number of keys. If multiple
+keys are provided, then the interned key is a tuple of each key
+value. In order to be interned, the keys must implement <code>Clone</code>,
+<code>Hash</code> and <code>Eq</code>. </p>
+<p><strong>Return type.</strong> The return type of an interned key may be of any type
+that implements <code>salsa::InternIndex</code>: salsa provides an impl for the
+type <code>salsa::InternId</code>, but you can implement it for your own.</p>
+<p><strong>Inverse query.</strong> For each interning query, we automatically generate
+a reverse query that will invert the interning step. It is named
+<code>lookup_XXX</code>, where <code>XXX</code> is the name of the query. Hence here it
+would be <code>fn lookup_intern_path(&amp;self, key: salsa::InternId) -&gt; Path</code>.</p>
+<h2><a class="header" href="#the-expected-us" id="the-expected-us">The expected us</a></h2>
+<p>Using an interned query is quite straightforward. You simply invoke it
+with a key, and you will get back an integer, and you can use the
+generated <code>lookup</code> method to convert back to the original value:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let key = db.intern_path(path_data1);
+let path_data2 = db.lookup_intern_path_data(key);
+<span class="boring">}
+</span></code></pre></pre>
+<p>Note that the interned value will be cloned -- so, like all Salsa
+values, it is best if that is a cheap operation. Interestingly,
+interning can help to keep recursive, tree-shapes values cheap,
+because the &quot;pointers&quot; within can be replaced with interned keys.</p>
+<h2><a class="header" href="#custom-return-types" id="custom-return-types">Custom return types</a></h2>
+<p>The return type for an intern query does not have to be a <code>InternId</code>. It can
+be any type that implements the <code>salsa::InternKey</code> trait:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub trait InternKey {
+    /// Create an instance of the intern-key from a `InternId` value.
+    fn from_intern_id(v: InternId) -&gt; Self;
+
+    /// Extract the `InternId` with which the intern-key was created.
+    fn as_intern_id(&amp;self) -&gt; InternId;
+}
+<span class="boring">}
+</span></code></pre></pre>
+<h2><a class="header" href="#recommended-practice" id="recommended-practice">Recommended practice</a></h2>
+<p>This section shows the recommended practice for using interned keys,
+building on the <code>Path</code> and <code>PathData</code> example that we've been working
+with. </p>
+<h3><a class="header" href="#naming-convention" id="naming-convention">Naming Convention</a></h3>
+<p>First, note the recommended naming convention: the <em>intern key</em> is
+<code>Foo</code> and the key's associated data <code>FooData</code> (in our case, <code>Path</code> and
+<code>PathData</code>). The intern key is given the shorter name because it is
+used far more often. Moreover, other types should never store the full
+data, but rather should store the interned key.</p>
+<h3><a class="header" href="#defining-the-intern-key" id="defining-the-intern-key">Defining the intern key</a></h3>
+<p>The intern key should always be a newtype struct that implements
+the <code>InternKey</code> trait. So, something like this:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct Path(InternId);
+
+impl salsa::InternKey for Path {
+    fn from_intern_id(v: InternId) -&gt; Self {
+        Path(v)
+    }
+
+    fn as_intern_id(&amp;self) -&gt; InternId {
+        self.0
+    }
+}
+<span class="boring">}
+</span></code></pre></pre>
+<h3><a class="header" href="#convenient-lookup-method" id="convenient-lookup-method">Convenient lookup method</a></h3>
+<p>It is often convenient to add a <code>lookup</code> method to the newtype key:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl Path {
+    // Adding this method is often convenient, since you can then
+    // write `path.lookup(db)` to access the data, which reads a bit better.
+    pub fn lookup(&amp;self, db: &amp;impl MyDatabase) -&gt; PathData {
+        db.lookup_intern_path_data(*self)
+    }
+}
+<span class="boring">}
+</span></code></pre></pre>
+<h3><a class="header" href="#defining-the-data-type" id="defining-the-data-type">Defining the data type</a></h3>
+<p>Recall that our paths were defined by a recursive grammar like so:</p>
+<pre><code>PathData = &lt;file-name&gt;
+         | PathData / &lt;identifier&gt;
+</code></pre>
+<p>This recursion is quite typical of salsa applications. The recommended
+way to encode it in the <code>PathData</code> structure itself is to build on other
+intern keys, like so:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Clone, Hash, Eq, ..)]
+enum PathData {
+  Root(String),
+  Child(Path, String),
+  //    ^^^^ Note that the recursive reference here
+  //         is encoded as a Path.
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>Note though that the <code>PathData</code> type will be cloned whenever the value
+for an interned key is looked up, and it may also be cloned to store
+dependency information between queries. So, as an optimization, you
+might prefer to avoid <code>String</code> in favor of <code>Arc&lt;String&gt;</code> -- or even
+intern the strings as well.</p>
+<h2><a class="header" href="#interaction-with-the-garbage-collector" id="interaction-with-the-garbage-collector">Interaction with the garbage collector</a></h2>
+<p>Interned keys can be garbage collected as normal, with one
+caveat. Even if requested, Salsa will never collect the results
+generated in the current revision. This is because it would permit the
+same key to be interned twice in the same revision, possibly mapping
+to distinct intern keys each time.</p>
+<p>Note that if an interned key <em>is</em> collected, its index will be
+re-used.  Salsa's dependency tracking system should ensure that
+anything incorporating the older value is considered dirty, but you
+may see the same index showing up more than once in the logs.</p>
+<h1><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h1>
+<p>Interned keys are implemented using a hash-map that maps from the
+interned data to its index, as well as a vector containing (for each
+index) various bits of data. In addition to the interned data, we must
+track the revision in which the value was interned and the revision in
+which it was last accessed, to help manage the interaction with the
+GC. Finally, we have to track some sort of free list that tracks the
+keys that are being re-used. The current implementation never actually
+shrinks the vectors and maps from their maximum size, but this might
+be a useful thing to be able to do (this is effectively a memory
+allocator, so standard allocation strategies could be used here).</p>
+<h2><a class="header" href="#internid" id="internid">InternId</a></h2>
+<p>Presently the <code>InternId</code> type is implemented to wrap a <code>NonZeroU32</code>:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct InternId {
+    value: NonZeroU32,
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>This means that <code>Option&lt;InternId&gt;</code> (or <code>Option&lt;Path&gt;</code>, continuing our
+example from before) will only be a single word. To accommodate this,
+the <code>InternId</code> constructors require that the value is less than
+<code>InternId::MAX</code>; the value is deliberately set low (currently to
+<code>0xFFFF_FF00</code>) to allow for more sentinel values in the future (Rust
+doesn't presently expose the capability of having sentinel values
+other than zero on stable, but it is possible on nightly).</p>
+<h1><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h1>
+<p>None at present.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+                            <a rel="prev" href="../rfcs/RFC0001-Query-Group-Traits.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+
+                        
+                            <a rel="next" href="../rfcs/RFC0003-Query-Dependencies.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+                    <a rel="prev" href="../rfcs/RFC0001-Query-Group-Traits.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+                    <a rel="next" href="../rfcs/RFC0003-Query-Dependencies.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        
+
+        
+
+        
+        <script src="../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+        <script type="text/javascript" src="../mermaid.min.js"></script>
+        
+        <script type="text/javascript" src="../mermaid-init.js"></script>
+        
+
+        
+
+    </body>
+</html>

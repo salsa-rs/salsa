@@ -1,0 +1,495 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>RFC 0005: Durability - Salsa</title>
+        
+        
+
+
+        <!-- Custom HTML head -->
+        
+
+
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        
+        <link rel="stylesheet" href="../fonts/fonts.css">
+        
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+        <link rel="stylesheet" href="../mermaid.css">
+        
+
+        
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.1.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.2.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html" class="active"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li></ol></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                        
+                    </div>
+
+                    <h1 class="menu-title">Salsa</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1><a class="header" href="#summary" id="summary">Summary</a></h1>
+<ul>
+<li>Introduce a user-visibile concept of <code>Durability</code></li>
+<li>Adjusting the &quot;durability&quot; of an input can allow salsa to skip a lot of validation work</li>
+<li>Garbage collection -- particularly of interned values -- however becomes more complex</li>
+<li>Possible future expansion: automatic detection of more &quot;durable&quot; input values</li>
+</ul>
+<h1><a class="header" href="#motivation" id="motivation">Motivation</a></h1>
+<h2><a class="header" href="#making-validation-faster-by-optimizing-for-durability" id="making-validation-faster-by-optimizing-for-durability">Making validation faster by optimizing for &quot;durability&quot;</a></h2>
+<p>Presently, salsa's validation logic requires traversing all
+dependencies to check that they have not changed. This can sometimes
+be quite costly in practice: rust-analyzer for example sometimes
+spends as much as 90ms revalidating the results from a no-op
+change. One option to improve this is simply optimization --
+<a href="https://github.com/salsa-rs/salsa/pull/176">salsa#176</a> for example reduces validation times significantly, and
+there remains opportunity to do better still. However, even if we are
+able to traverse the dependency graph more efficiently, it will still
+be an O(n) process. It would be nice if we could do better.</p>
+<p>One observation is that, in practice, there are often input values
+that are known to change quite infrequently. For example, in
+rust-analyzer, the standard library and crates downloaded from
+crates.io are unlikely to change (though changes are possible; see
+below). Similarly, the <code>Cargo.toml</code> file for a project changes
+relatively infrequently compared to the sources. We say then that
+these inputs are more <strong>durable</strong> -- that is, they change less frequently.</p>
+<p>This RFC proposes a mechanism to take advantage of durability for
+optimization purposes. Imagine that we have some query Q that depends
+solely on the standard library. The idea is that we can track the last
+revision R when the standard library was changed. Then, when
+traversing dependencies, we can skip traversing the dependencies of Q
+if it was last validated after the revision R. Put another way, we
+only need to traverse the dependencies of Q when the standard library
+changes -- which is unusual. If the standard library <em>does</em> change,
+for example by user's tinkering with the internal sources, then yes we
+walk the dependencies of Q to see if it is affected.</p>
+<h1><a class="header" href="#users-guide" id="users-guide">User's guide</a></h1>
+<h2><a class="header" href="#the-durability-type" id="the-durability-type">The durability type</a></h2>
+<p>We add a new type <code>salsa::Durability</code> which has there associated constants:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Copy, Clone, Debug, Ord)]
+pub struct Durability(..);
+
+impl Durability {
+  // Values that change regularly, like the source to the current crate.
+  pub const LOW: Durability;
+  
+  // Values that change infrequently, like Cargo.toml.
+  pub const MEDIUM: Durability;
+
+  // Values that are not expected to change, like sources from crates.io or the stdlib.
+  pub const HIGH: Durability;
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>h## Specifying the durability of an input</p>
+<p>When setting an input <code>foo</code>, one can now invoke a method
+<code>set_foo_with_durability</code>, which takes a <code>Durability</code> as the final
+argument:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// db.set_foo(key, value) is equivalent to:
+db.set_foo_with_durability(key, value, Durability::LOW);
+
+// This would indicate that `foo` is not expected to change: 
+db.set_foo_with_durability(key, value, Durability::HIGH);
+<span class="boring">}
+</span></code></pre></pre>
+<h2><a class="header" href="#durability-of-interned-values" id="durability-of-interned-values">Durability of interned values</a></h2>
+<p>Interned values are always considered <code>Durability::HIGH</code>. This makes
+sense as many queries that only use high durability inputs will also
+make use of interning internally. A consequence of this is that they
+will not be garbage collected unless you use the specific patterns
+recommended below.</p>
+<h2><a class="header" href="#synthetic-writes" id="synthetic-writes">Synthetic writes</a></h2>
+<p>Finally, we add one new method, <code>synthetic_write(durability)</code>, 
+available on the salsa runtime:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>db.salsa_runtime().synthetic_write(Durability::HIGH)
+<span class="boring">}
+</span></code></pre></pre>
+<p>As the name suggests, <code>synthetic_write</code> causes salsa to act <em>as
+though</em> a write to an input of the given durability had taken
+place. This can be used for benchmarking, but it's also important to
+controlling what values get garbaged collected, as described below.</p>
+<h2><a class="header" href="#tracing-and-garbage-collection" id="tracing-and-garbage-collection">Tracing and garbage collection</a></h2>
+<p>Durability affects garbage collection. The <code>SweepStrategy</code> struct is
+modified as follows:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// Sweeps values which may be outdated, but which have not
+/// been verified since the start of the current collection.
+/// These are typically memoized values from previous computations
+/// that are no longer relevant.
+pub fn sweep_outdated(self) -&gt; SweepStrategy;
+
+/// Sweeps values which have not been verified since the start 
+/// of the current collection, even if they are known to be 
+/// up to date. This can be used to collect &quot;high durability&quot; values
+/// that are not *directly* used by the main query.
+///
+/// So, for example, imagine a main query `result` which relies
+/// on another query `threshold` and (indirectly) on a `threshold_inner`:
+///
+/// ```
+/// result(10) [durability: Low]
+///    |
+///    v
+/// threshold(10) [durability: High]
+///    |
+///    v
+/// threshold_inner(10)  [durability: High]
+/// ```
+///
+/// If you modify a low durability input and then access `result`,
+/// then `result(10)` and its *immediate* dependencies will 
+/// be considered &quot;verified&quot;. However, because `threshold(10)` 
+/// has high durability and no high durability input was modified,
+/// we will not verify *its* dependencies, so `threshold_inner` is not 
+/// verified (but it is also not outdated).
+///
+/// Collecting unverified things would therefore collect `threshold_inner(10)`.
+/// Collecting only *outdated* things (i.e., with `sweep_outdated`)
+/// would collect nothing -- but this does mean that some high durability
+/// queries that are no longer relevant to your main query may stick around.
+/// 
+/// To get the most precise garbage collection, do a synthetic write with
+/// high durability -- this will force us to verify *all* values. You can then
+/// sweep unverified values.
+pub fn sweep_unverified(self) -&gt; SweepStrategy;
+<span class="boring">}
+</span></code></pre></pre>
+<h1><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h1>
+<h2><a class="header" href="#review-the-need-for-gc-to-collect-outdated-values" id="review-the-need-for-gc-to-collect-outdated-values">Review: The need for GC to collect outdated values</a></h2>
+<p>In general, salsa's lazy validation scheme can lead to the accumulation
+of garbage that is no longer needed. Consider a query like this one:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn derived1(db: &amp;impl Database, start: usize) {
+  let middle = self.input(start);
+  self.derived2(middle)
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>Now imagine that, on some particular run, we compute <code>derived1(22)</code>:</p>
+<ul>
+<li><code>derived1(22)</code>
+<ul>
+<li>executes <code>input(22)</code>, which returns <code>44</code></li>
+<li>then executes <code>derived2(44)</code></li>
+</ul>
+</li>
+</ul>
+<p>The end result of this execution will be a dependency graph
+like:</p>
+<pre><code>derived1(22) -&gt; derived2(44)
+  |
+  v
+input(22)
+</code></pre>
+<p>Now. imagine that the user modifies <code>input(22)</code> to have the value <code>45</code>.
+The next time <code>derived1(22)</code> executes, it will load <code>input(22)</code> as before,
+but then execute <code>derived2(45)</code>. This leaves us with a dependency
+graph as follows:</p>
+<pre><code>derived1(22) -&gt; derived2(45)
+  |
+  v
+input(22)       derived2(44)
+</code></pre>
+<p>Notice that we still see <code>derived2(44)</code> in the graph. This is because
+we memoized the result in last round and then simply had no use for it
+in this round. The role of GC is to collect &quot;outdated&quot; values like
+this one.</p>
+<p>###Review: Tracing and GC before durability</p>
+<p>In the absence of durability, when you execute a query Q in some new
+revision where Q has not previously executed, salsa must trace back
+through all the queries that Q depends on to ensure that they are
+still up to date. As each of Q's dependencies is validated, we mark it
+to indicate that it has been checked in the current revision (and
+thus, within a particular revision, we would never validate or trace a
+particular query twice).</p>
+<p>So, to continue our example, when we first executed <code>derived1(22)</code>
+in revision R1, we might have had a graph like:</p>
+<pre><code>derived1(22)   -&gt; derived2(44)
+[verified: R1]    [verified: R1]
+  |
+  v
+input(22)
+</code></pre>
+<p>Now, after we modify <code>input(22)</code> and execute <code>derived1(22)</code> again, we 
+would have a graph like:</p>
+<pre><code>derived1(22)   -&gt; derived2(45)
+[verified: R2]    [verified: R2]
+  |
+  v
+input(22)         derived2(44)
+                  [verified: R1]
+</code></pre>
+<p>Note that <code>derived2(44)</code>, the outdated value, never had its &quot;verified&quot;
+revision updated, because we never accessed it.</p>
+<p>Salsa leverages this validation stamp to serve as the &quot;marking&quot; phase
+of a simple mark-sweep garbage collector. The idea is that the sweep
+method can collect any values that are &quot;outdated&quot; (whose &quot;verified&quot;
+revision is less than the current revision).</p>
+<p>The intended model is that one can do a &quot;mark-sweep&quot; style garbage
+collection like so:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Modify some input, triggering a new revision.
+db.set_input(22, 45);
+
+// The **mark** phase: execute the &quot;main query&quot;, with the intention
+// that we wish to retain all the memoized values needed to compute
+// this main query, but discard anything else. For example, in an IDE
+// context, this might be a &quot;compute all errors&quot; query.
+db.derived1(22);
+
+// The **sweep** phase: discard anything that was not traced during
+// the mark phase.
+db.sweep_all(...);
+<span class="boring">}
+</span></code></pre></pre>
+<p>In the case of our example, when we execute <code>sweep_all</code>, it would
+collect <code>derived2(44)</code>.</p>
+<h2><a class="header" href="#challenge-durability-lets-us-avoid-tracing" id="challenge-durability-lets-us-avoid-tracing">Challenge: Durability lets us avoid tracing</a></h2>
+<p>This tracing model is affected by the move to durability. Now, if some
+derived value has a high durability, we may skip tracing its
+descendants altogether. This means that they would never be &quot;verified&quot;
+-- that is, their &quot;verified date&quot; would never be updated.</p>
+<p>This is why we modify the definition of &quot;outdated&quot; as follows:</p>
+<ul>
+<li>For a query value <code>Q</code> with durability <code>D</code>, let <code>R_lc</code> be the revision when
+values of durability <code>D</code> last changed. Let <code>R_v</code> be the revision when
+<code>Q</code> was last verified.</li>
+<li><code>Q</code> is outdated if <code>R_v &lt; R_lc</code>.
+<ul>
+<li>In other words, if <code>Q</code> may have changed since it was last verified.</li>
+</ul>
+</li>
+</ul>
+<h2><a class="header" href="#collecting-interned-and-untracked-values" id="collecting-interned-and-untracked-values">Collecting interned and untracked values</a></h2>
+<p>Most values can be collected whenever we like without influencing
+correctness.  However, interned values and those with untracked
+dependencies are an exception -- <strong>they can only be collected when
+outdated</strong>.  This is because their values may not be reproducible --
+in other words, re-executing an interning query (or one with untracked
+dependencies, which can read arbitrary program state) twice in a row
+may produce a different value. In the case of an interning query, for
+example, we may wind up using a different integer than we did before.
+If the query is outdated, this is not a problem: anything that
+dependend on its result must also be outdated, and hence would be
+re-executed and would observe the new value. But if the query is <em>not</em>
+outdated, then we could get inconsistent result.s</p>
+<h1><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h1>
+<h2><a class="header" href="#rejected-arbitrary-durabilities" id="rejected-arbitrary-durabilities">Rejected: Arbitrary durabilities</a></h2>
+<p>We considered permitting arbitrary &quot;levels&quot; of durability -- for
+example, allowing the user to specify a number -- rather than offering
+just three. Ultimately it seemed like that level of control wasn't
+really necessary and that having just three levels would be sufficient
+and simpler.</p>
+<h2><a class="header" href="#rejected-durability-lattices" id="rejected-durability-lattices">Rejected: Durability lattices</a></h2>
+<p>We also considered permitting a &quot;lattice&quot; of durabilities -- e.g., to
+mirror the crate DAG in rust-analyzer -- but this is tricky because
+the lattice itself would be dependent on other inputs.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+                            <a rel="prev" href="../rfcs/RFC0004-LRU.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+                    <a rel="prev" href="../rfcs/RFC0004-LRU.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        
+
+        
+
+        
+        <script src="../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+        <script type="text/javascript" src="../mermaid.min.js"></script>
+        
+        <script type="text/javascript" src="../mermaid-init.js"></script>
+        
+
+        
+
+    </body>
+</html>

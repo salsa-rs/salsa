@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>On-demand (Lazy) inputs - Salsa</title>
+        <title>RFC 0003: Query dependencies - Salsa</title>
         
         
 
@@ -91,7 +91,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html" class="active"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.1.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.2.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li></ol></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.1.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.2.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html" class="active"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li></ol></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -157,65 +157,136 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#on-demand-lazy-inputs" id="on-demand-lazy-inputs">On-Demand (Lazy) Inputs</a></h1>
-<p>Salsa input queries work best if you can easily provide all of the inputs upfront.
-However sometimes the set of inputs is not known beforehand.</p>
-<p>A typical example is reading files from disk.
-While it is possible to eagerly scan a particular directory and create an in-memory file tree in a salsa input query, a more straight-forward approach is to read the files lazily.
-That is, when someone requests the text of a file for the first time:</p>
-<ol>
-<li>Read the file from disk and cache it.</li>
-<li>Setup a file-system watcher for this path.</li>
-<li>Invalidate the cached file once the watcher sends a change notification.</li>
-</ol>
-<p>This is possible to achieve in salsa, using a derived query and <code>report_synthetic_read</code> and <code>invalidate</code> queries.
-The setup looks roughly like this:</p>
-<pre><code class="language-rust ignore">#[salsa::query_group(VfsDatabaseStorage)]
-trait VfsDatabase: salsa::Database + FileWatcher {
-    fn read(&amp;self, path: PathBuf) -&gt; String;
-}
+                        <h1><a class="header" href="#summary" id="summary">Summary</a></h1>
+<p>Allow to specify a dependency on a query group without making it a super trait.</p>
+<h1><a class="header" href="#motivation" id="motivation">Motivation</a></h1>
+<p>Currently, there's only one way to express that queries from group <code>A</code> can use
+another group <code>B</code>: namely, <code>B</code> can be a super-trait of <code>A</code>:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[salsa::query_group(AStorage)]
+trait A: B {
 
-trait FileWatcher {
-    fn watch(&amp;self, path: &amp;Path);
-    fn did_change_file(&amp;mut self, path: &amp;Path);
 }
-
-fn read(db: &amp;impl salsa::Database, path: PathBuf) -&gt; String {
-    db.salsa_runtime()
-        .report_synthetic_read(salsa::Durability::LOW);
-    db.watch(&amp;path);
-    std::fs::read_to_string(&amp;path).unwrap_or_default()
+<span class="boring">}
+</span></code></pre></pre>
+<p>This approach works and allows one to express complex dependencies. However,
+this approach falls down when one wants to make a dependency a private
+implementation detail: Clients with <code>db: &amp;impl A</code> can freely call <code>B</code> methods on
+the <code>db</code>.</p>
+<p>This is a bad situation from software engineering point of view: if everything
+is accessible, it's hard to make distinction between public API and private
+implementation details. In the context of salsa the situation is even worse,
+because it breaks &quot;firewall&quot; pattern. It's customary to wrap low-level
+frequently-changing or volatile queries into higher-level queries which produce
+stable results and contain invalidation. In the current salsa, however, it's
+very easy to accidentally call a low-level volatile query instead of a wrapper,
+introducing and undesired dependency.</p>
+<h1><a class="header" href="#users-guide" id="users-guide">User's guide</a></h1>
+<p>To specify query dependencies, a <code>requires</code> attribute should be used:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[salsa::query_group(SymbolsDatabaseStorage)]
+#[salsa::requires(SyntaxDatabase)]
+#[salsa::requires(EnvDatabase)]
+pub trait SymbolsDatabase {
+    fn get_symbol_by_name(&amp;self, name: String) -&gt; Symbol;
 }
-
-#[salsa::database(VfsDatabaseStorage)]
-struct MyDatabase { ... }
-
-impl FileWatcher for MyDatabase {
-    fn watch(&amp;self, path: &amp;Path) { ... }
-    fn did_change_file(&amp;mut self, path: &amp;Path) {
-        self.query_mut(ReadQuery).invalidate(path);
-    }
+<span class="boring">}
+</span></code></pre></pre>
+<p>The argument of <code>requires</code> is a path to a trait. The traits from all <code>requires</code>
+attributes are available when implementing the query:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn get_symbol_by_name(
+    db: &amp;(impl SymbolsDatabase + SyntaxDatabase + EnvDatabase),
+    name: String,
+) -&gt; Symbol {
+    // ...
 }
-</code></pre>
-<ul>
-<li>We declare the query as a derived query (which is the default).</li>
-<li>In the query implementation, we don't call any other query and just directly read file from disk.</li>
-<li>Because the query doesn't read any inputs, it will be assigned a <code>HIGH</code> durability by default, which we override with <code>report_synthetic_read</code>.</li>
-<li>The result of the query is cached, and we must call <code>invalidate</code> to clear this cache.</li>
-</ul>
+<span class="boring">}
+</span></code></pre></pre>
+<p>However, these traits are <strong>not</strong> available without explicit bounds:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn fuzzy_find_symbol(db: &amp;impl SymbolsDatabase, name: String) {
+    // Can't accidentally call methods of the `SyntaxDatabase`
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>Note that, while the RFC does not propose to add per-query dependencies, query
+implementation can voluntarily specify only a subset of traits from <code>requires</code>
+attribute:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>fn get_symbol_by_name(
+    // Purposefully don't depend on EnvDatabase
+    db: &amp;(impl SymbolsDatabase + SyntaxDatabase),
+    name: String,
+) -&gt; Symbol {
+    // ...
+}
+<span class="boring">}
+</span></code></pre></pre>
+<h1><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h1>
+<p>The implementation is straightforward and consists of adding traits from
+<code>requires</code> attributes to various <code>where</code> bounds. For example, we would generate
+the following blanket for above example:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl&lt;T&gt; SymbolsDatabase for T
+where
+    T: SyntaxDatabase + EnvDatabase,
+    T: salsa::plumbing::HasQueryGroup&lt;SymbolsDatabaseStorage&gt;
+{
+    ...
+}
+<span class="boring">}
+</span></code></pre></pre>
+<h1><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h1>
+<p>The semantics of <code>requires</code> closely resembles <code>where</code>, so we could imagine a
+syntax based on magical where clauses:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[salsa::query_group(SymbolsDatabaseStorage)]
+pub trait SymbolsDatabase
+    where ???: SyntaxDatabase + EnvDatabase
+{
+    fn get_symbol_by_name(&amp;self, name: String) -&gt; Symbol;
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>However, it's not obvious what should stand for <code>???</code>. <code>Self</code> won't be ideal,
+because supertraits are a sugar for bounds on <code>Self</code>, and we deliberately want
+different semantics. Perhaps picking a magical identifier like <code>DB</code> would work
+though?</p>
+<p>One potential future development here is per-query-function bounds, but they can
+already be simulated by voluntarily requiring less bounds in the implementation
+function.</p>
+<p>Another direction for future work is privacy: because traits from <code>requires</code>
+clause are not a part of public interface, in theory it should be possible to
+restrict their visibility. In practice, this still hits public-in-private lint,
+at least with a trivial implementation.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
-                            <a rel="prev" href="../common_patterns/selection.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rfcs/RFC0002-Intern-Queries.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
 
                         
-                            <a rel="next" href="../videos.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next" href="../rfcs/RFC0004-LRU.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -227,13 +298,13 @@ impl FileWatcher for MyDatabase {
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
-                    <a rel="prev" href="../common_patterns/selection.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rfcs/RFC0002-Intern-Queries.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 
 
                 
-                    <a rel="next" href="../videos.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next" href="../rfcs/RFC0004-LRU.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                 

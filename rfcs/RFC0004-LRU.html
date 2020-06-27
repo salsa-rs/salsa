@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>On-demand (Lazy) inputs - Salsa</title>
+        <title>RFC 0004: LRU - Salsa</title>
         
         
 
@@ -91,7 +91,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html" class="active"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.1.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.2.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li></ol></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.1.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.2.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html" class="active"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li></ol></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -157,65 +157,86 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#on-demand-lazy-inputs" id="on-demand-lazy-inputs">On-Demand (Lazy) Inputs</a></h1>
-<p>Salsa input queries work best if you can easily provide all of the inputs upfront.
-However sometimes the set of inputs is not known beforehand.</p>
-<p>A typical example is reading files from disk.
-While it is possible to eagerly scan a particular directory and create an in-memory file tree in a salsa input query, a more straight-forward approach is to read the files lazily.
-That is, when someone requests the text of a file for the first time:</p>
-<ol>
-<li>Read the file from disk and cache it.</li>
-<li>Setup a file-system watcher for this path.</li>
-<li>Invalidate the cached file once the watcher sends a change notification.</li>
-</ol>
-<p>This is possible to achieve in salsa, using a derived query and <code>report_synthetic_read</code> and <code>invalidate</code> queries.
-The setup looks roughly like this:</p>
-<pre><code class="language-rust ignore">#[salsa::query_group(VfsDatabaseStorage)]
-trait VfsDatabase: salsa::Database + FileWatcher {
-    fn read(&amp;self, path: PathBuf) -&gt; String;
-}
-
-trait FileWatcher {
-    fn watch(&amp;self, path: &amp;Path);
-    fn did_change_file(&amp;mut self, path: &amp;Path);
-}
-
-fn read(db: &amp;impl salsa::Database, path: PathBuf) -&gt; String {
-    db.salsa_runtime()
-        .report_synthetic_read(salsa::Durability::LOW);
-    db.watch(&amp;path);
-    std::fs::read_to_string(&amp;path).unwrap_or_default()
-}
-
-#[salsa::database(VfsDatabaseStorage)]
-struct MyDatabase { ... }
-
-impl FileWatcher for MyDatabase {
-    fn watch(&amp;self, path: &amp;Path) { ... }
-    fn did_change_file(&amp;mut self, path: &amp;Path) {
-        self.query_mut(ReadQuery).invalidate(path);
-    }
-}
-</code></pre>
+                        <h1><a class="header" href="#summary" id="summary">Summary</a></h1>
+<p>Add Least Recently Used values eviction as a supplement to garbage collection.</p>
+<h1><a class="header" href="#motivation" id="motivation">Motivation</a></h1>
+<p>Currently, the single mechanism for controlling memory usage in salsa is garbage
+collection. Experience with rust-analyzer shown that it is insufficient for two
+reasons:</p>
 <ul>
-<li>We declare the query as a derived query (which is the default).</li>
-<li>In the query implementation, we don't call any other query and just directly read file from disk.</li>
-<li>Because the query doesn't read any inputs, it will be assigned a <code>HIGH</code> durability by default, which we override with <code>report_synthetic_read</code>.</li>
-<li>The result of the query is cached, and we must call <code>invalidate</code> to clear this cache.</li>
+<li>
+<p>It's hard to determine which values should be collected. Current
+implementation in rust-analyzer just periodically clears all values of
+specific queries.</p>
+</li>
+<li>
+<p>GC is in generally run in-between revision. However, especially after just
+opening the project, the number of values <em>within a single revision</em> can be
+high. In other words, GC doesn't really help with keeping peak memory usage
+under control. While it is possible to run GC concurrently with calculations
+(and this is in fact what rust-analyzer is doing right now to try to keep high
+water mark of memory lower), this is highly unreliable an inefficient.</p>
+</li>
 </ul>
+<p>The mechanism of LRU targets both of these weaknesses:</p>
+<ul>
+<li>
+<p>LRU tracks which values are accessed, and uses this information to determine
+which values are actually unused.</p>
+</li>
+<li>
+<p>LRU has a fixed cap on the maximal number of entries, thus bounding the memory
+usage.</p>
+</li>
+</ul>
+<h1><a class="header" href="#users-guide" id="users-guide">User's guide</a></h1>
+<p>It is possible to call <code>set_lru_capacity(n)</code> method on any non-input query. The
+effect of this is that the table for the query stores at most <code>n</code> <em>values</em> in
+the database. If a new value is computed, and there are already <code>n</code> existing
+ones in the database, the least recently used one is evicted. Note that
+information about query dependencies is <strong>not</strong> evicted. It is possible to
+change lru capacity at runtime at any time. <code>n == 0</code> is a special case, which
+completely disables LRU logic. LRU is not enabled by default.</p>
+<h1><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h1>
+<p>Implementation wise, we store a linked hash map of keys, in the recently-used
+order. Because reads of the queries are considered uses, we now need to
+write-lock the query map even if the query is fresh. However we don't do this
+bookkeeping if LRU is disabled, so you don't have to pay for it unless you use
+it.</p>
+<p>A slight complication arises with volatile queries (and, in general, with any
+query with an untracked input). Similarly to GC, evicting such a query could
+lead to an inconsistent database. For this reason, volatile queries are never
+evicted.</p>
+<h1><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h1>
+<p>LRU is a compromise, as it is prone to both accidentally evicting useful queries
+and needlessly holding onto useless ones. In particular, in the steady state and
+without additional GC, memory usage will be proportional to the lru capacity: it
+is not only an upper bound, but a lower bound as well!</p>
+<p>In theory, some deterministic way of evicting values when you for sure don't
+need them anymore maybe more efficient. However, it is unclear how exactly that
+would work! Experiments in rust-analyzer show that it's not easy to tame a
+dynamic crate graph, and that simplistic phase-based strategies fall down.</p>
+<p>It's also worth noting that, unlike GC, LRU can in theory be <em>more</em> memory
+efficient than deterministic memory management. Unlike a traditional GC, we can
+safely evict &quot;live&quot; objects and recalculate them later. That makes possible to
+use LRU for problems whose working set of &quot;live&quot; queries is larger than the
+available memory, at the cost of guaranteed recomputations.</p>
+<p>Currently, eviction is strictly LRU base. It should be possible to be smarter
+and to take size of values and time that is required to recompute them into
+account when making decisions about eviction.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
-                            <a rel="prev" href="../common_patterns/selection.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rfcs/RFC0003-Query-Dependencies.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
 
                         
-                            <a rel="next" href="../videos.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next" href="../rfcs/RFC0005-Durability.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -227,13 +248,13 @@ impl FileWatcher for MyDatabase {
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
-                    <a rel="prev" href="../common_patterns/selection.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rfcs/RFC0003-Query-Dependencies.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 
 
                 
-                    <a rel="next" href="../videos.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next" href="../rfcs/RFC0005-Durability.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                 
