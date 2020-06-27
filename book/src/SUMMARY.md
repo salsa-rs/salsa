@@ -15,3 +15,5 @@
   - [RFC 0001: Query group traits](./rfcs/RFC0001-Query-Group-Traits.md)
   - [RFC 0002: Intern queries](./rfcs/RFC0002-Intern-Queries.md)
   - [RFC 0003: Query dependencies](./rfcs/RFC0003-Query-Dependencies.md)
+  - [RFC 0004: LRU](./rfcs/RFC0004-LRU.md)
+  - [RFC 0005: Durability](./rfcs/RFC0005-Durability.md)
