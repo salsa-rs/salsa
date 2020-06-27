@@ -15,10 +15,9 @@ use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy};
-// use lock_api::RawRwLockUpgrade;
 use log::{debug, info};
 use parking_lot::Mutex;
-use parking_lot::{RawRwLock, RwLock};
+use parking_lot::RwLock;
 use smallvec::SmallVec;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -166,13 +165,13 @@ where
         // Check with an upgradable read to see if there is a value
         // already. (This permits other readers but prevents anyone
         // else from running `read_upgrade` at the same time.)
-        let old_memo = match self.probe(db, self.state.upgradable_read(), runtime, revision_now) {
+        //
+        // FIXME(Amanieu/parking_lot#101) -- we are using a write-lock
+        // and not an upgradable read here because upgradable reads
+        // can sometimes encounter deadlocks.
+        let old_memo = match self.probe(db, self.state.write(), runtime, revision_now) {
             ProbeState::UpToDate(v) => return v,
-            ProbeState::StaleOrAbsent(state) => {
-                type RwLockUpgradableReadGuard<'a, T> =
-                    lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
-
-                let mut state = RwLockUpgradableReadGuard::upgrade(state);
+            ProbeState::StaleOrAbsent(mut state) => {
                 match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
                     QueryState::Memoized(old_memo) => Some(old_memo),
                     QueryState::InProgress { .. } => unreachable!(),
