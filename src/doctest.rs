@@ -93,6 +93,7 @@ fn test_key_not_sync_db_not_send() {}
 /// not be `Sync`.
 ///
 /// ```compile_fail,E0277
+/// use std::cell::Cell;
 /// use std::rc::Rc;
 ///
 /// #[salsa::query_group(NoSendSyncStorage)]
@@ -120,7 +121,7 @@ fn test_key_not_sync_db_not_send() {}
 ///         &self.runtime
 ///     }
 ///
-///     fn salsa_runtime(&mut self) -> &mut salsa::Runtime<Self> {
+///     fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
 ///         &mut self.runtime
 ///     }
 /// }
