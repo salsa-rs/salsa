@@ -17,3 +17,4 @@
   - [RFC 0003: Query dependencies](./rfcs/RFC0003-Query-Dependencies.md)
   - [RFC 0004: LRU](./rfcs/RFC0004-LRU.md)
   - [RFC 0005: Durability](./rfcs/RFC0005-Durability.md)
+  - [RFC 0006: Dynamic database](./rfcs/RFC0006-Dynamic-Databases.md)

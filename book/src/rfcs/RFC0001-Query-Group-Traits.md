@@ -3,7 +3,7 @@
 ## Metadata
 
 * Author: nikomatsakis
-* Date: 2019.01.15
+* Date: 2019-01-15
 * Introduced in: https://github.com/salsa-rs/salsa-rfcs/pull/1
 
 ## Motivation
@@ -378,4 +378,3 @@ integration harder.
 It might be nice to be able to include functions in the trait that are
 *not* queries, but rather helpers that compose queries. This should be
 pretty easy, just need a suitable `#[salsa]` attribute.
-
