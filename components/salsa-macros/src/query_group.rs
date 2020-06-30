@@ -192,7 +192,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     let mut query_descriptor_variants = proc_macro2::TokenStream::new();
     let mut group_data_elements = vec![];
     let mut storage_fields = proc_macro2::TokenStream::new();
-    let mut storage_defaults = proc_macro2::TokenStream::new();
+    let mut queries_with_storage = vec![];
     for query in &queries {
         let key_names: &Vec<_> = &(0..query.keys.len())
             .map(|i| Ident::new(&format!("key{}", i), Span::call_site()))
@@ -219,6 +219,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             });
             continue;
         }
+
+        queries_with_storage.push(fn_name);
 
         query_fn_definitions.extend(quote! {
             fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
@@ -295,7 +297,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         storage_fields.extend(quote! {
             pub #fn_name: std::sync::Arc<<#qt as salsa::Query<DB__>>::Storage>,
         });
-        storage_defaults.extend(quote! { #fn_name: Default::default(), });
     }
 
     // Emit the trait itself.
@@ -349,7 +350,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     });
 
     // Emit the query types.
-    for query in &queries {
+    for (query, query_index) in queries.iter().zip(0_u16..) {
         let fn_name = &query.fn_name;
         let qt = &query.query_type;
 
@@ -387,6 +388,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 type Group = #group_struct;
                 type GroupStorage = #group_storage<#db>;
                 type GroupKey = #group_key;
+
+                const QUERY_INDEX: u16 = #query_index;
 
                 fn query_storage(
                     group_storage: &Self::GroupStorage,
@@ -466,8 +469,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     }
 
     // Emit query group storage struct
-    // It would derive Default, but then all database structs would have to implement Default
-    // as the derived version includes an unused `+ Default` constraint.
     output.extend(quote! {
         #trait_vis struct #group_storage<DB__>
         where
@@ -484,9 +485,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
-            #trait_vis fn new(group_index: usize) -> Self {
+            #trait_vis fn new(group_index: u16) -> Self {
                 #group_storage {
-                    #storage_defaults
+                    #(
+                        #queries_with_storage:
+                        std::sync::Arc::new(salsa::plumbing::QueryStorageOps::new(group_index)),
+                    )*
                 }
             }
         }

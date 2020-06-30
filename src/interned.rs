@@ -128,42 +128,6 @@ where
 {
 }
 
-impl<DB, Q> Default for InternedStorage<DB, Q>
-where
-    Q: Query<DB>,
-    Q::Key: Eq + Hash,
-    Q::Value: InternKey,
-    DB: Database,
-{
-    fn default() -> Self {
-        InternedStorage {
-            tables: RwLock::new(InternTables::default()),
-        }
-    }
-}
-
-impl<DB, Q, IQ> Default for LookupInternedStorage<DB, Q, IQ>
-where
-    Q: Query<DB>,
-    Q::Key: InternKey,
-    Q::Value: Eq + Hash,
-    IQ: Query<
-        DB,
-        Key = Q::Value,
-        Value = Q::Key,
-        Group = Q::Group,
-        GroupStorage = Q::GroupStorage,
-        GroupKey = Q::GroupKey,
-    >,
-    DB: Database,
-{
-    fn default() -> Self {
-        LookupInternedStorage {
-            phantom: std::marker::PhantomData,
-        }
-    }
-}
-
 impl<K: Debug + Hash + Eq> InternTables<K> {
     /// Returns the slot for the given key.
     ///
@@ -320,6 +284,12 @@ where
     Q::Value: InternKey,
     DB: Database,
 {
+    fn new(_group_index: u16) -> Self {
+        InternedStorage {
+            tables: RwLock::new(InternTables::default()),
+        }
+    }
+
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
@@ -419,6 +389,12 @@ where
     >,
     DB: Database + HasQueryGroup<Q::Group>,
 {
+    fn new(_group_index: u16) -> Self {
+        LookupInternedStorage {
+            phantom: std::marker::PhantomData,
+        }
+    }
+
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let index = key.as_intern_id();
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);

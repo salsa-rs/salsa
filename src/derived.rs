@@ -91,21 +91,6 @@ where
     }
 }
 
-impl<DB, Q, MP> Default for DerivedStorage<DB, Q, MP>
-where
-    Q: QueryFunction<DB>,
-    DB: Database + HasQueryGroup<Q::Group>,
-    MP: MemoizationPolicy<DB, Q>,
-{
-    fn default() -> Self {
-        DerivedStorage {
-            slot_map: RwLock::new(FxHashMap::default()),
-            lru_list: Default::default(),
-            policy: PhantomData,
-        }
-    }
-}
-
 impl<DB, Q, MP> DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
@@ -131,6 +116,14 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
+    fn new(_group_index: u16) -> Self {
+        DerivedStorage {
+            slot_map: RwLock::new(FxHashMap::default()),
+            lru_list: Default::default(),
+            policy: PhantomData,
+        }
+    }
+
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.slot(key);
         let StampedValue {

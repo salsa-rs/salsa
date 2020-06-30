@@ -442,6 +442,9 @@ pub unsafe trait Query<DB: Database>: Debug + Default + Sized + 'static {
     /// Type that identifies a particular query within the group + its key.
     type GroupKey;
 
+    /// A unique index identifying this query within the group.
+    const QUERY_INDEX: u16;
+
     /// Extact storage for this query from the storage for its group.
     fn query_storage(group_storage: &Self::GroupStorage) -> &Arc<Self::Storage>;
 

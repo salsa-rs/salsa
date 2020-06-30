@@ -142,12 +142,14 @@ where
     fn database_key(group_key: G::GroupKey) -> Self::DatabaseKey;
 }
 
-pub trait QueryStorageOps<DB, Q>: Default
+pub trait QueryStorageOps<DB, Q>
 where
     Self: QueryStorageMassOps<DB>,
     DB: Database,
     Q: Query<DB>,
 {
+    fn new(group_index: u16) -> Self;
+
     /// Execute the query, returning the result (often, the result
     /// will be memoized).  This is the "main method" for
     /// queries.
@@ -169,7 +171,7 @@ where
 /// An optional trait that is implemented for "user mutable" storage:
 /// that is, storage whose value is not derived from other storage but
 /// is set independently.
-pub trait InputQueryStorageOps<DB, Q>: Default
+pub trait InputQueryStorageOps<DB, Q>
 where
     DB: Database,
     Q: Query<DB>,
@@ -187,11 +189,11 @@ where
 /// An optional trait that is implemented for "user mutable" storage:
 /// that is, storage whose value is not derived from other storage but
 /// is set independently.
-pub trait LruQueryStorageOps: Default {
+pub trait LruQueryStorageOps {
     fn set_lru_capacity(&self, new_capacity: usize);
 }
 
-pub trait DerivedQueryStorageOps<DB, Q>: Default
+pub trait DerivedQueryStorageOps<DB, Q>
 where
     DB: Database,
     Q: Query<DB>,

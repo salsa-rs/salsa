@@ -47,18 +47,6 @@ where
 {
 }
 
-impl<DB, Q> Default for InputStorage<DB, Q>
-where
-    Q: Query<DB>,
-    DB: Database,
-{
-    fn default() -> Self {
-        InputStorage {
-            slots: Default::default(),
-        }
-    }
-}
-
 impl<DB, Q> InputStorage<DB, Q>
 where
     Q: Query<DB>,
@@ -74,6 +62,12 @@ where
     Q: Query<DB>,
     DB: Database,
 {
+    fn new(_group_index: u16) -> Self {
+        InputStorage {
+            slots: Default::default(),
+        }
+    }
+
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self
             .slot(key)

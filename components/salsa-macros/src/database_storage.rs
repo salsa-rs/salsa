@@ -53,7 +53,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         .zip(&query_group_names_snake)
         .zip(&query_group_storage_names)
         .zip(&query_group_key_names)
-        .zip(0_usize..)
+        .zip(0_u16..)
     {
         let group_path = &query_group.group_path;
         let group_name = query_group.name();
