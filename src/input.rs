@@ -5,17 +5,17 @@ use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
-use crate::runtime::StampedValue;
+use crate::runtime::{FxIndexMap, StampedValue};
 use crate::CycleError;
 use crate::Database;
 use crate::Event;
 use crate::EventKind;
 use crate::Query;
-use crate::SweepStrategy;
+use crate::{DatabaseKeyIndex, SweepStrategy};
+use indexmap::map::Entry;
 use log::debug;
 use parking_lot::RwLock;
-use rustc_hash::FxHashMap;
-use std::collections::hash_map::Entry;
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 /// Input queries store the result plus a list of the other queries
@@ -26,7 +26,8 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    slots: RwLock<FxHashMap<Q::Key, Arc<Slot<DB, Q>>>>,
+    group_index: u16,
+    slots: RwLock<FxIndexMap<Q::Key, Arc<Slot<DB, Q>>>>,
 }
 
 struct Slot<DB, Q>
@@ -35,6 +36,7 @@ where
     DB: Database,
 {
     key: Q::Key,
+    database_key_index: DatabaseKeyIndex,
     stamped_value: RwLock<StampedValue<Q::Value>>,
 }
 
@@ -62,8 +64,9 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    fn new(_group_index: u16) -> Self {
+    fn new(group_index: u16) -> Self {
         InputStorage {
+            group_index,
             slots: Default::default(),
         }
     }
@@ -181,8 +184,15 @@ where
                 }
 
                 Entry::Vacant(entry) => {
+                    let key_index = u32::try_from(entry.index()).unwrap();
+                    let database_key_index = DatabaseKeyIndex {
+                        group_index: self.group_index,
+                        query_index: Q::QUERY_INDEX,
+                        key_index,
+                    };
                     entry.insert(Arc::new(Slot {
                         key: key.clone(),
+                        database_key_index,
                         stamped_value: RwLock::new(stamped_value),
                     }));
                 }
