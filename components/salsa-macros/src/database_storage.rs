@@ -46,12 +46,14 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     // For each query group `foo::MyGroup` create a link to its
     // `foo::MyGroupGroupStorage`
     let mut storage_fields = proc_macro2::TokenStream::new();
+    let mut storage_initializers = proc_macro2::TokenStream::new();
     let mut has_group_impls = proc_macro2::TokenStream::new();
-    for (((query_group, group_name_snake), group_storage), group_key) in query_groups
+    for ((((query_group, group_name_snake), group_storage), group_key), group_index) in query_groups
         .iter()
         .zip(&query_group_names_snake)
         .zip(&query_group_storage_names)
         .zip(&query_group_key_names)
+        .zip(0_usize..)
     {
         let group_path = &query_group.group_path;
         let group_name = query_group.name();
@@ -61,6 +63,13 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         storage_fields.extend(quote! {
             #group_name_snake: #group_storage,
         });
+
+        // rewrite the last identifier (`MyGroup`, above) to
+        // (e.g.) `MyGroupGroupStorage`.
+        storage_initializers.extend(quote! {
+            #group_name_snake: #group_storage::new(#group_index),
+        });
+
         // ANCHOR:HasQueryGroup
         has_group_impls.extend(quote! {
             impl salsa::plumbing::HasQueryGroup<#group_path> for #database_name {
@@ -81,10 +90,17 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
 
     // create group storage wrapper struct
     output.extend(quote! {
-        #[derive(Default)]
         #[doc(hidden)]
         #visibility struct __SalsaDatabaseStorage {
             #storage_fields
+        }
+
+        impl Default for __SalsaDatabaseStorage {
+            fn default() -> Self {
+                Self {
+                    #storage_initializers
+                }
+            }
         }
     });
 

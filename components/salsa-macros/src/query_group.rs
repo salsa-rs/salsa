@@ -478,14 +478,13 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             #storage_fields
         }
 
-        impl<DB__> Default for #group_storage<DB__>
+        impl<DB__> #group_storage<DB__>
         where
             DB__: #trait_name + #requires,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
-            #[inline]
-            fn default() -> Self {
+            #trait_vis fn new(group_index: usize) -> Self {
                 #group_storage {
                     #storage_defaults
                 }
