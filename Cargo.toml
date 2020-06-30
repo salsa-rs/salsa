@@ -9,21 +9,22 @@ description = "A generic framework for on-demand, incrementalized computation (e
 readme = "README.md"
 
 [dependencies]
-crossbeam = "0.7.1"
+crossbeam-utils = { version = "0.7.1", default-features = false }
 indexmap = "1.0.1"
 lock_api = "0.4"
 log = "0.4.5"
 parking_lot = "0.11.0"
 rustc-hash = "1.0"
 smallvec = "1.0.0"
-rand = { version = "0.7", features = [ "small_rng" ] }
+rand = { version = "0.7", features = [ "small_rng" ], default-features = false }
 
 salsa-macros = { version = "0.14.1", path = "components/salsa-macros" }
 
 [dev-dependencies]
-rand_distr = "0.2.1"
 diff = "0.1.0"
 env_logger = "0.7"
 linked-hash-map = "0.5.2"
+rand = "0.7"
+rand_distr = "0.2.1"
 
 [workspace]
