@@ -410,6 +410,17 @@ where
     }
 }
 
+/// An integer that uniquely identifies a particular query instance within the
+/// database. Used to track dependencies between queries. Fully ordered and
+/// equatable but those orderings are arbitrary, and meant to be used only for
+/// inserting into maps and the like.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct DatabaseKeyIndex {
+    group_index: u16,
+    query_index: u16,
+    key_index: u32,
+}
+
 /// Trait implements by all of the "special types" associated with
 /// each of your queries.
 ///
