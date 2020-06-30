@@ -7,7 +7,7 @@ use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use crate::Query;
-use crate::{CycleError, Database, DiscardIf, SweepStrategy};
+use crate::{CycleError, Database, DatabaseKeyIndex, DiscardIf, SweepStrategy};
 use crossbeam_utils::atomic::AtomicCell;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
@@ -27,6 +27,7 @@ where
     Q::Value: InternKey,
     DB: Database,
 {
+    group_index: u16,
     tables: RwLock<InternTables<Q::Key>>,
 }
 
@@ -96,6 +97,9 @@ struct Slot<K> {
     /// Index of this slot in the list of interned values;
     /// set to None if gc'd.
     index: InternId,
+
+    /// DatabaseKeyIndex for this slot.
+    database_key_index: DatabaseKeyIndex,
 
     /// Value that was interned.
     value: K,
@@ -222,8 +226,14 @@ where
         };
 
         let create_slot = |index: InternId| {
+            let database_key_index = DatabaseKeyIndex {
+                group_index: self.group_index,
+                query_index: Q::QUERY_INDEX,
+                key_index: index.as_u32(),
+            };
             Arc::new(Slot {
                 index,
+                database_key_index,
                 value: owned_key2,
                 interned_at: revision_now,
                 accessed_at: AtomicCell::new(Some(revision_now)),
@@ -284,8 +294,9 @@ where
     Q::Value: InternKey,
     DB: Database,
 {
-    fn new(_group_index: u16) -> Self {
+    fn new(group_index: u16) -> Self {
         InternedStorage {
+            group_index,
             tables: RwLock::new(InternTables::default()),
         }
     }
