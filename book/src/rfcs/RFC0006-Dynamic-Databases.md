@@ -171,7 +171,7 @@ function.
 
 There are currently some parts of the API that take a `DB::DatabaseKey`, most
 notably cycle recovery and reporting. Those will now take a `salsa::DatabaseKey`
-struct that is simply a newtype'd index. There will be methods on
+struct that is a kind of integer index. There will be methods on
 `salsa::Database` that permit one to generate debug output from such a key:
 
 ```rust
@@ -225,53 +225,48 @@ impl salsa::Database for DatabaseStruct {
 
 ### Identifying queries
 
-We introduce the following struct that represents a database key using an index:
+We introduce the following struct that represents a database key using a series
+of indices:
 
 ```rust,ignore
 struct DatabaseKeyIndex {
-    key: usize
+    /// Identifies the query group.
+    group_index: u16,
+
+    /// Identifies the query within the group.
+    query_index: u16,
+
+    /// Identifies the key within the query.
+    key_index: u32,
 }
 ```
 
-This index allows the various query group structs to refer to database keys
+This struct allows the various query group structs to refer to database keys
 without having to use a type like `DB::DatabaseKey` that is dependent on the
-`DB`. The runtime has a central vector that registers each new database key and
-maps it to a `DB::DatabaseKey`. The `HasQueryGroup` trait is extended with a
-method `create_database_key_index` that registers a new database key:
+`DB`.
 
-```rust
-trait HasQueryGroup<G: QueryGroup> {
-    ...
+The group/query indices will be assigned by the `salsa::database` and
+`salsa::query_group` macros respectively. When query group storage is created,
+it will be passed in its group index by the database. Each query will be able to
+access its query-index through the `Query` trait, as they are statically known
+at the time that the query is compiled (the group index, in contrast, depends on
+the full set of groups for the database).
 
-    /// Registers a new database-key and returns its index.
-    ///
-    /// It is a logic error to invoke this twice with equal group-keys.
-    fn create_database_key(
-        db: &Self,
-        key: &G::GroupKey,
-    ) -> DatabaseKeyIndex;
-}
-```
+The key index can be assigned by the query as it executes without any central
+coordination. Each query will use a [`IndexMap`] mapping `Q::Key -> QueryState`.
+Inserting new keys into this map also creates new indices, and it is possible to
+index into the map in O(1) time later to obtain the state (or key) from a given
+query. This map replaces the existing `Q::Key -> Arc<Slot<..>>` map that is used
+today.
 
-The implementation of this method will wrap the group key into a database key
-enum and store it in a vector for later use, returning the index into this
-vector.  The method replaces the `database_key` method that we used to have.
+[`IndexMap`]: https://crates.io/crates/indexmap
 
-Each query will maintain a `Q::Key -> DatabaseKeyIndex` map, replacing the map
-today that maps to a `Arc<Slot<..>>`. This will be used to find the
-`DatabaseKeyIndex`. The actual store for a given query key, as described in more
-detail below, is then maintained in a `DatabaseKeyIndex -> QueryState` map. If
-no index is available for a given key, we invoke the `create_database_key` just
-described to create one.
-
-We do not propose a mechanism for "collecting" database-keys, just as we
-presently have no option for collecting slots. In principle database key indices
-can grow without bound. However, this has not proven to be a big issue with
-slots today, and key indices represent even less memory. The only mechanism to
-fix this would be a tracing GC, which would be relatively easy to implement from
-a technical perspective, but which would require users to decide when to invoke
-it. Or, more crudely, users could simply opt to periodically dump the database
-and start over.
+One notable implication: we cannot remove entries from the query index map
+(e.g., for GC) because that would invalidate the existing indices. We can
+however replace the query-state with a "not computed" value. This is not new:
+slots already take this approach today. In principle, we could extend the
+tracing GC to permit compressing and perhaps even rewriting indices, but it's
+not clear that this is a problem in practice.
 
 ### The various query traits are not generic over a database
 
@@ -435,7 +430,8 @@ Previously we held a direct reference to the `Arc<Slot<..>>` for a query, and
 hence revalidation could be performed by invoking a method on it. But in the new
 system when we find that a query is dirty, we have only a `DatabaseKeyIndex`.
 
-Therefore, we extend the `salsa::plumbing::DatabaseOps` trait, the `QueryGroup` trait, and the `Query` trait with a `revalidate` method, as shown below:
+Therefore, we extend the `salsa::plumbing::DatabaseOps` trait, the `QueryGroup`
+trait, and the `Query` trait with a `revalidate` method, as shown below:
 
 ```rust,ignore
 trait DatabaseOps {
@@ -475,7 +471,9 @@ corresponding to `index` and matching to determine the query group the index
 belongs to and extract the appropriate group key. It then invokes the
 `QueryGroup::revalidate` method.
 
-The `QueryGroup::revalidate` method is generated as part of the `salsa::query_group` macro. It will match against the `key` to determine which query is being referenced and then invoke `Query::revalidate`.
+The `QueryGroup::revalidate` method is generated as part of the
+`salsa::query_group` macro. It will match against the `key` to determine which
+query is being referenced and then invoke `Query::revalidate`.
 
 The `Query::revalidate` method will use the `index` to load the query state. It
 will re-execute the query, producing a new `DependencySlot`. The `changed_at`
