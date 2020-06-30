@@ -7,10 +7,10 @@ use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::runtime::StampedValue;
-use crate::{CycleError, Database, SweepStrategy};
+use crate::runtime::{FxIndexMap, StampedValue};
+use crate::{CycleError, Database, DatabaseKeyIndex, SweepStrategy};
 use parking_lot::RwLock;
-use rustc_hash::FxHashMap;
+use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -35,8 +35,9 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
+    group_index: u16,
     lru_list: Lru<Slot<DB, Q, MP>>,
-    slot_map: RwLock<FxHashMap<Q::Key, Arc<Slot<DB, Q, MP>>>>,
+    slot_map: RwLock<FxIndexMap<Q::Key, Arc<Slot<DB, Q, MP>>>>,
     policy: PhantomData<MP>,
 }
 
@@ -103,9 +104,15 @@ where
         }
 
         let mut write = self.slot_map.write();
-        write
-            .entry(key.clone())
-            .or_insert_with(|| Arc::new(Slot::new(key.clone())))
+        let entry = write.entry(key.clone());
+        let key_index = u32::try_from(entry.index()).unwrap();
+        let database_key_index = DatabaseKeyIndex {
+            group_index: self.group_index,
+            query_index: Q::QUERY_INDEX,
+            key_index: key_index,
+        };
+        entry
+            .or_insert_with(|| Arc::new(Slot::new(key.clone(), database_key_index)))
             .clone()
     }
 }
@@ -116,9 +123,10 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn new(_group_index: u16) -> Self {
+    fn new(group_index: u16) -> Self {
         DerivedStorage {
-            slot_map: RwLock::new(FxHashMap::default()),
+            group_index,
+            slot_map: RwLock::new(FxIndexMap::default()),
             lru_list: Default::default(),
             policy: PhantomData,
         }

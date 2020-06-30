@@ -14,7 +14,9 @@ use crate::revision::Revision;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
-use crate::{CycleError, Database, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy};
+use crate::{
+    CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy,
+};
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::{RawRwLock, RwLock};
@@ -30,6 +32,7 @@ where
     MP: MemoizationPolicy<DB, Q>,
 {
     key: Q::Key,
+    database_key_index: DatabaseKeyIndex,
     state: RwLock<QueryState<DB, Q>>,
     policy: PhantomData<MP>,
     lru_index: LruIndex,
@@ -109,9 +112,10 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    pub(super) fn new(key: Q::Key) -> Self {
+    pub(super) fn new(key: Q::Key, database_key_index: DatabaseKeyIndex) -> Self {
         Self {
             key,
+            database_key_index,
             state: RwLock::new(QueryState::NotComputed),
             lru_index: LruIndex::default(),
             policy: PhantomData,
