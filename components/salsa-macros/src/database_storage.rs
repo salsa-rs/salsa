@@ -145,7 +145,6 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         impl salsa::plumbing::DatabaseStorageTypes for #database_name {
             type DatabaseKey = __SalsaDatabaseKey;
             type DatabaseStorage = __SalsaDatabaseStorage;
-            type DatabaseData = (#(#database_data),*);
         }
     });
     // ANCHOR_END:DatabaseStorageTypes

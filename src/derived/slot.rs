@@ -1032,7 +1032,6 @@ where
     Q: QueryFunction<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
-    DB::DatabaseData: Send + Sync,
     DB::DatabaseKey: Send + Sync,
     Q::Key: Send + Sync,
     Q::Value: Send + Sync,
@@ -1051,7 +1050,6 @@ where
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
     DB: 'static,
-    DB::DatabaseData: 'static,
     Q::Key: 'static,
     Q::Value: 'static,
 {

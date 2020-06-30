@@ -240,7 +240,6 @@ fn check_send_sync<DB, Q>()
 where
     Q: Query<DB>,
     DB: Database,
-    DB::DatabaseData: Send + Sync,
     Q::Key: Send + Sync,
     Q::Value: Send + Sync,
 {
@@ -257,7 +256,6 @@ where
     Q: Query<DB>,
     DB: Database,
     DB: 'static,
-    DB::DatabaseData: 'static,
     Q::Key: 'static,
     Q::Value: 'static,
 {
