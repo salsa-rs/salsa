@@ -1,8 +1,7 @@
-use crate::dependency::Dependency;
 use crate::durability::Durability;
 use crate::runtime::ActiveQuery;
 use crate::runtime::Revision;
-use crate::Database;
+use crate::{Database, DatabaseKeyIndex};
 use std::cell::{Ref, RefCell, RefMut};
 
 /// State that is specific to a single execution thread.
@@ -67,12 +66,12 @@ impl<DB: Database> LocalState<DB> {
 
     pub(super) fn report_query_read(
         &self,
-        dependency: Dependency<DB>,
+        input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
     ) {
         if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_read(dependency, durability, changed_at);
+            top_query.add_read(input, durability, changed_at);
         }
     }
 

@@ -1,5 +1,4 @@
 use crate::debug::TableEntry;
-use crate::dependency::DatabaseSlot;
 use crate::durability::Durability;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
@@ -71,6 +70,19 @@ where
         }
     }
 
+    fn maybe_changed_since(&self, db: &DB, input: DatabaseKeyIndex, revision: Revision) -> bool {
+        assert_eq!(input.group_index, self.group_index);
+        assert_eq!(input.query_index, Q::QUERY_INDEX);
+        let slot = self
+            .slots
+            .read()
+            .get_index(input.key_index as usize)
+            .unwrap()
+            .1
+            .clone();
+        slot.maybe_changed_since(db, revision)
+    }
+
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self
             .slot(key)
@@ -83,7 +95,7 @@ where
         } = slot.stamped_value.read().clone();
 
         db.salsa_runtime()
-            .report_query_read(slot, durability, changed_at);
+            .report_query_read(slot.database_key_index, durability, changed_at);
 
         Ok(value)
     }
@@ -109,6 +121,25 @@ where
                 )
             })
             .collect()
+    }
+}
+
+impl<DB, Q> Slot<DB, Q>
+where
+    Q: Query<DB>,
+    DB: Database,
+{
+    fn maybe_changed_since(&self, _db: &DB, revision: Revision) -> bool {
+        debug!(
+            "maybe_changed_since(slot={:?}, revision={:?})",
+            self, revision,
+        );
+
+        let changed_at = self.stamped_value.read().changed_at;
+
+        debug!("maybe_changed_since: changed_at = {:?}", changed_at);
+
+        changed_at > revision
     }
 }
 
@@ -198,29 +229,6 @@ where
                 }
             }
         });
-    }
-}
-
-// Unsafe proof obligation: `Slot<DB, Q>` is Send + Sync if the query
-// key/value is Send + Sync (also, that we introduce no
-// references). These are tested by the `check_send_sync` and
-// `check_static` helpers below.
-unsafe impl<DB, Q> DatabaseSlot<DB> for Slot<DB, Q>
-where
-    Q: Query<DB>,
-    DB: Database,
-{
-    fn maybe_changed_since(&self, _db: &DB, revision: Revision) -> bool {
-        debug!(
-            "maybe_changed_since(slot={:?}, revision={:?})",
-            self, revision,
-        );
-
-        let changed_at = self.stamped_value.read().changed_at;
-
-        debug!("maybe_changed_since: changed_at = {:?}", changed_at);
-
-        changed_at > revision
     }
 }
 

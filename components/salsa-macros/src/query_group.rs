@@ -349,8 +349,15 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         }
     });
 
+    let non_transparent_queries = || {
+        queries.iter().filter(|q| match q.storage {
+            QueryStorage::Transparent => false,
+            _ => true,
+        })
+    };
+
     // Emit the query types.
-    for (query, query_index) in queries.iter().zip(0_u16..) {
+    for (query, query_index) in non_transparent_queries().zip(0_u16..) {
         let fn_name = &query.fn_name;
         let qt = &query.query_type;
 
@@ -364,7 +371,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             QueryStorage::InternedLookup { intern_query_type } => {
                 quote!(salsa::plumbing::LookupInternedStorage<#db, Self, #intern_query_type>)
             }
-            QueryStorage::Transparent => continue,
+            QueryStorage::Transparent => panic!("should have been filtered"),
         };
         let keys = &query.keys;
         let value = &query.value;
@@ -458,11 +465,19 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         }
     });
 
+    let mut maybe_changed_ops = proc_macro2::TokenStream::new();
+    for (Query { fn_name, .. }, query_index) in non_transparent_queries().zip(0_u16..) {
+        maybe_changed_ops.extend(quote! {
+            #query_index => {
+                salsa::plumbing::QueryStorageOps::maybe_changed_since(
+                    &*self.#fn_name, db, input, revision
+                )
+            }
+        });
+    }
+
     let mut for_each_ops = proc_macro2::TokenStream::new();
-    for Query { fn_name, .. } in queries
-        .iter()
-        .filter(|q| q.storage != QueryStorage::Transparent)
-    {
+    for Query { fn_name, .. } in non_transparent_queries() {
         for_each_ops.extend(quote! {
             op(&*self.#fn_name);
         });
@@ -500,6 +515,18 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             DB__: #trait_name + #requires,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
         {
+            #trait_vis fn maybe_changed_since(
+                &self,
+                db: &DB__,
+                input: salsa::DatabaseKeyIndex,
+                revision: salsa::Revision,
+            ) -> bool {
+                match input.query_index() {
+                    #maybe_changed_ops
+                    i => panic!("salsa: impossible query index {}", i),
+                }
+            }
+
             #trait_vis fn for_each_query(
                 &self,
                 db: &DB__,

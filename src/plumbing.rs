@@ -17,7 +17,7 @@ pub use crate::derived::MemoizedStorage;
 pub use crate::input::InputStorage;
 pub use crate::interned::InternedStorage;
 pub use crate::interned::LookupInternedStorage;
-pub use crate::revision::Revision;
+pub use crate::{revision::Revision, DatabaseKeyIndex};
 
 #[derive(Clone, Debug)]
 pub struct CycleDetected {
@@ -51,6 +51,9 @@ pub trait DatabaseStorageTypes: Sized {
 
 /// Internal operations that the runtime uses to operate on the database.
 pub trait DatabaseOps: Sized {
+    /// True if the computed value for `input` may have changed since `revision`.
+    fn maybe_changed_since(&self, input: DatabaseKeyIndex, revision: Revision) -> bool;
+
     /// Executes the callback for each kind of query.
     fn for_each_query(&self, op: impl FnMut(&dyn QueryStorageMassOps<Self>));
 }
@@ -149,6 +152,10 @@ where
     Q: Query<DB>,
 {
     fn new(group_index: u16) -> Self;
+
+    /// True if the value of `input`, which must be from this query, may have
+    /// changed since the given revision.
+    fn maybe_changed_since(&self, db: &DB, input: DatabaseKeyIndex, revision: Revision) -> bool;
 
     /// Execute the query, returning the result (often, the result
     /// will be memoized).  This is the "main method" for

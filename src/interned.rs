@@ -1,5 +1,4 @@
 use crate::debug::TableEntry;
-use crate::dependency::DatabaseSlot;
 use crate::durability::Durability;
 use crate::intern_id::InternId;
 use crate::plumbing::HasQueryGroup;
@@ -301,12 +300,23 @@ where
         }
     }
 
+    fn maybe_changed_since(&self, db: &DB, input: DatabaseKeyIndex, revision: Revision) -> bool {
+        assert_eq!(input.group_index, self.group_index);
+        assert_eq!(input.query_index, Q::QUERY_INDEX);
+        let intern_id = InternId::from(input.key_index);
+        let slot = self.lookup_value(db, intern_id);
+        slot.maybe_changed_since(db, revision)
+    }
+
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
         let index = slot.index;
-        db.salsa_runtime()
-            .report_query_read(slot, INTERN_DURABILITY, changed_at);
+        db.salsa_runtime().report_query_read(
+            slot.database_key_index,
+            INTERN_DURABILITY,
+            changed_at,
+        );
         Ok(<Q::Value>::from_intern_id(index))
     }
 
@@ -406,6 +416,12 @@ where
         }
     }
 
+    fn maybe_changed_since(&self, db: &DB, input: DatabaseKeyIndex, revision: Revision) -> bool {
+        let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
+        let interned_storage = IQ::query_storage(group_storage);
+        interned_storage.maybe_changed_since(db, input, revision)
+    }
+
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let index = key.as_intern_id();
         let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
@@ -413,8 +429,11 @@ where
         let slot = interned_storage.lookup_value(db, index);
         let value = slot.value.clone();
         let interned_at = slot.interned_at;
-        db.salsa_runtime()
-            .report_query_read(slot, INTERN_DURABILITY, interned_at);
+        db.salsa_runtime().report_query_read(
+            slot.database_key_index,
+            INTERN_DURABILITY,
+            interned_at,
+        );
         Ok(value)
     }
 
@@ -458,6 +477,17 @@ where
 }
 
 impl<K> Slot<K> {
+    fn maybe_changed_since<DB: Database>(&self, db: &DB, revision: Revision) -> bool {
+        let revision_now = db.salsa_runtime().current_revision();
+        if !self.try_update_accessed_at(revision_now) {
+            // if we failed to update accessed-at, then this slot was garbage collected
+            true
+        } else {
+            // otherwise, compare the interning with revision
+            self.interned_at > revision
+        }
+    }
+
     /// Updates the `accessed_at` time to be `revision_now` (if
     /// necessary).  Returns true if the update was successful, or
     /// false if the slot has been GC'd in the interim.
@@ -506,27 +536,6 @@ impl<K> Slot<K> {
             }
         } else {
             false
-        }
-    }
-}
-
-// Unsafe proof obligation: `Slot<K>` is Send + Sync if the query
-// key/value is Send + Sync (also, that we introduce no
-// references). These are tested by the `check_send_sync` and
-// `check_static` helpers below.
-unsafe impl<DB, K> DatabaseSlot<DB> for Slot<K>
-where
-    DB: Database,
-    K: Debug,
-{
-    fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
-        let revision_now = db.salsa_runtime().current_revision();
-        if !self.try_update_accessed_at(revision_now) {
-            // if we failed to update accessed-at, then this slot was garbage collected
-            true
-        } else {
-            // otherwise, compare the interning with revision
-            self.interned_at > revision
         }
     }
 }

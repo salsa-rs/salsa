@@ -7,7 +7,6 @@
 //! re-execute the derived queries and it will try to re-use results
 //! from previous invocations as appropriate.
 
-mod dependency;
 mod derived;
 mod doctest;
 mod durability;
@@ -30,7 +29,7 @@ use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::revision::Revision;
+pub use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 use std::sync::Arc;
@@ -419,6 +418,26 @@ pub struct DatabaseKeyIndex {
     group_index: u16,
     query_index: u16,
     key_index: u32,
+}
+
+impl DatabaseKeyIndex {
+    /// Returns the index of the query group containing this key.
+    #[inline]
+    pub fn group_index(self) -> u16 {
+        self.group_index
+    }
+
+    /// Returns the index of the query within its query group.
+    #[inline]
+    pub fn query_index(self) -> u16 {
+        self.query_index
+    }
+
+    /// Returns the index of this particular query key within the query.
+    #[inline]
+    pub fn key_index(self) -> u32 {
+        self.key_index
+    }
 }
 
 /// Trait implements by all of the "special types" associated with

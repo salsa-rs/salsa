@@ -1,9 +1,7 @@
-use crate::dependency::DatabaseSlot;
-use crate::dependency::Dependency;
 use crate::durability::Durability;
 use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
-use crate::{CycleError, Database, Event, EventKind, SweepStrategy};
+use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind, SweepStrategy};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
@@ -380,13 +378,12 @@ where
     ///   query had changed
     pub(crate) fn report_query_read<'hack>(
         &self,
-        database_slot: Arc<dyn DatabaseSlot<DB> + 'hack>,
+        input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
     ) {
-        let dependency = Dependency::new(database_slot);
         self.local_state
-            .report_query_read(dependency, durability, changed_at);
+            .report_query_read(input, durability, changed_at);
     }
 
     /// Reports that the query depends on some state unknown to salsa.
@@ -651,7 +648,7 @@ struct ActiveQuery<DB: Database> {
 
     /// Set of subqueries that were accessed thus far, or `None` if
     /// there was an untracked the read.
-    dependencies: Option<FxIndexSet<Dependency<DB>>>,
+    dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
 
     /// Stores the entire cycle, if one is found and this query is part of it.
     cycle: Vec<DB::DatabaseKey>,
@@ -670,7 +667,7 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
 
     /// Complete set of subqueries that were accessed, or `None` if
     /// there was an untracked the read.
-    pub(crate) dependencies: Option<FxIndexSet<Dependency<DB>>>,
+    pub(crate) dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
 
     /// The cycle if one occured while computing this value
     pub(crate) cycle: Vec<DB::DatabaseKey>,
@@ -687,9 +684,9 @@ impl<DB: Database> ActiveQuery<DB> {
         }
     }
 
-    fn add_read(&mut self, dependency: Dependency<DB>, durability: Durability, revision: Revision) {
+    fn add_read(&mut self, input: DatabaseKeyIndex, durability: Durability, revision: Revision) {
         if let Some(set) = &mut self.dependencies {
-            set.insert(dependency);
+            set.insert(input);
         }
 
         self.durability = self.durability.min(durability);

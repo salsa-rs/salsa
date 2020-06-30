@@ -8,7 +8,7 @@ use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::{FxIndexMap, StampedValue};
-use crate::{CycleError, Database, DatabaseKeyIndex, SweepStrategy};
+use crate::{CycleError, Database, DatabaseKeyIndex, Revision, SweepStrategy};
 use parking_lot::RwLock;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
@@ -132,6 +132,19 @@ where
         }
     }
 
+    fn maybe_changed_since(&self, db: &DB, input: DatabaseKeyIndex, revision: Revision) -> bool {
+        assert_eq!(input.group_index, self.group_index);
+        assert_eq!(input.query_index, Q::QUERY_INDEX);
+        let slot = self
+            .slot_map
+            .read()
+            .get_index(input.key_index as usize)
+            .unwrap()
+            .1
+            .clone();
+        slot.maybe_changed_since(db, revision)
+    }
+
     fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
         let slot = self.slot(key);
         let StampedValue {
@@ -145,7 +158,7 @@ where
         }
 
         db.salsa_runtime()
-            .report_query_read(slot, durability, changed_at);
+            .report_query_read(slot.database_key_index(), durability, changed_at);
 
         Ok(value)
     }
