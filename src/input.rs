@@ -193,7 +193,7 @@ where
         // case doesn't generally seem worth optimizing for.
         let mut value = Some(value);
         db.salsa_runtime_mut()
-            .with_incremented_revision(&mut |guard| {
+            .with_incremented_revision(&mut |next_revision, guard| {
                 let mut slots = self.slots.write();
 
                 // Do this *after* we acquire the lock, so that we are not
@@ -203,7 +203,7 @@ where
                 let stamped_value = StampedValue {
                     value: value.take().unwrap(),
                     durability,
-                    changed_at: guard.new_revision(),
+                    changed_at: next_revision,
                 };
 
                 match slots.entry(key.clone()) {

@@ -226,7 +226,7 @@ where
 {
     fn invalidate(&self, db: &mut DB, key: &Q::Key) {
         db.salsa_runtime_mut()
-            .with_incremented_revision(&mut |guard| {
+            .with_incremented_revision(&mut |_new_revision, guard| {
                 let map_read = self.slot_map.read();
 
                 if let Some(slot) = map_read.get(key) {

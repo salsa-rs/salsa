@@ -143,7 +143,7 @@ where
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
     pub fn synthetic_write(&mut self, durability: Durability) {
-        self.with_incremented_revision(&mut |guard| {
+        self.with_incremented_revision(&mut |_next_revision, guard| {
             guard.mark_durability_as_changed(durability);
         });
     }
@@ -280,22 +280,22 @@ where
         }
     }
 
-    /// Acquires the **global query write lock** (ensuring that no
-    /// queries are executing) and then increments the current
-    /// revision counter; invokes `op` with the global query write
-    /// lock still held.
+    /// Acquires the **global query write lock** (ensuring that no queries are
+    /// executing) and then increments the current revision counter; invokes
+    /// `op` with the global query write lock still held. The `op` closure is
+    /// given the new revision as an argument, and it should actually perform
+    /// the writes.
     ///
-    /// While we wait to acquire the global query write lock, this
-    /// method will also increment `pending_revision_increments`, thus
-    /// signalling to queries that their results are "canceled" and
-    /// they should abort as expeditiously as possible.
+    /// While we wait to acquire the global query write lock, this method will
+    /// also increment `pending_revision_increments`, thus signalling to queries
+    /// that their results are "canceled" and they should abort as expeditiously
+    /// as possible.
     ///
-    /// Note that, given our writer model, we can assume that only one
-    /// thread is attempting to increment the global revision at a
-    /// time.
+    /// Note that, given our writer model, we can assume that only one thread is
+    /// attempting to increment the global revision at a time.
     pub(crate) fn with_incremented_revision(
         &mut self,
-        op: &mut dyn FnMut(&DatabaseWriteLockGuard<'_, DB>),
+        op: &mut dyn FnMut(Revision, &DatabaseWriteLockGuard<'_, DB>),
     ) {
         log::debug!("increment_revision()");
 
@@ -318,10 +318,13 @@ where
 
         debug!("increment_revision: incremented to {:?}", new_revision);
 
-        op(&DatabaseWriteLockGuard {
-            runtime: self,
+        op(
             new_revision,
-        })
+            &DatabaseWriteLockGuard {
+                runtime: self,
+                new_revision,
+            },
+        )
     }
 
     pub(crate) fn permits_increment(&self) -> bool {
@@ -542,10 +545,6 @@ impl<DB> DatabaseWriteLockGuard<'_, DB>
 where
     DB: Database,
 {
-    pub(crate) fn new_revision(&self) -> Revision {
-        self.new_revision
-    }
-
     /// Indicates that this update modified an input marked as
     /// "constant". This will force re-evaluation of anything that was
     /// dependent on constants (which otherwise might not get
