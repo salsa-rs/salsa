@@ -110,7 +110,6 @@ where
 
 pub trait QueryGroup<DB: Database> {
     type GroupStorage;
-    type GroupKey;
 }
 
 /// Trait implemented by a database for each group that it supports.

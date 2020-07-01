@@ -180,11 +180,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         }
     }
 
-    let group_key = Ident::new(
-        &format!("{}GroupKey__", trait_name.to_string()),
-        Span::call_site(),
-    );
-
     let group_storage = Ident::new(
         &format!("{}GroupStorage__", trait_name.to_string()),
         Span::call_site(),
@@ -192,7 +187,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
-    let mut query_descriptor_variants = proc_macro2::TokenStream::new();
     let mut storage_fields = proc_macro2::TokenStream::new();
     let mut queries_with_storage = vec![];
     for query in &queries {
@@ -283,11 +277,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             });
         }
 
-        // A variant for the group descriptor below
-        query_descriptor_variants.extend(quote! {
-            #fn_name((#(#keys),*)),
-        });
-
         // A field for the storage struct
         //
         // FIXME(#120): the pub should not be necessary once we complete the transition
@@ -319,7 +308,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             DB__: salsa::Database,
         {
             type GroupStorage = #group_storage<DB__>;
-            type GroupKey = #group_key;
         }
     });
 
@@ -391,7 +379,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 type Storage = #storage;
                 type Group = #group_struct;
                 type GroupStorage = #group_storage<#db>;
-                type GroupKey = #group_key;
 
                 const QUERY_INDEX: u16 = #query_index;
 
@@ -401,10 +388,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     group_storage: &Self::GroupStorage,
                 ) -> &std::sync::Arc<Self::Storage> {
                     &group_storage.#fn_name
-                }
-
-                fn group_key(key: Self::Key) -> Self::GroupKey {
-                    #group_key::#fn_name(key)
                 }
             }
         });
@@ -454,15 +437,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             });
         }
     }
-
-    // Emit query group descriptor
-    output.extend(quote! {
-        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-        #[allow(non_camel_case_types)]
-        #trait_vis enum #group_key {
-            #query_descriptor_variants
-        }
-    });
 
     let mut fmt_ops = proc_macro2::TokenStream::new();
     for (Query { fn_name, .. }, query_index) in non_transparent_queries().zip(0_u16..) {

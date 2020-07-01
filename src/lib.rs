@@ -470,17 +470,10 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type Storage: plumbing::QueryStorageOps<DB, Self>;
 
     /// Associate query group struct.
-    type Group: plumbing::QueryGroup<
-        DB,
-        GroupStorage = Self::GroupStorage,
-        GroupKey = Self::GroupKey,
-    >;
+    type Group: plumbing::QueryGroup<DB, GroupStorage = Self::GroupStorage>;
 
     /// Generated struct that contains storage for all queries in a group.
     type GroupStorage;
-
-    /// Type that identifies a particular query within the group + its key.
-    type GroupKey;
 
     /// A unique index identifying this query within the group.
     const QUERY_INDEX: u16;
@@ -490,9 +483,6 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
 
     /// Extact storage for this query from the storage for its group.
     fn query_storage(group_storage: &Self::GroupStorage) -> &Arc<Self::Storage>;
-
-    /// Create group key for this query.
-    fn group_key(key: Self::Key) -> Self::GroupKey;
 }
 
 /// Return value from [the `query` method] on `Database`.

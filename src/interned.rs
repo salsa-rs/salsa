@@ -36,14 +36,7 @@ where
     Q: Query<DB>,
     Q::Key: InternKey,
     Q::Value: Eq + Hash,
-    IQ: Query<
-        DB,
-        Key = Q::Value,
-        Value = Q::Key,
-        Group = Q::Group,
-        GroupStorage = Q::GroupStorage,
-        GroupKey = Q::GroupKey,
-    >,
+    IQ: Query<DB, Key = Q::Value, Value = Q::Key, Group = Q::Group, GroupStorage = Q::GroupStorage>,
     DB: Database,
 {
     phantom: std::marker::PhantomData<(Q::Key, IQ)>,
@@ -419,7 +412,6 @@ where
         Storage = InternedStorage<DB, IQ>,
         Group = Q::Group,
         GroupStorage = Q::GroupStorage,
-        GroupKey = Q::GroupKey,
     >,
     DB: Database + HasQueryGroup<Q::Group>,
 {
@@ -487,14 +479,7 @@ where
     Q: Query<DB>,
     Q::Key: InternKey,
     Q::Value: Eq + Hash,
-    IQ: Query<
-        DB,
-        Key = Q::Value,
-        Value = Q::Key,
-        Group = Q::Group,
-        GroupStorage = Q::GroupStorage,
-        GroupKey = Q::GroupKey,
-    >,
+    IQ: Query<DB, Key = Q::Value, Value = Q::Key, Group = Q::Group, GroupStorage = Q::GroupStorage>,
     DB: Database,
 {
     fn sweep(&self, _db: &DB, _strategy: SweepStrategy) {}
