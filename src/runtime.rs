@@ -143,7 +143,7 @@ where
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
     pub fn synthetic_write(&mut self, durability: Durability) {
-        self.with_incremented_revision(|guard| {
+        self.with_incremented_revision(&mut |guard| {
             guard.mark_durability_as_changed(durability);
         });
     }
@@ -293,10 +293,10 @@ where
     /// Note that, given our writer model, we can assume that only one
     /// thread is attempting to increment the global revision at a
     /// time.
-    pub(crate) fn with_incremented_revision<R>(
+    pub(crate) fn with_incremented_revision(
         &mut self,
-        op: impl FnOnce(&DatabaseWriteLockGuard<'_, DB>) -> R,
-    ) -> R {
+        op: &mut dyn FnMut(&DatabaseWriteLockGuard<'_, DB>),
+    ) {
         log::debug!("increment_revision()");
 
         if !self.permits_increment() {

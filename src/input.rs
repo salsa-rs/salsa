@@ -191,41 +191,43 @@ where
         // keys, we only need a new revision if the key used to
         // exist. But we may add such methods in the future and this
         // case doesn't generally seem worth optimizing for.
-        db.salsa_runtime_mut().with_incremented_revision(|guard| {
-            let mut slots = self.slots.write();
+        let mut value = Some(value);
+        db.salsa_runtime_mut()
+            .with_incremented_revision(&mut |guard| {
+                let mut slots = self.slots.write();
 
-            // Do this *after* we acquire the lock, so that we are not
-            // racing with somebody else to modify this same cell.
-            // (Otherwise, someone else might write a *newer* revision
-            // into the same cell while we block on the lock.)
-            let stamped_value = StampedValue {
-                value,
-                durability,
-                changed_at: guard.new_revision(),
-            };
+                // Do this *after* we acquire the lock, so that we are not
+                // racing with somebody else to modify this same cell.
+                // (Otherwise, someone else might write a *newer* revision
+                // into the same cell while we block on the lock.)
+                let stamped_value = StampedValue {
+                    value: value.take().unwrap(),
+                    durability,
+                    changed_at: guard.new_revision(),
+                };
 
-            match slots.entry(key.clone()) {
-                Entry::Occupied(entry) => {
-                    let mut slot_stamped_value = entry.get().stamped_value.write();
-                    guard.mark_durability_as_changed(slot_stamped_value.durability);
-                    *slot_stamped_value = stamped_value;
+                match slots.entry(key.clone()) {
+                    Entry::Occupied(entry) => {
+                        let mut slot_stamped_value = entry.get().stamped_value.write();
+                        guard.mark_durability_as_changed(slot_stamped_value.durability);
+                        *slot_stamped_value = stamped_value;
+                    }
+
+                    Entry::Vacant(entry) => {
+                        let key_index = u32::try_from(entry.index()).unwrap();
+                        let database_key_index = DatabaseKeyIndex {
+                            group_index: self.group_index,
+                            query_index: Q::QUERY_INDEX,
+                            key_index,
+                        };
+                        entry.insert(Arc::new(Slot {
+                            key: key.clone(),
+                            database_key_index,
+                            stamped_value: RwLock::new(stamped_value),
+                        }));
+                    }
                 }
-
-                Entry::Vacant(entry) => {
-                    let key_index = u32::try_from(entry.index()).unwrap();
-                    let database_key_index = DatabaseKeyIndex {
-                        group_index: self.group_index,
-                        query_index: Q::QUERY_INDEX,
-                        key_index,
-                    };
-                    entry.insert(Arc::new(Slot {
-                        key: key.clone(),
-                        database_key_index,
-                        stamped_value: RwLock::new(stamped_value),
-                    }));
-                }
-            }
-        });
+            });
     }
 }
 

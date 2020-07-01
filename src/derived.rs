@@ -225,14 +225,15 @@ where
     MP: MemoizationPolicy<DB, Q>,
 {
     fn invalidate(&self, db: &mut DB, key: &Q::Key) {
-        db.salsa_runtime_mut().with_incremented_revision(|guard| {
-            let map_read = self.slot_map.read();
+        db.salsa_runtime_mut()
+            .with_incremented_revision(&mut |guard| {
+                let map_read = self.slot_map.read();
 
-            if let Some(slot) = map_read.get(key) {
-                if let Some(durability) = slot.invalidate() {
-                    guard.mark_durability_as_changed(durability);
+                if let Some(slot) = map_read.get(key) {
+                    if let Some(durability) = slot.invalidate() {
+                        guard.mark_durability_as_changed(durability);
+                    }
                 }
-            }
-        })
+            })
     }
 }
