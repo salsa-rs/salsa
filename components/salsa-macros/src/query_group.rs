@@ -41,6 +41,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 let mut storage = QueryStorage::Memoized;
                 let mut cycle = None;
                 let mut invoke = None;
+                let query_name = method.sig.ident.to_string();
                 let mut query_type = Ident::new(
                     &format!("{}Query", method.sig.ident.to_string().to_camel_case()),
                     Span::call_site(),
@@ -146,6 +147,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     let lookup_keys = vec![value.clone()];
                     Some(Query {
                         query_type: lookup_query_type,
+                        query_name: format!("lookup_{}", query_name),
                         fn_name: lookup_fn_name,
                         attrs: vec![], // FIXME -- some automatically generated docs on this method?
                         storage: QueryStorage::InternedLookup {
@@ -162,6 +164,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
                 queries.push(Query {
                     query_type,
+                    query_name,
                     fn_name: method.sig.ident,
                     attrs,
                     storage,
@@ -375,6 +378,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         };
         let keys = &query.keys;
         let value = &query.value;
+        let query_name = &query.query_name;
 
         // Emit the query struct and implement the Query trait on it.
         output.extend(quote! {
@@ -397,6 +401,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 type GroupKey = #group_key;
 
                 const QUERY_INDEX: u16 = #query_index;
+
+                const QUERY_NAME: &'static str = #query_name;
 
                 fn query_storage(
                     group_storage: &Self::GroupStorage,
@@ -591,6 +597,7 @@ fn filter_attrs(attrs: Vec<Attribute>) -> (Vec<Attribute>, Vec<SalsaAttr>) {
 #[derive(Debug)]
 struct Query {
     fn_name: Ident,
+    query_name: String,
     attrs: Vec<syn::Attribute>,
     query_type: Ident,
     storage: QueryStorage,

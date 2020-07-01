@@ -469,6 +469,9 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     /// A unique index identifying this query within the group.
     const QUERY_INDEX: u16;
 
+    /// Name of the query method (e.g., `foo`)
+    const QUERY_NAME: &'static str;
+
     /// Extact storage for this query from the storage for its group.
     fn query_storage(group_storage: &Self::GroupStorage) -> &Arc<Self::Storage>;
 
