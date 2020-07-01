@@ -167,23 +167,6 @@ those calls, this has not been tested, and in any case the runtime effects are
 not expected to be high, since all the calls will always go to the same
 function.
 
-### Database keys will become indices
-
-There are currently some parts of the API that take a `DB::DatabaseKey`, most
-notably cycle recovery and reporting. Those will now take a `salsa::DatabaseKey`
-struct that is a kind of integer index. There will be methods on
-`salsa::Database` that permit one to generate debug output from such a key:
-
-```rust
-trait Database {
-    fn debug_fmt_database_key(
-        &self,
-        key: DatabaseKey,
-        fmt: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result<()>;
-}
-```
-
 ## Reference guide
 
 ### Example
@@ -223,7 +206,7 @@ impl salsa::Database for DatabaseStruct {
 }
 ```
 
-### Identifying queries
+### Identifying queries using the `DatabaseKeyIndex`
 
 We introduce the following struct that represents a database key using a series
 of indices:
@@ -267,6 +250,11 @@ however replace the query-state with a "not computed" value. This is not new:
 slots already take this approach today. In principle, we could extend the
 tracing GC to permit compressing and perhaps even rewriting indices, but it's
 not clear that this is a problem in practice.
+
+The `DatabaseKeyIndex` also supports a `debug` method that returns a value with
+a human readable `debug!` output, so that you can do `debug!("{:?}",
+index.debug(db))`. This works by generating a `fmt_debug` method that is
+supported by the various query groups.
 
 ### The various query traits are not generic over a database
 
