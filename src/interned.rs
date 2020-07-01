@@ -8,7 +8,7 @@ use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use crate::Query;
 use crate::{CycleError, Database, DiscardIf, SweepStrategy};
-use crossbeam::atomic::AtomicCell;
+use crossbeam_utils::atomic::AtomicCell;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;

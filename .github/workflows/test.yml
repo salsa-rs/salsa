@@ -38,3 +38,7 @@ jobs:
       with:
         command: test
         args: --all-features --doc
+    - uses: actions-rs/cargo@v1
+      with:
+        command: check
+        args: --no-default-features
