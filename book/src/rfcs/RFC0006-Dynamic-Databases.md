@@ -21,6 +21,7 @@
     dependency information.
   * The various traits are changed to make `salsa::Database` dyn-safe. Invoking
     methods on the runtime must now go through a `salsa::Runtime` trait.
+  * The `salsa::requires` functionality is removed.
 * Upsides of the proposal:
   * Potentially improved recompilation time. Minimal code is regenerated.
   * Removing the `DatabaseData` unsafe code hack that was required by slots.
@@ -34,6 +35,7 @@
     so we were sure the value would not be deallocated; one can still imagine
     supporting this feature, but it would require some fancier unsafe code
     reasoning, although it would be more efficient.)
+  * The `salsa::requires` functionality is removed.
 
 ## Motivation
 
@@ -122,6 +124,20 @@ have two "similar but different" ways of generating plumbing, and I'm not
 convinced that it's worth it. Moreover, it would require some form of opt-in so
 that would be a measure of user complexity as well.
 
+### All query functions must take a dyn database
+
+You used to be able to implement queries by using `impl MyDatabase`, like so:
+
+```rust,ignore
+fn my_query(db: &impl MyDatabase, ...) { .. }
+```
+
+but you must now use `dyn MyDatabase`:
+
+```rust,ignore
+fn my_query(db: &dyn MyDatabase, ...) { .. }
+```
+
 ### The query method on `salsa::Database` moves to a helper method
 
 As a consequence of the previous point, the existing `query` and `query_mut`
@@ -166,6 +182,18 @@ It is however possible that ThinLTO or other such optimization could remove
 those calls, this has not been tested, and in any case the runtime effects are
 not expected to be high, since all the calls will always go to the same
 function.
+
+### The `salsa::requires` function is removed
+
+We currently offer a feature for "private" dependencies between query groups
+called `#[salsa::requires(ExtraDatabase)]`. This then requires query
+functions to be written like:
+
+```rust,ignore
+fn query_fn(db: &impl Database + ExtraDatabase, ...) { }
+```
+
+This format is not compatible with `dyn`, so this feature is removed.
 
 ## Reference guide
 
