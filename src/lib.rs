@@ -17,6 +17,7 @@ mod interned;
 mod lru;
 mod revision;
 mod runtime;
+mod blocking_future;
 
 pub mod debug;
 /// Items in this module are public for implementation reasons,

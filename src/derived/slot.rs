@@ -1,3 +1,4 @@
+use crate::blocking_future::{BlockingFuture, Promise};
 use crate::debug::TableEntry;
 use crate::dependency::DatabaseSlot;
 use crate::dependency::Dependency;
@@ -21,7 +22,6 @@ use parking_lot::{RawRwLock, RwLock};
 use smallvec::SmallVec;
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 
 pub(super) struct Slot<DB, Q, MP>
@@ -55,7 +55,7 @@ where
     /// indeeds a cycle.
     InProgress {
         id: RuntimeId,
-        waiting: Mutex<SmallVec<[Sender<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
+        waiting: Mutex<SmallVec<[Promise<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
     },
 
     /// We have computed the query already, and here is the result.
@@ -341,7 +341,7 @@ where
             QueryState::InProgress { id, waiting } => {
                 let other_id = *id;
                 return match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
-                    Ok(rx) => {
+                    Ok(future) => {
                         // Release our lock on `self.state`, so other thread can complete.
                         std::mem::drop(state);
 
@@ -353,7 +353,7 @@ where
                             },
                         });
 
-                        let result = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
+                        let result = future.wait().unwrap_or_else(|| db.on_propagated_panic());
                         ProbeState::UpToDate(if result.cycle.is_empty() {
                             Ok(result.value)
                         } else {
@@ -545,8 +545,8 @@ where
         db: &DB,
         runtime: &Runtime<DB>,
         other_id: RuntimeId,
-        waiting: &Mutex<SmallVec<[Sender<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
-    ) -> Result<Receiver<WaitResult<Q::Value, DB::DatabaseKey>>, CycleDetected> {
+        waiting: &Mutex<SmallVec<[Promise<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
+    ) -> Result<BlockingFuture<WaitResult<Q::Value, DB::DatabaseKey>>, CycleDetected> {
         let id = runtime.id();
         if other_id == id {
             return Err(CycleDetected { from: id, to: id });
@@ -558,13 +558,13 @@ where
                 });
             }
 
-            let (tx, rx) = mpsc::channel();
+            let (future, promise) = BlockingFuture::new();
 
             // The reader of this will have to acquire map
             // lock, we don't need any particular ordering.
-            waiting.lock().push(tx);
+            waiting.lock().push(promise);
 
-            Ok(rx)
+            Ok(future)
         }
     }
 
@@ -662,12 +662,11 @@ where
                     // If anybody has installed themselves in our "waiting"
                     // list, notify them that the value is available.
                     Some((new_value, ref cycle)) => {
-                        for tx in waiting.into_inner() {
-                            tx.send(WaitResult {
+                        for promise in waiting.into_inner() {
+                            promise.fulfil(WaitResult {
                                 value: new_value.clone(),
                                 cycle: cycle.clone(),
-                            })
-                            .unwrap();
+                            });
                         }
                     }
 
@@ -884,11 +883,11 @@ where
                     self, other_id,
                 );
                 match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
-                    Ok(rx) => {
+                    Ok(future) => {
                         // Release our lock on `self.state`, so other thread can complete.
                         std::mem::drop(state);
 
-                        let result = rx.recv().unwrap_or_else(|_| db.on_propagated_panic());
+                        let result = future.wait().unwrap_or_else(|| db.on_propagated_panic());
                         return !result.cycle.is_empty() || result.value.changed_at > revision;
                     }
 
