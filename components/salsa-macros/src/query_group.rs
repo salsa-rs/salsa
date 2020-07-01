@@ -5,10 +5,8 @@ use heck::CamelCase;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
-use syn::punctuated::Punctuated;
 use syn::{
-    parse_macro_input, parse_quote, Attribute, FnArg, Ident, ItemTrait, Path, ReturnType, Token,
-    TraitBound, TraitBoundModifier, TraitItem, Type, TypeParamBound,
+    parse_macro_input, parse_quote, Attribute, FnArg, Ident, ItemTrait, ReturnType, TraitItem, Type,
 };
 
 /// Implementation for `[salsa::query_group]` decorator.
@@ -19,14 +17,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     // println!("input: {:#?}", input);
 
     let (trait_attrs, salsa_attrs) = filter_attrs(input.attrs);
-    let mut requires: Punctuated<Path, Token![+]> = Punctuated::new();
-    for SalsaAttr { name, tts } in salsa_attrs {
-        match name.as_str() {
-            "requires" => {
-                requires.push(parse_macro_input!(tts as Parenthesized<syn::Path>).0);
-            }
-            _ => panic!("unknown salsa attribute `{}`", name),
-        }
+    if !salsa_attrs.is_empty() {
+        panic!("unsupported attributes: {:?}", salsa_attrs);
     }
 
     let trait_vis = input.vis;
@@ -303,7 +295,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         impl<DB__> salsa::plumbing::QueryGroup<DB__> for #group_struct
         where
-            DB__: #trait_name + #requires,
+            DB__: #trait_name,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
@@ -313,15 +305,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     // Emit an impl of the trait
     output.extend({
-        let mut bounds = input.supertraits.clone();
-        for path in requires.clone() {
-            bounds.push(TypeParamBound::Trait(TraitBound {
-                paren_token: None,
-                modifier: TraitBoundModifier::None,
-                lifetimes: None,
-                path,
-            }));
-        }
+        let bounds = input.supertraits.clone();
         quote! {
             impl<T> #trait_name for T
             where
@@ -370,7 +354,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             // of the `GroupData`.
             impl<#db> salsa::Query<#db> for #qt
             where
-                DB: #trait_name + #requires,
+                DB: #trait_name,
                 DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                 DB: salsa::Database,
             {
@@ -423,7 +407,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             output.extend(quote_spanned! {span=>
                 impl<DB> salsa::plumbing::QueryFunction<DB> for #qt
                 where
-                    DB: #trait_name + #requires,
+                    DB: #trait_name,
                     DB: salsa::plumbing::HasQueryGroup<#group_struct>,
                     DB: salsa::Database,
                 {
@@ -471,7 +455,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     output.extend(quote! {
         #trait_vis struct #group_storage<DB__>
         where
-            DB__: #trait_name + #requires,
+            DB__: #trait_name,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
@@ -480,7 +464,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         impl<DB__> #group_storage<DB__>
         where
-            DB__: #trait_name + #requires,
+            DB__: #trait_name,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
             DB__: salsa::Database,
         {
@@ -496,7 +480,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         impl<DB__> #group_storage<DB__>
         where
-            DB__: #trait_name + #requires,
+            DB__: #trait_name,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
         {
             #trait_vis fn fmt_index(
@@ -545,6 +529,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 struct SalsaAttr {
     name: String,
     tts: TokenStream,
+}
+
+impl std::fmt::Debug for SalsaAttr {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(fmt, "{:?}", self.name)
+    }
 }
 
 impl TryFrom<syn::Attribute> for SalsaAttr {
