@@ -143,9 +143,7 @@ where
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
     pub fn synthetic_write(&mut self, durability: Durability) {
-        self.with_incremented_revision(&mut |_next_revision, guard| {
-            guard.mark_durability_as_changed(durability);
-        });
+        self.with_incremented_revision(&mut |_next_revision| Some(durability));
     }
 
     /// Default implementation for `Database::sweep_all`.
@@ -282,20 +280,29 @@ where
 
     /// Acquires the **global query write lock** (ensuring that no queries are
     /// executing) and then increments the current revision counter; invokes
-    /// `op` with the global query write lock still held. The `op` closure is
-    /// given the new revision as an argument, and it should actually perform
-    /// the writes.
+    /// `op` with the global query write lock still held.
     ///
     /// While we wait to acquire the global query write lock, this method will
     /// also increment `pending_revision_increments`, thus signalling to queries
     /// that their results are "canceled" and they should abort as expeditiously
     /// as possible.
     ///
+    /// The `op` closure should actually perform the writes needed. It is given
+    /// the new revision as an argument, and its return value indicates whether
+    /// any pre-existing value was modified:
+    ///
+    /// - returning `None` means that no pre-existing value was modified (this
+    ///   could occur e.g. when setting some key on an input that was never set
+    ///   before)
+    /// - returning `Some(d)` indicates that a pre-existing value was modified
+    ///   and it had the durability `d`. This will update the records for when
+    ///   values with each durability were modified.
+    ///
     /// Note that, given our writer model, we can assume that only one thread is
     /// attempting to increment the global revision at a time.
     pub(crate) fn with_incremented_revision(
         &mut self,
-        op: &mut dyn FnMut(Revision, &DatabaseWriteLockGuard<'_, DB>),
+        op: &mut dyn FnMut(Revision) -> Option<Durability>,
     ) {
         log::debug!("increment_revision()");
 
@@ -318,13 +325,11 @@ where
 
         debug!("increment_revision: incremented to {:?}", new_revision);
 
-        op(
-            new_revision,
-            &DatabaseWriteLockGuard {
-                runtime: self,
-                new_revision,
-            },
-        )
+        if let Some(d) = op(new_revision) {
+            for rev in &self.shared_state.revisions[1..=d.index()] {
+                rev.store(new_revision);
+            }
+        }
     }
 
     pub(crate) fn permits_increment(&self) -> bool {
@@ -525,34 +530,6 @@ where
             .dependency_graph
             .lock()
             .remove_edge(database_key_index, self.id())
-    }
-}
-
-/// Temporary guard that indicates that the database write-lock is
-/// held. You can get one of these by invoking
-/// `with_incremented_revision`. It gives access to the new revision
-/// and a few other operations that only make sense to do while an
-/// update is happening.
-pub(crate) struct DatabaseWriteLockGuard<'db, DB>
-where
-    DB: Database,
-{
-    runtime: &'db mut Runtime<DB>,
-    new_revision: Revision,
-}
-
-impl<DB> DatabaseWriteLockGuard<'_, DB>
-where
-    DB: Database,
-{
-    /// Indicates that this update modified an input marked as
-    /// "constant". This will force re-evaluation of anything that was
-    /// dependent on constants (which otherwise might not get
-    /// re-evaluated).
-    pub(crate) fn mark_durability_as_changed(&self, d: Durability) {
-        for rev in &self.runtime.shared_state.revisions[1..=d.index()] {
-            rev.store(self.new_revision);
-        }
     }
 }
 

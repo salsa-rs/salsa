@@ -193,7 +193,7 @@ where
         // case doesn't generally seem worth optimizing for.
         let mut value = Some(value);
         db.salsa_runtime_mut()
-            .with_incremented_revision(&mut |next_revision, guard| {
+            .with_incremented_revision(&mut |next_revision| {
                 let mut slots = self.slots.write();
 
                 // Do this *after* we acquire the lock, so that we are not
@@ -209,8 +209,9 @@ where
                 match slots.entry(key.clone()) {
                     Entry::Occupied(entry) => {
                         let mut slot_stamped_value = entry.get().stamped_value.write();
-                        guard.mark_durability_as_changed(slot_stamped_value.durability);
+                        let old_durability = slot_stamped_value.durability;
                         *slot_stamped_value = stamped_value;
+                        Some(old_durability)
                     }
 
                     Entry::Vacant(entry) => {
@@ -225,6 +226,7 @@ where
                             database_key_index,
                             stamped_value: RwLock::new(stamped_value),
                         }));
+                        None
                     }
                 }
             });

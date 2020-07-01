@@ -226,14 +226,16 @@ where
 {
     fn invalidate(&self, db: &mut DB, key: &Q::Key) {
         db.salsa_runtime_mut()
-            .with_incremented_revision(&mut |_new_revision, guard| {
+            .with_incremented_revision(&mut |_new_revision| {
                 let map_read = self.slot_map.read();
 
                 if let Some(slot) = map_read.get(key) {
                     if let Some(durability) = slot.invalidate() {
-                        guard.mark_durability_as_changed(durability);
+                        return Some(durability);
                     }
                 }
+
+                None
             })
     }
 }
