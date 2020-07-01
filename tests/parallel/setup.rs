@@ -200,7 +200,7 @@ impl Database for ParDatabaseImpl {
         &mut self.runtime
     }
 
-    fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event<Self>) {
+    fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event) {
         let event = event_fn();
         match event.kind {
             salsa::EventKind::WillBlockOn { .. } => {

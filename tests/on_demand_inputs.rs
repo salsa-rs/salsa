@@ -39,7 +39,7 @@ fn c(db: &impl QueryGroup, x: u32) -> u32 {
 struct Database {
     runtime: salsa::Runtime<Database>,
     external_state: HashMap<u32, u32>,
-    on_event: Option<Box<dyn Fn(salsa::Event<Database>)>>,
+    on_event: Option<Box<dyn Fn(salsa::Event)>>,
 }
 
 impl salsa::Database for Database {
@@ -51,7 +51,7 @@ impl salsa::Database for Database {
         &mut self.runtime
     }
 
-    fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event<Self>) {
+    fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event) {
         if let Some(cb) = &self.on_event {
             cb(event_fn())
         }

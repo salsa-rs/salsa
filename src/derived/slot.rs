@@ -5,7 +5,6 @@ use crate::durability::Durability;
 use crate::lru::LruIndex;
 use crate::lru::LruNode;
 use crate::plumbing::CycleDetected;
-use crate::plumbing::GetQueryTable;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryFunction;
 use crate::revision::Revision;
@@ -55,7 +54,7 @@ where
     /// indeeds a cycle.
     InProgress {
         id: RuntimeId,
-        waiting: Mutex<SmallVec<[Promise<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
+        waiting: Mutex<SmallVec<[Promise<WaitResult<Q::Value, DatabaseKeyIndex>>; 2]>>,
     },
 
     /// We have computed the query already, and here is the result.
@@ -124,14 +123,10 @@ where
         self.database_key_index
     }
 
-    pub(super) fn database_key(&self, db: &DB) -> DB::DatabaseKey {
-        <DB as GetQueryTable<Q>>::database_key(db, self.key.clone())
-    }
-
     pub(super) fn read(
         &self,
         db: &DB,
-    ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
+    ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
         let runtime = db.salsa_runtime();
 
         // NB: We don't need to worry about people modifying the
@@ -160,7 +155,7 @@ where
         &self,
         db: &DB,
         revision_now: Revision,
-    ) -> Result<StampedValue<Q::Value>, CycleError<DB::DatabaseKey>> {
+    ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
         let runtime = db.salsa_runtime();
 
         debug!("{:?}: read_upgrade(revision_now={:?})", self, revision_now,);
@@ -183,8 +178,7 @@ where
             }
         };
 
-        let database_key = self.database_key(db);
-        let mut panic_guard = PanicGuard::new(&database_key, self, old_memo, runtime);
+        let mut panic_guard = PanicGuard::new(self.database_key_index, self, old_memo, runtime);
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
@@ -197,7 +191,7 @@ where
                 db.salsa_event(|| Event {
                     runtime_id: runtime.id(),
                     kind: EventKind::DidValidateMemoizedValue {
-                        database_key: database_key.clone(),
+                        database_key: self.database_key_index,
                     },
                 });
 
@@ -217,7 +211,7 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = runtime.execute_query_implementation(db, &database_key, || {
+        let mut result = runtime.execute_query_implementation(db, self.database_key_index, || {
             info!("{:?}: executing query", self);
 
             Q::execute(db, self.key.clone())
@@ -334,7 +328,7 @@ where
         state: StateGuard,
         runtime: &Runtime<DB>,
         revision_now: Revision,
-    ) -> ProbeState<StampedValue<Q::Value>, DB::DatabaseKey, StateGuard>
+    ) -> ProbeState<StampedValue<Q::Value>, DatabaseKeyIndex, StateGuard>
     where
         StateGuard: Deref<Target = QueryState<DB, Q>>,
     {
@@ -352,7 +346,7 @@ where
                             runtime_id: db.salsa_runtime().id(),
                             kind: EventKind::WillBlockOn {
                                 other_runtime_id: other_id,
-                                database_key: self.database_key(db),
+                                database_key: self.database_key_index,
                             },
                         });
 
@@ -378,7 +372,7 @@ where
 
                     Err(err) => {
                         let err = runtime.report_unexpected_cycle(
-                            &self.database_key(db),
+                            self.database_key_index,
                             err,
                             revision_now,
                         );
@@ -725,16 +719,16 @@ where
     /// computed (but first drop the lock on the map).
     fn register_with_in_progress_thread(
         &self,
-        db: &DB,
+        _db: &DB,
         runtime: &Runtime<DB>,
         other_id: RuntimeId,
-        waiting: &Mutex<SmallVec<[Promise<WaitResult<Q::Value, DB::DatabaseKey>>; 2]>>,
-    ) -> Result<BlockingFuture<WaitResult<Q::Value, DB::DatabaseKey>>, CycleDetected> {
+        waiting: &Mutex<SmallVec<[Promise<WaitResult<Q::Value, DatabaseKeyIndex>>; 2]>>,
+    ) -> Result<BlockingFuture<WaitResult<Q::Value, DatabaseKeyIndex>>, CycleDetected> {
         let id = runtime.id();
         if other_id == id {
             return Err(CycleDetected { from: id, to: id });
         } else {
-            if !runtime.try_block_on(&self.database_key(db), other_id) {
+            if !runtime.try_block_on(self.database_key_index, other_id) {
                 return Err(CycleDetected {
                     from: id,
                     to: other_id,
@@ -775,7 +769,7 @@ where
     Q: QueryFunction<DB>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    database_key: &'me DB::DatabaseKey,
+    database_key_index: DatabaseKeyIndex,
     slot: &'me Slot<DB, Q, MP>,
     memo: Option<Memo<DB, Q>>,
     runtime: &'me Runtime<DB>,
@@ -788,13 +782,13 @@ where
     MP: MemoizationPolicy<DB, Q>,
 {
     fn new(
-        database_key: &'me DB::DatabaseKey,
+        database_key_index: DatabaseKeyIndex,
         slot: &'me Slot<DB, Q, MP>,
         memo: Option<Memo<DB, Q>>,
         runtime: &'me Runtime<DB>,
     ) -> Self {
         Self {
-            database_key,
+            database_key_index,
             slot,
             memo,
             runtime,
@@ -804,7 +798,7 @@ where
     /// Proceed with our panic guard by overwriting the placeholder for `key`.
     /// Once that completes, ensure that our deconstructor is not run once we
     /// are out of scope.
-    fn proceed(mut self, new_value: &StampedValue<Q::Value>, cycle: Vec<DB::DatabaseKey>) {
+    fn proceed(mut self, new_value: &StampedValue<Q::Value>, cycle: Vec<DatabaseKeyIndex>) {
         self.overwrite_placeholder(Some((new_value, cycle)));
         std::mem::forget(self)
     }
@@ -819,7 +813,7 @@ where
     /// then notify them.
     fn overwrite_placeholder(
         &mut self,
-        new_value: Option<(&StampedValue<Q::Value>, Vec<DB::DatabaseKey>)>,
+        new_value: Option<(&StampedValue<Q::Value>, Vec<DatabaseKeyIndex>)>,
     ) {
         let mut write = self.slot.state.write();
 
@@ -839,7 +833,7 @@ where
                 assert_eq!(id, self.runtime.id());
 
                 self.runtime
-                    .unblock_queries_blocked_on_self(&self.database_key);
+                    .unblock_queries_blocked_on_self(self.database_key_index);
 
                 match new_value {
                     // If anybody has installed themselves in our "waiting"

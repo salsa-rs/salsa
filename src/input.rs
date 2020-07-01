@@ -7,8 +7,6 @@ use crate::revision::Revision;
 use crate::runtime::{FxIndexMap, StampedValue};
 use crate::CycleError;
 use crate::Database;
-use crate::Event;
-use crate::EventKind;
 use crate::Query;
 use crate::{DatabaseKeyIndex, SweepStrategy};
 use indexmap::map::Entry;
@@ -96,7 +94,7 @@ where
         slot.maybe_changed_since(db, revision)
     }
 
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         let slot = self
             .slot(key)
             .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
@@ -169,14 +167,7 @@ where
     Q: Query<DB>,
     DB: Database,
 {
-    fn set(
-        &self,
-        db: &mut DB,
-        key: &Q::Key,
-        database_key: &DB::DatabaseKey,
-        value: Q::Value,
-        durability: Durability,
-    ) {
+    fn set(&self, db: &mut DB, key: &Q::Key, value: Q::Value, durability: Durability) {
         log::debug!(
             "{:?}({:?}) = {:?} ({:?})",
             Q::default(),
@@ -184,13 +175,6 @@ where
             value,
             durability
         );
-
-        db.salsa_event(|| Event {
-            runtime_id: db.salsa_runtime().id(),
-            kind: EventKind::WillChangeInputValue {
-                database_key: database_key.clone(),
-            },
-        });
 
         // The value is changing, so we need a new revision (*). We also
         // need to update the 'last changed' revision by invoking

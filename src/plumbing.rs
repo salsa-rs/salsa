@@ -71,7 +71,7 @@ pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {}
 
 pub trait QueryFunction<DB: Database>: Query<DB> {
     fn execute(db: &DB, key: Self::Key) -> Self::Value;
-    fn recover(db: &DB, cycle: &[DB::DatabaseKey], key: &Self::Key) -> Option<Self::Value> {
+    fn recover(db: &DB, cycle: &[DatabaseKeyIndex], key: &Self::Key) -> Option<Self::Value> {
         let _ = (db, cycle, key);
         None
     }
@@ -173,7 +173,7 @@ where
     /// Returns `Err` in the event of a cycle, meaning that computing
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>>;
+    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>>;
 
     /// Returns the durability associated with a given key.
     fn durability(&self, db: &DB, key: &Q::Key) -> Durability;
@@ -192,14 +192,7 @@ where
     DB: Database,
     Q: Query<DB>,
 {
-    fn set(
-        &self,
-        db: &mut DB,
-        key: &Q::Key,
-        database_key: &DB::DatabaseKey,
-        new_value: Q::Value,
-        durability: Durability,
-    );
+    fn set(&self, db: &mut DB, key: &Q::Key, new_value: Q::Value, durability: Durability);
 }
 
 /// An optional trait that is implemented for "user mutable" storage:

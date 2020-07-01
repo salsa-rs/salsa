@@ -431,11 +431,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             let recover = if let Some(cycle_recovery_fn) = &query.cycle {
                 quote! {
-                    fn recover(db: &DB, cycle: &[DB::DatabaseKey], #key_pattern: &<Self as salsa::Query<DB>>::Key)
+                    fn recover(db: &DB, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::Query<DB>>::Key)
                         -> Option<<Self as salsa::Query<DB>>::Value> {
                         Some(#cycle_recovery_fn(
                                 db,
-                                &cycle.iter().map(|k| format!("{:?}", k)).collect::<Vec<String>>(),
+                                &cycle.iter().map(|k| format!("{:?}", k.debug(db))).collect::<Vec<String>>(),
                                 #(#key_names),*
                         ))
                     }

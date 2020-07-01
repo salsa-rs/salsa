@@ -114,7 +114,7 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// This function is invoked at key points in the salsa
     /// runtime. It permits the database to be customized and to
     /// inject logging or other custom behavior.
-    fn salsa_event(&self, event_fn: impl Fn() -> Event<Self>) {
+    fn salsa_event(&self, event_fn: impl Fn() -> Event) {
         #![allow(unused_variables)]
     }
 
@@ -128,16 +128,16 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
 /// The `Event` struct identifies various notable things that can
 /// occur during salsa execution. Instances of this struct are given
 /// to `salsa_event`.
-pub struct Event<DB: Database> {
+pub struct Event {
     /// The id of the snapshot that triggered the event.  Usually
     /// 1-to-1 with a thread, as well.
     pub runtime_id: RuntimeId,
 
     /// What sort of event was it.
-    pub kind: EventKind<DB>,
+    pub kind: EventKind,
 }
 
-impl<DB: Database> fmt::Debug for Event<DB> {
+impl fmt::Debug for Event {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("Event")
             .field("runtime_id", &self.runtime_id)
@@ -147,7 +147,7 @@ impl<DB: Database> fmt::Debug for Event<DB> {
 }
 
 /// An enum identifying the various kinds of events that can occur.
-pub enum EventKind<DB: Database> {
+pub enum EventKind {
     /// Occurs when we found that all inputs to a memoized value are
     /// up-to-date and hence the value can be re-used without
     /// executing the closure.
@@ -155,7 +155,7 @@ pub enum EventKind<DB: Database> {
     /// Executes before the "re-used" value is returned.
     DidValidateMemoizedValue {
         /// The database-key for the affected value. Implements `Debug`.
-        database_key: DB::DatabaseKey,
+        database_key: DatabaseKeyIndex,
     },
 
     /// Indicates that another thread (with id `other_runtime_id`) is processing the
@@ -172,14 +172,7 @@ pub enum EventKind<DB: Database> {
         other_runtime_id: RuntimeId,
 
         /// The database-key for the affected value. Implements `Debug`.
-        database_key: DB::DatabaseKey,
-    },
-
-    /// Indicates that the input value will change after this
-    /// callback, e.g. due to a call to `set`.
-    WillChangeInputValue {
-        /// The database-key for the affected value. Implements `Debug`.
-        database_key: DB::DatabaseKey,
+        database_key: DatabaseKeyIndex,
     },
 
     /// Indicates that the function for this query will be executed.
@@ -187,11 +180,11 @@ pub enum EventKind<DB: Database> {
     /// its inputs may be out of date.
     WillExecute {
         /// The database-key for the affected value. Implements `Debug`.
-        database_key: DB::DatabaseKey,
+        database_key: DatabaseKeyIndex,
     },
 }
 
-impl<DB: Database> fmt::Debug for EventKind<DB> {
+impl fmt::Debug for EventKind {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             EventKind::DidValidateMemoizedValue { database_key } => fmt
@@ -204,10 +197,6 @@ impl<DB: Database> fmt::Debug for EventKind<DB> {
             } => fmt
                 .debug_struct("WillBlockOn")
                 .field("other_runtime_id", other_runtime_id)
-                .field("database_key", database_key)
-                .finish(),
-            EventKind::WillChangeInputValue { database_key } => fmt
-                .debug_struct("WillChangeInputValue")
                 .field("database_key", database_key)
                 .finish(),
             EventKind::WillExecute { database_key } => fmt
@@ -537,7 +526,7 @@ where
         self.try_get(key).unwrap_or_else(|err| panic!("{}", err))
     }
 
-    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         self.storage.try_fetch(self.db, &key)
     }
 
@@ -575,10 +564,6 @@ where
         Self { db, storage }
     }
 
-    fn database_key(&self, key: &Q::Key) -> DB::DatabaseKey {
-        <DB as plumbing::GetQueryTable<Q>>::database_key(&self.db, key.clone())
-    }
-
     /// Assign a value to an "input query". Must be used outside of
     /// an active query computation.
     ///
@@ -605,8 +590,7 @@ where
     where
         Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
     {
-        self.storage
-            .set(self.db, &key, &self.database_key(&key), value, durability);
+        self.storage.set(self.db, &key, value, durability);
     }
 
     /// Sets the size of LRU cache of values for this query table.

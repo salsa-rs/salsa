@@ -34,7 +34,7 @@ pub struct Runtime<DB: Database> {
     revision_guard: Option<RevisionGuard<DB>>,
 
     /// Local state that is specific to this runtime (thread).
-    local_state: LocalState<DB>,
+    local_state: LocalState,
 
     /// Shared state that is accessible via all runtimes.
     shared_state: Arc<SharedState<DB>>,
@@ -167,7 +167,7 @@ where
 
     /// Returns the database-key for the query that this thread is
     /// actively executing (if any).
-    pub fn active_query(&self) -> Option<DB::DatabaseKey> {
+    pub fn active_query(&self) -> Option<DatabaseKeyIndex> {
         self.local_state.active_query()
     }
 
@@ -331,21 +331,26 @@ where
     pub(crate) fn execute_query_implementation<V>(
         &self,
         db: &DB,
-        database_key: &DB::DatabaseKey,
+        database_key_index: DatabaseKeyIndex,
         execute: impl FnOnce() -> V,
-    ) -> ComputedQueryResult<DB, V> {
-        debug!("{:?}: execute_query_implementation invoked", database_key);
+    ) -> ComputedQueryResult<V> {
+        debug!(
+            "{:?}: execute_query_implementation invoked",
+            database_key_index
+        );
 
         db.salsa_event(|| Event {
             runtime_id: db.salsa_runtime().id(),
             kind: EventKind::WillExecute {
-                database_key: database_key.clone(),
+                database_key: database_key_index.clone(),
             },
         });
 
         // Push the active query onto the stack.
         let max_durability = Durability::MAX;
-        let active_query = self.local_state.push_query(database_key, max_durability);
+        let active_query = self
+            .local_state
+            .push_query(database_key_index, max_durability);
 
         // Execute user's code, accumulating inputs etc.
         let value = execute();
@@ -417,11 +422,14 @@ where
     /// Obviously, this should be user configurable at some point.
     pub(crate) fn report_unexpected_cycle(
         &self,
-        database_key: &DB::DatabaseKey,
+        database_key_index: DatabaseKeyIndex,
         error: CycleDetected,
         changed_at: Revision,
-    ) -> crate::CycleError<DB::DatabaseKey> {
-        debug!("report_unexpected_cycle(database_key={:?})", database_key);
+    ) -> crate::CycleError<DatabaseKeyIndex> {
+        debug!(
+            "report_unexpected_cycle(database_key={:?})",
+            database_key_index
+        );
 
         let mut query_stack = self.local_state.borrow_query_stack_mut();
 
@@ -429,12 +437,12 @@ where
             // All queries in the cycle is local
             let start_index = query_stack
                 .iter()
-                .rposition(|active_query| active_query.database_key == *database_key)
+                .rposition(|active_query| active_query.database_key_index == database_key_index)
                 .unwrap();
             let mut cycle = Vec::new();
             let cycle_participants = &mut query_stack[start_index..];
             for active_query in &mut *cycle_participants {
-                cycle.push(active_query.database_key.clone());
+                cycle.push(active_query.database_key_index);
             }
 
             assert!(!cycle.is_empty());
@@ -455,18 +463,18 @@ where
 
             let mut cycle = Vec::new();
             dependency_graph.push_cycle_path(
-                database_key,
+                database_key_index,
                 error.to,
-                query_stack.iter().map(|query| &query.database_key),
+                query_stack.iter().map(|query| query.database_key_index),
                 &mut cycle,
             );
-            cycle.push(database_key.clone());
+            cycle.push(database_key_index);
 
             assert!(!cycle.is_empty());
 
             for active_query in query_stack
                 .iter_mut()
-                .filter(|query| cycle.iter().any(|key| *key == query.database_key))
+                .filter(|query| cycle.iter().any(|key| *key == query.database_key_index))
             {
                 active_query.cycle = cycle.clone();
             }
@@ -479,13 +487,17 @@ where
         }
     }
 
-    pub(crate) fn mark_cycle_participants(&self, err: &CycleError<DB::DatabaseKey>) {
+    pub(crate) fn mark_cycle_participants(&self, err: &CycleError<DatabaseKeyIndex>) {
         for active_query in self
             .local_state
             .borrow_query_stack_mut()
             .iter_mut()
             .rev()
-            .take_while(|active_query| err.cycle.iter().any(|e| *e == active_query.database_key))
+            .take_while(|active_query| {
+                err.cycle
+                    .iter()
+                    .any(|e| *e == active_query.database_key_index)
+            })
         {
             active_query.cycle = err.cycle.clone();
         }
@@ -493,7 +505,7 @@ where
 
     /// Try to make this runtime blocked on `other_id`. Returns true
     /// upon success or false if `other_id` is already blocked on us.
-    pub(crate) fn try_block_on(&self, database_key: &DB::DatabaseKey, other_id: RuntimeId) -> bool {
+    pub(crate) fn try_block_on(&self, database_key: DatabaseKeyIndex, other_id: RuntimeId) -> bool {
         self.shared_state.dependency_graph.lock().add_edge(
             self.id(),
             database_key,
@@ -501,15 +513,15 @@ where
             self.local_state
                 .borrow_query_stack()
                 .iter()
-                .map(|query| query.database_key.clone()),
+                .map(|query| query.database_key_index),
         )
     }
 
-    pub(crate) fn unblock_queries_blocked_on_self(&self, database_key: &DB::DatabaseKey) {
+    pub(crate) fn unblock_queries_blocked_on_self(&self, database_key_index: DatabaseKeyIndex) {
         self.shared_state
             .dependency_graph
             .lock()
-            .remove_edge(database_key, self.id())
+            .remove_edge(database_key_index, self.id())
     }
 }
 
@@ -580,7 +592,7 @@ struct SharedState<DB: Database> {
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
-    dependency_graph: Mutex<DependencyGraph<DB::DatabaseKey>>,
+    dependency_graph: Mutex<DependencyGraph<DatabaseKeyIndex>>,
 }
 
 impl<DB: Database> SharedState<DB> {
@@ -629,9 +641,9 @@ where
     }
 }
 
-struct ActiveQuery<DB: Database> {
+struct ActiveQuery {
     /// What query is executing
-    database_key: DB::DatabaseKey,
+    database_key_index: DatabaseKeyIndex,
 
     /// Minimum durability of inputs observed so far.
     durability: Durability,
@@ -645,10 +657,10 @@ struct ActiveQuery<DB: Database> {
     dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
 
     /// Stores the entire cycle, if one is found and this query is part of it.
-    cycle: Vec<DB::DatabaseKey>,
+    cycle: Vec<DatabaseKeyIndex>,
 }
 
-pub(crate) struct ComputedQueryResult<DB: Database, V> {
+pub(crate) struct ComputedQueryResult<V> {
     /// Final value produced
     pub(crate) value: V,
 
@@ -664,13 +676,13 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
     pub(crate) dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
 
     /// The cycle if one occured while computing this value
-    pub(crate) cycle: Vec<DB::DatabaseKey>,
+    pub(crate) cycle: Vec<DatabaseKeyIndex>,
 }
 
-impl<DB: Database> ActiveQuery<DB> {
-    fn new(database_key: DB::DatabaseKey, max_durability: Durability) -> Self {
+impl ActiveQuery {
+    fn new(database_key_index: DatabaseKeyIndex, max_durability: Durability) -> Self {
         ActiveQuery {
-            database_key,
+            database_key_index,
             durability: max_durability,
             changed_at: Revision::start(),
             dependencies: Some(FxIndexSet::default()),
@@ -753,7 +765,7 @@ where
     fn add_edge(
         &mut self,
         from_id: RuntimeId,
-        database_key: &K,
+        database_key: K,
         to_id: RuntimeId,
         path: impl IntoIterator<Item = K>,
     ) -> bool {
@@ -785,8 +797,8 @@ where
         true
     }
 
-    fn remove_edge(&mut self, database_key: &K, to_id: RuntimeId) {
-        let vec = self.labels.remove(database_key).unwrap_or_default();
+    fn remove_edge(&mut self, database_key: K, to_id: RuntimeId) {
+        let vec = self.labels.remove(&database_key).unwrap_or_default();
 
         for from_id in &vec {
             let to_id1 = self.edges.remove(from_id).map(|edge| edge.id);
@@ -796,14 +808,14 @@ where
 
     fn push_cycle_path<'a>(
         &'a self,
-        database_key: &'a K,
+        database_key: K,
         to: RuntimeId,
-        local_path: impl IntoIterator<Item = &'a K>,
+        local_path: impl IntoIterator<Item = K>,
         output: &mut Vec<K>,
     ) where
         K: std::fmt::Debug,
     {
-        let mut current = Some((to, std::slice::from_ref(database_key)));
+        let mut current = Some((to, std::slice::from_ref(&database_key)));
         let mut last = None;
         let mut local_path = Some(local_path);
 
@@ -823,7 +835,7 @@ where
                         last = local_path.take().map(|local_path| {
                             local_path
                                 .into_iter()
-                                .skip_while(move |p| *p != link_key)
+                                .skip_while(move |p| *p != *link_key)
                                 .skip(1)
                         });
                     }
@@ -833,7 +845,7 @@ where
         }
 
         if let Some(iter) = &mut last {
-            output.extend(iter.cloned());
+            output.extend(iter);
         }
     }
 }
@@ -895,10 +907,10 @@ mod tests {
         let mut graph = DependencyGraph::default();
         let a = RuntimeId { counter: 0 };
         let b = RuntimeId { counter: 1 };
-        assert!(graph.add_edge(a, &2, b, vec![1]));
+        assert!(graph.add_edge(a, 2, b, vec![1]));
         // assert!(graph.add_edge(b, &1, a, vec![3, 2]));
         let mut v = vec![];
-        graph.push_cycle_path(&1, a, &[3, 2][..], &mut v);
+        graph.push_cycle_path(1, a, vec![3, 2], &mut v);
         assert_eq!(v, vec![1, 2]);
     }
 
@@ -908,11 +920,11 @@ mod tests {
         let a = RuntimeId { counter: 0 };
         let b = RuntimeId { counter: 1 };
         let c = RuntimeId { counter: 2 };
-        assert!(graph.add_edge(a, &3, b, vec![1]));
-        assert!(graph.add_edge(b, &4, c, vec![2, 3]));
+        assert!(graph.add_edge(a, 3, b, vec![1]));
+        assert!(graph.add_edge(b, 4, c, vec![2, 3]));
         // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
         let mut v = vec![];
-        graph.push_cycle_path(&1, a, &[5, 6, 4, 7][..], &mut v);
+        graph.push_cycle_path(1, a, vec![5, 6, 4, 7], &mut v);
         assert_eq!(v, vec![1, 3, 4, 7]);
     }
 }
