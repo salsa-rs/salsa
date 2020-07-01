@@ -454,19 +454,13 @@ where
             let dependency_graph = self.shared_state.dependency_graph.lock();
 
             let mut cycle = Vec::new();
-            {
-                let cycle_iter = dependency_graph
-                    .get_cycle_path(
-                        database_key,
-                        error.to,
-                        query_stack.iter().map(|query| &query.database_key),
-                    )
-                    .chain(Some(database_key));
-
-                for key in cycle_iter {
-                    cycle.push(key.clone());
-                }
-            }
+            dependency_graph.push_cycle_path(
+                database_key,
+                error.to,
+                query_stack.iter().map(|query| &query.database_key),
+                &mut cycle,
+            );
+            cycle.push(database_key.clone());
 
             assert!(!cycle.is_empty());
 
@@ -800,44 +794,47 @@ where
         }
     }
 
-    fn get_cycle_path<'a>(
+    fn push_cycle_path<'a>(
         &'a self,
         database_key: &'a K,
         to: RuntimeId,
         local_path: impl IntoIterator<Item = &'a K>,
-    ) -> impl Iterator<Item = &'a K>
-    where
+        output: &mut Vec<K>,
+    ) where
         K: std::fmt::Debug,
     {
         let mut current = Some((to, std::slice::from_ref(database_key)));
         let mut last = None;
         let mut local_path = Some(local_path);
-        std::iter::from_fn(move || match current.take() {
-            Some((id, path)) => {
-                let link_key = path.last().unwrap();
 
-                current = self.edges.get(&id).map(|edge| {
-                    let i = edge.path.iter().rposition(|p| p == link_key).unwrap();
-                    (edge.id, &edge.path[i + 1..])
-                });
+        loop {
+            match current.take() {
+                Some((id, path)) => {
+                    let link_key = path.last().unwrap();
 
-                if current.is_none() {
-                    last = local_path.take().map(|local_path| {
-                        local_path
-                            .into_iter()
-                            .skip_while(move |p| *p != link_key)
-                            .skip(1)
+                    output.extend(path.iter().cloned());
+
+                    current = self.edges.get(&id).map(|edge| {
+                        let i = edge.path.iter().rposition(|p| p == link_key).unwrap();
+                        (edge.id, &edge.path[i + 1..])
                     });
-                }
 
-                Some(path)
+                    if current.is_none() {
+                        last = local_path.take().map(|local_path| {
+                            local_path
+                                .into_iter()
+                                .skip_while(move |p| *p != link_key)
+                                .skip(1)
+                        });
+                    }
+                }
+                None => break,
             }
-            None => match &mut last {
-                Some(iter) => iter.next().map(std::slice::from_ref),
-                None => None,
-            },
-        })
-        .flat_map(|x| x)
+        }
+
+        if let Some(iter) = &mut last {
+            output.extend(iter.cloned());
+        }
     }
 }
 
@@ -900,13 +897,9 @@ mod tests {
         let b = RuntimeId { counter: 1 };
         assert!(graph.add_edge(a, &2, b, vec![1]));
         // assert!(graph.add_edge(b, &1, a, vec![3, 2]));
-        assert_eq!(
-            graph
-                .get_cycle_path(&1, a, &[3, 2][..])
-                .cloned()
-                .collect::<Vec<i32>>(),
-            vec![1, 2]
-        );
+        let mut v = vec![];
+        graph.push_cycle_path(&1, a, &[3, 2][..], &mut v);
+        assert_eq!(v, vec![1, 2]);
     }
 
     #[test]
@@ -918,12 +911,8 @@ mod tests {
         assert!(graph.add_edge(a, &3, b, vec![1]));
         assert!(graph.add_edge(b, &4, c, vec![2, 3]));
         // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
-        assert_eq!(
-            graph
-                .get_cycle_path(&1, a, &[5, 6, 4, 7][..])
-                .cloned()
-                .collect::<Vec<i32>>(),
-            vec![1, 3, 4, 7]
-        );
+        let mut v = vec![];
+        graph.push_cycle_path(&1, a, &[5, 6, 4, 7][..], &mut v);
+        assert_eq!(v, vec![1, 3, 4, 7]);
     }
 }
