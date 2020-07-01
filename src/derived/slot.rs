@@ -1026,7 +1026,6 @@ where
     Q: QueryFunction<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
-    DB::DatabaseKey: Send + Sync,
     Q::Key: Send + Sync,
     Q::Value: Send + Sync,
 {

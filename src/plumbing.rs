@@ -30,14 +30,6 @@ pub struct CycleDetected {
 /// the `database_storage` macro, so you shouldn't need to mess
 /// with this trait directly.
 pub trait DatabaseStorageTypes: Sized {
-    /// A "query descriptor" packages up all the possible queries and a key.
-    /// It is used to store information about (e.g.) the stack.
-    ///
-    /// At runtime, it can be implemented in various ways: a monster enum
-    /// works for a fixed set of queries, but a boxed trait object is good
-    /// for a more open-ended option.
-    type DatabaseKey: DatabaseKey<Self>;
-
     /// Defines the "storage type", where all the query data is kept.
     /// This type is defined by the `database_storage` macro.
     type DatabaseStorage: Default;
@@ -95,9 +87,6 @@ pub trait GetQueryTable<Q: Query<Self>>: Database {
     /// Create a mutable query table, which has access to the storage
     /// for the query and offers methods like `set`.
     fn get_query_table_mut(db: &mut Self) -> QueryTableMut<'_, Self, Q>;
-
-    /// Create a query descriptor given a key for this query.
-    fn database_key(db: &Self, key: Q::Key) -> Self::DatabaseKey;
 }
 
 impl<DB, Q> GetQueryTable<Q> for DB
@@ -117,14 +106,6 @@ where
         let query_storage = Q::query_storage(group_storage).clone();
         QueryTableMut::new(db, query_storage)
     }
-
-    fn database_key(
-        _db: &DB,
-        key: <Q as Query<DB>>::Key,
-    ) -> <DB as DatabaseStorageTypes>::DatabaseKey {
-        let group_key = Q::group_key(key);
-        <DB as HasQueryGroup<_>>::database_key(group_key)
-    }
 }
 
 pub trait QueryGroup<DB: Database> {
@@ -140,9 +121,6 @@ where
 {
     /// Access the group storage struct from the database.
     fn group_storage(db: &Self) -> &G::GroupStorage;
-
-    /// "Upcast" a group key into a database key.
-    fn database_key(group_key: G::GroupKey) -> Self::DatabaseKey;
 }
 
 pub trait QueryStorageOps<DB, Q>
