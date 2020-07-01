@@ -438,6 +438,33 @@ impl DatabaseKeyIndex {
     pub fn key_index(self) -> u32 {
         self.key_index
     }
+
+    /// Returns a type that gives a user-readable debug output.
+    /// Use like `println!("{:?}", index.debug(db))`.
+    pub fn debug<D: ?Sized>(self, db: &D) -> impl std::fmt::Debug + '_
+    where
+        D: plumbing::DatabaseOps,
+    {
+        DatabaseKeyIndexDebug { index: self, db }
+    }
+}
+
+/// Helper type for `DatabaseKeyIndex::debug`
+struct DatabaseKeyIndexDebug<'me, D: ?Sized>
+where
+    D: plumbing::DatabaseOps,
+{
+    index: DatabaseKeyIndex,
+    db: &'me D,
+}
+
+impl<D: ?Sized> std::fmt::Debug for DatabaseKeyIndexDebug<'_, D>
+where
+    D: plumbing::DatabaseOps,
+{
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.db.fmt_index(self.index, fmt)
+    }
 }
 
 /// Trait implements by all of the "special types" associated with

@@ -150,6 +150,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     // ANCHOR_END:DatabaseStorageTypes
 
     // ANCHOR:DatabaseOps
+    let mut fmt_ops = proc_macro2::TokenStream::new();
     let mut maybe_changed_ops = proc_macro2::TokenStream::new();
     let mut for_each_ops = proc_macro2::TokenStream::new();
     for ((QueryGroup { group_path }, group_storage), group_index) in query_groups
@@ -157,6 +158,13 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         .zip(&query_group_storage_names)
         .zip(0_u16..)
     {
+        fmt_ops.extend(quote! {
+            #group_index => {
+                let storage: &#group_storage =
+                    <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
+                storage.fmt_index(self, input, fmt)
+            }
+        });
         maybe_changed_ops.extend(quote! {
             #group_index => {
                 let storage: &#group_storage =
@@ -172,6 +180,17 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     }
     output.extend(quote! {
         impl salsa::plumbing::DatabaseOps for #database_name {
+            fn fmt_index(
+                &self,
+                input: salsa::DatabaseKeyIndex,
+                fmt: &mut std::fmt::Formatter<'_>,
+            ) -> std::fmt::Result {
+                match input.group_index() {
+                    #fmt_ops
+                    i => panic!("salsa: invalid group index {}", i)
+                }
+            }
+
             fn maybe_changed_since(
                 &self,
                 input: salsa::DatabaseKeyIndex,

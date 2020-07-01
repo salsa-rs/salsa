@@ -471,6 +471,17 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         }
     });
 
+    let mut fmt_ops = proc_macro2::TokenStream::new();
+    for (Query { fn_name, .. }, query_index) in non_transparent_queries().zip(0_u16..) {
+        fmt_ops.extend(quote! {
+            #query_index => {
+                salsa::plumbing::QueryStorageOps::fmt_index(
+                    &*self.#fn_name, db, input, fmt,
+                )
+            }
+        });
+    }
+
     let mut maybe_changed_ops = proc_macro2::TokenStream::new();
     for (Query { fn_name, .. }, query_index) in non_transparent_queries().zip(0_u16..) {
         maybe_changed_ops.extend(quote! {
@@ -521,6 +532,18 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             DB__: #trait_name + #requires,
             DB__: salsa::plumbing::HasQueryGroup<#group_struct>,
         {
+            #trait_vis fn fmt_index(
+                &self,
+                db: &DB__,
+                input: salsa::DatabaseKeyIndex,
+                fmt: &mut std::fmt::Formatter<'_>,
+            ) -> std::fmt::Result {
+                match input.query_index() {
+                    #fmt_ops
+                    i => panic!("salsa: impossible query index {}", i),
+                }
+            }
+
             #trait_vis fn maybe_changed_since(
                 &self,
                 db: &DB__,

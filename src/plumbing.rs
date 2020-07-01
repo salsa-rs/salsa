@@ -45,6 +45,13 @@ pub trait DatabaseStorageTypes: Sized {
 
 /// Internal operations that the runtime uses to operate on the database.
 pub trait DatabaseOps: Sized {
+    /// Formats a database key index in a human readable fashion.
+    fn fmt_index(
+        &self,
+        index: DatabaseKeyIndex,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result;
+
     /// True if the computed value for `input` may have changed since `revision`.
     fn maybe_changed_since(&self, input: DatabaseKeyIndex, revision: Revision) -> bool;
 
@@ -146,6 +153,14 @@ where
     Q: Query<DB>,
 {
     fn new(group_index: u16) -> Self;
+
+    /// Format a database key index in a suitable way.
+    fn fmt_index(
+        &self,
+        db: &DB,
+        index: DatabaseKeyIndex,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result;
 
     /// True if the value of `input`, which must be from this query, may have
     /// changed since the given revision.

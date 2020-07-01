@@ -132,6 +132,19 @@ where
         }
     }
 
+    fn fmt_index(
+        &self,
+        _db: &DB,
+        index: DatabaseKeyIndex,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        assert_eq!(index.group_index, self.group_index);
+        assert_eq!(index.query_index, Q::QUERY_INDEX);
+        let slot_map = self.slot_map.read();
+        let key = slot_map.get_index(index.key_index as usize).unwrap().0;
+        write!(fmt, "{}({:?})", Q::QUERY_NAME, key)
+    }
+
     fn maybe_changed_since(&self, db: &DB, input: DatabaseKeyIndex, revision: Revision) -> bool {
         assert_eq!(input.group_index, self.group_index);
         assert_eq!(input.query_index, Q::QUERY_INDEX);

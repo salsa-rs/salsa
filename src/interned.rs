@@ -300,6 +300,19 @@ where
         }
     }
 
+    fn fmt_index(
+        &self,
+        db: &DB,
+        index: DatabaseKeyIndex,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        assert_eq!(index.group_index, self.group_index);
+        assert_eq!(index.query_index, Q::QUERY_INDEX);
+        let intern_id = InternId::from(index.key_index);
+        let slot = self.lookup_value(db, intern_id);
+        write!(fmt, "{}({:?})", Q::QUERY_NAME, slot.value)
+    }
+
     fn maybe_changed_since(&self, db: &DB, input: DatabaseKeyIndex, revision: Revision) -> bool {
         assert_eq!(input.group_index, self.group_index);
         assert_eq!(input.query_index, Q::QUERY_INDEX);
@@ -414,6 +427,17 @@ where
         LookupInternedStorage {
             phantom: std::marker::PhantomData,
         }
+    }
+
+    fn fmt_index(
+        &self,
+        db: &DB,
+        index: DatabaseKeyIndex,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        let group_storage = <DB as HasQueryGroup<Q::Group>>::group_storage(db);
+        let interned_storage = IQ::query_storage(group_storage);
+        interned_storage.fmt_index(db, index, fmt)
     }
 
     fn maybe_changed_since(&self, db: &DB, input: DatabaseKeyIndex, revision: Revision) -> bool {
