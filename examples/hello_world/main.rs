@@ -77,19 +77,10 @@ fn length(db: &impl HelloWorld, (): ()) -> usize {
 #[salsa::database(HelloWorldStorage)]
 #[derive(Default)]
 struct DatabaseStruct {
-    runtime: salsa::Runtime<DatabaseStruct>,
+    storage: salsa::Storage<Self>,
 }
 
-// Tell salsa where to find the runtime in your context.
-impl salsa::Database for DatabaseStruct {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseStruct {}
 // ANCHOR_END:database
 
 // This shows how to use a query.

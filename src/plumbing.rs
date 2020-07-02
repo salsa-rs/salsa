@@ -17,7 +17,7 @@ pub use crate::derived::MemoizedStorage;
 pub use crate::input::InputStorage;
 pub use crate::interned::InternedStorage;
 pub use crate::interned::LookupInternedStorage;
-pub use crate::{revision::Revision, DatabaseKeyIndex};
+pub use crate::{revision::Revision, DatabaseKeyIndex, Runtime};
 
 #[derive(Clone, Debug)]
 pub struct CycleDetected {
@@ -37,6 +37,12 @@ pub trait DatabaseStorageTypes: Sized {
 
 /// Internal operations that the runtime uses to operate on the database.
 pub trait DatabaseOps: Sized {
+    /// Gives access to the underlying salsa runtime.
+    fn ops_salsa_runtime(&self) -> &Runtime;
+
+    /// Gives access to the underlying salsa runtime.
+    fn ops_salsa_runtime_mut(&mut self) -> &mut Runtime;
+
     /// Formats a database key index in a human readable fashion.
     fn fmt_index(
         &self,

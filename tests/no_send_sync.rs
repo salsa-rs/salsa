@@ -19,18 +19,10 @@ fn no_send_sync_key(_db: &impl NoSendSyncDatabase, key: Rc<bool>) -> bool {
 #[salsa::database(NoSendSyncStorage)]
 #[derive(Default)]
 struct DatabaseImpl {
-    runtime: salsa::Runtime<DatabaseImpl>,
+    storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for DatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseImpl {}
 
 #[test]
 fn no_send_sync() {

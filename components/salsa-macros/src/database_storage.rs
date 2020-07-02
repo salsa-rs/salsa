@@ -13,6 +13,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     let query_groups = &args.query_groups;
     let database_name = &input.ident;
     let visibility = &input.vis;
+    let db_storage_field = quote! { storage };
 
     let mut output = proc_macro2::TokenStream::new();
     output.extend(quote! { #input });
@@ -63,8 +64,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         has_group_impls.extend(quote! {
             impl salsa::plumbing::HasQueryGroup<#group_path> for #database_name {
                 fn group_storage(db: &Self) -> &#group_storage {
-                    let runtime = salsa::Database::salsa_runtime(db);
-                    &runtime.storage().#group_name_snake
+                    &db.#db_storage_field.query_store().#group_name_snake
                 }
             }
         });
@@ -134,6 +134,14 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     }
     output.extend(quote! {
         impl salsa::plumbing::DatabaseOps for #database_name {
+            fn ops_salsa_runtime(&self) -> &salsa::Runtime {
+                self.#db_storage_field.salsa_runtime()
+            }
+
+            fn ops_salsa_runtime_mut(&mut self) -> &mut salsa::Runtime {
+                self.#db_storage_field.salsa_runtime_mut()
+            }
+
             fn fmt_index(
                 &self,
                 input: salsa::DatabaseKeyIndex,

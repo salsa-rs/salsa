@@ -26,23 +26,15 @@ fn outer(db: &impl PanicSafelyDatabase) -> () {
 #[salsa::database(PanicSafelyStruct)]
 #[derive(Default)]
 struct DatabaseStruct {
-    runtime: salsa::Runtime<DatabaseStruct>,
+    storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for DatabaseStruct {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseStruct {}
 
 impl salsa::ParallelDatabase for DatabaseStruct {
     fn snapshot(&self) -> Snapshot<Self> {
         Snapshot::new(DatabaseStruct {
-            runtime: self.runtime.snapshot(self),
+            storage: self.storage.snapshot(),
         })
     }
 }

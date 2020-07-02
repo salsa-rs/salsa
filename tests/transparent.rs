@@ -20,18 +20,10 @@ fn get(db: &impl QueryGroup, x: u32) -> u32 {
 #[salsa::database(QueryGroupStorage)]
 #[derive(Default)]
 struct Database {
-    runtime: salsa::Runtime<Database>,
+    storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for Database {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for Database {}
 
 #[test]
 fn transparent_queries_work() {

@@ -187,19 +187,11 @@ fn snapshot_me(db: &impl ParDatabase) {
 #[salsa::database(Par)]
 #[derive(Default)]
 pub(crate) struct ParDatabaseImpl {
-    runtime: salsa::Runtime<ParDatabaseImpl>,
+    storage: salsa::Storage<Self>,
     knobs: KnobsStruct,
 }
 
 impl Database for ParDatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-
     fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event) {
         let event = event_fn();
         match event.kind {
@@ -219,7 +211,7 @@ impl Database for ParDatabaseImpl {
 impl ParallelDatabase for ParDatabaseImpl {
     fn snapshot(&self) -> Snapshot<Self> {
         Snapshot::new(ParDatabaseImpl {
-            runtime: self.runtime.snapshot(self),
+            storage: self.storage.snapshot(),
             knobs: self.knobs.clone(),
         })
     }

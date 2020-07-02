@@ -31,18 +31,10 @@ fn trailing(_db: &impl HelloWorldDatabase, a: u32, b: u32) -> u32 {
 #[salsa::database(HelloWorld)]
 #[derive(Default)]
 struct DatabaseStruct {
-    runtime: salsa::Runtime<DatabaseStruct>,
+    storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for DatabaseStruct {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseStruct {}
 
 #[test]
 fn execute() {

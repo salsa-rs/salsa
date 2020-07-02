@@ -5,23 +5,15 @@ use salsa::InternId;
 #[salsa::database(InternStorage)]
 #[derive(Default)]
 struct Database {
-    runtime: salsa::Runtime<Database>,
+    storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for Database {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for Database {}
 
 impl salsa::ParallelDatabase for Database {
     fn snapshot(&self) -> salsa::Snapshot<Self> {
         salsa::Snapshot::new(Database {
-            runtime: self.runtime.snapshot(self),
+            storage: self.storage.snapshot(),
         })
     }
 }

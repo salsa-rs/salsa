@@ -326,7 +326,7 @@ where
         &self,
         db: &DB,
         state: StateGuard,
-        runtime: &Runtime<DB>,
+        runtime: &Runtime,
         revision_now: Revision,
     ) -> ProbeState<StampedValue<Q::Value>, DatabaseKeyIndex, StateGuard>
     where
@@ -720,7 +720,7 @@ where
     fn register_with_in_progress_thread(
         &self,
         _db: &DB,
-        runtime: &Runtime<DB>,
+        runtime: &Runtime,
         other_id: RuntimeId,
         waiting: &Mutex<SmallVec<[Promise<WaitResult<Q::Value, DatabaseKeyIndex>>; 2]>>,
     ) -> Result<BlockingFuture<WaitResult<Q::Value, DatabaseKeyIndex>>, CycleDetected> {
@@ -772,7 +772,7 @@ where
     database_key_index: DatabaseKeyIndex,
     slot: &'me Slot<DB, Q, MP>,
     memo: Option<Memo<DB, Q>>,
-    runtime: &'me Runtime<DB>,
+    runtime: &'me Runtime,
 }
 
 impl<'me, DB, Q, MP> PanicGuard<'me, DB, Q, MP>
@@ -785,7 +785,7 @@ where
         database_key_index: DatabaseKeyIndex,
         slot: &'me Slot<DB, Q, MP>,
         memo: Option<Memo<DB, Q>>,
-        runtime: &'me Runtime<DB>,
+        runtime: &'me Runtime,
     ) -> Self {
         Self {
             database_key_index,

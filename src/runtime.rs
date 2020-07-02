@@ -1,7 +1,7 @@
 use crate::durability::Durability;
 use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
-use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind, SweepStrategy};
+use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
@@ -24,26 +24,23 @@ use local_state::LocalState;
 /// `Runtime::default`) will have an independent set of query storage
 /// associated with it. Normally, therefore, you only do this once, at
 /// the start of your application.
-pub struct Runtime<DB: Database> {
+pub struct Runtime {
     /// Our unique runtime id.
     id: RuntimeId,
 
     /// If this is a "forked" runtime, then the `revision_guard` will
     /// be `Some`; this guard holds a read-lock on the global query
     /// lock.
-    revision_guard: Option<RevisionGuard<DB>>,
+    revision_guard: Option<RevisionGuard>,
 
     /// Local state that is specific to this runtime (thread).
     local_state: LocalState,
 
     /// Shared state that is accessible via all runtimes.
-    shared_state: Arc<SharedState<DB>>,
+    shared_state: Arc<SharedState>,
 }
 
-impl<DB> Default for Runtime<DB>
-where
-    DB: Database,
-{
+impl Default for Runtime {
     fn default() -> Self {
         Runtime {
             id: RuntimeId { counter: 0 },
@@ -54,10 +51,7 @@ where
     }
 }
 
-impl<DB> std::fmt::Debug for Runtime<DB>
-where
-    DB: Database,
-{
+impl std::fmt::Debug for Runtime {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fmt.debug_struct("Runtime")
             .field("id", &self.id())
@@ -67,36 +61,15 @@ where
     }
 }
 
-impl<DB> Runtime<DB>
-where
-    DB: Database,
-{
+impl Runtime {
     /// Create a new runtime; equivalent to `Self::default`. This is
     /// used when creating a new database.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Returns the underlying storage, where the keys/values for all queries are kept.
-    pub fn storage(&self) -> &DB::DatabaseStorage {
-        &self.shared_state.storage
-    }
-
-    /// Returns a "forked" runtime, suitable for use in a forked
-    /// database. "Forked" runtimes hold a read-lock on the global
-    /// state, which means that any attempt to `set` an input will
-    /// block until the forked runtime is dropped. See
-    /// `ParallelDatabase::snapshot` for more information.
-    ///
-    /// **Warning.** This second handle is intended to be used from a
-    /// separate thread. Using two database handles from the **same
-    /// thread** can lead to deadlock.
-    pub fn snapshot(&self, from_db: &DB) -> Self {
-        assert!(
-            Arc::ptr_eq(&self.shared_state, &from_db.salsa_runtime().shared_state),
-            "invoked `snapshot` with a non-matching database"
-        );
-
+    /// See [`crate::storage::Storage::snapshot`].
+    pub(crate) fn snapshot(&self) -> Self {
         if self.local_state.query_in_progress() {
             panic!("it is not legal to `snapshot` during a query (see salsa-rs/salsa#80)");
         }
@@ -144,16 +117,6 @@ where
     /// is owned by the current thread, this could trigger deadlock.
     pub fn synthetic_write(&mut self, durability: Durability) {
         self.with_incremented_revision(&mut |_next_revision| Some(durability));
-    }
-
-    /// Default implementation for `Database::sweep_all`.
-    pub fn sweep_all(&self, db: &DB, strategy: SweepStrategy) {
-        // Note that we do not acquire the query lock (or any locks)
-        // here.  Each table is capable of sweeping itself atomically
-        // and there is no need to bring things to a halt. That said,
-        // users may wish to guarantee atomicity.
-
-        db.for_each_query(|query_storage| query_storage.sweep(db, strategy));
     }
 
     /// The unique identifier attached to this `SalsaRuntime`. Each
@@ -336,12 +299,15 @@ where
         self.revision_guard.is_none() && !self.local_state.query_in_progress()
     }
 
-    pub(crate) fn execute_query_implementation<V>(
+    pub(crate) fn execute_query_implementation<DB, V>(
         &self,
         db: &DB,
         database_key_index: DatabaseKeyIndex,
         execute: impl FnOnce() -> V,
-    ) -> ComputedQueryResult<V> {
+    ) -> ComputedQueryResult<V>
+    where
+        DB: Database,
+    {
         debug!(
             "{:?}: execute_query_implementation invoked",
             database_key_index
@@ -534,9 +500,7 @@ where
 }
 
 /// State that will be common to all threads (when we support multiple threads)
-struct SharedState<DB: Database> {
-    storage: DB::DatabaseStorage,
-
+struct SharedState {
     /// Stores the next id to use for a snapshotted runtime (starts at 1).
     next_id: AtomicUsize,
 
@@ -571,11 +535,10 @@ struct SharedState<DB: Database> {
     dependency_graph: Mutex<DependencyGraph<DatabaseKeyIndex>>,
 }
 
-impl<DB: Database> SharedState<DB> {
+impl SharedState {
     fn with_durabilities(durabilities: usize) -> Self {
         SharedState {
             next_id: AtomicUsize::new(1),
-            storage: Default::default(),
             query_lock: Default::default(),
             revisions: (0..durabilities).map(|_| AtomicRevision::start()).collect(),
             pending_revision: AtomicRevision::start(),
@@ -584,23 +547,15 @@ impl<DB: Database> SharedState<DB> {
     }
 }
 
-impl<DB> std::panic::RefUnwindSafe for SharedState<DB>
-where
-    DB: Database,
-    DB::DatabaseStorage: std::panic::RefUnwindSafe,
-{
-}
+impl std::panic::RefUnwindSafe for SharedState {}
 
-impl<DB: Database> Default for SharedState<DB> {
+impl Default for SharedState {
     fn default() -> Self {
         Self::with_durabilities(Durability::LEN)
     }
 }
 
-impl<DB> std::fmt::Debug for SharedState<DB>
-where
-    DB: Database,
-{
+impl std::fmt::Debug for SharedState {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let query_lock = if self.query_lock.try_write().is_some() {
             "<unlocked>"
@@ -826,15 +781,12 @@ where
     }
 }
 
-struct RevisionGuard<DB: Database> {
-    shared_state: Arc<SharedState<DB>>,
+struct RevisionGuard {
+    shared_state: Arc<SharedState>,
 }
 
-impl<DB> RevisionGuard<DB>
-where
-    DB: Database,
-{
-    fn new(shared_state: &Arc<SharedState<DB>>) -> Self {
+impl RevisionGuard {
+    fn new(shared_state: &Arc<SharedState>) -> Self {
         // Subtle: we use a "recursive" lock here so that it is not an
         // error to acquire a read-lock when one is already held (this
         // happens when a query uses `snapshot` to spawn off parallel
@@ -861,10 +813,7 @@ where
     }
 }
 
-impl<DB> Drop for RevisionGuard<DB>
-where
-    DB: Database,
-{
+impl Drop for RevisionGuard {
     fn drop(&mut self) {
         // Release our read-lock without using RAII. As documented in
         // `Snapshot::new` above, this requires the unsafe keyword.

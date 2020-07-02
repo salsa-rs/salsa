@@ -37,20 +37,12 @@ fn c(db: &impl QueryGroup, x: u32) -> u32 {
 #[salsa::database(QueryGroupStorage)]
 #[derive(Default)]
 struct Database {
-    runtime: salsa::Runtime<Database>,
+    storage: salsa::Storage<Self>,
     external_state: HashMap<u32, u32>,
     on_event: Option<Box<dyn Fn(salsa::Event)>>,
 }
 
 impl salsa::Database for Database {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-
     fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event) {
         if let Some(cb) = &self.on_event {
             cb(event_fn())

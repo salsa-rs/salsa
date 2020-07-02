@@ -8,23 +8,15 @@ struct Error {
 #[salsa::database(GroupStruct)]
 #[derive(Default)]
 struct DatabaseImpl {
-    runtime: salsa::Runtime<DatabaseImpl>,
+    storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for DatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseImpl {}
 
 impl ParallelDatabase for DatabaseImpl {
     fn snapshot(&self) -> Snapshot<Self> {
         Snapshot::new(DatabaseImpl {
-            runtime: self.runtime.snapshot(self),
+            storage: self.storage.snapshot(),
         })
     }
 }

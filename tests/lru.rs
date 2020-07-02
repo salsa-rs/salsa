@@ -43,18 +43,10 @@ fn get_volatile(db: &impl QueryGroup, _x: u32) -> usize {
 #[salsa::database(QueryGroupStorage)]
 #[derive(Default)]
 struct Database {
-    runtime: salsa::Runtime<Database>,
+    storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for Database {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for Database {}
 
 #[test]
 fn lru_works() {

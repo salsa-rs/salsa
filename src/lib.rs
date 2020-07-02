@@ -7,6 +7,7 @@
 //! re-execute the derived queries and it will try to re-use results
 //! from previous invocations as appropriate.
 
+mod blocking_future;
 mod derived;
 mod doctest;
 mod durability;
@@ -16,7 +17,7 @@ mod interned;
 mod lru;
 mod revision;
 mod runtime;
-mod blocking_future;
+mod storage;
 
 pub mod debug;
 /// Items in this module are public for implementation reasons,
@@ -39,17 +40,12 @@ pub use crate::intern_id::InternId;
 pub use crate::interned::InternKey;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
+pub use crate::storage::Storage;
 
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
 pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
-    /// Gives access to the underlying salsa runtime.
-    fn salsa_runtime(&self) -> &Runtime<Self>;
-
-    /// Gives access to the underlying salsa runtime.
-    fn salsa_runtime_mut(&mut self) -> &mut Runtime<Self>;
-
     /// Iterates through all query storage and removes any values that
     /// have not been used since the last revision was created. The
     /// intended use-cycle is that you first execute all of your
@@ -58,7 +54,12 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// remove other values that were not needed for your main query
     /// results.
     fn sweep_all(&self, strategy: SweepStrategy) {
-        self.salsa_runtime().sweep_all(self, strategy);
+        // Note that we do not acquire the query lock (or any locks)
+        // here.  Each table is capable of sweeping itself atomically
+        // and there is no need to bring things to a halt. That said,
+        // users may wish to guarantee atomicity.
+
+        self.for_each_query(|query_storage| query_storage.sweep(self, strategy));
     }
 
     /// Get access to extra methods pertaining to a given query. For
@@ -122,6 +123,16 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// other thread, and that thread panics.
     fn on_propagated_panic(&self) -> ! {
         panic!("concurrent salsa query panicked")
+    }
+
+    /// Gives access to the underlying salsa runtime.
+    fn salsa_runtime(&self) -> &Runtime {
+        self.ops_salsa_runtime()
+    }
+
+    /// Gives access to the underlying salsa runtime.
+    fn salsa_runtime_mut(&mut self) -> &mut Runtime {
+        self.ops_salsa_runtime_mut()
     }
 }
 
