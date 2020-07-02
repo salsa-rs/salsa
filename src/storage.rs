@@ -1,16 +1,16 @@
-use crate::{Database, Runtime};
+use crate::{plumbing::DatabaseStorageTypes, Runtime};
 use std::sync::Arc;
 
 /// Stores the cached results and dependency information for all the queries
 /// defined on your salsa database. Also embeds a [`Runtime`] which is used to
 /// manage query execution. Every database must include a `storage:
 /// Storage<Self>` field.
-pub struct Storage<DB: Database> {
+pub struct Storage<DB: DatabaseStorageTypes> {
     query_store: Arc<DB::DatabaseStorage>,
     runtime: Runtime,
 }
 
-impl<DB: Database> Default for Storage<DB> {
+impl<DB: DatabaseStorageTypes> Default for Storage<DB> {
     fn default() -> Self {
         Self {
             query_store: Default::default(),
@@ -19,7 +19,7 @@ impl<DB: Database> Default for Storage<DB> {
     }
 }
 
-impl<DB: Database> Storage<DB> {
+impl<DB: DatabaseStorageTypes> Storage<DB> {
     /// Gives access to the underlying salsa runtime.
     pub fn salsa_runtime(&self) -> &Runtime {
         &self.runtime

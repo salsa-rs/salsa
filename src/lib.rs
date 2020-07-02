@@ -45,7 +45,7 @@ pub use crate::storage::Storage;
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
+pub trait Database: plumbing::DatabaseOps {
     /// Iterates through all query storage and removes any values that
     /// have not been used since the last revision was created. The
     /// intended use-cycle is that you first execute all of your

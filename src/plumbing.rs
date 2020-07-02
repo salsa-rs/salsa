@@ -29,7 +29,7 @@ pub struct CycleDetected {
 /// should be generated for your query-context type automatically by
 /// the `database_storage` macro, so you shouldn't need to mess
 /// with this trait directly.
-pub trait DatabaseStorageTypes: Sized {
+pub trait DatabaseStorageTypes: Database {
     /// Defines the "storage type", where all the query data is kept.
     /// This type is defined by the `database_storage` macro.
     type DatabaseStorage: Default;
