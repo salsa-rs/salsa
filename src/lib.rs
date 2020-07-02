@@ -115,7 +115,7 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// This function is invoked at key points in the salsa
     /// runtime. It permits the database to be customized and to
     /// inject logging or other custom behavior.
-    fn salsa_event(&self, event_fn: impl Fn() -> Event) {
+    fn salsa_event(&self, event_fn: Event) {
         #![allow(unused_variables)]
     }
 

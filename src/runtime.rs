@@ -313,10 +313,10 @@ impl Runtime {
             database_key_index
         );
 
-        db.salsa_event(|| Event {
-            runtime_id: db.salsa_runtime().id(),
+        db.salsa_event(Event {
+            runtime_id: self.id(),
             kind: EventKind::WillExecute {
-                database_key: database_key_index.clone(),
+                database_key: database_key_index,
             },
         });
 

@@ -188,7 +188,7 @@ where
             if let Some(value) = memo.validate_memoized_value(db, revision_now) {
                 info!("{:?}: validated old memoized value", self,);
 
-                db.salsa_event(|| Event {
+                db.salsa_event(Event {
                     runtime_id: runtime.id(),
                     kind: EventKind::DidValidateMemoizedValue {
                         database_key: self.database_key_index,
@@ -342,8 +342,8 @@ where
                         // Release our lock on `self.state`, so other thread can complete.
                         std::mem::drop(state);
 
-                        db.salsa_event(|| Event {
-                            runtime_id: db.salsa_runtime().id(),
+                        db.salsa_event(Event {
+                            runtime_id: runtime.id(),
                             kind: EventKind::WillBlockOn {
                                 other_runtime_id: other_id,
                                 database_key: self.database_key_index,

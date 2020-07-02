@@ -192,8 +192,7 @@ pub(crate) struct ParDatabaseImpl {
 }
 
 impl Database for ParDatabaseImpl {
-    fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event) {
-        let event = event_fn();
+    fn salsa_event(&self, event: salsa::Event) {
         match event.kind {
             salsa::EventKind::WillBlockOn { .. } => {
                 self.signal(self.knobs().signal_on_will_block.get());

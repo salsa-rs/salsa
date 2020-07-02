@@ -43,9 +43,9 @@ struct Database {
 }
 
 impl salsa::Database for Database {
-    fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event) {
+    fn salsa_event(&self, event: salsa::Event) {
         if let Some(cb) = &self.on_event {
-            cb(event_fn())
+            cb(event)
         }
     }
 }
