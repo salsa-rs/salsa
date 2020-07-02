@@ -306,7 +306,7 @@ impl Runtime {
         execute: impl FnOnce() -> V,
     ) -> ComputedQueryResult<V>
     where
-        DB: Database,
+        DB: ?Sized + Database,
     {
         debug!(
             "{:?}: execute_query_implementation invoked",
