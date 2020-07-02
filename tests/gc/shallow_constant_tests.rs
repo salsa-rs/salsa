@@ -1,7 +1,7 @@
 use crate::db;
 use crate::group::{FibonacciQuery, GcDatabase};
 use salsa::debug::DebugQueryTable;
-use salsa::{Database, Durability, SweepStrategy};
+use salsa::{Database, DatabaseQueryExt, Durability, SweepStrategy};
 
 // For constant values (like `fibonacci`), we only keep the values
 // that were used in the latest revision, not the sub-values that

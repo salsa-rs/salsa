@@ -1,6 +1,6 @@
 use crate::implementation::{TestContext, TestContextImpl};
 use salsa::debug::DebugQueryTable;
-use salsa::{Database, Durability};
+use salsa::{DatabaseQueryExt, Durability};
 
 #[salsa::query_group(Constants)]
 pub(crate) trait ConstantsDatabase: TestContext {

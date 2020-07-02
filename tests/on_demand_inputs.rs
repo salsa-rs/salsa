@@ -6,7 +6,7 @@
 
 use std::{cell::Cell, collections::HashMap, rc::Rc};
 
-use salsa::{Database as _, Durability};
+use salsa::{Database as _, DatabaseQueryExt as _, Durability};
 
 #[salsa::query_group(QueryGroupStorage)]
 trait QueryGroup: salsa::Database + AsRef<HashMap<u32, u32>> {

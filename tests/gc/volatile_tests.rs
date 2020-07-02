@@ -1,5 +1,5 @@
 use crate::db;
-use salsa::{Database, SweepStrategy};
+use salsa::{Database, DatabaseQueryExt, SweepStrategy};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 

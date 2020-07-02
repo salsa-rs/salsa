@@ -2,6 +2,7 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 
 use salsa::Database;
+use salsa::DatabaseQueryExt;
 use salsa::ParallelDatabase;
 use salsa::Snapshot;
 use salsa::SweepStrategy;

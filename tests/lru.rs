@@ -4,7 +4,7 @@ use std::sync::{
     Arc,
 };
 
-use salsa::Database as _;
+use salsa::DatabaseQueryExt as _;
 
 #[derive(Debug, PartialEq, Eq)]
 struct HotPotato(u32);

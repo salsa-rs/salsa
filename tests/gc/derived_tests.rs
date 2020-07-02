@@ -1,7 +1,7 @@
 use crate::db;
 use crate::group::*;
 use salsa::debug::DebugQueryTable;
-use salsa::{Database, Durability, SweepStrategy};
+use salsa::{Database, DatabaseQueryExt, Durability, SweepStrategy};
 
 #[test]
 fn compute_one_write_low() {

@@ -1,6 +1,6 @@
 use crate::db;
 use salsa::debug::DebugQueryTable;
-use salsa::{Database, Durability, InternId, SweepStrategy};
+use salsa::{Database, DatabaseQueryExt, Durability, InternId, SweepStrategy};
 
 /// Query group for tests for how interned keys interact with GC.
 #[salsa::query_group(Intern)]

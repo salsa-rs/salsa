@@ -1,7 +1,7 @@
 use crate::db;
 use crate::group::{FibonacciQuery, GcDatabase};
 use salsa::debug::DebugQueryTable;
-use salsa::{Database, Durability, SweepStrategy};
+use salsa::{Database, DatabaseQueryExt, Durability, SweepStrategy};
 
 #[test]
 fn sweep_default() {

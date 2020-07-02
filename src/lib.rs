@@ -62,6 +62,32 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
         self.for_each_query(|query_storage| query_storage.sweep(self, strategy));
     }
 
+    /// This function is invoked at key points in the salsa
+    /// runtime. It permits the database to be customized and to
+    /// inject logging or other custom behavior.
+    fn salsa_event(&self, event_fn: Event) {
+        #![allow(unused_variables)]
+    }
+
+    /// This function is invoked when a dependent query is being computed by the
+    /// other thread, and that thread panics.
+    fn on_propagated_panic(&self) -> ! {
+        panic!("concurrent salsa query panicked")
+    }
+
+    /// Gives access to the underlying salsa runtime.
+    fn salsa_runtime(&self) -> &Runtime {
+        self.ops_salsa_runtime()
+    }
+
+    /// Gives access to the underlying salsa runtime.
+    fn salsa_runtime_mut(&mut self) -> &mut Runtime {
+        self.ops_salsa_runtime_mut()
+    }
+}
+
+/// Extension trait that gives access to the `query` and `query_mut` methods.
+pub trait DatabaseQueryExt: Database {
     /// Get access to extra methods pertaining to a given query. For
     /// example, you can use this to run the GC (`sweep`) across a
     /// single input. You can also use it to invoke a query, though
@@ -111,30 +137,9 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     {
         <Self as plumbing::GetQueryTable<Q>>::get_query_table_mut(self)
     }
-
-    /// This function is invoked at key points in the salsa
-    /// runtime. It permits the database to be customized and to
-    /// inject logging or other custom behavior.
-    fn salsa_event(&self, event_fn: Event) {
-        #![allow(unused_variables)]
-    }
-
-    /// This function is invoked when a dependent query is being computed by the
-    /// other thread, and that thread panics.
-    fn on_propagated_panic(&self) -> ! {
-        panic!("concurrent salsa query panicked")
-    }
-
-    /// Gives access to the underlying salsa runtime.
-    fn salsa_runtime(&self) -> &Runtime {
-        self.ops_salsa_runtime()
-    }
-
-    /// Gives access to the underlying salsa runtime.
-    fn salsa_runtime_mut(&mut self) -> &mut Runtime {
-        self.ops_salsa_runtime_mut()
-    }
 }
+
+impl<DB: Database> DatabaseQueryExt for DB {}
 
 /// The `Event` struct identifies various notable things that can
 /// occur during salsa execution. Instances of this struct are given
