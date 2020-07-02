@@ -1,7 +1,7 @@
 macro_rules! assert_keys {
     ($db:expr, $($query:expr => ($($key:expr),*),)*) => {
         $(
-            let entries = $db.query($query).entries::<Vec<_>>();
+            let entries = $query.in_db(&$db).entries::<Vec<_>>();
             let mut keys = entries.into_iter().map(|e| e.key).collect::<Vec<_>>();
             keys.sort();
             assert_eq!(keys, vec![$($key),*], "query {:?} had wrong keys", $query);

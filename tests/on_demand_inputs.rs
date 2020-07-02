@@ -6,7 +6,7 @@
 
 use std::{cell::Cell, collections::HashMap, rc::Rc};
 
-use salsa::{Database as _, DatabaseQueryExt as _, Durability};
+use salsa::{Database as _, Durability};
 
 #[salsa::query_group(QueryGroupStorage)]
 trait QueryGroup: salsa::Database + AsRef<HashMap<u32, u32>> {
@@ -70,7 +70,7 @@ fn on_demand_input_works() {
     assert_eq!(db.b(1), 10);
     assert_eq!(db.a(1), 10);
 
-    db.query_mut(AQuery).invalidate(&1);
+    AQuery.in_db_mut(&mut db).invalidate(&1);
     assert_eq!(db.b(1), 92);
     assert_eq!(db.a(1), 92);
 }

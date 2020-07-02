@@ -86,61 +86,6 @@ pub trait Database: plumbing::DatabaseOps {
     }
 }
 
-/// Extension trait that gives access to the `query` and `query_mut` methods.
-pub trait DatabaseQueryExt: Database {
-    /// Get access to extra methods pertaining to a given query. For
-    /// example, you can use this to run the GC (`sweep`) across a
-    /// single input. You can also use it to invoke a query, though
-    /// it's more common to use the trait method on the database
-    /// itself.
-    #[allow(unused_variables)]
-    fn query<Q>(&self, query: Q) -> QueryTable<'_, Self, Q>
-    where
-        Q: Query<Self>,
-        Self: plumbing::GetQueryTable<Q>,
-    {
-        <Self as plumbing::GetQueryTable<Q>>::get_query_table(self)
-    }
-
-    /// Like `query`, but gives access to methods for setting the
-    /// value of an input.
-    ///
-    /// # Threads, cancellation, and blocking
-    ///
-    /// Mutating the value of a query cannot be done while there are
-    /// still other queries executing. If you are using your database
-    /// within a single thread, this is not a problem: you only have
-    /// `&self` access to the database, but this method requires `&mut
-    /// self`.
-    ///
-    /// However, if you have used `snapshot` to create other threads,
-    /// then attempts to `set` will **block the current thread** until
-    /// those snapshots are dropped (usually when those threads
-    /// complete). This also implies that if you create a snapshot but
-    /// do not send it to another thread, then invoking `set` will
-    /// deadlock.
-    ///
-    /// Before blocking, the thread that is attempting to `set` will
-    /// also set a cancellation flag. In the threads operating on
-    /// snapshots, you can use the [`is_current_revision_canceled`]
-    /// method to check for this flag and bring those operations to a
-    /// close, thus allowing the `set` to succeed. Ignoring this flag
-    /// may lead to "starvation", meaning that the thread attempting
-    /// to `set` has to wait a long, long time. =)
-    ///
-    /// [`is_current_revision_canceled`]: struct.Runtime.html#method.is_current_revision_canceled
-    #[allow(unused_variables)]
-    fn query_mut<Q>(&mut self, query: Q) -> QueryTableMut<'_, Self, Q>
-    where
-        Q: Query<Self>,
-        Self: plumbing::GetQueryTable<Q>,
-    {
-        <Self as plumbing::GetQueryTable<Q>>::get_query_table_mut(self)
-    }
-}
-
-impl<DB: Database> DatabaseQueryExt for DB {}
-
 /// The `Event` struct identifies various notable things that can
 /// occur during salsa execution. Instances of this struct are given
 /// to `salsa_event`.

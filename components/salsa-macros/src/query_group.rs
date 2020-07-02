@@ -350,6 +350,56 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             #[derive(Default, Debug)]
             #trait_vis struct #qt;
 
+            impl #qt {
+                /// Get access to extra methods pertaining to this query. For
+                /// example, you can use this to run the GC (`sweep`) across a
+                /// single input. You can also use it to invoke this query, though
+                /// it's more common to use the trait method on the database
+                /// itself.
+                #trait_vis fn in_db<DB>(self, db: &DB) -> salsa::QueryTable<'_, DB, Self>
+                where
+                    Self: salsa::Query<DB>,
+                    DB: salsa::plumbing::GetQueryTable<Self>,
+                {
+                    <DB as salsa::plumbing::GetQueryTable<Self>>::get_query_table(db)
+                }
+
+                /// Like `in_db`, but gives access to methods for setting the
+                /// value of an input. Not applicable to derived queries.
+                ///
+                /// # Threads, cancellation, and blocking
+                ///
+                /// Mutating the value of a query cannot be done while there are
+                /// still other queries executing. If you are using your database
+                /// within a single thread, this is not a problem: you only have
+                /// `&self` access to the database, but this method requires `&mut
+                /// self`.
+                ///
+                /// However, if you have used `snapshot` to create other threads,
+                /// then attempts to `set` will **block the current thread** until
+                /// those snapshots are dropped (usually when those threads
+                /// complete). This also implies that if you create a snapshot but
+                /// do not send it to another thread, then invoking `set` will
+                /// deadlock.
+                ///
+                /// Before blocking, the thread that is attempting to `set` will
+                /// also set a cancellation flag. In the threads operating on
+                /// snapshots, you can use the [`is_current_revision_canceled`]
+                /// method to check for this flag and bring those operations to a
+                /// close, thus allowing the `set` to succeed. Ignoring this flag
+                /// may lead to "starvation", meaning that the thread attempting
+                /// to `set` has to wait a long, long time. =)
+                ///
+                /// [`is_current_revision_canceled`]: struct.Runtime.html#method.is_current_revision_canceled
+                #trait_vis fn in_db_mut<DB>(self, db: &mut DB) -> salsa::QueryTableMut<'_, DB, Self>
+                where
+                    Self: salsa::Query<DB>,
+                    DB: salsa::plumbing::GetQueryTable<Self>,
+                {
+                    <DB as salsa::plumbing::GetQueryTable<Self>>::get_query_table_mut(db)
+                }
+            }
+
             // Unsafe proof obligation: that our key/value are a part
             // of the `GroupData`.
             impl<#db> salsa::Query<#db> for #qt

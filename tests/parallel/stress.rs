@@ -2,7 +2,6 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 
 use salsa::Database;
-use salsa::DatabaseQueryExt;
 use salsa::ParallelDatabase;
 use salsa::Snapshot;
 use salsa::SweepStrategy;
@@ -162,13 +161,13 @@ impl ReadOp {
             },
             ReadOp::Gc(query, strategy) => match query {
                 Query::A => {
-                    db.query(AQuery).sweep(strategy);
+                    AQuery.in_db(db).sweep(strategy);
                 }
                 Query::B => {
-                    db.query(BQuery).sweep(strategy);
+                    BQuery.in_db(db).sweep(strategy);
                 }
                 Query::C => {
-                    db.query(CQuery).sweep(strategy);
+                    CQuery.in_db(db).sweep(strategy);
                 }
             },
             ReadOp::GcAll(strategy) => {

@@ -1,5 +1,5 @@
 use crate::db;
-use salsa::{Database, DatabaseQueryExt, SweepStrategy};
+use salsa::{Database, SweepStrategy};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -60,7 +60,7 @@ fn consistency_with_gc() {
     let v1 = db.repeat1();
 
     cell.store(23, Ordering::SeqCst);
-    db.query(VolatileQuery).sweep(
+    VolatileQuery.in_db(&db).sweep(
         SweepStrategy::default()
             .discard_everything()
             .sweep_all_revisions(),

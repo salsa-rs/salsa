@@ -1,6 +1,6 @@
 use crate::db;
 use salsa::debug::DebugQueryTable;
-use salsa::{Database, DatabaseQueryExt, Durability, InternId, SweepStrategy};
+use salsa::{Database, Durability, InternId, SweepStrategy};
 
 /// Query group for tests for how interned keys interact with GC.
 #[salsa::query_group(Intern)]
@@ -44,7 +44,7 @@ fn discard_during_same_revision() {
 
     // If we are not careful, this would remove the interned key for
     // "foo".
-    db.query(InternStrQuery).sweep(
+    InternStrQuery.in_db(&db).sweep(
         SweepStrategy::default()
             .discard_everything()
             .sweep_all_revisions(),
@@ -123,7 +123,7 @@ fn discard_durability_after_synthetic_write_low() {
     let foo1a = db.repeat_intern1("foo");
     assert_eq!(
         Durability::HIGH,
-        db.query(RepeatIntern1Query).durability("foo")
+        RepeatIntern1Query.in_db(&db).durability("foo")
     );
 
     // Trigger a new revision.
@@ -131,7 +131,7 @@ fn discard_durability_after_synthetic_write_low() {
 
     // If we are not careful, this would remove the interned key for
     // "foo".
-    db.query(InternStrQuery).sweep(
+    InternStrQuery.in_db(&db).sweep(
         SweepStrategy::default()
             .discard_everything()
             .sweep_all_revisions(),
@@ -163,14 +163,14 @@ fn discard_durability_after_synthetic_write_high() {
     let foo1a = db.repeat_intern1("foo");
     assert_eq!(
         Durability::HIGH,
-        db.query(RepeatIntern1Query).durability("foo")
+        RepeatIntern1Query.in_db(&db).durability("foo")
     );
 
     // Trigger a new revision -- marking even high things as having changed.
     db.salsa_runtime_mut().synthetic_write(Durability::HIGH);
 
     // We are now able to collect "collect".
-    db.query(InternStrQuery).sweep(
+    InternStrQuery.in_db(&db).sweep(
         SweepStrategy::default()
             .discard_everything()
             .sweep_all_revisions(),
