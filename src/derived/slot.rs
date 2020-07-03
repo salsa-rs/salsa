@@ -291,11 +291,7 @@ where
                     MemoInputs::NoInputs
                 } else {
                     MemoInputs::Tracked {
-                        inputs: dependencies
-                            .into_iter()
-                            .collect::<Vec<_>>()
-                            .into_boxed_slice()
-                            .into(),
+                        inputs: dependencies.into_iter().collect(),
                     }
                 }
             }
