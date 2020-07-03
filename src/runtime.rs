@@ -10,7 +10,7 @@ use parking_lot::{Mutex, RwLock};
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 use std::hash::{BuildHasherDefault, Hash};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
@@ -558,14 +558,14 @@ struct SharedState<DB: Database> {
     storage: DB::DatabaseStorage,
 
     /// Stores the next id to use for a snapshotted runtime (starts at 1).
-    next_id: AtomicU64,
+    next_id: AtomicUsize,
 
     /// Whenever derived queries are executing, they acquire this lock
     /// in read mode. Mutating inputs (and thus creating a new
     /// revision) requires a write lock (thus guaranteeing that no
     /// derived queries are in progress). Note that this is not needed
     /// to prevent **race conditions** -- the revision counter itself
-    /// is stored in an `AtomicU64` so it can be cheaply read
+    /// is stored in an `AtomicUsize` so it can be cheaply read
     /// without acquiring the lock.  Rather, the `query_lock` is used
     /// to ensure a higher-level consistency property.
     query_lock: RwLock<()>,
@@ -594,7 +594,7 @@ struct SharedState<DB: Database> {
 impl<DB: Database> SharedState<DB> {
     fn with_durabilities(durabilities: usize) -> Self {
         SharedState {
-            next_id: AtomicU64::new(1),
+            next_id: AtomicUsize::new(1),
             storage: Default::default(),
             query_lock: Default::default(),
             revisions: (0..durabilities).map(|_| AtomicRevision::start()).collect(),
@@ -715,7 +715,7 @@ impl<DB: Database> ActiveQuery<DB> {
 /// complete, its `RuntimeId` may potentially be re-used.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RuntimeId {
-    counter: u64,
+    counter: usize,
 }
 
 #[derive(Clone, Debug)]
