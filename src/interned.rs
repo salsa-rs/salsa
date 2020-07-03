@@ -6,7 +6,7 @@ use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use crate::Query;
-use crate::{CycleError, Database, DatabaseKeyIndex, DiscardIf, SweepStrategy};
+use crate::{CycleError, Database, DatabaseKeyIndex, DiscardIf, Runtime, SweepStrategy};
 use crossbeam_utils::atomic::AtomicCell;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
@@ -345,16 +345,16 @@ where
     }
 }
 
-impl<DB, Q> QueryStorageMassOps<DB> for InternedStorage<DB, Q>
+impl<DB, Q> QueryStorageMassOps for InternedStorage<DB, Q>
 where
     Q: Query<DB>,
     Q::Value: InternKey,
     DB: Database,
 {
-    fn sweep(&self, db: &DB, strategy: SweepStrategy) {
+    fn sweep(&self, runtime: &Runtime, strategy: SweepStrategy) {
         let mut tables = self.tables.write();
-        let last_changed = db.salsa_runtime().last_changed_revision(INTERN_DURABILITY);
-        let revision_now = db.salsa_runtime().current_revision();
+        let last_changed = runtime.last_changed_revision(INTERN_DURABILITY);
+        let revision_now = runtime.current_revision();
         let InternTables {
             map,
             values,
@@ -474,7 +474,7 @@ where
     }
 }
 
-impl<DB, Q, IQ> QueryStorageMassOps<DB> for LookupInternedStorage<DB, Q, IQ>
+impl<DB, Q, IQ> QueryStorageMassOps for LookupInternedStorage<DB, Q, IQ>
 where
     Q: Query<DB>,
     Q::Key: InternKey,
@@ -482,7 +482,7 @@ where
     IQ: Query<DB, Key = Q::Value, Value = Q::Key, Group = Q::Group, GroupStorage = Q::GroupStorage>,
     DB: Database,
 {
-    fn sweep(&self, _db: &DB, _strategy: SweepStrategy) {}
+    fn sweep(&self, _: &Runtime, _strategy: SweepStrategy) {}
 }
 
 impl<K> Slot<K> {

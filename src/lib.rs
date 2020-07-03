@@ -59,7 +59,8 @@ pub trait Database: plumbing::DatabaseOps {
         // and there is no need to bring things to a halt. That said,
         // users may wish to guarantee atomicity.
 
-        self.for_each_query(|query_storage| query_storage.sweep(self, strategy));
+        let runtime = self.salsa_runtime();
+        self.for_each_query(&mut |query_storage| query_storage.sweep(runtime, strategy));
     }
 
     /// This function is invoked at key points in the salsa
@@ -485,9 +486,9 @@ where
     /// the most recent revision.
     pub fn sweep(&self, strategy: SweepStrategy)
     where
-        Q::Storage: plumbing::QueryStorageMassOps<DB>,
+        Q::Storage: plumbing::QueryStorageMassOps,
     {
-        self.storage.sweep(self.db, strategy);
+        self.storage.sweep(self.db.salsa_runtime(), strategy);
     }
 }
 

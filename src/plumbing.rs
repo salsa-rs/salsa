@@ -54,15 +54,15 @@ pub trait DatabaseOps: Sized {
     fn maybe_changed_since(&self, input: DatabaseKeyIndex, revision: Revision) -> bool;
 
     /// Executes the callback for each kind of query.
-    fn for_each_query(&self, op: impl FnMut(&dyn QueryStorageMassOps<Self>));
+    fn for_each_query(&self, op: &mut dyn FnMut(&dyn QueryStorageMassOps));
 }
 
 /// Internal operations performed on the query storage as a whole
 /// (note that these ops do not need to know the identity of the
 /// query, unlike `QueryStorageOps`).
-pub trait QueryStorageMassOps<DB: Database> {
+pub trait QueryStorageMassOps {
     /// Discards memoized values that are not up to date with the current revision.
-    fn sweep(&self, db: &DB, strategy: SweepStrategy);
+    fn sweep(&self, runtime: &Runtime, strategy: SweepStrategy);
 }
 
 pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {}
@@ -130,7 +130,7 @@ where
 
 pub trait QueryStorageOps<DB, Q>
 where
-    Self: QueryStorageMassOps<DB>,
+    Self: QueryStorageMassOps,
     DB: Database,
     Q: Query<DB>,
 {

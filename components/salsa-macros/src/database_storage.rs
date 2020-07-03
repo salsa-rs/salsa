@@ -129,7 +129,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         for_each_ops.extend(quote! {
             let storage: &#group_storage =
                 <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
-            storage.for_each_query(self, &mut op);
+            storage.for_each_query(runtime, &mut op);
         });
     }
     output.extend(quote! {
@@ -166,8 +166,9 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
 
             fn for_each_query(
                 &self,
-                mut op: impl FnMut(&dyn salsa::plumbing::QueryStorageMassOps<Self>),
+                mut op: &mut dyn FnMut(&dyn salsa::plumbing::QueryStorageMassOps),
             ) {
+                let runtime = salsa::Database::salsa_runtime(self);
                 #for_each_ops
             }
         }

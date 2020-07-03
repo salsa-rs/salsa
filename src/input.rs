@@ -8,7 +8,7 @@ use crate::runtime::{FxIndexMap, StampedValue};
 use crate::CycleError;
 use crate::Database;
 use crate::Query;
-use crate::{DatabaseKeyIndex, SweepStrategy};
+use crate::{DatabaseKeyIndex, Runtime, SweepStrategy};
 use indexmap::map::Entry;
 use log::debug;
 use parking_lot::RwLock;
@@ -154,12 +154,12 @@ where
     }
 }
 
-impl<DB, Q> QueryStorageMassOps<DB> for InputStorage<DB, Q>
+impl<DB, Q> QueryStorageMassOps for InputStorage<DB, Q>
 where
     Q: Query<DB>,
     DB: Database,
 {
-    fn sweep(&self, _db: &DB, _strategy: SweepStrategy) {}
+    fn sweep(&self, _runtime: &Runtime, _strategy: SweepStrategy) {}
 }
 
 impl<DB, Q> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q>

@@ -559,8 +559,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             #trait_vis fn for_each_query(
                 &self,
-                db: &DB__,
-                mut op: &mut dyn FnMut(&dyn salsa::plumbing::QueryStorageMassOps<DB__>),
+                _runtime: &salsa::Runtime,
+                mut op: &mut dyn FnMut(&dyn salsa::plumbing::QueryStorageMassOps),
             ) {
                 #for_each_ops
             }

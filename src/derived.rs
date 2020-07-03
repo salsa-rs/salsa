@@ -8,7 +8,7 @@ use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::{FxIndexMap, StampedValue};
-use crate::{CycleError, Database, DatabaseKeyIndex, Revision, SweepStrategy};
+use crate::{CycleError, Database, DatabaseKeyIndex, Revision, Runtime, SweepStrategy};
 use parking_lot::RwLock;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
@@ -192,15 +192,15 @@ where
     }
 }
 
-impl<DB, Q, MP> QueryStorageMassOps<DB> for DerivedStorage<DB, Q, MP>
+impl<DB, Q, MP> QueryStorageMassOps for DerivedStorage<DB, Q, MP>
 where
     Q: QueryFunction<DB>,
     DB: Database + HasQueryGroup<Q::Group>,
     MP: MemoizationPolicy<DB, Q>,
 {
-    fn sweep(&self, db: &DB, strategy: SweepStrategy) {
+    fn sweep(&self, runtime: &Runtime, strategy: SweepStrategy) {
         let map_read = self.slot_map.read();
-        let revision_now = db.salsa_runtime().current_revision();
+        let revision_now = runtime.current_revision();
         for slot in map_read.values() {
             slot.sweep(revision_now, strategy);
         }
