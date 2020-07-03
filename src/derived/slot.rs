@@ -11,7 +11,6 @@ use crate::plumbing::GetQueryTable;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryFunction;
 use crate::revision::Revision;
-use crate::runtime::FxIndexSet;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
@@ -89,9 +88,7 @@ where
 /// inputs accessed during query execution.
 pub(super) enum MemoInputs<DB: Database> {
     /// Non-empty set of inputs, fully known
-    Tracked {
-        inputs: Arc<FxIndexSet<Dependency<DB>>>,
-    },
+    Tracked { inputs: Arc<[Dependency<DB>]> },
 
     /// Empty set of inputs, fully known.
     NoInputs,
@@ -294,7 +291,11 @@ where
                     MemoInputs::NoInputs
                 } else {
                     MemoInputs::Tracked {
-                        inputs: Arc::new(dependencies),
+                        inputs: dependencies
+                            .into_iter()
+                            .collect::<Vec<_>>()
+                            .into_boxed_slice()
+                            .into(),
                     }
                 }
             }
