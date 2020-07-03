@@ -1,9 +1,9 @@
-use std::num::NonZeroU64;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Value of the initial revision, as a u64. We don't use 0
-/// because we want to use a `NonZeroU64`.
-const START_U64: u64 = 1;
+/// because we want to use a `NonZeroUsize`.
+const START: usize = 1;
 
 /// A unique identifier for the current version of the database; each
 /// time an input is changed, the revision number is incremented.
@@ -12,17 +12,17 @@ const START_U64: u64 = 1;
 /// directly as a user of salsa.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Revision {
-    generation: NonZeroU64,
+    generation: NonZeroUsize,
 }
 
 impl Revision {
     pub(crate) fn start() -> Self {
-        Self::from(START_U64)
+        Self::from(START)
     }
 
-    pub(crate) fn from(g: u64) -> Self {
+    pub(crate) fn from(g: usize) -> Self {
         Self {
-            generation: NonZeroU64::new(g).unwrap(),
+            generation: NonZeroUsize::new(g).unwrap(),
         }
     }
 
@@ -30,7 +30,7 @@ impl Revision {
         Self::from(self.generation.get() + 1)
     }
 
-    fn as_u64(self) -> u64 {
+    fn as_usize(self) -> usize {
         self.generation.get()
     }
 }
@@ -43,13 +43,13 @@ impl std::fmt::Debug for Revision {
 
 #[derive(Debug)]
 pub(crate) struct AtomicRevision {
-    data: AtomicU64,
+    data: AtomicUsize,
 }
 
 impl AtomicRevision {
     pub(crate) fn start() -> Self {
         Self {
-            data: AtomicU64::new(START_U64),
+            data: AtomicUsize::new(START),
         }
     }
 
@@ -58,13 +58,13 @@ impl AtomicRevision {
     }
 
     pub(crate) fn store(&self, r: Revision) {
-        self.data.store(r.as_u64(), Ordering::SeqCst);
+        self.data.store(r.as_usize(), Ordering::SeqCst);
     }
 
     /// Increment by 1, returning previous value.
     pub(crate) fn fetch_then_increment(&self) -> Revision {
         let v = self.data.fetch_add(1, Ordering::SeqCst);
-        assert!(v != u64::max_value(), "revision overflow");
+        assert!(v != usize::max_value(), "revision overflow");
         Revision::from(v)
     }
 }
