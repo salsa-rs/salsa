@@ -5,8 +5,7 @@ use crate::durability::Durability;
 use crate::lru::LruIndex;
 use crate::lru::LruNode;
 use crate::plumbing::CycleDetected;
-use crate::plumbing::HasQueryGroup;
-use crate::plumbing::QueryFunction;
+use crate::plumbing::{DatabaseOps, QueryFunction};
 use crate::revision::Revision;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
@@ -22,15 +21,14 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 
-pub(super) struct Slot<DB, Q, MP>
+pub(super) struct Slot<Q, MP>
 where
-    Q: QueryFunction<DB>,
-    DB: Database + HasQueryGroup<Q::Group>,
-    MP: MemoizationPolicy<DB, Q>,
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
 {
     key: Q::Key,
     database_key_index: DatabaseKeyIndex,
-    state: RwLock<QueryState<DB, Q>>,
+    state: RwLock<QueryState<Q>>,
     policy: PhantomData<MP>,
     lru_index: LruIndex,
 }
@@ -42,10 +40,9 @@ struct WaitResult<V, K> {
 }
 
 /// Defines the "current state" of query's memoized results.
-enum QueryState<DB, Q>
+enum QueryState<Q>
 where
-    Q: QueryFunction<DB>,
-    DB: Database + HasQueryGroup<Q::Group>,
+    Q: QueryFunction,
 {
     NotComputed,
 
@@ -58,13 +55,12 @@ where
     },
 
     /// We have computed the query already, and here is the result.
-    Memoized(Memo<DB, Q>),
+    Memoized(Memo<Q>),
 }
 
-struct Memo<DB, Q>
+struct Memo<Q>
 where
-    Q: QueryFunction<DB>,
-    DB: Database + HasQueryGroup<Q::Group>,
+    Q: QueryFunction,
 {
     /// The result of the query, if we decide to memoize it.
     value: Option<Q::Value>,
@@ -103,11 +99,10 @@ enum ProbeState<V, K, G> {
     StaleOrAbsent(G),
 }
 
-impl<DB, Q, MP> Slot<DB, Q, MP>
+impl<Q, MP> Slot<Q, MP>
 where
-    Q: QueryFunction<DB>,
-    DB: Database + HasQueryGroup<Q::Group>,
-    MP: MemoizationPolicy<DB, Q>,
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
 {
     pub(super) fn new(key: Q::Key, database_key_index: DatabaseKeyIndex) -> Self {
         Self {
@@ -125,7 +120,7 @@ where
 
     pub(super) fn read(
         &self,
-        db: &DB,
+        db: &Q::DynDb,
     ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
         let runtime = db.salsa_runtime();
 
@@ -153,7 +148,7 @@ where
     /// shows a potentially out of date value.
     fn read_upgrade(
         &self,
-        db: &DB,
+        db: &Q::DynDb,
         revision_now: Revision,
     ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
         let runtime = db.salsa_runtime();
@@ -324,13 +319,13 @@ where
     /// Note that in case `ProbeState::UpToDate`, the lock will have been released.
     fn probe<StateGuard>(
         &self,
-        db: &DB,
+        db: &Q::DynDb,
         state: StateGuard,
         runtime: &Runtime,
         revision_now: Revision,
     ) -> ProbeState<StampedValue<Q::Value>, DatabaseKeyIndex, StateGuard>
     where
-        StateGuard: Deref<Target = QueryState<DB, Q>>,
+        StateGuard: Deref<Target = QueryState<Q>>,
     {
         match &*state {
             QueryState::NotComputed => { /* fall through */ }
@@ -417,7 +412,7 @@ where
         ProbeState::StaleOrAbsent(state)
     }
 
-    pub(super) fn durability(&self, db: &DB) -> Durability {
+    pub(super) fn durability(&self, db: &Q::DynDb) -> Durability {
         match &*self.state.read() {
             QueryState::NotComputed => Durability::LOW,
             QueryState::InProgress { .. } => panic!("query in progress"),
@@ -530,7 +525,7 @@ where
         }
     }
 
-    pub(super) fn maybe_changed_since(&self, db: &DB, revision: Revision) -> bool {
+    pub(super) fn maybe_changed_since(&self, db: &Q::DynDb, revision: Revision) -> bool {
         let runtime = db.salsa_runtime();
         let revision_now = runtime.current_revision();
 
@@ -719,7 +714,7 @@ where
     /// computed (but first drop the lock on the map).
     fn register_with_in_progress_thread(
         &self,
-        _db: &DB,
+        _db: &Q::DynDb,
         runtime: &Runtime,
         other_id: RuntimeId,
         waiting: &Mutex<SmallVec<[Promise<WaitResult<Q::Value, DatabaseKeyIndex>>; 2]>>,
@@ -750,10 +745,9 @@ where
     }
 }
 
-impl<DB, Q> QueryState<DB, Q>
+impl<Q> QueryState<Q>
 where
-    Q: QueryFunction<DB>,
-    DB: Database + HasQueryGroup<Q::Group>,
+    Q: QueryFunction,
 {
     fn in_progress(id: RuntimeId) -> Self {
         QueryState::InProgress {
@@ -763,28 +757,26 @@ where
     }
 }
 
-struct PanicGuard<'me, DB, Q, MP>
+struct PanicGuard<'me, Q, MP>
 where
-    DB: Database + HasQueryGroup<Q::Group>,
-    Q: QueryFunction<DB>,
-    MP: MemoizationPolicy<DB, Q>,
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
 {
     database_key_index: DatabaseKeyIndex,
-    slot: &'me Slot<DB, Q, MP>,
-    memo: Option<Memo<DB, Q>>,
+    slot: &'me Slot<Q, MP>,
+    memo: Option<Memo<Q>>,
     runtime: &'me Runtime,
 }
 
-impl<'me, DB, Q, MP> PanicGuard<'me, DB, Q, MP>
+impl<'me, Q, MP> PanicGuard<'me, Q, MP>
 where
-    DB: Database + HasQueryGroup<Q::Group>,
-    Q: QueryFunction<DB>,
-    MP: MemoizationPolicy<DB, Q>,
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
 {
     fn new(
         database_key_index: DatabaseKeyIndex,
-        slot: &'me Slot<DB, Q, MP>,
-        memo: Option<Memo<DB, Q>>,
+        slot: &'me Slot<Q, MP>,
+        memo: Option<Memo<Q>>,
         runtime: &'me Runtime,
     ) -> Self {
         Self {
@@ -864,11 +856,10 @@ Please report this bug to https://github.com/salsa-rs/salsa/issues."
     }
 }
 
-impl<'me, DB, Q, MP> Drop for PanicGuard<'me, DB, Q, MP>
+impl<'me, Q, MP> Drop for PanicGuard<'me, Q, MP>
 where
-    DB: Database + HasQueryGroup<Q::Group>,
-    Q: QueryFunction<DB>,
-    MP: MemoizationPolicy<DB, Q>,
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
 {
     fn drop(&mut self) {
         if std::thread::panicking() {
@@ -882,13 +873,12 @@ where
     }
 }
 
-impl<DB, Q> Memo<DB, Q>
+impl<Q> Memo<Q>
 where
-    Q: QueryFunction<DB>,
-    DB: Database + HasQueryGroup<Q::Group>,
+    Q: QueryFunction,
 {
     /// True if this memo is known not to have changed based on its durability.
-    fn check_durability(&self, db: &DB) -> bool {
+    fn check_durability(&self, db: &Q::DynDb) -> bool {
         let last_changed = db.salsa_runtime().last_changed_revision(self.durability);
         debug!(
             "check_durability(last_changed={:?} <= verified_at={:?}) = {:?}",
@@ -901,7 +891,7 @@ where
 
     fn validate_memoized_value(
         &mut self,
-        db: &DB,
+        db: &Q::DynDb,
         revision_now: Revision,
     ) -> Option<StampedValue<Q::Value>> {
         // If we don't have a memoized value, nothing to validate.
@@ -983,11 +973,10 @@ where
     }
 }
 
-impl<DB, Q, MP> std::fmt::Debug for Slot<DB, Q, MP>
+impl<Q, MP> std::fmt::Debug for Slot<Q, MP>
 where
-    Q: QueryFunction<DB>,
-    DB: Database + HasQueryGroup<Q::Group>,
-    MP: MemoizationPolicy<DB, Q>,
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(fmt, "{:?}({:?})", Q::default(), self.key)
@@ -1006,46 +995,42 @@ impl std::fmt::Debug for MemoInputs {
     }
 }
 
-impl<DB, Q, MP> LruNode for Slot<DB, Q, MP>
+impl<Q, MP> LruNode for Slot<Q, MP>
 where
-    Q: QueryFunction<DB>,
-    DB: Database + HasQueryGroup<Q::Group>,
-    MP: MemoizationPolicy<DB, Q>,
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
 {
     fn lru_index(&self) -> &LruIndex {
         &self.lru_index
     }
 }
 
-/// Check that `Slot<DB, Q, MP>: Send + Sync` as long as
+/// Check that `Slot<Q, MP>: Send + Sync` as long as
 /// `DB::DatabaseData: Send + Sync`, which in turn implies that
 /// `Q::Key: Send + Sync`, `Q::Value: Send + Sync`.
 #[allow(dead_code)]
-fn check_send_sync<DB, Q, MP>()
+fn check_send_sync<Q, MP>()
 where
-    Q: QueryFunction<DB>,
-    DB: Database + HasQueryGroup<Q::Group>,
-    MP: MemoizationPolicy<DB, Q>,
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
     Q::Key: Send + Sync,
     Q::Value: Send + Sync,
 {
     fn is_send_sync<T: Send + Sync>() {}
-    is_send_sync::<Slot<DB, Q, MP>>();
+    is_send_sync::<Slot<Q, MP>>();
 }
 
-/// Check that `Slot<DB, Q, MP>: 'static` as long as
+/// Check that `Slot<Q, MP>: 'static` as long as
 /// `DB::DatabaseData: 'static`, which in turn implies that
 /// `Q::Key: 'static`, `Q::Value: 'static`.
 #[allow(dead_code)]
-fn check_static<DB, Q, MP>()
+fn check_static<Q, MP>()
 where
-    Q: QueryFunction<DB>,
-    DB: Database + HasQueryGroup<Q::Group>,
-    MP: MemoizationPolicy<DB, Q>,
-    DB: 'static,
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
     Q::Key: 'static,
     Q::Value: 'static,
 {
     fn is_static<T: 'static>() {}
-    is_static::<Slot<DB, Q, MP>>();
+    is_static::<Slot<Q, MP>>();
 }

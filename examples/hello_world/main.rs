@@ -51,7 +51,7 @@ trait HelloWorld: salsa::Database {
 // all of the queries in the system -- we never know the concrete type
 // here, we only know the subset of methods we care about (defined by
 // the `HelloWorld` trait we specified above).
-fn length(db: &impl HelloWorld, (): ()) -> usize {
+fn length(db: &dyn HelloWorld, (): ()) -> usize {
     // Read the input string:
     let input_string = db.input_string(());
 

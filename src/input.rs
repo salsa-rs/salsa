@@ -18,48 +18,43 @@ use std::sync::Arc;
 /// Input queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
 /// none of those inputs have changed.
-pub struct InputStorage<DB, Q>
+pub struct InputStorage<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
     group_index: u16,
-    slots: RwLock<FxIndexMap<Q::Key, Arc<Slot<DB, Q>>>>,
+    slots: RwLock<FxIndexMap<Q::Key, Arc<Slot<Q>>>>,
 }
 
-struct Slot<DB, Q>
+struct Slot<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
     key: Q::Key,
     database_key_index: DatabaseKeyIndex,
     stamped_value: RwLock<StampedValue<Q::Value>>,
 }
 
-impl<DB, Q> std::panic::RefUnwindSafe for InputStorage<DB, Q>
+impl<Q> std::panic::RefUnwindSafe for InputStorage<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
     Q::Key: std::panic::RefUnwindSafe,
     Q::Value: std::panic::RefUnwindSafe,
 {
 }
 
-impl<DB, Q> InputStorage<DB, Q>
+impl<Q> InputStorage<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
-    fn slot(&self, key: &Q::Key) -> Option<Arc<Slot<DB, Q>>> {
+    fn slot(&self, key: &Q::Key) -> Option<Arc<Slot<Q>>> {
         self.slots.read().get(key).cloned()
     }
 }
 
-impl<DB, Q> QueryStorageOps<DB, Q> for InputStorage<DB, Q>
+impl<Q> QueryStorageOps<Q> for InputStorage<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
     fn new(group_index: u16) -> Self {
         InputStorage {
@@ -70,7 +65,7 @@ where
 
     fn fmt_index(
         &self,
-        _db: &DB,
+        _db: &Q::DynDb,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
@@ -81,7 +76,12 @@ where
         write!(fmt, "{}({:?})", Q::QUERY_NAME, key)
     }
 
-    fn maybe_changed_since(&self, db: &DB, input: DatabaseKeyIndex, revision: Revision) -> bool {
+    fn maybe_changed_since(
+        &self,
+        db: &Q::DynDb,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool {
         assert_eq!(input.group_index, self.group_index);
         assert_eq!(input.query_index, Q::QUERY_INDEX);
         let slot = self
@@ -94,7 +94,11 @@ where
         slot.maybe_changed_since(db, revision)
     }
 
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+    fn try_fetch(
+        &self,
+        db: &Q::DynDb,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         let slot = self
             .slot(key)
             .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
@@ -111,14 +115,14 @@ where
         Ok(value)
     }
 
-    fn durability(&self, _db: &DB, key: &Q::Key) -> Durability {
+    fn durability(&self, _db: &Q::DynDb, key: &Q::Key) -> Durability {
         match self.slot(key) {
             Some(slot) => slot.stamped_value.read().durability,
             None => panic!("no value set for {:?}({:?})", Q::default(), key),
         }
     }
 
-    fn entries<C>(&self, _db: &DB) -> C
+    fn entries<C>(&self, _db: &Q::DynDb) -> C
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
     {
@@ -135,12 +139,11 @@ where
     }
 }
 
-impl<DB, Q> Slot<DB, Q>
+impl<Q> Slot<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
-    fn maybe_changed_since(&self, _db: &DB, revision: Revision) -> bool {
+    fn maybe_changed_since(&self, _db: &Q::DynDb, revision: Revision) -> bool {
         debug!(
             "maybe_changed_since(slot={:?}, revision={:?})",
             self, revision,
@@ -154,20 +157,18 @@ where
     }
 }
 
-impl<DB, Q> QueryStorageMassOps for InputStorage<DB, Q>
+impl<Q> QueryStorageMassOps for InputStorage<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
     fn sweep(&self, _runtime: &Runtime, _strategy: SweepStrategy) {}
 }
 
-impl<DB, Q> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q>
+impl<Q> InputQueryStorageOps<Q> for InputStorage<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
-    fn set(&self, db: &mut DB, key: &Q::Key, value: Q::Value, durability: Durability) {
+    fn set(&self, db: &mut Q::DynDb, key: &Q::Key, value: Q::Value, durability: Durability) {
         log::debug!(
             "{:?}({:?}) = {:?} ({:?})",
             Q::default(),
@@ -233,41 +234,37 @@ where
     }
 }
 
-/// Check that `Slot<DB, Q, MP>: Send + Sync` as long as
+/// Check that `Slot<Q, MP>: Send + Sync` as long as
 /// `DB::DatabaseData: Send + Sync`, which in turn implies that
 /// `Q::Key: Send + Sync`, `Q::Value: Send + Sync`.
 #[allow(dead_code)]
-fn check_send_sync<DB, Q>()
+fn check_send_sync<Q>()
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
     Q::Key: Send + Sync,
     Q::Value: Send + Sync,
 {
     fn is_send_sync<T: Send + Sync>() {}
-    is_send_sync::<Slot<DB, Q>>();
+    is_send_sync::<Slot<Q>>();
 }
 
-/// Check that `Slot<DB, Q, MP>: 'static` as long as
+/// Check that `Slot<Q, MP>: 'static` as long as
 /// `DB::DatabaseData: 'static`, which in turn implies that
 /// `Q::Key: 'static`, `Q::Value: 'static`.
 #[allow(dead_code)]
-fn check_static<DB, Q>()
+fn check_static<Q>()
 where
-    Q: Query<DB>,
-    DB: Database,
-    DB: 'static,
+    Q: Query,
     Q::Key: 'static,
     Q::Value: 'static,
 {
     fn is_static<T: 'static>() {}
-    is_static::<Slot<DB, Q>>();
+    is_static::<Slot<Q>>();
 }
 
-impl<DB, Q> std::fmt::Debug for Slot<DB, Q>
+impl<Q> std::fmt::Debug for Slot<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(fmt, "{:?}({:?})", Q::default(), self.key)

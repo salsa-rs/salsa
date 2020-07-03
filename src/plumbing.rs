@@ -36,7 +36,7 @@ pub trait DatabaseStorageTypes: Database {
 }
 
 /// Internal operations that the runtime uses to operate on the database.
-pub trait DatabaseOps: Sized {
+pub trait DatabaseOps {
     /// Gives access to the underlying salsa runtime.
     fn ops_salsa_runtime(&self) -> &Runtime;
 
@@ -65,88 +65,83 @@ pub trait QueryStorageMassOps {
     fn sweep(&self, runtime: &Runtime, strategy: SweepStrategy);
 }
 
-pub trait DatabaseKey<DB>: Clone + Debug + Eq + Hash {}
+pub trait DatabaseKey: Clone + Debug + Eq + Hash {}
 
-pub trait QueryFunction<DB: Database>: Query<DB> {
-    fn execute(db: &DB, key: Self::Key) -> Self::Value;
-    fn recover(db: &DB, cycle: &[DatabaseKeyIndex], key: &Self::Key) -> Option<Self::Value> {
+pub trait QueryFunction: Query {
+    fn execute(db: &Self::DynDb, key: Self::Key) -> Self::Value;
+
+    fn recover(
+        db: &Self::DynDb,
+        cycle: &[DatabaseKeyIndex],
+        key: &Self::Key,
+    ) -> Option<Self::Value> {
         let _ = (db, cycle, key);
         None
     }
 }
 
-/// The `GetQueryTable` trait makes the connection the *database type*
-/// `DB` and some specific *query type* `Q` that it supports. Note
-/// that the `Database` trait itself is not specific to any query, and
-/// the impls of the query trait are not specific to any *database*
-/// (in particular, query groups are defined without knowing the final
-/// database type). This trait then serves to put the query in the
-/// context of the full database. It gives access to the storage for
-/// the query and also to creating the query descriptor. For any given
-/// database, impls of this trait are created by the
-/// `database_storage` macro.
-pub trait GetQueryTable<Q: Query<Self>>: Database {
-    /// Create a query table, which has access to the storage for the query
-    /// and offers methods like `get`.
-    fn get_query_table(db: &Self) -> QueryTable<'_, Self, Q>;
-
-    /// Create a mutable query table, which has access to the storage
-    /// for the query and offers methods like `set`.
-    fn get_query_table_mut(db: &mut Self) -> QueryTableMut<'_, Self, Q>;
-}
-
-impl<DB, Q> GetQueryTable<Q> for DB
+/// Create a query table, which has access to the storage for the query
+/// and offers methods like `get`.
+pub fn get_query_table<Q>(db: &Q::DynDb) -> QueryTable<'_, Q>
 where
-    DB: Database,
-    Q: Query<DB>,
-    DB: HasQueryGroup<Q::Group>,
+    Q: Query,
 {
-    fn get_query_table(db: &DB) -> QueryTable<'_, DB, Q> {
-        let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-        let query_storage: &Q::Storage = Q::query_storage(group_storage);
-        QueryTable::new(db, query_storage)
-    }
-
-    fn get_query_table_mut(db: &mut DB) -> QueryTableMut<'_, DB, Q> {
-        let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-        let query_storage = Q::query_storage(group_storage).clone();
-        QueryTableMut::new(db, query_storage)
-    }
+    let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
+    let query_storage: &Q::Storage = Q::query_storage(group_storage);
+    QueryTable::new(db, query_storage)
 }
 
-pub trait QueryGroup<DB: Database> {
+/// Create a mutable query table, which has access to the storage
+/// for the query and offers methods like `set`.
+pub fn get_query_table_mut<Q>(db: &mut Q::DynDb) -> QueryTableMut<'_, Q>
+where
+    Q: Query,
+{
+    let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
+    let query_storage = Q::query_storage(group_storage).clone();
+    QueryTableMut::new(db, query_storage)
+}
+
+pub trait QueryGroup: Sized {
     type GroupStorage;
+
+    /// Dyn version of the associated database trait.
+    type DynDb: ?Sized + Database + HasQueryGroup<Self>;
 }
 
 /// Trait implemented by a database for each group that it supports.
 /// `S` and `K` are the types for *group storage* and *group key*, respectively.
 pub trait HasQueryGroup<G>: Database
 where
-    G: QueryGroup<Self>,
+    G: QueryGroup,
 {
     /// Access the group storage struct from the database.
-    fn group_storage(db: &Self) -> &G::GroupStorage;
+    fn group_storage(&self) -> &G::GroupStorage;
 }
 
-pub trait QueryStorageOps<DB, Q>
+pub trait QueryStorageOps<Q>
 where
     Self: QueryStorageMassOps,
-    DB: Database,
-    Q: Query<DB>,
+    Q: Query,
 {
     fn new(group_index: u16) -> Self;
 
     /// Format a database key index in a suitable way.
     fn fmt_index(
         &self,
-        db: &DB,
+        db: &Q::DynDb,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result;
 
     /// True if the value of `input`, which must be from this query, may have
     /// changed since the given revision.
-    fn maybe_changed_since(&self, db: &DB, input: DatabaseKeyIndex, revision: Revision) -> bool;
+    fn maybe_changed_since(
+        &self,
+        db: &Q::DynDb,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool;
 
     /// Execute the query, returning the result (often, the result
     /// will be memoized).  This is the "main method" for
@@ -155,13 +150,17 @@ where
     /// Returns `Err` in the event of a cycle, meaning that computing
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>>;
+    fn try_fetch(
+        &self,
+        db: &Q::DynDb,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>>;
 
     /// Returns the durability associated with a given key.
-    fn durability(&self, db: &DB, key: &Q::Key) -> Durability;
+    fn durability(&self, db: &Q::DynDb, key: &Q::Key) -> Durability;
 
     /// Get the (current) set of the entries in the query storage
-    fn entries<C>(&self, db: &DB) -> C
+    fn entries<C>(&self, db: &Q::DynDb) -> C
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>;
 }
@@ -169,12 +168,11 @@ where
 /// An optional trait that is implemented for "user mutable" storage:
 /// that is, storage whose value is not derived from other storage but
 /// is set independently.
-pub trait InputQueryStorageOps<DB, Q>
+pub trait InputQueryStorageOps<Q>
 where
-    DB: Database,
-    Q: Query<DB>,
+    Q: Query,
 {
-    fn set(&self, db: &mut DB, key: &Q::Key, new_value: Q::Value, durability: Durability);
+    fn set(&self, db: &mut Q::DynDb, key: &Q::Key, new_value: Q::Value, durability: Durability);
 }
 
 /// An optional trait that is implemented for "user mutable" storage:
@@ -184,10 +182,9 @@ pub trait LruQueryStorageOps {
     fn set_lru_capacity(&self, new_capacity: usize);
 }
 
-pub trait DerivedQueryStorageOps<DB, Q>
+pub trait DerivedQueryStorageOps<Q>
 where
-    DB: Database,
-    Q: Query<DB>,
+    Q: Query,
 {
-    fn invalidate(&self, db: &mut DB, key: &Q::Key);
+    fn invalidate(&self, db: &mut Q::DynDb, key: &Q::Key);
 }

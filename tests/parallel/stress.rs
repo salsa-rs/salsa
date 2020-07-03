@@ -24,14 +24,14 @@ trait StressDatabase: salsa::Database {
     fn c(&self, key: usize) -> Cancelable<usize>;
 }
 
-fn b(db: &impl StressDatabase, key: usize) -> Cancelable<usize> {
+fn b(db: &dyn StressDatabase, key: usize) -> Cancelable<usize> {
     if db.salsa_runtime().is_current_revision_canceled() {
         return Err(Canceled);
     }
     Ok(db.a(key))
 }
 
-fn c(db: &impl StressDatabase, key: usize) -> Cancelable<usize> {
+fn c(db: &dyn StressDatabase, key: usize) -> Cancelable<usize> {
     db.b(key)
 }
 

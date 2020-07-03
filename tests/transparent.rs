@@ -9,11 +9,11 @@ trait QueryGroup {
     fn get(&self, x: u32) -> u32;
 }
 
-fn wrap(db: &impl QueryGroup, x: u32) -> u32 {
+fn wrap(db: &dyn QueryGroup, x: u32) -> u32 {
     db.input(x)
 }
 
-fn get(db: &impl QueryGroup, x: u32) -> u32 {
+fn get(db: &dyn QueryGroup, x: u32) -> u32 {
     db.wrap(x)
 }
 

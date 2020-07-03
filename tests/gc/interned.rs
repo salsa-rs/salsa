@@ -20,11 +20,11 @@ pub(crate) trait InternDatabase {
     fn repeat_intern2(&self, x: &'static str) -> InternId;
 }
 
-fn repeat_intern1(db: &impl InternDatabase, x: &'static str) -> InternId {
+fn repeat_intern1(db: &dyn InternDatabase, x: &'static str) -> InternId {
     db.intern_str(x)
 }
 
-fn repeat_intern2(db: &impl InternDatabase, x: &'static str) -> InternId {
+fn repeat_intern2(db: &dyn InternDatabase, x: &'static str) -> InternId {
     db.intern_str(x)
 }
 

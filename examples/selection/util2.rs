@@ -7,11 +7,11 @@ trait RequestUtil: RequestParser {
     fn content_type(&self) -> Option<String>;
 }
 
-fn header(db: &impl RequestUtil) -> Vec<ParsedHeader> {
+fn header(db: &dyn RequestUtil) -> Vec<ParsedHeader> {
     db.parse().header.clone()
 }
 
-fn content_type(db: &impl RequestUtil) -> Option<String> {
+fn content_type(db: &dyn RequestUtil) -> Option<String> {
     db.header()
         .iter()
         .find(|header| header.key == "content-type")

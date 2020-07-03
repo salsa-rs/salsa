@@ -45,7 +45,7 @@ pub use crate::storage::Storage;
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait Database: plumbing::DatabaseOps {
+pub trait Database: 'static + plumbing::DatabaseOps {
     /// Iterates through all query storage and removes any values that
     /// have not been used since the last revision was created. The
     /// intended use-cycle is that you first execute all of your
@@ -330,7 +330,7 @@ pub trait ParallelDatabase: Database + Send {
 ///
 /// [fm]: trait.ParallelDatabase.html#method.snapshot
 #[derive(Debug)]
-pub struct Snapshot<DB>
+pub struct Snapshot<DB: ?Sized>
 where
     DB: ParallelDatabase,
 {
@@ -420,7 +420,7 @@ where
 
 /// Trait implements by all of the "special types" associated with
 /// each of your queries.
-pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
+pub trait Query: Debug + Default + Sized + 'static {
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
     type Key: Clone + Debug + Hash + Eq;
@@ -429,13 +429,16 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type Value: Clone + Debug;
 
     /// Internal struct storing the values for the query.
-    type Storage: plumbing::QueryStorageOps<DB, Self>;
+    type Storage: plumbing::QueryStorageOps<Self>;
 
     /// Associate query group struct.
-    type Group: plumbing::QueryGroup<DB, GroupStorage = Self::GroupStorage>;
+    type Group: plumbing::QueryGroup<DynDb = Self::DynDb, GroupStorage = Self::GroupStorage>;
 
     /// Generated struct that contains storage for all queries in a group.
     type GroupStorage;
+
+    /// Dyn version of the associated trait for this query group.
+    type DynDb: ?Sized + Database + HasQueryGroup<Self::Group>;
 
     /// A unique index identifying this query within the group.
     const QUERY_INDEX: u16;
@@ -451,22 +454,20 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
 /// Gives access to various less common operations on queries.
 ///
 /// [the `query` method]: trait.Database.html#method.query
-pub struct QueryTable<'me, DB, Q>
+pub struct QueryTable<'me, Q>
 where
-    DB: plumbing::GetQueryTable<Q>,
-    Q: Query<DB> + 'me,
+    Q: Query + 'me,
 {
-    db: &'me DB,
+    db: &'me Q::DynDb,
     storage: &'me Q::Storage,
 }
 
-impl<'me, DB, Q> QueryTable<'me, DB, Q>
+impl<'me, Q> QueryTable<'me, Q>
 where
-    DB: plumbing::GetQueryTable<Q>,
-    Q: Query<DB>,
+    Q: Query,
 {
     /// Constructs a new `QueryTable`.
-    pub fn new(db: &'me DB, storage: &'me Q::Storage) -> Self {
+    pub fn new(db: &'me Q::DynDb, storage: &'me Q::Storage) -> Self {
         Self { db, storage }
     }
 
@@ -497,22 +498,20 @@ where
 /// set the value of an input query.
 ///
 /// [the `query_mut` method]: trait.Database.html#method.query_mut
-pub struct QueryTableMut<'me, DB, Q>
+pub struct QueryTableMut<'me, Q>
 where
-    DB: plumbing::GetQueryTable<Q>,
-    Q: Query<DB> + 'me,
+    Q: Query + 'me,
 {
-    db: &'me mut DB,
+    db: &'me mut Q::DynDb,
     storage: Arc<Q::Storage>,
 }
 
-impl<'me, DB, Q> QueryTableMut<'me, DB, Q>
+impl<'me, Q> QueryTableMut<'me, Q>
 where
-    DB: plumbing::GetQueryTable<Q>,
-    Q: Query<DB>,
+    Q: Query,
 {
     /// Constructs a new `QueryTableMut`.
-    pub fn new(db: &'me mut DB, storage: Arc<Q::Storage>) -> Self {
+    pub fn new(db: &'me mut Q::DynDb, storage: Arc<Q::Storage>) -> Self {
         Self { db, storage }
     }
 
@@ -525,7 +524,7 @@ where
     /// [the `query_mut` method]: trait.Database.html#method.query_mut
     pub fn set(&mut self, key: Q::Key, value: Q::Value)
     where
-        Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
+        Q::Storage: plumbing::InputQueryStorageOps<Q>,
     {
         self.set_with_durability(key, value, Durability::LOW);
     }
@@ -540,7 +539,7 @@ where
     /// [the `query_mut` method]: trait.Database.html#method.query_mut
     pub fn set_with_durability(&mut self, key: Q::Key, value: Q::Value, durability: Durability)
     where
-        Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
+        Q::Storage: plumbing::InputQueryStorageOps<Q>,
     {
         self.storage.set(self.db, &key, value, durability);
     }
@@ -568,7 +567,7 @@ where
     /// pattern](https://salsa-rs.github.io/salsa/common_patterns/on_demand_inputs.html).
     pub fn invalidate(&mut self, key: &Q::Key)
     where
-        Q::Storage: plumbing::DerivedQueryStorageOps<DB, Q>,
+        Q::Storage: plumbing::DerivedQueryStorageOps<Q>,
     {
         self.storage.invalidate(self.db, key)
     }
@@ -600,5 +599,6 @@ where
 #[allow(unused_imports)]
 #[macro_use]
 extern crate salsa_macros;
+use plumbing::HasQueryGroup;
 #[doc(hidden)]
 pub use salsa_macros::*;

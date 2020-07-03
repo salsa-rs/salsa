@@ -25,7 +25,7 @@ trait FileWatcher {
     fn did_change_file(&mut self, path: &Path);
 }
 
-fn read(db: &impl salsa::Database, path: PathBuf) -> String {
+fn read(db: &dyn salsa::Database, path: PathBuf) -> String {
     db.salsa_runtime()
         .report_synthetic_read(salsa::Durability::LOW);
     db.watch(&path);

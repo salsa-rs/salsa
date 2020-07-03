@@ -9,7 +9,7 @@ pub(crate) trait MemoizedInputsContext: TestContext {
     fn input2(&self) -> usize;
 }
 
-fn max(db: &impl MemoizedInputsContext) -> usize {
+fn max(db: &dyn MemoizedInputsContext) -> usize {
     db.log().add("Max invoked");
     std::cmp::max(db.input1(), db.input2())
 }

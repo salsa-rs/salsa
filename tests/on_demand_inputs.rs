@@ -15,7 +15,7 @@ trait QueryGroup: salsa::Database + AsRef<HashMap<u32, u32>> {
     fn c(&self, x: u32) -> u32;
 }
 
-fn a(db: &impl QueryGroup, x: u32) -> u32 {
+fn a(db: &dyn QueryGroup, x: u32) -> u32 {
     let durability = if x % 2 == 0 {
         Durability::LOW
     } else {
@@ -26,11 +26,11 @@ fn a(db: &impl QueryGroup, x: u32) -> u32 {
     external_state[&x]
 }
 
-fn b(db: &impl QueryGroup, x: u32) -> u32 {
+fn b(db: &dyn QueryGroup, x: u32) -> u32 {
     db.a(x)
 }
 
-fn c(db: &impl QueryGroup, x: u32) -> u32 {
+fn c(db: &dyn QueryGroup, x: u32) -> u32 {
     db.b(x)
 }
 

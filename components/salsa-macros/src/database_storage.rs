@@ -30,7 +30,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         .iter()
         .map(|QueryGroup { group_path }| {
             quote! {
-                <#group_path as salsa::plumbing::QueryGroup<#database_name>>::GroupStorage
+                <#group_path as salsa::plumbing::QueryGroup>::GroupStorage
             }
         })
         .collect();
@@ -63,8 +63,8 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         // ANCHOR:HasQueryGroup
         has_group_impls.extend(quote! {
             impl salsa::plumbing::HasQueryGroup<#group_path> for #database_name {
-                fn group_storage(db: &Self) -> &#group_storage {
-                    &db.#db_storage_field.query_store().#group_name_snake
+                fn group_storage(&self) -> &#group_storage {
+                    &self.#db_storage_field.query_store().#group_name_snake
                 }
             }
         });
@@ -91,7 +91,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut database_data = vec![];
     for QueryGroup { group_path } in query_groups {
         database_data.push(quote! {
-            <#group_path as salsa::plumbing::QueryGroup<#database_name>>::GroupData
+            <#group_path as salsa::plumbing::QueryGroup>::GroupData
         });
     }
 
