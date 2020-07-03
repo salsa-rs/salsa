@@ -1,6 +1,6 @@
 [package]
 name = "salsa"
-version = "0.14.2" # CHECK salsa-macros version
+version = "0.14.3" # CHECK salsa-macros version
 authors = ["Salsa developers"]
 edition = "2018"
 license = "Apache-2.0 OR MIT"
