@@ -395,8 +395,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 }
             }
 
-            // Unsafe proof obligation: that our key/value are a part
-            // of the `GroupData`.
+            // ANCHOR:Query_impl
             impl salsa::Query for #qt
             {
                 type Key = (#(#keys),*);
@@ -416,6 +415,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     &group_storage.#fn_name
                 }
             }
+            // ANCHOR_END:Query_impl
         });
 
         // Implement the QueryFunction trait for queries which need it.
@@ -447,6 +447,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             };
 
             output.extend(quote_spanned! {span=>
+                // ANCHOR:QueryFunction_impl
                 impl salsa::plumbing::QueryFunction for #qt
                 {
                     fn execute(db: &Self::DynDb, #key_pattern: <Self as salsa::Query>::Key)
@@ -456,6 +457,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
                     #recover
                 }
+                // ANCHOR_END:QueryFunction_impl
             });
         }
     }
@@ -495,6 +497,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             #storage_fields
         }
 
+        // ANCHOR:group_storage_new
         impl #group_storage {
             #trait_vis fn new(group_index: u16) -> Self {
                 #group_storage {
@@ -505,7 +508,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 }
             }
         }
+        // ANCHOR_END:group_storage_new
 
+        // ANCHOR:group_storage_methods
         impl #group_storage {
             #trait_vis fn fmt_index(
                 &self,
@@ -539,6 +544,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 #for_each_ops
             }
         }
+        // ANCHOR_END:group_storage_methods
     });
 
     if std::env::var("SALSA_DUMP").is_ok() {
