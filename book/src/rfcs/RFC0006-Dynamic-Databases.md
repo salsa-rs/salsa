@@ -280,13 +280,11 @@ at the time that the query is compiled (the group index, in contrast, depends on
 the full set of groups for the database).
 
 The key index can be assigned by the query as it executes without any central
-coordination. Each query will use a [`IndexMap`] mapping `Q::Key -> QueryState`.
-Inserting new keys into this map also creates new indices, and it is possible to
-index into the map in O(1) time later to obtain the state (or key) from a given
-query. This map replaces the existing `Q::Key -> Arc<Slot<..>>` map that is used
-today.
-
-[`IndexMap`]: https://crates.io/crates/indexmap
+coordination. Each query will use a `IndexMap` (from the `indexmap` crate)
+mapping `Q::Key -> QueryState`. Inserting new keys into this map also creates
+new indices, and it is possible to index into the map in O(1) time later to
+obtain the state (or key) from a given query. This map replaces the existing
+`Q::Key -> Arc<Slot<..>>` map that is used today.
 
 One notable implication: we cannot remove entries from the query index map
 (e.g., for GC) because that would invalidate the existing indices. We can
