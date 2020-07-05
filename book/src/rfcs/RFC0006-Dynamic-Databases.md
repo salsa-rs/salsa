@@ -653,7 +653,7 @@ could be overcome in the future by:
   QueryDb<'a>`. This would permit the `DynDb` type to be referenced by writing
   `<Q as QueryDb<'a>>::DynDb`. 
 
-### Salsa query group traits are extended with `HasQueryGroup` supertrait
+### Salsa query group traits are extended with `Database` and `HasQueryGroup` supertrait
 
 When `#[salsa::query_group]` is applied to a trait, we currently generate a copy
 of the trait that is "more or less" unmodified (although we sometimes add
@@ -669,11 +669,41 @@ trait HelloWorld { .. }
 will generate a trait like:
 
 ```rust,ignore
-trait HelloWorld: HasQueryGroup<HelloWorldStorage> { .. }
+trait HelloWorld: 
+    salsa::Database + 
+    salsa::plumbing::HasQueryGroup<HelloWorldStorage>
+{ 
+    .. 
+}
 ```
 
-The `HasQueryGroup` trait is implemented by the database and defines various
-plumbing methods that are used by the storage implementations.
+The `Database` trait is the standard `salsa::Database` trait and contains
+various helper methods. The `HasQueryGroup` trait is implemented by the database
+and defines various plumbing methods that are used by the storage
+implementations.
+
+One downside of this is that `salsa::Database` methods become available on the
+trait; we might want to give internal plumbing methods more obscure names.
+
+#### Bounds were already present on the blanket impl of salsa query group trait
+
+The new bounds that are appearing on the trait were always present on the
+blanket impl that the `salsa::query_group` procedural macro generated, which
+looks like so (and continues unchanged under this RFC):
+
+```rust,ignore
+impl<DB> HelloWorld for DB
+where
+    DB: salsa::Database +
+    DB: salsa::plumbing::HasQueryGroup<HelloWorldStorage>
+{
+    ...
+}
+```
+
+The reason we generate the impl is so that the `salsa::database` procedural
+macro can simply create the `HasQueryGroup` impl and never needs to know the
+name of the `HelloWorld` trait, only the `HelloWorldStorage` type.
 
 ### Storage types no longer parameterized by the database
 
