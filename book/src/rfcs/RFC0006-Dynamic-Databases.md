@@ -320,254 +320,73 @@ pub trait QueryFunction: Query {
 
 ### Storing query results and tracking dependencies
 
-In today's setup, we have all the data for a particular query stoerd in a
+In today's setup, we have all the data for a particular query stored in a
 `Slot<Q, DB, MP>`, and these slots hold references to one another to track
 dependencies. Because the type of each slot is specific to the particular query
 `Q`, the references between slots are done using a `Arc<dyn DatabaseSlot<DB>>`
 handle. This requires some unsafe hacks, including the `DatabaseData` associated
 type.
 
-This RFC proposes to alter this setup, moving to a different approach. The
-queries store the overall query state and its cached value (if any) inline in the hashmap, similar to what we did before adopting slots. However, the dependency information for each query remains in an `Arc<DependencySlot>`.
+This RFC proposes to alter this setup. Dependencies will store a `DatabaseIndex`
+instead. This means that validating dependencies is less efficient, as we no
+longer have a direct pointer to the dependency information but instead must
+execute three index lookups (one to find the query group, one to locate the
+query, and then one to locate the key). Similarly the LRU list can be reverted
+to a `LinkedHashMap` of indices.
 
-This new type `DependencySlot` only stores the dependency information for each
-query `Q`, such as:
+We may tinker with other approaches too: the key change in the RFC is that we
+do not need to store a `DB::DatabaseKey` or `Slot<..DB..>`, but instead can use
+some type for dependencies that is independent of the dtabase type `DB`.
 
-* the revision where `Q` last changed
-* the revision where `Q` was last verified
-* links to the `Arc<DependencySlot>` for the dependent queries that `Q` invoked
+### Dispatching methods from a `DatabaseKeyIndex`
 
-Unlike the old `Slot<DB, Q, MP>` type, the `DependencySlot` type is not
-dependent on the query `Q`. This removes the need for `DatabaseData` while
-retaining a lot of the benefits of slots: we can revalidate without needing to
-access the master hashtable.
+There are a number of methods that can be dispatched through the database
+interface on a `DatabaseKeyIndex`. For example, we already mentioned
+`fmt_debug`, which emits a debug representation of the key, but there is also
+`maybe_changed_since`, which checks whether the value for a given key may have
+changed since the given revision. Each of these methods is a member of the
+`DatabaseOps` trait and they are dispatched as follows.
 
-This proposal is also anticipating an eventual design that I would like to move
-towards, in which the query state is a simple cache that stores the result of a
-query once it is fully computed, and the handling of "in progress" queries is
-separated and only used for those queries that require 'at most once per
-revision' execution semantics (either because they are expensive or for other
-reasons).
-
-### A closer look at `DependencySlot` and revalidation
-
-In the current slot-based design, the slot for a given query key is allocated
-once and always remains up-to-date, even when the query is re-executed (because
-its inputs have changed). Thus all of the slot's data is effectively under a
-lock.
-
-This RFC proposes to create a fresh `Arc<DependencySlot>` each time the query is
-re-executed. This makes *almost all* the fields in the `DependencySlot`
-immutable, including the list of dependencies. This in turn means that those
-fields can be traversed during revalidation without acquiring any read-locks.
-
-There is one complication, though. It sometimes happens that we a query Q has a
-dirty input, and hence is re-executed, but we find that its output has not
-changed. In this case, we will have allocated a fresh `DependencySlot`, which
-may have distinct inputs and other information. We want to replace the old
-dependency slot with this new one. For this reason, we store references to
-dependency slots using an `ArcSwap`, which allows us to store a replacement,
-though it does imply that while traversing dependencies we will have to do
-atomic loads.
-
-The exact structure proposed is as follows:
+First, the `#[salsa::database]` procedural macro is the one which
+generates the `DatabaseOps` impl for the database. This base method
+simply matches on the group index to determine which query group
+contains the key, and then dispatches to an inherent
+method defined on the appropriate query group struct:
 
 ```rust
-struct DependencySlot {
-    /// What query key does this dependency represent?
-    key_index: DatabaseKeyIndex,
+impl salsa::plumbing::DatabaseOps for DatabaseStruct {
+    // We'll use the `fmt_debug` method as an example
+    fn fmt_debug(&self, index: DatabaseKeyIndex, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match index.group_index() {
+            0 => {
+                let storage = <Self as HasQueryGroup<HelloWorld>>::group_storage(self);
+                storage.fmt_debug(index, fmt)
+            }
 
-    /// When was this dependency last verified?
-    verified_at: AtomicCell<Revision>,
-
-    /// Initially stores `None`. If the value for this key
-    /// has been recomputed, this field
-    /// will be updated to point to the replacement.
-    replacement: ArcSwapOption<DependencySlot>,
-
-    /// Revision when the value for this key last changed.
-    changed_at: Revision,
-
-    /// Minimum durability of any input.
-    durability: Durability,
-
-    /// Set of inputs (if known).
-    inputs: Inputs,
-}
-
-enum Inputs {
-    /// We know the full set of inputs (possibly empty).
-    FullyKnown { Vec<ArcSwap<DependencySlot>> },
-
-    ///
-    Untracked,
-}
-```
-
-#### Implementing maybe-changed-since
-
-The `DependencySlot` type offers a `maybe_changed_since` operation with the following signature. Note the new return type:
-
-```rust,ignore
-impl DependencySlot {
-    /// Checks if the computation represented by this dependency slot
-    /// may be out of date as of `revision`. Returns:
-    ///
-    /// * `Ok(true)`, if the value may have changed
-    /// * `Ok(false)`, if the value cannot have changed
-    /// * `Err(slot)`, if the value had to be re-executed and
-    ///   hence a new slot was created. In that case, this slot
-    ///   is out of date and should be replaced with the new one,
-    ///   and the method should be invoked again, but on the new slot.
-    fn maybe_changed_since(
-        &self,
-        db: &dyn salsa::Database,
-        revision: Revision,
-    ) -> Result<bool, Arc<DependencySlot>> {
-        ...
+            _ => panic!("Invalid index")
+        }
     }
 }
 ```
 
-The method is implemented as follows:
+The query group struct has a very similar inherent method that dispatches based
+on the query index and invokes a method on the query storage:
 
-* If `self.replacement` is `Some(slot)`, return `Err(slot)`.
-* If `self.verified_at` is the current revision, return `Ok(self.changed_at > revision)`.
-* Determine if any input may have changed (see below). If not, update `self.verified_at` to the current revision and return `Ok(false)`.
-* Re-execute by invoking `db.revalidate(self.key_index)`, which returns a `DependencySlot` that we will call `r`. We discuss the `revalidate` method below.
-* Set `self.replacement` to `Some(r)`. Note that there is a potential race here. But if `self.replacement` has changed from `None`, it can only have been changed to `Some(r)` by some other thread.
-* Return `Err(r)`.
-
-#### Determining if inputs have changed
-
-To determine if inputs have changed:
-
-* If there are any untracked inputs, return true.
-* Iterate over the `Vec<ArcSwap<DependencySlot>>` inputs.
-* For each input `s: &ArcSwap<DepencySlot>`:
-  * Load its current value `s0` and invoke `s0.maybe_changed_since(..)`:
-  * If `Ok(true)` is returned, return true.
-  * If `Ok(false)` is returned, continue iteration.
-  * If `Err(s1)` is returned, then `s.store(s1)` and process the current input slot again.
-
-#### The revalidate method
-
-"Revalidation" means to re-execute a query method whose direct inputs may have
-changed and then check if the new result is the same as the old one. If it is,
-then then the `changed_at` revision is not altered.
-
-Previously we held a direct reference to the `Arc<Slot<..>>` for a query, and
-hence revalidation could be performed by invoking a method on it. But in the new
-system when we find that a query is dirty, we have only a `DatabaseKeyIndex`.
-
-Therefore, we extend the `salsa::plumbing::DatabaseOps` trait, the `QueryGroup`
-trait, and the `Query` trait with a `revalidate` method, as shown below:
-
-```rust,ignore
-trait DatabaseOps {
-    /// New method:
-    fn revalidate(&self, index: DatabaseKeyIndex) -> Arc<DependencySlot>;
-
-    /// Existing method (signature slightly tweaked):
-    fn for_each_query(&self, op: &mut dyn FnMut(&dyn QueryStorageMassOps<Self>));
-}
-
-trait QueryGroup {
-    ...
-
-    fn revalidate(
-        &self,
-        db: &Self::DynDb,
-        key: &Self::GroupKey,
-        index: DatabaseKeyIndex,
-    ) -> Arc<DependencySlot>;
-}
-
-trait Query {
-    ...
-
-    fn revalidate(
-        &self,
-        db: &Self::DynDb,
-        key: &Self::Key,
-        index: DatabaseKeyIndex,
-    ) -> Arc<DependencySlot>;
+```rust
+impl HelloWorldGroupStorage__ {
+    // We'll use the `fmt_debug` method as an example
+    fn fmt_debug(&self, index: DatabaseKeyIndex, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match index.query_index() {
+            0 => self.appropriate_query_field.fmt_debug(index, fmt),
+            1 => ...
+            _ => panic!("Invalid index")
+        }
+    }
 }
 ```
 
-The `DatabaseOps::revalidate` method implementation is auto-generated by the
-`salsa::database` procedural macro. It works by loading the `DatabaseKey`
-corresponding to `index` and matching to determine the query group the index
-belongs to and extract the appropriate group key. It then invokes the
-`QueryGroup::revalidate` method.
-
-The `QueryGroup::revalidate` method is generated as part of the
-`salsa::query_group` macro. It will match against the `key` to determine which
-query is being referenced and then invoke `Query::revalidate`.
-
-The `Query::revalidate` method will use the `index` to load the query state. It
-will re-execute the query, producing a new `DependencySlot`. The `changed_at`
-value in this new dependency-slot is either the current revision or, if the new
-value is equal to the old one, then it is taken from the previous
-`DependencySlot`. The old dependency slot is also modified to "forward" to the
-new dependency slot. Finally, the new dependency slot is returned.
-
-#### The ripple effect of modification and revalidation
-
-When a query `Q` is re-executed, its dependency slot is re-created. If its value
-does not change, however, queries that had `Q` as an input are not re-executed,
-though their dependency slots may be mutated to track the most recent version of
-`Q`. This section illustrates the process.
-
-Consider three queries, `A`, `B`, and `C`, where each one invokes its successor
-during execution:
-
-```mermaid
-graph LR;
-  A -- invokes --> B;
-  B -- invokes --> C;
-  C -- invokes --> Ellipsis;
-  Ellipsis["..."];
-```
-
-This will create a graph of dependency slots that looks very similar. Here the slots are named `A0`, `B0`, and `C0`:
-
-```mermaid
-graph LR;
-  A0 --> B0;
-  B0 --> C0;
-  C0 --> Ellipsis;
-  Ellipsis["..."];
-```
-
-Now imagine that, in some revision, an input to `C` changes and hence `C` must
-be re-executed. However, when it is re-executed, it produces the same value as
-in the previous revision, and therefore it hasn't really changed. The
-re-execution produces a new slot `C1` that replaces `C0`; but since the value
-didn't change, neither query `A` nor `B` is re-executed, and thus their
-dependency slots are updated but not replaced:
-
-```mermaid
-graph LR;
-  A0 --> B0;
-  C0 --> Ellipsis0;
-  Ellipsis0["..."];
-  B0 --> C1;
-  C1 --> Ellipsis1;
-  Ellipsis1["..."];
-```
-
-### DatabaseImpl
-
-We introduce a `plumbing::DatabaseImpl` trait extends `salsa::Database`. The
-impl for this is generated by the `salsa::database` macro. It just defines the
-`DatabaseStorage` type.
-
-```rust,ignore
-pub trait DatabaseImpl: Database {
-    type DatabaseStorage;
-}
-```
+Finally, the query storage can use the key index to lookup the appropriate
+data from the `FxIndexSet`.
 
 ### Wrap runtime in a `Storage<DB>` type
 
