@@ -634,6 +634,25 @@ we have to make a few changes:
 * The `DatabaseStorageTypes` supertrait is removed (that trait is renamed and altered, see next section).
 * The `salsa_event` method changes, as described in the User's guide.
 
+### Salsa database trait requires `'static`, at least for now
+
+One downside of this proposal is that the `salsa::Database` trait now has a
+`'static` bound. This is a result of the lack of GATs -- in particular, the
+queries expect a `Q::DynDb` as argument. In the query definition, we have
+something like `type DynDb = dyn QueryGroupDatabase`, which in turn defaults to
+`dyn::QueryGroupDatabase + 'static`.
+
+At the moment, this limitation is harmless, since salsa databases don't support
+generic parameters. But it would be good to lift in the future, especially as we
+would like to support arena allocation and other such patterns. The limitation
+could be overcome in the future by:
+
+* converting to a GAT like `DynDb<'a>`, if those were available;
+* or by simulating GATs by introducing a trait to carry the `DynDb` definition,
+  like `QueryDb<'a>`, where `Query` has the supertrait `for<'a> Self:
+  QueryDb<'a>`. This would permit the `DynDb` type to be referenced by writing
+  `<Q as QueryDb<'a>>::DynDb`. 
+
 ### Salsa query group traits are extended with `HasQueryGroup` supertrait
 
 When `#[salsa::query_group]` is applied to a trait, we currently generate a copy
