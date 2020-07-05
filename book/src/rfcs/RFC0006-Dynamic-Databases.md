@@ -165,30 +165,15 @@ combines the `Runtime` (whose type no longer references `DB` directly) with an
 type, cannot appear in any public interface, it is just used by the various
 implementations that are created by `salsa::database`.
 
-### The query method on `salsa::Database` moves to a helper method
+### Instead of `db.query(Q)`, you write `Q.in_db(&db)`
 
 As a consequence of the previous point, the existing `query` and `query_mut`
-methods on the `salsa::Database` trait will be moved to an extension trait,
-automatically implemented for all salsa databases:
-
-```rust,ignore
-pub trait DatabaseExt {
-    #[allow(unused_variables)]
-    fn query<Q>(&self, query: Q) -> QueryTable<'_, Self, Q>
-    where
-        Q: Query<Self>,
-        Self: plumbing::GetQueryTable<Q>,
-    {
-        <Self as plumbing::GetQueryTable<Q>>::get_query_table(self)
-    }
-
-    fn query_mut<Q>(&mut self, query: Q) -> QueryTableMut<'_, Self, Q> ...  { }
-}
-
-impl<DB: ?Sized + salsa::Database> DatabaseExt for DB {
-    ...
-}
-```
+methods on the `salsa::Database` trait are changed to methods on the query types
+themselves. So instead of `db.query(SomeQuery)`, one would write
+`SomeQuery.in_db(&db)` (or `in_db_mut`). This both helps by making the
+`salsa::Database` trait dyn-safe and also works better with the new use of `dyn`
+types, since it permits a coercion from `&db` to the appropriate `dyn` database
+type at the point of call.
 
 ### The salsa-event mechanism will move to dynamic dispatch
 
