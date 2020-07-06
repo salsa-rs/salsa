@@ -180,7 +180,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
-    let mut query_fn_shims = proc_macro2::TokenStream::new();
     let mut storage_fields = proc_macro2::TokenStream::new();
     let mut queries_with_storage = vec![];
     for query in &queries {
@@ -212,16 +211,17 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         queries_with_storage.push(fn_name);
 
-        let shim = format_ident!("{}_shim", fn_name);
         query_fn_definitions.extend(quote! {
             fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
-                #shim(self, #(#key_names),*)
+                // Create a shim to force the code to be monomorphized in the
+                // query crate. Our experiments revealed that this makes a big
+                // difference in total compilation time in rust-analyzer, though
+                // it's not totally obvious why that should be.
+                fn __shim(db: &dyn #trait_name,  #(#key_names: #keys),*) -> #value {
+                    salsa::plumbing::get_query_table::<#qt>(db).get((#(#key_names),*))
+                }
+                __shim(self, #(#key_names),*)
 
-            }
-        });
-        query_fn_shims.extend(quote! {
-            fn #shim(db: &dyn #trait_name,  #(#key_names: #keys),*) -> #value {
-                salsa::plumbing::get_query_table::<#qt>(db).get((#(#key_names),*))
             }
         });
 
@@ -298,8 +298,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             {
                 #query_fn_declarations
             }
-
-            #query_fn_shims
         }
     };
 
