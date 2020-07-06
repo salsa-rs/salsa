@@ -37,6 +37,9 @@ pub trait DatabaseStorageTypes: Database {
 
 /// Internal operations that the runtime uses to operate on the database.
 pub trait DatabaseOps {
+    /// Upcast this type to a `dyn Database`.
+    fn ops_database(&self) -> &dyn Database;
+
     /// Gives access to the underlying salsa runtime.
     fn ops_salsa_runtime(&self) -> &Runtime;
 

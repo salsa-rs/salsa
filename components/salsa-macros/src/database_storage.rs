@@ -134,6 +134,10 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     }
     output.extend(quote! {
         impl salsa::plumbing::DatabaseOps for #database_name {
+            fn ops_database(&self) -> &dyn salsa::Database {
+                self
+            }
+
             fn ops_salsa_runtime(&self) -> &salsa::Runtime {
                 self.#db_storage_field.salsa_runtime()
             }
