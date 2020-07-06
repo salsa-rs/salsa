@@ -364,7 +364,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         output.extend(quote! {
             #[derive(Default, Debug)]
             #trait_vis struct #qt;
+        });
 
+        output.extend(quote! {
             impl #qt {
                 /// Get access to extra methods pertaining to this query. For
                 /// example, you can use this to run the GC (`sweep`) across a
@@ -375,7 +377,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 {
                     salsa::plumbing::get_query_table::<#qt>(db)
                 }
+            }
+        });
 
+        if query.storage.supports_mut() {}
+        output.extend(quote! {
+            impl #qt {
                 /// Like `in_db`, but gives access to methods for setting the
                 /// value of an input. Not applicable to derived queries.
                 ///
@@ -651,6 +658,7 @@ enum QueryStorage {
 }
 
 impl QueryStorage {
+    /// Do we need a `QueryFunction` impl for this type of query?
     fn needs_query_function(&self) -> bool {
         match self {
             QueryStorage::Input
@@ -658,6 +666,18 @@ impl QueryStorage {
             | QueryStorage::InternedLookup { .. }
             | QueryStorage::Transparent => false,
             QueryStorage::Memoized | QueryStorage::Dependencies => true,
+        }
+    }
+
+    /// Does this type of query support `&mut` operations?
+    fn supports_mut(&self) -> bool {
+        match self {
+            QueryStorage::Input => true,
+            QueryStorage::Interned
+            | QueryStorage::InternedLookup { .. }
+            | QueryStorage::Transparent
+            | QueryStorage::Memoized
+            | QueryStorage::Dependencies => false,
         }
     }
 }
