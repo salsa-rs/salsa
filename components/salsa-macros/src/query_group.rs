@@ -269,11 +269,17 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             query_fn_definitions.extend(quote! {
                 fn #set_fn_name(&mut self, #(#key_names: #keys,)* value__: #value) {
-                    salsa::plumbing::get_query_table_mut::<#qt>(self).set((#(#key_names),*), value__)
+                    fn __shim(db: &mut dyn #trait_name, #(#key_names: #keys,)* value__: #value) {
+                        salsa::plumbing::get_query_table_mut::<#qt>(db).set((#(#key_names),*), value__)
+                    }
+                    __shim(self, #(#key_names,)* value__)
                 }
 
                 fn #set_with_durability_fn_name(&mut self, #(#key_names: #keys,)* value__: #value, durability__: salsa::Durability) {
-                    salsa::plumbing::get_query_table_mut::<#qt>(self).set_with_durability((#(#key_names),*), value__, durability__)
+                    fn __shim(db: &mut dyn #trait_name, #(#key_names: #keys,)* value__: #value, durability__: salsa::Durability) {
+                        salsa::plumbing::get_query_table_mut::<#qt>(db).set_with_durability((#(#key_names),*), value__, durability__)
+                    }
+                    __shim(self, #(#key_names,)* value__ ,durability__)
                 }
             });
         }
