@@ -23,17 +23,10 @@
 /// #[salsa::database(NoSendSyncStorage)]
 /// #[derive(Default)]
 /// struct DatabaseImpl {
-///     runtime: salsa::Runtime<DatabaseImpl>,
+///     storage: salsa::Storage<Self>,
 /// }
 ///
 /// impl salsa::Database for DatabaseImpl {
-///     fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-///         &self.runtime
-///     }
-///
-///     fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-///         &mut self.runtime
-///     }
 /// }
 ///
 /// fn is_send<T: Send>(_: T) { }
@@ -68,17 +61,10 @@ fn test_key_not_send_db_not_send() {}
 /// #[salsa::database(NoSendSyncStorage)]
 /// #[derive(Default)]
 /// struct DatabaseImpl {
-///     runtime: salsa::Runtime<DatabaseImpl>,
+///     runtime: salsa::Storage<Self>,
 /// }
 ///
 /// impl salsa::Database for DatabaseImpl {
-///     fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-///         &self.runtime
-///     }
-///
-///     fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-///         &mut self.runtime
-///     }
 /// }
 ///
 /// fn is_send<T: Send>(_: T) { }
@@ -113,17 +99,10 @@ fn test_key_not_sync_db_not_send() {}
 /// #[salsa::database(NoSendSyncStorage)]
 /// #[derive(Default)]
 /// struct DatabaseImpl {
-///     runtime: salsa::Runtime<DatabaseImpl>,
+///     runtime: salsa::Storage<Self>,
 /// }
 ///
 /// impl salsa::Database for DatabaseImpl {
-///     fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-///         &self.runtime
-///     }
-///
-///     fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-///         &mut self.runtime
-///     }
 /// }
 ///
 /// fn is_sync<T: Sync>(_: T) { }
