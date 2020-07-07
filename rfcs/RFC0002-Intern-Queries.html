@@ -91,7 +91,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.1.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.2.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html" class="active"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li></ol></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/diagram.html"><strong aria-hidden="true">6.1.</strong> Diagram</a></li><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.2.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.3.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html" class="active"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0006-Dynamic-Databases.html"><strong aria-hidden="true">7.7.</strong> RFC 0006: Dynamic database</a></li></ol></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -187,7 +187,7 @@ input. But within an input file, there are additional structures, such
 as <code>struct</code> or <code>impl</code> declarations, and these structures may contain
 further structures within them (such as fields or methods). This gives
 rise to a path like so that can be used to identify a given item:</p>
-<pre><code>PathData = &lt;file-name&gt;
+<pre><code class="language-notrust">PathData = &lt;file-name&gt;
          | PathData / &lt;identifier&gt;
 </code></pre>
 <p>These paths <em>could</em> be represented in the compiler with an <code>Arc</code>, but
@@ -236,16 +236,12 @@ collection mechanisms.</p>
 <p>This section covers how interned queries are expected to be used.</p>
 <h2><a class="header" href="#declaring-an-interned-query" id="declaring-an-interned-query">Declaring an interned query</a></h2>
 <p>You can declare an interned query like so:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[salsa::query_group]
+<pre><code class="language-rust ignore">#[salsa::query_group]
 trait Foo {
   #[salsa::interned]
   fn intern_path_data(&amp;self, data: PathData) -&gt; salsa::InternId;
 ]
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p><strong>Query keys.</strong> Like any query, these queries can take any number of keys. If multiple
 keys are provided, then the interned key is a tuple of each key
 value. In order to be interned, the keys must implement <code>Clone</code>,
@@ -261,13 +257,9 @@ would be <code>fn lookup_intern_path(&amp;self, key: salsa::InternId) -&gt; Path
 <p>Using an interned query is quite straightforward. You simply invoke it
 with a key, and you will get back an integer, and you can use the
 generated <code>lookup</code> method to convert back to the original value:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let key = db.intern_path(path_data1);
+<pre><code class="language-rust ignore">let key = db.intern_path(path_data1);
 let path_data2 = db.lookup_intern_path_data(key);
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>Note that the interned value will be cloned -- so, like all Salsa
 values, it is best if that is a cheap operation. Interestingly,
 interning can help to keep recursive, tree-shapes values cheap,
@@ -275,18 +267,14 @@ because the &quot;pointers&quot; within can be replaced with interned keys.</p>
 <h2><a class="header" href="#custom-return-types" id="custom-return-types">Custom return types</a></h2>
 <p>The return type for an intern query does not have to be a <code>InternId</code>. It can
 be any type that implements the <code>salsa::InternKey</code> trait:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub trait InternKey {
+<pre><code class="language-rust ignore">pub trait InternKey {
     /// Create an instance of the intern-key from a `InternId` value.
     fn from_intern_id(v: InternId) -&gt; Self;
 
     /// Extract the `InternId` with which the intern-key was created.
     fn as_intern_id(&amp;self) -&gt; InternId;
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <h2><a class="header" href="#recommended-practice" id="recommended-practice">Recommended practice</a></h2>
 <p>This section shows the recommended practice for using interned keys,
 building on the <code>Path</code> and <code>PathData</code> example that we've been working
@@ -300,10 +288,7 @@ data, but rather should store the interned key.</p>
 <h3><a class="header" href="#defining-the-intern-key" id="defining-the-intern-key">Defining the intern key</a></h3>
 <p>The intern key should always be a newtype struct that implements
 the <code>InternKey</code> trait. So, something like this:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub struct Path(InternId);
+<pre><code class="language-rust ignore">pub struct Path(InternId);
 
 impl salsa::InternKey for Path {
     fn from_intern_id(v: InternId) -&gt; Self {
@@ -314,42 +299,33 @@ impl salsa::InternKey for Path {
         self.0
     }
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <h3><a class="header" href="#convenient-lookup-method" id="convenient-lookup-method">Convenient lookup method</a></h3>
 <p>It is often convenient to add a <code>lookup</code> method to the newtype key:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl Path {
+<pre><code class="language-rust ignore">impl Path {
     // Adding this method is often convenient, since you can then
     // write `path.lookup(db)` to access the data, which reads a bit better.
     pub fn lookup(&amp;self, db: &amp;impl MyDatabase) -&gt; PathData {
         db.lookup_intern_path_data(*self)
     }
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <h3><a class="header" href="#defining-the-data-type" id="defining-the-data-type">Defining the data type</a></h3>
 <p>Recall that our paths were defined by a recursive grammar like so:</p>
-<pre><code>PathData = &lt;file-name&gt;
+<pre><code class="language-notrust">PathData = &lt;file-name&gt;
          | PathData / &lt;identifier&gt;
 </code></pre>
 <p>This recursion is quite typical of salsa applications. The recommended
 way to encode it in the <code>PathData</code> structure itself is to build on other
 intern keys, like so:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[derive(Clone, Hash, Eq, ..)]
+<pre><code class="language-rust ignore">#[derive(Clone, Hash, Eq, ..)]
 enum PathData {
   Root(String),
   Child(Path, String),
   //    ^^^^ Note that the recursive reference here
   //         is encoded as a Path.
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>Note though that the <code>PathData</code> type will be cloned whenever the value
 for an interned key is looked up, and it may also be cloned to store
 dependency information between queries. So, as an optimization, you
@@ -378,14 +354,10 @@ be a useful thing to be able to do (this is effectively a memory
 allocator, so standard allocation strategies could be used here).</p>
 <h2><a class="header" href="#internid" id="internid">InternId</a></h2>
 <p>Presently the <code>InternId</code> type is implemented to wrap a <code>NonZeroU32</code>:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub struct InternId {
+<pre><code class="language-rust ignore">pub struct InternId {
     value: NonZeroU32,
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>This means that <code>Option&lt;InternId&gt;</code> (or <code>Option&lt;Path&gt;</code>, continuing our
 example from before) will only be a single word. To accommodate this,
 the <code>InternId</code> constructors require that the value is less than

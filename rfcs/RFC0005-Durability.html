@@ -91,7 +91,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.1.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.2.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html" class="active"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li></ol></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/diagram.html"><strong aria-hidden="true">6.1.</strong> Diagram</a></li><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.2.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.3.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html" class="active"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0006-Dynamic-Databases.html"><strong aria-hidden="true">7.7.</strong> RFC 0006: Dynamic database</a></li></ol></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -195,10 +195,7 @@ walk the dependencies of Q to see if it is affected.</p>
 <h1><a class="header" href="#users-guide" id="users-guide">User's guide</a></h1>
 <h2><a class="header" href="#the-durability-type" id="the-durability-type">The durability type</a></h2>
 <p>We add a new type <code>salsa::Durability</code> which has there associated constants:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[derive(Copy, Clone, Debug, Ord)]
+<pre><code class="language-rust ignore">#[derive(Copy, Clone, Debug, Ord)]
 pub struct Durability(..);
 
 impl Durability {
@@ -211,22 +208,17 @@ impl Durability {
   // Values that are not expected to change, like sources from crates.io or the stdlib.
   pub const HIGH: Durability;
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>h## Specifying the durability of an input</p>
 <p>When setting an input <code>foo</code>, one can now invoke a method
 <code>set_foo_with_durability</code>, which takes a <code>Durability</code> as the final
 argument:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// db.set_foo(key, value) is equivalent to:
+<pre><code class="language-rust ignore">// db.set_foo(key, value) is equivalent to:
 db.set_foo_with_durability(key, value, Durability::LOW);
 
 // This would indicate that `foo` is not expected to change: 
 db.set_foo_with_durability(key, value, Durability::HIGH);
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <h2><a class="header" href="#durability-of-interned-values" id="durability-of-interned-values">Durability of interned values</a></h2>
 <p>Interned values are always considered <code>Durability::HIGH</code>. This makes
 sense as many queries that only use high durability inputs will also
@@ -236,12 +228,8 @@ recommended below.</p>
 <h2><a class="header" href="#synthetic-writes" id="synthetic-writes">Synthetic writes</a></h2>
 <p>Finally, we add one new method, <code>synthetic_write(durability)</code>, 
 available on the salsa runtime:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>db.salsa_runtime().synthetic_write(Durability::HIGH)
-<span class="boring">}
-</span></code></pre></pre>
+<pre><code class="language-rust ignore">db.salsa_runtime().synthetic_write(Durability::HIGH)
+</code></pre>
 <p>As the name suggests, <code>synthetic_write</code> causes salsa to act <em>as
 though</em> a write to an input of the given durability had taken
 place. This can be used for benchmarking, but it's also important to
@@ -249,10 +237,7 @@ controlling what values get garbaged collected, as described below.</p>
 <h2><a class="header" href="#tracing-and-garbage-collection" id="tracing-and-garbage-collection">Tracing and garbage collection</a></h2>
 <p>Durability affects garbage collection. The <code>SweepStrategy</code> struct is
 modified as follows:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>/// Sweeps values which may be outdated, but which have not
+<pre><code class="language-rust ignore">/// Sweeps values which may be outdated, but which have not
 /// been verified since the start of the current collection.
 /// These are typically memoized values from previous computations
 /// that are no longer relevant.
@@ -292,21 +277,16 @@ pub fn sweep_outdated(self) -&gt; SweepStrategy;
 /// high durability -- this will force us to verify *all* values. You can then
 /// sweep unverified values.
 pub fn sweep_unverified(self) -&gt; SweepStrategy;
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <h1><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h1>
 <h2><a class="header" href="#review-the-need-for-gc-to-collect-outdated-values" id="review-the-need-for-gc-to-collect-outdated-values">Review: The need for GC to collect outdated values</a></h2>
 <p>In general, salsa's lazy validation scheme can lead to the accumulation
 of garbage that is no longer needed. Consider a query like this one:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>fn derived1(db: &amp;impl Database, start: usize) {
+<pre><code class="language-rust ignore">fn derived1(db: &amp;impl Database, start: usize) {
   let middle = self.input(start);
   self.derived2(middle)
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>Now imagine that, on some particular run, we compute <code>derived1(22)</code>:</p>
 <ul>
 <li><code>derived1(22)</code>
@@ -318,7 +298,7 @@ of garbage that is no longer needed. Consider a query like this one:</p>
 </ul>
 <p>The end result of this execution will be a dependency graph
 like:</p>
-<pre><code>derived1(22) -&gt; derived2(44)
+<pre><code class="language-notrust">derived1(22) -&gt; derived2(44)
   |
   v
 input(22)
@@ -327,7 +307,7 @@ input(22)
 The next time <code>derived1(22)</code> executes, it will load <code>input(22)</code> as before,
 but then execute <code>derived2(45)</code>. This leaves us with a dependency
 graph as follows:</p>
-<pre><code>derived1(22) -&gt; derived2(45)
+<pre><code class="language-notrust">derived1(22) -&gt; derived2(45)
   |
   v
 input(22)       derived2(44)
@@ -346,7 +326,7 @@ thus, within a particular revision, we would never validate or trace a
 particular query twice).</p>
 <p>So, to continue our example, when we first executed <code>derived1(22)</code>
 in revision R1, we might have had a graph like:</p>
-<pre><code>derived1(22)   -&gt; derived2(44)
+<pre><code class="language-notrust">derived1(22)   -&gt; derived2(44)
 [verified: R1]    [verified: R1]
   |
   v
@@ -354,7 +334,7 @@ input(22)
 </code></pre>
 <p>Now, after we modify <code>input(22)</code> and execute <code>derived1(22)</code> again, we 
 would have a graph like:</p>
-<pre><code>derived1(22)   -&gt; derived2(45)
+<pre><code class="language-notrust">derived1(22)   -&gt; derived2(45)
 [verified: R2]    [verified: R2]
   |
   v
@@ -369,10 +349,7 @@ method can collect any values that are &quot;outdated&quot; (whose &quot;verifie
 revision is less than the current revision).</p>
 <p>The intended model is that one can do a &quot;mark-sweep&quot; style garbage
 collection like so:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Modify some input, triggering a new revision.
+<pre><code class="language-rust ignore">// Modify some input, triggering a new revision.
 db.set_input(22, 45);
 
 // The **mark** phase: execute the &quot;main query&quot;, with the intention
@@ -384,8 +361,7 @@ db.derived1(22);
 // The **sweep** phase: discard anything that was not traced during
 // the mark phase.
 db.sweep_all(...);
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>In the case of our example, when we execute <code>sweep_all</code>, it would
 collect <code>derived2(44)</code>.</p>
 <h2><a class="header" href="#challenge-durability-lets-us-avoid-tracing" id="challenge-durability-lets-us-avoid-tracing">Challenge: Durability lets us avoid tracing</a></h2>
@@ -440,6 +416,10 @@ the lattice itself would be dependent on other inputs.</p>
                         
 
                         
+                            <a rel="next" href="../rfcs/RFC0006-Dynamic-Databases.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
 
                         <div style="clear: both"></div>
                     </nav>
@@ -453,6 +433,10 @@ the lattice itself would be dependent on other inputs.</p>
                     </a>
                 
 
+                
+                    <a rel="next" href="../rfcs/RFC0006-Dynamic-Databases.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
                 
             </nav>
 

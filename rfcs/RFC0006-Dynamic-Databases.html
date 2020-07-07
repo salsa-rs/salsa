@@ -1,0 +1,684 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>RFC 0006: Dynamic database - Salsa</title>
+        
+        
+
+
+        <!-- Custom HTML head -->
+        
+
+
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        
+        <link rel="stylesheet" href="../fonts/fonts.css">
+        
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+        <link rel="stylesheet" href="../mermaid.css">
+        
+
+        
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/diagram.html"><strong aria-hidden="true">6.1.</strong> Diagram</a></li><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.2.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.3.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0006-Dynamic-Databases.html" class="active"><strong aria-hidden="true">7.7.</strong> RFC 0006: Dynamic database</a></li></ol></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                        
+                    </div>
+
+                    <h1 class="menu-title">Salsa</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1><a class="header" href="#dynamic-databases" id="dynamic-databases">Dynamic databases</a></h1>
+<h2><a class="header" href="#metadata" id="metadata">Metadata</a></h2>
+<ul>
+<li>Author: nikomatsakis</li>
+<li>Date: 2020-06-29</li>
+<li>Introduced in: <a href="https://github.com/salsa-rs/salsa/pull/1">salsa-rs/salsa#1</a> (please update once you open your PR)</li>
+</ul>
+<h2><a class="header" href="#summary" id="summary">Summary</a></h2>
+<ul>
+<li>Retool Salsa's setup so that the generated code for a query group is not
+dependent on the final database type, and interacts with the database only
+through <code>dyn</code> trait values.</li>
+<li>This imposes a certain amount of indirecton but has the benefit that when a
+query group definition changes, less code must be recompiled as a result.</li>
+<li>Key changes include:
+<ul>
+<li>Database keys are &quot;interned&quot; in the database to produce a
+<code>DatabaseKeyIndex</code>.</li>
+<li>The values for cached query are stored directly in the hashtable instead of
+in an <code>Arc</code>. There is still an Arc per cached query, but it stores the
+dependency information.</li>
+<li>The various traits are changed to make <code>salsa::Database</code> dyn-safe. Invoking
+methods on the runtime must now go through a <code>salsa::Runtime</code> trait.</li>
+<li>The <code>salsa::requires</code> functionality is removed.</li>
+</ul>
+</li>
+<li>Upsides of the proposal:
+<ul>
+<li>Potentially improved recompilation time. Minimal code is regenerated.</li>
+<li>Removing the <code>DatabaseData</code> unsafe code hack that was required by slots.</li>
+</ul>
+</li>
+<li>Downsides of the proposal:
+<ul>
+<li>The effect on runtime performance must be measured.</li>
+<li><code>DatabaseKeyIndex</code> values will leak, as we propose no means to reclaim them.
+However, the same is true of <code>Slot</code> values today.</li>
+<li>Storing values for the tables directly in the hashtable makes it less
+obvious how we would return references to them in a safe fashion (before, I
+had planned to have a separate module that held onto the Arc for the slot,
+so we were sure the value would not be deallocated; one can still imagine
+supporting this feature, but it would require some fancier unsafe code
+reasoning, although it would be more efficient.)</li>
+<li>The <code>salsa::requires</code> functionality is removed.</li>
+</ul>
+</li>
+</ul>
+<h2><a class="header" href="#motivation" id="motivation">Motivation</a></h2>
+<p>Under the current salsa setup, all of the &quot;glue code&quot; that manages cache
+invalidation and other logic is ultimately parameterized by a type <code>DB</code> that
+refers to the full database. The problem is that, if you consider a typical
+salsa crate graph, the actual value for that type is not available until the
+final database crate is compiled:</p>
+<pre class="mermaid">graph TD;
+  Database["Crate that defines the database"];
+  QueryGroupA["Crate with query group A"];
+  QueryGroupB["Crate with query group B"];
+  SalsaCrate["the `salsa` crate"];
+  Database -- depends on --> QueryGroupA;
+  Database -- depends on --> QueryGroupB;
+  QueryGroupA -- depends on --> SalsaCrate;
+  QueryGroupB -- depends on --> SalsaCrate;
+</pre>
+<p>The result is that we do not actually compile a good part of the code from
+<code>QueryGroupA</code> or <code>QueryGroupB</code> until we build the final database crate.</p>
+<h3><a class="header" href="#what-you-can-do-today-dyn-traits" id="what-you-can-do-today-dyn-traits">What you can do today: dyn traits</a></h3>
+<p>What you can do today is to use define a &quot;dyn-compatible&quot; query group
+trait and then write your derived functions using a <code>dyn</code> type as the
+argument:</p>
+<pre><code class="language-rust ignore">#[salsa::query_group(QueryGroupAStorage)]
+trait QueryGroupA {
+    fn derived(&amp;self, key: usize) -&gt; usize;
+}
+
+fn derived(db: &amp;dyn QueryGroupA, key: usize) -&gt; usize {
+    key * 2
+}
+</code></pre>
+<p>This has the benefit that the <code>derived</code> function is not generic. However, it's
+still true that the glue code salsa makes will be generic over a <code>DB</code> type --
+this includes the impl of <code>QueryGroupA</code> but also the <code>Slot</code> and other machinery.
+This means that even if the only change is to query group B, in a different
+crate, the glue code for query group A ultimately has to be recompiled whenever
+the <code>Database</code> crate is rebuilt (though incremental compilation may help here).
+Moreover, as reported in <a href="https://github.com/salsa-rs/salsa/issues/220">salsa-rs/salsa#220</a>, measurements of rust-analyzer
+suggest that this code may be duplicated and accounting for more of the binary
+than we would expect.</p>
+<p>FIXME: I'd like to have better measurements on the above!</p>
+<h3><a class="header" href="#our-goal" id="our-goal">Our goal</a></h3>
+<p>The primary goal of this RFC is to make it so that the glue code we generate for
+query groups is not dependent on the database type, thus enabling better
+incremental rebuilds.</p>
+<h2><a class="header" href="#users-guide" id="users-guide">User's guide</a></h2>
+<p>Most of the changes in this RFC are &quot;under the hood&quot;. But there are various user
+visibile changes proposed here.</p>
+<h3><a class="header" href="#all-query-groups-must-be-dyn-safe" id="all-query-groups-must-be-dyn-safe">All query groups must be dyn safe</a></h3>
+<p>The largest one is that <strong>all Salsa query groups must now be dyn-safe</strong>. The
+existing salsa query methods are all dyn-safe, so what this really implies is
+that one cannot have super-traits that use generic methods or other things that
+are not dyn safe. For example, this query group would be illegal:</p>
+<pre><code class="language-rust ignore">#[salsa::query_group(QueryGroupAStorage)]
+trait QueryGroupA: Foo {
+}
+
+trait Foo {
+    fn method&lt;T&gt;(t: T) { }
+}
+</code></pre>
+<p>We could support query groups that are not dyn safe, but it would require us to
+have two &quot;similar but different&quot; ways of generating plumbing, and I'm not
+convinced that it's worth it. Moreover, it would require some form of opt-in so
+that would be a measure of user complexity as well.</p>
+<h3><a class="header" href="#all-query-functions-must-take-a-dyn-database" id="all-query-functions-must-take-a-dyn-database">All query functions must take a dyn database</a></h3>
+<p>You used to be able to implement queries by using <code>impl MyDatabase</code>, like so:</p>
+<pre><code class="language-rust ignore">fn my_query(db: &amp;impl MyDatabase, ...) { .. }
+</code></pre>
+<p>but you must now use <code>dyn MyDatabase</code>:</p>
+<pre><code class="language-rust ignore">fn my_query(db: &amp;dyn MyDatabase, ...) { .. }
+</code></pre>
+<h3><a class="header" href="#databases-embed-a-storagedb-with-a-fixed-field-name" id="databases-embed-a-storagedb-with-a-fixed-field-name">Databases embed a <code>Storage&lt;DB&gt;</code> with a fixed field name</a></h3>
+<p>The &quot;Hello World&quot; database becomes the following:</p>
+<pre><code class="language-rust ignore">#[salsa::database(QueryGroup1, ..., QueryGroupN)]
+struct MyDatabase {
+    storage: salsa::Storage&lt;Self&gt;
+}
+
+impl salsa::Database for MyDatabase {}
+</code></pre>
+<p>In particular:</p>
+<ul>
+<li>You now embed a <code>salsa::Storage&lt;Self&gt;</code> instead of a <code>salsa::Runtime&lt;Self&gt;</code></li>
+<li>The field <strong>must</strong> be named <code>storage</code> by default; we can include a <code>#[salsa::storge_field(xxx)]</code> annotation to change that default if desired.
+<ul>
+<li>Or we could scrape the struct declaration and infer it, I suppose.</li>
+</ul>
+</li>
+<li>You no longer have to define the <code>salsa_runtime</code> and <code>salsa_runtime_mut</code> methods, they move to the <code>DatabaseOps</code> trait and are manually implemented by doing <code>self.storage.runtime()</code> and so forth.</li>
+</ul>
+<p>Why these changes, and what is this <code>Storage</code> struct? This is because the actual
+storage for queries is moving outside of the runtime. The Storage struct just
+combines the <code>Runtime</code> (whose type no longer references <code>DB</code> directly) with an
+<code>Arc&lt;DB::Storage&gt;</code>. The full type of <code>Storage</code>, since it includes the database
+type, cannot appear in any public interface, it is just used by the various
+implementations that are created by <code>salsa::database</code>.</p>
+<h3><a class="header" href="#instead-of-dbqueryq-you-write-qin_dbdb" id="instead-of-dbqueryq-you-write-qin_dbdb">Instead of <code>db.query(Q)</code>, you write <code>Q.in_db(&amp;db)</code></a></h3>
+<p>As a consequence of the previous point, the existing <code>query</code> and <code>query_mut</code>
+methods on the <code>salsa::Database</code> trait are changed to methods on the query types
+themselves. So instead of <code>db.query(SomeQuery)</code>, one would write
+<code>SomeQuery.in_db(&amp;db)</code> (or <code>in_db_mut</code>). This both helps by making the
+<code>salsa::Database</code> trait dyn-safe and also works better with the new use of <code>dyn</code>
+types, since it permits a coercion from <code>&amp;db</code> to the appropriate <code>dyn</code> database
+type at the point of call.</p>
+<h3><a class="header" href="#the-salsa-event-mechanism-will-move-to-dynamic-dispatch" id="the-salsa-event-mechanism-will-move-to-dynamic-dispatch">The salsa-event mechanism will move to dynamic dispatch</a></h3>
+<p>A further consequence is that the existing <code>salsa_event</code> method will be
+simplified and made suitable for dynamic dispatch. It used to take a closure
+that would produce the event if necessary; it now simply takes the event itself.
+This is partly because events themselves no longer contain complex information:
+they used to have database-keys, which could require expensive cloning, but they
+now have simple indices.</p>
+<pre><code class="language-rust ignore">fn salsa_event(&amp;self, event: Event) {
+    #![allow(unused_variables)]
+}
+</code></pre>
+<p>This may imply some runtime cost, since various parts of the machinery invoke
+<code>salsa_event</code>, and those calls will now be virtual calls. They would previously
+have been static calls that would likely have been optimized away entirely.</p>
+<p>It is however possible that ThinLTO or other such optimization could remove
+those calls, this has not been tested, and in any case the runtime effects are
+not expected to be high, since all the calls will always go to the same
+function.</p>
+<h3><a class="header" href="#the-salsarequires-function-is-removed" id="the-salsarequires-function-is-removed">The <code>salsa::requires</code> function is removed</a></h3>
+<p>We currently offer a feature for &quot;private&quot; dependencies between query groups
+called <code>#[salsa::requires(ExtraDatabase)]</code>. This then requires query
+functions to be written like:</p>
+<pre><code class="language-rust ignore">fn query_fn(db: &amp;impl Database + ExtraDatabase, ...) { }
+</code></pre>
+<p>This format is not compatible with <code>dyn</code>, so this feature is removed.</p>
+<h2><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h2>
+<h3><a class="header" href="#example" id="example">Example</a></h3>
+<p>To explain the proposal, we'll use the Hello World example, lightly adapted:</p>
+<pre><code class="language-rust ignore">#[salsa::query_group(HelloWorldStorage)]
+trait HelloWorld: salsa::Database {
+    #[salsa::input]
+    fn input_string(&amp;self, key: ()) -&gt; Arc&lt;String&gt;;
+
+    fn length(&amp;self, key: ()) -&gt; usize;
+}
+
+fn length(db: &amp;dyn HelloWorld, (): ()) -&gt; usize {
+    // Read the input string:
+    let input_string = db.input_string(());
+
+    // Return its length:
+    input_string.len()
+}
+
+#[salsa::database(HelloWorldStorage)]
+struct DatabaseStruct {
+    runtime: salsa::Runtime&lt;DatabaseStruct&gt;,
+}
+
+impl salsa::Database for DatabaseStruct {
+    fn salsa_runtime(&amp;self) -&gt; &amp;salsa::Runtime&lt;Self&gt; {
+        &amp;self.runtime
+    }
+
+    fn salsa_runtime_mut(&amp;mut self) -&gt; &amp;mut salsa::Runtime&lt;Self&gt; {
+        &amp;mut self.runtime
+    }
+}
+</code></pre>
+<h3><a class="header" href="#identifying-queries-using-the-databasekeyindex" id="identifying-queries-using-the-databasekeyindex">Identifying queries using the <code>DatabaseKeyIndex</code></a></h3>
+<p>We introduce the following struct that represents a database key using a series
+of indices:</p>
+<pre><code class="language-rust ignore">struct DatabaseKeyIndex {
+    /// Identifies the query group.
+    group_index: u16,
+
+    /// Identifies the query within the group.
+    query_index: u16,
+
+    /// Identifies the key within the query.
+    key_index: u32,
+}
+</code></pre>
+<p>This struct allows the various query group structs to refer to database keys
+without having to use a type like <code>DB::DatabaseKey</code> that is dependent on the
+<code>DB</code>.</p>
+<p>The group/query indices will be assigned by the <code>salsa::database</code> and
+<code>salsa::query_group</code> macros respectively. When query group storage is created,
+it will be passed in its group index by the database. Each query will be able to
+access its query-index through the <code>Query</code> trait, as they are statically known
+at the time that the query is compiled (the group index, in contrast, depends on
+the full set of groups for the database).</p>
+<p>The key index can be assigned by the query as it executes without any central
+coordination. Each query will use a <code>IndexMap</code> (from the <code>indexmap</code> crate)
+mapping <code>Q::Key -&gt; QueryState</code>. Inserting new keys into this map also creates
+new indices, and it is possible to index into the map in O(1) time later to
+obtain the state (or key) from a given query. This map replaces the existing
+<code>Q::Key -&gt; Arc&lt;Slot&lt;..&gt;&gt;</code> map that is used today.</p>
+<p>One notable implication: we cannot remove entries from the query index map
+(e.g., for GC) because that would invalidate the existing indices. We can
+however replace the query-state with a &quot;not computed&quot; value. This is not new:
+slots already take this approach today. In principle, we could extend the
+tracing GC to permit compressing and perhaps even rewriting indices, but it's
+not clear that this is a problem in practice.</p>
+<p>The <code>DatabaseKeyIndex</code> also supports a <code>debug</code> method that returns a value with
+a human readable <code>debug!</code> output, so that you can do <code>debug!(&quot;{:?}&quot;, index.debug(db))</code>. This works by generating a <code>fmt_debug</code> method that is
+supported by the various query groups.</p>
+<h3><a class="header" href="#the-various-query-traits-are-not-generic-over-a-database" id="the-various-query-traits-are-not-generic-over-a-database">The various query traits are not generic over a database</a></h3>
+<p>Today, the <code>Query</code>, <code>QueryFunction</code>, and <code>QueryGroup</code> traits are generic over
+the database <code>DB</code>, which allows them to name the final database type and
+associated types derived from it. In the new scheme, we never want to do that,
+and so instead they will now have an associated type, <code>DynDb</code>, that maps to the
+<code>dyn</code> version of the query group trait that the query is associated with.</p>
+<p>Therefore <code>QueryFunction</code> for example can become:</p>
+<pre><code class="language-rust ignore">pub trait QueryFunction: Query {
+    fn execute(db: &amp;Self::DynDb, key: Self::Key) -&gt; Self::Value;
+    fn recover(db: &amp;Self::DynDb, cycle: &amp;[DB::DatabaseKey], key: &amp;Self::Key) -&gt; Option&lt;Self::Value&gt; {
+        let _ = (db, cycle, key);
+        None
+    }
+}
+</code></pre>
+<h3><a class="header" href="#storing-query-results-and-tracking-dependencies" id="storing-query-results-and-tracking-dependencies">Storing query results and tracking dependencies</a></h3>
+<p>In today's setup, we have all the data for a particular query stored in a
+<code>Slot&lt;Q, DB, MP&gt;</code>, and these slots hold references to one another to track
+dependencies. Because the type of each slot is specific to the particular query
+<code>Q</code>, the references between slots are done using a <code>Arc&lt;dyn DatabaseSlot&lt;DB&gt;&gt;</code>
+handle. This requires some unsafe hacks, including the <code>DatabaseData</code> associated
+type.</p>
+<p>This RFC proposes to alter this setup. Dependencies will store a <code>DatabaseIndex</code>
+instead. This means that validating dependencies is less efficient, as we no
+longer have a direct pointer to the dependency information but instead must
+execute three index lookups (one to find the query group, one to locate the
+query, and then one to locate the key). Similarly the LRU list can be reverted
+to a <code>LinkedHashMap</code> of indices.</p>
+<p>We may tinker with other approaches too: the key change in the RFC is that we
+do not need to store a <code>DB::DatabaseKey</code> or <code>Slot&lt;..DB..&gt;</code>, but instead can use
+some type for dependencies that is independent of the dtabase type <code>DB</code>.</p>
+<h3><a class="header" href="#dispatching-methods-from-a-databasekeyindex" id="dispatching-methods-from-a-databasekeyindex">Dispatching methods from a <code>DatabaseKeyIndex</code></a></h3>
+<p>There are a number of methods that can be dispatched through the database
+interface on a <code>DatabaseKeyIndex</code>. For example, we already mentioned
+<code>fmt_debug</code>, which emits a debug representation of the key, but there is also
+<code>maybe_changed_since</code>, which checks whether the value for a given key may have
+changed since the given revision. Each of these methods is a member of the
+<code>DatabaseOps</code> trait and they are dispatched as follows.</p>
+<p>First, the <code>#[salsa::database]</code> procedural macro is the one which
+generates the <code>DatabaseOps</code> impl for the database. This base method
+simply matches on the group index to determine which query group
+contains the key, and then dispatches to an inherent
+method defined on the appropriate query group struct:</p>
+<pre><code class="language-rust ignore">impl salsa::plumbing::DatabaseOps for DatabaseStruct {
+    // We'll use the `fmt_debug` method as an example
+    fn fmt_debug(&amp;self, index: DatabaseKeyIndex, fmt: &amp;mut std::fmt::Formatter&lt;'_&gt;) -&gt; std::fmt::Result {
+        match index.group_index() {
+            0 =&gt; {
+                let storage = &lt;Self as HasQueryGroup&lt;HelloWorld&gt;&gt;::group_storage(self);
+                storage.fmt_debug(index, fmt)
+            }
+
+            _ =&gt; panic!(&quot;Invalid index&quot;)
+        }
+    }
+}
+</code></pre>
+<p>The query group struct has a very similar inherent method that dispatches based
+on the query index and invokes a method on the query storage:</p>
+<pre><code class="language-rust ignore">impl HelloWorldGroupStorage__ {
+    // We'll use the `fmt_debug` method as an example
+    fn fmt_debug(&amp;self, index: DatabaseKeyIndex, fmt: &amp;mut std::fmt::Formatter&lt;'_&gt;) -&gt; std::fmt::Result {
+        match index.query_index() {
+            0 =&gt; self.appropriate_query_field.fmt_debug(index, fmt),
+            1 =&gt; ...
+            _ =&gt; panic!(&quot;Invalid index&quot;)
+        }
+    }
+}
+</code></pre>
+<p>Finally, the query storage can use the key index to lookup the appropriate
+data from the <code>FxIndexSet</code>.</p>
+<h3><a class="header" href="#wrap-runtime-in-a-storagedb-type" id="wrap-runtime-in-a-storagedb-type">Wrap runtime in a <code>Storage&lt;DB&gt;</code> type</a></h3>
+<p>The Salsa runtime is currently <code>Runtime&lt;DB&gt;</code> but it will change to just
+<code>Runtime</code> and thus not be generic over the database. This means it can be
+referenced directly by query storage implementations. This is very useful
+because it allows that type to have a number of <code>pub(crate)</code> details that query
+storage implementations make use of but which are not exposed as part of our
+public API.</p>
+<p>However, the <code>Runtime</code> crate used to contain a <code>DB::Storage</code>, and without the
+<code>DB</code> in its type, it no longer can. Therefore, we will introduce a new type
+<code>Storage&lt;DB&gt;</code> type which is defined like so:</p>
+<pre><code class="language-rust ignore">pub struct Storage&lt;DB: DatabaseImpl&gt; {
+    query_store: Arc&lt;DB::DatabaseStorage&gt;,
+    runtime: Runtime,
+}
+
+impl&lt;DB&gt; Storage&lt;DB&gt; {
+    pub fn query_store(&amp;self) -&gt; &amp;DB::DatabaseStorage {
+        &amp;self.query_store
+    }
+
+    pub fn salsa_runtime(&amp;self) -&gt; &amp;Runtime {
+        &amp;self.runtime
+    }
+
+    pub fn salsa_runtime_mut(&amp;mut self) -&gt; &amp;mut Runtime {
+        &amp;self.runtime
+    }
+
+    /// Used for parallel queries
+    pub fn snapshot(&amp;self) -&gt; Self {
+        Storage {
+            query_store: query_store.clone(),
+            runtime: runtime.snapshot(),
+        }
+    }
+}
+</code></pre>
+<p>The user is expected to include a field <code>storage: Storage&lt;DB&gt;</code> in their database
+definition. The <code>salsa::database</code> procedural macro, when it generates impls of
+traits like <code>HasQueryGroup</code>, will embed code like <code>self.storage</code> that looks for
+that field.</p>
+<h3><a class="header" href="#salsa_runtime-methods-move-to-databaseops-trait" id="salsa_runtime-methods-move-to-databaseops-trait"><code>salsa_runtime</code> methods move to <code>DatabaseOps</code> trait</a></h3>
+<p>The <code>salsa_runtime</code> methods used to be manually implemented by users to define
+the field that contains the salsa runtime. This was always boilerplate. The
+<code>salsa::database</code> macro now handles that job by defining them to invoke the
+corresponding methods on <code>Storage</code>.</p>
+<h3><a class="header" href="#salsa-database-trait-becomes-dyn-safe" id="salsa-database-trait-becomes-dyn-safe">Salsa database trait becomes dyn safe</a></h3>
+<p>Under this proposal, the Salsa database must be dyn safe. This implies that
+we have to make a few changes:</p>
+<ul>
+<li>The <code>query</code> and <code>query_mut</code> methods move to an extension trait.</li>
+<li>The <code>DatabaseStorageTypes</code> supertrait is removed (that trait is renamed and altered, see next section).</li>
+<li>The <code>salsa_event</code> method changes, as described in the User's guide.</li>
+</ul>
+<h3><a class="header" href="#salsa-database-trait-requires-static-at-least-for-now" id="salsa-database-trait-requires-static-at-least-for-now">Salsa database trait requires <code>'static</code>, at least for now</a></h3>
+<p>One downside of this proposal is that the <code>salsa::Database</code> trait now has a
+<code>'static</code> bound. This is a result of the lack of GATs -- in particular, the
+queries expect a <code>Q::DynDb</code> as argument. In the query definition, we have
+something like <code>type DynDb = dyn QueryGroupDatabase</code>, which in turn defaults to
+<code>dyn::QueryGroupDatabase + 'static</code>.</p>
+<p>At the moment, this limitation is harmless, since salsa databases don't support
+generic parameters. But it would be good to lift in the future, especially as we
+would like to support arena allocation and other such patterns. The limitation
+could be overcome in the future by:</p>
+<ul>
+<li>converting to a GAT like <code>DynDb&lt;'a&gt;</code>, if those were available;</li>
+<li>or by simulating GATs by introducing a trait to carry the <code>DynDb</code> definition,
+like <code>QueryDb&lt;'a&gt;</code>, where <code>Query</code> has the supertrait <code>for&lt;'a&gt; Self: QueryDb&lt;'a&gt;</code>. This would permit the <code>DynDb</code> type to be referenced by writing
+<code>&lt;Q as QueryDb&lt;'a&gt;&gt;::DynDb</code>. </li>
+</ul>
+<h3><a class="header" href="#salsa-query-group-traits-are-extended-with-database-and-hasquerygroup-supertrait" id="salsa-query-group-traits-are-extended-with-database-and-hasquerygroup-supertrait">Salsa query group traits are extended with <code>Database</code> and <code>HasQueryGroup</code> supertrait</a></h3>
+<p>When <code>#[salsa::query_group]</code> is applied to a trait, we currently generate a copy
+of the trait that is &quot;more or less&quot; unmodified (although we sometimes add
+additional synthesized methods, such as the <code>set</code> method for an input). Under
+this proposal, we will also introduce a <code>HasQueryGroup&lt;QueryGroupStorage&gt;</code>
+supertrait. Therefore the following input:</p>
+<pre><code class="language-rust ignore">#[salsa::query_group(HelloWorldStorage)]
+trait HelloWorld { .. }
+</code></pre>
+<p>will generate a trait like:</p>
+<pre><code class="language-rust ignore">trait HelloWorld: 
+    salsa::Database + 
+    salsa::plumbing::HasQueryGroup&lt;HelloWorldStorage&gt;
+{ 
+    .. 
+}
+</code></pre>
+<p>The <code>Database</code> trait is the standard <code>salsa::Database</code> trait and contains
+various helper methods. The <code>HasQueryGroup</code> trait is implemented by the database
+and defines various plumbing methods that are used by the storage
+implementations.</p>
+<p>One downside of this is that <code>salsa::Database</code> methods become available on the
+trait; we might want to give internal plumbing methods more obscure names.</p>
+<h4><a class="header" href="#bounds-were-already-present-on-the-blanket-impl-of-salsa-query-group-trait" id="bounds-were-already-present-on-the-blanket-impl-of-salsa-query-group-trait">Bounds were already present on the blanket impl of salsa query group trait</a></h4>
+<p>The new bounds that are appearing on the trait were always present on the
+blanket impl that the <code>salsa::query_group</code> procedural macro generated, which
+looks like so (and continues unchanged under this RFC):</p>
+<pre><code class="language-rust ignore">impl&lt;DB&gt; HelloWorld for DB
+where
+    DB: salsa::Database +
+    DB: salsa::plumbing::HasQueryGroup&lt;HelloWorldStorage&gt;
+{
+    ...
+}
+</code></pre>
+<p>The reason we generate the impl is so that the <code>salsa::database</code> procedural
+macro can simply create the <code>HasQueryGroup</code> impl and never needs to know the
+name of the <code>HelloWorld</code> trait, only the <code>HelloWorldStorage</code> type.</p>
+<h3><a class="header" href="#storage-types-no-longer-parameterized-by-the-database" id="storage-types-no-longer-parameterized-by-the-database">Storage types no longer parameterized by the database</a></h3>
+<p>Today's storage types, such as <code>Derived</code>, are parameterized over both a query <code>Q</code> and a <code>DB</code> (along with the memoization policy <code>MP</code>):</p>
+<pre><code class="language-rust ignore">// Before this RFC:
+pub struct DerivedStorage&lt;DB, Q, MP&gt;
+where
+    Q: QueryFunction&lt;DB&gt;,
+    DB: Database + HasQueryGroup&lt;Q::Group&gt;,
+    MP: MemoizationPolicy&lt;DB, Q&gt;,
+</code></pre>
+<p>The <code>DB</code> parameter should no longer be needed after the previously described
+changes are made, so that the signature looks like:</p>
+<pre><code class="language-rust ignore">// Before this RFC:
+pub struct DerivedStorage&lt;Q, MP&gt;
+where
+    Q: QueryFunction,
+    MP: MemoizationPolicy&lt;DB, Q&gt;,
+</code></pre>
+<h2><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h2>
+<p>The 'linch-pin' of this design is the <code>DatabaseKeyIndex</code> type, which allows for
+signatures to refer to &quot;any query in the system&quot; without reference to the <code>DB</code>
+type. The biggest downside of the system is that this type is an integer which
+then requires a tracing GC to recover index values. The primary alternative
+would be to use an <code>Arc</code>-like scheme,but this has some severe downsides:</p>
+<ul>
+<li>Requires reference counting, allocation</li>
+<li>Hashing and equality comparisons have more data to process versus an integer</li>
+<li>Equality comparisons must still be deep since you may have older and newer keys co-existing</li>
+<li>Requires a <code>Arc&lt;dyn DatabaseKey&gt;</code>-like setup, which then encounters the
+problems that this type is not <code>Send</code> or <code>Sync</code>, leading to hacks like the
+<code>DB::DatabaseData</code> we use today.</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+                            <a rel="prev" href="../rfcs/RFC0005-Durability.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+                    <a rel="prev" href="../rfcs/RFC0005-Durability.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        
+
+        
+
+        
+        <script src="../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+        <script type="text/javascript" src="../mermaid.min.js"></script>
+        
+        <script type="text/javascript" src="../mermaid-init.js"></script>
+        
+
+        
+
+    </body>
+</html>

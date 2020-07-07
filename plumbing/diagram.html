@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>RFC 0003: Query dependencies - Salsa</title>
+        <title>Diagram - Salsa</title>
         
         
 
@@ -91,7 +91,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/diagram.html"><strong aria-hidden="true">6.1.</strong> Diagram</a></li><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.2.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.3.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html" class="active"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0006-Dynamic-Databases.html"><strong aria-hidden="true">7.7.</strong> RFC 0006: Dynamic database</a></li></ol></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/diagram.html" class="active"><strong aria-hidden="true">6.1.</strong> Diagram</a></li><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.2.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.3.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0006-Dynamic-Databases.html"><strong aria-hidden="true">7.7.</strong> RFC 0006: Dynamic database</a></li></ol></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -157,108 +157,92 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#summary" id="summary">Summary</a></h1>
-<p>Allow to specify a dependency on a query group without making it a super trait.</p>
-<h1><a class="header" href="#motivation" id="motivation">Motivation</a></h1>
-<p>Currently, there's only one way to express that queries from group <code>A</code> can use
-another group <code>B</code>: namely, <code>B</code> can be a super-trait of <code>A</code>:</p>
-<pre><code class="language-rust ignore">#[salsa::query_group(AStorage)]
-trait A: B {
+                        <h1><a class="header" href="#diagram" id="diagram">Diagram</a></h1>
+<p>Based on the hello world example:</p>
+<pre><code class="language-rust ignore">#[salsa::query_group(HelloWorldStorage)]
+trait HelloWorld: salsa::Database {
+    // For each query, we give the name, some input keys (here, we
+    // have one key, `()`) and the output type `Arc&lt;String&gt;`. We can
+    // use attributes to give other configuration:
+    //
+    // - `salsa::input` indicates that this is an &quot;input&quot; to the system,
+    //   which must be explicitly set. The `salsa::query_group` method
+    //   will autogenerate a `set_input_string` method that can be
+    //   used to set the input.
+    #[salsa::input]
+    fn input_string(&amp;self, key: ()) -&gt; Arc&lt;String&gt;;
 
+    // This is a *derived query*, meaning its value is specified by
+    // a function (see Step 2, below).
+    fn length(&amp;self, key: ()) -&gt; usize;
 }
 </code></pre>
-<p>This approach works and allows one to express complex dependencies. However,
-this approach falls down when one wants to make a dependency a private
-implementation detail: Clients with <code>db: &amp;impl A</code> can freely call <code>B</code> methods on
-the <code>db</code>.</p>
-<p>This is a bad situation from software engineering point of view: if everything
-is accessible, it's hard to make distinction between public API and private
-implementation details. In the context of salsa the situation is even worse,
-because it breaks &quot;firewall&quot; pattern. It's customary to wrap low-level
-frequently-changing or volatile queries into higher-level queries which produce
-stable results and contain invalidation. In the current salsa, however, it's
-very easy to accidentally call a low-level volatile query instead of a wrapper,
-introducing and undesired dependency.</p>
-<h1><a class="header" href="#users-guide" id="users-guide">User's guide</a></h1>
-<p>To specify query dependencies, a <code>requires</code> attribute should be used:</p>
-<pre><code class="language-rust ignore">#[salsa::query_group(SymbolsDatabaseStorage)]
-#[salsa::requires(SyntaxDatabase)]
-#[salsa::requires(EnvDatabase)]
-pub trait SymbolsDatabase {
-    fn get_symbol_by_name(&amp;self, name: String) -&gt; Symbol;
+<pre><code class="language-rust ignore">#[salsa::database(HelloWorldStorage)]
+#[derive(Default)]
+struct DatabaseStruct {
+    storage: salsa::Storage&lt;Self&gt;,
 }
+
+impl salsa::Database for DatabaseStruct {}
 </code></pre>
-<p>The argument of <code>requires</code> is a path to a trait. The traits from all <code>requires</code>
-attributes are available when implementing the query:</p>
-<pre><code class="language-rust ignore">fn get_symbol_by_name(
-    db: &amp;(impl SymbolsDatabase + SyntaxDatabase + EnvDatabase),
-    name: String,
-) -&gt; Symbol {
-    // ...
-}
-</code></pre>
-<p>However, these traits are <strong>not</strong> available without explicit bounds:</p>
-<pre><code class="language-rust ignore">fn fuzzy_find_symbol(db: &amp;impl SymbolsDatabase, name: String) {
-    // Can't accidentally call methods of the `SyntaxDatabase`
-}
-</code></pre>
-<p>Note that, while the RFC does not propose to add per-query dependencies, query
-implementation can voluntarily specify only a subset of traits from <code>requires</code>
-attribute:</p>
-<pre><code class="language-rust ignore">fn get_symbol_by_name(
-    // Purposefully don't depend on EnvDatabase
-    db: &amp;(impl SymbolsDatabase + SyntaxDatabase),
-    name: String,
-) -&gt; Symbol {
-    // ...
-}
-</code></pre>
-<h1><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h1>
-<p>The implementation is straightforward and consists of adding traits from
-<code>requires</code> attributes to various <code>where</code> bounds. For example, we would generate
-the following blanket for above example:</p>
-<pre><code class="language-rust ignore">impl&lt;T&gt; SymbolsDatabase for T
-where
-    T: SyntaxDatabase + EnvDatabase,
-    T: salsa::plumbing::HasQueryGroup&lt;SymbolsDatabaseStorage&gt;
-{
-    ...
-}
-</code></pre>
-<h1><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h1>
-<p>The semantics of <code>requires</code> closely resembles <code>where</code>, so we could imagine a
-syntax based on magical where clauses:</p>
-<pre><code class="language-rust ignore">#[salsa::query_group(SymbolsDatabaseStorage)]
-pub trait SymbolsDatabase
-    where ???: SyntaxDatabase + EnvDatabase
-{
-    fn get_symbol_by_name(&amp;self, name: String) -&gt; Symbol;
-}
-</code></pre>
-<p>However, it's not obvious what should stand for <code>???</code>. <code>Self</code> won't be ideal,
-because supertraits are a sugar for bounds on <code>Self</code>, and we deliberately want
-different semantics. Perhaps picking a magical identifier like <code>DB</code> would work
-though?</p>
-<p>One potential future development here is per-query-function bounds, but they can
-already be simulated by voluntarily requiring less bounds in the implementation
-function.</p>
-<p>Another direction for future work is privacy: because traits from <code>requires</code>
-clause are not a part of public interface, in theory it should be possible to
-restrict their visibility. In practice, this still hits public-in-private lint,
-at least with a trivial implementation.</p>
+<pre class="mermaid">graph LR
+    classDef diagramNode text-align:left;
+    subgraph query group
+        HelloWorldTrait["trait HelloWorld: Database + HasQueryGroup(HelloWorldStroage)"]
+        HelloWorldImpl["impl(DB) HelloWorld for DB<br>where DB: HasQueryGroup(HelloWorldStorage)"]
+        click HelloWorldImpl "http:query_groups.html#impl-of-the-hello-world-trait" "more info"
+        HelloWorldStorage["struct HelloWorldStorage"]
+        click HelloWorldStorage "http:query_groups.html#the-group-struct-and-querygroup-trait" "more info"
+        QueryGroupImpl["impl QueryGroup for HelloWorldStorage<br>&nbsp;&nbsp;type DynDb = dyn HelloWorld<br>&nbsp;&nbsp;type Storage = HelloWorldGroupStorage__;"]
+        click QueryGroupImpl "http:query_groups.html#the-group-struct-and-querygroup-trait" "more info"
+        HelloWorldGroupStorage["struct HelloWorldGroupStorage__"]
+        click HelloWorldGroupStorage "http:query_groups.html#group-storage" "more info"
+        subgraph for each query...
+            LengthQuery[struct LengthQuery]
+            LengthQueryImpl["impl Query for LengthQuery<br>&nbsp;&nbsp;type Key = ()<br>&nbsp;&nbsp;type Value = usize<br>&nbsp;&nbsp;type Storage = salsa::DerivedStorage(Self)<br>&nbsp;&nbsp;type QueryGroup = HelloWorldStorage"]
+            LengthQueryFunctionImpl["impl QueryFunction for LengthQuery<br>&nbsp;&nbsp;fn execute(db: &dyn HelloWorld, key: ()) -> usize"]
+            click LengthQuery "http:query_groups.html#for-each-query-a-query-struct" "more info"
+            click LengthQueryImpl "http:query_groups.html#for-each-query-a-query-struct" "more info"
+            click LengthQueryFunctionImpl "http:query_groups.html#for-each-query-a-query-struct" "more info"
+        end
+        class HelloWorldTrait,HelloWorldImpl,HelloWorldStorage,QueryGroupImpl,HelloWorldGroupStorage diagramNode;
+        class LengthQuery,LengthQueryImpl,LengthQueryFunctionImpl diagramNode;
+    end
+    subgraph database
+        DatabaseStruct["struct Database { .. storage: Storage(Self) .. }"]
+        subgraph for each group...
+            HasQueryGroup["impl plumbing::HasQueryGroup(HelloWorldStorage) for DatabaseStruct"]
+            click HasQueryGroup "http:database.html#the-hasquerygroup-impl" "more info"
+        end
+        DatabaseStorageTypes["impl plumbing::DatabaseStorageTypes for DatabaseStruct<br>&nbsp;&nbsp;type DatabaseStorage = __SalsaDatabaseStorage"]
+        click DatabaseStorageTypes "http:database.html#the-databasestoragetypes-impl" "more info"
+        DatabaseStorage["struct __SalsaDatabaseStorage"]
+        click DatabaseStorage "http:database.html#the-database-storage-struct" "more info"
+        DatabaseOps["impl plumbing::DatabaseOps for DatabaseStruct"]
+        click DatabaseOps "http:database.html#the-databaseops-impl" "more info"
+        class DatabaseStruct,DatabaseStorage,DatabaseStorageTypes,DatabaseOps,HasQueryGroup diagramNode;
+    end
+    subgraph salsa crate
+        DerivedStorage["DerivedStorage"]
+        class DerivedStorage diagramNode;
+    end
+    LengthQueryImpl --> DerivedStorage;
+    DatabaseStruct --> HelloWorldImpl
+    HasQueryGroup --> HelloWorldImpl
+</pre>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
-                            <a rel="prev" href="../rfcs/RFC0002-Intern-Queries.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../plumbing.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
 
                         
-                            <a rel="next" href="../rfcs/RFC0004-LRU.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next" href="../plumbing/query_groups.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -270,13 +254,13 @@ at least with a trivial implementation.</p>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
-                    <a rel="prev" href="../rfcs/RFC0002-Intern-Queries.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../plumbing.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 
 
                 
-                    <a rel="next" href="../rfcs/RFC0004-LRU.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next" href="../plumbing/query_groups.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                 

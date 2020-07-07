@@ -93,7 +93,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="plumbing/query_groups.html"><strong aria-hidden="true">6.1.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="plumbing/database.html"><strong aria-hidden="true">6.2.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li></ol></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="plumbing/diagram.html"><strong aria-hidden="true">6.1.</strong> Diagram</a></li><li class="chapter-item expanded "><a href="plumbing/query_groups.html"><strong aria-hidden="true">6.2.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="plumbing/database.html"><strong aria-hidden="true">6.3.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li><li class="chapter-item expanded "><a href="rfcs/RFC0006-Dynamic-Databases.html"><strong aria-hidden="true">7.7.</strong> RFC 0006: Dynamic database</a></li></ol></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -210,6 +210,9 @@ anything else that your code needs (e.g., configuration data).</li>
 <p>To see an example of this in action, check out <a href="https://github.com/salsa-rs/salsa/blob/master/examples/hello_world/main.rs">the <code>hello_world</code>
 example</a>, which has a number of comments explaining how
 things work.</p>
+<h2><a class="header" href="#digging-into-the-plumbing" id="digging-into-the-plumbing">Digging into the plumbing</a></h2>
+<p>Check out the <a href="plumbing.html">plumbing</a> chapter to see a deeper explanation of the
+code that salsa generates and how it connects to the salsa library.</p>
 <h1><a class="header" href="#common-patterns" id="common-patterns">Common patterns</a></h1>
 <p>This section documents patterns for using Salsa.</p>
 <h1><a class="header" href="#selection" id="selection">Selection</a></h1>
@@ -253,7 +256,7 @@ trait RequestUtil: RequestParser {
     fn content_type(&amp;self) -&gt; Option&lt;String&gt;;
 }
 
-fn content_type(db: &amp;impl RequestUtil) -&gt; Option&lt;String&gt; {
+fn content_type(db: &amp;dyn RequestUtil) -&gt; Option&lt;String&gt; {
     db.parse()
         .header
         .iter()
@@ -285,11 +288,11 @@ trait RequestUtil: RequestParser {
     fn content_type(&amp;self) -&gt; Option&lt;String&gt;;
 }
 
-fn header(db: &amp;impl RequestUtil) -&gt; Vec&lt;ParsedHeader&gt; {
+fn header(db: &amp;dyn RequestUtil) -&gt; Vec&lt;ParsedHeader&gt; {
     db.parse().header.clone()
 }
 
-fn content_type(db: &amp;impl RequestUtil) -&gt; Option&lt;String&gt; {
+fn content_type(db: &amp;dyn RequestUtil) -&gt; Option&lt;String&gt; {
     db.header()
         .iter()
         .find(|header| header.key == &quot;content-type&quot;)
@@ -333,7 +336,7 @@ trait FileWatcher {
     fn did_change_file(&amp;mut self, path: &amp;Path);
 }
 
-fn read(db: &amp;impl salsa::Database, path: PathBuf) -&gt; String {
+fn read(db: &amp;dyn salsa::Database, path: PathBuf) -&gt; String {
     db.salsa_runtime()
         .report_synthetic_read(salsa::Durability::LOW);
     db.watch(&amp;path);
@@ -367,16 +370,93 @@ which digs into the incremental algorithm and explains -- at a
 high-level -- how Salsa is implemented.</li>
 </ul>
 <h1><a class="header" href="#plumbing" id="plumbing">Plumbing</a></h1>
-<p><strong>Last updated:</strong> 2020-06-24</p>
 <p>This chapter documents the code that salsa generates and its &quot;inner workings&quot;.
 We refer to this as the &quot;plumbing&quot;.</p>
 <p>This page walks through the <a href="https://github.com/salsa-rs/salsa/blob/master/examples/hello_world/main.rs">&quot;Hello, World!&quot;</a> example and explains the code that
 it generates. Please take it with a grain of salt: while we make an effort to
 keep this documentation up to date, this sort of thing can fall out of date
-easily.</p>
+easily. See the page history below for major updates.</p>
 <p>If you'd like to see for yourself, you can set the environment variable
 <code>SALSA_DUMP</code> to 1 while the procedural macro runs, and it will dump the full
 output to stdout. I recommend piping the output through rustfmt.</p>
+<h2><a class="header" href="#history" id="history">History</a></h2>
+<ul>
+<li>2020-07-05: Updated to take <a href="rfcs/RFC0006-Dynamic-Databases.html">RFC 6</a> into account.</li>
+<li>2020-06-24: Initial version.</li>
+</ul>
+<h1><a class="header" href="#diagram" id="diagram">Diagram</a></h1>
+<p>Based on the hello world example:</p>
+<pre><code class="language-rust ignore">#[salsa::query_group(HelloWorldStorage)]
+trait HelloWorld: salsa::Database {
+    // For each query, we give the name, some input keys (here, we
+    // have one key, `()`) and the output type `Arc&lt;String&gt;`. We can
+    // use attributes to give other configuration:
+    //
+    // - `salsa::input` indicates that this is an &quot;input&quot; to the system,
+    //   which must be explicitly set. The `salsa::query_group` method
+    //   will autogenerate a `set_input_string` method that can be
+    //   used to set the input.
+    #[salsa::input]
+    fn input_string(&amp;self, key: ()) -&gt; Arc&lt;String&gt;;
+
+    // This is a *derived query*, meaning its value is specified by
+    // a function (see Step 2, below).
+    fn length(&amp;self, key: ()) -&gt; usize;
+}
+</code></pre>
+<pre><code class="language-rust ignore">#[salsa::database(HelloWorldStorage)]
+#[derive(Default)]
+struct DatabaseStruct {
+    storage: salsa::Storage&lt;Self&gt;,
+}
+
+impl salsa::Database for DatabaseStruct {}
+</code></pre>
+<pre class="mermaid">graph LR
+    classDef diagramNode text-align:left;
+    subgraph query group
+        HelloWorldTrait["trait HelloWorld: Database + HasQueryGroup(HelloWorldStroage)"]
+        HelloWorldImpl["impl(DB) HelloWorld for DB<br>where DB: HasQueryGroup(HelloWorldStorage)"]
+        click HelloWorldImpl "http:query_groups.html#impl-of-the-hello-world-trait" "more info"
+        HelloWorldStorage["struct HelloWorldStorage"]
+        click HelloWorldStorage "http:query_groups.html#the-group-struct-and-querygroup-trait" "more info"
+        QueryGroupImpl["impl QueryGroup for HelloWorldStorage<br>&nbsp;&nbsp;type DynDb = dyn HelloWorld<br>&nbsp;&nbsp;type Storage = HelloWorldGroupStorage__;"]
+        click QueryGroupImpl "http:query_groups.html#the-group-struct-and-querygroup-trait" "more info"
+        HelloWorldGroupStorage["struct HelloWorldGroupStorage__"]
+        click HelloWorldGroupStorage "http:query_groups.html#group-storage" "more info"
+        subgraph for each query...
+            LengthQuery[struct LengthQuery]
+            LengthQueryImpl["impl Query for LengthQuery<br>&nbsp;&nbsp;type Key = ()<br>&nbsp;&nbsp;type Value = usize<br>&nbsp;&nbsp;type Storage = salsa::DerivedStorage(Self)<br>&nbsp;&nbsp;type QueryGroup = HelloWorldStorage"]
+            LengthQueryFunctionImpl["impl QueryFunction for LengthQuery<br>&nbsp;&nbsp;fn execute(db: &dyn HelloWorld, key: ()) -> usize"]
+            click LengthQuery "http:query_groups.html#for-each-query-a-query-struct" "more info"
+            click LengthQueryImpl "http:query_groups.html#for-each-query-a-query-struct" "more info"
+            click LengthQueryFunctionImpl "http:query_groups.html#for-each-query-a-query-struct" "more info"
+        end
+        class HelloWorldTrait,HelloWorldImpl,HelloWorldStorage,QueryGroupImpl,HelloWorldGroupStorage diagramNode;
+        class LengthQuery,LengthQueryImpl,LengthQueryFunctionImpl diagramNode;
+    end
+    subgraph database
+        DatabaseStruct["struct Database { .. storage: Storage(Self) .. }"]
+        subgraph for each group...
+            HasQueryGroup["impl plumbing::HasQueryGroup(HelloWorldStorage) for DatabaseStruct"]
+            click HasQueryGroup "http:database.html#the-hasquerygroup-impl" "more info"
+        end
+        DatabaseStorageTypes["impl plumbing::DatabaseStorageTypes for DatabaseStruct<br>&nbsp;&nbsp;type DatabaseStorage = __SalsaDatabaseStorage"]
+        click DatabaseStorageTypes "http:database.html#the-databasestoragetypes-impl" "more info"
+        DatabaseStorage["struct __SalsaDatabaseStorage"]
+        click DatabaseStorage "http:database.html#the-database-storage-struct" "more info"
+        DatabaseOps["impl plumbing::DatabaseOps for DatabaseStruct"]
+        click DatabaseOps "http:database.html#the-databaseops-impl" "more info"
+        class DatabaseStruct,DatabaseStorage,DatabaseStorageTypes,DatabaseOps,HasQueryGroup diagramNode;
+    end
+    subgraph salsa crate
+        DerivedStorage["DerivedStorage"]
+        class DerivedStorage diagramNode;
+    end
+    LengthQueryImpl --> DerivedStorage;
+    DatabaseStruct --> HelloWorldImpl
+    HasQueryGroup --> HelloWorldImpl
+</pre>
 <h1><a class="header" href="#query-groups-and-query-group-structs" id="query-groups-and-query-group-structs">Query groups and query group structs</a></h1>
 <p>When you define a query group trait:</p>
 <pre><code class="language-rust ignore">#[salsa::query_group(HelloWorldStorage)]
@@ -397,39 +477,36 @@ trait HelloWorld: salsa::Database {
     fn length(&amp;self, key: ()) -&gt; usize;
 }
 </code></pre>
-<p>the <code>salsa::query_group</code> macro generates a number of things:</p>
-<ul>
-<li>a copy of the <code>HelloWorld</code> trait, minus the salsa annotations, and lightly edited</li>
-<li>a &quot;group struct&quot; named <code>HelloWorldStorage</code> that represents the group; this struct implements <code>plumbing::QueryGroup</code>
-<ul>
-<li>somewhat confusingly, this struct doesn't actually contain the storage itself, but rather has an associated type that leads to the &quot;true&quot; storage struct</li>
-</ul>
-</li>
-<li>an impl of the <code>HelloWorld</code> trait, for any database type</li>
-<li>for each query, a &quot;query struct&quot; named after the query; these structs implement <code>plumbing::Query</code> and sometimes other plumbing traits</li>
-<li>a group key, an enum that can identify any query within the group and store its key</li>
-<li>the associated storage struct, which contains the actual hashmaps that store the data for all queries in the group</li>
-</ul>
-<p>Note that there are a number of structs and types (e.g., the group descriptor
-and associated storage struct) that represent things which don't have &quot;public&quot;
+<p>the <code>salsa::query_group</code> macro generates a number of things, shown in the sample
+generated code below (details in the sections to come).</p>
+<p>and associated storage struct) that represent things which don't have &quot;public&quot;
+Note that there are a number of structs and types (e.g., the group descriptor
 names. We currently generate mangled names with <code>__</code> afterwards, but those names
 are not meant to be exposed to the user (ideally we'd use hygiene to enforce
 this).</p>
-<p>So the generated code looks something like this. We'll go into more detail on
-each part in the following sections.</p>
-<pre><code class="language-rust ignore">// First, a copy of the trait, though sometimes with some extra
-// methods (e.g., `set_input_string`)
-trait HelloWorld: salsa::Database {
+<pre><code class="language-rust ignore">// First, a copy of the trait, though with extra supertraits and
+// sometimes with some extra methods (e.g., `set_input_string`)
+trait HelloWorld: 
+    salsa::Database + 
+    salsa::plumbing::HasQueryGroup&lt;HelloWorldStorage&gt;
+{
     fn input_string(&amp;self, key: ()) -&gt; Arc&lt;String&gt;;
     fn set_input_string(&amp;mut self, key: (), value: Arc&lt;String&gt;);
     fn length(&amp;self, key: ()) -&gt; usize;
 }
 
-// Next, the group struct
+// Next, the &quot;query group struct&quot;, whose name was given by the
+// user. This struct implements the `QueryGroup` trait which
+// defines a few associated types common to the entire group.
 struct HelloWorldStorage { }
-impl&lt;DB&gt; salsa::plumbing::QueryGroup&lt;DB&gt; for HelloWorldStorage { ... }
+impl salsa::plumbing::QueryGroup for HelloWorldStorage {
+    type DynDb = dyn HelloWorld;
+    type GroupStorage = HelloWorldGroupStorage__;
+}
 
-// Next, the impl of the trait
+// Next, a blanket impl of the `HelloWorld` trait. This impl
+// works for any database `DB` that implements the
+// appropriate `HasQueryGroup`.
 impl&lt;DB&gt; HelloWorld for DB
 where
   DB: salsa::Database,
@@ -438,41 +515,29 @@ where
   ...
 }
 
-// Next, a series of query structs and query impls
-struct InputQuery { }
-unsafe impl&lt;DB&gt; salsa::Query&lt;DB&gt; for InputQuery
-where
-    DB: HelloWorld,
-    DB: salsa::plumbing::HasQueryGroup&lt;#group_struct&gt;,
-    DB: salsa::Database,
-{
-    ...
-}
-struct LengthQuery { }
-unsafe impl&lt;DB&gt; salsa::Query&lt;DB&gt; for LengthQuery
-where
-    DB: HelloWorld,
-    DB: salsa::plumbing::HasQueryGroup&lt;#group_struct&gt;,
-    DB: salsa::Database,
-{
-    ...
+// Next, for each query, a &quot;query struct&quot; that represents it.
+// The query struct has inherent methods like `in_db` and
+// implements the `Query` trait, which defines various
+// details about the query (e.g., its key, value, etc).
+pub struct InputQuery { }
+impl InputQuery { /* definition for `in_db`, etc */ }
+impl salsa::Query for InputQuery {
+    /* associated types */
 }
 
-// For derived queries, those include implementations
-// of additional traits like `QueryFunction`
-unsafe impl&lt;DB&gt; salsa::QueryFunction&lt;DB&gt; for LengthQuery
-where
-    DB: HelloWorld,
-    DB: salsa::plumbing::HasQueryGroup&lt;#group_struct&gt;,
-    DB: salsa::Database,
-{
+// Same as above, but for the derived query `length`.
+// For derived queries, we also implement `QueryFunction`
+// which defines how to execute the query.
+pub struct LengthQuery { }
+impl salsa::Query for LengthQuery {
+    ...
+}
+impl salsa::QueryFunction for LengthQuery {
     ...
 }
 
-// The group key
-enum HelloWorldGroupKey__ { .. }
-
-// The group storage
+// Finally, the group storage, which contains the actual
+// hashmaps and other data used to implement the queries.
 struct HelloWorldGroupStorage__ { .. }
 </code></pre>
 <h2><a class="header" href="#the-group-struct-and-querygroup-trait" id="the-group-struct-and-querygroup-trait">The group struct and <code>QueryGroup</code> trait</a></h2>
@@ -484,10 +549,9 @@ implement the <code>QueryGroup</code> trait. This <em>trait</em> has a number of
 that reference various bits of the query group, including the actual &quot;group
 storage&quot; struct:</p>
 <pre><code class="language-rust ignore">struct HelloWorldStorage { }
-impl&lt;DB&gt; salsa::plumbing::QueryGroup&lt;DB&gt; for HelloWorldStorage {
+impl salsa::plumbing::QueryGroup for HelloWorldStorage {
+    type DynDb = dyn HelloWorld;
     type GroupStorage = HelloWorldGroupStorage__; // generated struct
-    type GroupKey = HelloWorldGroupKey__;
-    type GroupData = ((), Arc&lt;String&gt;, (), usize);
 }
 </code></pre>
 <p>We'll go into detail on these types below and the role they play, but one that
@@ -535,93 +599,101 @@ For e.g. the <code>length</code> query, this structs might look something like:<
 <p>The struct also implements the <code>plumbing::Query</code> trait, which defines
 a bunch of metadata about the query (and repeats, for convenience,
 some of the data about the group that the query is in):</p>
-<pre><code class="language-rust ignore">unsafe impl&lt;DB&gt; salsa::Query&lt;DB&gt; for LengthQuery
-where
-    DB: HelloWorld,
-    DB: salsa::plumbing::HasQueryGroup&lt;#group_struct&gt;,
-    DB: salsa::Database,
-{
-    // A tuple of the types of the function parameters trom trait.
-    type Key = ((), );
+<pre><code class="language-rust ignore">            impl salsa::Query for #qt
+            {
+                type Key = (#(#keys),*);
+                type Value = #value;
+                type Storage = #storage;
+                type Group = #group_struct;
+                type GroupStorage = #group_storage;
+                type DynDb = #dyn_db;
 
-    // The return value of the function in the trait.
-    type Value = Arc&lt;String&gt;;
+                const QUERY_INDEX: u16 = #query_index;
 
-    // The &quot;query storage&quot; references a type from within salsa
-    // that stores the actual query data and defines the
-    // logic for accessing and revalidating it.
-    //
-    // It is generic over the query type which lets it
-    // customize itself to the keys/value of this particular
-    // query.
-    type Storage = salsa::derived::DerivedStorage&lt;
-        DB,
-        LengthQuery,
-        salsa::plumbing::MemoizedStorage,
-    &gt;;
+                const QUERY_NAME: &amp;'static str = #query_name;
 
-    // Types from the query group, repeated for convenience.
-    type Group = HelloWorldStorage;
-    type GroupStorage = HelloWorldGroupStorage__;
-    type GroupKey = HelloWorldGroupKey__;
-
-    // Given the storage for the entire group, extract
-    // the storage for just this query. Described when
-    // we talk about group storage.
-    fn query_storage(
-        group_storage: &amp;HelloWorldGroupStorage__,
-    ) -&gt; &amp;std::sync::Arc&lt;Self::Storage&gt; {
-        &amp;group_storage.length
-    }
-
-    // Given the key for this query, construct the &quot;group key&quot;
-    // that situates it within the group. Described when
-    // we talk about group key.
-    fn group_key(key: Self::Key) -&gt; Self::GroupKey {
-        HelloWorldGroupKey__::length(key)
-    }
-}
+                fn query_storage(
+                    group_storage: &amp;Self::GroupStorage,
+                ) -&gt; &amp;std::sync::Arc&lt;Self::Storage&gt; {
+                    &amp;group_storage.#fn_name
+                }
+            }
 </code></pre>
 <p>Depending on the kind of query, we may also generate other impls, such as an
 impl of <code>salsa::plumbing::QueryFunction</code>, which defines the methods for
 executing the body of a query. This impl would then include a call to the user's
 actual function.</p>
-<h2><a class="header" href="#group-key" id="group-key">Group key</a></h2>
-<p>The &quot;query key&quot; is the inputs to the query, and identifies a particular query
-instace: in our example, it is a value of type <code>()</code> (so there is only one
-instance of the query), but typically it's some other type. The &quot;group key&quot; then
-broadens that to include the identifier of the query within the group. So instead
-of just <code>()</code> the group key would encode (e.g.) <code>Length(())</code> (the &quot;length&quot; query
-applied to the <code>()</code> key). It is represented as an enum, which we generate,
-with one variant per query:</p>
-<pre><code class="language-rust ignore">#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum HelloWorldGroupKey__ {
-  input(()),
-  length(()),
-}
+<pre><code class="language-rust ignore">                impl salsa::plumbing::QueryFunction for #qt
+                {
+                    fn execute(db: &amp;Self::DynDb, #key_pattern: &lt;Self as salsa::Query&gt;::Key)
+                        -&gt; &lt;Self as salsa::Query&gt;::Value {
+<span class="boring">                        invoke(db, #(#key_names),*)
+</span>                    }
+
+<span class="boring">                    recover
+</span>                }
 </code></pre>
-<p>The <code>Query</code> trait that we saw earlier includes a method <code>group_key</code> for wrapping
-the key for some individual query into the group key.</p>
 <h2><a class="header" href="#group-storage" id="group-storage">Group storage</a></h2>
 <p>The &quot;group storage&quot; is the actual struct that contains all the hashtables and
 so forth for each query. The types of these are ultimately defined by the
 <code>Storage</code> associated type for each query type. The struct is generic over the
 final database type:</p>
-<pre><code class="language-rust ignore">struct HelloWorldGroupStorage__&lt;DB&gt; {
-    input: &lt;InputQuery as Query&lt;DB&gt;&gt;::Storage,
-    length: &lt;LengthQuery as Query&lt;DB&gt;&gt;::Storage,
+<pre><code class="language-rust ignore">struct HelloWorldGroupStorage__ {
+    input: &lt;InputQuery as Query::Storage,
+    length: &lt;LengthQuery as Query&gt;::Storage,
 }
 </code></pre>
-<p>We also generate some impls: first is an impl of <code>Default</code> and the second is a
-method <code>for_each_query</code> that simply iterates over each field and invokes a
-method on it. This method is called by some of the code we generate for the
-database in order to implement debugging methods that &quot;sweep&quot; over all the
-queries.</p>
-<pre><code class="language-rust ignore">impl&lt;DB&gt; HelloWorldGroupStorage__&lt;DB&gt; {
-    fn for_each_query(&amp;self, db: &amp;DB, method: &amp;mut dyn FnMut(...)) {
-        ...
-    }
-}
+<p>We also generate some inherent methods. First, a <code>new</code> method that takes
+the group index as a parameter and passes it along to each of the query
+storage <code>new</code> methods:</p>
+<pre><code class="language-rust ignore">        impl #group_storage {
+<span class="boring">            trait_vis fn new(group_index: u16) -&gt; Self {
+</span><span class="boring">                group_storage {
+</span><span class="boring">                    (
+</span><span class="boring">                        queries_with_storage:
+</span>                        std::sync::Arc::new(salsa::plumbing::QueryStorageOps::new(group_index)),
+                    )*
+                }
+            }
+        }
+</code></pre>
+<p>And then various methods that will dispatch from a <code>DatabaseKeyIndex</code> that
+corresponds to this query group into the appropriate query within the group.
+Each has a similar structure of matching on the query index and then delegating
+to some method defined by the query storage:</p>
+<pre><code class="language-rust ignore">        impl #group_storage {
+<span class="boring">            trait_vis fn fmt_index(
+</span>                &amp;self,
+                db: &amp;#dyn_db,
+                input: salsa::DatabaseKeyIndex,
+                fmt: &amp;mut std::fmt::Formatter&lt;'_&gt;,
+            ) -&gt; std::fmt::Result {
+                match input.query_index() {
+<span class="boring">                    fmt_ops
+</span>                    i =&gt; panic!(&quot;salsa: impossible query index {}&quot;, i),
+                }
+            }
+
+<span class="boring">            trait_vis fn maybe_changed_since(
+</span>                &amp;self,
+                db: &amp;#dyn_db,
+                input: salsa::DatabaseKeyIndex,
+                revision: salsa::Revision,
+            ) -&gt; bool {
+                match input.query_index() {
+<span class="boring">                    maybe_changed_ops
+</span>                    i =&gt; panic!(&quot;salsa: impossible query index {}&quot;, i),
+                }
+            }
+
+<span class="boring">            trait_vis fn for_each_query(
+</span>                &amp;self,
+                _runtime: &amp;salsa::Runtime,
+                mut op: &amp;mut dyn FnMut(&amp;dyn salsa::plumbing::QueryStorageMassOps),
+            ) {
+<span class="boring">                for_each_ops
+</span>            }
+        }
 </code></pre>
 <h1><a class="header" href="#database" id="database">Database</a></h1>
 <p>Continuing our dissection, the other thing which a user must define is a
@@ -629,19 +701,10 @@ queries.</p>
 <pre><code class="language-rust ignore">#[salsa::database(HelloWorldStorage)]
 #[derive(Default)]
 struct DatabaseStruct {
-    runtime: salsa::Runtime&lt;DatabaseStruct&gt;,
+    storage: salsa::Storage&lt;Self&gt;,
 }
 
-// Tell salsa where to find the runtime in your context.
-impl salsa::Database for DatabaseStruct {
-    fn salsa_runtime(&amp;self) -&gt; &amp;salsa::Runtime&lt;Self&gt; {
-        &amp;self.runtime
-    }
-
-    fn salsa_runtime_mut(&amp;mut self) -&gt; &amp;mut salsa::Runtime&lt;Self&gt; {
-        &amp;mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseStruct {}
 </code></pre>
 <p>The <code>salsa::database</code> procedural macro takes a list of query group
 structs (like <code>HelloWorldStorage</code>) and generates the following items:</p>
@@ -651,13 +714,9 @@ structs (like <code>HelloWorldStorage</code>) and generates the following items:
 each query group. Note: these are the structs full of hashmaps etc that are
 generaetd by the query group procdural macro, not the <code>HelloWorldStorage</code>
 struct itself.</li>
-<li>a struct <code>__SalsaDatabaseKey</code> that wraps an enum <code>__SalsaDatabaseKeyKind</code>. The
-enum contains one variant per query group, and in each variant contains the
-group key. This can be used to identify any query in the database.</li>
 <li>an impl of <code>HasQueryGroup&lt;G&gt;</code> for each query group <code>G</code></li>
 <li>an impl of <code>salsa::plumbing::DatabaseStorageTypes</code> for the database struct</li>
 <li>an impl of <code>salsa::plumbing::DatabaseOps</code> for the database struct</li>
-<li>an impl of <code>salsa::plumbing::DatabaseKey&lt;DB&gt;</code> for the database struct <code>DB</code></li>
 </ul>
 <h2><a class="header" href="#key-constraint-we-do-not-know-the-names-of-individual-queries" id="key-constraint-we-do-not-know-the-names-of-individual-queries">Key constraint: we do not know the names of individual queries</a></h2>
 <p>There is one key constraint in the design here. None of this code knows the
@@ -670,103 +729,109 @@ a &quot;global&quot; context.</p>
 <h2><a class="header" href="#the-database-storage-struct" id="the-database-storage-struct">The database storage struct</a></h2>
 <p>The <code>__SalsaDatabaseStorage</code> struct concatenates all of the query group storage
 structs. In the hello world example, it looks something like:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>struct __SalsaDatabaseStorage {
+<pre><code class="language-rust ignore">struct __SalsaDatabaseStorage {
     hello_world: &lt;HelloWorldStorage as salsa::plumbing::QueryGroup&lt;DatabaseStruct&gt;&gt;::GroupStorage
 }
-<span class="boring">}
-</span></code></pre></pre>
-<h2><a class="header" href="#the-database-key-struct--enum-and-the-databasekey-impl" id="the-database-key-struct--enum-and-the-databasekey-impl">The database key struct / enum and the <code>DatabaseKey</code> impl</a></h2>
-<p>The <code>__SalsaDatabaseKey</code> and <code>__SalsaDatabaseKeyKind</code> types create a <strong>database
-key</strong>, which uniquely identifies any query in the database. It builds on the
-<strong>group keys</strong> created by the query groups, which uniquely identify a query
-within a given query group.</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>struct __SalsaDatabaseKey {
-    kind: __SalsaDatabaseKeyKind
-}
-
-enum __SalsaDatabaseKeyKind {
-    HelloWorld(
-        &lt;HelloWorldStorage as salsa::plumbing::QueryGroup&lt;DatabaseStruct&gt;&gt;::GroupKey
-    )
-}
-<span class="boring">}
-</span></code></pre></pre>
-<p>We also generate an impl of <code>DatabaseKey</code>:</p>
-<pre><code class="language-rust ignore">    output.extend(quote! {
-        impl salsa::plumbing::DatabaseKey&lt;#database_name&gt; for __SalsaDatabaseKey {
-        }
-    });
 </code></pre>
+<p>We also generate a <code>Default</code> impl for <code>__SalsaDatabaseStorage</code>. It invokes
+a <code>new</code> method on each group storage with the unique index assigned to that group.
+This invokes the <a href="plumbing/query_groups.html#group-storage">inherent <code>new</code> method generated by the <code>#[salsa::query_group]</code> macro</a>.</p>
 <h2><a class="header" href="#the-hasquerygroup-impl" id="the-hasquerygroup-impl">The <code>HasQueryGroup</code> impl</a></h2>
 <p>The <code>HasQueryGroup</code> trait allows a given query group to access its definition
 within the greater database. The impl is generated here:</p>
 <pre><code class="language-rust ignore">        has_group_impls.extend(quote! {
             impl salsa::plumbing::HasQueryGroup&lt;#group_path&gt; for #database_name {
-                fn group_storage(db: &amp;Self) -&gt; &amp;#group_storage {
-                    let runtime = salsa::Database::salsa_runtime(db);
-                    &amp;runtime.storage().#group_name_snake
-                }
-
-                fn database_key(group_key: #group_key) -&gt; __SalsaDatabaseKey {
-                    __SalsaDatabaseKey {
-                        kind: __SalsaDatabaseKeyKind::#group_name(group_key),
-                    }
+                fn group_storage(&amp;self) -&gt; &amp;#group_storage {
+                    &amp;self.#db_storage_field.query_store().#group_name_snake
                 }
             }
         });
 </code></pre>
-<p>and so for our example it would look something like</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl salsa::plumbing::HasQueryGroup&lt;HelloWorld&gt; for DatabaseStruct {
-    fn group_storage(&amp;self) -&gt; &amp;HelloWorldStorage::GroupStorage {
-        &amp;self.hello_world
-    }
-
-    fn database_key(group_key: HelloWorldStorage::GroupKey) -&gt; __SalsaDatabaseKey {
-        __SalsaDatabaseKey {
-            kind: __SalsaDatabaseKeyKind::HelloWorld(group_key)
-        }
-    }
-}
-<span class="boring">}
-</span></code></pre></pre>
-<h2><a class="header" href="#other-impls" id="other-impls">Other impls</a></h2>
+<p>The <code>HasQueryGroup</code> impl combines with <a href="plumbing/query_groups.html#impl-of-the-hello-world-trait">the blanket impl</a> from the
+<code>#[salsa::query_group]</code> macro so that the database can implement the query group
+trait (e.g., the <code>HelloWorld</code> trait) but without knowing all the names of the
+query methods and the like.</p>
+<h2><a class="header" href="#the-databasestoragetypes-impl" id="the-databasestoragetypes-impl">The <code>DatabaseStorageTypes</code> impl</a></h2>
 <p>Then there are a variety of other impls, like this one for <code>DatabaseStorageTypes</code>:</p>
 <pre><code class="language-rust ignore">    output.extend(quote! {
         impl salsa::plumbing::DatabaseStorageTypes for #database_name {
-            type DatabaseKey = __SalsaDatabaseKey;
             type DatabaseStorage = __SalsaDatabaseStorage;
-            type DatabaseData = (#(#database_data),*);
         }
     });
 </code></pre>
+<h2><a class="header" href="#the-databaseops-impl" id="the-databaseops-impl">The <code>DatabaseOps</code> impl</a></h2>
 <p>Or this one for <code>DatabaseOps</code>, which defines the for-each method to
 invoke an operation on every kind of query in the database. It ultimately
 delegates to the <code>for_each</code> methods for the groups:</p>
-<pre><code class="language-rust ignore">    let mut for_each_ops = proc_macro2::TokenStream::new();
-    for (QueryGroup { group_path }, group_storage) in
-        query_groups.iter().zip(&amp;query_group_storage_names)
+<pre><code class="language-rust ignore">    let mut fmt_ops = proc_macro2::TokenStream::new();
+    let mut maybe_changed_ops = proc_macro2::TokenStream::new();
+    let mut for_each_ops = proc_macro2::TokenStream::new();
+    for ((QueryGroup { group_path }, group_storage), group_index) in query_groups
+        .iter()
+        .zip(&amp;query_group_storage_names)
+        .zip(0_u16..)
     {
+        fmt_ops.extend(quote! {
+<span class="boring">            group_index =&gt; {
+</span>                let storage: &amp;#group_storage =
+                    &lt;Self as salsa::plumbing::HasQueryGroup&lt;#group_path&gt;&gt;::group_storage(self);
+                storage.fmt_index(self, input, fmt)
+            }
+        });
+        maybe_changed_ops.extend(quote! {
+<span class="boring">            group_index =&gt; {
+</span>                let storage: &amp;#group_storage =
+                    &lt;Self as salsa::plumbing::HasQueryGroup&lt;#group_path&gt;&gt;::group_storage(self);
+                storage.maybe_changed_since(self, input, revision)
+            }
+        });
         for_each_ops.extend(quote! {
             let storage: &amp;#group_storage =
                 &lt;Self as salsa::plumbing::HasQueryGroup&lt;#group_path&gt;&gt;::group_storage(self);
-            storage.for_each_query(self, &amp;mut op);
+            storage.for_each_query(runtime, &amp;mut op);
         });
     }
     output.extend(quote! {
         impl salsa::plumbing::DatabaseOps for #database_name {
+            fn ops_database(&amp;self) -&gt; &amp;dyn salsa::Database {
+                self
+            }
+
+            fn ops_salsa_runtime(&amp;self) -&gt; &amp;salsa::Runtime {
+                self.#db_storage_field.salsa_runtime()
+            }
+
+            fn ops_salsa_runtime_mut(&amp;mut self) -&gt; &amp;mut salsa::Runtime {
+                self.#db_storage_field.salsa_runtime_mut()
+            }
+
+            fn fmt_index(
+                &amp;self,
+                input: salsa::DatabaseKeyIndex,
+                fmt: &amp;mut std::fmt::Formatter&lt;'_&gt;,
+            ) -&gt; std::fmt::Result {
+                match input.group_index() {
+<span class="boring">                    fmt_ops
+</span>                    i =&gt; panic!(&quot;salsa: invalid group index {}&quot;, i)
+                }
+            }
+
+            fn maybe_changed_since(
+                &amp;self,
+                input: salsa::DatabaseKeyIndex,
+                revision: salsa::Revision
+            ) -&gt; bool {
+                match input.group_index() {
+<span class="boring">                    maybe_changed_ops
+</span>                    i =&gt; panic!(&quot;salsa: invalid group index {}&quot;, i)
+                }
+            }
+
             fn for_each_query(
                 &amp;self,
-                mut op: impl FnMut(&amp;dyn salsa::plumbing::QueryStorageMassOps&lt;Self&gt;),
+                mut op: &amp;mut dyn FnMut(&amp;dyn salsa::plumbing::QueryStorageMassOps),
             ) {
+                let runtime = salsa::Database::salsa_runtime(self);
 <span class="boring">                for_each_ops
 </span>            }
         }
@@ -792,17 +857,31 @@ changes to how Salsa works. And they don't have to be super complicated, but
 they should capture the most important reasons you would like to make the
 change. When in doubt, it's ok to just open a PR, and we can always request an
 RFC if we want one.</p>
-<h1><a class="header" href="#summary" id="summary">Summary</a></h1>
+<h1><a class="header" href="#descriptiontitle" id="descriptiontitle">Description/title</a></h1>
+<h2><a class="header" href="#metadata" id="metadata">Metadata</a></h2>
+<ul>
+<li>Author: (Github username(s) or real names, as you prefer)</li>
+<li>Date: (today's date)</li>
+<li>Introduced in: https://github.com/salsa-rs/salsa/pull/1 (please update once you open your PR)</li>
+</ul>
+<h2><a class="header" href="#summary" id="summary">Summary</a></h2>
 <p>Summarize the effects of the RFC bullet point form.</p>
-<h1><a class="header" href="#motivation" id="motivation">Motivation</a></h1>
+<h2><a class="header" href="#motivation" id="motivation">Motivation</a></h2>
 <p>Say something about your goals here.</p>
-<h1><a class="header" href="#users-guide" id="users-guide">User's guide</a></h1>
+<h2><a class="header" href="#users-guide" id="users-guide">User's guide</a></h2>
 <p>Describe effects on end users here.</p>
-<h1><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h1>
+<h2><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h2>
 <p>Describe implementation details or other things here.</p>
-<h1><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h1>
+<h2><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h2>
 <p>Various downsides, rejected approaches, or other considerations.</p>
-<h1><a class="header" href="#motivation-1" id="motivation-1">Motivation</a></h1>
+<h1><a class="header" href="#query-group-traits" id="query-group-traits">Query group traits</a></h1>
+<h2><a class="header" href="#metadata-1" id="metadata-1">Metadata</a></h2>
+<ul>
+<li>Author: nikomatsakis</li>
+<li>Date: 2019-01-15</li>
+<li>Introduced in: https://github.com/salsa-rs/salsa-rfcs/pull/1</li>
+</ul>
+<h2><a class="header" href="#motivation-1" id="motivation-1">Motivation</a></h2>
 <ul>
 <li>Support <code>dyn QueryGroup</code> for each query group trait as well as <code>impl QueryGroup</code>
 <ul>
@@ -811,13 +890,10 @@ RFC if we want one.</p>
 </li>
 <li>Don't require you to redeclare each query in the final database, just the query groups</li>
 </ul>
-<h1><a class="header" href="#users-guide-1" id="users-guide-1">User's guide</a></h1>
-<h2><a class="header" href="#declaring-a-query-group" id="declaring-a-query-group">Declaring a query group</a></h2>
+<h2><a class="header" href="#users-guide-1" id="users-guide-1">User's guide</a></h2>
+<h3><a class="header" href="#declaring-a-query-group" id="declaring-a-query-group">Declaring a query group</a></h3>
 <p>User's will declare query groups by decorating a trait with <code>salsa::query_group</code>:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[salsa::query_group(MyGroupStorage)]
+<pre><code class="language-rust ignore">#[salsa::query_group(MyGroupStorage)]
 trait MyGroup {
   // Inputs are annotated with `#[salsa::input]`. For inputs, the final trait will include
   // a `set_my_input(&amp;mut self, key: K1, value: V1)` method automatically added,
@@ -828,8 +904,7 @@ trait MyGroup {
   // &quot;Derived&quot; queries are just a getter.
   fn my_query(&amp;self, key: K2) -&gt; V2;
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>The <code>query_group</code> attribute is a procedural macro. It takes as
 argument the name of the <strong>storage struct</strong> for the query group --
 this is a struct, generated by the macro, which represents the query
@@ -851,7 +926,7 @@ to fully resolve this question in this RFC.</li>
 <p>In addition, the macro generates a number of structs that users should
 not have to be aware of. These are described in the &quot;reference guide&quot;
 section.</p>
-<h3><a class="header" href="#controlling-query-modes" id="controlling-query-modes">Controlling query modes</a></h3>
+<h4><a class="header" href="#controlling-query-modes" id="controlling-query-modes">Controlling query modes</a></h4>
 <p>Input queries, as described in the trait, are specified via the
 <code>#[salsa::input]</code> attribute.</p>
 <p>Derived queries can be customized by the following attributes,
@@ -864,7 +939,7 @@ read untracked input and hence must be re-executed on every revision.</li>
 <li><code>#[salsa::dependencies]</code> specifies a &quot;dependencies-only&quot; query, which is assumed to
 read untracked input and hence must be re-executed on every revision.</li>
 </ul>
-<h2><a class="header" href="#creating-the-database" id="creating-the-database">Creating the database</a></h2>
+<h3><a class="header" href="#creating-the-database" id="creating-the-database">Creating the database</a></h3>
 <p>Creating a salsa database works by using a <code>#[salsa::database(..)]</code>
 attribute. The <code>..</code> content should be a list of paths leading to the
 storage structs for each query group that the database will
@@ -872,10 +947,7 @@ implement. It is no longer necessary to list the individual
 queries. In addition to the <code>salsa::database</code> query, the struct must
 have access to a <code>salsa::Runtime</code> and implement the <code>salsa::Database</code>
 trait. Hence the complete declaration looks roughly like so:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[salsa::database(MyGroupStorage)]
+<pre><code class="language-rust ignore">#[salsa::database(MyGroupStorage)]
 struct MyDatabase {
   runtime: salsa::Runtime&lt;MyDatabase&gt;,
 }
@@ -885,33 +957,28 @@ impl salsa::Database for MyDatabase {
     &amp;self.runtime
   }
 }  
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>This (procedural) macro generates various impls and types that cause
 <code>MyDatabase</code> to implement all the traits for the query groups it
 supports, and which customize the storage in the runtime to have all
 the data needed. Users should not have to interact with these details,
 and they are written out in the reference guide section.</p>
-<h1><a class="header" href="#reference-guide-1" id="reference-guide-1">Reference guide</a></h1>
+<h2><a class="header" href="#reference-guide-1" id="reference-guide-1">Reference guide</a></h2>
 <p>The goal here is not to give the <em>full</em> details of how to do the
 lowering, but to describe the key concepts. Throughout the text, we
 will refer to names (e.g., <code>MyGroup</code> or <code>MyGroupStorage</code>) that appear
 in the example from the User's Guide -- this indicates that we use
 whatever name the user provided.</p>
-<h2><a class="header" href="#the-plumbingquerygroup-trait" id="the-plumbingquerygroup-trait">The <code>plumbing::QueryGroup</code> trait</a></h2>
+<h3><a class="header" href="#the-plumbingquerygroup-trait" id="the-plumbingquerygroup-trait">The <code>plumbing::QueryGroup</code> trait</a></h3>
 <p>The <code>QueryGroup</code> trait is a new trait added to the plumbing module. It
 is implemented by the query group storage struct <code>MyGroupStorage</code>. Its
 role is to link from that struct to the various bits of data that the
 salsa runtime needs:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub trait QueryGroup&lt;DB: Database&gt; {
+<pre><code class="language-rust ignore">pub trait QueryGroup&lt;DB: Database&gt; {
     type GroupStorage;
     type GroupKey;
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>This trait is implemented by the <strong>storage struct</strong> (<code>MyGroupStorage</code>)
 in our example. You can see there is a bit of confusing nameing going
 on here -- what we call (for user's) the &quot;storage struct&quot; actually
@@ -929,16 +996,13 @@ of the query, plus the keys used to invoke it.</li>
 responsible will generate an impl of this trait for the
 <code>MyGroupStorage</code> struct, along with the group storage and group key
 type definitions.</p>
-<h2><a class="header" href="#the-plumbinghasquerygroupg-trait" id="the-plumbinghasquerygroupg-trait">The <code>plumbing::HasQueryGroup&lt;G&gt;</code> trait</a></h2>
+<h3><a class="header" href="#the-plumbinghasquerygroupg-trait" id="the-plumbinghasquerygroupg-trait">The <code>plumbing::HasQueryGroup&lt;G&gt;</code> trait</a></h3>
 <p>The <code>HasQueryGroup&lt;G&gt;</code> struct a new trait added to the plumbing
 module. It is implemented by the database struct <code>MyDatabase</code> for
 every query group that <code>MyDatabase</code> supports. Its role is to offer
 methods that move back and forth between the context of the <em>full
 database</em> to the context of an <em>individual query group</em>:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub trait HasQueryGroup&lt;G&gt;: Database
+<pre><code class="language-rust ignore">pub trait HasQueryGroup&lt;G&gt;: Database
 where
     G: QueryGroup&lt;Self&gt;,
 {
@@ -948,19 +1012,15 @@ where
     /// &quot;Upcast&quot; a group key into a database key.
     fn database_key(group_key: G::GroupKey) -&gt; Self::DatabaseKey;
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>Here the &quot;database key&quot; is an enum that contains variants for each
 group. Its role is to take group key and puts it into the context of
 the entire database.</p>
-<h2><a class="header" href="#the-query-trait" id="the-query-trait">The <code>Query</code> trait</a></h2>
+<h3><a class="header" href="#the-query-trait" id="the-query-trait">The <code>Query</code> trait</a></h3>
 <p>The query trait (pre-existing) is extended to include links to its
 group, and methods to convert from the group storage to the query
 storage, plus methods to convert from a query key up to the group key:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub trait Query&lt;DB: Database&gt;: Debug + Default + Sized + 'static {
+<pre><code class="language-rust ignore">pub trait Query&lt;DB: Database&gt;: Debug + Default + Sized + 'static {
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
     type Key: Clone + Debug + Hash + Eq;
@@ -990,9 +1050,8 @@ storage, plus methods to convert from a query key up to the group key:</p>
     /// Create group key for this query.
     fn group_key(key: Self::Key) -&gt; Self::GroupKey;
 }
-<span class="boring">}
-</span></code></pre></pre>
-<h2><a class="header" href="#converting-tofrom-the-context-of-the-full-database-generically" id="converting-tofrom-the-context-of-the-full-database-generically">Converting to/from the context of the full database generically</a></h2>
+</code></pre>
+<h3><a class="header" href="#converting-tofrom-the-context-of-the-full-database-generically" id="converting-tofrom-the-context-of-the-full-database-generically">Converting to/from the context of the full database generically</a></h3>
 <p>Putting all the previous plumbing traits together, this means
 that given:</p>
 <ul>
@@ -1002,23 +1061,15 @@ that given:</p>
 </ul>
 <p>we can (generically) get the storage for the individual query
 <code>Q</code> out from the database <code>db</code> via a two-step process:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let group_storage = HasGroupStorage::group_storage(db);
+<pre><code class="language-rust ignore">let group_storage = HasGroupStorage::group_storage(db);
 let query_storage = Query::query_storage(group_storage);
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>Similarly, we can convert from the key to an individual query
 up to the &quot;database key&quot; in a two-step process:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let group_key = Query::group_key(key);
+<pre><code class="language-rust ignore">let group_key = Query::group_key(key);
 let db_key = HasGroupStorage::database_key(group_key);
-<span class="boring">}
-</span></code></pre></pre>
-<h2><a class="header" href="#lowering-query-groups" id="lowering-query-groups">Lowering query groups</a></h2>
+</code></pre>
+<h3><a class="header" href="#lowering-query-groups" id="lowering-query-groups">Lowering query groups</a></h3>
 <p>The role of the <code>#[salsa::query_group(MyGroupStorage)] trait MyGroup { .. }</code> macro is primarily to generate the group storage struct and the
 impl of <code>QueryGroup</code>.  That involves generating the following things:</p>
 <ul>
@@ -1090,7 +1141,7 @@ but since we cannot, it is entitled <code>MyGroupGroupKey</code></li>
 </ul>
 </li>
 </ul>
-<h2><a class="header" href="#lowering-database-storage" id="lowering-database-storage">Lowering database storage</a></h2>
+<h3><a class="header" href="#lowering-database-storage" id="lowering-database-storage">Lowering database storage</a></h3>
 <p>The <code>#[salsa::database(MyGroup)]</code> attribute macro creates the links to the query groups.
 It generates the following things:</p>
 <ul>
@@ -1143,11 +1194,11 @@ inherent method on the group key struct.</li>
 </ul>
 </li>
 </ul>
-<h1><a class="header" href="#alternatives" id="alternatives">Alternatives</a></h1>
+<h2><a class="header" href="#alternatives" id="alternatives">Alternatives</a></h2>
 <p>This proposal results from a fair amount of iteration. Compared to the
 status quo, there is one primary downside. We also explain a few things here that
 may not be obvious.</p>
-<h2><a class="header" href="#why-include-a-group-storage-struct" id="why-include-a-group-storage-struct">Why include a group storage struct?</a></h2>
+<h3><a class="header" href="#why-include-a-group-storage-struct" id="why-include-a-group-storage-struct">Why include a group storage struct?</a></h3>
 <p>You might wonder why we need the <code>MyGroupStorage</code> struct at all. It is a touch of boilerplate,
 but there are several advantages to it:</p>
 <ul>
@@ -1169,7 +1220,7 @@ encapsulation in the future. While the struct must be public and
 named from the database, the <em>trait</em> (and query key/value types)
 actually does not have to be.</li>
 </ul>
-<h2><a class="header" href="#downside-size-of-a-database-key" id="downside-size-of-a-database-key">Downside: Size of a database key</a></h2>
+<h3><a class="header" href="#downside-size-of-a-database-key" id="downside-size-of-a-database-key">Downside: Size of a database key</a></h3>
 <p>Database keys now wind up with two discriminants: one to identify the
 group, and one to identify the query. That's a bit sad. This could be
 overcome by using unsafe code: the idea would be that a group/database
@@ -1177,20 +1228,17 @@ key would be stored as the pair of an integer and a <code>union</code>. Each
 group within a given database would be assigned a range of integer
 values, and the unions would store the actual key values. We leave
 such a change for future work.</p>
-<h1><a class="header" href="#future-possibilities" id="future-possibilities">Future possibilities</a></h1>
+<h2><a class="header" href="#future-possibilities" id="future-possibilities">Future possibilities</a></h2>
 <p>Here are some ideas we might want to do later.</p>
-<h2><a class="header" href="#no-generics" id="no-generics">No generics</a></h2>
+<h3><a class="header" href="#no-generics" id="no-generics">No generics</a></h3>
 <p>We leave generic parameters on the query group trait etc for future work.</p>
-<h2><a class="header" href="#public--private" id="public--private">Public / private</a></h2>
+<h3><a class="header" href="#public--private" id="public--private">Public / private</a></h3>
 <p>We'd like the ability to make more details from the query groups
 private. This will require some tinkering.</p>
-<h2><a class="header" href="#inline-query-definitions" id="inline-query-definitions">Inline query definitions</a></h2>
+<h3><a class="header" href="#inline-query-definitions" id="inline-query-definitions">Inline query definitions</a></h3>
 <p>Instead of defining queries in separate functions, it might be nice to
 have the option of defining query methods in the trait itself:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[salsa::query_group(MyGroupStorage)]
+<pre><code class="language-rust ignore">#[salsa::query_group(MyGroupStorage)]
 trait MyGroup {
   #[salsa::input]
   fn my_input(&amp;self, key: K1) -&gt; V1;
@@ -1199,13 +1247,12 @@ trait MyGroup {
       // define my-query right here!
   }
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>It's a bit tricky to figure out how to handle this, so that is left
 for future work. Also, it would mean that the method body itself is
 inside of a macro (the procedural macro) which can make IDE
 integration harder.</p>
-<h2><a class="header" href="#non-query-functions" id="non-query-functions">Non-query functions</a></h2>
+<h3><a class="header" href="#non-query-functions" id="non-query-functions">Non-query functions</a></h3>
 <p>It might be nice to be able to include functions in the trait that are
 <em>not</em> queries, but rather helpers that compose queries. This should be
 pretty easy, just need a suitable <code>#[salsa]</code> attribute.</p>
@@ -1239,7 +1286,7 @@ input. But within an input file, there are additional structures, such
 as <code>struct</code> or <code>impl</code> declarations, and these structures may contain
 further structures within them (such as fields or methods). This gives
 rise to a path like so that can be used to identify a given item:</p>
-<pre><code>PathData = &lt;file-name&gt;
+<pre><code class="language-notrust">PathData = &lt;file-name&gt;
          | PathData / &lt;identifier&gt;
 </code></pre>
 <p>These paths <em>could</em> be represented in the compiler with an <code>Arc</code>, but
@@ -1288,16 +1335,12 @@ collection mechanisms.</p>
 <p>This section covers how interned queries are expected to be used.</p>
 <h2><a class="header" href="#declaring-an-interned-query" id="declaring-an-interned-query">Declaring an interned query</a></h2>
 <p>You can declare an interned query like so:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[salsa::query_group]
+<pre><code class="language-rust ignore">#[salsa::query_group]
 trait Foo {
   #[salsa::interned]
   fn intern_path_data(&amp;self, data: PathData) -&gt; salsa::InternId;
 ]
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p><strong>Query keys.</strong> Like any query, these queries can take any number of keys. If multiple
 keys are provided, then the interned key is a tuple of each key
 value. In order to be interned, the keys must implement <code>Clone</code>,
@@ -1313,13 +1356,9 @@ would be <code>fn lookup_intern_path(&amp;self, key: salsa::InternId) -&gt; Path
 <p>Using an interned query is quite straightforward. You simply invoke it
 with a key, and you will get back an integer, and you can use the
 generated <code>lookup</code> method to convert back to the original value:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>let key = db.intern_path(path_data1);
+<pre><code class="language-rust ignore">let key = db.intern_path(path_data1);
 let path_data2 = db.lookup_intern_path_data(key);
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>Note that the interned value will be cloned -- so, like all Salsa
 values, it is best if that is a cheap operation. Interestingly,
 interning can help to keep recursive, tree-shapes values cheap,
@@ -1327,18 +1366,14 @@ because the &quot;pointers&quot; within can be replaced with interned keys.</p>
 <h2><a class="header" href="#custom-return-types" id="custom-return-types">Custom return types</a></h2>
 <p>The return type for an intern query does not have to be a <code>InternId</code>. It can
 be any type that implements the <code>salsa::InternKey</code> trait:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub trait InternKey {
+<pre><code class="language-rust ignore">pub trait InternKey {
     /// Create an instance of the intern-key from a `InternId` value.
     fn from_intern_id(v: InternId) -&gt; Self;
 
     /// Extract the `InternId` with which the intern-key was created.
     fn as_intern_id(&amp;self) -&gt; InternId;
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <h2><a class="header" href="#recommended-practice" id="recommended-practice">Recommended practice</a></h2>
 <p>This section shows the recommended practice for using interned keys,
 building on the <code>Path</code> and <code>PathData</code> example that we've been working
@@ -1352,10 +1387,7 @@ data, but rather should store the interned key.</p>
 <h3><a class="header" href="#defining-the-intern-key" id="defining-the-intern-key">Defining the intern key</a></h3>
 <p>The intern key should always be a newtype struct that implements
 the <code>InternKey</code> trait. So, something like this:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub struct Path(InternId);
+<pre><code class="language-rust ignore">pub struct Path(InternId);
 
 impl salsa::InternKey for Path {
     fn from_intern_id(v: InternId) -&gt; Self {
@@ -1366,42 +1398,33 @@ impl salsa::InternKey for Path {
         self.0
     }
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <h3><a class="header" href="#convenient-lookup-method" id="convenient-lookup-method">Convenient lookup method</a></h3>
 <p>It is often convenient to add a <code>lookup</code> method to the newtype key:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl Path {
+<pre><code class="language-rust ignore">impl Path {
     // Adding this method is often convenient, since you can then
     // write `path.lookup(db)` to access the data, which reads a bit better.
     pub fn lookup(&amp;self, db: &amp;impl MyDatabase) -&gt; PathData {
         db.lookup_intern_path_data(*self)
     }
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <h3><a class="header" href="#defining-the-data-type" id="defining-the-data-type">Defining the data type</a></h3>
 <p>Recall that our paths were defined by a recursive grammar like so:</p>
-<pre><code>PathData = &lt;file-name&gt;
+<pre><code class="language-notrust">PathData = &lt;file-name&gt;
          | PathData / &lt;identifier&gt;
 </code></pre>
 <p>This recursion is quite typical of salsa applications. The recommended
 way to encode it in the <code>PathData</code> structure itself is to build on other
 intern keys, like so:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[derive(Clone, Hash, Eq, ..)]
+<pre><code class="language-rust ignore">#[derive(Clone, Hash, Eq, ..)]
 enum PathData {
   Root(String),
   Child(Path, String),
   //    ^^^^ Note that the recursive reference here
   //         is encoded as a Path.
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>Note though that the <code>PathData</code> type will be cloned whenever the value
 for an interned key is looked up, and it may also be cloned to store
 dependency information between queries. So, as an optimization, you
@@ -1430,14 +1453,10 @@ be a useful thing to be able to do (this is effectively a memory
 allocator, so standard allocation strategies could be used here).</p>
 <h2><a class="header" href="#internid" id="internid">InternId</a></h2>
 <p>Presently the <code>InternId</code> type is implemented to wrap a <code>NonZeroU32</code>:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub struct InternId {
+<pre><code class="language-rust ignore">pub struct InternId {
     value: NonZeroU32,
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>This means that <code>Option&lt;InternId&gt;</code> (or <code>Option&lt;Path&gt;</code>, continuing our
 example from before) will only be a single word. To accommodate this,
 the <code>InternId</code> constructors require that the value is less than
@@ -1452,15 +1471,11 @@ other than zero on stable, but it is possible on nightly).</p>
 <h1><a class="header" href="#motivation-3" id="motivation-3">Motivation</a></h1>
 <p>Currently, there's only one way to express that queries from group <code>A</code> can use
 another group <code>B</code>: namely, <code>B</code> can be a super-trait of <code>A</code>:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[salsa::query_group(AStorage)]
+<pre><code class="language-rust ignore">#[salsa::query_group(AStorage)]
 trait A: B {
 
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>This approach works and allows one to express complex dependencies. However,
 this approach falls down when one wants to make a dependency a private
 implementation detail: Clients with <code>db: &amp;impl A</code> can freely call <code>B</code> methods on
@@ -1475,84 +1490,60 @@ very easy to accidentally call a low-level volatile query instead of a wrapper,
 introducing and undesired dependency.</p>
 <h1><a class="header" href="#users-guide-3" id="users-guide-3">User's guide</a></h1>
 <p>To specify query dependencies, a <code>requires</code> attribute should be used:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[salsa::query_group(SymbolsDatabaseStorage)]
+<pre><code class="language-rust ignore">#[salsa::query_group(SymbolsDatabaseStorage)]
 #[salsa::requires(SyntaxDatabase)]
 #[salsa::requires(EnvDatabase)]
 pub trait SymbolsDatabase {
     fn get_symbol_by_name(&amp;self, name: String) -&gt; Symbol;
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>The argument of <code>requires</code> is a path to a trait. The traits from all <code>requires</code>
 attributes are available when implementing the query:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>fn get_symbol_by_name(
+<pre><code class="language-rust ignore">fn get_symbol_by_name(
     db: &amp;(impl SymbolsDatabase + SyntaxDatabase + EnvDatabase),
     name: String,
 ) -&gt; Symbol {
     // ...
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>However, these traits are <strong>not</strong> available without explicit bounds:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>fn fuzzy_find_symbol(db: &amp;impl SymbolsDatabase, name: String) {
+<pre><code class="language-rust ignore">fn fuzzy_find_symbol(db: &amp;impl SymbolsDatabase, name: String) {
     // Can't accidentally call methods of the `SyntaxDatabase`
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>Note that, while the RFC does not propose to add per-query dependencies, query
 implementation can voluntarily specify only a subset of traits from <code>requires</code>
 attribute:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>fn get_symbol_by_name(
+<pre><code class="language-rust ignore">fn get_symbol_by_name(
     // Purposefully don't depend on EnvDatabase
     db: &amp;(impl SymbolsDatabase + SyntaxDatabase),
     name: String,
 ) -&gt; Symbol {
     // ...
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <h1><a class="header" href="#reference-guide-3" id="reference-guide-3">Reference guide</a></h1>
 <p>The implementation is straightforward and consists of adding traits from
 <code>requires</code> attributes to various <code>where</code> bounds. For example, we would generate
 the following blanket for above example:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl&lt;T&gt; SymbolsDatabase for T
+<pre><code class="language-rust ignore">impl&lt;T&gt; SymbolsDatabase for T
 where
     T: SyntaxDatabase + EnvDatabase,
     T: salsa::plumbing::HasQueryGroup&lt;SymbolsDatabaseStorage&gt;
 {
     ...
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <h1><a class="header" href="#alternatives-and-future-work-2" id="alternatives-and-future-work-2">Alternatives and future work</a></h1>
 <p>The semantics of <code>requires</code> closely resembles <code>where</code>, so we could imagine a
 syntax based on magical where clauses:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[salsa::query_group(SymbolsDatabaseStorage)]
+<pre><code class="language-rust ignore">#[salsa::query_group(SymbolsDatabaseStorage)]
 pub trait SymbolsDatabase
     where ???: SyntaxDatabase + EnvDatabase
 {
     fn get_symbol_by_name(&amp;self, name: String) -&gt; Symbol;
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>However, it's not obvious what should stand for <code>???</code>. <code>Self</code> won't be ideal,
 because supertraits are a sugar for bounds on <code>Self</code>, and we deliberately want
 different semantics. Perhaps picking a magical identifier like <code>DB</code> would work
@@ -1669,10 +1660,7 @@ walk the dependencies of Q to see if it is affected.</p>
 <h1><a class="header" href="#users-guide-5" id="users-guide-5">User's guide</a></h1>
 <h2><a class="header" href="#the-durability-type" id="the-durability-type">The durability type</a></h2>
 <p>We add a new type <code>salsa::Durability</code> which has there associated constants:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[derive(Copy, Clone, Debug, Ord)]
+<pre><code class="language-rust ignore">#[derive(Copy, Clone, Debug, Ord)]
 pub struct Durability(..);
 
 impl Durability {
@@ -1685,22 +1673,17 @@ impl Durability {
   // Values that are not expected to change, like sources from crates.io or the stdlib.
   pub const HIGH: Durability;
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>h## Specifying the durability of an input</p>
 <p>When setting an input <code>foo</code>, one can now invoke a method
 <code>set_foo_with_durability</code>, which takes a <code>Durability</code> as the final
 argument:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// db.set_foo(key, value) is equivalent to:
+<pre><code class="language-rust ignore">// db.set_foo(key, value) is equivalent to:
 db.set_foo_with_durability(key, value, Durability::LOW);
 
 // This would indicate that `foo` is not expected to change: 
 db.set_foo_with_durability(key, value, Durability::HIGH);
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <h2><a class="header" href="#durability-of-interned-values" id="durability-of-interned-values">Durability of interned values</a></h2>
 <p>Interned values are always considered <code>Durability::HIGH</code>. This makes
 sense as many queries that only use high durability inputs will also
@@ -1710,12 +1693,8 @@ recommended below.</p>
 <h2><a class="header" href="#synthetic-writes" id="synthetic-writes">Synthetic writes</a></h2>
 <p>Finally, we add one new method, <code>synthetic_write(durability)</code>, 
 available on the salsa runtime:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>db.salsa_runtime().synthetic_write(Durability::HIGH)
-<span class="boring">}
-</span></code></pre></pre>
+<pre><code class="language-rust ignore">db.salsa_runtime().synthetic_write(Durability::HIGH)
+</code></pre>
 <p>As the name suggests, <code>synthetic_write</code> causes salsa to act <em>as
 though</em> a write to an input of the given durability had taken
 place. This can be used for benchmarking, but it's also important to
@@ -1723,10 +1702,7 @@ controlling what values get garbaged collected, as described below.</p>
 <h2><a class="header" href="#tracing-and-garbage-collection" id="tracing-and-garbage-collection">Tracing and garbage collection</a></h2>
 <p>Durability affects garbage collection. The <code>SweepStrategy</code> struct is
 modified as follows:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>/// Sweeps values which may be outdated, but which have not
+<pre><code class="language-rust ignore">/// Sweeps values which may be outdated, but which have not
 /// been verified since the start of the current collection.
 /// These are typically memoized values from previous computations
 /// that are no longer relevant.
@@ -1766,21 +1742,16 @@ pub fn sweep_outdated(self) -&gt; SweepStrategy;
 /// high durability -- this will force us to verify *all* values. You can then
 /// sweep unverified values.
 pub fn sweep_unverified(self) -&gt; SweepStrategy;
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <h1><a class="header" href="#reference-guide-5" id="reference-guide-5">Reference guide</a></h1>
 <h2><a class="header" href="#review-the-need-for-gc-to-collect-outdated-values" id="review-the-need-for-gc-to-collect-outdated-values">Review: The need for GC to collect outdated values</a></h2>
 <p>In general, salsa's lazy validation scheme can lead to the accumulation
 of garbage that is no longer needed. Consider a query like this one:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>fn derived1(db: &amp;impl Database, start: usize) {
+<pre><code class="language-rust ignore">fn derived1(db: &amp;impl Database, start: usize) {
   let middle = self.input(start);
   self.derived2(middle)
 }
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>Now imagine that, on some particular run, we compute <code>derived1(22)</code>:</p>
 <ul>
 <li><code>derived1(22)</code>
@@ -1792,7 +1763,7 @@ of garbage that is no longer needed. Consider a query like this one:</p>
 </ul>
 <p>The end result of this execution will be a dependency graph
 like:</p>
-<pre><code>derived1(22) -&gt; derived2(44)
+<pre><code class="language-notrust">derived1(22) -&gt; derived2(44)
   |
   v
 input(22)
@@ -1801,7 +1772,7 @@ input(22)
 The next time <code>derived1(22)</code> executes, it will load <code>input(22)</code> as before,
 but then execute <code>derived2(45)</code>. This leaves us with a dependency
 graph as follows:</p>
-<pre><code>derived1(22) -&gt; derived2(45)
+<pre><code class="language-notrust">derived1(22) -&gt; derived2(45)
   |
   v
 input(22)       derived2(44)
@@ -1820,7 +1791,7 @@ thus, within a particular revision, we would never validate or trace a
 particular query twice).</p>
 <p>So, to continue our example, when we first executed <code>derived1(22)</code>
 in revision R1, we might have had a graph like:</p>
-<pre><code>derived1(22)   -&gt; derived2(44)
+<pre><code class="language-notrust">derived1(22)   -&gt; derived2(44)
 [verified: R1]    [verified: R1]
   |
   v
@@ -1828,7 +1799,7 @@ input(22)
 </code></pre>
 <p>Now, after we modify <code>input(22)</code> and execute <code>derived1(22)</code> again, we 
 would have a graph like:</p>
-<pre><code>derived1(22)   -&gt; derived2(45)
+<pre><code class="language-notrust">derived1(22)   -&gt; derived2(45)
 [verified: R2]    [verified: R2]
   |
   v
@@ -1843,10 +1814,7 @@ method can collect any values that are &quot;outdated&quot; (whose &quot;verifie
 revision is less than the current revision).</p>
 <p>The intended model is that one can do a &quot;mark-sweep&quot; style garbage
 collection like so:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Modify some input, triggering a new revision.
+<pre><code class="language-rust ignore">// Modify some input, triggering a new revision.
 db.set_input(22, 45);
 
 // The **mark** phase: execute the &quot;main query&quot;, with the intention
@@ -1858,8 +1826,7 @@ db.derived1(22);
 // The **sweep** phase: discard anything that was not traced during
 // the mark phase.
 db.sweep_all(...);
-<span class="boring">}
-</span></code></pre></pre>
+</code></pre>
 <p>In the case of our example, when we execute <code>sweep_all</code>, it would
 collect <code>derived2(44)</code>.</p>
 <h2><a class="header" href="#challenge-durability-lets-us-avoid-tracing" id="challenge-durability-lets-us-avoid-tracing">Challenge: Durability lets us avoid tracing</a></h2>
@@ -1902,6 +1869,466 @@ and simpler.</p>
 <p>We also considered permitting a &quot;lattice&quot; of durabilities -- e.g., to
 mirror the crate DAG in rust-analyzer -- but this is tricky because
 the lattice itself would be dependent on other inputs.</p>
+<h1><a class="header" href="#dynamic-databases" id="dynamic-databases">Dynamic databases</a></h1>
+<h2><a class="header" href="#metadata-2" id="metadata-2">Metadata</a></h2>
+<ul>
+<li>Author: nikomatsakis</li>
+<li>Date: 2020-06-29</li>
+<li>Introduced in: <a href="https://github.com/salsa-rs/salsa/pull/1">salsa-rs/salsa#1</a> (please update once you open your PR)</li>
+</ul>
+<h2><a class="header" href="#summary-5" id="summary-5">Summary</a></h2>
+<ul>
+<li>Retool Salsa's setup so that the generated code for a query group is not
+dependent on the final database type, and interacts with the database only
+through <code>dyn</code> trait values.</li>
+<li>This imposes a certain amount of indirecton but has the benefit that when a
+query group definition changes, less code must be recompiled as a result.</li>
+<li>Key changes include:
+<ul>
+<li>Database keys are &quot;interned&quot; in the database to produce a
+<code>DatabaseKeyIndex</code>.</li>
+<li>The values for cached query are stored directly in the hashtable instead of
+in an <code>Arc</code>. There is still an Arc per cached query, but it stores the
+dependency information.</li>
+<li>The various traits are changed to make <code>salsa::Database</code> dyn-safe. Invoking
+methods on the runtime must now go through a <code>salsa::Runtime</code> trait.</li>
+<li>The <code>salsa::requires</code> functionality is removed.</li>
+</ul>
+</li>
+<li>Upsides of the proposal:
+<ul>
+<li>Potentially improved recompilation time. Minimal code is regenerated.</li>
+<li>Removing the <code>DatabaseData</code> unsafe code hack that was required by slots.</li>
+</ul>
+</li>
+<li>Downsides of the proposal:
+<ul>
+<li>The effect on runtime performance must be measured.</li>
+<li><code>DatabaseKeyIndex</code> values will leak, as we propose no means to reclaim them.
+However, the same is true of <code>Slot</code> values today.</li>
+<li>Storing values for the tables directly in the hashtable makes it less
+obvious how we would return references to them in a safe fashion (before, I
+had planned to have a separate module that held onto the Arc for the slot,
+so we were sure the value would not be deallocated; one can still imagine
+supporting this feature, but it would require some fancier unsafe code
+reasoning, although it would be more efficient.)</li>
+<li>The <code>salsa::requires</code> functionality is removed.</li>
+</ul>
+</li>
+</ul>
+<h2><a class="header" href="#motivation-6" id="motivation-6">Motivation</a></h2>
+<p>Under the current salsa setup, all of the &quot;glue code&quot; that manages cache
+invalidation and other logic is ultimately parameterized by a type <code>DB</code> that
+refers to the full database. The problem is that, if you consider a typical
+salsa crate graph, the actual value for that type is not available until the
+final database crate is compiled:</p>
+<pre class="mermaid">graph TD;
+  Database["Crate that defines the database"];
+  QueryGroupA["Crate with query group A"];
+  QueryGroupB["Crate with query group B"];
+  SalsaCrate["the `salsa` crate"];
+  Database -- depends on --> QueryGroupA;
+  Database -- depends on --> QueryGroupB;
+  QueryGroupA -- depends on --> SalsaCrate;
+  QueryGroupB -- depends on --> SalsaCrate;
+</pre>
+<p>The result is that we do not actually compile a good part of the code from
+<code>QueryGroupA</code> or <code>QueryGroupB</code> until we build the final database crate.</p>
+<h3><a class="header" href="#what-you-can-do-today-dyn-traits" id="what-you-can-do-today-dyn-traits">What you can do today: dyn traits</a></h3>
+<p>What you can do today is to use define a &quot;dyn-compatible&quot; query group
+trait and then write your derived functions using a <code>dyn</code> type as the
+argument:</p>
+<pre><code class="language-rust ignore">#[salsa::query_group(QueryGroupAStorage)]
+trait QueryGroupA {
+    fn derived(&amp;self, key: usize) -&gt; usize;
+}
+
+fn derived(db: &amp;dyn QueryGroupA, key: usize) -&gt; usize {
+    key * 2
+}
+</code></pre>
+<p>This has the benefit that the <code>derived</code> function is not generic. However, it's
+still true that the glue code salsa makes will be generic over a <code>DB</code> type --
+this includes the impl of <code>QueryGroupA</code> but also the <code>Slot</code> and other machinery.
+This means that even if the only change is to query group B, in a different
+crate, the glue code for query group A ultimately has to be recompiled whenever
+the <code>Database</code> crate is rebuilt (though incremental compilation may help here).
+Moreover, as reported in <a href="https://github.com/salsa-rs/salsa/issues/220">salsa-rs/salsa#220</a>, measurements of rust-analyzer
+suggest that this code may be duplicated and accounting for more of the binary
+than we would expect.</p>
+<p>FIXME: I'd like to have better measurements on the above!</p>
+<h3><a class="header" href="#our-goal" id="our-goal">Our goal</a></h3>
+<p>The primary goal of this RFC is to make it so that the glue code we generate for
+query groups is not dependent on the database type, thus enabling better
+incremental rebuilds.</p>
+<h2><a class="header" href="#users-guide-6" id="users-guide-6">User's guide</a></h2>
+<p>Most of the changes in this RFC are &quot;under the hood&quot;. But there are various user
+visibile changes proposed here.</p>
+<h3><a class="header" href="#all-query-groups-must-be-dyn-safe" id="all-query-groups-must-be-dyn-safe">All query groups must be dyn safe</a></h3>
+<p>The largest one is that <strong>all Salsa query groups must now be dyn-safe</strong>. The
+existing salsa query methods are all dyn-safe, so what this really implies is
+that one cannot have super-traits that use generic methods or other things that
+are not dyn safe. For example, this query group would be illegal:</p>
+<pre><code class="language-rust ignore">#[salsa::query_group(QueryGroupAStorage)]
+trait QueryGroupA: Foo {
+}
+
+trait Foo {
+    fn method&lt;T&gt;(t: T) { }
+}
+</code></pre>
+<p>We could support query groups that are not dyn safe, but it would require us to
+have two &quot;similar but different&quot; ways of generating plumbing, and I'm not
+convinced that it's worth it. Moreover, it would require some form of opt-in so
+that would be a measure of user complexity as well.</p>
+<h3><a class="header" href="#all-query-functions-must-take-a-dyn-database" id="all-query-functions-must-take-a-dyn-database">All query functions must take a dyn database</a></h3>
+<p>You used to be able to implement queries by using <code>impl MyDatabase</code>, like so:</p>
+<pre><code class="language-rust ignore">fn my_query(db: &amp;impl MyDatabase, ...) { .. }
+</code></pre>
+<p>but you must now use <code>dyn MyDatabase</code>:</p>
+<pre><code class="language-rust ignore">fn my_query(db: &amp;dyn MyDatabase, ...) { .. }
+</code></pre>
+<h3><a class="header" href="#databases-embed-a-storagedb-with-a-fixed-field-name" id="databases-embed-a-storagedb-with-a-fixed-field-name">Databases embed a <code>Storage&lt;DB&gt;</code> with a fixed field name</a></h3>
+<p>The &quot;Hello World&quot; database becomes the following:</p>
+<pre><code class="language-rust ignore">#[salsa::database(QueryGroup1, ..., QueryGroupN)]
+struct MyDatabase {
+    storage: salsa::Storage&lt;Self&gt;
+}
+
+impl salsa::Database for MyDatabase {}
+</code></pre>
+<p>In particular:</p>
+<ul>
+<li>You now embed a <code>salsa::Storage&lt;Self&gt;</code> instead of a <code>salsa::Runtime&lt;Self&gt;</code></li>
+<li>The field <strong>must</strong> be named <code>storage</code> by default; we can include a <code>#[salsa::storge_field(xxx)]</code> annotation to change that default if desired.
+<ul>
+<li>Or we could scrape the struct declaration and infer it, I suppose.</li>
+</ul>
+</li>
+<li>You no longer have to define the <code>salsa_runtime</code> and <code>salsa_runtime_mut</code> methods, they move to the <code>DatabaseOps</code> trait and are manually implemented by doing <code>self.storage.runtime()</code> and so forth.</li>
+</ul>
+<p>Why these changes, and what is this <code>Storage</code> struct? This is because the actual
+storage for queries is moving outside of the runtime. The Storage struct just
+combines the <code>Runtime</code> (whose type no longer references <code>DB</code> directly) with an
+<code>Arc&lt;DB::Storage&gt;</code>. The full type of <code>Storage</code>, since it includes the database
+type, cannot appear in any public interface, it is just used by the various
+implementations that are created by <code>salsa::database</code>.</p>
+<h3><a class="header" href="#instead-of-dbqueryq-you-write-qin_dbdb" id="instead-of-dbqueryq-you-write-qin_dbdb">Instead of <code>db.query(Q)</code>, you write <code>Q.in_db(&amp;db)</code></a></h3>
+<p>As a consequence of the previous point, the existing <code>query</code> and <code>query_mut</code>
+methods on the <code>salsa::Database</code> trait are changed to methods on the query types
+themselves. So instead of <code>db.query(SomeQuery)</code>, one would write
+<code>SomeQuery.in_db(&amp;db)</code> (or <code>in_db_mut</code>). This both helps by making the
+<code>salsa::Database</code> trait dyn-safe and also works better with the new use of <code>dyn</code>
+types, since it permits a coercion from <code>&amp;db</code> to the appropriate <code>dyn</code> database
+type at the point of call.</p>
+<h3><a class="header" href="#the-salsa-event-mechanism-will-move-to-dynamic-dispatch" id="the-salsa-event-mechanism-will-move-to-dynamic-dispatch">The salsa-event mechanism will move to dynamic dispatch</a></h3>
+<p>A further consequence is that the existing <code>salsa_event</code> method will be
+simplified and made suitable for dynamic dispatch. It used to take a closure
+that would produce the event if necessary; it now simply takes the event itself.
+This is partly because events themselves no longer contain complex information:
+they used to have database-keys, which could require expensive cloning, but they
+now have simple indices.</p>
+<pre><code class="language-rust ignore">fn salsa_event(&amp;self, event: Event) {
+    #![allow(unused_variables)]
+}
+</code></pre>
+<p>This may imply some runtime cost, since various parts of the machinery invoke
+<code>salsa_event</code>, and those calls will now be virtual calls. They would previously
+have been static calls that would likely have been optimized away entirely.</p>
+<p>It is however possible that ThinLTO or other such optimization could remove
+those calls, this has not been tested, and in any case the runtime effects are
+not expected to be high, since all the calls will always go to the same
+function.</p>
+<h3><a class="header" href="#the-salsarequires-function-is-removed" id="the-salsarequires-function-is-removed">The <code>salsa::requires</code> function is removed</a></h3>
+<p>We currently offer a feature for &quot;private&quot; dependencies between query groups
+called <code>#[salsa::requires(ExtraDatabase)]</code>. This then requires query
+functions to be written like:</p>
+<pre><code class="language-rust ignore">fn query_fn(db: &amp;impl Database + ExtraDatabase, ...) { }
+</code></pre>
+<p>This format is not compatible with <code>dyn</code>, so this feature is removed.</p>
+<h2><a class="header" href="#reference-guide-6" id="reference-guide-6">Reference guide</a></h2>
+<h3><a class="header" href="#example" id="example">Example</a></h3>
+<p>To explain the proposal, we'll use the Hello World example, lightly adapted:</p>
+<pre><code class="language-rust ignore">#[salsa::query_group(HelloWorldStorage)]
+trait HelloWorld: salsa::Database {
+    #[salsa::input]
+    fn input_string(&amp;self, key: ()) -&gt; Arc&lt;String&gt;;
+
+    fn length(&amp;self, key: ()) -&gt; usize;
+}
+
+fn length(db: &amp;dyn HelloWorld, (): ()) -&gt; usize {
+    // Read the input string:
+    let input_string = db.input_string(());
+
+    // Return its length:
+    input_string.len()
+}
+
+#[salsa::database(HelloWorldStorage)]
+struct DatabaseStruct {
+    runtime: salsa::Runtime&lt;DatabaseStruct&gt;,
+}
+
+impl salsa::Database for DatabaseStruct {
+    fn salsa_runtime(&amp;self) -&gt; &amp;salsa::Runtime&lt;Self&gt; {
+        &amp;self.runtime
+    }
+
+    fn salsa_runtime_mut(&amp;mut self) -&gt; &amp;mut salsa::Runtime&lt;Self&gt; {
+        &amp;mut self.runtime
+    }
+}
+</code></pre>
+<h3><a class="header" href="#identifying-queries-using-the-databasekeyindex" id="identifying-queries-using-the-databasekeyindex">Identifying queries using the <code>DatabaseKeyIndex</code></a></h3>
+<p>We introduce the following struct that represents a database key using a series
+of indices:</p>
+<pre><code class="language-rust ignore">struct DatabaseKeyIndex {
+    /// Identifies the query group.
+    group_index: u16,
+
+    /// Identifies the query within the group.
+    query_index: u16,
+
+    /// Identifies the key within the query.
+    key_index: u32,
+}
+</code></pre>
+<p>This struct allows the various query group structs to refer to database keys
+without having to use a type like <code>DB::DatabaseKey</code> that is dependent on the
+<code>DB</code>.</p>
+<p>The group/query indices will be assigned by the <code>salsa::database</code> and
+<code>salsa::query_group</code> macros respectively. When query group storage is created,
+it will be passed in its group index by the database. Each query will be able to
+access its query-index through the <code>Query</code> trait, as they are statically known
+at the time that the query is compiled (the group index, in contrast, depends on
+the full set of groups for the database).</p>
+<p>The key index can be assigned by the query as it executes without any central
+coordination. Each query will use a <code>IndexMap</code> (from the <code>indexmap</code> crate)
+mapping <code>Q::Key -&gt; QueryState</code>. Inserting new keys into this map also creates
+new indices, and it is possible to index into the map in O(1) time later to
+obtain the state (or key) from a given query. This map replaces the existing
+<code>Q::Key -&gt; Arc&lt;Slot&lt;..&gt;&gt;</code> map that is used today.</p>
+<p>One notable implication: we cannot remove entries from the query index map
+(e.g., for GC) because that would invalidate the existing indices. We can
+however replace the query-state with a &quot;not computed&quot; value. This is not new:
+slots already take this approach today. In principle, we could extend the
+tracing GC to permit compressing and perhaps even rewriting indices, but it's
+not clear that this is a problem in practice.</p>
+<p>The <code>DatabaseKeyIndex</code> also supports a <code>debug</code> method that returns a value with
+a human readable <code>debug!</code> output, so that you can do <code>debug!(&quot;{:?}&quot;, index.debug(db))</code>. This works by generating a <code>fmt_debug</code> method that is
+supported by the various query groups.</p>
+<h3><a class="header" href="#the-various-query-traits-are-not-generic-over-a-database" id="the-various-query-traits-are-not-generic-over-a-database">The various query traits are not generic over a database</a></h3>
+<p>Today, the <code>Query</code>, <code>QueryFunction</code>, and <code>QueryGroup</code> traits are generic over
+the database <code>DB</code>, which allows them to name the final database type and
+associated types derived from it. In the new scheme, we never want to do that,
+and so instead they will now have an associated type, <code>DynDb</code>, that maps to the
+<code>dyn</code> version of the query group trait that the query is associated with.</p>
+<p>Therefore <code>QueryFunction</code> for example can become:</p>
+<pre><code class="language-rust ignore">pub trait QueryFunction: Query {
+    fn execute(db: &amp;Self::DynDb, key: Self::Key) -&gt; Self::Value;
+    fn recover(db: &amp;Self::DynDb, cycle: &amp;[DB::DatabaseKey], key: &amp;Self::Key) -&gt; Option&lt;Self::Value&gt; {
+        let _ = (db, cycle, key);
+        None
+    }
+}
+</code></pre>
+<h3><a class="header" href="#storing-query-results-and-tracking-dependencies" id="storing-query-results-and-tracking-dependencies">Storing query results and tracking dependencies</a></h3>
+<p>In today's setup, we have all the data for a particular query stored in a
+<code>Slot&lt;Q, DB, MP&gt;</code>, and these slots hold references to one another to track
+dependencies. Because the type of each slot is specific to the particular query
+<code>Q</code>, the references between slots are done using a <code>Arc&lt;dyn DatabaseSlot&lt;DB&gt;&gt;</code>
+handle. This requires some unsafe hacks, including the <code>DatabaseData</code> associated
+type.</p>
+<p>This RFC proposes to alter this setup. Dependencies will store a <code>DatabaseIndex</code>
+instead. This means that validating dependencies is less efficient, as we no
+longer have a direct pointer to the dependency information but instead must
+execute three index lookups (one to find the query group, one to locate the
+query, and then one to locate the key). Similarly the LRU list can be reverted
+to a <code>LinkedHashMap</code> of indices.</p>
+<p>We may tinker with other approaches too: the key change in the RFC is that we
+do not need to store a <code>DB::DatabaseKey</code> or <code>Slot&lt;..DB..&gt;</code>, but instead can use
+some type for dependencies that is independent of the dtabase type <code>DB</code>.</p>
+<h3><a class="header" href="#dispatching-methods-from-a-databasekeyindex" id="dispatching-methods-from-a-databasekeyindex">Dispatching methods from a <code>DatabaseKeyIndex</code></a></h3>
+<p>There are a number of methods that can be dispatched through the database
+interface on a <code>DatabaseKeyIndex</code>. For example, we already mentioned
+<code>fmt_debug</code>, which emits a debug representation of the key, but there is also
+<code>maybe_changed_since</code>, which checks whether the value for a given key may have
+changed since the given revision. Each of these methods is a member of the
+<code>DatabaseOps</code> trait and they are dispatched as follows.</p>
+<p>First, the <code>#[salsa::database]</code> procedural macro is the one which
+generates the <code>DatabaseOps</code> impl for the database. This base method
+simply matches on the group index to determine which query group
+contains the key, and then dispatches to an inherent
+method defined on the appropriate query group struct:</p>
+<pre><code class="language-rust ignore">impl salsa::plumbing::DatabaseOps for DatabaseStruct {
+    // We'll use the `fmt_debug` method as an example
+    fn fmt_debug(&amp;self, index: DatabaseKeyIndex, fmt: &amp;mut std::fmt::Formatter&lt;'_&gt;) -&gt; std::fmt::Result {
+        match index.group_index() {
+            0 =&gt; {
+                let storage = &lt;Self as HasQueryGroup&lt;HelloWorld&gt;&gt;::group_storage(self);
+                storage.fmt_debug(index, fmt)
+            }
+
+            _ =&gt; panic!(&quot;Invalid index&quot;)
+        }
+    }
+}
+</code></pre>
+<p>The query group struct has a very similar inherent method that dispatches based
+on the query index and invokes a method on the query storage:</p>
+<pre><code class="language-rust ignore">impl HelloWorldGroupStorage__ {
+    // We'll use the `fmt_debug` method as an example
+    fn fmt_debug(&amp;self, index: DatabaseKeyIndex, fmt: &amp;mut std::fmt::Formatter&lt;'_&gt;) -&gt; std::fmt::Result {
+        match index.query_index() {
+            0 =&gt; self.appropriate_query_field.fmt_debug(index, fmt),
+            1 =&gt; ...
+            _ =&gt; panic!(&quot;Invalid index&quot;)
+        }
+    }
+}
+</code></pre>
+<p>Finally, the query storage can use the key index to lookup the appropriate
+data from the <code>FxIndexSet</code>.</p>
+<h3><a class="header" href="#wrap-runtime-in-a-storagedb-type" id="wrap-runtime-in-a-storagedb-type">Wrap runtime in a <code>Storage&lt;DB&gt;</code> type</a></h3>
+<p>The Salsa runtime is currently <code>Runtime&lt;DB&gt;</code> but it will change to just
+<code>Runtime</code> and thus not be generic over the database. This means it can be
+referenced directly by query storage implementations. This is very useful
+because it allows that type to have a number of <code>pub(crate)</code> details that query
+storage implementations make use of but which are not exposed as part of our
+public API.</p>
+<p>However, the <code>Runtime</code> crate used to contain a <code>DB::Storage</code>, and without the
+<code>DB</code> in its type, it no longer can. Therefore, we will introduce a new type
+<code>Storage&lt;DB&gt;</code> type which is defined like so:</p>
+<pre><code class="language-rust ignore">pub struct Storage&lt;DB: DatabaseImpl&gt; {
+    query_store: Arc&lt;DB::DatabaseStorage&gt;,
+    runtime: Runtime,
+}
+
+impl&lt;DB&gt; Storage&lt;DB&gt; {
+    pub fn query_store(&amp;self) -&gt; &amp;DB::DatabaseStorage {
+        &amp;self.query_store
+    }
+
+    pub fn salsa_runtime(&amp;self) -&gt; &amp;Runtime {
+        &amp;self.runtime
+    }
+
+    pub fn salsa_runtime_mut(&amp;mut self) -&gt; &amp;mut Runtime {
+        &amp;self.runtime
+    }
+
+    /// Used for parallel queries
+    pub fn snapshot(&amp;self) -&gt; Self {
+        Storage {
+            query_store: query_store.clone(),
+            runtime: runtime.snapshot(),
+        }
+    }
+}
+</code></pre>
+<p>The user is expected to include a field <code>storage: Storage&lt;DB&gt;</code> in their database
+definition. The <code>salsa::database</code> procedural macro, when it generates impls of
+traits like <code>HasQueryGroup</code>, will embed code like <code>self.storage</code> that looks for
+that field.</p>
+<h3><a class="header" href="#salsa_runtime-methods-move-to-databaseops-trait" id="salsa_runtime-methods-move-to-databaseops-trait"><code>salsa_runtime</code> methods move to <code>DatabaseOps</code> trait</a></h3>
+<p>The <code>salsa_runtime</code> methods used to be manually implemented by users to define
+the field that contains the salsa runtime. This was always boilerplate. The
+<code>salsa::database</code> macro now handles that job by defining them to invoke the
+corresponding methods on <code>Storage</code>.</p>
+<h3><a class="header" href="#salsa-database-trait-becomes-dyn-safe" id="salsa-database-trait-becomes-dyn-safe">Salsa database trait becomes dyn safe</a></h3>
+<p>Under this proposal, the Salsa database must be dyn safe. This implies that
+we have to make a few changes:</p>
+<ul>
+<li>The <code>query</code> and <code>query_mut</code> methods move to an extension trait.</li>
+<li>The <code>DatabaseStorageTypes</code> supertrait is removed (that trait is renamed and altered, see next section).</li>
+<li>The <code>salsa_event</code> method changes, as described in the User's guide.</li>
+</ul>
+<h3><a class="header" href="#salsa-database-trait-requires-static-at-least-for-now" id="salsa-database-trait-requires-static-at-least-for-now">Salsa database trait requires <code>'static</code>, at least for now</a></h3>
+<p>One downside of this proposal is that the <code>salsa::Database</code> trait now has a
+<code>'static</code> bound. This is a result of the lack of GATs -- in particular, the
+queries expect a <code>Q::DynDb</code> as argument. In the query definition, we have
+something like <code>type DynDb = dyn QueryGroupDatabase</code>, which in turn defaults to
+<code>dyn::QueryGroupDatabase + 'static</code>.</p>
+<p>At the moment, this limitation is harmless, since salsa databases don't support
+generic parameters. But it would be good to lift in the future, especially as we
+would like to support arena allocation and other such patterns. The limitation
+could be overcome in the future by:</p>
+<ul>
+<li>converting to a GAT like <code>DynDb&lt;'a&gt;</code>, if those were available;</li>
+<li>or by simulating GATs by introducing a trait to carry the <code>DynDb</code> definition,
+like <code>QueryDb&lt;'a&gt;</code>, where <code>Query</code> has the supertrait <code>for&lt;'a&gt; Self: QueryDb&lt;'a&gt;</code>. This would permit the <code>DynDb</code> type to be referenced by writing
+<code>&lt;Q as QueryDb&lt;'a&gt;&gt;::DynDb</code>. </li>
+</ul>
+<h3><a class="header" href="#salsa-query-group-traits-are-extended-with-database-and-hasquerygroup-supertrait" id="salsa-query-group-traits-are-extended-with-database-and-hasquerygroup-supertrait">Salsa query group traits are extended with <code>Database</code> and <code>HasQueryGroup</code> supertrait</a></h3>
+<p>When <code>#[salsa::query_group]</code> is applied to a trait, we currently generate a copy
+of the trait that is &quot;more or less&quot; unmodified (although we sometimes add
+additional synthesized methods, such as the <code>set</code> method for an input). Under
+this proposal, we will also introduce a <code>HasQueryGroup&lt;QueryGroupStorage&gt;</code>
+supertrait. Therefore the following input:</p>
+<pre><code class="language-rust ignore">#[salsa::query_group(HelloWorldStorage)]
+trait HelloWorld { .. }
+</code></pre>
+<p>will generate a trait like:</p>
+<pre><code class="language-rust ignore">trait HelloWorld: 
+    salsa::Database + 
+    salsa::plumbing::HasQueryGroup&lt;HelloWorldStorage&gt;
+{ 
+    .. 
+}
+</code></pre>
+<p>The <code>Database</code> trait is the standard <code>salsa::Database</code> trait and contains
+various helper methods. The <code>HasQueryGroup</code> trait is implemented by the database
+and defines various plumbing methods that are used by the storage
+implementations.</p>
+<p>One downside of this is that <code>salsa::Database</code> methods become available on the
+trait; we might want to give internal plumbing methods more obscure names.</p>
+<h4><a class="header" href="#bounds-were-already-present-on-the-blanket-impl-of-salsa-query-group-trait" id="bounds-were-already-present-on-the-blanket-impl-of-salsa-query-group-trait">Bounds were already present on the blanket impl of salsa query group trait</a></h4>
+<p>The new bounds that are appearing on the trait were always present on the
+blanket impl that the <code>salsa::query_group</code> procedural macro generated, which
+looks like so (and continues unchanged under this RFC):</p>
+<pre><code class="language-rust ignore">impl&lt;DB&gt; HelloWorld for DB
+where
+    DB: salsa::Database +
+    DB: salsa::plumbing::HasQueryGroup&lt;HelloWorldStorage&gt;
+{
+    ...
+}
+</code></pre>
+<p>The reason we generate the impl is so that the <code>salsa::database</code> procedural
+macro can simply create the <code>HasQueryGroup</code> impl and never needs to know the
+name of the <code>HelloWorld</code> trait, only the <code>HelloWorldStorage</code> type.</p>
+<h3><a class="header" href="#storage-types-no-longer-parameterized-by-the-database" id="storage-types-no-longer-parameterized-by-the-database">Storage types no longer parameterized by the database</a></h3>
+<p>Today's storage types, such as <code>Derived</code>, are parameterized over both a query <code>Q</code> and a <code>DB</code> (along with the memoization policy <code>MP</code>):</p>
+<pre><code class="language-rust ignore">// Before this RFC:
+pub struct DerivedStorage&lt;DB, Q, MP&gt;
+where
+    Q: QueryFunction&lt;DB&gt;,
+    DB: Database + HasQueryGroup&lt;Q::Group&gt;,
+    MP: MemoizationPolicy&lt;DB, Q&gt;,
+</code></pre>
+<p>The <code>DB</code> parameter should no longer be needed after the previously described
+changes are made, so that the signature looks like:</p>
+<pre><code class="language-rust ignore">// Before this RFC:
+pub struct DerivedStorage&lt;Q, MP&gt;
+where
+    Q: QueryFunction,
+    MP: MemoizationPolicy&lt;DB, Q&gt;,
+</code></pre>
+<h2><a class="header" href="#alternatives-and-future-work-5" id="alternatives-and-future-work-5">Alternatives and future work</a></h2>
+<p>The 'linch-pin' of this design is the <code>DatabaseKeyIndex</code> type, which allows for
+signatures to refer to &quot;any query in the system&quot; without reference to the <code>DB</code>
+type. The biggest downside of the system is that this type is an integer which
+then requires a tracing GC to recover index values. The primary alternative
+would be to use an <code>Arc</code>-like scheme,but this has some severe downsides:</p>
+<ul>
+<li>Requires reference counting, allocation</li>
+<li>Hashing and equality comparisons have more data to process versus an integer</li>
+<li>Equality comparisons must still be deep since you may have older and newer keys co-existing</li>
+<li>Requires a <code>Arc&lt;dyn DatabaseKey&gt;</code>-like setup, which then encounters the
+problems that this type is not <code>Send</code> or <code>Sync</code>, leading to hacks like the
+<code>DB::DatabaseData</code> we use today.</li>
+</ul>
 
                     </main>
 

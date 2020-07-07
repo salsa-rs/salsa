@@ -91,7 +91,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_groups.html" class="active"><strong aria-hidden="true">6.1.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.2.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li></ol></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/diagram.html"><strong aria-hidden="true">6.1.</strong> Diagram</a></li><li class="chapter-item expanded "><a href="../plumbing/query_groups.html" class="active"><strong aria-hidden="true">6.2.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">6.3.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0006-Dynamic-Databases.html"><strong aria-hidden="true">7.7.</strong> RFC 0006: Dynamic database</a></li></ol></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -177,39 +177,36 @@ trait HelloWorld: salsa::Database {
     fn length(&amp;self, key: ()) -&gt; usize;
 }
 </code></pre>
-<p>the <code>salsa::query_group</code> macro generates a number of things:</p>
-<ul>
-<li>a copy of the <code>HelloWorld</code> trait, minus the salsa annotations, and lightly edited</li>
-<li>a &quot;group struct&quot; named <code>HelloWorldStorage</code> that represents the group; this struct implements <code>plumbing::QueryGroup</code>
-<ul>
-<li>somewhat confusingly, this struct doesn't actually contain the storage itself, but rather has an associated type that leads to the &quot;true&quot; storage struct</li>
-</ul>
-</li>
-<li>an impl of the <code>HelloWorld</code> trait, for any database type</li>
-<li>for each query, a &quot;query struct&quot; named after the query; these structs implement <code>plumbing::Query</code> and sometimes other plumbing traits</li>
-<li>a group key, an enum that can identify any query within the group and store its key</li>
-<li>the associated storage struct, which contains the actual hashmaps that store the data for all queries in the group</li>
-</ul>
-<p>Note that there are a number of structs and types (e.g., the group descriptor
-and associated storage struct) that represent things which don't have &quot;public&quot;
+<p>the <code>salsa::query_group</code> macro generates a number of things, shown in the sample
+generated code below (details in the sections to come).</p>
+<p>and associated storage struct) that represent things which don't have &quot;public&quot;
+Note that there are a number of structs and types (e.g., the group descriptor
 names. We currently generate mangled names with <code>__</code> afterwards, but those names
 are not meant to be exposed to the user (ideally we'd use hygiene to enforce
 this).</p>
-<p>So the generated code looks something like this. We'll go into more detail on
-each part in the following sections.</p>
-<pre><code class="language-rust ignore">// First, a copy of the trait, though sometimes with some extra
-// methods (e.g., `set_input_string`)
-trait HelloWorld: salsa::Database {
+<pre><code class="language-rust ignore">// First, a copy of the trait, though with extra supertraits and
+// sometimes with some extra methods (e.g., `set_input_string`)
+trait HelloWorld: 
+    salsa::Database + 
+    salsa::plumbing::HasQueryGroup&lt;HelloWorldStorage&gt;
+{
     fn input_string(&amp;self, key: ()) -&gt; Arc&lt;String&gt;;
     fn set_input_string(&amp;mut self, key: (), value: Arc&lt;String&gt;);
     fn length(&amp;self, key: ()) -&gt; usize;
 }
 
-// Next, the group struct
+// Next, the &quot;query group struct&quot;, whose name was given by the
+// user. This struct implements the `QueryGroup` trait which
+// defines a few associated types common to the entire group.
 struct HelloWorldStorage { }
-impl&lt;DB&gt; salsa::plumbing::QueryGroup&lt;DB&gt; for HelloWorldStorage { ... }
+impl salsa::plumbing::QueryGroup for HelloWorldStorage {
+    type DynDb = dyn HelloWorld;
+    type GroupStorage = HelloWorldGroupStorage__;
+}
 
-// Next, the impl of the trait
+// Next, a blanket impl of the `HelloWorld` trait. This impl
+// works for any database `DB` that implements the
+// appropriate `HasQueryGroup`.
 impl&lt;DB&gt; HelloWorld for DB
 where
   DB: salsa::Database,
@@ -218,41 +215,29 @@ where
   ...
 }
 
-// Next, a series of query structs and query impls
-struct InputQuery { }
-unsafe impl&lt;DB&gt; salsa::Query&lt;DB&gt; for InputQuery
-where
-    DB: HelloWorld,
-    DB: salsa::plumbing::HasQueryGroup&lt;#group_struct&gt;,
-    DB: salsa::Database,
-{
-    ...
-}
-struct LengthQuery { }
-unsafe impl&lt;DB&gt; salsa::Query&lt;DB&gt; for LengthQuery
-where
-    DB: HelloWorld,
-    DB: salsa::plumbing::HasQueryGroup&lt;#group_struct&gt;,
-    DB: salsa::Database,
-{
-    ...
+// Next, for each query, a &quot;query struct&quot; that represents it.
+// The query struct has inherent methods like `in_db` and
+// implements the `Query` trait, which defines various
+// details about the query (e.g., its key, value, etc).
+pub struct InputQuery { }
+impl InputQuery { /* definition for `in_db`, etc */ }
+impl salsa::Query for InputQuery {
+    /* associated types */
 }
 
-// For derived queries, those include implementations
-// of additional traits like `QueryFunction`
-unsafe impl&lt;DB&gt; salsa::QueryFunction&lt;DB&gt; for LengthQuery
-where
-    DB: HelloWorld,
-    DB: salsa::plumbing::HasQueryGroup&lt;#group_struct&gt;,
-    DB: salsa::Database,
-{
+// Same as above, but for the derived query `length`.
+// For derived queries, we also implement `QueryFunction`
+// which defines how to execute the query.
+pub struct LengthQuery { }
+impl salsa::Query for LengthQuery {
+    ...
+}
+impl salsa::QueryFunction for LengthQuery {
     ...
 }
 
-// The group key
-enum HelloWorldGroupKey__ { .. }
-
-// The group storage
+// Finally, the group storage, which contains the actual
+// hashmaps and other data used to implement the queries.
 struct HelloWorldGroupStorage__ { .. }
 </code></pre>
 <h2><a class="header" href="#the-group-struct-and-querygroup-trait" id="the-group-struct-and-querygroup-trait">The group struct and <code>QueryGroup</code> trait</a></h2>
@@ -264,10 +249,9 @@ implement the <code>QueryGroup</code> trait. This <em>trait</em> has a number of
 that reference various bits of the query group, including the actual &quot;group
 storage&quot; struct:</p>
 <pre><code class="language-rust ignore">struct HelloWorldStorage { }
-impl&lt;DB&gt; salsa::plumbing::QueryGroup&lt;DB&gt; for HelloWorldStorage {
+impl salsa::plumbing::QueryGroup for HelloWorldStorage {
+    type DynDb = dyn HelloWorld;
     type GroupStorage = HelloWorldGroupStorage__; // generated struct
-    type GroupKey = HelloWorldGroupKey__;
-    type GroupData = ((), Arc&lt;String&gt;, (), usize);
 }
 </code></pre>
 <p>We'll go into detail on these types below and the role they play, but one that
@@ -315,93 +299,101 @@ For e.g. the <code>length</code> query, this structs might look something like:<
 <p>The struct also implements the <code>plumbing::Query</code> trait, which defines
 a bunch of metadata about the query (and repeats, for convenience,
 some of the data about the group that the query is in):</p>
-<pre><code class="language-rust ignore">unsafe impl&lt;DB&gt; salsa::Query&lt;DB&gt; for LengthQuery
-where
-    DB: HelloWorld,
-    DB: salsa::plumbing::HasQueryGroup&lt;#group_struct&gt;,
-    DB: salsa::Database,
-{
-    // A tuple of the types of the function parameters trom trait.
-    type Key = ((), );
+<pre><code class="language-rust ignore">            impl salsa::Query for #qt
+            {
+                type Key = (#(#keys),*);
+                type Value = #value;
+                type Storage = #storage;
+                type Group = #group_struct;
+                type GroupStorage = #group_storage;
+                type DynDb = #dyn_db;
 
-    // The return value of the function in the trait.
-    type Value = Arc&lt;String&gt;;
+                const QUERY_INDEX: u16 = #query_index;
 
-    // The &quot;query storage&quot; references a type from within salsa
-    // that stores the actual query data and defines the
-    // logic for accessing and revalidating it.
-    //
-    // It is generic over the query type which lets it
-    // customize itself to the keys/value of this particular
-    // query.
-    type Storage = salsa::derived::DerivedStorage&lt;
-        DB,
-        LengthQuery,
-        salsa::plumbing::MemoizedStorage,
-    &gt;;
+                const QUERY_NAME: &amp;'static str = #query_name;
 
-    // Types from the query group, repeated for convenience.
-    type Group = HelloWorldStorage;
-    type GroupStorage = HelloWorldGroupStorage__;
-    type GroupKey = HelloWorldGroupKey__;
-
-    // Given the storage for the entire group, extract
-    // the storage for just this query. Described when
-    // we talk about group storage.
-    fn query_storage(
-        group_storage: &amp;HelloWorldGroupStorage__,
-    ) -&gt; &amp;std::sync::Arc&lt;Self::Storage&gt; {
-        &amp;group_storage.length
-    }
-
-    // Given the key for this query, construct the &quot;group key&quot;
-    // that situates it within the group. Described when
-    // we talk about group key.
-    fn group_key(key: Self::Key) -&gt; Self::GroupKey {
-        HelloWorldGroupKey__::length(key)
-    }
-}
+                fn query_storage(
+                    group_storage: &amp;Self::GroupStorage,
+                ) -&gt; &amp;std::sync::Arc&lt;Self::Storage&gt; {
+                    &amp;group_storage.#fn_name
+                }
+            }
 </code></pre>
 <p>Depending on the kind of query, we may also generate other impls, such as an
 impl of <code>salsa::plumbing::QueryFunction</code>, which defines the methods for
 executing the body of a query. This impl would then include a call to the user's
 actual function.</p>
-<h2><a class="header" href="#group-key" id="group-key">Group key</a></h2>
-<p>The &quot;query key&quot; is the inputs to the query, and identifies a particular query
-instace: in our example, it is a value of type <code>()</code> (so there is only one
-instance of the query), but typically it's some other type. The &quot;group key&quot; then
-broadens that to include the identifier of the query within the group. So instead
-of just <code>()</code> the group key would encode (e.g.) <code>Length(())</code> (the &quot;length&quot; query
-applied to the <code>()</code> key). It is represented as an enum, which we generate,
-with one variant per query:</p>
-<pre><code class="language-rust ignore">#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum HelloWorldGroupKey__ {
-  input(()),
-  length(()),
-}
+<pre><code class="language-rust ignore">                impl salsa::plumbing::QueryFunction for #qt
+                {
+                    fn execute(db: &amp;Self::DynDb, #key_pattern: &lt;Self as salsa::Query&gt;::Key)
+                        -&gt; &lt;Self as salsa::Query&gt;::Value {
+<span class="boring">                        invoke(db, #(#key_names),*)
+</span>                    }
+
+<span class="boring">                    recover
+</span>                }
 </code></pre>
-<p>The <code>Query</code> trait that we saw earlier includes a method <code>group_key</code> for wrapping
-the key for some individual query into the group key.</p>
 <h2><a class="header" href="#group-storage" id="group-storage">Group storage</a></h2>
 <p>The &quot;group storage&quot; is the actual struct that contains all the hashtables and
 so forth for each query. The types of these are ultimately defined by the
 <code>Storage</code> associated type for each query type. The struct is generic over the
 final database type:</p>
-<pre><code class="language-rust ignore">struct HelloWorldGroupStorage__&lt;DB&gt; {
-    input: &lt;InputQuery as Query&lt;DB&gt;&gt;::Storage,
-    length: &lt;LengthQuery as Query&lt;DB&gt;&gt;::Storage,
+<pre><code class="language-rust ignore">struct HelloWorldGroupStorage__ {
+    input: &lt;InputQuery as Query::Storage,
+    length: &lt;LengthQuery as Query&gt;::Storage,
 }
 </code></pre>
-<p>We also generate some impls: first is an impl of <code>Default</code> and the second is a
-method <code>for_each_query</code> that simply iterates over each field and invokes a
-method on it. This method is called by some of the code we generate for the
-database in order to implement debugging methods that &quot;sweep&quot; over all the
-queries.</p>
-<pre><code class="language-rust ignore">impl&lt;DB&gt; HelloWorldGroupStorage__&lt;DB&gt; {
-    fn for_each_query(&amp;self, db: &amp;DB, method: &amp;mut dyn FnMut(...)) {
-        ...
-    }
-}
+<p>We also generate some inherent methods. First, a <code>new</code> method that takes
+the group index as a parameter and passes it along to each of the query
+storage <code>new</code> methods:</p>
+<pre><code class="language-rust ignore">        impl #group_storage {
+<span class="boring">            trait_vis fn new(group_index: u16) -&gt; Self {
+</span><span class="boring">                group_storage {
+</span><span class="boring">                    (
+</span><span class="boring">                        queries_with_storage:
+</span>                        std::sync::Arc::new(salsa::plumbing::QueryStorageOps::new(group_index)),
+                    )*
+                }
+            }
+        }
+</code></pre>
+<p>And then various methods that will dispatch from a <code>DatabaseKeyIndex</code> that
+corresponds to this query group into the appropriate query within the group.
+Each has a similar structure of matching on the query index and then delegating
+to some method defined by the query storage:</p>
+<pre><code class="language-rust ignore">        impl #group_storage {
+<span class="boring">            trait_vis fn fmt_index(
+</span>                &amp;self,
+                db: &amp;#dyn_db,
+                input: salsa::DatabaseKeyIndex,
+                fmt: &amp;mut std::fmt::Formatter&lt;'_&gt;,
+            ) -&gt; std::fmt::Result {
+                match input.query_index() {
+<span class="boring">                    fmt_ops
+</span>                    i =&gt; panic!(&quot;salsa: impossible query index {}&quot;, i),
+                }
+            }
+
+<span class="boring">            trait_vis fn maybe_changed_since(
+</span>                &amp;self,
+                db: &amp;#dyn_db,
+                input: salsa::DatabaseKeyIndex,
+                revision: salsa::Revision,
+            ) -&gt; bool {
+                match input.query_index() {
+<span class="boring">                    maybe_changed_ops
+</span>                    i =&gt; panic!(&quot;salsa: impossible query index {}&quot;, i),
+                }
+            }
+
+<span class="boring">            trait_vis fn for_each_query(
+</span>                &amp;self,
+                _runtime: &amp;salsa::Runtime,
+                mut op: &amp;mut dyn FnMut(&amp;dyn salsa::plumbing::QueryStorageMassOps),
+            ) {
+<span class="boring">                for_each_ops
+</span>            }
+        }
 </code></pre>
 
                     </main>
@@ -409,7 +401,7 @@ queries.</p>
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
-                            <a rel="prev" href="../plumbing.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../plumbing/diagram.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
@@ -427,7 +419,7 @@ queries.</p>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
-                    <a rel="prev" href="../plumbing.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../plumbing/diagram.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 

@@ -91,7 +91,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.1.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html" class="active"><strong aria-hidden="true">6.2.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li></ol></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded "><a href="../how_to_use.html"><strong aria-hidden="true">2.</strong> How to use Salsa</a></li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">3.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">4.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">4.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">4.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">5.</strong> YouTube videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">6.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/diagram.html"><strong aria-hidden="true">6.1.</strong> Diagram</a></li><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">6.2.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html" class="active"><strong aria-hidden="true">6.3.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">7.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">7.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">7.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">7.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">7.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">7.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">7.6.</strong> RFC 0005: Durability</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0006-Dynamic-Databases.html"><strong aria-hidden="true">7.7.</strong> RFC 0006: Dynamic database</a></li></ol></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -163,19 +163,10 @@
 <pre><code class="language-rust ignore">#[salsa::database(HelloWorldStorage)]
 #[derive(Default)]
 struct DatabaseStruct {
-    runtime: salsa::Runtime&lt;DatabaseStruct&gt;,
+    storage: salsa::Storage&lt;Self&gt;,
 }
 
-// Tell salsa where to find the runtime in your context.
-impl salsa::Database for DatabaseStruct {
-    fn salsa_runtime(&amp;self) -&gt; &amp;salsa::Runtime&lt;Self&gt; {
-        &amp;self.runtime
-    }
-
-    fn salsa_runtime_mut(&amp;mut self) -&gt; &amp;mut salsa::Runtime&lt;Self&gt; {
-        &amp;mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseStruct {}
 </code></pre>
 <p>The <code>salsa::database</code> procedural macro takes a list of query group
 structs (like <code>HelloWorldStorage</code>) and generates the following items:</p>
@@ -185,13 +176,9 @@ structs (like <code>HelloWorldStorage</code>) and generates the following items:
 each query group. Note: these are the structs full of hashmaps etc that are
 generaetd by the query group procdural macro, not the <code>HelloWorldStorage</code>
 struct itself.</li>
-<li>a struct <code>__SalsaDatabaseKey</code> that wraps an enum <code>__SalsaDatabaseKeyKind</code>. The
-enum contains one variant per query group, and in each variant contains the
-group key. This can be used to identify any query in the database.</li>
 <li>an impl of <code>HasQueryGroup&lt;G&gt;</code> for each query group <code>G</code></li>
 <li>an impl of <code>salsa::plumbing::DatabaseStorageTypes</code> for the database struct</li>
 <li>an impl of <code>salsa::plumbing::DatabaseOps</code> for the database struct</li>
-<li>an impl of <code>salsa::plumbing::DatabaseKey&lt;DB&gt;</code> for the database struct <code>DB</code></li>
 </ul>
 <h2><a class="header" href="#key-constraint-we-do-not-know-the-names-of-individual-queries" id="key-constraint-we-do-not-know-the-names-of-individual-queries">Key constraint: we do not know the names of individual queries</a></h2>
 <p>There is one key constraint in the design here. None of this code knows the
@@ -204,103 +191,109 @@ a &quot;global&quot; context.</p>
 <h2><a class="header" href="#the-database-storage-struct" id="the-database-storage-struct">The database storage struct</a></h2>
 <p>The <code>__SalsaDatabaseStorage</code> struct concatenates all of the query group storage
 structs. In the hello world example, it looks something like:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>struct __SalsaDatabaseStorage {
+<pre><code class="language-rust ignore">struct __SalsaDatabaseStorage {
     hello_world: &lt;HelloWorldStorage as salsa::plumbing::QueryGroup&lt;DatabaseStruct&gt;&gt;::GroupStorage
 }
-<span class="boring">}
-</span></code></pre></pre>
-<h2><a class="header" href="#the-database-key-struct--enum-and-the-databasekey-impl" id="the-database-key-struct--enum-and-the-databasekey-impl">The database key struct / enum and the <code>DatabaseKey</code> impl</a></h2>
-<p>The <code>__SalsaDatabaseKey</code> and <code>__SalsaDatabaseKeyKind</code> types create a <strong>database
-key</strong>, which uniquely identifies any query in the database. It builds on the
-<strong>group keys</strong> created by the query groups, which uniquely identify a query
-within a given query group.</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>struct __SalsaDatabaseKey {
-    kind: __SalsaDatabaseKeyKind
-}
-
-enum __SalsaDatabaseKeyKind {
-    HelloWorld(
-        &lt;HelloWorldStorage as salsa::plumbing::QueryGroup&lt;DatabaseStruct&gt;&gt;::GroupKey
-    )
-}
-<span class="boring">}
-</span></code></pre></pre>
-<p>We also generate an impl of <code>DatabaseKey</code>:</p>
-<pre><code class="language-rust ignore">    output.extend(quote! {
-        impl salsa::plumbing::DatabaseKey&lt;#database_name&gt; for __SalsaDatabaseKey {
-        }
-    });
 </code></pre>
+<p>We also generate a <code>Default</code> impl for <code>__SalsaDatabaseStorage</code>. It invokes
+a <code>new</code> method on each group storage with the unique index assigned to that group.
+This invokes the <a href="query_groups.html#group-storage">inherent <code>new</code> method generated by the <code>#[salsa::query_group]</code> macro</a>.</p>
 <h2><a class="header" href="#the-hasquerygroup-impl" id="the-hasquerygroup-impl">The <code>HasQueryGroup</code> impl</a></h2>
 <p>The <code>HasQueryGroup</code> trait allows a given query group to access its definition
 within the greater database. The impl is generated here:</p>
 <pre><code class="language-rust ignore">        has_group_impls.extend(quote! {
             impl salsa::plumbing::HasQueryGroup&lt;#group_path&gt; for #database_name {
-                fn group_storage(db: &amp;Self) -&gt; &amp;#group_storage {
-                    let runtime = salsa::Database::salsa_runtime(db);
-                    &amp;runtime.storage().#group_name_snake
-                }
-
-                fn database_key(group_key: #group_key) -&gt; __SalsaDatabaseKey {
-                    __SalsaDatabaseKey {
-                        kind: __SalsaDatabaseKeyKind::#group_name(group_key),
-                    }
+                fn group_storage(&amp;self) -&gt; &amp;#group_storage {
+                    &amp;self.#db_storage_field.query_store().#group_name_snake
                 }
             }
         });
 </code></pre>
-<p>and so for our example it would look something like</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl salsa::plumbing::HasQueryGroup&lt;HelloWorld&gt; for DatabaseStruct {
-    fn group_storage(&amp;self) -&gt; &amp;HelloWorldStorage::GroupStorage {
-        &amp;self.hello_world
-    }
-
-    fn database_key(group_key: HelloWorldStorage::GroupKey) -&gt; __SalsaDatabaseKey {
-        __SalsaDatabaseKey {
-            kind: __SalsaDatabaseKeyKind::HelloWorld(group_key)
-        }
-    }
-}
-<span class="boring">}
-</span></code></pre></pre>
-<h2><a class="header" href="#other-impls" id="other-impls">Other impls</a></h2>
+<p>The <code>HasQueryGroup</code> impl combines with <a href="query_groups.html#impl-of-the-hello-world-trait">the blanket impl</a> from the
+<code>#[salsa::query_group]</code> macro so that the database can implement the query group
+trait (e.g., the <code>HelloWorld</code> trait) but without knowing all the names of the
+query methods and the like.</p>
+<h2><a class="header" href="#the-databasestoragetypes-impl" id="the-databasestoragetypes-impl">The <code>DatabaseStorageTypes</code> impl</a></h2>
 <p>Then there are a variety of other impls, like this one for <code>DatabaseStorageTypes</code>:</p>
 <pre><code class="language-rust ignore">    output.extend(quote! {
         impl salsa::plumbing::DatabaseStorageTypes for #database_name {
-            type DatabaseKey = __SalsaDatabaseKey;
             type DatabaseStorage = __SalsaDatabaseStorage;
-            type DatabaseData = (#(#database_data),*);
         }
     });
 </code></pre>
+<h2><a class="header" href="#the-databaseops-impl" id="the-databaseops-impl">The <code>DatabaseOps</code> impl</a></h2>
 <p>Or this one for <code>DatabaseOps</code>, which defines the for-each method to
 invoke an operation on every kind of query in the database. It ultimately
 delegates to the <code>for_each</code> methods for the groups:</p>
-<pre><code class="language-rust ignore">    let mut for_each_ops = proc_macro2::TokenStream::new();
-    for (QueryGroup { group_path }, group_storage) in
-        query_groups.iter().zip(&amp;query_group_storage_names)
+<pre><code class="language-rust ignore">    let mut fmt_ops = proc_macro2::TokenStream::new();
+    let mut maybe_changed_ops = proc_macro2::TokenStream::new();
+    let mut for_each_ops = proc_macro2::TokenStream::new();
+    for ((QueryGroup { group_path }, group_storage), group_index) in query_groups
+        .iter()
+        .zip(&amp;query_group_storage_names)
+        .zip(0_u16..)
     {
+        fmt_ops.extend(quote! {
+<span class="boring">            group_index =&gt; {
+</span>                let storage: &amp;#group_storage =
+                    &lt;Self as salsa::plumbing::HasQueryGroup&lt;#group_path&gt;&gt;::group_storage(self);
+                storage.fmt_index(self, input, fmt)
+            }
+        });
+        maybe_changed_ops.extend(quote! {
+<span class="boring">            group_index =&gt; {
+</span>                let storage: &amp;#group_storage =
+                    &lt;Self as salsa::plumbing::HasQueryGroup&lt;#group_path&gt;&gt;::group_storage(self);
+                storage.maybe_changed_since(self, input, revision)
+            }
+        });
         for_each_ops.extend(quote! {
             let storage: &amp;#group_storage =
                 &lt;Self as salsa::plumbing::HasQueryGroup&lt;#group_path&gt;&gt;::group_storage(self);
-            storage.for_each_query(self, &amp;mut op);
+            storage.for_each_query(runtime, &amp;mut op);
         });
     }
     output.extend(quote! {
         impl salsa::plumbing::DatabaseOps for #database_name {
+            fn ops_database(&amp;self) -&gt; &amp;dyn salsa::Database {
+                self
+            }
+
+            fn ops_salsa_runtime(&amp;self) -&gt; &amp;salsa::Runtime {
+                self.#db_storage_field.salsa_runtime()
+            }
+
+            fn ops_salsa_runtime_mut(&amp;mut self) -&gt; &amp;mut salsa::Runtime {
+                self.#db_storage_field.salsa_runtime_mut()
+            }
+
+            fn fmt_index(
+                &amp;self,
+                input: salsa::DatabaseKeyIndex,
+                fmt: &amp;mut std::fmt::Formatter&lt;'_&gt;,
+            ) -&gt; std::fmt::Result {
+                match input.group_index() {
+<span class="boring">                    fmt_ops
+</span>                    i =&gt; panic!(&quot;salsa: invalid group index {}&quot;, i)
+                }
+            }
+
+            fn maybe_changed_since(
+                &amp;self,
+                input: salsa::DatabaseKeyIndex,
+                revision: salsa::Revision
+            ) -&gt; bool {
+                match input.group_index() {
+<span class="boring">                    maybe_changed_ops
+</span>                    i =&gt; panic!(&quot;salsa: invalid group index {}&quot;, i)
+                }
+            }
+
             fn for_each_query(
                 &amp;self,
-                mut op: impl FnMut(&amp;dyn salsa::plumbing::QueryStorageMassOps&lt;Self&gt;),
+                mut op: &amp;mut dyn FnMut(&amp;dyn salsa::plumbing::QueryStorageMassOps),
             ) {
+                let runtime = salsa::Database::salsa_runtime(self);
 <span class="boring">                for_each_ops
 </span>            }
         }
