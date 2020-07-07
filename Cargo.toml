@@ -1,6 +1,6 @@
 [package]
 name = "salsa"
-version = "0.14.4" # CHECK salsa-macros version
+version = "0.15.0" # CHECK salsa-macros version
 authors = ["Salsa developers"]
 edition = "2018"
 license = "Apache-2.0 OR MIT"
@@ -18,7 +18,7 @@ rustc-hash = "1.0"
 smallvec = "1.0.0"
 rand = { version = "0.7", features = [ "small_rng" ], default-features = false }
 
-salsa-macros = { version = "0.14.1", path = "components/salsa-macros" }
+salsa-macros = { version = "0.15.0", path = "components/salsa-macros" }
 
 [dev-dependencies]
 diff = "0.1.0"
