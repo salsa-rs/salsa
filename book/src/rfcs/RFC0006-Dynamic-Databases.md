@@ -184,7 +184,7 @@ This is partly because events themselves no longer contain complex information:
 they used to have database-keys, which could require expensive cloning, but they
 now have simple indices.
 
-```rust
+```rust,ignore
 fn salsa_event(&self, event: Event) {
     #![allow(unused_variables)]
 }
@@ -217,7 +217,7 @@ This format is not compatible with `dyn`, so this feature is removed.
 
 To explain the proposal, we'll use the Hello World example, lightly adapted:
 
-```rust
+```rust,ignore
 #[salsa::query_group(HelloWorldStorage)]
 trait HelloWorld: salsa::Database {
     #[salsa::input]
@@ -308,7 +308,7 @@ and so instead they will now have an associated type, `DynDb`, that maps to the
 
 Therefore `QueryFunction` for example can become:
 
-```rust
+```rust,ignore
 pub trait QueryFunction: Query {
     fn execute(db: &Self::DynDb, key: Self::Key) -> Self::Value;
     fn recover(db: &Self::DynDb, cycle: &[DB::DatabaseKey], key: &Self::Key) -> Option<Self::Value> {
@@ -353,7 +353,7 @@ simply matches on the group index to determine which query group
 contains the key, and then dispatches to an inherent
 method defined on the appropriate query group struct:
 
-```rust
+```rust,ignore
 impl salsa::plumbing::DatabaseOps for DatabaseStruct {
     // We'll use the `fmt_debug` method as an example
     fn fmt_debug(&self, index: DatabaseKeyIndex, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -372,7 +372,7 @@ impl salsa::plumbing::DatabaseOps for DatabaseStruct {
 The query group struct has a very similar inherent method that dispatches based
 on the query index and invokes a method on the query storage:
 
-```rust
+```rust,ignore
 impl HelloWorldGroupStorage__ {
     // We'll use the `fmt_debug` method as an example
     fn fmt_debug(&self, index: DatabaseKeyIndex, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

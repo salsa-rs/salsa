@@ -18,7 +18,7 @@
 
 User's will declare query groups by decorating a trait with `salsa::query_group`:
 
-```rust
+```rust,ignore
 #[salsa::query_group(MyGroupStorage)]
 trait MyGroup {
   // Inputs are annotated with `#[salsa::input]`. For inputs, the final trait will include
@@ -80,7 +80,7 @@ queries. In addition to the `salsa::database` query, the struct must
 have access to a `salsa::Runtime` and implement the `salsa::Database`
 trait. Hence the complete declaration looks roughly like so:
 
-```rust
+```rust,ignore
 #[salsa::database(MyGroupStorage)]
 struct MyDatabase {
   runtime: salsa::Runtime<MyDatabase>,
@@ -114,7 +114,7 @@ is implemented by the query group storage struct `MyGroupStorage`. Its
 role is to link from that struct to the various bits of data that the
 salsa runtime needs:
 
-```rust
+```rust,ignore
 pub trait QueryGroup<DB: Database> {
     type GroupStorage;
     type GroupKey;
@@ -147,7 +147,7 @@ every query group that `MyDatabase` supports. Its role is to offer
 methods that move back and forth between the context of the *full
 database* to the context of an *individual query group*:
 
-```rust
+```rust,ignore
 pub trait HasQueryGroup<G>: Database
 where
     G: QueryGroup<Self>,
@@ -170,7 +170,7 @@ The query trait (pre-existing) is extended to include links to its
 group, and methods to convert from the group storage to the query
 storage, plus methods to convert from a query key up to the group key:
 
-```rust
+```rust,ignore
 pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
@@ -215,7 +215,7 @@ that given:
 we can (generically) get the storage for the individual query
 `Q` out from the database `db` via a two-step process:
 
-```rust
+```rust,ignore
 let group_storage = HasGroupStorage::group_storage(db);
 let query_storage = Query::query_storage(group_storage);
 ```
@@ -223,7 +223,7 @@ let query_storage = Query::query_storage(group_storage);
 Similarly, we can convert from the key to an individual query
 up to the "database key" in a two-step process:
 
-```rust
+```rust,ignore
 let group_key = Query::group_key(key);
 let db_key = HasGroupStorage::database_key(group_key);
 ```
@@ -356,7 +356,7 @@ private. This will require some tinkering.
 Instead of defining queries in separate functions, it might be nice to
 have the option of defining query methods in the trait itself:
 
-```rust
+```rust,ignore
 #[salsa::query_group(MyGroupStorage)]
 trait MyGroup {
   #[salsa::input]

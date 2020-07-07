@@ -34,7 +34,7 @@ a "global" context.
 The `__SalsaDatabaseStorage` struct concatenates all of the query group storage
 structs. In the hello world example, it looks something like:
 
-```rust
+```rust,ignore
 struct __SalsaDatabaseStorage {
     hello_world: <HelloWorldStorage as salsa::plumbing::QueryGroup<DatabaseStruct>>::GroupStorage
 }
