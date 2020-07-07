@@ -8,6 +8,7 @@
   - [On-demand (Lazy) inputs](./common_patterns/on_demand_inputs.md)
 - [YouTube videos](./videos.md)
 - [Plumbing](./plumbing.md)
+  - [Diagram](./plumbing/diagram.md)
   - [Query groups](./plumbing/query_groups.md)
   - [Database](./plumbing/database.md)
 - [RFCs](./rfcs.md)
@@ -17,3 +18,4 @@
   - [RFC 0003: Query dependencies](./rfcs/RFC0003-Query-Dependencies.md)
   - [RFC 0004: LRU](./rfcs/RFC0004-LRU.md)
   - [RFC 0005: Durability](./rfcs/RFC0005-Durability.md)
+  - [RFC 0006: Dynamic database](./rfcs/RFC0006-Dynamic-Databases.md)

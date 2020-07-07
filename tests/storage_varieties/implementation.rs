@@ -4,7 +4,7 @@ use std::cell::Cell;
 #[salsa::database(queries::GroupStruct)]
 #[derive(Default)]
 pub(crate) struct DatabaseImpl {
-    runtime: salsa::Runtime<DatabaseImpl>,
+    storage: salsa::Storage<Self>,
     counter: Cell<usize>,
 }
 
@@ -16,12 +16,4 @@ impl queries::Counter for DatabaseImpl {
     }
 }
 
-impl salsa::Database for DatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<DatabaseImpl> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<DatabaseImpl> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseImpl {}

@@ -6,39 +6,39 @@ When you define a query group trait:
 {{#include ../../../examples/hello_world/main.rs:trait}}
 ```
 
-the `salsa::query_group` macro generates a number of things:
+the `salsa::query_group` macro generates a number of things, shown in the sample
+generated code below (details in the sections to come).
 
-* a copy of the `HelloWorld` trait, minus the salsa annotations, and lightly edited
-* a "group struct" named `HelloWorldStorage` that represents the group; this struct implements `plumbing::QueryGroup`
-  * somewhat confusingly, this struct doesn't actually contain the storage itself, but rather has an associated type that leads to the "true" storage struct
-* an impl of the `HelloWorld` trait, for any database type
-* for each query, a "query struct" named after the query; these structs implement `plumbing::Query` and sometimes other plumbing traits
-* a group key, an enum that can identify any query within the group and store its key
-* the associated storage struct, which contains the actual hashmaps that store the data for all queries in the group
-
-Note that there are a number of structs and types (e.g., the group descriptor
 and associated storage struct) that represent things which don't have "public"
+Note that there are a number of structs and types (e.g., the group descriptor
 names. We currently generate mangled names with `__` afterwards, but those names
 are not meant to be exposed to the user (ideally we'd use hygiene to enforce
 this).
 
-So the generated code looks something like this. We'll go into more detail on
-each part in the following sections.
-
 ```rust,ignore
-// First, a copy of the trait, though sometimes with some extra
-// methods (e.g., `set_input_string`)
-trait HelloWorld: salsa::Database {
+// First, a copy of the trait, though with extra supertraits and
+// sometimes with some extra methods (e.g., `set_input_string`)
+trait HelloWorld: 
+    salsa::Database + 
+    salsa::plumbing::HasQueryGroup<HelloWorldStorage>
+{
     fn input_string(&self, key: ()) -> Arc<String>;
     fn set_input_string(&mut self, key: (), value: Arc<String>);
     fn length(&self, key: ()) -> usize;
 }
 
-// Next, the group struct
+// Next, the "query group struct", whose name was given by the
+// user. This struct implements the `QueryGroup` trait which
+// defines a few associated types common to the entire group.
 struct HelloWorldStorage { }
-impl<DB> salsa::plumbing::QueryGroup<DB> for HelloWorldStorage { ... }
+impl salsa::plumbing::QueryGroup for HelloWorldStorage {
+    type DynDb = dyn HelloWorld;
+    type GroupStorage = HelloWorldGroupStorage__;
+}
 
-// Next, the impl of the trait
+// Next, a blanket impl of the `HelloWorld` trait. This impl
+// works for any database `DB` that implements the
+// appropriate `HasQueryGroup`.
 impl<DB> HelloWorld for DB
 where
   DB: salsa::Database,
@@ -47,41 +47,29 @@ where
   ...
 }
 
-// Next, a series of query structs and query impls
-struct InputQuery { }
-unsafe impl<DB> salsa::Query<DB> for InputQuery
-where
-    DB: HelloWorld,
-    DB: salsa::plumbing::HasQueryGroup<#group_struct>,
-    DB: salsa::Database,
-{
-    ...
-}
-struct LengthQuery { }
-unsafe impl<DB> salsa::Query<DB> for LengthQuery
-where
-    DB: HelloWorld,
-    DB: salsa::plumbing::HasQueryGroup<#group_struct>,
-    DB: salsa::Database,
-{
-    ...
+// Next, for each query, a "query struct" that represents it.
+// The query struct has inherent methods like `in_db` and
+// implements the `Query` trait, which defines various
+// details about the query (e.g., its key, value, etc).
+pub struct InputQuery { }
+impl InputQuery { /* definition for `in_db`, etc */ }
+impl salsa::Query for InputQuery {
+    /* associated types */
 }
 
-// For derived queries, those include implementations
-// of additional traits like `QueryFunction`
-unsafe impl<DB> salsa::QueryFunction<DB> for LengthQuery
-where
-    DB: HelloWorld,
-    DB: salsa::plumbing::HasQueryGroup<#group_struct>,
-    DB: salsa::Database,
-{
+// Same as above, but for the derived query `length`.
+// For derived queries, we also implement `QueryFunction`
+// which defines how to execute the query.
+pub struct LengthQuery { }
+impl salsa::Query for LengthQuery {
+    ...
+}
+impl salsa::QueryFunction for LengthQuery {
     ...
 }
 
-// The group key
-enum HelloWorldGroupKey__ { .. }
-
-// The group storage
+// Finally, the group storage, which contains the actual
+// hashmaps and other data used to implement the queries.
 struct HelloWorldGroupStorage__ { .. }
 ```
 
@@ -98,10 +86,9 @@ storage" struct:
 
 ```rust,ignore
 struct HelloWorldStorage { }
-impl<DB> salsa::plumbing::QueryGroup<DB> for HelloWorldStorage {
+impl salsa::plumbing::QueryGroup for HelloWorldStorage {
+    type DynDb = dyn HelloWorld;
     type GroupStorage = HelloWorldGroupStorage__; // generated struct
-    type GroupKey = HelloWorldGroupKey__;
-    type GroupData = ((), Arc<String>, (), usize);
 }
 ```
 
@@ -164,52 +151,7 @@ a bunch of metadata about the query (and repeats, for convenience,
 some of the data about the group that the query is in):
 
 ```rust,ignore
-unsafe impl<DB> salsa::Query<DB> for LengthQuery
-where
-    DB: HelloWorld,
-    DB: salsa::plumbing::HasQueryGroup<#group_struct>,
-    DB: salsa::Database,
-{
-    // A tuple of the types of the function parameters trom trait.
-    type Key = ((), );
-
-    // The return value of the function in the trait.
-    type Value = Arc<String>;
-
-    // The "query storage" references a type from within salsa
-    // that stores the actual query data and defines the
-    // logic for accessing and revalidating it.
-    //
-    // It is generic over the query type which lets it
-    // customize itself to the keys/value of this particular
-    // query.
-    type Storage = salsa::derived::DerivedStorage<
-        DB,
-        LengthQuery,
-        salsa::plumbing::MemoizedStorage,
-    >;
-
-    // Types from the query group, repeated for convenience.
-    type Group = HelloWorldStorage;
-    type GroupStorage = HelloWorldGroupStorage__;
-    type GroupKey = HelloWorldGroupKey__;
-
-    // Given the storage for the entire group, extract
-    // the storage for just this query. Described when
-    // we talk about group storage.
-    fn query_storage(
-        group_storage: &HelloWorldGroupStorage__,
-    ) -> &std::sync::Arc<Self::Storage> {
-        &group_storage.length
-    }
-
-    // Given the key for this query, construct the "group key"
-    // that situates it within the group. Described when
-    // we talk about group key.
-    fn group_key(key: Self::Key) -> Self::GroupKey {
-        HelloWorldGroupKey__::length(key)
-    }
-}
+{{#include ../../../components/salsa-macros/src/query_group.rs:Query_impl}}
 ```
 
 Depending on the kind of query, we may also generate other impls, such as an
@@ -217,26 +159,9 @@ impl of `salsa::plumbing::QueryFunction`, which defines the methods for
 executing the body of a query. This impl would then include a call to the user's
 actual function.
 
-## Group key
-
-The "query key" is the inputs to the query, and identifies a particular query
-instace: in our example, it is a value of type `()` (so there is only one
-instance of the query), but typically it's some other type. The "group key" then
-broadens that to include the identifier of the query within the group. So instead
-of just `()` the group key would encode (e.g.) `Length(())` (the "length" query
-applied to the `()` key). It is represented as an enum, which we generate,
-with one variant per query:
-
 ```rust,ignore
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum HelloWorldGroupKey__ {
-  input(()),
-  length(()),
-}
+{{#include ../../../components/salsa-macros/src/query_group.rs:QueryFunction_impl}}
 ```
-
-The `Query` trait that we saw earlier includes a method `group_key` for wrapping
-the key for some individual query into the group key.
 
 ## Group storage
 
@@ -246,22 +171,25 @@ so forth for each query. The types of these are ultimately defined by the
 final database type:
 
 ```rust,ignore
-struct HelloWorldGroupStorage__<DB> {
-    input: <InputQuery as Query<DB>>::Storage,
-    length: <LengthQuery as Query<DB>>::Storage,
+struct HelloWorldGroupStorage__ {
+    input: <InputQuery as Query::Storage,
+    length: <LengthQuery as Query>::Storage,
 }
 ```
 
-We also generate some impls: first is an impl of `Default` and the second is a
-method `for_each_query` that simply iterates over each field and invokes a
-method on it. This method is called by some of the code we generate for the
-database in order to implement debugging methods that "sweep" over all the
-queries.
+We also generate some inherent methods. First, a `new` method that takes
+the group index as a parameter and passes it along to each of the query
+storage `new` methods:
 
 ```rust,ignore
-impl<DB> HelloWorldGroupStorage__<DB> {
-    fn for_each_query(&self, db: &DB, method: &mut dyn FnMut(...)) {
-        ...
-    }
-}
+{{#include ../../../components/salsa-macros/src/query_group.rs:group_storage_new}}
+```
+
+And then various methods that will dispatch from a `DatabaseKeyIndex` that
+corresponds to this query group into the appropriate query within the group.
+Each has a similar structure of matching on the query index and then delegating
+to some method defined by the query storage:
+
+```rust,ignore
+{{#include ../../../components/salsa-macros/src/query_group.rs:group_storage_methods}}
 ```

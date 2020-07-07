@@ -15,7 +15,7 @@ trait QueryGroup: salsa::Database + AsRef<HashMap<u32, u32>> {
     fn c(&self, x: u32) -> u32;
 }
 
-fn a(db: &impl QueryGroup, x: u32) -> u32 {
+fn a(db: &dyn QueryGroup, x: u32) -> u32 {
     let durability = if x % 2 == 0 {
         Durability::LOW
     } else {
@@ -26,34 +26,26 @@ fn a(db: &impl QueryGroup, x: u32) -> u32 {
     external_state[&x]
 }
 
-fn b(db: &impl QueryGroup, x: u32) -> u32 {
+fn b(db: &dyn QueryGroup, x: u32) -> u32 {
     db.a(x)
 }
 
-fn c(db: &impl QueryGroup, x: u32) -> u32 {
+fn c(db: &dyn QueryGroup, x: u32) -> u32 {
     db.b(x)
 }
 
 #[salsa::database(QueryGroupStorage)]
 #[derive(Default)]
 struct Database {
-    runtime: salsa::Runtime<Database>,
+    storage: salsa::Storage<Self>,
     external_state: HashMap<u32, u32>,
-    on_event: Option<Box<dyn Fn(salsa::Event<Database>)>>,
+    on_event: Option<Box<dyn Fn(salsa::Event)>>,
 }
 
 impl salsa::Database for Database {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-
-    fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event<Self>) {
+    fn salsa_event(&self, event: salsa::Event) {
         if let Some(cb) = &self.on_event {
-            cb(event_fn())
+            cb(event)
         }
     }
 }
@@ -78,7 +70,7 @@ fn on_demand_input_works() {
     assert_eq!(db.b(1), 10);
     assert_eq!(db.a(1), 10);
 
-    db.query_mut(AQuery).invalidate(&1);
+    AQuery.in_db_mut(&mut db).invalidate(&1);
     assert_eq!(db.b(1), 92);
     assert_eq!(db.a(1), 92);
 }

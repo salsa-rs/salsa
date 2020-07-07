@@ -5,7 +5,7 @@ trait MyDatabase: salsa::Database {
 }
 
 mod another_module {
-    pub(crate) fn another_name(_: &impl crate::MyDatabase, (): ()) -> () {}
+    pub(crate) fn another_name(_: &dyn crate::MyDatabase, (): ()) -> () {}
 }
 
 fn main() {}

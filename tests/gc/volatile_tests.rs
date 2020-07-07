@@ -19,16 +19,16 @@ pub(crate) trait VolatileDatabase: Database {
     fn repeat2(&self) -> usize;
 }
 
-fn volatile(db: &impl VolatileDatabase) -> usize {
+fn volatile(db: &dyn VolatileDatabase) -> usize {
     db.salsa_runtime().report_untracked_read();
     db.atomic_cell().load(Ordering::SeqCst)
 }
 
-fn repeat1(db: &impl VolatileDatabase) -> usize {
+fn repeat1(db: &dyn VolatileDatabase) -> usize {
     db.volatile()
 }
 
-fn repeat2(db: &impl VolatileDatabase) -> usize {
+fn repeat2(db: &dyn VolatileDatabase) -> usize {
     db.volatile()
 }
 
@@ -60,7 +60,7 @@ fn consistency_with_gc() {
     let v1 = db.repeat1();
 
     cell.store(23, Ordering::SeqCst);
-    db.query(VolatileQuery).sweep(
+    VolatileQuery.in_db(&db).sweep(
         SweepStrategy::default()
             .discard_everything()
             .sweep_all_revisions(),

@@ -1,9 +1,7 @@
-use crate::dependency::DatabaseSlot;
-use crate::dependency::Dependency;
 use crate::durability::Durability;
 use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
-use crate::{CycleError, Database, Event, EventKind, SweepStrategy};
+use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
@@ -14,6 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
+pub(crate) type FxIndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasherDefault<FxHasher>>;
 
 mod local_state;
 use local_state::LocalState;
@@ -25,26 +24,23 @@ use local_state::LocalState;
 /// `Runtime::default`) will have an independent set of query storage
 /// associated with it. Normally, therefore, you only do this once, at
 /// the start of your application.
-pub struct Runtime<DB: Database> {
+pub struct Runtime {
     /// Our unique runtime id.
     id: RuntimeId,
 
     /// If this is a "forked" runtime, then the `revision_guard` will
     /// be `Some`; this guard holds a read-lock on the global query
     /// lock.
-    revision_guard: Option<RevisionGuard<DB>>,
+    revision_guard: Option<RevisionGuard>,
 
     /// Local state that is specific to this runtime (thread).
-    local_state: LocalState<DB>,
+    local_state: LocalState,
 
     /// Shared state that is accessible via all runtimes.
-    shared_state: Arc<SharedState<DB>>,
+    shared_state: Arc<SharedState>,
 }
 
-impl<DB> Default for Runtime<DB>
-where
-    DB: Database,
-{
+impl Default for Runtime {
     fn default() -> Self {
         Runtime {
             id: RuntimeId { counter: 0 },
@@ -55,10 +51,7 @@ where
     }
 }
 
-impl<DB> std::fmt::Debug for Runtime<DB>
-where
-    DB: Database,
-{
+impl std::fmt::Debug for Runtime {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fmt.debug_struct("Runtime")
             .field("id", &self.id())
@@ -68,36 +61,15 @@ where
     }
 }
 
-impl<DB> Runtime<DB>
-where
-    DB: Database,
-{
+impl Runtime {
     /// Create a new runtime; equivalent to `Self::default`. This is
     /// used when creating a new database.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Returns the underlying storage, where the keys/values for all queries are kept.
-    pub fn storage(&self) -> &DB::DatabaseStorage {
-        &self.shared_state.storage
-    }
-
-    /// Returns a "forked" runtime, suitable for use in a forked
-    /// database. "Forked" runtimes hold a read-lock on the global
-    /// state, which means that any attempt to `set` an input will
-    /// block until the forked runtime is dropped. See
-    /// `ParallelDatabase::snapshot` for more information.
-    ///
-    /// **Warning.** This second handle is intended to be used from a
-    /// separate thread. Using two database handles from the **same
-    /// thread** can lead to deadlock.
-    pub fn snapshot(&self, from_db: &DB) -> Self {
-        assert!(
-            Arc::ptr_eq(&self.shared_state, &from_db.salsa_runtime().shared_state),
-            "invoked `snapshot` with a non-matching database"
-        );
-
+    /// See [`crate::storage::Storage::snapshot`].
+    pub(crate) fn snapshot(&self) -> Self {
         if self.local_state.query_in_progress() {
             panic!("it is not legal to `snapshot` during a query (see salsa-rs/salsa#80)");
         }
@@ -144,19 +116,7 @@ where
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
     pub fn synthetic_write(&mut self, durability: Durability) {
-        self.with_incremented_revision(|guard| {
-            guard.mark_durability_as_changed(durability);
-        });
-    }
-
-    /// Default implementation for `Database::sweep_all`.
-    pub fn sweep_all(&self, db: &DB, strategy: SweepStrategy) {
-        // Note that we do not acquire the query lock (or any locks)
-        // here.  Each table is capable of sweeping itself atomically
-        // and there is no need to bring things to a halt. That said,
-        // users may wish to guarantee atomicity.
-
-        db.for_each_query(|query_storage| query_storage.sweep(db, strategy));
+        self.with_incremented_revision(&mut |_next_revision| Some(durability));
     }
 
     /// The unique identifier attached to this `SalsaRuntime`. Each
@@ -168,7 +128,7 @@ where
 
     /// Returns the database-key for the query that this thread is
     /// actively executing (if any).
-    pub fn active_query(&self) -> Option<DB::DatabaseKey> {
+    pub fn active_query(&self) -> Option<DatabaseKeyIndex> {
         self.local_state.active_query()
     }
 
@@ -281,23 +241,32 @@ where
         }
     }
 
-    /// Acquires the **global query write lock** (ensuring that no
-    /// queries are executing) and then increments the current
-    /// revision counter; invokes `op` with the global query write
-    /// lock still held.
+    /// Acquires the **global query write lock** (ensuring that no queries are
+    /// executing) and then increments the current revision counter; invokes
+    /// `op` with the global query write lock still held.
     ///
-    /// While we wait to acquire the global query write lock, this
-    /// method will also increment `pending_revision_increments`, thus
-    /// signalling to queries that their results are "canceled" and
-    /// they should abort as expeditiously as possible.
+    /// While we wait to acquire the global query write lock, this method will
+    /// also increment `pending_revision_increments`, thus signalling to queries
+    /// that their results are "canceled" and they should abort as expeditiously
+    /// as possible.
     ///
-    /// Note that, given our writer model, we can assume that only one
-    /// thread is attempting to increment the global revision at a
-    /// time.
-    pub(crate) fn with_incremented_revision<R>(
+    /// The `op` closure should actually perform the writes needed. It is given
+    /// the new revision as an argument, and its return value indicates whether
+    /// any pre-existing value was modified:
+    ///
+    /// - returning `None` means that no pre-existing value was modified (this
+    ///   could occur e.g. when setting some key on an input that was never set
+    ///   before)
+    /// - returning `Some(d)` indicates that a pre-existing value was modified
+    ///   and it had the durability `d`. This will update the records for when
+    ///   values with each durability were modified.
+    ///
+    /// Note that, given our writer model, we can assume that only one thread is
+    /// attempting to increment the global revision at a time.
+    pub(crate) fn with_incremented_revision(
         &mut self,
-        op: impl FnOnce(&DatabaseWriteLockGuard<'_, DB>) -> R,
-    ) -> R {
+        op: &mut dyn FnMut(Revision) -> Option<Durability>,
+    ) {
         log::debug!("increment_revision()");
 
         if !self.permits_increment() {
@@ -319,34 +288,43 @@ where
 
         debug!("increment_revision: incremented to {:?}", new_revision);
 
-        op(&DatabaseWriteLockGuard {
-            runtime: self,
-            new_revision,
-        })
+        if let Some(d) = op(new_revision) {
+            for rev in &self.shared_state.revisions[1..=d.index()] {
+                rev.store(new_revision);
+            }
+        }
     }
 
     pub(crate) fn permits_increment(&self) -> bool {
         self.revision_guard.is_none() && !self.local_state.query_in_progress()
     }
 
-    pub(crate) fn execute_query_implementation<V>(
+    pub(crate) fn execute_query_implementation<DB, V>(
         &self,
         db: &DB,
-        database_key: &DB::DatabaseKey,
+        database_key_index: DatabaseKeyIndex,
         execute: impl FnOnce() -> V,
-    ) -> ComputedQueryResult<DB, V> {
-        debug!("{:?}: execute_query_implementation invoked", database_key);
+    ) -> ComputedQueryResult<V>
+    where
+        DB: ?Sized + Database,
+    {
+        debug!(
+            "{:?}: execute_query_implementation invoked",
+            database_key_index
+        );
 
-        db.salsa_event(|| Event {
-            runtime_id: db.salsa_runtime().id(),
+        db.salsa_event(Event {
+            runtime_id: self.id(),
             kind: EventKind::WillExecute {
-                database_key: database_key.clone(),
+                database_key: database_key_index,
             },
         });
 
         // Push the active query onto the stack.
         let max_durability = Durability::MAX;
-        let active_query = self.local_state.push_query(database_key, max_durability);
+        let active_query = self
+            .local_state
+            .push_query(database_key_index, max_durability);
 
         // Execute user's code, accumulating inputs etc.
         let value = execute();
@@ -379,13 +357,12 @@ where
     ///   query had changed
     pub(crate) fn report_query_read<'hack>(
         &self,
-        database_slot: Arc<dyn DatabaseSlot<DB> + 'hack>,
+        input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
     ) {
-        let dependency = Dependency::new(database_slot);
         self.local_state
-            .report_query_read(dependency, durability, changed_at);
+            .report_query_read(input, durability, changed_at);
     }
 
     /// Reports that the query depends on some state unknown to salsa.
@@ -419,11 +396,14 @@ where
     /// Obviously, this should be user configurable at some point.
     pub(crate) fn report_unexpected_cycle(
         &self,
-        database_key: &DB::DatabaseKey,
+        database_key_index: DatabaseKeyIndex,
         error: CycleDetected,
         changed_at: Revision,
-    ) -> crate::CycleError<DB::DatabaseKey> {
-        debug!("report_unexpected_cycle(database_key={:?})", database_key);
+    ) -> crate::CycleError<DatabaseKeyIndex> {
+        debug!(
+            "report_unexpected_cycle(database_key={:?})",
+            database_key_index
+        );
 
         let mut query_stack = self.local_state.borrow_query_stack_mut();
 
@@ -431,12 +411,12 @@ where
             // All queries in the cycle is local
             let start_index = query_stack
                 .iter()
-                .rposition(|active_query| active_query.database_key == *database_key)
+                .rposition(|active_query| active_query.database_key_index == database_key_index)
                 .unwrap();
             let mut cycle = Vec::new();
             let cycle_participants = &mut query_stack[start_index..];
             for active_query in &mut *cycle_participants {
-                cycle.push(active_query.database_key.clone());
+                cycle.push(active_query.database_key_index);
             }
 
             assert!(!cycle.is_empty());
@@ -456,25 +436,19 @@ where
             let dependency_graph = self.shared_state.dependency_graph.lock();
 
             let mut cycle = Vec::new();
-            {
-                let cycle_iter = dependency_graph
-                    .get_cycle_path(
-                        database_key,
-                        error.to,
-                        query_stack.iter().map(|query| &query.database_key),
-                    )
-                    .chain(Some(database_key));
-
-                for key in cycle_iter {
-                    cycle.push(key.clone());
-                }
-            }
+            dependency_graph.push_cycle_path(
+                database_key_index,
+                error.to,
+                query_stack.iter().map(|query| query.database_key_index),
+                &mut cycle,
+            );
+            cycle.push(database_key_index);
 
             assert!(!cycle.is_empty());
 
             for active_query in query_stack
                 .iter_mut()
-                .filter(|query| cycle.iter().any(|key| *key == query.database_key))
+                .filter(|query| cycle.iter().any(|key| *key == query.database_key_index))
             {
                 active_query.cycle = cycle.clone();
             }
@@ -487,13 +461,17 @@ where
         }
     }
 
-    pub(crate) fn mark_cycle_participants(&self, err: &CycleError<DB::DatabaseKey>) {
+    pub(crate) fn mark_cycle_participants(&self, err: &CycleError<DatabaseKeyIndex>) {
         for active_query in self
             .local_state
             .borrow_query_stack_mut()
             .iter_mut()
             .rev()
-            .take_while(|active_query| err.cycle.iter().any(|e| *e == active_query.database_key))
+            .take_while(|active_query| {
+                err.cycle
+                    .iter()
+                    .any(|e| *e == active_query.database_key_index)
+            })
         {
             active_query.cycle = err.cycle.clone();
         }
@@ -501,7 +479,7 @@ where
 
     /// Try to make this runtime blocked on `other_id`. Returns true
     /// upon success or false if `other_id` is already blocked on us.
-    pub(crate) fn try_block_on(&self, database_key: &DB::DatabaseKey, other_id: RuntimeId) -> bool {
+    pub(crate) fn try_block_on(&self, database_key: DatabaseKeyIndex, other_id: RuntimeId) -> bool {
         self.shared_state.dependency_graph.lock().add_edge(
             self.id(),
             database_key,
@@ -509,54 +487,20 @@ where
             self.local_state
                 .borrow_query_stack()
                 .iter()
-                .map(|query| query.database_key.clone()),
+                .map(|query| query.database_key_index),
         )
     }
 
-    pub(crate) fn unblock_queries_blocked_on_self(&self, database_key: &DB::DatabaseKey) {
+    pub(crate) fn unblock_queries_blocked_on_self(&self, database_key_index: DatabaseKeyIndex) {
         self.shared_state
             .dependency_graph
             .lock()
-            .remove_edge(database_key, self.id())
-    }
-}
-
-/// Temporary guard that indicates that the database write-lock is
-/// held. You can get one of these by invoking
-/// `with_incremented_revision`. It gives access to the new revision
-/// and a few other operations that only make sense to do while an
-/// update is happening.
-pub(crate) struct DatabaseWriteLockGuard<'db, DB>
-where
-    DB: Database,
-{
-    runtime: &'db mut Runtime<DB>,
-    new_revision: Revision,
-}
-
-impl<DB> DatabaseWriteLockGuard<'_, DB>
-where
-    DB: Database,
-{
-    pub(crate) fn new_revision(&self) -> Revision {
-        self.new_revision
-    }
-
-    /// Indicates that this update modified an input marked as
-    /// "constant". This will force re-evaluation of anything that was
-    /// dependent on constants (which otherwise might not get
-    /// re-evaluated).
-    pub(crate) fn mark_durability_as_changed(&self, d: Durability) {
-        for rev in &self.runtime.shared_state.revisions[1..=d.index()] {
-            rev.store(self.new_revision);
-        }
+            .remove_edge(database_key_index, self.id())
     }
 }
 
 /// State that will be common to all threads (when we support multiple threads)
-struct SharedState<DB: Database> {
-    storage: DB::DatabaseStorage,
-
+struct SharedState {
     /// Stores the next id to use for a snapshotted runtime (starts at 1).
     next_id: AtomicUsize,
 
@@ -588,14 +532,13 @@ struct SharedState<DB: Database> {
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
-    dependency_graph: Mutex<DependencyGraph<DB::DatabaseKey>>,
+    dependency_graph: Mutex<DependencyGraph<DatabaseKeyIndex>>,
 }
 
-impl<DB: Database> SharedState<DB> {
+impl SharedState {
     fn with_durabilities(durabilities: usize) -> Self {
         SharedState {
             next_id: AtomicUsize::new(1),
-            storage: Default::default(),
             query_lock: Default::default(),
             revisions: (0..durabilities).map(|_| AtomicRevision::start()).collect(),
             pending_revision: AtomicRevision::start(),
@@ -604,23 +547,15 @@ impl<DB: Database> SharedState<DB> {
     }
 }
 
-impl<DB> std::panic::RefUnwindSafe for SharedState<DB>
-where
-    DB: Database,
-    DB::DatabaseStorage: std::panic::RefUnwindSafe,
-{
-}
+impl std::panic::RefUnwindSafe for SharedState {}
 
-impl<DB: Database> Default for SharedState<DB> {
+impl Default for SharedState {
     fn default() -> Self {
         Self::with_durabilities(Durability::LEN)
     }
 }
 
-impl<DB> std::fmt::Debug for SharedState<DB>
-where
-    DB: Database,
-{
+impl std::fmt::Debug for SharedState {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let query_lock = if self.query_lock.try_write().is_some() {
             "<unlocked>"
@@ -637,9 +572,9 @@ where
     }
 }
 
-struct ActiveQuery<DB: Database> {
+struct ActiveQuery {
     /// What query is executing
-    database_key: DB::DatabaseKey,
+    database_key_index: DatabaseKeyIndex,
 
     /// Minimum durability of inputs observed so far.
     durability: Durability,
@@ -650,13 +585,13 @@ struct ActiveQuery<DB: Database> {
 
     /// Set of subqueries that were accessed thus far, or `None` if
     /// there was an untracked the read.
-    dependencies: Option<FxIndexSet<Dependency<DB>>>,
+    dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
 
     /// Stores the entire cycle, if one is found and this query is part of it.
-    cycle: Vec<DB::DatabaseKey>,
+    cycle: Vec<DatabaseKeyIndex>,
 }
 
-pub(crate) struct ComputedQueryResult<DB: Database, V> {
+pub(crate) struct ComputedQueryResult<V> {
     /// Final value produced
     pub(crate) value: V,
 
@@ -669,16 +604,16 @@ pub(crate) struct ComputedQueryResult<DB: Database, V> {
 
     /// Complete set of subqueries that were accessed, or `None` if
     /// there was an untracked the read.
-    pub(crate) dependencies: Option<FxIndexSet<Dependency<DB>>>,
+    pub(crate) dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
 
     /// The cycle if one occured while computing this value
-    pub(crate) cycle: Vec<DB::DatabaseKey>,
+    pub(crate) cycle: Vec<DatabaseKeyIndex>,
 }
 
-impl<DB: Database> ActiveQuery<DB> {
-    fn new(database_key: DB::DatabaseKey, max_durability: Durability) -> Self {
+impl ActiveQuery {
+    fn new(database_key_index: DatabaseKeyIndex, max_durability: Durability) -> Self {
         ActiveQuery {
-            database_key,
+            database_key_index,
             durability: max_durability,
             changed_at: Revision::start(),
             dependencies: Some(FxIndexSet::default()),
@@ -686,9 +621,9 @@ impl<DB: Database> ActiveQuery<DB> {
         }
     }
 
-    fn add_read(&mut self, dependency: Dependency<DB>, durability: Durability, revision: Revision) {
+    fn add_read(&mut self, input: DatabaseKeyIndex, durability: Durability, revision: Revision) {
         if let Some(set) = &mut self.dependencies {
-            set.insert(dependency);
+            set.insert(input);
         }
 
         self.durability = self.durability.min(durability);
@@ -761,7 +696,7 @@ where
     fn add_edge(
         &mut self,
         from_id: RuntimeId,
-        database_key: &K,
+        database_key: K,
         to_id: RuntimeId,
         path: impl IntoIterator<Item = K>,
     ) -> bool {
@@ -793,8 +728,8 @@ where
         true
     }
 
-    fn remove_edge(&mut self, database_key: &K, to_id: RuntimeId) {
-        let vec = self.labels.remove(database_key).unwrap_or_default();
+    fn remove_edge(&mut self, database_key: K, to_id: RuntimeId) {
+        let vec = self.labels.remove(&database_key).unwrap_or_default();
 
         for from_id in &vec {
             let to_id1 = self.edges.remove(from_id).map(|edge| edge.id);
@@ -802,56 +737,56 @@ where
         }
     }
 
-    fn get_cycle_path<'a>(
+    fn push_cycle_path<'a>(
         &'a self,
-        database_key: &'a K,
+        database_key: K,
         to: RuntimeId,
-        local_path: impl IntoIterator<Item = &'a K>,
-    ) -> impl Iterator<Item = &'a K>
-    where
+        local_path: impl IntoIterator<Item = K>,
+        output: &mut Vec<K>,
+    ) where
         K: std::fmt::Debug,
     {
-        let mut current = Some((to, std::slice::from_ref(database_key)));
+        let mut current = Some((to, std::slice::from_ref(&database_key)));
         let mut last = None;
         let mut local_path = Some(local_path);
-        std::iter::from_fn(move || match current.take() {
-            Some((id, path)) => {
-                let link_key = path.last().unwrap();
 
-                current = self.edges.get(&id).map(|edge| {
-                    let i = edge.path.iter().rposition(|p| p == link_key).unwrap();
-                    (edge.id, &edge.path[i + 1..])
-                });
+        loop {
+            match current.take() {
+                Some((id, path)) => {
+                    let link_key = path.last().unwrap();
 
-                if current.is_none() {
-                    last = local_path.take().map(|local_path| {
-                        local_path
-                            .into_iter()
-                            .skip_while(move |p| *p != link_key)
-                            .skip(1)
+                    output.extend(path.iter().cloned());
+
+                    current = self.edges.get(&id).map(|edge| {
+                        let i = edge.path.iter().rposition(|p| p == link_key).unwrap();
+                        (edge.id, &edge.path[i + 1..])
                     });
-                }
 
-                Some(path)
+                    if current.is_none() {
+                        last = local_path.take().map(|local_path| {
+                            local_path
+                                .into_iter()
+                                .skip_while(move |p| *p != *link_key)
+                                .skip(1)
+                        });
+                    }
+                }
+                None => break,
             }
-            None => match &mut last {
-                Some(iter) => iter.next().map(std::slice::from_ref),
-                None => None,
-            },
-        })
-        .flat_map(|x| x)
+        }
+
+        if let Some(iter) = &mut last {
+            output.extend(iter);
+        }
     }
 }
 
-struct RevisionGuard<DB: Database> {
-    shared_state: Arc<SharedState<DB>>,
+struct RevisionGuard {
+    shared_state: Arc<SharedState>,
 }
 
-impl<DB> RevisionGuard<DB>
-where
-    DB: Database,
-{
-    fn new(shared_state: &Arc<SharedState<DB>>) -> Self {
+impl RevisionGuard {
+    fn new(shared_state: &Arc<SharedState>) -> Self {
         // Subtle: we use a "recursive" lock here so that it is not an
         // error to acquire a read-lock when one is already held (this
         // happens when a query uses `snapshot` to spawn off parallel
@@ -878,10 +813,7 @@ where
     }
 }
 
-impl<DB> Drop for RevisionGuard<DB>
-where
-    DB: Database,
-{
+impl Drop for RevisionGuard {
     fn drop(&mut self) {
         // Release our read-lock without using RAII. As documented in
         // `Snapshot::new` above, this requires the unsafe keyword.
@@ -900,15 +832,11 @@ mod tests {
         let mut graph = DependencyGraph::default();
         let a = RuntimeId { counter: 0 };
         let b = RuntimeId { counter: 1 };
-        assert!(graph.add_edge(a, &2, b, vec![1]));
+        assert!(graph.add_edge(a, 2, b, vec![1]));
         // assert!(graph.add_edge(b, &1, a, vec![3, 2]));
-        assert_eq!(
-            graph
-                .get_cycle_path(&1, a, &[3, 2][..])
-                .cloned()
-                .collect::<Vec<i32>>(),
-            vec![1, 2]
-        );
+        let mut v = vec![];
+        graph.push_cycle_path(1, a, vec![3, 2], &mut v);
+        assert_eq!(v, vec![1, 2]);
     }
 
     #[test]
@@ -917,15 +845,11 @@ mod tests {
         let a = RuntimeId { counter: 0 };
         let b = RuntimeId { counter: 1 };
         let c = RuntimeId { counter: 2 };
-        assert!(graph.add_edge(a, &3, b, vec![1]));
-        assert!(graph.add_edge(b, &4, c, vec![2, 3]));
+        assert!(graph.add_edge(a, 3, b, vec![1]));
+        assert!(graph.add_edge(b, 4, c, vec![2, 3]));
         // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
-        assert_eq!(
-            graph
-                .get_cycle_path(&1, a, &[5, 6, 4, 7][..])
-                .cloned()
-                .collect::<Vec<i32>>(),
-            vec![1, 3, 4, 7]
-        );
+        let mut v = vec![];
+        graph.push_cycle_path(1, a, vec![5, 6, 4, 7], &mut v);
+        assert_eq!(v, vec![1, 3, 4, 7]);
     }
 }

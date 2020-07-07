@@ -42,3 +42,8 @@ example][hello_world], which has a number of comments explaining how
 things work.
 
 [hello_world]: https://github.com/salsa-rs/salsa/blob/master/examples/hello_world/main.rs
+
+## Digging into the plumbing
+
+Check out the [plumbing](plumbing.md) chapter to see a deeper explanation of the
+code that salsa generates and how it connects to the salsa library.

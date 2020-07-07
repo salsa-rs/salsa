@@ -9,7 +9,7 @@ fn sweep_default() {
 
     db.fibonacci(5);
 
-    let k: Vec<_> = db.query(FibonacciQuery).entries();
+    let k: Vec<_> = FibonacciQuery.in_db(&db).entries();
     assert_eq!(k.len(), 6);
 
     db.salsa_runtime_mut().synthetic_write(Durability::LOW);

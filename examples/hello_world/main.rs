@@ -47,11 +47,11 @@ trait HelloWorld: salsa::Database {
 // be called whenever the query's value must be recomputed. After it
 // is called once, its result is typically memoized, unless we think
 // that one of the inputs may have changed. Its first argument (`db`)
-// is the "database", which is the type that contains the storage for
-// all of the queries in the system -- we never know the concrete type
-// here, we only know the subset of methods we care about (defined by
-// the `HelloWorld` trait we specified above).
-fn length(db: &impl HelloWorld, (): ()) -> usize {
+// is the "database". This is always a `&dyn` version of the query group
+// trait, so that you can invoke all the queries you know about.
+// We never know the concrete type here, as the full database may contain
+// methods from other query groups that we don't know about.
+fn length(db: &dyn HelloWorld, (): ()) -> usize {
     // Read the input string:
     let input_string = db.input_string(());
 
@@ -62,34 +62,31 @@ fn length(db: &impl HelloWorld, (): ()) -> usize {
 ///////////////////////////////////////////////////////////////////////////
 // Step 3. Define the database struct
 
-// Define the actual database struct. This struct needs to be
-// annotated with `#[salsa::database(..)]`. The list `..` will be the
-// paths leading to the storage structs for each query group that this
-// database supports. This attribute macro will generate the necessary
-// impls so that the database implements the corresponding traits as
-// well (so, here, `DatabaseStruct` will implement the `HelloWorld`
-// trait).
+// Define the actual database struct. This struct needs to be annotated with
+// `#[salsa::database(..)]`. The list `..` will be the paths leading to the
+// storage structs for each query group that this database supports. This
+// attribute macro will generate the necessary impls so that the database
+// implements the corresponding traits as well (so, here, `DatabaseStruct` will
+// implement the `HelloWorld` trait).
 //
-// The database struct can contain basically anything you need, but it
-// must have a `runtime` field as shown, and you must implement the
-// `salsa::Database` trait (as shown below).
+// The database struct must have a field `storage: salsa::Storage<Self>`, but it
+// can have any number of additional fields beyond that. The
+// `#[salsa::database]` macro will generate glue code that accesses this
+// `storage` field (but other fields are ignored). The `Storage<Self>` type
+// contains all the actual hashtables and the like used to store query results
+// and dependency information.
+//
+// In addition to including the `storage` field, you must also implement the
+// `salsa::Database` trait (as shown below). This gives you a chance to define
+// the callback methods within if you want to (in this example, we don't).
 // ANCHOR:database
 #[salsa::database(HelloWorldStorage)]
 #[derive(Default)]
 struct DatabaseStruct {
-    runtime: salsa::Runtime<DatabaseStruct>,
+    storage: salsa::Storage<Self>,
 }
 
-// Tell salsa where to find the runtime in your context.
-impl salsa::Database for DatabaseStruct {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseStruct {}
 // ANCHOR_END:database
 
 // This shows how to use a query.

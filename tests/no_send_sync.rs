@@ -8,29 +8,21 @@ trait NoSendSyncDatabase: salsa::Database {
     fn no_send_sync_key(&self, key: Rc<bool>) -> bool;
 }
 
-fn no_send_sync_value(_db: &impl NoSendSyncDatabase, key: bool) -> Rc<bool> {
+fn no_send_sync_value(_db: &dyn NoSendSyncDatabase, key: bool) -> Rc<bool> {
     Rc::new(key)
 }
 
-fn no_send_sync_key(_db: &impl NoSendSyncDatabase, key: Rc<bool>) -> bool {
+fn no_send_sync_key(_db: &dyn NoSendSyncDatabase, key: Rc<bool>) -> bool {
     *key
 }
 
 #[salsa::database(NoSendSyncStorage)]
 #[derive(Default)]
 struct DatabaseImpl {
-    runtime: salsa::Runtime<DatabaseImpl>,
+    storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for DatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseImpl {}
 
 #[test]
 fn no_send_sync() {

@@ -6,7 +6,7 @@ use std::cell::Cell;
 use std::sync::Arc;
 
 #[salsa::query_group(Par)]
-pub(crate) trait ParDatabase: Knobs + salsa::ParallelDatabase {
+pub(crate) trait ParDatabase: Knobs {
     #[salsa::input]
     fn input(&self, key: char) -> usize;
 
@@ -23,8 +23,6 @@ pub(crate) trait ParDatabase: Knobs + salsa::ParallelDatabase {
 
     /// Invokes `sum2_drop_sum`
     fn sum3_drop_sum(&self, key: &'static str) -> usize;
-
-    fn snapshot_me(&self) -> ();
 }
 
 #[derive(PartialEq, Eq)]
@@ -111,7 +109,7 @@ pub(crate) struct KnobsStruct {
     pub(crate) sum3_drop_sum_should_panic: Cell<bool>,
 }
 
-fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
+fn sum(db: &dyn ParDatabase, key: &'static str) -> usize {
     let mut sum = 0;
 
     db.signal(db.knobs().sum_signal_on_entry.get());
@@ -159,49 +157,35 @@ fn sum(db: &impl ParDatabase, key: &'static str) -> usize {
     sum
 }
 
-fn sum2(db: &impl ParDatabase, key: &'static str) -> usize {
+fn sum2(db: &dyn ParDatabase, key: &'static str) -> usize {
     db.sum(key)
 }
 
-fn sum2_drop_sum(db: &impl ParDatabase, key: &'static str) -> usize {
+fn sum2_drop_sum(db: &dyn ParDatabase, key: &'static str) -> usize {
     let _ = db.sum(key);
     22
 }
 
-fn sum3(db: &impl ParDatabase, key: &'static str) -> usize {
+fn sum3(db: &dyn ParDatabase, key: &'static str) -> usize {
     db.sum2(key)
 }
 
-fn sum3_drop_sum(db: &impl ParDatabase, key: &'static str) -> usize {
+fn sum3_drop_sum(db: &dyn ParDatabase, key: &'static str) -> usize {
     if db.knobs().sum3_drop_sum_should_panic.get() {
         panic!("sum3_drop_sum executed")
     }
     db.sum2_drop_sum(key)
 }
 
-fn snapshot_me(db: &impl ParDatabase) {
-    // this should panic
-    db.snapshot();
-}
-
 #[salsa::database(Par)]
 #[derive(Default)]
 pub(crate) struct ParDatabaseImpl {
-    runtime: salsa::Runtime<ParDatabaseImpl>,
+    storage: salsa::Storage<Self>,
     knobs: KnobsStruct,
 }
 
 impl Database for ParDatabaseImpl {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-
-    fn salsa_event(&self, event_fn: impl Fn() -> salsa::Event<Self>) {
-        let event = event_fn();
+    fn salsa_event(&self, event: salsa::Event) {
         match event.kind {
             salsa::EventKind::WillBlockOn { .. } => {
                 self.signal(self.knobs().signal_on_will_block.get());
@@ -219,7 +203,7 @@ impl Database for ParDatabaseImpl {
 impl ParallelDatabase for ParDatabaseImpl {
     fn snapshot(&self) -> Snapshot<Self> {
         Snapshot::new(ParDatabaseImpl {
-            runtime: self.runtime.snapshot(self),
+            storage: self.storage.snapshot(),
             knobs: self.knobs.clone(),
         })
     }

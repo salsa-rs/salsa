@@ -46,7 +46,7 @@ walk the dependencies of Q to see if it is affected.
 
 We add a new type `salsa::Durability` which has there associated constants:
 
-```rust
+```rust,ignore
 #[derive(Copy, Clone, Debug, Ord)]
 pub struct Durability(..);
 
@@ -68,7 +68,7 @@ When setting an input `foo`, one can now invoke a method
 `set_foo_with_durability`, which takes a `Durability` as the final
 argument:
 
-```rust
+```rust,ignore
 // db.set_foo(key, value) is equivalent to:
 db.set_foo_with_durability(key, value, Durability::LOW);
 
@@ -89,7 +89,7 @@ recommended below.
 Finally, we add one new method, `synthetic_write(durability)`, 
 available on the salsa runtime:
 
-```rust
+```rust,ignore
 db.salsa_runtime().synthetic_write(Durability::HIGH)
 ```
 
@@ -103,7 +103,7 @@ controlling what values get garbaged collected, as described below.
 Durability affects garbage collection. The `SweepStrategy` struct is
 modified as follows:
 
-```rust
+```rust,ignore
 /// Sweeps values which may be outdated, but which have not
 /// been verified since the start of the current collection.
 /// These are typically memoized values from previous computations
@@ -153,7 +153,7 @@ pub fn sweep_unverified(self) -> SweepStrategy;
 In general, salsa's lazy validation scheme can lead to the accumulation
 of garbage that is no longer needed. Consider a query like this one:
 
-```rust
+```rust,ignore
 fn derived1(db: &impl Database, start: usize) {
   let middle = self.input(start);
   self.derived2(middle)
@@ -169,7 +169,7 @@ Now imagine that, on some particular run, we compute `derived1(22)`:
 The end result of this execution will be a dependency graph
 like:
 
-```
+```notrust
 derived1(22) -> derived2(44)
   |
   v
@@ -181,7 +181,7 @@ The next time `derived1(22)` executes, it will load `input(22)` as before,
 but then execute `derived2(45)`. This leaves us with a dependency
 graph as follows:
 
-```
+```notrust
 derived1(22) -> derived2(45)
   |
   v
@@ -207,7 +207,7 @@ So, to continue our example, when we first executed `derived1(22)`
 in revision R1, we might have had a graph like:
 
 
-```
+```notrust
 derived1(22)   -> derived2(44)
 [verified: R1]    [verified: R1]
   |
@@ -218,7 +218,7 @@ input(22)
 Now, after we modify `input(22)` and execute `derived1(22)` again, we 
 would have a graph like:
 
-```
+```notrust
 derived1(22)   -> derived2(45)
 [verified: R2]    [verified: R2]
   |
@@ -238,7 +238,7 @@ revision is less than the current revision).
 The intended model is that one can do a "mark-sweep" style garbage
 collection like so:
 
-```rust
+```rust,ignore
 // Modify some input, triggering a new revision.
 db.set_input(22, 45);
 

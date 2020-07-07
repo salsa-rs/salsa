@@ -1,16 +1,24 @@
-# Motivation
+# Query group traits
+
+## Metadata
+
+* Author: nikomatsakis
+* Date: 2019-01-15
+* Introduced in: https://github.com/salsa-rs/salsa-rfcs/pull/1
+
+## Motivation
 
 - Support `dyn QueryGroup` for each query group trait as well as `impl QueryGroup`
   - `dyn QueryGroup` will be much more convenient, at the cost of runtime efficiency
 - Don't require you to redeclare each query in the final database, just the query groups
 
-# User's guide
+## User's guide
 
-## Declaring a query group
+### Declaring a query group
 
 User's will declare query groups by decorating a trait with `salsa::query_group`:
 
-```rust
+```rust,ignore
 #[salsa::query_group(MyGroupStorage)]
 trait MyGroup {
   // Inputs are annotated with `#[salsa::input]`. For inputs, the final trait will include
@@ -47,7 +55,7 @@ In addition, the macro generates a number of structs that users should
 not have to be aware of. These are described in the "reference guide"
 section.
   
-### Controlling query modes
+#### Controlling query modes
 
 Input queries, as described in the trait, are specified via the
 `#[salsa::input]` attribute.
@@ -62,7 +70,7 @@ attached to the getter method (e.g., `fn my_query(..)`):
 - `#[salsa::dependencies]` specifies a "dependencies-only" query, which is assumed to
   read untracked input and hence must be re-executed on every revision.
 
-## Creating the database
+### Creating the database
 
 Creating a salsa database works by using a `#[salsa::database(..)]`
 attribute. The `..` content should be a list of paths leading to the
@@ -72,7 +80,7 @@ queries. In addition to the `salsa::database` query, the struct must
 have access to a `salsa::Runtime` and implement the `salsa::Database`
 trait. Hence the complete declaration looks roughly like so:
 
-```rust
+```rust,ignore
 #[salsa::database(MyGroupStorage)]
 struct MyDatabase {
   runtime: salsa::Runtime<MyDatabase>,
@@ -91,7 +99,7 @@ supports, and which customize the storage in the runtime to have all
 the data needed. Users should not have to interact with these details,
 and they are written out in the reference guide section.
 
-# Reference guide
+## Reference guide
 
 The goal here is not to give the *full* details of how to do the
 lowering, but to describe the key concepts. Throughout the text, we
@@ -99,14 +107,14 @@ will refer to names (e.g., `MyGroup` or `MyGroupStorage`) that appear
 in the example from the User's Guide -- this indicates that we use
 whatever name the user provided.
 
-## The `plumbing::QueryGroup` trait
+### The `plumbing::QueryGroup` trait
 
 The `QueryGroup` trait is a new trait added to the plumbing module. It
 is implemented by the query group storage struct `MyGroupStorage`. Its
 role is to link from that struct to the various bits of data that the
 salsa runtime needs:
 
-```rust
+```rust,ignore
 pub trait QueryGroup<DB: Database> {
     type GroupStorage;
     type GroupKey;
@@ -131,7 +139,7 @@ responsible will generate an impl of this trait for the
 `MyGroupStorage` struct, along with the group storage and group key
 type definitions.
 
-## The `plumbing::HasQueryGroup<G>` trait
+### The `plumbing::HasQueryGroup<G>` trait
 
 The `HasQueryGroup<G>` struct a new trait added to the plumbing
 module. It is implemented by the database struct `MyDatabase` for
@@ -139,7 +147,7 @@ every query group that `MyDatabase` supports. Its role is to offer
 methods that move back and forth between the context of the *full
 database* to the context of an *individual query group*:
 
-```rust
+```rust,ignore
 pub trait HasQueryGroup<G>: Database
 where
     G: QueryGroup<Self>,
@@ -156,13 +164,13 @@ Here the "database key" is an enum that contains variants for each
 group. Its role is to take group key and puts it into the context of
 the entire database.
 
-## The `Query` trait
+### The `Query` trait
 
 The query trait (pre-existing) is extended to include links to its
 group, and methods to convert from the group storage to the query
 storage, plus methods to convert from a query key up to the group key:
 
-```rust
+```rust,ignore
 pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
@@ -195,7 +203,7 @@ pub trait Query<DB: Database>: Debug + Default + Sized + 'static {
 }
 ```
 
-## Converting to/from the context of the full database generically
+### Converting to/from the context of the full database generically
 
 Putting all the previous plumbing traits together, this means
 that given:
@@ -207,7 +215,7 @@ that given:
 we can (generically) get the storage for the individual query
 `Q` out from the database `db` via a two-step process:
 
-```rust
+```rust,ignore
 let group_storage = HasGroupStorage::group_storage(db);
 let query_storage = Query::query_storage(group_storage);
 ```
@@ -215,12 +223,12 @@ let query_storage = Query::query_storage(group_storage);
 Similarly, we can convert from the key to an individual query
 up to the "database key" in a two-step process:
 
-```rust
+```rust,ignore
 let group_key = Query::group_key(key);
 let db_key = HasGroupStorage::database_key(group_key);
 ```
 
-## Lowering query groups
+### Lowering query groups
 
 The role of the `#[salsa::query_group(MyGroupStorage)] trait MyGroup {
 .. }` macro is primarily to generate the group storage struct and the
@@ -264,7 +272,7 @@ impl of `QueryGroup`.  That involves generating the following things:
     - `fn maybe_changed_since<DB>(db: &DB, db_descriptor: &DB::DatabaseKey, revision: Revision)`
     - it is invoked when implementing `maybe_changed_since` for the database key
 
-## Lowering database storage
+### Lowering database storage
 
 The `#[salsa::database(MyGroup)]` attribute macro creates the links to the query groups.
 It generates the following things:
@@ -294,13 +302,13 @@ It generates the following things:
     matching to get a particular group key, and then invoking the
     inherent method on the group key struct.
 
-# Alternatives
+## Alternatives
 
 This proposal results from a fair amount of iteration. Compared to the
 status quo, there is one primary downside. We also explain a few things here that
 may not be obvious.
 
-## Why include a group storage struct?
+### Why include a group storage struct?
 
 You might wonder why we need the `MyGroupStorage` struct at all. It is a touch of boilerplate,
 but there are several advantages to it:
@@ -320,7 +328,7 @@ but there are several advantages to it:
   named from the database, the *trait* (and query key/value types)
   actually does not have to be.
 
-## Downside: Size of a database key
+### Downside: Size of a database key
 
 Database keys now wind up with two discriminants: one to identify the
 group, and one to identify the query. That's a bit sad. This could be
@@ -330,25 +338,25 @@ group within a given database would be assigned a range of integer
 values, and the unions would store the actual key values. We leave
 such a change for future work.
 
-# Future possibilities
+## Future possibilities
 
 Here are some ideas we might want to do later.
 
-## No generics
+### No generics
 
 We leave generic parameters on the query group trait etc for future work.
 
-## Public / private
+### Public / private
 
 We'd like the ability to make more details from the query groups
 private. This will require some tinkering.
 
-## Inline query definitions
+### Inline query definitions
 
 Instead of defining queries in separate functions, it might be nice to
 have the option of defining query methods in the trait itself:
 
-```rust
+```rust,ignore
 #[salsa::query_group(MyGroupStorage)]
 trait MyGroup {
   #[salsa::input]
@@ -365,9 +373,8 @@ for future work. Also, it would mean that the method body itself is
 inside of a macro (the procedural macro) which can make IDE
 integration harder.
 
-## Non-query functions
+### Non-query functions
 
 It might be nice to be able to include functions in the trait that are
 *not* queries, but rather helpers that compose queries. This should be
 pretty easy, just need a suitable `#[salsa]` attribute.
-

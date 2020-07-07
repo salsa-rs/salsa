@@ -7,7 +7,7 @@
 //! re-execute the derived queries and it will try to re-use results
 //! from previous invocations as appropriate.
 
-mod dependency;
+mod blocking_future;
 mod derived;
 mod doctest;
 mod durability;
@@ -17,7 +17,7 @@ mod interned;
 mod lru;
 mod revision;
 mod runtime;
-mod blocking_future;
+mod storage;
 
 pub mod debug;
 /// Items in this module are public for implementation reasons,
@@ -30,7 +30,7 @@ use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::revision::Revision;
+pub use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 use std::sync::Arc;
@@ -40,17 +40,12 @@ pub use crate::intern_id::InternId;
 pub use crate::interned::InternKey;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
+pub use crate::storage::Storage;
 
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
-    /// Gives access to the underlying salsa runtime.
-    fn salsa_runtime(&self) -> &Runtime<Self>;
-
-    /// Gives access to the underlying salsa runtime.
-    fn salsa_runtime_mut(&mut self) -> &mut Runtime<Self>;
-
+pub trait Database: 'static + plumbing::DatabaseOps {
     /// Iterates through all query storage and removes any values that
     /// have not been used since the last revision was created. The
     /// intended use-cycle is that you first execute all of your
@@ -59,63 +54,19 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     /// remove other values that were not needed for your main query
     /// results.
     fn sweep_all(&self, strategy: SweepStrategy) {
-        self.salsa_runtime().sweep_all(self, strategy);
-    }
+        // Note that we do not acquire the query lock (or any locks)
+        // here.  Each table is capable of sweeping itself atomically
+        // and there is no need to bring things to a halt. That said,
+        // users may wish to guarantee atomicity.
 
-    /// Get access to extra methods pertaining to a given query. For
-    /// example, you can use this to run the GC (`sweep`) across a
-    /// single input. You can also use it to invoke a query, though
-    /// it's more common to use the trait method on the database
-    /// itself.
-    #[allow(unused_variables)]
-    fn query<Q>(&self, query: Q) -> QueryTable<'_, Self, Q>
-    where
-        Q: Query<Self>,
-        Self: plumbing::GetQueryTable<Q>,
-    {
-        <Self as plumbing::GetQueryTable<Q>>::get_query_table(self)
-    }
-
-    /// Like `query`, but gives access to methods for setting the
-    /// value of an input.
-    ///
-    /// # Threads, cancellation, and blocking
-    ///
-    /// Mutating the value of a query cannot be done while there are
-    /// still other queries executing. If you are using your database
-    /// within a single thread, this is not a problem: you only have
-    /// `&self` access to the database, but this method requires `&mut
-    /// self`.
-    ///
-    /// However, if you have used `snapshot` to create other threads,
-    /// then attempts to `set` will **block the current thread** until
-    /// those snapshots are dropped (usually when those threads
-    /// complete). This also implies that if you create a snapshot but
-    /// do not send it to another thread, then invoking `set` will
-    /// deadlock.
-    ///
-    /// Before blocking, the thread that is attempting to `set` will
-    /// also set a cancellation flag. In the threads operating on
-    /// snapshots, you can use the [`is_current_revision_canceled`]
-    /// method to check for this flag and bring those operations to a
-    /// close, thus allowing the `set` to succeed. Ignoring this flag
-    /// may lead to "starvation", meaning that the thread attempting
-    /// to `set` has to wait a long, long time. =)
-    ///
-    /// [`is_current_revision_canceled`]: struct.Runtime.html#method.is_current_revision_canceled
-    #[allow(unused_variables)]
-    fn query_mut<Q>(&mut self, query: Q) -> QueryTableMut<'_, Self, Q>
-    where
-        Q: Query<Self>,
-        Self: plumbing::GetQueryTable<Q>,
-    {
-        <Self as plumbing::GetQueryTable<Q>>::get_query_table_mut(self)
+        let runtime = self.salsa_runtime();
+        self.for_each_query(&mut |query_storage| query_storage.sweep(runtime, strategy));
     }
 
     /// This function is invoked at key points in the salsa
     /// runtime. It permits the database to be customized and to
     /// inject logging or other custom behavior.
-    fn salsa_event(&self, event_fn: impl Fn() -> Event<Self>) {
+    fn salsa_event(&self, event_fn: Event) {
         #![allow(unused_variables)]
     }
 
@@ -124,21 +75,31 @@ pub trait Database: plumbing::DatabaseStorageTypes + plumbing::DatabaseOps {
     fn on_propagated_panic(&self) -> ! {
         panic!("concurrent salsa query panicked")
     }
+
+    /// Gives access to the underlying salsa runtime.
+    fn salsa_runtime(&self) -> &Runtime {
+        self.ops_salsa_runtime()
+    }
+
+    /// Gives access to the underlying salsa runtime.
+    fn salsa_runtime_mut(&mut self) -> &mut Runtime {
+        self.ops_salsa_runtime_mut()
+    }
 }
 
 /// The `Event` struct identifies various notable things that can
 /// occur during salsa execution. Instances of this struct are given
 /// to `salsa_event`.
-pub struct Event<DB: Database> {
+pub struct Event {
     /// The id of the snapshot that triggered the event.  Usually
     /// 1-to-1 with a thread, as well.
     pub runtime_id: RuntimeId,
 
     /// What sort of event was it.
-    pub kind: EventKind<DB>,
+    pub kind: EventKind,
 }
 
-impl<DB: Database> fmt::Debug for Event<DB> {
+impl fmt::Debug for Event {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("Event")
             .field("runtime_id", &self.runtime_id)
@@ -148,7 +109,7 @@ impl<DB: Database> fmt::Debug for Event<DB> {
 }
 
 /// An enum identifying the various kinds of events that can occur.
-pub enum EventKind<DB: Database> {
+pub enum EventKind {
     /// Occurs when we found that all inputs to a memoized value are
     /// up-to-date and hence the value can be re-used without
     /// executing the closure.
@@ -156,7 +117,7 @@ pub enum EventKind<DB: Database> {
     /// Executes before the "re-used" value is returned.
     DidValidateMemoizedValue {
         /// The database-key for the affected value. Implements `Debug`.
-        database_key: DB::DatabaseKey,
+        database_key: DatabaseKeyIndex,
     },
 
     /// Indicates that another thread (with id `other_runtime_id`) is processing the
@@ -173,14 +134,7 @@ pub enum EventKind<DB: Database> {
         other_runtime_id: RuntimeId,
 
         /// The database-key for the affected value. Implements `Debug`.
-        database_key: DB::DatabaseKey,
-    },
-
-    /// Indicates that the input value will change after this
-    /// callback, e.g. due to a call to `set`.
-    WillChangeInputValue {
-        /// The database-key for the affected value. Implements `Debug`.
-        database_key: DB::DatabaseKey,
+        database_key: DatabaseKeyIndex,
     },
 
     /// Indicates that the function for this query will be executed.
@@ -188,11 +142,11 @@ pub enum EventKind<DB: Database> {
     /// its inputs may be out of date.
     WillExecute {
         /// The database-key for the affected value. Implements `Debug`.
-        database_key: DB::DatabaseKey,
+        database_key: DatabaseKeyIndex,
     },
 }
 
-impl<DB: Database> fmt::Debug for EventKind<DB> {
+impl fmt::Debug for EventKind {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             EventKind::DidValidateMemoizedValue { database_key } => fmt
@@ -205,10 +159,6 @@ impl<DB: Database> fmt::Debug for EventKind<DB> {
             } => fmt
                 .debug_struct("WillBlockOn")
                 .field("other_runtime_id", other_runtime_id)
-                .field("database_key", database_key)
-                .finish(),
-            EventKind::WillChangeInputValue { database_key } => fmt
-                .debug_struct("WillChangeInputValue")
                 .field("database_key", database_key)
                 .finish(),
             EventKind::WillExecute { database_key } => fmt
@@ -380,7 +330,7 @@ pub trait ParallelDatabase: Database + Send {
 ///
 /// [fm]: trait.ParallelDatabase.html#method.snapshot
 #[derive(Debug)]
-pub struct Snapshot<DB>
+pub struct Snapshot<DB: ?Sized>
 where
     DB: ParallelDatabase,
 {
@@ -410,15 +360,67 @@ where
     }
 }
 
+/// An integer that uniquely identifies a particular query instance within the
+/// database. Used to track dependencies between queries. Fully ordered and
+/// equatable but those orderings are arbitrary, and meant to be used only for
+/// inserting into maps and the like.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct DatabaseKeyIndex {
+    group_index: u16,
+    query_index: u16,
+    key_index: u32,
+}
+
+impl DatabaseKeyIndex {
+    /// Returns the index of the query group containing this key.
+    #[inline]
+    pub fn group_index(self) -> u16 {
+        self.group_index
+    }
+
+    /// Returns the index of the query within its query group.
+    #[inline]
+    pub fn query_index(self) -> u16 {
+        self.query_index
+    }
+
+    /// Returns the index of this particular query key within the query.
+    #[inline]
+    pub fn key_index(self) -> u32 {
+        self.key_index
+    }
+
+    /// Returns a type that gives a user-readable debug output.
+    /// Use like `println!("{:?}", index.debug(db))`.
+    pub fn debug<D: ?Sized>(self, db: &D) -> impl std::fmt::Debug + '_
+    where
+        D: plumbing::DatabaseOps,
+    {
+        DatabaseKeyIndexDebug { index: self, db }
+    }
+}
+
+/// Helper type for `DatabaseKeyIndex::debug`
+struct DatabaseKeyIndexDebug<'me, D: ?Sized>
+where
+    D: plumbing::DatabaseOps,
+{
+    index: DatabaseKeyIndex,
+    db: &'me D,
+}
+
+impl<D: ?Sized> std::fmt::Debug for DatabaseKeyIndexDebug<'_, D>
+where
+    D: plumbing::DatabaseOps,
+{
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.db.fmt_index(self.index, fmt)
+    }
+}
+
 /// Trait implements by all of the "special types" associated with
 /// each of your queries.
-///
-/// Unsafe trait obligation: Asserts that the Key/Value associated
-/// types for this trait are a part of the `Group::GroupData` type.
-/// In particular, `Group::GroupData: Send + Sync` must imply that
-/// `Key: Send + Sync` and `Value: Send + Sync`. This is relied upon
-/// by the dependency tracking logic.
-pub unsafe trait Query<DB: Database>: Debug + Default + Sized + 'static {
+pub trait Query: Debug + Default + Sized + 'static {
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
     type Key: Clone + Debug + Hash + Eq;
@@ -427,48 +429,45 @@ pub unsafe trait Query<DB: Database>: Debug + Default + Sized + 'static {
     type Value: Clone + Debug;
 
     /// Internal struct storing the values for the query.
-    type Storage: plumbing::QueryStorageOps<DB, Self>;
+    type Storage: plumbing::QueryStorageOps<Self>;
 
     /// Associate query group struct.
-    type Group: plumbing::QueryGroup<
-        DB,
-        GroupStorage = Self::GroupStorage,
-        GroupKey = Self::GroupKey,
-    >;
+    type Group: plumbing::QueryGroup<DynDb = Self::DynDb, GroupStorage = Self::GroupStorage>;
 
     /// Generated struct that contains storage for all queries in a group.
     type GroupStorage;
 
-    /// Type that identifies a particular query within the group + its key.
-    type GroupKey;
+    /// Dyn version of the associated trait for this query group.
+    type DynDb: ?Sized + Database + HasQueryGroup<Self::Group>;
+
+    /// A unique index identifying this query within the group.
+    const QUERY_INDEX: u16;
+
+    /// Name of the query method (e.g., `foo`)
+    const QUERY_NAME: &'static str;
 
     /// Extact storage for this query from the storage for its group.
     fn query_storage(group_storage: &Self::GroupStorage) -> &Arc<Self::Storage>;
-
-    /// Create group key for this query.
-    fn group_key(key: Self::Key) -> Self::GroupKey;
 }
 
 /// Return value from [the `query` method] on `Database`.
 /// Gives access to various less common operations on queries.
 ///
 /// [the `query` method]: trait.Database.html#method.query
-pub struct QueryTable<'me, DB, Q>
+pub struct QueryTable<'me, Q>
 where
-    DB: plumbing::GetQueryTable<Q>,
-    Q: Query<DB> + 'me,
+    Q: Query + 'me,
 {
-    db: &'me DB,
+    db: &'me Q::DynDb,
     storage: &'me Q::Storage,
 }
 
-impl<'me, DB, Q> QueryTable<'me, DB, Q>
+impl<'me, Q> QueryTable<'me, Q>
 where
-    DB: plumbing::GetQueryTable<Q>,
-    Q: Query<DB>,
+    Q: Query,
 {
     /// Constructs a new `QueryTable`.
-    pub fn new(db: &'me DB, storage: &'me Q::Storage) -> Self {
+    pub fn new(db: &'me Q::DynDb, storage: &'me Q::Storage) -> Self {
         Self { db, storage }
     }
 
@@ -480,7 +479,7 @@ where
         self.try_get(key).unwrap_or_else(|err| panic!("{}", err))
     }
 
-    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         self.storage.try_fetch(self.db, &key)
     }
 
@@ -488,9 +487,9 @@ where
     /// the most recent revision.
     pub fn sweep(&self, strategy: SweepStrategy)
     where
-        Q::Storage: plumbing::QueryStorageMassOps<DB>,
+        Q::Storage: plumbing::QueryStorageMassOps,
     {
-        self.storage.sweep(self.db, strategy);
+        self.storage.sweep(self.db.salsa_runtime(), strategy);
     }
 }
 
@@ -499,27 +498,21 @@ where
 /// set the value of an input query.
 ///
 /// [the `query_mut` method]: trait.Database.html#method.query_mut
-pub struct QueryTableMut<'me, DB, Q>
+pub struct QueryTableMut<'me, Q>
 where
-    DB: plumbing::GetQueryTable<Q>,
-    Q: Query<DB> + 'me,
+    Q: Query + 'me,
 {
-    db: &'me mut DB,
+    db: &'me mut Q::DynDb,
     storage: Arc<Q::Storage>,
 }
 
-impl<'me, DB, Q> QueryTableMut<'me, DB, Q>
+impl<'me, Q> QueryTableMut<'me, Q>
 where
-    DB: plumbing::GetQueryTable<Q>,
-    Q: Query<DB>,
+    Q: Query,
 {
     /// Constructs a new `QueryTableMut`.
-    pub fn new(db: &'me mut DB, storage: Arc<Q::Storage>) -> Self {
+    pub fn new(db: &'me mut Q::DynDb, storage: Arc<Q::Storage>) -> Self {
         Self { db, storage }
-    }
-
-    fn database_key(&self, key: &Q::Key) -> DB::DatabaseKey {
-        <DB as plumbing::GetQueryTable<Q>>::database_key(&self.db, key.clone())
     }
 
     /// Assign a value to an "input query". Must be used outside of
@@ -531,7 +524,7 @@ where
     /// [the `query_mut` method]: trait.Database.html#method.query_mut
     pub fn set(&mut self, key: Q::Key, value: Q::Value)
     where
-        Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
+        Q::Storage: plumbing::InputQueryStorageOps<Q>,
     {
         self.set_with_durability(key, value, Durability::LOW);
     }
@@ -546,10 +539,9 @@ where
     /// [the `query_mut` method]: trait.Database.html#method.query_mut
     pub fn set_with_durability(&mut self, key: Q::Key, value: Q::Value, durability: Durability)
     where
-        Q::Storage: plumbing::InputQueryStorageOps<DB, Q>,
+        Q::Storage: plumbing::InputQueryStorageOps<Q>,
     {
-        self.storage
-            .set(self.db, &key, &self.database_key(&key), value, durability);
+        self.storage.set(self.db, &key, value, durability);
     }
 
     /// Sets the size of LRU cache of values for this query table.
@@ -575,7 +567,7 @@ where
     /// pattern](https://salsa-rs.github.io/salsa/common_patterns/on_demand_inputs.html).
     pub fn invalidate(&mut self, key: &Q::Key)
     where
-        Q::Storage: plumbing::DerivedQueryStorageOps<DB, Q>,
+        Q::Storage: plumbing::DerivedQueryStorageOps<Q>,
     {
         self.storage.invalidate(self.db, key)
     }
@@ -607,5 +599,6 @@ where
 #[allow(unused_imports)]
 #[macro_use]
 extern crate salsa_macros;
+use plumbing::HasQueryGroup;
 #[doc(hidden)]
 pub use salsa_macros::*;

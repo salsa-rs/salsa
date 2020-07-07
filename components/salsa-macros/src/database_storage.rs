@@ -13,6 +13,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     let query_groups = &args.query_groups;
     let database_name = &input.ident;
     let visibility = &input.vis;
+    let db_storage_field = quote! { storage };
 
     let mut output = proc_macro2::TokenStream::new();
     output.extend(quote! { #input });
@@ -29,16 +30,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         .iter()
         .map(|QueryGroup { group_path }| {
             quote! {
-                <#group_path as salsa::plumbing::QueryGroup<#database_name>>::GroupStorage
-            }
-        })
-        .collect();
-
-    let query_group_key_names: Vec<_> = query_groups
-        .iter()
-        .map(|QueryGroup { group_path }| {
-            quote! {
-                <#group_path as salsa::plumbing::QueryGroup<#database_name>>::GroupKey
+                <#group_path as salsa::plumbing::QueryGroup>::GroupStorage
             }
         })
         .collect();
@@ -46,33 +38,33 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     // For each query group `foo::MyGroup` create a link to its
     // `foo::MyGroupGroupStorage`
     let mut storage_fields = proc_macro2::TokenStream::new();
+    let mut storage_initializers = proc_macro2::TokenStream::new();
     let mut has_group_impls = proc_macro2::TokenStream::new();
-    for (((query_group, group_name_snake), group_storage), group_key) in query_groups
+    for (((query_group, group_name_snake), group_storage), group_index) in query_groups
         .iter()
         .zip(&query_group_names_snake)
         .zip(&query_group_storage_names)
-        .zip(&query_group_key_names)
+        .zip(0_u16..)
     {
         let group_path = &query_group.group_path;
-        let group_name = query_group.name();
 
         // rewrite the last identifier (`MyGroup`, above) to
         // (e.g.) `MyGroupGroupStorage`.
         storage_fields.extend(quote! {
             #group_name_snake: #group_storage,
         });
+
+        // rewrite the last identifier (`MyGroup`, above) to
+        // (e.g.) `MyGroupGroupStorage`.
+        storage_initializers.extend(quote! {
+            #group_name_snake: #group_storage::new(#group_index),
+        });
+
         // ANCHOR:HasQueryGroup
         has_group_impls.extend(quote! {
             impl salsa::plumbing::HasQueryGroup<#group_path> for #database_name {
-                fn group_storage(db: &Self) -> &#group_storage {
-                    let runtime = salsa::Database::salsa_runtime(db);
-                    &runtime.storage().#group_name_snake
-                }
-
-                fn database_key(group_key: #group_key) -> __SalsaDatabaseKey {
-                    __SalsaDatabaseKey {
-                        kind: __SalsaDatabaseKeyKind::#group_name(group_key),
-                    }
+                fn group_storage(&self) -> &#group_storage {
+                    &self.#db_storage_field.query_store().#group_name_snake
                 }
             }
         });
@@ -81,38 +73,17 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
 
     // create group storage wrapper struct
     output.extend(quote! {
-        #[derive(Default)]
         #[doc(hidden)]
         #visibility struct __SalsaDatabaseStorage {
             #storage_fields
         }
-    });
 
-    // create query database_key wrapper struct
-    output.extend(quote! {
-        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-        #[doc(hidden)]
-        #visibility struct __SalsaDatabaseKey {
-            kind: __SalsaDatabaseKeyKind
-        }
-    });
-
-    // For each query `fn foo() for FooType` create
-    //
-    // ```
-    // foo(<FooType as salsa::Query<#database_name>>::Key),
-    // ```
-    let mut variants = proc_macro2::TokenStream::new();
-    for (query_group, group_key) in query_groups.iter().zip(&query_group_key_names) {
-        let group_name = query_group.name();
-        variants.extend(quote!(
-            #group_name(#group_key),
-        ));
-    }
-    output.extend(quote! {
-        #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-        enum __SalsaDatabaseKeyKind {
-            #variants
+        impl Default for __SalsaDatabaseStorage {
+            fn default() -> Self {
+                Self {
+                    #storage_initializers
+                }
+            }
         }
     });
 
@@ -120,49 +91,93 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut database_data = vec![];
     for QueryGroup { group_path } in query_groups {
         database_data.push(quote! {
-            <#group_path as salsa::plumbing::QueryGroup<#database_name>>::GroupData
+            <#group_path as salsa::plumbing::QueryGroup>::GroupData
         });
     }
 
     // ANCHOR:DatabaseStorageTypes
     output.extend(quote! {
         impl salsa::plumbing::DatabaseStorageTypes for #database_name {
-            type DatabaseKey = __SalsaDatabaseKey;
             type DatabaseStorage = __SalsaDatabaseStorage;
-            type DatabaseData = (#(#database_data),*);
         }
     });
     // ANCHOR_END:DatabaseStorageTypes
 
     // ANCHOR:DatabaseOps
+    let mut fmt_ops = proc_macro2::TokenStream::new();
+    let mut maybe_changed_ops = proc_macro2::TokenStream::new();
     let mut for_each_ops = proc_macro2::TokenStream::new();
-    for (QueryGroup { group_path }, group_storage) in
-        query_groups.iter().zip(&query_group_storage_names)
+    for ((QueryGroup { group_path }, group_storage), group_index) in query_groups
+        .iter()
+        .zip(&query_group_storage_names)
+        .zip(0_u16..)
     {
+        fmt_ops.extend(quote! {
+            #group_index => {
+                let storage: &#group_storage =
+                    <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
+                storage.fmt_index(self, input, fmt)
+            }
+        });
+        maybe_changed_ops.extend(quote! {
+            #group_index => {
+                let storage: &#group_storage =
+                    <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
+                storage.maybe_changed_since(self, input, revision)
+            }
+        });
         for_each_ops.extend(quote! {
             let storage: &#group_storage =
                 <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
-            storage.for_each_query(self, &mut op);
+            storage.for_each_query(runtime, &mut op);
         });
     }
     output.extend(quote! {
         impl salsa::plumbing::DatabaseOps for #database_name {
+            fn ops_database(&self) -> &dyn salsa::Database {
+                self
+            }
+
+            fn ops_salsa_runtime(&self) -> &salsa::Runtime {
+                self.#db_storage_field.salsa_runtime()
+            }
+
+            fn ops_salsa_runtime_mut(&mut self) -> &mut salsa::Runtime {
+                self.#db_storage_field.salsa_runtime_mut()
+            }
+
+            fn fmt_index(
+                &self,
+                input: salsa::DatabaseKeyIndex,
+                fmt: &mut std::fmt::Formatter<'_>,
+            ) -> std::fmt::Result {
+                match input.group_index() {
+                    #fmt_ops
+                    i => panic!("salsa: invalid group index {}", i)
+                }
+            }
+
+            fn maybe_changed_since(
+                &self,
+                input: salsa::DatabaseKeyIndex,
+                revision: salsa::Revision
+            ) -> bool {
+                match input.group_index() {
+                    #maybe_changed_ops
+                    i => panic!("salsa: invalid group index {}", i)
+                }
+            }
+
             fn for_each_query(
                 &self,
-                mut op: impl FnMut(&dyn salsa::plumbing::QueryStorageMassOps<Self>),
+                mut op: &mut dyn FnMut(&dyn salsa::plumbing::QueryStorageMassOps),
             ) {
+                let runtime = salsa::Database::salsa_runtime(self);
                 #for_each_ops
             }
         }
     });
     // ANCHOR_END:DatabaseOps
-
-    // ANCHOR:DatabaseKey
-    output.extend(quote! {
-        impl salsa::plumbing::DatabaseKey<#database_name> for __SalsaDatabaseKey {
-        }
-    });
-    // ANCHOR_END:DatabaseKey
 
     output.extend(has_group_impls);
 

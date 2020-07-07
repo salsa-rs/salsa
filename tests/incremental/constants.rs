@@ -1,6 +1,6 @@
 use crate::implementation::{TestContext, TestContextImpl};
 use salsa::debug::DebugQueryTable;
-use salsa::{Database, Durability};
+use salsa::Durability;
 
 #[salsa::query_group(Constants)]
 pub(crate) trait ConstantsDatabase: TestContext {
@@ -12,12 +12,12 @@ pub(crate) trait ConstantsDatabase: TestContext {
     fn add3(&self, key1: char, key2: char, key3: char) -> usize;
 }
 
-fn add(db: &impl ConstantsDatabase, key1: char, key2: char) -> usize {
+fn add(db: &dyn ConstantsDatabase, key1: char, key2: char) -> usize {
     db.log().add(format!("add({}, {})", key1, key2));
     db.input(key1) + db.input(key2)
 }
 
-fn add3(db: &impl ConstantsDatabase, key1: char, key2: char, key3: char) -> usize {
+fn add3(db: &dyn ConstantsDatabase, key1: char, key2: char, key3: char) -> usize {
     db.log().add(format!("add3({}, {}, {})", key1, key2, key3));
     db.add(key1, key2) + db.input(key3)
 }
@@ -64,56 +64,56 @@ fn set_after_constant_same_value() {
 
 #[test]
 fn not_constant() {
-    let db = &mut TestContextImpl::default();
+    let mut db = TestContextImpl::default();
 
     db.set_input('a', 22);
     db.set_input('b', 44);
     assert_eq!(db.add('a', 'b'), 66);
-    assert_eq!(Durability::LOW, db.query(AddQuery).durability(('a', 'b')));
+    assert_eq!(Durability::LOW, AddQuery.in_db(&db).durability(('a', 'b')));
 }
 
 #[test]
 fn durability() {
-    let db = &mut TestContextImpl::default();
+    let mut db = TestContextImpl::default();
 
     db.set_input_with_durability('a', 22, Durability::HIGH);
     db.set_input_with_durability('b', 44, Durability::HIGH);
     assert_eq!(db.add('a', 'b'), 66);
-    assert_eq!(Durability::HIGH, db.query(AddQuery).durability(('a', 'b')));
+    assert_eq!(Durability::HIGH, AddQuery.in_db(&db).durability(('a', 'b')));
 }
 
 #[test]
 fn mixed_constant() {
-    let db = &mut TestContextImpl::default();
+    let mut db = TestContextImpl::default();
 
     db.set_input_with_durability('a', 22, Durability::HIGH);
     db.set_input('b', 44);
     assert_eq!(db.add('a', 'b'), 66);
-    assert_eq!(Durability::LOW, db.query(AddQuery).durability(('a', 'b')));
+    assert_eq!(Durability::LOW, AddQuery.in_db(&db).durability(('a', 'b')));
 }
 
 #[test]
 fn becomes_constant_with_change() {
-    let db = &mut TestContextImpl::default();
+    let mut db = TestContextImpl::default();
 
     db.set_input('a', 22);
     db.set_input('b', 44);
     assert_eq!(db.add('a', 'b'), 66);
-    assert_eq!(Durability::LOW, db.query(AddQuery).durability(('a', 'b')));
+    assert_eq!(Durability::LOW, AddQuery.in_db(&db).durability(('a', 'b')));
 
     db.set_input_with_durability('a', 23, Durability::HIGH);
     assert_eq!(db.add('a', 'b'), 67);
-    assert_eq!(Durability::LOW, db.query(AddQuery).durability(('a', 'b')));
+    assert_eq!(Durability::LOW, AddQuery.in_db(&db).durability(('a', 'b')));
 
     db.set_input_with_durability('b', 45, Durability::HIGH);
     assert_eq!(db.add('a', 'b'), 68);
-    assert_eq!(Durability::HIGH, db.query(AddQuery).durability(('a', 'b')));
+    assert_eq!(Durability::HIGH, AddQuery.in_db(&db).durability(('a', 'b')));
 
     db.set_input_with_durability('b', 45, Durability::MEDIUM);
     assert_eq!(db.add('a', 'b'), 68);
     assert_eq!(
         Durability::MEDIUM,
-        db.query(AddQuery).durability(('a', 'b'))
+        AddQuery.in_db(&db).durability(('a', 'b'))
     );
 }
 
@@ -123,7 +123,7 @@ fn becomes_constant_with_change() {
 // being constant.
 #[test]
 fn constant_to_non_constant() {
-    let db = &mut TestContextImpl::default();
+    let mut db = TestContextImpl::default();
 
     db.set_input_with_durability('a', 11, Durability::HIGH);
     db.set_input_with_durability('b', 22, Durability::HIGH);

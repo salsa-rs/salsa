@@ -12,37 +12,29 @@ trait HelloWorldDatabase: salsa::Database {
     fn trailing(&self, a: u32, b: u32) -> u32;
 }
 
-fn none(_db: &impl HelloWorldDatabase) -> u32 {
+fn none(_db: &dyn HelloWorldDatabase) -> u32 {
     22
 }
 
-fn one(_db: &impl HelloWorldDatabase, k: u32) -> u32 {
+fn one(_db: &dyn HelloWorldDatabase, k: u32) -> u32 {
     k * 2
 }
 
-fn two(_db: &impl HelloWorldDatabase, a: u32, b: u32) -> u32 {
+fn two(_db: &dyn HelloWorldDatabase, a: u32, b: u32) -> u32 {
     a * b
 }
 
-fn trailing(_db: &impl HelloWorldDatabase, a: u32, b: u32) -> u32 {
+fn trailing(_db: &dyn HelloWorldDatabase, a: u32, b: u32) -> u32 {
     a - b
 }
 
 #[salsa::database(HelloWorld)]
 #[derive(Default)]
 struct DatabaseStruct {
-    runtime: salsa::Runtime<DatabaseStruct>,
+    storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for DatabaseStruct {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for DatabaseStruct {}
 
 #[test]
 fn execute() {

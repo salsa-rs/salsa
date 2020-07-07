@@ -1,80 +1,104 @@
 use crate::debug::TableEntry;
-use crate::dependency::DatabaseSlot;
 use crate::durability::Durability;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
-use crate::runtime::StampedValue;
+use crate::runtime::{FxIndexMap, StampedValue};
 use crate::CycleError;
 use crate::Database;
-use crate::Event;
-use crate::EventKind;
 use crate::Query;
-use crate::SweepStrategy;
+use crate::{DatabaseKeyIndex, Runtime, SweepStrategy};
+use indexmap::map::Entry;
 use log::debug;
 use parking_lot::RwLock;
-use rustc_hash::FxHashMap;
-use std::collections::hash_map::Entry;
+use std::convert::TryFrom;
 use std::sync::Arc;
 
 /// Input queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
 /// none of those inputs have changed.
-pub struct InputStorage<DB, Q>
+pub struct InputStorage<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
-    slots: RwLock<FxHashMap<Q::Key, Arc<Slot<DB, Q>>>>,
+    group_index: u16,
+    slots: RwLock<FxIndexMap<Q::Key, Arc<Slot<Q>>>>,
 }
 
-struct Slot<DB, Q>
+struct Slot<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
     key: Q::Key,
+    database_key_index: DatabaseKeyIndex,
     stamped_value: RwLock<StampedValue<Q::Value>>,
 }
 
-impl<DB, Q> std::panic::RefUnwindSafe for InputStorage<DB, Q>
+impl<Q> std::panic::RefUnwindSafe for InputStorage<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
     Q::Key: std::panic::RefUnwindSafe,
     Q::Value: std::panic::RefUnwindSafe,
 {
 }
 
-impl<DB, Q> Default for InputStorage<DB, Q>
+impl<Q> InputStorage<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
-    fn default() -> Self {
-        InputStorage {
-            slots: Default::default(),
-        }
-    }
-}
-
-impl<DB, Q> InputStorage<DB, Q>
-where
-    Q: Query<DB>,
-    DB: Database,
-{
-    fn slot(&self, key: &Q::Key) -> Option<Arc<Slot<DB, Q>>> {
+    fn slot(&self, key: &Q::Key) -> Option<Arc<Slot<Q>>> {
         self.slots.read().get(key).cloned()
     }
 }
 
-impl<DB, Q> QueryStorageOps<DB, Q> for InputStorage<DB, Q>
+impl<Q> QueryStorageOps<Q> for InputStorage<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DB::DatabaseKey>> {
+    fn new(group_index: u16) -> Self {
+        InputStorage {
+            group_index,
+            slots: Default::default(),
+        }
+    }
+
+    fn fmt_index(
+        &self,
+        _db: &Q::DynDb,
+        index: DatabaseKeyIndex,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        assert_eq!(index.group_index, self.group_index);
+        assert_eq!(index.query_index, Q::QUERY_INDEX);
+        let slot_map = self.slots.read();
+        let key = slot_map.get_index(index.key_index as usize).unwrap().0;
+        write!(fmt, "{}({:?})", Q::QUERY_NAME, key)
+    }
+
+    fn maybe_changed_since(
+        &self,
+        db: &Q::DynDb,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool {
+        assert_eq!(input.group_index, self.group_index);
+        assert_eq!(input.query_index, Q::QUERY_INDEX);
+        let slot = self
+            .slots
+            .read()
+            .get_index(input.key_index as usize)
+            .unwrap()
+            .1
+            .clone();
+        slot.maybe_changed_since(db, revision)
+    }
+
+    fn try_fetch(
+        &self,
+        db: &Q::DynDb,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         let slot = self
             .slot(key)
             .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
@@ -86,19 +110,19 @@ where
         } = slot.stamped_value.read().clone();
 
         db.salsa_runtime()
-            .report_query_read(slot, durability, changed_at);
+            .report_query_read(slot.database_key_index, durability, changed_at);
 
         Ok(value)
     }
 
-    fn durability(&self, _db: &DB, key: &Q::Key) -> Durability {
+    fn durability(&self, _db: &Q::DynDb, key: &Q::Key) -> Durability {
         match self.slot(key) {
             Some(slot) => slot.stamped_value.read().durability,
             None => panic!("no value set for {:?}({:?})", Q::default(), key),
         }
     }
 
-    fn entries<C>(&self, _db: &DB) -> C
+    fn entries<C>(&self, _db: &Q::DynDb) -> C
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
     {
@@ -115,27 +139,36 @@ where
     }
 }
 
-impl<DB, Q> QueryStorageMassOps<DB> for InputStorage<DB, Q>
+impl<Q> Slot<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
-    fn sweep(&self, _db: &DB, _strategy: SweepStrategy) {}
+    fn maybe_changed_since(&self, _db: &Q::DynDb, revision: Revision) -> bool {
+        debug!(
+            "maybe_changed_since(slot={:?}, revision={:?})",
+            self, revision,
+        );
+
+        let changed_at = self.stamped_value.read().changed_at;
+
+        debug!("maybe_changed_since: changed_at = {:?}", changed_at);
+
+        changed_at > revision
+    }
 }
 
-impl<DB, Q> InputQueryStorageOps<DB, Q> for InputStorage<DB, Q>
+impl<Q> QueryStorageMassOps for InputStorage<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
-    fn set(
-        &self,
-        db: &mut DB,
-        key: &Q::Key,
-        database_key: &DB::DatabaseKey,
-        value: Q::Value,
-        durability: Durability,
-    ) {
+    fn sweep(&self, _runtime: &Runtime, _strategy: SweepStrategy) {}
+}
+
+impl<Q> InputQueryStorageOps<Q> for InputStorage<Q>
+where
+    Q: Query,
+{
+    fn set(&self, db: &mut Q::DynDb, key: &Q::Key, value: Q::Value, durability: Durability) {
         log::debug!(
             "{:?}({:?}) = {:?} ({:?})",
             Q::default(),
@@ -143,13 +176,6 @@ where
             value,
             durability
         );
-
-        db.salsa_event(|| Event {
-            runtime_id: db.salsa_runtime().id(),
-            kind: EventKind::WillChangeInputValue {
-                database_key: database_key.clone(),
-            },
-        });
 
         // The value is changing, so we need a new revision (*). We also
         // need to update the 'last changed' revision by invoking
@@ -166,97 +192,79 @@ where
         // keys, we only need a new revision if the key used to
         // exist. But we may add such methods in the future and this
         // case doesn't generally seem worth optimizing for.
-        db.salsa_runtime_mut().with_incremented_revision(|guard| {
-            let mut slots = self.slots.write();
+        let mut value = Some(value);
+        db.salsa_runtime_mut()
+            .with_incremented_revision(&mut |next_revision| {
+                let mut slots = self.slots.write();
 
-            // Do this *after* we acquire the lock, so that we are not
-            // racing with somebody else to modify this same cell.
-            // (Otherwise, someone else might write a *newer* revision
-            // into the same cell while we block on the lock.)
-            let stamped_value = StampedValue {
-                value,
-                durability,
-                changed_at: guard.new_revision(),
-            };
+                // Do this *after* we acquire the lock, so that we are not
+                // racing with somebody else to modify this same cell.
+                // (Otherwise, someone else might write a *newer* revision
+                // into the same cell while we block on the lock.)
+                let stamped_value = StampedValue {
+                    value: value.take().unwrap(),
+                    durability,
+                    changed_at: next_revision,
+                };
 
-            match slots.entry(key.clone()) {
-                Entry::Occupied(entry) => {
-                    let mut slot_stamped_value = entry.get().stamped_value.write();
-                    guard.mark_durability_as_changed(slot_stamped_value.durability);
-                    *slot_stamped_value = stamped_value;
+                match slots.entry(key.clone()) {
+                    Entry::Occupied(entry) => {
+                        let mut slot_stamped_value = entry.get().stamped_value.write();
+                        let old_durability = slot_stamped_value.durability;
+                        *slot_stamped_value = stamped_value;
+                        Some(old_durability)
+                    }
+
+                    Entry::Vacant(entry) => {
+                        let key_index = u32::try_from(entry.index()).unwrap();
+                        let database_key_index = DatabaseKeyIndex {
+                            group_index: self.group_index,
+                            query_index: Q::QUERY_INDEX,
+                            key_index,
+                        };
+                        entry.insert(Arc::new(Slot {
+                            key: key.clone(),
+                            database_key_index,
+                            stamped_value: RwLock::new(stamped_value),
+                        }));
+                        None
+                    }
                 }
-
-                Entry::Vacant(entry) => {
-                    entry.insert(Arc::new(Slot {
-                        key: key.clone(),
-                        stamped_value: RwLock::new(stamped_value),
-                    }));
-                }
-            }
-        });
+            });
     }
 }
 
-// Unsafe proof obligation: `Slot<DB, Q>` is Send + Sync if the query
-// key/value is Send + Sync (also, that we introduce no
-// references). These are tested by the `check_send_sync` and
-// `check_static` helpers below.
-unsafe impl<DB, Q> DatabaseSlot<DB> for Slot<DB, Q>
-where
-    Q: Query<DB>,
-    DB: Database,
-{
-    fn maybe_changed_since(&self, _db: &DB, revision: Revision) -> bool {
-        debug!(
-            "maybe_changed_since(slot={:?}, revision={:?})",
-            self, revision,
-        );
-
-        let changed_at = self.stamped_value.read().changed_at;
-
-        debug!("maybe_changed_since: changed_at = {:?}", changed_at);
-
-        changed_at > revision
-    }
-}
-
-/// Check that `Slot<DB, Q, MP>: Send + Sync` as long as
+/// Check that `Slot<Q, MP>: Send + Sync` as long as
 /// `DB::DatabaseData: Send + Sync`, which in turn implies that
 /// `Q::Key: Send + Sync`, `Q::Value: Send + Sync`.
 #[allow(dead_code)]
-fn check_send_sync<DB, Q>()
+fn check_send_sync<Q>()
 where
-    Q: Query<DB>,
-    DB: Database,
-    DB::DatabaseData: Send + Sync,
+    Q: Query,
     Q::Key: Send + Sync,
     Q::Value: Send + Sync,
 {
     fn is_send_sync<T: Send + Sync>() {}
-    is_send_sync::<Slot<DB, Q>>();
+    is_send_sync::<Slot<Q>>();
 }
 
-/// Check that `Slot<DB, Q, MP>: 'static` as long as
+/// Check that `Slot<Q, MP>: 'static` as long as
 /// `DB::DatabaseData: 'static`, which in turn implies that
 /// `Q::Key: 'static`, `Q::Value: 'static`.
 #[allow(dead_code)]
-fn check_static<DB, Q>()
+fn check_static<Q>()
 where
-    Q: Query<DB>,
-    DB: Database,
-    DB: 'static,
-    DB::DatabaseData: 'static,
+    Q: Query,
     Q::Key: 'static,
     Q::Value: 'static,
 {
     fn is_static<T: 'static>() {}
-    is_static::<Slot<DB, Q>>();
+    is_static::<Slot<Q>>();
 }
 
-impl<DB, Q> std::fmt::Debug for Slot<DB, Q>
+impl<Q> std::fmt::Debug for Slot<Q>
 where
-    Q: Query<DB>,
-    DB: Database,
+    Q: Query,
 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(fmt, "{:?}({:?})", Q::default(), self.key)

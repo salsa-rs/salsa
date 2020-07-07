@@ -7,7 +7,7 @@ Allow to specify a dependency on a query group without making it a super trait.
 Currently, there's only one way to express that queries from group `A` can use
 another group `B`: namely, `B` can be a super-trait of `A`:
 
-```rust
+```rust,ignore
 #[salsa::query_group(AStorage)]
 trait A: B {
 
@@ -32,7 +32,7 @@ introducing and undesired dependency.
 
 To specify query dependencies, a `requires` attribute should be used:
 
-```rust
+```rust,ignore
 #[salsa::query_group(SymbolsDatabaseStorage)]
 #[salsa::requires(SyntaxDatabase)]
 #[salsa::requires(EnvDatabase)]
@@ -44,7 +44,7 @@ pub trait SymbolsDatabase {
 The argument of `requires` is a path to a trait. The traits from all `requires`
 attributes are available when implementing the query:
 
-```rust
+```rust,ignore
 fn get_symbol_by_name(
     db: &(impl SymbolsDatabase + SyntaxDatabase + EnvDatabase),
     name: String,
@@ -55,7 +55,7 @@ fn get_symbol_by_name(
 
 However, these traits are **not** available without explicit bounds:
 
-```rust
+```rust,ignore
 fn fuzzy_find_symbol(db: &impl SymbolsDatabase, name: String) {
     // Can't accidentally call methods of the `SyntaxDatabase`
 }
@@ -65,7 +65,7 @@ Note that, while the RFC does not propose to add per-query dependencies, query
 implementation can voluntarily specify only a subset of traits from `requires`
 attribute:
 
-```rust
+```rust,ignore
 fn get_symbol_by_name(
     // Purposefully don't depend on EnvDatabase
     db: &(impl SymbolsDatabase + SyntaxDatabase),
@@ -81,7 +81,7 @@ The implementation is straightforward and consists of adding traits from
 `requires` attributes to various `where` bounds. For example, we would generate
 the following blanket for above example:
 
-```rust
+```rust,ignore
 impl<T> SymbolsDatabase for T
 where
     T: SyntaxDatabase + EnvDatabase,
@@ -96,7 +96,7 @@ where
 The semantics of `requires` closely resembles `where`, so we could imagine a
 syntax based on magical where clauses:
 
-```rust
+```rust,ignore
 #[salsa::query_group(SymbolsDatabaseStorage)]
 pub trait SymbolsDatabase
     where ???: SyntaxDatabase + EnvDatabase

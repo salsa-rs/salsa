@@ -20,7 +20,7 @@ pub(crate) trait GcDatabase: salsa::Database + HasLog {
     fn compute_all(&self) -> Vec<usize>;
 }
 
-fn fibonacci(db: &impl GcDatabase, key: usize) -> usize {
+fn fibonacci(db: &dyn GcDatabase, key: usize) -> usize {
     db.log().add(format!("fibonacci({:?})", key));
     if key == 0 {
         0
@@ -31,7 +31,7 @@ fn fibonacci(db: &impl GcDatabase, key: usize) -> usize {
     }
 }
 
-fn triangular(db: &impl GcDatabase, key: usize) -> usize {
+fn triangular(db: &dyn GcDatabase, key: usize) -> usize {
     db.log().add(format!("triangular({:?})", key));
     if key == 0 {
         0
@@ -40,7 +40,7 @@ fn triangular(db: &impl GcDatabase, key: usize) -> usize {
     }
 }
 
-fn compute(db: &impl GcDatabase, key: usize) -> usize {
+fn compute(db: &dyn GcDatabase, key: usize) -> usize {
     db.log().add(format!("compute({:?})", key));
     if db.use_triangular(key) {
         db.triangular(key)
@@ -49,7 +49,7 @@ fn compute(db: &impl GcDatabase, key: usize) -> usize {
     }
 }
 
-fn compute_all(db: &impl GcDatabase) -> Vec<usize> {
+fn compute_all(db: &dyn GcDatabase) -> Vec<usize> {
     db.log().add("compute_all()");
     (db.min()..db.max()).map(|v| db.compute(v)).collect()
 }

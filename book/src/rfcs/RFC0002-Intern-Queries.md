@@ -31,7 +31,7 @@ as `struct` or `impl` declarations, and these structures may contain
 further structures within them (such as fields or methods). This gives
 rise to a path like so that can be used to identify a given item:
 
-```
+```notrust
 PathData = <file-name>
          | PathData / <identifier>
 ```
@@ -94,7 +94,7 @@ This section covers how interned queries are expected to be used.
 
 You can declare an interned query like so:
 
-```rust
+```rust,ignore
 #[salsa::query_group]
 trait Foo {
   #[salsa::interned]
@@ -122,7 +122,7 @@ Using an interned query is quite straightforward. You simply invoke it
 with a key, and you will get back an integer, and you can use the
 generated `lookup` method to convert back to the original value:
 
-```rust
+```rust,ignore
 let key = db.intern_path(path_data1);
 let path_data2 = db.lookup_intern_path_data(key);
 ```
@@ -137,7 +137,7 @@ because the "pointers" within can be replaced with interned keys.
 The return type for an intern query does not have to be a `InternId`. It can
 be any type that implements the `salsa::InternKey` trait:
 
-```rust
+```rust,ignore
 pub trait InternKey {
     /// Create an instance of the intern-key from a `InternId` value.
     fn from_intern_id(v: InternId) -> Self;
@@ -166,7 +166,7 @@ data, but rather should store the interned key.
 The intern key should always be a newtype struct that implements
 the `InternKey` trait. So, something like this:
 
-```rust
+```rust,ignore
 pub struct Path(InternId);
 
 impl salsa::InternKey for Path {
@@ -184,7 +184,7 @@ impl salsa::InternKey for Path {
 
 It is often convenient to add a `lookup` method to the newtype key:
 
-```rust
+```rust,ignore
 impl Path {
     // Adding this method is often convenient, since you can then
     // write `path.lookup(db)` to access the data, which reads a bit better.
@@ -198,7 +198,7 @@ impl Path {
 
 Recall that our paths were defined by a recursive grammar like so:
 
-```
+```notrust
 PathData = <file-name>
          | PathData / <identifier>
 ```
@@ -207,7 +207,7 @@ This recursion is quite typical of salsa applications. The recommended
 way to encode it in the `PathData` structure itself is to build on other
 intern keys, like so:
 
-```rust
+```rust,ignore
 #[derive(Clone, Hash, Eq, ..)]
 enum PathData {
   Root(String),
@@ -253,7 +253,7 @@ allocator, so standard allocation strategies could be used here).
 
 Presently the `InternId` type is implemented to wrap a `NonZeroU32`:
 
-```rust
+```rust,ignore
 pub struct InternId {
     value: NonZeroU32,
 }

@@ -2,7 +2,6 @@
 //! debugging your application but aren't ordinarily needed.
 
 use crate::durability::Durability;
-use crate::plumbing;
 use crate::plumbing::QueryStorageOps;
 use crate::Query;
 use crate::QueryTable;
@@ -50,10 +49,9 @@ impl<K, V> TableEntry<K, V> {
     }
 }
 
-impl<DB, Q> DebugQueryTable for QueryTable<'_, DB, Q>
+impl<Q> DebugQueryTable for QueryTable<'_, Q>
 where
-    DB: plumbing::GetQueryTable<Q>,
-    Q: Query<DB>,
+    Q: Query,
 {
     type Key = Q::Key;
     type Value = Q::Value;

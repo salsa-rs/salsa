@@ -1,8 +1,7 @@
-use crate::dependency::Dependency;
 use crate::durability::Durability;
 use crate::runtime::ActiveQuery;
 use crate::runtime::Revision;
-use crate::Database;
+use crate::DatabaseKeyIndex;
 use std::cell::{Ref, RefCell, RefMut};
 
 /// State that is specific to a single execution thread.
@@ -11,15 +10,15 @@ use std::cell::{Ref, RefCell, RefMut};
 ///
 /// **Note also that all mutations to the database handle (and hence
 /// to the local-state) must be undone during unwinding.**
-pub(super) struct LocalState<DB: Database> {
+pub(super) struct LocalState {
     /// Vector of active queries.
     ///
     /// Unwinding note: pushes onto this vector must be popped -- even
     /// during unwinding.
-    query_stack: RefCell<Vec<ActiveQuery<DB>>>,
+    query_stack: RefCell<Vec<ActiveQuery>>,
 }
 
-impl<DB: Database> Default for LocalState<DB> {
+impl Default for LocalState {
     fn default() -> Self {
         LocalState {
             query_stack: Default::default(),
@@ -27,14 +26,14 @@ impl<DB: Database> Default for LocalState<DB> {
     }
 }
 
-impl<DB: Database> LocalState<DB> {
+impl LocalState {
     pub(super) fn push_query(
         &self,
-        database_key: &DB::DatabaseKey,
+        database_key_index: DatabaseKeyIndex,
         max_durability: Durability,
-    ) -> ActiveQueryGuard<'_, DB> {
+    ) -> ActiveQueryGuard<'_> {
         let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push(ActiveQuery::new(database_key.clone(), max_durability));
+        query_stack.push(ActiveQuery::new(database_key_index, max_durability));
         ActiveQueryGuard {
             local_state: self,
             push_len: query_stack.len(),
@@ -46,11 +45,11 @@ impl<DB: Database> LocalState<DB> {
     /// **Warning:** Because this reference holds the ref-cell lock,
     /// you should not use any mutating methods of `LocalState` while
     /// reading from it.
-    pub(super) fn borrow_query_stack(&self) -> Ref<'_, Vec<ActiveQuery<DB>>> {
+    pub(super) fn borrow_query_stack(&self) -> Ref<'_, Vec<ActiveQuery>> {
         self.query_stack.borrow()
     }
 
-    pub(super) fn borrow_query_stack_mut(&self) -> RefMut<'_, Vec<ActiveQuery<DB>>> {
+    pub(super) fn borrow_query_stack_mut(&self) -> RefMut<'_, Vec<ActiveQuery>> {
         self.query_stack.borrow_mut()
     }
 
@@ -58,21 +57,21 @@ impl<DB: Database> LocalState<DB> {
         !self.query_stack.borrow().is_empty()
     }
 
-    pub(super) fn active_query(&self) -> Option<DB::DatabaseKey> {
+    pub(super) fn active_query(&self) -> Option<DatabaseKeyIndex> {
         self.query_stack
             .borrow()
             .last()
-            .map(|active_query| active_query.database_key.clone())
+            .map(|active_query| active_query.database_key_index)
     }
 
     pub(super) fn report_query_read(
         &self,
-        dependency: Dependency<DB>,
+        input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
     ) {
         if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_read(dependency, durability, changed_at);
+            top_query.add_read(input, durability, changed_at);
         }
     }
 
@@ -95,22 +94,19 @@ impl<DB: Database> LocalState<DB> {
     }
 }
 
-impl<DB> std::panic::RefUnwindSafe for LocalState<DB> where DB: Database {}
+impl std::panic::RefUnwindSafe for LocalState {}
 
 /// When a query is pushed onto the `active_query` stack, this guard
 /// is returned to represent its slot. The guard can be used to pop
 /// the query from the stack -- in the case of unwinding, the guard's
 /// destructor will also remove the query.
-pub(super) struct ActiveQueryGuard<'me, DB: Database> {
-    local_state: &'me LocalState<DB>,
+pub(super) struct ActiveQueryGuard<'me> {
+    local_state: &'me LocalState,
     push_len: usize,
 }
 
-impl<'me, DB> ActiveQueryGuard<'me, DB>
-where
-    DB: Database,
-{
-    fn pop_helper(&self) -> ActiveQuery<DB> {
+impl ActiveQueryGuard<'_> {
+    fn pop_helper(&self) -> ActiveQuery {
         let mut query_stack = self.local_state.query_stack.borrow_mut();
 
         // Sanity check: pushes and pops should be balanced.
@@ -120,17 +116,14 @@ where
     }
 
     /// Invoked when the query has successfully completed execution.
-    pub(super) fn complete(self) -> ActiveQuery<DB> {
+    pub(super) fn complete(self) -> ActiveQuery {
         let query = self.pop_helper();
         std::mem::forget(self);
         query
     }
 }
 
-impl<'me, DB> Drop for ActiveQueryGuard<'me, DB>
-where
-    DB: Database,
-{
+impl Drop for ActiveQueryGuard<'_> {
     fn drop(&mut self) {
         self.pop_helper();
     }

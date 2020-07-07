@@ -13,7 +13,7 @@ fn one_rev() {
 
     db.fibonacci(5);
 
-    let k: Vec<_> = db.query(FibonacciQuery).entries();
+    let k: Vec<_> = FibonacciQuery.in_db(&db).entries();
     assert_eq!(k.len(), 6);
 
     // Everything was used in this revision, so
@@ -28,7 +28,7 @@ fn two_rev_nothing() {
 
     db.fibonacci(5);
 
-    let k: Vec<_> = db.query(FibonacciQuery).entries();
+    let k: Vec<_> = FibonacciQuery.in_db(&db).entries();
     assert_eq!(k.len(), 6);
 
     db.salsa_runtime_mut().synthetic_write(Durability::LOW);
@@ -37,7 +37,7 @@ fn two_rev_nothing() {
     // everything gets collected.
     db.sweep_all(SweepStrategy::discard_outdated());
 
-    let k: Vec<_> = db.query(FibonacciQuery).entries();
+    let k: Vec<_> = FibonacciQuery.in_db(&db).entries();
     assert_eq!(k.len(), 0);
 }
 
@@ -47,7 +47,7 @@ fn two_rev_one_use() {
 
     db.fibonacci(5);
 
-    let k: Vec<_> = db.query(FibonacciQuery).entries();
+    let k: Vec<_> = FibonacciQuery.in_db(&db).entries();
     assert_eq!(k.len(), 6);
 
     db.salsa_runtime_mut().synthetic_write(Durability::LOW);
@@ -70,7 +70,7 @@ fn two_rev_two_uses() {
 
     db.fibonacci(5);
 
-    let k: Vec<_> = db.query(FibonacciQuery).entries();
+    let k: Vec<_> = FibonacciQuery.in_db(&db).entries();
     assert_eq!(k.len(), 6);
 
     db.salsa_runtime_mut().synthetic_write(Durability::LOW);
