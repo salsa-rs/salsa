@@ -19,3 +19,4 @@
   - [RFC 0004: LRU](./rfcs/RFC0004-LRU.md)
   - [RFC 0005: Durability](./rfcs/RFC0005-Durability.md)
   - [RFC 0006: Dynamic database](./rfcs/RFC0006-Dynamic-Databases.md)
+  - [RFC 0007: Prefetch](./rfcs/RFC0007-Prefetch.md)
