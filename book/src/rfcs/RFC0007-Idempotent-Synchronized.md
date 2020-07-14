@@ -114,7 +114,7 @@ To get the index for a key, we take the following steps:
 
 The procedure to compute the query value, given the index, is as follows:
 
-* Using the index, access the `key_data` from the slab
+* Using the index, access the `key_data` from the slab.
 * Load the (optional) cached value from `key_data`. If it is `Some`:
   * Load the (optional) dependency information from `key_data`. If it is `Some`:
     * Validate the dependencies (see below).
@@ -136,12 +136,22 @@ The procedure to compute the query value, given the index, is as follows:
 
 Subtle points:
 
-* The value/dependency-information are not stored atomically. But we are careful
+* The value/dependency-information are not stored atomically. But if we load the
+  value and then the dependencies, and both are `Some`, we are guaranteed that
+  they correspond to one another:
+  * If we load the value XXX this is not true
+  But we are careful
   in the ordering such that if the reader sees both a value + dependency
   information, they correspond to one another.
 * There may be multiple writers at once. If we see dep-info that is "verified
   at" the current revision, that implies that we raced with another writer and
   do not need to store our value.
+
+Ideas:
+
+* Store the (value, changed-at) field together
+  * If the changed-at matches the dependencies, then they match?
+  * If the 
 
 ### Verifying dependencies
 
