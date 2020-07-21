@@ -7,7 +7,7 @@ use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::{FxIndexMap, StampedValue};
-use crate::{CycleError, Database, DatabaseKeyIndex, Revision, Runtime, SweepStrategy};
+use crate::{CycleError, Database, DatabaseKeyIndex, QueryDb, Revision, Runtime, SweepStrategy};
 use parking_lot::RwLock;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
@@ -126,7 +126,7 @@ where
 
     fn fmt_index(
         &self,
-        _db: &Q::DynDb,
+        _db: &<Q as QueryDb<'_>>::DynDb,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
@@ -139,7 +139,7 @@ where
 
     fn maybe_changed_since(
         &self,
-        db: &Q::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool {
@@ -157,7 +157,7 @@ where
 
     fn try_fetch(
         &self,
-        db: &Q::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         let slot = self.slot(key);
@@ -177,11 +177,11 @@ where
         Ok(value)
     }
 
-    fn durability(&self, db: &Q::DynDb, key: &Q::Key) -> Durability {
+    fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
         self.slot(key).durability(db)
     }
 
-    fn entries<C>(&self, _db: &Q::DynDb) -> C
+    fn entries<C>(&self, _db: &<Q as QueryDb<'_>>::DynDb) -> C
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
     {
@@ -222,7 +222,7 @@ where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
 {
-    fn invalidate(&self, db: &mut Q::DynDb, key: &Q::Key) {
+    fn invalidate(&self, db: &mut <Q as QueryDb<'_>>::DynDb, key: &Q::Key) {
         db.salsa_runtime_mut()
             .with_incremented_revision(&mut |_new_revision| {
                 let map_read = self.slot_map.read();

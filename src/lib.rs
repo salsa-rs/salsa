@@ -45,7 +45,7 @@ pub use crate::storage::Storage;
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait Database: 'static + plumbing::DatabaseOps {
+pub trait Database: plumbing::DatabaseOps {
     /// Iterates through all query storage and removes any values that
     /// have not been used since the last revision was created. The
     /// intended use-cycle is that you first execute all of your
@@ -418,9 +418,13 @@ where
     }
 }
 
+pub trait QueryDb<'d>: Sized {
+    type DynDb: ?Sized + Database + 'd;
+}
+
 /// Trait implements by all of the "special types" associated with
 /// each of your queries.
-pub trait Query: Debug + Default + Sized + 'static {
+pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
     type Key: Clone + Debug + Hash + Eq;
@@ -432,13 +436,10 @@ pub trait Query: Debug + Default + Sized + 'static {
     type Storage: plumbing::QueryStorageOps<Self>;
 
     /// Associate query group struct.
-    type Group: plumbing::QueryGroup<DynDb = Self::DynDb, GroupStorage = Self::GroupStorage>;
+    type Group: plumbing::QueryGroup<GroupStorage = Self::GroupStorage>;
 
     /// Generated struct that contains storage for all queries in a group.
     type GroupStorage;
-
-    /// Dyn version of the associated trait for this query group.
-    type DynDb: ?Sized + Database + HasQueryGroup<Self::Group>;
 
     /// A unique index identifying this query within the group.
     const QUERY_INDEX: u16;
@@ -454,20 +455,21 @@ pub trait Query: Debug + Default + Sized + 'static {
 /// Gives access to various less common operations on queries.
 ///
 /// [the `query` method]: trait.Database.html#method.query
-pub struct QueryTable<'me, Q>
+pub struct QueryTable<'me, Q, DB>
 where
-    Q: Query + 'me,
+    Q: Query,
+    DB: ?Sized,
 {
-    db: &'me Q::DynDb,
+    db: &'me DB,
     storage: &'me Q::Storage,
 }
 
-impl<'me, Q> QueryTable<'me, Q>
+impl<'me, 'd, Q> QueryTable<'me, Q, <Q as QueryDb<'d>>::DynDb>
 where
     Q: Query,
 {
     /// Constructs a new `QueryTable`.
-    pub fn new(db: &'me Q::DynDb, storage: &'me Q::Storage) -> Self {
+    pub fn new(db: &'me <Q as QueryDb<'d>>::DynDb, storage: &'me Q::Storage) -> Self {
         Self { db, storage }
     }
 
@@ -502,7 +504,7 @@ pub struct QueryTableMut<'me, Q>
 where
     Q: Query + 'me,
 {
-    db: &'me mut Q::DynDb,
+    db: &'me mut <Q as QueryDb<'static>>::DynDb,
     storage: Arc<Q::Storage>,
 }
 
@@ -511,7 +513,7 @@ where
     Q: Query,
 {
     /// Constructs a new `QueryTableMut`.
-    pub fn new(db: &'me mut Q::DynDb, storage: Arc<Q::Storage>) -> Self {
+    pub fn new(db: &'me mut <Q as QueryDb<'static>>::DynDb, storage: Arc<Q::Storage>) -> Self {
         Self { db, storage }
     }
 

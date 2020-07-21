@@ -17,7 +17,7 @@ pub use crate::derived::MemoizedStorage;
 pub use crate::input::InputStorage;
 pub use crate::interned::InternedStorage;
 pub use crate::interned::LookupInternedStorage;
-pub use crate::{revision::Revision, DatabaseKeyIndex, Runtime};
+pub use crate::{revision::Revision, DatabaseKeyIndex, QueryDb, Runtime};
 
 #[derive(Clone, Debug)]
 pub struct CycleDetected {
@@ -71,10 +71,10 @@ pub trait QueryStorageMassOps {
 pub trait DatabaseKey: Clone + Debug + Eq + Hash {}
 
 pub trait QueryFunction: Query {
-    fn execute(db: &Self::DynDb, key: Self::Key) -> Self::Value;
+    fn execute(db: &<Self as QueryDb<'_>>::DynDb, key: Self::Key) -> Self::Value;
 
     fn recover(
-        db: &Self::DynDb,
+        db: &<Self as QueryDb<'_>>::DynDb,
         cycle: &[DatabaseKeyIndex],
         key: &Self::Key,
     ) -> Option<Self::Value> {
@@ -85,9 +85,10 @@ pub trait QueryFunction: Query {
 
 /// Create a query table, which has access to the storage for the query
 /// and offers methods like `get`.
-pub fn get_query_table<Q>(db: &Q::DynDb) -> QueryTable<'_, Q>
+pub fn get_query_table<'me, Q, DB>(db: &'me DB) -> QueryTable<'me, Q, DB>
 where
-    Q: Query,
+    Q: Query + for<'d> QueryDb<'d, DynDb = DB> + 'me,
+    DB: HasQueryGroup<Q::Group>,
 {
     let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
     let query_storage: &Q::Storage = Q::query_storage(group_storage);
@@ -96,9 +97,12 @@ where
 
 /// Create a mutable query table, which has access to the storage
 /// for the query and offers methods like `set`.
-pub fn get_query_table_mut<Q>(db: &mut Q::DynDb) -> QueryTableMut<'_, Q>
+pub fn get_query_table_mut<'me, Q>(
+    db: &'me mut <Q as QueryDb<'static>>::DynDb,
+) -> QueryTableMut<'me, Q>
 where
     Q: Query,
+    <Q as QueryDb<'static>>::DynDb: HasQueryGroup<Q::Group>,
 {
     let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
     let query_storage = Q::query_storage(group_storage).clone();
@@ -132,7 +136,7 @@ where
     /// Format a database key index in a suitable way.
     fn fmt_index(
         &self,
-        db: &Q::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result;
@@ -141,7 +145,7 @@ where
     /// changed since the given revision.
     fn maybe_changed_since(
         &self,
-        db: &Q::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool;
@@ -155,15 +159,15 @@ where
     /// itself.
     fn try_fetch(
         &self,
-        db: &Q::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>>;
 
     /// Returns the durability associated with a given key.
-    fn durability(&self, db: &Q::DynDb, key: &Q::Key) -> Durability;
+    fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability;
 
     /// Get the (current) set of the entries in the query storage
-    fn entries<C>(&self, db: &Q::DynDb) -> C
+    fn entries<C>(&self, db: &<Q as QueryDb<'_>>::DynDb) -> C
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>;
 }
@@ -175,7 +179,13 @@ pub trait InputQueryStorageOps<Q>
 where
     Q: Query,
 {
-    fn set(&self, db: &mut Q::DynDb, key: &Q::Key, new_value: Q::Value, durability: Durability);
+    fn set(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::DynDb,
+        key: &Q::Key,
+        new_value: Q::Value,
+        durability: Durability,
+    );
 }
 
 /// An optional trait that is implemented for "user mutable" storage:
@@ -189,5 +199,5 @@ pub trait DerivedQueryStorageOps<Q>
 where
     Q: Query,
 {
-    fn invalidate(&self, db: &mut Q::DynDb, key: &Q::Key);
+    fn invalidate(&self, db: &mut <Q as QueryDb<'_>>::DynDb, key: &Q::Key);
 }
