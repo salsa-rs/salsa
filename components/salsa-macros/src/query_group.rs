@@ -418,7 +418,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 /// single input. You can also use it to invoke this query, though
                 /// it's more common to use the trait method on the database
                 /// itself.
-                #trait_vis fn in_db(self, db: &#dyn_db) -> salsa::QueryTable<'_, Self>
+                #trait_vis fn in_db(self, db: &#dyn_db) -> salsa::QueryTable<'_, Self, #dyn_db>
                 {
                     salsa::plumbing::get_query_table::<#qt>(db)
                 }
@@ -461,6 +461,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 }
             }
 
+            impl<'d> salsa::QueryDb<'d> for #qt
+            {
+                type DynDb = #dyn_db + 'd;
+            }
+
             // ANCHOR:Query_impl
             impl salsa::Query for #qt
             {
@@ -469,7 +474,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 type Storage = #storage;
                 type Group = #group_struct;
                 type GroupStorage = #group_storage;
-                type DynDb = #dyn_db;
 
                 const QUERY_INDEX: u16 = #query_index;
 
@@ -499,7 +503,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             let recover = if let Some(cycle_recovery_fn) = &query.cycle {
                 quote! {
-                    fn recover(db: &Self::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::Query>::Key)
+                    fn recover(db: &<Self as salsa::QueryDb<'_>>::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::Query>::Key)
                         -> Option<<Self as salsa::Query>::Value> {
                         Some(#cycle_recovery_fn(
                                 db,
@@ -516,7 +520,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 // ANCHOR:QueryFunction_impl
                 impl salsa::plumbing::QueryFunction for #qt
                 {
-                    fn execute(db: &Self::DynDb, #key_pattern: <Self as salsa::Query>::Key)
+                    fn execute(db: &<Self as salsa::QueryDb<'_>>::DynDb, #key_pattern: <Self as salsa::Query>::Key)
                         -> <Self as salsa::Query>::Value {
                         #invoke(db, #(#key_names),*)
                     }

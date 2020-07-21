@@ -310,8 +310,8 @@ Therefore `QueryFunction` for example can become:
 
 ```rust,ignore
 pub trait QueryFunction: Query {
-    fn execute(db: &Self::DynDb, key: Self::Key) -> Self::Value;
-    fn recover(db: &Self::DynDb, cycle: &[DB::DatabaseKey], key: &Self::Key) -> Option<Self::Value> {
+    fn execute(db: &<Self as QueryDb<'_>>::DynDb, key: Self::Key) -> Self::Value;
+    fn recover(db: &<Self as QueryDb<'_>>::DynDb, cycle: &[DB::DatabaseKey], key: &Self::Key) -> Option<Self::Value> {
         let _ = (db, cycle, key);
         None
     }
@@ -455,7 +455,7 @@ we have to make a few changes:
 
 One downside of this proposal is that the `salsa::Database` trait now has a
 `'static` bound. This is a result of the lack of GATs -- in particular, the
-queries expect a `Q::DynDb` as argument. In the query definition, we have
+queries expect a `<Q as QueryDb<'_>>::DynDb` as argument. In the query definition, we have
 something like `type DynDb = dyn QueryGroupDatabase`, which in turn defaults to
 `dyn::QueryGroupDatabase + 'static`.
 
