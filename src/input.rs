@@ -162,6 +162,9 @@ where
     Q: Query,
 {
     fn sweep(&self, _runtime: &Runtime, _strategy: SweepStrategy) {}
+    fn purge(&self) {
+        *self.slots.write() = Default::default();
+    }
 }
 
 impl<Q> InputQueryStorageOps<Q> for InputStorage<Q>

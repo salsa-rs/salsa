@@ -407,6 +407,9 @@ where
             }
         });
     }
+    fn purge(&self) {
+        *self.tables.write() = Default::default();
+    }
 }
 
 impl<Q, IQ> QueryStorageOps<Q> for LookupInternedStorage<Q, IQ>
@@ -505,6 +508,7 @@ where
     >,
 {
     fn sweep(&self, _: &Runtime, _strategy: SweepStrategy) {}
+    fn purge(&self) {}
 }
 
 impl<K> Slot<K> {

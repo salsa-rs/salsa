@@ -203,6 +203,7 @@ impl Default for DiscardWhat {
 pub struct SweepStrategy {
     discard_if: DiscardIf,
     discard_what: DiscardWhat,
+    shrink_to_fit: bool,
 }
 
 impl SweepStrategy {
@@ -491,7 +492,18 @@ where
     {
         self.storage.sweep(self.db.salsa_runtime(), strategy);
     }
-}
+    /// Completely clears the storage for this query.
+    ///
+    /// This method breaks internal invariants of salsa, so any further queries
+    /// might return nonsense results. It is useful only in very specific
+    /// circumstances -- for example, when one wants to observe which values
+    /// dropped together with the table
+    pub fn purge(&self)
+    where
+        Q::Storage: plumbing::QueryStorageMassOps,
+    {
+        self.storage.purge();
+    }}
 
 /// Return value from [the `query_mut` method] on `Database`.
 /// Gives access to the `set` method, notably, that is used to

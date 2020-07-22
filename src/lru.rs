@@ -131,6 +131,11 @@ where
 
         self.data.lock().record_use(node)
     }
+
+    pub fn purge(&self) {
+        self.green_zone.store(0, Ordering::SeqCst);
+        *self.data.lock() = LruData::with_seed(LRU_SEED);
+    }
 }
 
 impl<Node> LruData<Node>

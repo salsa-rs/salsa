@@ -66,6 +66,7 @@ pub trait DatabaseOps {
 pub trait QueryStorageMassOps {
     /// Discards memoized values that are not up to date with the current revision.
     fn sweep(&self, runtime: &Runtime, strategy: SweepStrategy);
+    fn purge(&self);
 }
 
 pub trait DatabaseKey: Clone + Debug + Eq + Hash {}
