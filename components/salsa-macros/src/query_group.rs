@@ -262,7 +262,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 // query crate. Our experiments revealed that this makes a big
                 // difference in total compilation time in rust-analyzer, though
                 // it's not totally obvious why that should be.
-                fn __shim(db: &dyn #trait_name,  #(#key_names: #keys),*) -> #value {
+                fn __shim(db: &(dyn #trait_name + '_),  #(#key_names: #keys),*) -> #value {
                     salsa::plumbing::get_query_table::<#qt>(db).get((#(#key_names),*))
                 }
                 __shim(self, #(#key_names),*)
@@ -418,7 +418,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 /// single input. You can also use it to invoke this query, though
                 /// it's more common to use the trait method on the database
                 /// itself.
-                #trait_vis fn in_db(self, db: &#dyn_db) -> salsa::QueryTable<'_, Self, #dyn_db>
+                #trait_vis fn in_db<'me, 'd>(self, db: &'me (#dyn_db + 'd)) -> salsa::QueryTable<'me, Self, (#dyn_db + 'd)>
                 {
                     salsa::plumbing::get_query_table::<#qt>(db)
                 }
@@ -464,6 +464,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             impl<'d> salsa::QueryDb<'d> for #qt
             {
                 type DynDb = #dyn_db + 'd;
+                type Group = #group_struct;
+                type GroupStorage = #group_storage;
             }
 
             // ANCHOR:Query_impl
@@ -472,16 +474,14 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 type Key = (#(#keys),*);
                 type Value = #value;
                 type Storage = #storage;
-                type Group = #group_struct;
-                type GroupStorage = #group_storage;
 
                 const QUERY_INDEX: u16 = #query_index;
 
                 const QUERY_NAME: &'static str = #query_name;
 
-                fn query_storage(
-                    group_storage: &Self::GroupStorage,
-                ) -> &std::sync::Arc<Self::Storage> {
+                fn query_storage<'a>(
+                    group_storage: &'a <Self as salsa::QueryDb<'_>>::GroupStorage,
+                ) -> &'a std::sync::Arc<Self::Storage> {
                     &group_storage.#fn_name
                 }
             }
@@ -584,7 +584,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         impl #group_storage {
             #trait_vis fn fmt_index(
                 &self,
-                db: &#dyn_db,
+                db: &(#dyn_db + '_),
                 input: salsa::DatabaseKeyIndex,
                 fmt: &mut std::fmt::Formatter<'_>,
             ) -> std::fmt::Result {
@@ -596,7 +596,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             #trait_vis fn maybe_changed_since(
                 &self,
-                db: &#dyn_db,
+                db: &(#dyn_db + '_),
                 input: salsa::DatabaseKeyIndex,
                 revision: salsa::Revision,
             ) -> bool {

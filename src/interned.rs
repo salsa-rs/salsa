@@ -409,19 +409,46 @@ where
     }
 }
 
-impl<Q, IQ, DB> QueryStorageOps<Q> for LookupInternedStorage<Q, IQ>
+// Workaround for
+// ```
+// IQ: for<'d> QueryDb<
+//     'd,
+//     DynDb = <Q as QueryDb<'d>>::DynDb,
+//     Group = <Q as QueryDb<'d>>::Group,
+//     GroupStorage = <Q as QueryDb<'d>>::GroupStorage,
+// >,
+// ```
+// not working to make rustc know DynDb, Group and GroupStorage being the same in `Q` and `IQ`
+#[doc(hidden)]
+pub trait EqualDynDb<'d, IQ>: QueryDb<'d>
 where
-    Q: Query + for<'d> QueryDb<'d, DynDb = DB>,
+    IQ: QueryDb<'d>,
+{
+    fn convert_db(d: &Self::DynDb) -> &IQ::DynDb;
+    fn convert_group_storage(d: &Self::GroupStorage) -> &IQ::GroupStorage;
+}
+
+impl<'d, IQ, Q> EqualDynDb<'d, IQ> for Q
+where
+    Q: QueryDb<'d, DynDb = IQ::DynDb, Group = IQ::Group, GroupStorage = IQ::GroupStorage>,
+    Q::DynDb: HasQueryGroup<Q::Group>,
+    IQ: QueryDb<'d>,
+{
+    fn convert_db(d: &Self::DynDb) -> &IQ::DynDb {
+        d
+    }
+    fn convert_group_storage(d: &Self::GroupStorage) -> &IQ::GroupStorage {
+        d
+    }
+}
+
+impl<Q, IQ> QueryStorageOps<Q> for LookupInternedStorage<Q, IQ>
+where
+    Q: Query,
     Q::Key: InternKey,
     Q::Value: Eq + Hash,
-    IQ: Query<
-            Key = Q::Value,
-            Value = Q::Key,
-            Storage = InternedStorage<IQ>,
-            Group = Q::Group,
-            GroupStorage = Q::GroupStorage,
-        > + for<'d> QueryDb<'d, DynDb = DB>,
-    DB: ?Sized + Database + HasQueryGroup<Q::Group>,
+    IQ: Query<Key = Q::Value, Value = Q::Key, Storage = InternedStorage<IQ>>,
+    for<'d> Q: EqualDynDb<'d, IQ>,
 {
     fn new(_group_index: u16) -> Self {
         LookupInternedStorage {
@@ -431,29 +458,38 @@ where
 
     fn fmt_index(
         &self,
-        db: &DB,
+        db: &<Q as QueryDb<'_>>::DynDb,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         let group_storage =
             <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(group_storage);
-        interned_storage.fmt_index(db, index, fmt)
+        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
+        interned_storage.fmt_index(Q::convert_db(db), index, fmt)
     }
 
-    fn maybe_changed_since(&self, db: &DB, input: DatabaseKeyIndex, revision: Revision) -> bool {
+    fn maybe_changed_since(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool {
         let group_storage =
             <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(group_storage);
-        interned_storage.maybe_changed_since(db, input, revision)
+        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
+        interned_storage.maybe_changed_since(Q::convert_db(db), input, revision)
     }
 
-    fn try_fetch(&self, db: &DB, key: &Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+    fn try_fetch(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         let index = key.as_intern_id();
         let group_storage =
             <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(group_storage);
-        let slot = interned_storage.lookup_value(db, index);
+        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
+        let slot = interned_storage.lookup_value(Q::convert_db(db), index);
         let value = slot.value.clone();
         let interned_at = slot.interned_at;
         db.salsa_runtime().report_query_read(
@@ -464,17 +500,17 @@ where
         Ok(value)
     }
 
-    fn durability(&self, _db: &DB, _key: &Q::Key) -> Durability {
+    fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Durability {
         INTERN_DURABILITY
     }
 
-    fn entries<C>(&self, db: &DB) -> C
+    fn entries<C>(&self, db: &<Q as QueryDb<'_>>::DynDb) -> C
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
     {
         let group_storage =
             <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(group_storage);
+        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
         let tables = interned_storage.tables.read();
         tables
             .map
@@ -491,7 +527,7 @@ where
     Q: Query,
     Q::Key: InternKey,
     Q::Value: Eq + Hash,
-    IQ: Query<Key = Q::Value, Value = Q::Key, Group = Q::Group, GroupStorage = Q::GroupStorage>,
+    IQ: Query<Key = Q::Value, Value = Q::Key>,
 {
     fn sweep(&self, _: &Runtime, _strategy: SweepStrategy) {}
     fn purge(&self) {}
