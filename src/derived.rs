@@ -48,7 +48,7 @@ where
 {
 }
 
-pub trait MemoizationPolicy<Q>: Send + Sync + 'static
+pub trait MemoizationPolicy<Q>: Send + Sync
 where
     Q: QueryFunction,
 {

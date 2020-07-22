@@ -1038,7 +1038,7 @@ where
 fn check_static<Q, MP>()
 where
     Q: QueryFunction + 'static,
-    MP: MemoizationPolicy<Q>,
+    MP: MemoizationPolicy<Q> + 'static,
     Q::Key: 'static,
     Q::Value: 'static,
 {

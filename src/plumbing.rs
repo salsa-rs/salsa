@@ -85,10 +85,13 @@ pub trait QueryFunction: Query {
 
 /// Create a query table, which has access to the storage for the query
 /// and offers methods like `get`.
-pub fn get_query_table<'me, Q, DB>(db: &'me DB) -> QueryTable<'me, Q, DB>
+pub fn get_query_table<'d, 'me, Q>(
+    db: &'me <Q as QueryDb<'d>>::DynDb,
+) -> QueryTable<'me, Q, <Q as QueryDb<'d>>::DynDb>
 where
-    Q: Query + for<'d> QueryDb<'d, DynDb = DB> + 'me,
-    DB: HasQueryGroup<Q::Group>,
+    'd: 'me,
+    Q: Query + 'me,
+    Q::Storage: QueryStorageOps<Q>,
 {
     let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
     let query_storage: &Q::Storage = Q::query_storage(group_storage);
@@ -97,12 +100,9 @@ where
 
 /// Create a mutable query table, which has access to the storage
 /// for the query and offers methods like `set`.
-pub fn get_query_table_mut<'me, Q>(
-    db: &'me mut <Q as QueryDb<'static>>::DynDb,
-) -> QueryTableMut<'me, Q>
+pub fn get_query_table_mut<'me, Q>(db: &'me mut <Q as QueryDb<'me>>::DynDb) -> QueryTableMut<'me, Q>
 where
     Q: Query,
-    <Q as QueryDb<'static>>::DynDb: HasQueryGroup<Q::Group>,
 {
     let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
     let query_storage = Q::query_storage(group_storage).clone();

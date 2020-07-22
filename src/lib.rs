@@ -418,8 +418,19 @@ where
     }
 }
 
+/// Trait implements by all of the "special types" associated with
+/// each of your queries.
+///
+/// Base trait of `Query` that has a lifetime parameter to allow the `DynDb` to be non-'static.
 pub trait QueryDb<'d>: Sized {
-    type DynDb: ?Sized + Database + 'd;
+    /// Dyn version of the associated trait for this query group.
+    type DynDb: ?Sized + Database + HasQueryGroup<Self::Group> + 'd;
+
+    /// Associate query group struct.
+    type Group: plumbing::QueryGroup<GroupStorage = Self::GroupStorage>;
+
+    /// Generated struct that contains storage for all queries in a group.
+    type GroupStorage;
 }
 
 /// Trait implements by all of the "special types" associated with
@@ -433,13 +444,8 @@ pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
     type Value: Clone + Debug;
 
     /// Internal struct storing the values for the query.
-    type Storage: plumbing::QueryStorageOps<Self>;
-
-    /// Associate query group struct.
-    type Group: plumbing::QueryGroup<GroupStorage = Self::GroupStorage>;
-
-    /// Generated struct that contains storage for all queries in a group.
-    type GroupStorage;
+    // type Storage: plumbing::QueryStorageOps<Self>;
+    type Storage;
 
     /// A unique index identifying this query within the group.
     const QUERY_INDEX: u16;
@@ -448,7 +454,9 @@ pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
     const QUERY_NAME: &'static str;
 
     /// Extact storage for this query from the storage for its group.
-    fn query_storage(group_storage: &Self::GroupStorage) -> &Arc<Self::Storage>;
+    fn query_storage<'a>(
+        group_storage: &'a <Self as QueryDb<'_>>::GroupStorage,
+    ) -> &'a Arc<Self::Storage>;
 }
 
 /// Return value from [the `query` method] on `Database`.
@@ -467,6 +475,7 @@ where
 impl<'me, 'd, Q> QueryTable<'me, Q, <Q as QueryDb<'d>>::DynDb>
 where
     Q: Query,
+    Q::Storage: QueryStorageOps<Q>,
 {
     /// Constructs a new `QueryTable`.
     pub fn new(db: &'me <Q as QueryDb<'d>>::DynDb, storage: &'me Q::Storage) -> Self {
@@ -504,7 +513,7 @@ pub struct QueryTableMut<'me, Q>
 where
     Q: Query + 'me,
 {
-    db: &'me mut <Q as QueryDb<'static>>::DynDb,
+    db: &'me mut <Q as QueryDb<'me>>::DynDb,
     storage: Arc<Q::Storage>,
 }
 
@@ -513,7 +522,7 @@ where
     Q: Query,
 {
     /// Constructs a new `QueryTableMut`.
-    pub fn new(db: &'me mut <Q as QueryDb<'static>>::DynDb, storage: Arc<Q::Storage>) -> Self {
+    pub fn new(db: &'me mut <Q as QueryDb<'me>>::DynDb, storage: Arc<Q::Storage>) -> Self {
         Self { db, storage }
     }
 
