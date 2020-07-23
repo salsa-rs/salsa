@@ -5,8 +5,6 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-mod test;
-
 /// A simple and approximate concurrent lru list.
 ///
 /// We assume but do not verify that each node is only used with one
