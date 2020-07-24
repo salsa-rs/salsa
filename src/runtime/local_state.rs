@@ -104,7 +104,7 @@ impl std::panic::RefUnwindSafe for LocalState {}
 /// is returned to represent its slot. The guard can be used to pop
 /// the query from the stack -- in the case of unwinding, the guard's
 /// destructor will also remove the query.
-pub(super) struct ActiveQueryGuard<'me, DB>
+pub(crate) struct ActiveQueryGuard<'me, DB>
 where
     DB: std::ops::Deref,
     DB::Target: Database,

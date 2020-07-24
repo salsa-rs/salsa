@@ -15,7 +15,7 @@ pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHashe
 pub(crate) type FxIndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasherDefault<FxHasher>>;
 
 mod local_state;
-use local_state::LocalState;
+use local_state::{ActiveQueryGuard, LocalState};
 
 /// The salsa runtime stores the storage for all queries as well as
 /// tracking the query stack and dependencies between cycles.
@@ -299,11 +299,10 @@ impl Runtime {
         self.revision_guard.is_none() && !self.local_state.query_in_progress()
     }
 
-    pub(crate) fn execute_query_implementation<DB, V>(
+    pub(crate) fn prepare_query_implementation<DB>(
         db: &mut DB,
         database_key_index: DatabaseKeyIndex,
-        execute: impl FnOnce(&mut DB) -> V,
-    ) -> ComputedQueryResult<V>
+    ) -> ActiveQueryGuard<'_, DB>
     where
         DB: std::ops::Deref,
         DB::Target: Database,
@@ -323,12 +322,17 @@ impl Runtime {
 
         // Push the active query onto the stack.
         let max_durability = Durability::MAX;
-        let active_query = LocalState::push_query(db, database_key_index, max_durability);
+        LocalState::push_query(db, database_key_index, max_durability)
+    }
 
-        // Execute user's code, accumulating inputs etc.
-        let value = execute(active_query.db);
-
-        // Extract accumulated inputs.
+    pub(crate) fn complete_query<DB, V>(
+        active_query: ActiveQueryGuard<'_, DB>,
+        value: V,
+    ) -> ComputedQueryResult<V>
+    where
+        DB: std::ops::Deref,
+        DB::Target: Database,
+    {
         let ActiveQuery {
             dependencies,
             changed_at,
@@ -822,14 +826,15 @@ impl Drop for RevisionGuard {
     }
 }
 
-pub struct OwnedDb<'a, T>
+/// TODO
+pub struct AsyncDb<'a, T>
 where
     T: ?Sized + Database,
 {
     db: &'a mut T,
 }
 
-impl<T> std::ops::Deref for OwnedDb<'_, T>
+impl<T> std::ops::Deref for AsyncDb<'_, T>
 where
     T: ?Sized + Database,
 {
@@ -839,12 +844,13 @@ where
     }
 }
 
-impl<'a, T> OwnedDb<'a, T>
+impl<'a, T> AsyncDb<'a, T>
 where
     T: ?Sized + Database,
 {
-    pub(crate) fn new(db: &'a mut T) -> Self {
-        OwnedDb { db }
+    /// TODO
+    pub fn new(db: &'a mut T) -> Self {
+        AsyncDb { db }
     }
 }
 

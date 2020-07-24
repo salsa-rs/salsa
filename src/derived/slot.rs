@@ -1,18 +1,18 @@
-use crate::blocking_future::{BlockingFuture, Promise};
+use crate::blocking_future::{BlockingFutureTrait, PromiseTrait};
 use crate::debug::TableEntry;
 use crate::derived::MemoizationPolicy;
 use crate::durability::Durability;
 use crate::lru::LruIndex;
 use crate::lru::LruNode;
 use crate::plumbing::CycleDetected;
-use crate::plumbing::{DatabaseOps, QueryFunction};
+use crate::plumbing::{DatabaseOps, QueryFunction, QueryFunctionBase};
 use crate::revision::Revision;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::{
-    CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event, EventKind, QueryDb,
-    SweepStrategy,
+    CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event, EventKind, QueryBase,
+    QueryDb, SweepStrategy,
 };
 use log::{debug, info};
 use parking_lot::Mutex;
@@ -22,9 +22,13 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 
+type Promise<Q> = <<Q as QueryFunctionBase>::BlockingFuture as BlockingFutureTrait<
+    WaitResult<<Q as QueryBase>::Value, DatabaseKeyIndex>,
+>>::Promise;
+
 pub(super) struct Slot<Q, MP>
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
     MP: MemoizationPolicy<Q>,
 {
     key: Q::Key,
@@ -34,8 +38,9 @@ where
     lru_index: LruIndex,
 }
 
+#[doc(hidden)]
 #[derive(Clone)]
-struct WaitResult<V, K> {
+pub struct WaitResult<V, K> {
     value: StampedValue<V>,
     cycle: Vec<K>,
 }
@@ -43,7 +48,7 @@ struct WaitResult<V, K> {
 /// Defines the "current state" of query's memoized results.
 enum QueryState<Q>
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
 {
     NotComputed,
 
@@ -52,7 +57,7 @@ where
     /// indeeds a cycle.
     InProgress {
         id: RuntimeId,
-        waiting: Mutex<SmallVec<[Promise<WaitResult<Q::Value, DatabaseKeyIndex>>; 2]>>,
+        waiting: Mutex<SmallVec<[Promise<Q>; 2]>>,
     },
 
     /// We have computed the query already, and here is the result.
@@ -61,7 +66,7 @@ where
 
 struct Memo<Q>
 where
-    Q: QueryFunction,
+    Q: QueryBase,
 {
     /// The result of the query, if we decide to memoize it.
     value: Option<Q::Value>,
@@ -100,14 +105,15 @@ pub(super) enum MemoInputs {
 }
 
 /// Return value of `probe` helper.
-enum ProbeState<V, K, G> {
+enum ProbeState<V, K, G, F> {
     UpToDate(Result<V, CycleError<K>>),
     StaleOrAbsent(G),
+    Pending(F, RuntimeId),
 }
 
 impl<Q, MP> Slot<Q, MP>
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
     MP: MemoizationPolicy<Q>,
 {
     pub(super) fn new(key: Q::Key, database_key_index: DatabaseKeyIndex) -> Self {
@@ -123,59 +129,89 @@ where
     pub(super) fn database_key_index(&self) -> DatabaseKeyIndex {
         self.database_key_index
     }
+}
 
-    pub(super) fn read<'d>(
+impl<Q, MP> Slot<Q, MP>
+where
+    for<'f, 'd> Q: QueryFunction<'f, 'd>,
+    MP: MemoizationPolicy<Q>,
+{
+    pub(super) async fn read<'d>(
         &self,
         db: &mut <Q as QueryDb<'d>>::Db,
     ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
-        let runtime = db.salsa_runtime();
+        let revision_now;
+        {
+            // NB: We don't need to worry about people modifying the
+            // revision out from under our feet. Either `db` is a frozen
+            // database, in which case there is a lock, or the mutator
+            // thread is the current thread, and it will be prevented from
+            // doing any `set` invocations while the query function runs.
+            revision_now = db.salsa_runtime().current_revision();
 
-        // NB: We don't need to worry about people modifying the
-        // revision out from under our feet. Either `db` is a frozen
-        // database, in which case there is a lock, or the mutator
-        // thread is the current thread, and it will be prevented from
-        // doing any `set` invocations while the query function runs.
-        let revision_now = runtime.current_revision();
+            info!("{:?}: invoked at {:?}", self, revision_now,);
 
-        info!("{:?}: invoked at {:?}", self, revision_now,);
+            // First, do a check with a read-lock.
+            let opt = match self.probe(db, self.state.read(), revision_now) {
+                ProbeState::Pending(future, other_id) => Some((future, other_id)),
+                ProbeState::UpToDate(v) => return v,
+                ProbeState::StaleOrAbsent(_guard) => None,
+            };
 
-        // First, do a check with a read-lock.
-        match self.probe(db, self.state.read(), runtime, revision_now) {
-            ProbeState::UpToDate(v) => return v,
-            ProbeState::StaleOrAbsent(_guard) => (),
-        }
+            if let Some((future, other_id)) = opt {
+                return self.wait_for_value(db, other_id, future).await;
+            }
 
-        self.read_upgrade(db, revision_now)
+            revision_now
+        };
+
+        self.read_upgrade(db, revision_now).await
     }
 
     /// Second phase of a read operation: acquires an upgradable-read
     /// and -- if needed -- validates whether inputs have changed,
     /// recomputes value, etc. This is invoked after our initial probe
     /// shows a potentially out of date value.
-    fn read_upgrade<'d>(
+    async fn read_upgrade<'d>(
         &self,
         db: &mut <Q as QueryDb<'d>>::Db,
         revision_now: Revision,
     ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
-        let runtime = db.salsa_runtime();
-
         debug!("{:?}: read_upgrade(revision_now={:?})", self, revision_now,);
 
         // Check with an upgradable read to see if there is a value
         // already. (This permits other readers but prevents anyone
         // else from running `read_upgrade` at the same time.)
-        let old_memo = match self.probe(db, self.state.upgradable_read(), runtime, revision_now) {
-            ProbeState::UpToDate(v) => return v,
-            ProbeState::StaleOrAbsent(state) => {
-                type RwLockUpgradableReadGuard<'a, T> =
-                    lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
+        let old_memo = {
+            enum State<F, V> {
+                Wait(F, RuntimeId),
+                Memo(Option<V>),
+            }
+            let state = match self.probe(db, self.state.upgradable_read(), revision_now) {
+                ProbeState::Pending(future, other_id) => State::Wait(future, other_id),
+                ProbeState::UpToDate(v) => return v,
+                ProbeState::StaleOrAbsent(state) => {
+                    type RwLockUpgradableReadGuard<'a, T> =
+                        lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
 
-                let mut state = RwLockUpgradableReadGuard::upgrade(state);
-                match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
-                    QueryState::Memoized(old_memo) => Some(old_memo),
-                    QueryState::InProgress { .. } => unreachable!(),
-                    QueryState::NotComputed => None,
+                    let mut state = RwLockUpgradableReadGuard::upgrade(state);
+                    let runtime = db.salsa_runtime();
+                    State::Memo(
+                        match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id()))
+                        {
+                            QueryState::Memoized(old_memo) => Some(old_memo),
+                            QueryState::InProgress { .. } => unreachable!(),
+                            QueryState::NotComputed => None,
+                        },
+                    )
                 }
+            };
+
+            match state {
+                State::Wait(future, other_id) => {
+                    return self.wait_for_value(db, other_id, future).await;
+                }
+                State::Memo(x) => x,
             }
         };
 
@@ -215,11 +251,16 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = Runtime::execute_query_implementation(db, self.database_key_index, |db| {
+        let mut result = {
+            let active_query = Runtime::prepare_query_implementation(db, self.database_key_index);
+
             info!("{:?}: executing query", self);
 
-            Q::execute(db, self.key.clone())
-        });
+            // Execute user's code, accumulating inputs etc.
+            let value = Q::execute(active_query.db, self.key.clone()).await;
+
+            Runtime::complete_query(active_query, value)
+        };
 
         let runtime = db.salsa_runtime();
 
@@ -332,11 +373,10 @@ where
     /// Note that in case `ProbeState::UpToDate`, the lock will have been released.
     fn probe<StateGuard>(
         &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
+        db: &mut <Q as QueryDb<'_>>::Db,
         state: StateGuard,
-        runtime: &Runtime,
         revision_now: Revision,
-    ) -> ProbeState<StampedValue<Q::Value>, DatabaseKeyIndex, StateGuard>
+    ) -> ProbeState<StampedValue<Q::Value>, DatabaseKeyIndex, StateGuard, Q::BlockingFuture>
     where
         StateGuard: Deref<Target = QueryState<Q>>,
     {
@@ -345,41 +385,17 @@ where
 
             QueryState::InProgress { id, waiting } => {
                 let other_id = *id;
-                return match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
-                    Ok(future) => {
-                        // Release our lock on `self.state`, so other thread can complete.
-                        std::mem::drop(state);
-
-                        db.salsa_event(Event {
-                            runtime_id: runtime.id(),
-                            kind: EventKind::WillBlockOn {
-                                other_runtime_id: other_id,
-                                database_key: self.database_key_index,
-                            },
-                        });
-
-                        let result = future.wait().unwrap_or_else(|| db.on_propagated_panic());
-                        ProbeState::UpToDate(if result.cycle.is_empty() {
-                            Ok(result.value)
-                        } else {
-                            let err = CycleError {
-                                cycle: result.cycle,
-                                changed_at: result.value.changed_at,
-                                durability: result.value.durability,
-                            };
-                            runtime.mark_cycle_participants(&err);
-                            Q::recover(db, &err.cycle, &self.key)
-                                .map(|value| StampedValue {
-                                    value,
-                                    durability: err.durability,
-                                    changed_at: err.changed_at,
-                                })
-                                .ok_or_else(|| err)
-                        })
-                    }
+                let result = self.register_with_in_progress_thread(
+                    db,
+                    db.salsa_runtime(),
+                    other_id,
+                    waiting,
+                );
+                return match result {
+                    Ok(future) => ProbeState::Pending(future, other_id),
 
                     Err(err) => {
-                        let err = runtime.report_unexpected_cycle(
+                        let err = db.salsa_runtime().report_unexpected_cycle(
                             self.database_key_index,
                             err,
                             revision_now,
@@ -423,6 +439,40 @@ where
         }
 
         ProbeState::StaleOrAbsent(state)
+    }
+
+    async fn wait_for_value(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
+        other_id: RuntimeId,
+        future: Q::BlockingFuture,
+    ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
+        db.salsa_event(Event {
+            runtime_id: db.salsa_runtime().id(),
+            kind: EventKind::WillBlockOn {
+                other_runtime_id: other_id,
+                database_key: self.database_key_index,
+            },
+        });
+
+        let result = future.await.unwrap_or_else(|| db.on_propagated_panic());
+        if result.cycle.is_empty() {
+            Ok(result.value)
+        } else {
+            let err = CycleError {
+                cycle: result.cycle,
+                changed_at: result.value.changed_at,
+                durability: result.value.durability,
+            };
+            db.salsa_runtime().mark_cycle_participants(&err);
+            Q::recover(db, &err.cycle, &self.key)
+                .map(|value| StampedValue {
+                    value,
+                    durability: err.durability,
+                    changed_at: err.changed_at,
+                })
+                .ok_or_else(|| err)
+        }
     }
 
     pub(super) fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb) -> Durability {
@@ -538,7 +588,7 @@ where
         }
     }
 
-    pub(super) fn maybe_changed_since(
+    pub(super) async fn maybe_changed_since(
         &self,
         db: &mut <Q as QueryDb<'_>>::Db,
         revision: Revision,
@@ -579,7 +629,7 @@ where
                         // Release our lock on `self.state`, so other thread can complete.
                         std::mem::drop(state);
 
-                        let result = future.wait().unwrap_or_else(|| db.on_propagated_panic());
+                        let result = future.await.unwrap_or_else(|| db.on_propagated_panic());
                         return !result.cycle.is_empty() || result.value.changed_at > revision;
                     }
 
@@ -638,7 +688,7 @@ where
                     assert!(inputs.len() > 0);
                     if memo.value.is_some() {
                         std::mem::drop(state);
-                        return match self.read_upgrade(db, revision_now) {
+                        return match self.read_upgrade(db, revision_now).await {
                             Ok(v) => {
                                 debug!(
                                 "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
@@ -734,8 +784,8 @@ where
         _db: &<Q as QueryDb<'_>>::DynDb,
         runtime: &Runtime,
         other_id: RuntimeId,
-        waiting: &Mutex<SmallVec<[Promise<WaitResult<Q::Value, DatabaseKeyIndex>>; 2]>>,
-    ) -> Result<BlockingFuture<WaitResult<Q::Value, DatabaseKeyIndex>>, CycleDetected> {
+        waiting: &Mutex<SmallVec<[Promise<Q>; 2]>>,
+    ) -> Result<<Q as QueryFunctionBase>::BlockingFuture, CycleDetected> {
         let id = runtime.id();
         if other_id == id {
             return Err(CycleDetected { from: id, to: id });
@@ -747,7 +797,7 @@ where
                 });
             }
 
-            let (future, promise) = BlockingFuture::new();
+            let (future, promise) = <Q as QueryFunctionBase>::BlockingFuture::new();
 
             // The reader of this will have to acquire map
             // lock, we don't need any particular ordering.
@@ -764,7 +814,7 @@ where
 
 impl<Q> QueryState<Q>
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
 {
     fn in_progress(id: RuntimeId) -> Self {
         QueryState::InProgress {
@@ -776,7 +826,7 @@ where
 
 struct PanicGuard<'me, 'db, Q, MP, DB>
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
     MP: MemoizationPolicy<Q>,
     DB: std::ops::Deref,
     DB::Target: Database,
@@ -789,7 +839,7 @@ where
 
 impl<'me, 'db, Q, MP, DB> PanicGuard<'me, 'db, Q, MP, DB>
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
     MP: MemoizationPolicy<Q>,
     DB: std::ops::Deref,
     DB::Target: Database,
@@ -879,7 +929,7 @@ Please report this bug to https://github.com/salsa-rs/salsa/issues."
 
 impl<Q, MP, DB> Drop for PanicGuard<'_, '_, Q, MP, DB>
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
     MP: MemoizationPolicy<Q>,
     DB: std::ops::Deref,
     DB::Target: Database,
@@ -898,7 +948,7 @@ where
 
 impl<Q> Memo<Q>
 where
-    Q: QueryFunction,
+    for<'f, 'd> Q: QueryFunction<'f, 'd>,
 {
     fn validate_memoized_value(
         &mut self,
@@ -997,7 +1047,7 @@ impl MemoRevisions {
 
 impl<Q, MP> std::fmt::Debug for Slot<Q, MP>
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
     MP: MemoizationPolicy<Q>,
 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1019,7 +1069,7 @@ impl std::fmt::Debug for MemoInputs {
 
 impl<Q, MP> LruNode for Slot<Q, MP>
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
     MP: MemoizationPolicy<Q>,
 {
     fn lru_index(&self) -> &LruIndex {
@@ -1033,10 +1083,13 @@ where
 #[allow(dead_code)]
 fn check_send_sync<Q, MP>()
 where
-    Q: QueryFunction,
+    for<'f, 'd> Q: QueryFunction<'f, 'd>,
     MP: MemoizationPolicy<Q>,
     Q::Key: Send + Sync,
     Q::Value: Send + Sync,
+    Q::BlockingFuture: Send + Sync,
+    <Q::BlockingFuture as BlockingFutureTrait<WaitResult<Q::Value, DatabaseKeyIndex>>>::Promise:
+        Send + Sync,
 {
     fn is_send_sync<T: Send + Sync>() {}
     is_send_sync::<Slot<Q, MP>>();
@@ -1048,7 +1101,7 @@ where
 #[allow(dead_code)]
 fn check_static<Q, MP>()
 where
-    Q: QueryFunction + 'static,
+    for<'f, 'd> Q: QueryFunction<'f, 'd> + 'static,
     MP: MemoizationPolicy<Q> + 'static,
     Q::Key: 'static,
     Q::Value: 'static,
