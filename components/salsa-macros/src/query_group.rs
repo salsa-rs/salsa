@@ -418,7 +418,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 /// single input. You can also use it to invoke this query, though
                 /// it's more common to use the trait method on the database
                 /// itself.
-                #trait_vis fn in_db<'me, 'd>(self, db: &'me (#dyn_db + 'd)) -> salsa::QueryTable<'me, Self, (#dyn_db + 'd)>
+                #trait_vis fn in_db(self, db: &#dyn_db) -> salsa::QueryTable<'_, Self>
                 {
                     salsa::plumbing::get_query_table::<#qt>(db)
                 }

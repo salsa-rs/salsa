@@ -86,11 +86,8 @@ pub trait QueryFunction: Query {
 
 /// Create a query table, which has access to the storage for the query
 /// and offers methods like `get`.
-pub fn get_query_table<'d, 'me, Q>(
-    db: &'me <Q as QueryDb<'d>>::DynDb,
-) -> QueryTable<'me, Q, <Q as QueryDb<'d>>::DynDb>
+pub fn get_query_table<'me, Q>(db: &'me <Q as QueryDb<'me>>::DynDb) -> QueryTable<'me, Q>
 where
-    'd: 'me,
     Q: Query + 'me,
     Q::Storage: QueryStorageOps<Q>,
 {
