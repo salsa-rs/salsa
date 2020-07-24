@@ -38,6 +38,7 @@ use std::sync::Arc;
 pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
 pub use crate::interned::InternKey;
+pub use crate::runtime::AsyncDb;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
 pub use crate::storage::Storage;
@@ -423,23 +424,17 @@ where
 /// each of your queries.
 ///
 /// Base trait of `Query` that has a lifetime parameter to allow the `DynDb` to be non-'static.
-pub trait QueryDb<'d>: Sized {
+pub trait QueryDb<'d>: QueryBase {
     /// Dyn version of the associated trait for this query group.
     type DynDb: ?Sized + Database + HasQueryGroup<Self::Group> + 'd;
 
     /// Sized version of `DynDb`, &'d Self::DynDb for synchronous queries
     type Db: std::ops::Deref<Target = Self::DynDb>;
-
-    /// Associate query group struct.
-    type Group: plumbing::QueryGroup<GroupStorage = Self::GroupStorage>;
-
-    /// Generated struct that contains storage for all queries in a group.
-    type GroupStorage;
 }
 
 /// Trait implements by all of the "special types" associated with
 /// each of your queries.
-pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
+pub trait QueryBase: Debug + Default + Sized {
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
     type Key: Clone + Debug + Hash + Eq;
@@ -457,11 +452,21 @@ pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
     /// Name of the query method (e.g., `foo`)
     const QUERY_NAME: &'static str;
 
+    /// Associate query group struct.
+    type Group: plumbing::QueryGroup<GroupStorage = Self::GroupStorage>;
+
+    /// Generated struct that contains storage for all queries in a group.
+    type GroupStorage;
+
     /// Extact storage for this query from the storage for its group.
-    fn query_storage<'a>(
-        group_storage: &'a <Self as QueryDb<'_>>::GroupStorage,
-    ) -> &'a Arc<Self::Storage>;
+    fn query_storage<'a>(group_storage: &'a Self::GroupStorage) -> &'a Arc<Self::Storage>;
 }
+
+/// Trait implements by all of the "special types" associated with
+/// each of your queries.
+pub trait Query: for<'d> QueryDb<'d> {}
+
+impl<Q> Query for Q where Q: for<'d> QueryDb<'d> {}
 
 /// Return value from [the `query` method] on `Database`.
 /// Gives access to various less common operations on queries.
@@ -485,6 +490,21 @@ where
         Self { db, storage }
     }
 
+    /// Remove all values for this query that have not been used in
+    /// the most recent revision.
+    pub fn sweep(&self, strategy: SweepStrategy)
+    where
+        Q::Storage: plumbing::QueryStorageMassOps,
+    {
+        self.storage.sweep(self.db.salsa_runtime(), strategy);
+    }
+}
+
+impl<'me, Q> QueryTable<'me, Q>
+where
+    Q: Query,
+    Q::Storage: QueryStorageOpsSync<Q>,
+{
     /// Execute the query on a given input. Usually it's easier to
     /// invoke the trait method directly. Note that for variadic
     /// queries (those with no inputs, or those with more than one
@@ -496,14 +516,31 @@ where
     fn try_get(&mut self, key: Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         self.storage.try_fetch(&mut self.db, &key)
     }
+}
 
-    /// Remove all values for this query that have not been used in
-    /// the most recent revision.
-    pub fn sweep(&self, strategy: SweepStrategy)
-    where
-        Q::Storage: plumbing::QueryStorageMassOps,
-    {
-        self.storage.sweep(self.db.salsa_runtime(), strategy);
+impl<'me, Q> QueryTable<'me, Q>
+where
+    Q: QueryBase,
+    Q::Key: Send + Sync,
+    Q::Value: Send + Sync,
+    Q::Storage: QueryStorageOpsAsync<Q>,
+    Q: for<'f, 'd> AsyncQueryFunction<'f, 'd>,
+{
+    /// Execute the query on a given input. Usually it's easier to
+    /// invoke the trait method directly. Note that for variadic
+    /// queries (those with no inputs, or those with more than one
+    /// input) the key will be a tuple.
+    pub async fn get_async(&mut self, key: Q::Key) -> Q::Value {
+        self.try_get_async(key)
+            .await
+            .unwrap_or_else(|err| panic!("{}", err))
+    }
+
+    async fn try_get_async(
+        &mut self,
+        key: Q::Key,
+    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+        self.storage.try_fetch_async(&mut self.db, &key).await
     }
     /// Completely clears the storage for this query.
     ///
@@ -620,10 +657,13 @@ where
     }
 }
 
+/// A boxed future used in the salsa traits
+pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
+
 // Re-export the procedural macros.
 #[allow(unused_imports)]
 #[macro_use]
 extern crate salsa_macros;
-use plumbing::HasQueryGroup;
+use plumbing::{AsyncQueryFunction, HasQueryGroup, QueryStorageOpsAsync, QueryStorageOpsSync};
 #[doc(hidden)]
 pub use salsa_macros::*;

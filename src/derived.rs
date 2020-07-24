@@ -5,9 +5,15 @@ use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
-use crate::plumbing::QueryStorageOps;
+use crate::plumbing::{
+    AsyncQueryFunction, QueryFunctionBase, QueryStorageOps, QueryStorageOpsAsync,
+    QueryStorageOpsSync,
+};
 use crate::runtime::{FxIndexMap, StampedValue};
-use crate::{CycleError, Database, DatabaseKeyIndex, QueryDb, Revision, Runtime, SweepStrategy};
+use crate::{
+    blocking_future::{BlockingFuture, BlockingFutureTrait},
+    CycleError, Database, DatabaseKeyIndex, QueryBase, QueryDb, Revision, Runtime, SweepStrategy,
+};
 use parking_lot::RwLock;
 use std::borrow::Borrow;
 use std::convert::TryFrom;
@@ -17,6 +23,8 @@ use std::sync::Arc;
 
 mod slot;
 use slot::Slot;
+
+pub use slot::WaitResult;
 
 /// Memoized queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
@@ -32,7 +40,7 @@ pub type DependencyStorage<Q> = DerivedStorage<Q, NeverMemoizeValue>;
 /// function (in contrast to "inputs").
 pub struct DerivedStorage<Q, MP>
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
     MP: MemoizationPolicy<Q>,
 {
     group_index: u16,
@@ -43,7 +51,7 @@ where
 
 impl<Q, MP> std::panic::RefUnwindSafe for DerivedStorage<Q, MP>
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
     MP: MemoizationPolicy<Q>,
     Q::Key: std::panic::RefUnwindSafe,
     Q::Value: std::panic::RefUnwindSafe,
@@ -52,7 +60,7 @@ where
 
 pub trait MemoizationPolicy<Q>: Send + Sync
 where
-    Q: QueryFunction,
+    Q: QueryBase,
 {
     fn should_memoize_value(key: &Q::Key) -> bool;
 
@@ -62,7 +70,7 @@ where
 pub enum AlwaysMemoizeValue {}
 impl<Q> MemoizationPolicy<Q> for AlwaysMemoizeValue
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
     Q::Value: Eq,
 {
     fn should_memoize_value(_key: &Q::Key) -> bool {
@@ -77,7 +85,7 @@ where
 pub enum NeverMemoizeValue {}
 impl<Q> MemoizationPolicy<Q> for NeverMemoizeValue
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
 {
     fn should_memoize_value(_key: &Q::Key) -> bool {
         false
@@ -90,7 +98,7 @@ where
 
 impl<Q, MP> DerivedStorage<Q, MP>
 where
-    Q: QueryFunction,
+    Q: QueryFunctionBase,
     MP: MemoizationPolicy<Q>,
 {
     fn slot(&self, key: &Q::Key) -> Arc<Slot<Q, MP>> {
@@ -114,7 +122,7 @@ where
 
 impl<Q, MP> QueryStorageOps<Q> for DerivedStorage<Q, MP>
 where
-    Q: QueryFunction,
+    for<'f, 'd> Q: QueryFunction<'f, 'd>,
     MP: MemoizationPolicy<Q>,
 {
     fn new(group_index: u16) -> Self {
@@ -128,7 +136,7 @@ where
 
     fn fmt_index(
         &self,
-        _db: &mut <Q as QueryDb<'_>>::Db,
+        _db: &<Q as QueryDb<'_>>::DynDb,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
@@ -154,29 +162,7 @@ where
             .unwrap()
             .1
             .clone();
-        slot.maybe_changed_since(db, revision)
-    }
-
-    fn try_fetch(
-        &self,
-        db: &mut <Q as QueryDb<'_>>::Db,
-        key: &Q::Key,
-    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
-        let slot = self.slot(key);
-        let StampedValue {
-            value,
-            durability,
-            changed_at,
-        } = slot.read(db)?;
-
-        if let Some(evicted) = self.lru_list.record_use(&slot) {
-            evicted.evict();
-        }
-
-        db.salsa_runtime()
-            .report_query_read(slot.database_key_index(), durability, changed_at);
-
-        Ok(value)
+        crate::plumbing::sync_future(slot.maybe_changed_since(db, revision))
     }
 
     fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
@@ -195,9 +181,75 @@ where
     }
 }
 
+impl<Q, MP> QueryStorageOpsSync<Q> for DerivedStorage<Q, MP>
+where
+    for<'f, 'd> Q: QueryFunction<'f, 'd>,
+    Q: QueryFunctionBase<
+        BlockingFuture = BlockingFuture<WaitResult<<Q as QueryBase>::Value, DatabaseKeyIndex>>,
+    >,
+    MP: MemoizationPolicy<Q>,
+{
+    fn try_fetch(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+        let slot = self.slot(key);
+        let StampedValue {
+            value,
+            durability,
+            changed_at,
+        } = crate::plumbing::sync_future(slot.read(db))?;
+
+        if let Some(evicted) = self.lru_list.record_use(&slot) {
+            evicted.evict();
+        }
+
+        db.salsa_runtime()
+            .report_query_read(slot.database_key_index(), durability, changed_at);
+
+        Ok(value)
+    }
+}
+
+impl<Q, MP> QueryStorageOpsAsync<Q> for DerivedStorage<Q, MP>
+where
+    for<'f, 'd> Q: AsyncQueryFunction<'f, 'd>,
+    Q::BlockingFuture: Send,
+    Q::Key: Send + Sync,
+    Q::Value: Send + Sync,
+    <Q::BlockingFuture as BlockingFutureTrait<WaitResult<Q::Value, DatabaseKeyIndex>>>::Promise:
+        Send + Sync,
+    MP: MemoizationPolicy<Q>,
+{
+    fn try_fetch_async<'f>(
+        &'f self,
+        db: &'f mut <Q as AsyncQueryFunction<'_, '_>>::SendDb,
+        key: &'f Q::Key,
+    ) -> crate::BoxFuture<'f, Result<Q::Value, CycleError<DatabaseKeyIndex>>> {
+        Box::pin(async move {
+            let slot = self.slot(key);
+            let StampedValue {
+                value,
+                durability,
+                changed_at,
+            } = slot.read(db).await?;
+
+            if let Some(evicted) = self.lru_list.record_use(&slot) {
+                evicted.evict();
+            }
+
+            db.salsa_runtime()
+                .report_query_read(slot.database_key_index(), durability, changed_at);
+
+            Ok(value)
+        })
+    }
+}
+
 impl<Q, MP> QueryStorageMassOps for DerivedStorage<Q, MP>
 where
-    Q: QueryFunction,
+    for<'f, 'd> Q: QueryFunction<'f, 'd>,
     MP: MemoizationPolicy<Q>,
 {
     fn sweep(&self, runtime: &Runtime, strategy: SweepStrategy) {
@@ -215,7 +267,7 @@ where
 
 impl<Q, MP> LruQueryStorageOps for DerivedStorage<Q, MP>
 where
-    Q: QueryFunction,
+    for<'f, 'd> Q: QueryFunction<'f, 'd>,
     MP: MemoizationPolicy<Q>,
 {
     fn set_lru_capacity(&self, new_capacity: usize) {
@@ -225,7 +277,7 @@ where
 
 impl<Q, MP> DerivedQueryStorageOps<Q> for DerivedStorage<Q, MP>
 where
-    Q: QueryFunction,
+    for<'f, 'd> Q: QueryFunction<'f, 'd>,
     MP: MemoizationPolicy<Q>,
 {
     fn invalidate<S>(&self, db: &mut <Q as QueryDb<'_>>::DynDb, key: &S)

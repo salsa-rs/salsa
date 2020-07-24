@@ -186,6 +186,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     Some(Query {
                         query_type: lookup_query_type,
                         query_name: format!("lookup_{}", query_name),
+                        is_async: method.sig.asyncness.is_some(),
                         fn_name: lookup_fn_name,
                         attrs: vec![], // FIXME -- some automatically generated docs on this method?
                         storage: QueryStorage::InternedLookup {
@@ -203,6 +204,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 queries.push(Query {
                     query_type,
                     query_name,
+                    is_async: method.sig.asyncness.is_some(),
                     fn_name: method.sig.ident,
                     attrs,
                     storage,
@@ -225,6 +227,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
+    let mut async_query_fn_definitions = proc_macro2::TokenStream::new();
     let mut storage_fields = proc_macro2::TokenStream::new();
     let mut queries_with_storage = vec![];
     for query in &queries {
@@ -237,10 +240,17 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         let qt = &query.query_type;
         let attrs = &query.attrs;
 
-        query_fn_declarations.extend(quote! {
-            #(#attrs)*
-            fn #fn_name(&self, #(#key_names: #keys),*) -> #value;
-        });
+        if query.is_async {
+            query_fn_declarations.extend(quote! {
+                #(#attrs)*
+                fn #fn_name<'f>(&'f mut self, #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value>;
+            });
+        } else {
+            query_fn_declarations.extend(quote! {
+                #(#attrs)*
+                fn #fn_name(&self, #(#key_names: #keys),*) -> #value;
+            });
+        }
 
         // Special case: transparent queries don't create actual storage,
         // just inline the definition
@@ -256,19 +266,44 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         queries_with_storage.push(fn_name);
 
-        query_fn_definitions.extend(quote! {
-            fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
-                // Create a shim to force the code to be monomorphized in the
-                // query crate. Our experiments revealed that this makes a big
-                // difference in total compilation time in rust-analyzer, though
-                // it's not totally obvious why that should be.
-                fn __shim(db: &(dyn #trait_name + '_),  #(#key_names: #keys),*) -> #value {
-                    salsa::plumbing::get_query_table::<#qt>(db).get((#(#key_names),*))
+        if query.is_async {
+            query_fn_definitions.extend(quote! {
+                fn #fn_name<'f>(&'f mut self, #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
+                    // Create a shim to force the code to be monomorphized in the
+                    // query crate. Our experiments revealed that this makes a big
+                    // difference in total compilation time in rust-analyzer, though
+                    // it's not totally obvious why that should be.
+                    fn __shim<'f, 'd>(db: &'f mut (#dyn_db + 'd),  #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
+                        Box::pin(async move {
+                            let mut table = salsa::plumbing::get_query_table::<#qt>(AsyncDb::new(db));
+                            salsa::QueryTable::get_async(&mut table, (#(#key_names),*)).await
+                        })
+                    }
+                    __shim(self, #(#key_names),*)
                 }
-                __shim(self, #(#key_names),*)
+            });
+        } else {
+            query_fn_definitions.extend(quote! {
+                fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
+                    // Create a shim to force the code to be monomorphized in the
+                    // query crate. Our experiments revealed that this makes a big
+                    // difference in total compilation time in rust-analyzer, though
+                    // it's not totally obvious why that should be.
+                    fn __shim<'d>(db: &'d (#dyn_db + 'd),  #(#key_names: #keys),*) -> #value {
+                        salsa::plumbing::get_query_table::<#qt>(db).get((#(#key_names),*))
+                    }
+                    __shim(self, #(#key_names),*)
+                }
+            });
+        }
 
-            }
-        });
+        if query.is_async {
+            async_query_fn_definitions.extend(quote! {
+                 fn #fn_name<'f>(&'f mut self, #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
+                    self.db.#fn_name(#(#key_names),*)
+                }
+            });
+        }
 
         // For input queries, we need `set_foo` etc
         if let QueryStorage::Input = query.storage {
@@ -333,7 +368,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         //
         // FIXME(#120): the pub should not be necessary once we complete the transition
         storage_fields.extend(quote! {
-            pub #fn_name: std::sync::Arc<<#qt as salsa::Query>::Storage>,
+            pub #fn_name: std::sync::Arc<<#qt as salsa::QueryBase>::Storage>,
         });
     }
 
@@ -365,19 +400,61 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     });
 
     // Emit an impl of the trait
-    output.extend({
-        let bounds = input.supertraits.clone();
-        quote! {
+    {
+        let bounds = &input.supertraits;
+
+        let db_bounds = if bounds.is_empty() {
+            quote!()
+        } else {
+            quote!(DB: #bounds,)
+        };
+
+        output.extend(quote! {
             impl<DB> #trait_name for DB
             where
-                DB: #bounds,
+                #db_bounds
                 DB: salsa::Database,
                 DB: salsa::plumbing::HasQueryGroup<#group_struct>,
             {
                 #query_fn_definitions
             }
-        }
-    });
+        });
+
+        // HACK Define new type so we can define the methods for it
+        // Should really use one type exported from salsa though
+        output.extend(quote! {
+            #trait_vis struct AsyncDb<'a, T>
+            where
+                T: ?Sized + salsa::Database,
+            {
+                db: &'a mut T,
+            }
+
+            impl<T> std::ops::Deref for AsyncDb<'_, T>
+            where
+                T: ?Sized + salsa::Database,
+            {
+                type Target = T;
+                fn deref(&self) -> &Self::Target {
+                    self.db
+                }
+            }
+
+            impl<'a, T> AsyncDb<'a, T>
+            where
+                T: ?Sized + salsa::Database,
+            {
+                pub fn new(db: &'a mut T) -> Self {
+                    Self { db }
+                }
+            }
+
+            impl AsyncDb<'_, (#dyn_db + '_)>
+            {
+                #async_query_fn_definitions
+            }
+        });
+    }
 
     let non_transparent_queries = || {
         queries.iter().filter(|q| match q.storage {
@@ -385,6 +462,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             _ => true,
         })
     };
+
+    let has_async = non_transparent_queries().any(|query| query.is_async);
 
     // Emit the query types.
     for (query, query_index) in non_transparent_queries().zip(0_u16..) {
@@ -411,6 +490,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             #trait_vis struct #qt;
         });
 
+        let db = if query.is_async {
+            quote!(AsyncDb<'d, #dyn_db + 'd>)
+        } else {
+            quote!(&'d (#dyn_db + 'd))
+        };
+
         output.extend(quote! {
             impl #qt {
                 /// Get access to extra methods pertaining to this query. For
@@ -418,7 +503,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 /// single input. You can also use it to invoke this query, though
                 /// it's more common to use the trait method on the database
                 /// itself.
-                #trait_vis fn in_db(self, db: &#dyn_db) -> salsa::QueryTable<'_, Self>
+                #trait_vis fn in_db<'d>(self, db: #db) -> salsa::QueryTable<'d, Self>
                 {
                     salsa::plumbing::get_query_table::<#qt>(db)
                 }
@@ -464,24 +549,24 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             impl<'d> salsa::QueryDb<'d> for #qt
             {
                 type DynDb = #dyn_db + 'd;
-                type Db = &'d Self::DynDb;
-                type Group = #group_struct;
-                type GroupStorage = #group_storage;
+                type Db = #db;
             }
 
             // ANCHOR:Query_impl
-            impl salsa::Query for #qt
+            impl salsa::QueryBase for #qt
             {
                 type Key = (#(#keys),*);
                 type Value = #value;
                 type Storage = #storage;
+                type Group = #group_struct;
+                type GroupStorage = #group_storage;
 
                 const QUERY_INDEX: u16 = #query_index;
 
                 const QUERY_NAME: &'static str = #query_name;
 
                 fn query_storage<'a>(
-                    group_storage: &'a <Self as salsa::QueryDb<'_>>::GroupStorage,
+                    group_storage: &'a Self::GroupStorage,
                 ) -> &'a std::sync::Arc<Self::Storage> {
                     &group_storage.#fn_name
                 }
@@ -504,8 +589,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             let recover = if let Some(cycle_recovery_fn) = &query.cycle {
                 quote! {
-                    fn recover(db: &<Self as salsa::QueryDb<'_>>::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::Query>::Key)
-                        -> Option<<Self as salsa::Query>::Value> {
+                    fn recover(db: &<Self as salsa::QueryDb<'d>>::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::QueryBase>::Key)
+                        -> Option<<Self as salsa::QueryBase>::Value> {
                         Some(#cycle_recovery_fn(
                                 db,
                                 &cycle.iter().map(|k| format!("{:?}", k.debug(db))).collect::<Vec<String>>(),
@@ -517,42 +602,94 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 quote! {}
             };
 
+            let db_ref = if query.is_async {
+                quote!(db)
+            } else {
+                quote!(&**db)
+            };
+
+            let future = if query.is_async {
+                quote!(salsa::BoxFuture<'f, Self::Value>)
+            } else {
+                quote!(futures::future::Ready<Self::Value>)
+            };
+
+            let wrap_future = if query.is_async {
+                quote!(Box::pin)
+            } else {
+                quote!(futures::future::ready)
+            };
+
+            let blocking_future = if query.is_async {
+                quote!(BlockingAsyncFuture)
+            } else {
+                quote!(BlockingFuture)
+            };
+
             output.extend(quote_spanned! {span=>
-                // ANCHOR:QueryFunction_impl
-                impl salsa::plumbing::QueryFunction for #qt
+                impl salsa::plumbing::QueryFunctionBase for #qt
                 {
-                    fn execute(db: &mut <Self as salsa::QueryDb<'_>>::Db, #key_pattern: <Self as salsa::Query>::Key)
-                        -> <Self as salsa::Query>::Value {
-                        #invoke(&**db, #(#key_names),*)
+                    type BlockingFuture = salsa::plumbing::#blocking_future<
+                        salsa::plumbing::WaitResult<<Self as salsa::QueryBase>::Value, salsa::DatabaseKeyIndex>,
+                    >;
+                }
+
+                // ANCHOR:QueryFunction_impl
+                impl <'f, 'd> salsa::plumbing::QueryFunction<'f, 'd> for #qt
+                {
+                    type Future = #future;
+
+                    fn execute(db: &'f mut <Self as salsa::QueryDb<'d>>::Db, #key_pattern: <Self as salsa::QueryBase>::Key)
+                        -> <Self as salsa::plumbing::QueryFunction<'f, 'd>>::Future {
+                        #wrap_future(#invoke(#db_ref, #(#key_names),*))
                     }
 
                     #recover
                 }
                 // ANCHOR_END:QueryFunction_impl
             });
+
+            if query.is_async {
+                output.extend(quote_spanned! {span=>
+                    impl <'f, 'd> salsa::plumbing::AsyncQueryFunction<'f, 'd> for #qt
+                    {
+                        type SendDb = #db;
+                    }
+                });
+            }
         }
     }
 
     let mut fmt_ops = proc_macro2::TokenStream::new();
-    for (Query { fn_name, .. }, query_index) in non_transparent_queries().zip(0_u16..) {
+    for (query, query_index) in non_transparent_queries().zip(0_u16..) {
+        let Query { fn_name, .. } = query;
+
         fmt_ops.extend(quote! {
             #query_index => {
                 salsa::plumbing::QueryStorageOps::fmt_index(
-                    &*self.#fn_name, &mut db, input, fmt,
+                    &*self.#fn_name, db, input, fmt,
                 )
             }
         });
     }
 
     let mut maybe_changed_ops = proc_macro2::TokenStream::new();
-    for (Query { fn_name, .. }, query_index) in non_transparent_queries().zip(0_u16..) {
-        maybe_changed_ops.extend(quote! {
+
+    for (query, query_index) in non_transparent_queries().zip(0_u16..) {
+        let Query { fn_name, .. } = query;
+        let db_ref = if has_async && !query.is_async {
+            quote!(&mut &*db)
+        } else {
+            quote!(&mut db)
+        };
+        let arm = quote! {
             #query_index => {
                 salsa::plumbing::QueryStorageOps::maybe_changed_since(
-                    &*self.#fn_name, &mut db, input, revision
+                    &*self.#fn_name, #db_ref, input, revision
                 )
             }
-        });
+        };
+        maybe_changed_ops.extend(arm)
     }
 
     let mut for_each_ops = proc_macro2::TokenStream::new();
@@ -561,6 +698,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             op(&*self.#fn_name);
         });
     }
+
+    let db = if has_async {
+        quote!(AsyncDb<'d, #dyn_db + 'd>)
+    } else {
+        quote!(&'d (#dyn_db + 'd))
+    };
 
     // Emit query group storage struct
     output.extend(quote! {
@@ -585,7 +728,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         impl #group_storage {
             #trait_vis fn fmt_index<'d>(
                 &self,
-                mut db: &'d (#dyn_db + 'd),
+                db: &'d (#dyn_db + 'd),
                 input: salsa::DatabaseKeyIndex,
                 fmt: &mut std::fmt::Formatter<'_>,
             ) -> std::fmt::Result {
@@ -597,7 +740,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             #trait_vis fn maybe_changed_since<'d>(
                 &self,
-                mut db: &'d (#dyn_db + 'd),
+                mut db: #db,
                 input: salsa::DatabaseKeyIndex,
                 revision: salsa::Revision,
             ) -> bool {
@@ -683,6 +826,7 @@ fn filter_attrs(attrs: Vec<Attribute>) -> (Vec<Attribute>, Vec<SalsaAttr>) {
 struct Query {
     fn_name: Ident,
     query_name: String,
+    is_async: bool,
     attrs: Vec<syn::Attribute>,
     query_type: Ident,
     storage: QueryStorage,

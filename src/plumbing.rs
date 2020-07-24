@@ -11,14 +11,18 @@ use crate::RuntimeId;
 use crate::SweepStrategy;
 use std::borrow::Borrow;
 use std::fmt::Debug;
-use std::{hash::Hash, sync::Arc};
+use std::{future::Future, hash::Hash, sync::Arc};
 
 pub use crate::derived::DependencyStorage;
-pub use crate::derived::MemoizedStorage;
+pub use crate::derived::{MemoizedStorage, WaitResult};
 pub use crate::input::InputStorage;
 pub use crate::interned::InternedStorage;
 pub use crate::interned::LookupInternedStorage;
-pub use crate::{revision::Revision, DatabaseKeyIndex, QueryDb, Runtime};
+pub use crate::{
+    blocking_future::{BlockingAsyncFuture, BlockingFuture, BlockingFutureTrait},
+    revision::Revision,
+    BoxFuture, DatabaseKeyIndex, QueryBase, QueryDb, Runtime,
+};
 
 #[derive(Clone, Debug)]
 pub struct CycleDetected {
@@ -72,11 +76,17 @@ pub trait QueryStorageMassOps {
 
 pub trait DatabaseKey: Clone + Debug + Eq + Hash {}
 
-pub trait QueryFunction: Query {
-    fn execute(db: &mut <Self as QueryDb<'_>>::Db, key: Self::Key) -> Self::Value;
+pub trait QueryFunctionBase: QueryBase {
+    type BlockingFuture: BlockingFutureTrait<WaitResult<Self::Value, DatabaseKeyIndex>>;
+}
+
+pub trait QueryFunction<'f, 'd>: QueryFunctionBase + QueryDb<'d> {
+    type Future: Future<Output = Self::Value> + 'f;
+
+    fn execute(db: &'f mut <Self as QueryDb<'d>>::Db, key: Self::Key) -> Self::Future;
 
     fn recover(
-        db: &<Self as QueryDb<'_>>::DynDb,
+        db: &<Self as QueryDb<'d>>::DynDb,
         cycle: &[DatabaseKeyIndex],
         key: &Self::Key,
     ) -> Option<Self::Value> {
@@ -85,11 +95,27 @@ pub trait QueryFunction: Query {
     }
 }
 
+// Workaround for `for<'d> <Q as QueryDb<'d>>::Db: Send` being impossible to fulfill at callsites (in the generated code).
+// Helps rustc understand that the future and database are actually `Send`
+#[doc(hidden)]
+pub trait AsyncQueryFunction<'f, 'd>:
+    QueryFunction<
+    'f,
+    'd,
+    Db = <Self as AsyncQueryFunction<'f, 'd>>::SendDb,
+    Future = crate::BoxFuture<'f, <Self as QueryBase>::Value>,
+>
+where
+    <Self as QueryBase>::Value: Send + 'f,
+{
+    type SendDb: std::ops::Deref<Target = Self::DynDb> + Send + 'd;
+}
+
 /// Create a query table, which has access to the storage for the query
 /// and offers methods like `get`.
 pub fn get_query_table<'me, Q>(db: <Q as QueryDb<'me>>::Db) -> QueryTable<'me, Q>
 where
-    Q: Query + 'me,
+    Q: Query,
     Q::Storage: QueryStorageOps<Q>,
 {
     let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(&*db);
@@ -135,7 +161,7 @@ where
     /// Format a database key index in a suitable way.
     fn fmt_index(
         &self,
-        db: &mut <Q as QueryDb<'_>>::Db,
+        db: &<Q as QueryDb<'_>>::DynDb,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result;
@@ -149,6 +175,20 @@ where
         revision: Revision,
     ) -> bool;
 
+    /// Returns the durability associated with a given key.
+    fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability;
+
+    /// Get the (current) set of the entries in the query storage
+    fn entries<C>(&self, db: &<Q as QueryDb<'_>>::DynDb) -> C
+    where
+        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>;
+}
+
+pub trait QueryStorageOpsSync<Q>
+where
+    Self: QueryStorageMassOps,
+    Q: Query,
+{
     /// Execute the query, returning the result (often, the result
     /// will be memoized).  This is the "main method" for
     /// queries.
@@ -161,14 +201,27 @@ where
         db: &mut <Q as QueryDb<'_>>::Db,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>>;
+}
 
-    /// Returns the durability associated with a given key.
-    fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability;
-
-    /// Get the (current) set of the entries in the query storage
-    fn entries<C>(&self, db: &<Q as QueryDb<'_>>::DynDb) -> C
-    where
-        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>;
+pub trait QueryStorageOpsAsync<Q>: QueryStorageOps<Q>
+where
+    Self: QueryStorageMassOps,
+    Q: for<'f, 'd> AsyncQueryFunction<'f, 'd>,
+    Q::Key: Send + Sync,
+    Q::Value: Send + Sync,
+{
+    /// Execute the query, returning the result (often, the result
+    /// will be memoized).  This is the "main method" for
+    /// queries.
+    ///
+    /// Returns `Err` in the event of a cycle, meaning that computing
+    /// the value for this `key` is recursively attempting to fetch
+    /// itself.
+    fn try_fetch_async<'f>(
+        &'f self,
+        db: &'f mut <Q as AsyncQueryFunction<'_, '_>>::SendDb,
+        key: &'f Q::Key,
+    ) -> crate::BoxFuture<'f, Result<Q::Value, CycleError<DatabaseKeyIndex>>>;
 }
 
 /// An optional trait that is implemented for "user mutable" storage:
@@ -202,4 +255,50 @@ where
     where
         S: Eq + Hash,
         Q::Key: Borrow<S>;
+}
+
+/// Calls a future synchronously without an actual way to resume to future.
+pub(crate) fn sync_future<F>(mut f: F) -> F::Output
+where
+    F: Future,
+{
+    use std::{
+        pin::Pin,
+        sync::{Condvar, Mutex},
+    };
+
+    use futures::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+
+    unsafe {
+        type WakerState = Condvar;
+
+        static VTABLE: RawWakerVTable = RawWakerVTable::new(
+            |p| RawWaker::new(p, &VTABLE),
+            |p| unsafe {
+                (&*(p as *const WakerState)).notify_one();
+            },
+            |p| unsafe {
+                (&*(p as *const WakerState)).notify_one();
+            },
+            |_| (),
+        );
+
+        let waker_state = WakerState::new();
+        let waker = Waker::from_raw(RawWaker::new(
+            &waker_state as *const WakerState as *const (),
+            &VTABLE,
+        ));
+        let mut context = Context::from_waker(&waker);
+
+        let mutex = Mutex::new(());
+        let mut guard = mutex.lock().unwrap();
+        loop {
+            match Pin::new_unchecked(&mut f).poll(&mut context) {
+                Poll::Ready(x) => break x,
+                Poll::Pending => {
+                    guard = waker_state.wait(guard).unwrap();
+                }
+            }
+        }
+    }
 }

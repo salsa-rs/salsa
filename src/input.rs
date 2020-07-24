@@ -2,7 +2,7 @@ use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
-use crate::plumbing::QueryStorageOps;
+use crate::plumbing::{QueryStorageOps, QueryStorageOpsSync};
 use crate::revision::Revision;
 use crate::runtime::{FxIndexMap, StampedValue};
 use crate::CycleError;
@@ -65,7 +65,7 @@ where
 
     fn fmt_index(
         &self,
-        _db: &mut <Q as QueryDb<'_>>::Db,
+        _db: &<Q as QueryDb<'_>>::DynDb,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
@@ -94,27 +94,6 @@ where
         slot.maybe_changed_since(db, revision)
     }
 
-    fn try_fetch(
-        &self,
-        db: &mut <Q as QueryDb<'_>>::Db,
-        key: &Q::Key,
-    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
-        let slot = self
-            .slot(key)
-            .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
-
-        let StampedValue {
-            value,
-            durability,
-            changed_at,
-        } = slot.stamped_value.read().clone();
-
-        db.salsa_runtime()
-            .report_query_read(slot.database_key_index, durability, changed_at);
-
-        Ok(value)
-    }
-
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
         match self.slot(key) {
             Some(slot) => slot.stamped_value.read().durability,
@@ -136,6 +115,32 @@ where
                 )
             })
             .collect()
+    }
+}
+
+impl<Q> QueryStorageOpsSync<Q> for InputStorage<Q>
+where
+    Q: Query,
+{
+    fn try_fetch(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+        let slot = self
+            .slot(key)
+            .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
+
+        let StampedValue {
+            value,
+            durability,
+            changed_at,
+        } = slot.stamped_value.read().clone();
+
+        db.salsa_runtime()
+            .report_query_read(slot.database_key_index, durability, changed_at);
+
+        Ok(value)
     }
 }
 
