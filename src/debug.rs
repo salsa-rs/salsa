@@ -4,7 +4,7 @@
 use crate::durability::Durability;
 use crate::plumbing::QueryStorageOps;
 use crate::Query;
-use crate::{QueryDb, QueryTable};
+use crate::QueryTable;
 use std::iter::FromIterator;
 
 /// Additional methods on queries that can be used to "peek into"
@@ -49,7 +49,7 @@ impl<K, V> TableEntry<K, V> {
     }
 }
 
-impl<'d, Q> DebugQueryTable for QueryTable<'_, Q, <Q as QueryDb<'d>>::DynDb>
+impl<'d, Q> DebugQueryTable for QueryTable<'_, Q>
 where
     Q: Query,
     Q::Storage: QueryStorageOps<Q>,

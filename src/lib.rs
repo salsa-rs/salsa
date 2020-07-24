@@ -463,22 +463,21 @@ pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
 /// Gives access to various less common operations on queries.
 ///
 /// [the `query` method]: trait.Database.html#method.query
-pub struct QueryTable<'me, Q, DB>
+pub struct QueryTable<'me, Q>
 where
     Q: Query,
-    DB: ?Sized,
 {
-    db: &'me DB,
+    db: &'me <Q as QueryDb<'me>>::DynDb,
     storage: &'me Q::Storage,
 }
 
-impl<'me, 'd, Q> QueryTable<'me, Q, <Q as QueryDb<'d>>::DynDb>
+impl<'me, Q> QueryTable<'me, Q>
 where
     Q: Query,
     Q::Storage: QueryStorageOps<Q>,
 {
     /// Constructs a new `QueryTable`.
-    pub fn new(db: &'me <Q as QueryDb<'d>>::DynDb, storage: &'me Q::Storage) -> Self {
+    pub fn new(db: &'me <Q as QueryDb<'me>>::DynDb, storage: &'me Q::Storage) -> Self {
         Self { db, storage }
     }
 
