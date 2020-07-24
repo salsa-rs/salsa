@@ -427,6 +427,9 @@ pub trait QueryDb<'d>: Sized {
     /// Dyn version of the associated trait for this query group.
     type DynDb: ?Sized + Database + HasQueryGroup<Self::Group> + 'd;
 
+    /// Sized version of `DynDb`, &'d Self::DynDb for synchronous queries
+    type Db: std::ops::Deref<Target = Self::DynDb>;
+
     /// Associate query group struct.
     type Group: plumbing::QueryGroup<GroupStorage = Self::GroupStorage>;
 
@@ -468,8 +471,8 @@ pub struct QueryTable<'me, Q>
 where
     Q: Query,
 {
-    db: &'me <Q as QueryDb<'me>>::DynDb,
-    storage: &'me Q::Storage,
+    db: <Q as QueryDb<'me>>::Db,
+    storage: Arc<Q::Storage>,
 }
 
 impl<'me, Q> QueryTable<'me, Q>
@@ -478,7 +481,7 @@ where
     Q::Storage: QueryStorageOps<Q>,
 {
     /// Constructs a new `QueryTable`.
-    pub fn new(db: &'me <Q as QueryDb<'me>>::DynDb, storage: &'me Q::Storage) -> Self {
+    pub fn new(db: <Q as QueryDb<'me>>::Db, storage: Arc<Q::Storage>) -> Self {
         Self { db, storage }
     }
 
@@ -486,12 +489,12 @@ where
     /// invoke the trait method directly. Note that for variadic
     /// queries (those with no inputs, or those with more than one
     /// input) the key will be a tuple.
-    pub fn get(&self, key: Q::Key) -> Q::Value {
+    pub fn get(&mut self, key: Q::Key) -> Q::Value {
         self.try_get(key).unwrap_or_else(|err| panic!("{}", err))
     }
 
-    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
-        self.storage.try_fetch(self.db, &key)
+    fn try_get(&mut self, key: Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+        self.storage.try_fetch(&mut self.db, &key)
     }
 
     /// Remove all values for this query that have not been used in

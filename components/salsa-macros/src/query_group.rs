@@ -464,6 +464,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             impl<'d> salsa::QueryDb<'d> for #qt
             {
                 type DynDb = #dyn_db + 'd;
+                type Db = &'d Self::DynDb;
                 type Group = #group_struct;
                 type GroupStorage = #group_storage;
             }
@@ -520,9 +521,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 // ANCHOR:QueryFunction_impl
                 impl salsa::plumbing::QueryFunction for #qt
                 {
-                    fn execute(db: &<Self as salsa::QueryDb<'_>>::DynDb, #key_pattern: <Self as salsa::Query>::Key)
+                    fn execute(db: &mut <Self as salsa::QueryDb<'_>>::Db, #key_pattern: <Self as salsa::Query>::Key)
                         -> <Self as salsa::Query>::Value {
-                        #invoke(db, #(#key_names),*)
+                        #invoke(&**db, #(#key_names),*)
                     }
 
                     #recover
@@ -537,7 +538,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         fmt_ops.extend(quote! {
             #query_index => {
                 salsa::plumbing::QueryStorageOps::fmt_index(
-                    &*self.#fn_name, db, input, fmt,
+                    &*self.#fn_name, &mut db, input, fmt,
                 )
             }
         });
@@ -548,7 +549,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         maybe_changed_ops.extend(quote! {
             #query_index => {
                 salsa::plumbing::QueryStorageOps::maybe_changed_since(
-                    &*self.#fn_name, db, input, revision
+                    &*self.#fn_name, &mut db, input, revision
                 )
             }
         });
@@ -582,9 +583,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         // ANCHOR:group_storage_methods
         impl #group_storage {
-            #trait_vis fn fmt_index(
+            #trait_vis fn fmt_index<'d>(
                 &self,
-                db: &(#dyn_db + '_),
+                mut db: &'d (#dyn_db + 'd),
                 input: salsa::DatabaseKeyIndex,
                 fmt: &mut std::fmt::Formatter<'_>,
             ) -> std::fmt::Result {
@@ -594,9 +595,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 }
             }
 
-            #trait_vis fn maybe_changed_since(
+            #trait_vis fn maybe_changed_since<'d>(
                 &self,
-                db: &(#dyn_db + '_),
+                mut db: &'d (#dyn_db + 'd),
                 input: salsa::DatabaseKeyIndex,
                 revision: salsa::Revision,
             ) -> bool {

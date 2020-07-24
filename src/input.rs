@@ -65,7 +65,7 @@ where
 
     fn fmt_index(
         &self,
-        _db: &<Q as QueryDb<'_>>::DynDb,
+        _db: &mut <Q as QueryDb<'_>>::Db,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
@@ -78,7 +78,7 @@ where
 
     fn maybe_changed_since(
         &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
+        db: &mut <Q as QueryDb<'_>>::Db,
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool {
@@ -96,7 +96,7 @@ where
 
     fn try_fetch(
         &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
+        db: &mut <Q as QueryDb<'_>>::Db,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         let slot = self

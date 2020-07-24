@@ -11,7 +11,7 @@ use crate::RuntimeId;
 use crate::SweepStrategy;
 use std::borrow::Borrow;
 use std::fmt::Debug;
-use std::hash::Hash;
+use std::{hash::Hash, sync::Arc};
 
 pub use crate::derived::DependencyStorage;
 pub use crate::derived::MemoizedStorage;
@@ -73,7 +73,7 @@ pub trait QueryStorageMassOps {
 pub trait DatabaseKey: Clone + Debug + Eq + Hash {}
 
 pub trait QueryFunction: Query {
-    fn execute(db: &<Self as QueryDb<'_>>::DynDb, key: Self::Key) -> Self::Value;
+    fn execute(db: &mut <Self as QueryDb<'_>>::Db, key: Self::Key) -> Self::Value;
 
     fn recover(
         db: &<Self as QueryDb<'_>>::DynDb,
@@ -87,13 +87,13 @@ pub trait QueryFunction: Query {
 
 /// Create a query table, which has access to the storage for the query
 /// and offers methods like `get`.
-pub fn get_query_table<'me, Q>(db: &'me <Q as QueryDb<'me>>::DynDb) -> QueryTable<'me, Q>
+pub fn get_query_table<'me, Q>(db: <Q as QueryDb<'me>>::Db) -> QueryTable<'me, Q>
 where
     Q: Query + 'me,
     Q::Storage: QueryStorageOps<Q>,
 {
-    let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-    let query_storage: &Q::Storage = Q::query_storage(group_storage);
+    let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(&*db);
+    let query_storage: Arc<Q::Storage> = Q::query_storage(group_storage).clone();
     QueryTable::new(db, query_storage)
 }
 
@@ -135,7 +135,7 @@ where
     /// Format a database key index in a suitable way.
     fn fmt_index(
         &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
+        db: &mut <Q as QueryDb<'_>>::Db,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result;
@@ -144,7 +144,7 @@ where
     /// changed since the given revision.
     fn maybe_changed_since(
         &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
+        db: &mut <Q as QueryDb<'_>>::Db,
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool;
@@ -158,7 +158,7 @@ where
     /// itself.
     fn try_fetch(
         &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
+        db: &mut <Q as QueryDb<'_>>::Db,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>>;
 
