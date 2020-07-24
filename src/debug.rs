@@ -58,13 +58,13 @@ where
     type Value = Q::Value;
 
     fn durability(&self, key: Q::Key) -> Durability {
-        self.storage.durability(self.db, &key)
+        self.storage.durability(&self.db, &key)
     }
 
     fn entries<C>(&self) -> C
     where
         C: FromIterator<TableEntry<Self::Key, Self::Value>>,
     {
-        self.storage.entries(self.db)
+        self.storage.entries(&self.db)
     }
 }

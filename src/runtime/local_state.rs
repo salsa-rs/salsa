@@ -1,7 +1,7 @@
 use crate::durability::Durability;
 use crate::runtime::ActiveQuery;
 use crate::runtime::Revision;
-use crate::DatabaseKeyIndex;
+use crate::{Database, DatabaseKeyIndex};
 use std::cell::{Ref, RefCell, RefMut};
 
 /// State that is specific to a single execution thread.
@@ -27,17 +27,21 @@ impl Default for LocalState {
 }
 
 impl LocalState {
-    pub(super) fn push_query(
-        &self,
+    pub(super) fn push_query<DB>(
+        db: &mut DB,
         database_key_index: DatabaseKeyIndex,
         max_durability: Durability,
-    ) -> ActiveQueryGuard<'_> {
-        let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push(ActiveQuery::new(database_key_index, max_durability));
-        ActiveQueryGuard {
-            local_state: self,
-            push_len: query_stack.len(),
-        }
+    ) -> ActiveQueryGuard<'_, DB>
+    where
+        DB: std::ops::Deref,
+        DB::Target: Database,
+    {
+        let push_len = {
+            let mut query_stack = db.salsa_runtime().local_state.query_stack.borrow_mut();
+            query_stack.push(ActiveQuery::new(database_key_index, max_durability));
+            query_stack.len()
+        };
+        ActiveQueryGuard { db, push_len }
     }
 
     /// Returns a reference to the active query stack.
@@ -100,14 +104,22 @@ impl std::panic::RefUnwindSafe for LocalState {}
 /// is returned to represent its slot. The guard can be used to pop
 /// the query from the stack -- in the case of unwinding, the guard's
 /// destructor will also remove the query.
-pub(super) struct ActiveQueryGuard<'me> {
-    local_state: &'me LocalState,
+pub(super) struct ActiveQueryGuard<'me, DB>
+where
+    DB: std::ops::Deref,
+    DB::Target: Database,
+{
+    pub db: &'me mut DB,
     push_len: usize,
 }
 
-impl ActiveQueryGuard<'_> {
+impl<DB> ActiveQueryGuard<'_, DB>
+where
+    DB: std::ops::Deref,
+    DB::Target: Database,
+{
     fn pop_helper(&self) -> ActiveQuery {
-        let mut query_stack = self.local_state.query_stack.borrow_mut();
+        let mut query_stack = self.db.salsa_runtime().local_state.query_stack.borrow_mut();
 
         // Sanity check: pushes and pops should be balanced.
         assert_eq!(query_stack.len(), self.push_len);
@@ -123,7 +135,11 @@ impl ActiveQueryGuard<'_> {
     }
 }
 
-impl Drop for ActiveQueryGuard<'_> {
+impl<DB> Drop for ActiveQueryGuard<'_, DB>
+where
+    DB: std::ops::Deref,
+    DB::Target: Database,
+{
     fn drop(&mut self) {
         self.pop_helper();
     }

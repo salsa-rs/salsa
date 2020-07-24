@@ -300,21 +300,22 @@ impl Runtime {
     }
 
     pub(crate) fn execute_query_implementation<DB, V>(
-        &self,
-        db: &DB,
+        db: &mut DB,
         database_key_index: DatabaseKeyIndex,
-        execute: impl FnOnce() -> V,
+        execute: impl FnOnce(&mut DB) -> V,
     ) -> ComputedQueryResult<V>
     where
-        DB: ?Sized + Database,
+        DB: std::ops::Deref,
+        DB::Target: Database,
     {
         debug!(
             "{:?}: execute_query_implementation invoked",
             database_key_index
         );
 
+        let runtime = db.salsa_runtime();
         db.salsa_event(Event {
-            runtime_id: self.id(),
+            runtime_id: runtime.id(),
             kind: EventKind::WillExecute {
                 database_key: database_key_index,
             },
@@ -322,12 +323,10 @@ impl Runtime {
 
         // Push the active query onto the stack.
         let max_durability = Durability::MAX;
-        let active_query = self
-            .local_state
-            .push_query(database_key_index, max_durability);
+        let active_query = LocalState::push_query(db, database_key_index, max_durability);
 
         // Execute user's code, accumulating inputs etc.
-        let value = execute();
+        let value = execute(active_query.db);
 
         // Extract accumulated inputs.
         let ActiveQuery {
@@ -820,6 +819,32 @@ impl Drop for RevisionGuard {
         unsafe {
             self.shared_state.query_lock.raw().unlock_shared();
         }
+    }
+}
+
+pub struct OwnedDb<'a, T>
+where
+    T: ?Sized + Database,
+{
+    db: &'a mut T,
+}
+
+impl<T> std::ops::Deref for OwnedDb<'_, T>
+where
+    T: ?Sized + Database,
+{
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        self.db
+    }
+}
+
+impl<'a, T> OwnedDb<'a, T>
+where
+    T: ?Sized + Database,
+{
+    pub(crate) fn new(db: &'a mut T) -> Self {
+        OwnedDb { db }
     }
 }
 

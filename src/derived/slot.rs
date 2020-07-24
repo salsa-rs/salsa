@@ -124,9 +124,9 @@ where
         self.database_key_index
     }
 
-    pub(super) fn read(
+    pub(super) fn read<'d>(
         &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
+        db: &mut <Q as QueryDb<'d>>::Db,
     ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
         let runtime = db.salsa_runtime();
 
@@ -152,9 +152,9 @@ where
     /// and -- if needed -- validates whether inputs have changed,
     /// recomputes value, etc. This is invoked after our initial probe
     /// shows a potentially out of date value.
-    fn read_upgrade(
+    fn read_upgrade<'d>(
         &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
+        db: &mut <Q as QueryDb<'d>>::Db,
         revision_now: Revision,
     ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
         let runtime = db.salsa_runtime();
@@ -179,7 +179,8 @@ where
             }
         };
 
-        let mut panic_guard = PanicGuard::new(self.database_key_index, self, old_memo, runtime);
+        let mut panic_guard = PanicGuard::new(self.database_key_index, self, old_memo, db);
+        let db = &mut *panic_guard.db;
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
@@ -188,6 +189,8 @@ where
         if let Some(memo) = &mut panic_guard.memo {
             if let Some(value) = memo.validate_memoized_value(db, revision_now) {
                 info!("{:?}: validated old memoized value", self,);
+
+                let runtime = db.salsa_runtime();
 
                 db.salsa_event(Event {
                     runtime_id: runtime.id(),
@@ -212,11 +215,13 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = runtime.execute_query_implementation(db, self.database_key_index, || {
+        let mut result = Runtime::execute_query_implementation(db, self.database_key_index, |db| {
             info!("{:?}: executing query", self);
 
             Q::execute(db, self.key.clone())
         });
+
+        let runtime = db.salsa_runtime();
 
         if !result.cycle.is_empty() {
             result.value = match Q::recover(db, &result.cycle, &self.key) {
@@ -535,7 +540,7 @@ where
 
     pub(super) fn maybe_changed_since(
         &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
+        db: &mut <Q as QueryDb<'_>>::Db,
         revision: Revision,
     ) -> bool {
         let runtime = db.salsa_runtime();
@@ -769,33 +774,37 @@ where
     }
 }
 
-struct PanicGuard<'me, Q, MP>
+struct PanicGuard<'me, 'db, Q, MP, DB>
 where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
+    DB: std::ops::Deref,
+    DB::Target: Database,
 {
     database_key_index: DatabaseKeyIndex,
     slot: &'me Slot<Q, MP>,
     memo: Option<Memo<Q>>,
-    runtime: &'me Runtime,
+    db: &'db mut DB,
 }
 
-impl<'me, Q, MP> PanicGuard<'me, Q, MP>
+impl<'me, 'db, Q, MP, DB> PanicGuard<'me, 'db, Q, MP, DB>
 where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
+    DB: std::ops::Deref,
+    DB::Target: Database,
 {
     fn new(
         database_key_index: DatabaseKeyIndex,
         slot: &'me Slot<Q, MP>,
         memo: Option<Memo<Q>>,
-        runtime: &'me Runtime,
+        db: &'db mut DB,
     ) -> Self {
         Self {
             database_key_index,
             slot,
             memo,
-            runtime,
+            db,
         }
     }
 
@@ -834,10 +843,10 @@ where
 
         match old_value {
             QueryState::InProgress { id, waiting } => {
-                assert_eq!(id, self.runtime.id());
+                let runtime = self.db.salsa_runtime();
+                assert_eq!(id, runtime.id());
 
-                self.runtime
-                    .unblock_queries_blocked_on_self(self.database_key_index);
+                runtime.unblock_queries_blocked_on_self(self.database_key_index);
 
                 match new_value {
                     // If anybody has installed themselves in our "waiting"
@@ -868,10 +877,12 @@ Please report this bug to https://github.com/salsa-rs/salsa/issues."
     }
 }
 
-impl<'me, Q, MP> Drop for PanicGuard<'me, Q, MP>
+impl<Q, MP, DB> Drop for PanicGuard<'_, '_, Q, MP, DB>
 where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
+    DB: std::ops::Deref,
+    DB::Target: Database,
 {
     fn drop(&mut self) {
         if std::thread::panicking() {
