@@ -267,43 +267,26 @@ pub(crate) fn sync_future<F>(mut f: F) -> F::Output
 where
     F: Future,
 {
-    use std::{
-        pin::Pin,
-        sync::{Condvar, Mutex},
-    };
+    use std::pin::Pin;
 
-    use futures::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+    use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
     unsafe {
-        type WakerState = Condvar;
+        type WakerState = ();
 
-        static VTABLE: RawWakerVTable = RawWakerVTable::new(
-            |p| RawWaker::new(p, &VTABLE),
-            |p| unsafe {
-                (&*(p as *const WakerState)).notify_one();
-            },
-            |p| unsafe {
-                (&*(p as *const WakerState)).notify_one();
-            },
-            |_| (),
-        );
+        static VTABLE: RawWakerVTable =
+            RawWakerVTable::new(|p| RawWaker::new(p, &VTABLE), |_| (), |_| (), |_| ());
 
-        let waker_state = WakerState::new();
+        let waker_state = WakerState::default();
         let waker = Waker::from_raw(RawWaker::new(
             &waker_state as *const WakerState as *const (),
             &VTABLE,
         ));
         let mut context = Context::from_waker(&waker);
 
-        let mutex = Mutex::new(());
-        let mut guard = mutex.lock().unwrap();
-        loop {
-            match Pin::new_unchecked(&mut f).poll(&mut context) {
-                Poll::Ready(x) => break x,
-                Poll::Pending => {
-                    guard = waker_state.wait(guard).unwrap();
-                }
-            }
+        match Pin::new_unchecked(&mut f).poll(&mut context) {
+            Poll::Ready(x) => x,
+            Poll::Pending => unreachable!(),
         }
     }
 }
