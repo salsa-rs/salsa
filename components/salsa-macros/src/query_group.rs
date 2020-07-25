@@ -677,16 +677,21 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     for (query, query_index) in non_transparent_queries().zip(0_u16..) {
         let Query { fn_name, .. } = query;
-        let db_ref = if has_async && !query.is_async {
-            quote!(&mut &*db)
+        let arm = if query.is_async {
+            quote! {
+                #query_index => {
+                    salsa::plumbing::QueryStorageOpsAsync::maybe_changed_since_async(
+                        &*self.#fn_name, &mut db, input, revision
+                    ).await
+                }
+            }
         } else {
-            quote!(&mut db)
-        };
-        let arm = quote! {
-            #query_index => {
-                salsa::plumbing::QueryStorageOps::maybe_changed_since(
-                    &*self.#fn_name, #db_ref, input, revision
-                )
+            quote! {
+                #query_index => {
+                    salsa::plumbing::QueryStorageOpsSync::maybe_changed_since(
+                        &*self.#fn_name, &mut &*db, input, revision
+                    )
+                }
             }
         };
         maybe_changed_ops.extend(arm)
@@ -704,6 +709,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     } else {
         quote!(&'d (#dyn_db + 'd))
     };
+
+    let async_modifier = if has_async { quote!(async) } else { quote!() };
 
     // Emit query group storage struct
     output.extend(quote! {
@@ -738,7 +745,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 }
             }
 
-            #trait_vis fn maybe_changed_since<'d>(
+            #trait_vis #async_modifier fn maybe_changed_since<'d>(
                 &self,
                 mut db: #db,
                 input: salsa::DatabaseKeyIndex,

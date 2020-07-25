@@ -166,15 +166,6 @@ where
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result;
 
-    /// True if the value of `input`, which must be from this query, may have
-    /// changed since the given revision.
-    fn maybe_changed_since(
-        &self,
-        db: &mut <Q as QueryDb<'_>>::Db,
-        input: DatabaseKeyIndex,
-        revision: Revision,
-    ) -> bool;
-
     /// Returns the durability associated with a given key.
     fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability;
 
@@ -189,6 +180,15 @@ where
     Self: QueryStorageMassOps,
     Q: Query,
 {
+    /// True if the value of `input`, which must be from this query, may have
+    /// changed since the given revision.
+    fn maybe_changed_since(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool;
+
     /// Execute the query, returning the result (often, the result
     /// will be memoized).  This is the "main method" for
     /// queries.
@@ -210,6 +210,15 @@ where
     Q::Key: Send + Sync,
     Q::Value: Send + Sync,
 {
+    /// True if the value of `input`, which must be from this query, may have
+    /// changed since the given revision.
+    fn maybe_changed_since_async<'f>(
+        &'f self,
+        db: &'f mut <Q as AsyncQueryFunction<'_, '_>>::SendDb,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> crate::BoxFuture<'f, bool>;
+
     /// Execute the query, returning the result (often, the result
     /// will be memoized).  This is the "main method" for
     /// queries.

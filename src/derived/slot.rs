@@ -14,6 +14,7 @@ use crate::{
     CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event, EventKind, QueryBase,
     QueryDb, SweepStrategy,
 };
+use futures::Future;
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::{RawRwLock, RwLock};
@@ -25,6 +26,9 @@ use std::sync::Arc;
 type Promise<Q> = <<Q as QueryFunctionBase>::BlockingFuture as BlockingFutureTrait<
     WaitResult<<Q as QueryBase>::Value, DatabaseKeyIndex>,
 >>::Promise;
+
+pub trait Captures<'a> {}
+impl<T> Captures<'_> for T {}
 
 pub(super) struct Slot<Q, MP>
 where
@@ -588,11 +592,17 @@ where
         }
     }
 
-    pub(super) async fn maybe_changed_since(
-        &self,
-        db: &mut <Q as QueryDb<'_>>::Db,
+    pub(super) fn maybe_changed_since<'f, 'd: 'f, 'me: 'f, 'db: 'f>(
+        &'me self,
+        db: &'db mut <Q as QueryDb<'d>>::Db,
         revision: Revision,
-    ) -> bool {
+    ) -> impl Future<Output = bool> + Captures<'me> + Captures<'db> + Captures<'d> + 'f {
+        use futures::future::{ready, Either, Ready};
+
+        fn done<L, R>(l: L) -> Either<Ready<L>, R> {
+            Either::Left(ready(l))
+        }
+
         let runtime = db.salsa_runtime();
         let revision_now = runtime.current_revision();
 
@@ -612,7 +622,7 @@ where
             // of date and removed.
             QueryState::NotComputed => {
                 debug!("maybe_changed_since({:?}: no value", self);
-                return true;
+                return done(true);
             }
 
             // This value is being actively recomputed. Wait for
@@ -629,12 +639,14 @@ where
                         // Release our lock on `self.state`, so other thread can complete.
                         std::mem::drop(state);
 
-                        let result = future.await.unwrap_or_else(|| db.on_propagated_panic());
-                        return !result.cycle.is_empty() || result.value.changed_at > revision;
+                        return Either::Right(Either::Left(async move {
+                            let result = future.await.unwrap_or_else(|| db.on_propagated_panic());
+                            !result.cycle.is_empty() || result.value.changed_at > revision
+                        }));
                     }
 
                     // Consider a cycle to have changed.
-                    Err(_) => return true,
+                    Err(_) => return done(true),
                 }
             }
 
@@ -648,7 +660,7 @@ where
                 memo.revisions.changed_at > revision,
                 memo.revisions.changed_at,
             );
-            return memo.revisions.changed_at > revision;
+            return done(memo.revisions.changed_at > revision);
         }
 
         let maybe_changed;
@@ -670,7 +682,7 @@ where
                         "maybe_changed_since({:?}: true since untracked inputs",
                         self,
                     );
-                    return true;
+                    return done(true);
                 }
 
                 MemoInputs::NoInputs => {
@@ -688,18 +700,20 @@ where
                     assert!(inputs.len() > 0);
                     if memo.value.is_some() {
                         std::mem::drop(state);
-                        return match self.read_upgrade(db, revision_now).await {
-                            Ok(v) => {
-                                debug!(
-                                "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
-                                self,
-                                    v.changed_at > revision,
-                                v.changed_at,
-                            );
-                                v.changed_at > revision
+                        return Either::Right(Either::Right(async move {
+                            match self.read_upgrade(db, revision_now).await {
+                                Ok(v) => {
+                                    debug!(
+                                    "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
+                                    self,
+                                        v.changed_at > revision,
+                                    v.changed_at,
+                                );
+                                    v.changed_at > revision
+                                }
+                                Err(_) => true,
                             }
-                            Err(_) => true,
-                        };
+                        }));
                     }
 
                     // We have a **tracked set of inputs** that need to be validated.
@@ -769,7 +783,7 @@ where
             }
         }
 
-        maybe_changed
+        done(maybe_changed)
     }
 
     /// Helper:
