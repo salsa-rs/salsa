@@ -304,19 +304,6 @@ where
         write!(fmt, "{}({:?})", Q::QUERY_NAME, slot.value)
     }
 
-    fn maybe_changed_since(
-        &self,
-        db: &mut <Q as QueryDb<'_>>::Db,
-        input: DatabaseKeyIndex,
-        revision: Revision,
-    ) -> bool {
-        assert_eq!(input.group_index, self.group_index);
-        assert_eq!(input.query_index, Q::QUERY_INDEX);
-        let intern_id = InternId::from(input.key_index);
-        let slot = self.lookup_value(db, intern_id);
-        slot.maybe_changed_since(db, revision)
-    }
-
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Durability {
         INTERN_DURABILITY
     }
@@ -341,6 +328,19 @@ where
     Q: Query,
     Q::Value: InternKey,
 {
+    fn maybe_changed_since(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool {
+        assert_eq!(input.group_index, self.group_index);
+        assert_eq!(input.query_index, Q::QUERY_INDEX);
+        let intern_id = InternId::from(input.key_index);
+        let slot = self.lookup_value(db, intern_id);
+        slot.maybe_changed_since(db, revision)
+    }
+
     fn try_fetch(
         &self,
         db: &mut <Q as QueryDb<'_>>::Db,
@@ -484,18 +484,6 @@ where
         interned_storage.fmt_index(Q::convert_dyn_db(db), index, fmt)
     }
 
-    fn maybe_changed_since(
-        &self,
-        db: &mut <Q as QueryDb<'_>>::Db,
-        input: DatabaseKeyIndex,
-        revision: Revision,
-    ) -> bool {
-        let group_storage =
-            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage)).clone();
-        interned_storage.maybe_changed_since(Q::convert_db(db), input, revision)
-    }
-
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Durability {
         INTERN_DURABILITY
     }
@@ -526,6 +514,18 @@ where
     IQ: Query<Key = Q::Value, Value = Q::Key, Storage = InternedStorage<IQ>>,
     for<'d> Q: EqualDynDb<'d, IQ>,
 {
+    fn maybe_changed_since(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool {
+        let group_storage =
+            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
+        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage)).clone();
+        interned_storage.maybe_changed_since(Q::convert_db(db), input, revision)
+    }
+
     fn try_fetch(
         &self,
         db: &mut <Q as QueryDb<'_>>::Db,

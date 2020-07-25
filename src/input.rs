@@ -76,24 +76,6 @@ where
         write!(fmt, "{}({:?})", Q::QUERY_NAME, key)
     }
 
-    fn maybe_changed_since(
-        &self,
-        db: &mut <Q as QueryDb<'_>>::Db,
-        input: DatabaseKeyIndex,
-        revision: Revision,
-    ) -> bool {
-        assert_eq!(input.group_index, self.group_index);
-        assert_eq!(input.query_index, Q::QUERY_INDEX);
-        let slot = self
-            .slots
-            .read()
-            .get_index(input.key_index as usize)
-            .unwrap()
-            .1
-            .clone();
-        slot.maybe_changed_since(db, revision)
-    }
-
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
         match self.slot(key) {
             Some(slot) => slot.stamped_value.read().durability,
@@ -122,6 +104,24 @@ impl<Q> QueryStorageOpsSync<Q> for InputStorage<Q>
 where
     Q: Query,
 {
+    fn maybe_changed_since(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool {
+        assert_eq!(input.group_index, self.group_index);
+        assert_eq!(input.query_index, Q::QUERY_INDEX);
+        let slot = self
+            .slots
+            .read()
+            .get_index(input.key_index as usize)
+            .unwrap()
+            .1
+            .clone();
+        slot.maybe_changed_since(db, revision)
+    }
+
     fn try_fetch(
         &self,
         db: &mut <Q as QueryDb<'_>>::Db,
