@@ -292,7 +292,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     // it's not totally obvious why that should be.
                     fn __shim<'f, 'd>(db: &'f mut (#dyn_db + 'd),  #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
                         Box::pin(async move {
-                            let mut table = salsa::plumbing::get_query_table::<#qt>(#owned_trait_name::new(db));
+                            let mut table = salsa::plumbing::get_query_table_async::<#qt>(#owned_trait_name::new(db));
                             salsa::QueryTable::get_async(&mut table, (#(#key_names),*)).await
                         })
                     }
@@ -506,14 +506,15 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             quote!(&'d (#dyn_db + 'd))
         };
 
-        output.extend(quote! {
+        output.extend(quote_spanned! {fn_name.span()=>
             impl #qt {
                 /// Get access to extra methods pertaining to this query. For
                 /// example, you can use this to run the GC (`sweep`) across a
                 /// single input. You can also use it to invoke this query, though
                 /// it's more common to use the trait method on the database
                 /// itself.
-                #trait_vis fn in_db<'d>(self, db: #db) -> salsa::QueryTable<'d, Self>
+                #[allow(unused)]
+                #trait_vis fn in_db<'d>(self, db: &'d (#dyn_db + 'd)) -> salsa::QueryTable<'d, Self, &'d (#dyn_db + 'd)>
                 {
                     salsa::plumbing::get_query_table::<#qt>(db)
                 }
