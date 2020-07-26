@@ -299,7 +299,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         if query.is_async {
             async_query_fn_definitions.extend(quote! {
-                 fn #fn_name<'f>(&'f mut self, #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
+                 pub fn #fn_name<'f>(&'f mut self, #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
                     self.db.#fn_name(#(#key_names),*)
                 }
             });
@@ -399,6 +399,15 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         }
     });
 
+    let non_transparent_queries = || {
+        queries.iter().filter(|q| match q.storage {
+            QueryStorage::Transparent => false,
+            _ => true,
+        })
+    };
+
+    let has_async = non_transparent_queries().any(|query| query.is_async);
+
     // Emit an impl of the trait
     {
         let bounds = &input.supertraits;
@@ -420,50 +429,48 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             }
         });
 
-        // HACK Define new type so we can define the methods for it
-        // Should really use one type exported from salsa though
-        output.extend(quote! {
-            #trait_vis struct AsyncDb<'a, T>
-            where
-                T: ?Sized + salsa::Database,
-            {
-                db: &'a mut T,
-            }
+        // Define a wrapper type which only allows mutable access to the database
+        // for the query methods. Users may still only access a `&` reference (through the `Deref` implementation)
+        if has_async {
+            output.extend(quote! {
+                mod __async_db {
+                    use super::*;
 
-            impl<T> std::ops::Deref for AsyncDb<'_, T>
-            where
-                T: ?Sized + salsa::Database,
-            {
-                type Target = T;
-                fn deref(&self) -> &Self::Target {
-                    self.db
+                    pub struct AsyncDb<'a, T>
+                    where
+                        T: ?Sized + salsa::Database,
+                    {
+                        db: &'a mut T,
+                    }
+
+                    impl<T> std::ops::Deref for AsyncDb<'_, T>
+                    where
+                        T: ?Sized + salsa::Database,
+                    {
+                        type Target = T;
+                        fn deref(&self) -> &Self::Target {
+                            self.db
+                        }
+                    }
+
+                    impl<'a, T> AsyncDb<'a, T>
+                    where
+                        T: ?Sized + salsa::Database,
+                    {
+                        pub fn new(db: &'a mut T) -> Self {
+                            Self { db }
+                        }
+                    }
+
+                    impl AsyncDb<'_, (#dyn_db + '_)>
+                    {
+                        #async_query_fn_definitions
+                    }
                 }
-            }
-
-            impl<'a, T> AsyncDb<'a, T>
-            where
-                T: ?Sized + salsa::Database,
-            {
-                pub fn new(db: &'a mut T) -> Self {
-                    Self { db }
-                }
-            }
-
-            impl AsyncDb<'_, (#dyn_db + '_)>
-            {
-                #async_query_fn_definitions
-            }
-        });
+                #trait_vis use self::__async_db::AsyncDb;
+            });
+        }
     }
-
-    let non_transparent_queries = || {
-        queries.iter().filter(|q| match q.storage {
-            QueryStorage::Transparent => false,
-            _ => true,
-        })
-    };
-
-    let has_async = non_transparent_queries().any(|query| query.is_async);
 
     // Emit the query types.
     for (query, query_index) in non_transparent_queries().zip(0_u16..) {
