@@ -598,7 +598,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let invoke = query.invoke_tt();
 
             let recover = if let Some(cycle_recovery_fn) = &query.cycle {
-                quote! {
+                quote_spanned! { cycle_recovery_fn.span() =>
                     fn recover(db: &<Self as salsa::QueryDb<'d>>::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::QueryBase>::Key)
                         -> Option<<Self as salsa::QueryBase>::Value> {
                         Some(#cycle_recovery_fn(
