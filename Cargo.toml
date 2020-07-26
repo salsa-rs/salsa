@@ -12,8 +12,8 @@ readme = "README.md"
 async-trait = "0.1"
 crossbeam-utils = { version = "0.7.1", default-features = false }
 indexmap = "1.0.1"
-futures-util = { version = "0.3", default-features = false }
 futures-channel = { version = "0.3", features = ["alloc"], default-features = false, optional = true }
+futures-util = { version = "0.3", default-features = false, optional = true }
 lock_api = "0.4"
 log = "0.4.5"
 parking_lot = "0.11.0"
@@ -35,4 +35,4 @@ tokio = { version = "0.2", features = ["macros", "rt-core"] }
 
 [features]
 default = ["async"]
-async = ["futures-channel", "salsa-macros/async"]
+async = ["futures-channel", "futures-util", "salsa-macros/async"]

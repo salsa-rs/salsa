@@ -137,6 +137,12 @@ where
     }
 }
 
+enum MaybeChangedSinceState<F> {
+    Wait(F),
+    Read(Revision),
+    Done(bool),
+}
+
 impl<Q, MP> Slot<Q, MP>
 where
     for<'f, 'd> Q: QueryFunction<'f, 'd>,
@@ -612,12 +618,36 @@ where
         db: &'db mut <Q as QueryDb<'d>>::Db,
         revision: Revision,
     ) -> impl Future<Output = bool> + Captures<'me> + Captures<'db> + Captures<'d> + 'f {
-        use futures_util::future::{ready, Either, Ready};
-
-        fn done<L, R>(l: L) -> Either<Ready<L>, R> {
-            Either::Left(ready(l))
+        async move {
+            match self.maybe_changed_since_inner(db, revision) {
+                MaybeChangedSinceState::Done(b) => b,
+                MaybeChangedSinceState::Wait(future) => {
+                    let result = future.await.unwrap_or_else(|| db.on_propagated_panic());
+                    !result.cycle.is_empty() || result.value.changed_at > revision
+                }
+                MaybeChangedSinceState::Read(revision_now) => {
+                    match self.read_upgrade(db, revision_now).await {
+                        Ok(v) => {
+                            debug!(
+                                    "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
+                                    self,
+                                        v.changed_at > revision,
+                                    v.changed_at,
+                                );
+                            v.changed_at > revision
+                        }
+                        Err(_) => true,
+                    }
+                }
+            }
         }
+    }
 
+    fn maybe_changed_since_inner<'f, 'd: 'f, 'me: 'f, 'db: 'f>(
+        &'me self,
+        db: &'db mut <Q as QueryDb<'d>>::Db,
+        revision: Revision,
+    ) -> MaybeChangedSinceState<Q::BlockingFuture> {
         let runtime = db.salsa_runtime();
         let revision_now = runtime.current_revision();
 
@@ -637,7 +667,7 @@ where
             // of date and removed.
             QueryState::NotComputed => {
                 debug!("maybe_changed_since({:?}: no value", self);
-                return done(true);
+                return MaybeChangedSinceState::Done(true);
             }
 
             // This value is being actively recomputed. Wait for
@@ -654,14 +684,11 @@ where
                         // Release our lock on `self.state`, so other thread can complete.
                         std::mem::drop(state);
 
-                        return Either::Right(Either::Left(async move {
-                            let result = future.await.unwrap_or_else(|| db.on_propagated_panic());
-                            !result.cycle.is_empty() || result.value.changed_at > revision
-                        }));
+                        return MaybeChangedSinceState::Wait(future);
                     }
 
                     // Consider a cycle to have changed.
-                    Err(_) => return done(true),
+                    Err(_) => return MaybeChangedSinceState::Done(true),
                 }
             }
 
@@ -675,7 +702,7 @@ where
                 memo.revisions.changed_at > revision,
                 memo.revisions.changed_at,
             );
-            return done(memo.revisions.changed_at > revision);
+            return MaybeChangedSinceState::Done(memo.revisions.changed_at > revision);
         }
 
         let maybe_changed;
@@ -697,7 +724,7 @@ where
                         "maybe_changed_since({:?}: true since untracked inputs",
                         self,
                     );
-                    return done(true);
+                    return MaybeChangedSinceState::Done(true);
                 }
 
                 MemoInputs::NoInputs => {
@@ -715,20 +742,7 @@ where
                     assert!(inputs.len() > 0);
                     if memo.value.is_some() {
                         std::mem::drop(state);
-                        return Either::Right(Either::Right(async move {
-                            match self.read_upgrade(db, revision_now).await {
-                                Ok(v) => {
-                                    debug!(
-                                    "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
-                                    self,
-                                        v.changed_at > revision,
-                                    v.changed_at,
-                                );
-                                    v.changed_at > revision
-                                }
-                                Err(_) => true,
-                            }
-                        }));
+                        return MaybeChangedSinceState::Read(revision_now);
                     }
 
                     // We have a **tracked set of inputs** that need to be validated.
@@ -798,7 +812,7 @@ where
             }
         }
 
-        done(maybe_changed)
+        MaybeChangedSinceState::Done(maybe_changed)
     }
 
     /// Helper:

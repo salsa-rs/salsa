@@ -10,7 +10,13 @@ use crate::QueryTableMut;
 use crate::RuntimeId;
 use crate::SweepStrategy;
 use std::fmt::Debug;
-use std::{future::Future, hash::Hash, sync::Arc};
+use std::{
+    future::Future,
+    hash::Hash,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 #[cfg(feature = "async")]
 pub use crate::blocking_future::BlockingAsyncFuture;
@@ -24,7 +30,6 @@ pub use crate::{
     revision::Revision,
     BoxFuture, DatabaseKeyIndex, QueryBase, QueryDb, Runtime,
 };
-pub use futures_util::future::{ready, Ready};
 
 #[derive(Clone, Debug)]
 pub struct CycleDetected {
@@ -100,6 +105,7 @@ pub trait QueryFunction<'f, 'd>: QueryFunctionBase + QueryDb<'d> {
 // Workaround for `for<'d> <Q as QueryDb<'d>>::Db: Send` being impossible to fulfill at callsites (in the generated code).
 // Helps rustc understand that the future and database are actually `Send`
 #[doc(hidden)]
+#[cfg(feature = "async")]
 pub trait AsyncQueryFunction<'f, 'd>:
     QueryFunction<
     'f,
@@ -271,9 +277,7 @@ pub(crate) fn sync_future<F>(mut f: F) -> F::Output
 where
     F: Future,
 {
-    use std::pin::Pin;
-
-    use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+    use std::task::{RawWaker, RawWakerVTable, Waker};
 
     unsafe {
         type WakerState = ();
@@ -293,4 +297,22 @@ where
             Poll::Pending => unreachable!(),
         }
     }
+}
+
+#[must_use = "futures do nothing unless you `.await` or poll them"]
+pub struct Ready<T>(Option<T>);
+
+impl<T> Unpin for Ready<T> {}
+
+impl<T> Future for Ready<T> {
+    type Output = T;
+
+    #[inline]
+    fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<T> {
+        Poll::Ready(self.0.take().expect("Ready polled after completion"))
+    }
+}
+
+pub fn ready<T>(t: T) -> Ready<T> {
+    Ready(Some(t))
 }

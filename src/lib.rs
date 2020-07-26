@@ -25,14 +25,14 @@ pub mod debug;
 #[doc(hidden)]
 pub mod plumbing;
 
-#[cfg(feature = "async")]
-use crate::plumbing::AsyncQueryFunction;
 use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::plumbing::{HasQueryGroup, QueryStorageOpsAsync, QueryStorageOpsSync};
+#[cfg(feature = "async")]
+use crate::plumbing::{AsyncQueryFunction, QueryStorageOpsAsync};
+use crate::plumbing::{HasQueryGroup, QueryStorageOpsSync};
 pub use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
