@@ -16,10 +16,18 @@ trait Async: Send {
 
     async fn output(&self, x: u32) -> u32;
 
+    #[salsa::cycle(recover)]
     async fn output_inner(&self, x: u32) -> u32;
+
+    #[salsa::dependencies]
+    async fn output_dependencies(&self, x: u32) -> u32;
 
     #[salsa::transparent]
     async fn output_transparent(&self, x: u32) -> u32;
+}
+
+fn recover(_: &dyn Async, _: &[String], _: &u32) -> u32 {
+    0
 }
 
 async fn output(db: &mut OwnedAsync<'_>, x: u32) -> u32 {
@@ -30,6 +38,10 @@ async fn output(db: &mut OwnedAsync<'_>, x: u32) -> u32 {
 async fn output_inner(db: &mut OwnedAsync<'_>, x: u32) -> u32 {
     yield_().await;
     db.input(x) * 2
+}
+
+async fn output_dependencies(db: &mut OwnedAsync<'_>, x: u32) -> u32 {
+    db.output(x).await
 }
 
 async fn output_transparent(db: &mut OwnedAsync<'_>, x: u32) -> u32 {
