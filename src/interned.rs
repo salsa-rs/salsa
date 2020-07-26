@@ -321,6 +321,10 @@ where
             })
             .collect()
     }
+
+    fn peek(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Option<Q::Value> {
+        None // TODO ?
+    }
 }
 
 impl<Q> QueryStorageOpsSync<Q> for InternedStorage<Q>
@@ -503,6 +507,10 @@ where
                 TableEntry::new(<Q::Key>::from_intern_id(*index), Some(key.clone()))
             })
             .collect()
+    }
+
+    fn peek(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Option<Q::Value> {
+        None // TODO ?
     }
 }
 

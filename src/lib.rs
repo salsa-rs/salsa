@@ -526,6 +526,12 @@ where
     {
         self.storage.sweep(self.db.salsa_runtime(), strategy);
     }
+
+    /// Peeks at the value at `Q::Key`. If it is currently in cache then it returns
+    /// `Some`, otherwise `None`
+    pub fn peek(&self, key: &Q::Key) -> Option<Q::Value> {
+        self.storage.peek(self.db, key)
+    }
 }
 
 impl<'me, Q> QueryTable<'me, Q, <Q as QueryDb<'me>>::Db>
