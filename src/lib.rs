@@ -25,11 +25,14 @@ pub mod debug;
 #[doc(hidden)]
 pub mod plumbing;
 
+#[cfg(feature = "async")]
+use crate::plumbing::AsyncQueryFunction;
 use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
+use crate::plumbing::{HasQueryGroup, QueryStorageOpsAsync, QueryStorageOpsSync};
 pub use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
@@ -517,6 +520,7 @@ where
     }
 }
 
+#[cfg(feature = "async")]
 impl<'me, Q> QueryTable<'me, Q>
 where
     Q: QueryBase,
@@ -663,6 +667,5 @@ pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T
 #[allow(unused_imports)]
 #[macro_use]
 extern crate salsa_macros;
-use plumbing::{AsyncQueryFunction, HasQueryGroup, QueryStorageOpsAsync, QueryStorageOpsSync};
 #[doc(hidden)]
 pub use salsa_macros::*;

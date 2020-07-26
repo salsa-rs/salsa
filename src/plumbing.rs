@@ -12,13 +12,15 @@ use crate::SweepStrategy;
 use std::fmt::Debug;
 use std::{future::Future, hash::Hash, sync::Arc};
 
+#[cfg(feature = "async")]
+pub use crate::blocking_future::BlockingAsyncFuture;
 pub use crate::derived::DependencyStorage;
 pub use crate::derived::{MemoizedStorage, WaitResult};
 pub use crate::input::InputStorage;
 pub use crate::interned::InternedStorage;
 pub use crate::interned::LookupInternedStorage;
 pub use crate::{
-    blocking_future::{BlockingAsyncFuture, BlockingFuture, BlockingFutureTrait},
+    blocking_future::{BlockingFuture, BlockingFutureTrait},
     revision::Revision,
     BoxFuture, DatabaseKeyIndex, QueryBase, QueryDb, Runtime,
 };
@@ -203,6 +205,7 @@ where
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>>;
 }
 
+#[cfg(feature = "async")]
 pub trait QueryStorageOpsAsync<Q>: QueryStorageOps<Q>
 where
     Self: QueryStorageMassOps,

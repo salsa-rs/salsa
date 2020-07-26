@@ -223,6 +223,7 @@ where
     }
 }
 
+#[cfg(feature = "async")]
 impl<Q, MP> QueryStorageOpsAsync<Q> for DerivedStorage<Q, MP>
 where
     for<'f, 'd> Q: AsyncQueryFunction<'f, 'd>,
