@@ -5,10 +5,9 @@ use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
-use crate::plumbing::{
-    AsyncQueryFunction, QueryFunctionBase, QueryStorageOps, QueryStorageOpsAsync,
-    QueryStorageOpsSync,
-};
+#[cfg(feature = "async")]
+use crate::plumbing::{AsyncQueryFunction, QueryStorageOpsAsync};
+use crate::plumbing::{QueryFunctionBase, QueryStorageOps, QueryStorageOpsSync};
 use crate::runtime::{FxIndexMap, StampedValue};
 use crate::{
     blocking_future::{BlockingFuture, BlockingFutureTrait},
