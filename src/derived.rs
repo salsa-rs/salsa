@@ -96,9 +96,35 @@ where
 
 impl<Q, MP> DerivedStorage<Q, MP>
 where
-    Q: QueryFunctionBase,
+    for<'f, 'd> Q: QueryFunction<'f, 'd>,
     MP: MemoizationPolicy<Q>,
 {
+    fn record_fetch(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        slot: &Arc<Slot<Q, MP>>,
+        durability: Durability,
+        changed_at: Revision,
+    ) {
+        if let Some(evicted) = self.lru_list.record_use(slot) {
+            evicted.evict();
+        }
+
+        db.salsa_runtime()
+            .report_query_read(slot.database_key_index(), durability, changed_at);
+    }
+
+    fn maybe_changed_since_get_slot(&self, input: &DatabaseKeyIndex) -> Arc<Slot<Q, MP>> {
+        assert_eq!(input.group_index, self.group_index);
+        assert_eq!(input.query_index, Q::QUERY_INDEX);
+        self.slot_map
+            .read()
+            .get_index(input.key_index as usize)
+            .unwrap()
+            .1
+            .clone()
+    }
+
     fn slot(&self, key: &Q::Key) -> Arc<Slot<Q, MP>> {
         if let Some(v) = self.slot_map.read().get(key) {
             return v.clone();
@@ -175,15 +201,7 @@ where
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool {
-        assert_eq!(input.group_index, self.group_index);
-        assert_eq!(input.query_index, Q::QUERY_INDEX);
-        let slot = self
-            .slot_map
-            .read()
-            .get_index(input.key_index as usize)
-            .unwrap()
-            .1
-            .clone();
+        let slot = self.maybe_changed_since_get_slot(&input);
         crate::plumbing::sync_future(slot.maybe_changed_since(db, revision))
     }
 
@@ -199,12 +217,7 @@ where
             changed_at,
         } = crate::plumbing::sync_future(slot.read(db))?;
 
-        if let Some(evicted) = self.lru_list.record_use(&slot) {
-            evicted.evict();
-        }
-
-        db.salsa_runtime()
-            .report_query_read(slot.database_key_index(), durability, changed_at);
+        self.record_fetch(db, &slot, durability, changed_at);
 
         Ok(value)
     }
@@ -227,15 +240,7 @@ where
         revision: Revision,
     ) -> crate::BoxFuture<'f, bool> {
         Box::pin(async move {
-            assert_eq!(input.group_index, self.group_index);
-            assert_eq!(input.query_index, Q::QUERY_INDEX);
-            let slot = self
-                .slot_map
-                .read()
-                .get_index(input.key_index as usize)
-                .unwrap()
-                .1
-                .clone();
+            let slot = self.maybe_changed_since_get_slot(&input);
             slot.maybe_changed_since(db, revision).await
         })
     }
@@ -253,12 +258,7 @@ where
                 changed_at,
             } = slot.read(db).await?;
 
-            if let Some(evicted) = self.lru_list.record_use(&slot) {
-                evicted.evict();
-            }
-
-            db.salsa_runtime()
-                .report_query_read(slot.database_key_index(), durability, changed_at);
+            self.record_fetch(db, &slot, durability, changed_at);
 
             Ok(value)
         })
