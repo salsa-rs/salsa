@@ -121,7 +121,9 @@ where
 
 /// Create a query table, which has access to the storage for the query
 /// and offers methods like `get`.
-pub fn get_query_table<'me, Q>(db: <Q as QueryDb<'me>>::Db) -> QueryTable<'me, Q>
+pub fn get_query_table<'me, Q>(
+    db: &'me <Q as QueryDb<'me>>::DynDb,
+) -> QueryTable<'me, Q, &'me <Q as QueryDb<'me>>::DynDb>
 where
     Q: Query,
     Q::Storage: QueryStorageOps<Q>,
@@ -129,6 +131,18 @@ where
     let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(&*db);
     let query_storage: Arc<Q::Storage> = Q::query_storage(group_storage).clone();
     QueryTable::new(db, query_storage)
+}
+
+pub fn get_query_table_async<'me, Q>(
+    db: <Q as QueryDb<'me>>::Db,
+) -> QueryTable<'me, Q, <Q as QueryDb<'me>>::Db>
+where
+    Q: Query,
+    Q::Storage: QueryStorageOps<Q>,
+{
+    let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(&*db);
+    let query_storage: Arc<Q::Storage> = Q::query_storage(group_storage).clone();
+    QueryTable::new_async(db, query_storage)
 }
 
 /// Create a mutable query table, which has access to the storage

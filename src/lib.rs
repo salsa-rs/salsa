@@ -36,7 +36,7 @@ use crate::plumbing::{HasQueryGroup, QueryStorageOpsSync};
 pub use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
@@ -474,24 +474,50 @@ impl<Q> Query for Q where Q: for<'d> QueryDb<'d> {}
 /// Gives access to various less common operations on queries.
 ///
 /// [the `query` method]: trait.Database.html#method.query
-pub struct QueryTable<'me, Q>
+pub struct QueryTable<'me, Q, DB>
 where
     Q: Query,
 {
-    db: <Q as QueryDb<'me>>::Db,
+    db: DB,
     storage: Arc<Q::Storage>,
+    _marker: PhantomData<&'me ()>,
 }
 
-impl<'me, Q> QueryTable<'me, Q>
+impl<'me, Q> QueryTable<'me, Q, &'me <Q as QueryDb<'me>>::DynDb>
 where
     Q: Query,
     Q::Storage: QueryStorageOps<Q>,
 {
     /// Constructs a new `QueryTable`.
-    pub fn new(db: <Q as QueryDb<'me>>::Db, storage: Arc<Q::Storage>) -> Self {
-        Self { db, storage }
+    pub fn new(db: &'me <Q as QueryDb<'me>>::DynDb, storage: Arc<Q::Storage>) -> Self {
+        Self {
+            db,
+            storage,
+            _marker: PhantomData,
+        }
     }
+}
 
+impl<'me, Q> QueryTable<'me, Q, <Q as QueryDb<'me>>::Db>
+where
+    Q: Query,
+    Q::Storage: QueryStorageOps<Q>,
+{
+    /// Constructs a new `QueryTable`.
+    pub fn new_async(db: <Q as QueryDb<'me>>::Db, storage: Arc<Q::Storage>) -> Self {
+        Self {
+            db,
+            storage,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'me, Q> QueryTable<'me, Q, &'me <Q as QueryDb<'me>>::DynDb>
+where
+    Q: Query,
+    Q::Storage: QueryStorageOps<Q>,
+{
     /// Remove all values for this query that have not been used in
     /// the most recent revision.
     pub fn sweep(&self, strategy: SweepStrategy)
@@ -502,7 +528,7 @@ where
     }
 }
 
-impl<'me, Q> QueryTable<'me, Q>
+impl<'me, Q> QueryTable<'me, Q, <Q as QueryDb<'me>>::Db>
 where
     Q: Query,
     Q::Storage: QueryStorageOpsSync<Q>,
@@ -521,7 +547,7 @@ where
 }
 
 #[cfg(feature = "async")]
-impl<'me, Q> QueryTable<'me, Q>
+impl<'me, Q> QueryTable<'me, Q, <Q as QueryDb<'me>>::Db>
 where
     Q: QueryBase,
     Q::Key: Send + Sync,
