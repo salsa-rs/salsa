@@ -384,7 +384,20 @@ where
     where
         StateGuard: Deref<Target = QueryState<Q>>,
     {
-        match &*state {
+        match self.probe_inner(db, &state, revision_now) {
+            ProbeState::Pending(future, other_id) => ProbeState::Pending(future, other_id),
+            ProbeState::UpToDate(v) => ProbeState::UpToDate(v),
+            ProbeState::StaleOrAbsent(()) => ProbeState::StaleOrAbsent(state),
+        }
+    }
+
+    fn probe_inner(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
+        state: &QueryState<Q>,
+        revision_now: Revision,
+    ) -> ProbeState<StampedValue<Q::Value>, DatabaseKeyIndex, (), Q::BlockingFuture> {
+        match state {
             QueryState::NotComputed => { /* fall through */ }
 
             QueryState::InProgress { id, waiting } => {
@@ -442,7 +455,7 @@ where
             }
         }
 
-        ProbeState::StaleOrAbsent(state)
+        ProbeState::StaleOrAbsent(())
     }
 
     async fn wait_for_value(
