@@ -263,11 +263,21 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // just inline the definition
         if let QueryStorage::Transparent = query.storage {
             let invoke = query.invoke_tt();
-            query_fn_definitions.extend(quote! {
-                fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
-                    #invoke(self, #(#key_names),*)
-                }
-            });
+            if query.is_async {
+                query_fn_definitions.extend(quote! {
+                    fn #fn_name<'f>(&'f mut self, #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
+                        Box::pin(async move {
+                            #invoke(&mut #owned_trait_name::new(self), #(#key_names),*).await
+                        })
+                    }
+                });
+            } else {
+                query_fn_definitions.extend(quote! {
+                    fn #fn_name(&self, #(#key_names: #keys),*) -> #value {
+                        #invoke(self, #(#key_names),*)
+                    }
+                });
+            }
             continue;
         }
 
