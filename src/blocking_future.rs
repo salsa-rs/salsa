@@ -6,7 +6,11 @@ use std::{
     task::{Context, Poll},
 };
 
-use parking_lot::{Condvar, Mutex};
+use {
+    futures_channel::oneshot,
+    futures_util::future::{self, FutureExt},
+    parking_lot::{Condvar, Mutex},
+};
 
 #[doc(hidden)]
 pub struct BlockingFuture<T> {
@@ -120,11 +124,9 @@ impl<T> BlockingFutureTrait<T> for BlockingFuture<T> {
     }
 }
 
-use futures::{channel::oneshot, future::FutureExt};
-
 /// Async variant of BlockingFuture
 pub type BlockingAsyncFuture<T> =
-    futures::future::Map<oneshot::Receiver<T>, fn(Result<T, oneshot::Canceled>) -> Option<T>>;
+    future::Map<oneshot::Receiver<T>, fn(Result<T, oneshot::Canceled>) -> Option<T>>;
 
 impl<T> PromiseTrait<T> for oneshot::Sender<T> {
     fn fulfil(self, value: T) {

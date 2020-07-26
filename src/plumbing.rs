@@ -23,6 +23,7 @@ pub use crate::{
     revision::Revision,
     BoxFuture, DatabaseKeyIndex, QueryBase, QueryDb, Runtime,
 };
+pub use futures_util::future::{ready, Ready};
 
 #[derive(Clone, Debug)]
 pub struct CycleDetected {

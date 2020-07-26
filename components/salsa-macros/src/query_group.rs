@@ -605,13 +605,13 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let future = if query.is_async {
                 quote!(salsa::BoxFuture<'f, Self::Value>)
             } else {
-                quote!(futures::future::Ready<Self::Value>)
+                quote!(salsa::plumbing::Ready<Self::Value>)
             };
 
             let wrap_future = if query.is_async {
                 quote!(Box::pin)
             } else {
-                quote!(futures::future::ready)
+                quote!(salsa::plumbing::ready)
             };
 
             let blocking_future = if query.is_async {
