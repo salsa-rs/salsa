@@ -587,8 +587,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // Implement the QueryFunction trait for queries which need it.
         if query.storage.needs_query_function() {
             let span = query.fn_name.span();
-            let key_names: &Vec<_> = &(0..query.keys.len())
-                .map(|i| Ident::new(&format!("key{}", i), Span::call_site()))
+            let key_names: &Vec<_> = &query
+                .keys
+                .iter()
+                .enumerate()
+                .map(|(i, key)| Ident::new(&format!("key{}", i), key.span()))
                 .collect();
             let key_pattern = if query.keys.len() == 1 {
                 quote! { #(#key_names),* }
@@ -613,9 +616,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             };
 
             let db_ref = if query.is_async {
-                quote!(db)
+                quote_spanned!(span=> db)
             } else {
-                quote!(&**db)
+                quote_spanned!(span=> &**db)
             };
 
             let future = if query.is_async {
