@@ -1,3 +1,5 @@
+#![cfg(feature = "async")]
+
 #[salsa::database(async AsyncStorage)]
 #[derive(Default)]
 struct AsyncDatabase {

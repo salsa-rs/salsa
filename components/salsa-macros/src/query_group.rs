@@ -202,10 +202,16 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     None
                 };
 
+                let is_async = method.sig.asyncness.is_some();
+
+                if is_async && !cfg!(feature = "async") {
+                    panic!("The `async` feature must be enabled to use async query functions!")
+                }
+
                 queries.push(Query {
                     query_type,
                     query_name,
-                    is_async: method.sig.asyncness.is_some(),
+                    is_async,
                     fn_name: method.sig.ident,
                     attrs,
                     storage,

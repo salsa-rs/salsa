@@ -6,11 +6,13 @@ use std::{
     task::{Context, Poll},
 };
 
+#[cfg(feature = "async")]
 use {
     futures_channel::oneshot,
     futures_util::future::{self, FutureExt},
-    parking_lot::{Condvar, Mutex},
 };
+
+use parking_lot::{Condvar, Mutex};
 
 #[doc(hidden)]
 pub struct BlockingFuture<T> {
@@ -125,15 +127,18 @@ impl<T> BlockingFutureTrait<T> for BlockingFuture<T> {
 }
 
 /// Async variant of BlockingFuture
+#[cfg(feature = "async")]
 pub type BlockingAsyncFuture<T> =
     future::Map<oneshot::Receiver<T>, fn(Result<T, oneshot::Canceled>) -> Option<T>>;
 
+#[cfg(feature = "async")]
 impl<T> PromiseTrait<T> for oneshot::Sender<T> {
     fn fulfil(self, value: T) {
         let _ = self.send(value);
     }
 }
 
+#[cfg(feature = "async")]
 impl<T> BlockingFutureTrait<T> for BlockingAsyncFuture<T> {
     type Promise = oneshot::Sender<T>;
     fn new() -> (Self, Self::Promise) {
