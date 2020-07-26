@@ -9,7 +9,6 @@ description = "A generic framework for on-demand, incrementalized computation (e
 readme = "README.md"
 
 [dependencies]
-async-trait = "0.1"
 crossbeam-utils = { version = "0.7.1", default-features = false }
 indexmap = "1.0.1"
 futures-channel = { version = "0.3", features = ["alloc"], default-features = false, optional = true }
