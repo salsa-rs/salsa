@@ -20,7 +20,6 @@ use parking_lot::Mutex;
 use parking_lot::{RawRwLock, RwLock};
 use smallvec::SmallVec;
 
-use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -28,9 +27,6 @@ use std::sync::Arc;
 type Promise<Q> = <<Q as QueryFunctionBase>::BlockingFuture as BlockingFutureTrait<
     WaitResult<<Q as QueryBase>::Value, DatabaseKeyIndex>,
 >>::Promise;
-
-pub trait Captures<'a> {}
-impl<T> Captures<'_> for T {}
 
 pub(super) struct Slot<Q, MP>
 where
@@ -613,31 +609,29 @@ where
         }
     }
 
-    pub(super) fn maybe_changed_since<'f, 'd: 'f, 'me: 'f, 'db: 'f>(
-        &'me self,
-        db: &'db mut <Q as QueryDb<'d>>::Db,
+    pub(super) async fn maybe_changed_since(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
         revision: Revision,
-    ) -> impl Future<Output = bool> + Captures<'me> + Captures<'db> + Captures<'d> + 'f {
-        async move {
-            match self.maybe_changed_since_inner(db, revision) {
-                MaybeChangedSinceState::Done(b) => b,
-                MaybeChangedSinceState::Wait(future) => {
-                    let result = future.await.unwrap_or_else(|| db.on_propagated_panic());
-                    !result.cycle.is_empty() || result.value.changed_at > revision
-                }
-                MaybeChangedSinceState::Read(revision_now) => {
-                    match self.read_upgrade(db, revision_now).await {
-                        Ok(v) => {
-                            debug!(
+    ) -> bool {
+        match self.maybe_changed_since_inner(db, revision) {
+            MaybeChangedSinceState::Done(b) => b,
+            MaybeChangedSinceState::Wait(future) => {
+                let result = future.await.unwrap_or_else(|| db.on_propagated_panic());
+                !result.cycle.is_empty() || result.value.changed_at > revision
+            }
+            MaybeChangedSinceState::Read(revision_now) => {
+                match self.read_upgrade(db, revision_now).await {
+                    Ok(v) => {
+                        debug!(
                                     "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
                                     self,
                                         v.changed_at > revision,
                                     v.changed_at,
                                 );
-                            v.changed_at > revision
-                        }
-                        Err(_) => true,
+                        v.changed_at > revision
                     }
+                    Err(_) => true,
                 }
             }
         }
