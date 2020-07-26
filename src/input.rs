@@ -98,6 +98,10 @@ where
             })
             .collect()
     }
+
+    fn peek(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Option<Q::Value> {
+        None // TODO ?
+    }
 }
 
 impl<Q> QueryStorageOpsSync<Q> for InputStorage<Q>

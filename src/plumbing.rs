@@ -195,9 +195,11 @@ where
     fn entries<C>(&self, db: &<Q as QueryDb<'_>>::DynDb) -> C
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>;
+
+    fn peek(&self, db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Option<Q::Value>;
 }
 
-pub trait QueryStorageOpsSync<Q>
+pub trait QueryStorageOpsSync<Q>: QueryStorageOps<Q>
 where
     Self: QueryStorageMassOps,
     Q: Query,

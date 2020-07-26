@@ -184,6 +184,10 @@ where
             .filter_map(|slot| slot.as_table_entry())
             .collect()
     }
+
+    fn peek(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Option<Q::Value> {
+        self.slot(key).peek(db).map(|v| v.value)
+    }
 }
 
 impl<Q, MP> QueryStorageOpsSync<Q> for DerivedStorage<Q, MP>
