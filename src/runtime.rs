@@ -826,34 +826,6 @@ impl Drop for RevisionGuard {
     }
 }
 
-/// TODO
-pub struct AsyncDb<'a, T>
-where
-    T: ?Sized + Database,
-{
-    db: &'a mut T,
-}
-
-impl<T> std::ops::Deref for AsyncDb<'_, T>
-where
-    T: ?Sized + Database,
-{
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        self.db
-    }
-}
-
-impl<'a, T> AsyncDb<'a, T>
-where
-    T: ?Sized + Database,
-{
-    /// TODO
-    pub fn new(db: &'a mut T) -> Self {
-        AsyncDb { db }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

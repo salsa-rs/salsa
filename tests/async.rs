@@ -16,11 +16,11 @@ trait Async: Send {
     async fn output_inner(&self, x: u32) -> u32;
 }
 
-async fn output(db: &mut AsyncDb<'_, (dyn Async + '_)>, x: u32) -> u32 {
+async fn output(db: &mut OwnedAsync<'_>, x: u32) -> u32 {
     db.output_inner(x).await
 }
 
-async fn output_inner(db: &mut AsyncDb<'_, (dyn Async + '_)>, x: u32) -> u32 {
+async fn output_inner(db: &mut OwnedAsync<'_>, x: u32) -> u32 {
     db.input(x) * 2
 }
 

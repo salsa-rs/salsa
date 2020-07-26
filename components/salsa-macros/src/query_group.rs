@@ -30,6 +30,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     let trait_vis = input.vis;
     let trait_name = input.ident;
+    let owned_trait_name = syn::Ident::new(&format!("Owned{}", trait_name), trait_name.span());
     let _generics = input.generics.clone();
     let dyn_db = quote! { dyn #trait_name };
 
@@ -275,7 +276,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     // it's not totally obvious why that should be.
                     fn __shim<'f, 'd>(db: &'f mut (#dyn_db + 'd),  #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
                         Box::pin(async move {
-                            let mut table = salsa::plumbing::get_query_table::<#qt>(AsyncDb::new(db));
+                            let mut table = salsa::plumbing::get_query_table::<#qt>(#owned_trait_name::new(db));
                             salsa::QueryTable::get_async(&mut table, (#(#key_names),*)).await
                         })
                     }
@@ -433,41 +434,27 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // for the query methods. Users may still only access a `&` reference (through the `Deref` implementation)
         if has_async {
             output.extend(quote! {
-                mod __async_db {
-                    use super::*;
+                #trait_vis struct #owned_trait_name<'a>
+                {
+                    db: &'a mut (#dyn_db + 'a),
+                }
 
-                    pub struct AsyncDb<'a, T>
-                    where
-                        T: ?Sized + salsa::Database,
-                    {
-                        db: &'a mut T,
-                    }
-
-                    impl<T> std::ops::Deref for AsyncDb<'_, T>
-                    where
-                        T: ?Sized + salsa::Database,
-                    {
-                        type Target = T;
-                        fn deref(&self) -> &Self::Target {
-                            self.db
-                        }
-                    }
-
-                    impl<'a, T> AsyncDb<'a, T>
-                    where
-                        T: ?Sized + salsa::Database,
-                    {
-                        pub fn new(db: &'a mut T) -> Self {
-                            Self { db }
-                        }
-                    }
-
-                    impl AsyncDb<'_, (#dyn_db + '_)>
-                    {
-                        #async_query_fn_definitions
+                impl<'a> std::ops::Deref for #owned_trait_name<'a> {
+                    type Target = #dyn_db + 'a;
+                    fn deref(&self) -> &Self::Target {
+                        self.db
                     }
                 }
-                #trait_vis use self::__async_db::AsyncDb;
+
+                impl<'a> #owned_trait_name<'a> {
+                    pub fn new(db: &'a mut (#dyn_db + 'a)) -> Self {
+                        Self { db }
+                    }
+                }
+
+                impl #owned_trait_name<'_> {
+                    #async_query_fn_definitions
+                }
             });
         }
     }
@@ -498,7 +485,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         });
 
         let db = if query.is_async {
-            quote!(AsyncDb<'d, #dyn_db + 'd>)
+            quote!(#owned_trait_name<'d>)
         } else {
             quote!(&'d (#dyn_db + 'd))
         };
@@ -712,7 +699,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     }
 
     let db = if has_async {
-        quote!(AsyncDb<'d, #dyn_db + 'd>)
+        quote!(#owned_trait_name<'d>)
     } else {
         quote!(&'d (#dyn_db + 'd))
     };
