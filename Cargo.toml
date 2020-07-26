@@ -12,7 +12,8 @@ readme = "README.md"
 async-trait = "0.1"
 crossbeam-utils = { version = "0.7.1", default-features = false }
 indexmap = "1.0.1"
-futures = "0.3"
+futures-util = { version = "0.3", default-features = false }
+futures-channel = { version = "0.3", features = ["alloc"], default-features = false }
 lock_api = "0.4"
 log = "0.4.5"
 parking_lot = "0.11.0"

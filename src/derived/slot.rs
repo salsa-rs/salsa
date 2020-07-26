@@ -14,11 +14,13 @@ use crate::{
     CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event, EventKind, QueryBase,
     QueryDb, SweepStrategy,
 };
-use futures::Future;
+
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::{RawRwLock, RwLock};
 use smallvec::SmallVec;
+
+use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -610,7 +612,7 @@ where
         db: &'db mut <Q as QueryDb<'d>>::Db,
         revision: Revision,
     ) -> impl Future<Output = bool> + Captures<'me> + Captures<'db> + Captures<'d> + 'f {
-        use futures::future::{ready, Either, Ready};
+        use futures_util::future::{ready, Either, Ready};
 
         fn done<L, R>(l: L) -> Either<Ready<L>, R> {
             Either::Left(ready(l))
