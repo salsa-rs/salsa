@@ -36,7 +36,10 @@ use crate::plumbing::{HasQueryGroup, QueryStorageOpsSync};
 pub use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
-use std::{marker::PhantomData, sync::Arc};
+use std::{
+    marker::PhantomData,
+    sync::{Arc, Mutex},
+};
 
 pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
@@ -326,6 +329,100 @@ pub trait ParallelDatabase: Database + Send {
     /// }
     /// ```
     fn snapshot(&self) -> Snapshot<Self>;
+
+    /// Returns a `Snapshot` which can be used to run a query concurrently
+    fn fork(&self, state: ForkState) -> Snapshot<Self>;
+
+    /// Returns a [`Forker`] object which can be used to fork new `DB` references that are able to
+    /// query the database concurrently. All queries run this way must complete before the
+    /// [`Forker`] object goes out of scope or its `Drop` impl will panic.
+    fn forker(&self) -> Forker<&Self> {
+        forker(self)
+    }
+
+    /// Returns a [`Forker`] object which can be used to fork new `DB` references that are able to
+    /// query the database concurrently. All queries run this way must complete before the
+    /// [`Forker`] object goes out of scope or its `Drop` impl will panic.
+    fn forker_mut(&mut self) -> Forker<&mut Self> {
+        forker(self)
+    }
+}
+
+/// TODO
+pub fn forker<DB>(db: DB) -> Forker<DB>
+where
+    DB: std::ops::Deref,
+    DB::Target: Database,
+{
+    let runtime = db.salsa_runtime();
+    Forker {
+        state: ForkState(Arc::new(ForkStateInner {
+            parents: runtime
+                .parent
+                .iter()
+                .flat_map(|state| state.0.parents.iter())
+                .cloned()
+                .chain(Some(runtime.id()))
+                .collect(),
+            cycle: Default::default(),
+        })),
+        db,
+    }
+}
+
+/// Returned from calling [`ParallelDatabase::forker`]. Used to fork on a database so that
+/// multiple queries can run concurrently
+pub struct Forker<DB>
+where
+    DB: std::ops::Deref,
+    DB::Target: Database,
+{
+    /// The database
+    pub db: DB,
+    /// The state used to tracked forked queries
+    pub state: ForkState,
+}
+
+///
+#[derive(Clone)]
+pub struct ForkState(Arc<ForkStateInner>);
+
+struct ForkStateInner {
+    parents: Vec<RuntimeId>,
+    cycle: Mutex<Vec<DatabaseKeyIndex>>,
+}
+
+impl<DB> Drop for Forker<DB>
+where
+    DB: std::ops::Deref,
+    DB::Target: Database,
+{
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            let cycle = std::mem::replace(
+                Arc::get_mut(&mut self.state.0)
+                    .expect("Forker dropped before joining forked databases!")
+                    .cycle
+                    .get_mut()
+                    .unwrap(),
+                Vec::new(),
+            );
+            if !cycle.is_empty() {
+                self.db.salsa_runtime().mark_cycle_participants(&cycle);
+            }
+        }
+    }
+}
+
+impl<DB> Forker<DB>
+where
+    DB: std::ops::Deref,
+    DB::Target: Sized + ParallelDatabase,
+{
+    /// Returns a `Snapshot` which can be used to run a query concurrently
+    pub fn fork(&self) -> Snapshot<DB::Target> {
+        self.db.fork(self.state.clone())
+    }
 }
 
 /// Simple wrapper struct that takes ownership of a database `DB` and

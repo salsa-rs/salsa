@@ -1,4 +1,4 @@
-use crate::{plumbing::DatabaseStorageTypes, Runtime};
+use crate::{plumbing::DatabaseStorageTypes, ForkState, Runtime};
 use std::sync::Arc;
 
 /// Stores the cached results and dependency information for all the queries
@@ -48,6 +48,14 @@ impl<DB: DatabaseStorageTypes> Storage<DB> {
         Storage {
             query_store: self.query_store.clone(),
             runtime: self.runtime.snapshot(),
+        }
+    }
+
+    /// Returns a "forked" runtime, suitable to call concurrent queries.
+    pub fn fork(&self, forker: ForkState) -> Self {
+        Storage {
+            query_store: self.query_store.clone(),
+            runtime: self.runtime.fork(forker),
         }
     }
 }

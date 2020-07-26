@@ -510,7 +510,7 @@ where
                 changed_at: result.value.changed_at,
                 durability: result.value.durability,
             };
-            db.salsa_runtime().mark_cycle_participants(&err);
+            db.salsa_runtime().mark_cycle_participants(&err.cycle);
             Q::recover(db, &err.cycle, &self.key)
                 .map(|value| StampedValue {
                     value,
@@ -978,7 +978,7 @@ where
                 let runtime = self.db.salsa_runtime();
                 assert_eq!(id, runtime.id());
 
-                runtime.unblock_queries_blocked_on_self(self.database_key_index);
+                runtime.unblock_queries_blocked_on_self(Some(self.database_key_index));
 
                 match new_value {
                     // If anybody has installed themselves in our "waiting"

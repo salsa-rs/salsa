@@ -207,6 +207,13 @@ impl ParallelDatabase for ParDatabaseImpl {
             knobs: self.knobs.clone(),
         })
     }
+
+    fn fork(&self, forker: salsa::ForkState) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
+            storage: self.storage.fork(forker),
+            knobs: self.knobs.clone(),
+        })
+    }
 }
 
 impl Knobs for ParDatabaseImpl {

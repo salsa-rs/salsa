@@ -1,7 +1,7 @@
 use crate::durability::Durability;
 use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
-use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind};
+use crate::{Database, DatabaseKeyIndex, Event, EventKind, ForkState};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
@@ -36,8 +36,18 @@ pub struct Runtime {
     /// Local state that is specific to this runtime (thread).
     local_state: LocalState,
 
+    pub(super) parent: Option<ForkState>,
+
     /// Shared state that is accessible via all runtimes.
     shared_state: Arc<SharedState>,
+}
+
+impl Drop for Runtime {
+    fn drop(&mut self) {
+        if self.parent.is_some() {
+            self.unblock_queries_blocked_on_self(None);
+        }
+    }
 }
 
 impl Default for Runtime {
@@ -47,6 +57,7 @@ impl Default for Runtime {
             revision_guard: None,
             shared_state: Default::default(),
             local_state: Default::default(),
+            parent: Default::default(),
         }
     }
 }
@@ -69,7 +80,7 @@ impl Runtime {
     }
 
     /// See [`crate::storage::Storage::snapshot`].
-    pub(crate) fn snapshot(&self) -> Self {
+    pub fn snapshot(&self) -> Self {
         if self.local_state.query_in_progress() {
             panic!("it is not legal to `snapshot` during a query (see salsa-rs/salsa#80)");
         }
@@ -85,6 +96,26 @@ impl Runtime {
             revision_guard: Some(revision_guard),
             shared_state: self.shared_state.clone(),
             local_state: Default::default(),
+            parent: self.parent.clone(),
+        }
+    }
+
+    /// Returns a "forked" runtime, suitable to call concurrent queries.
+    pub fn fork(&self, state: ForkState) -> Self {
+        let revision_guard = RevisionGuard::new(&self.shared_state);
+
+        let id = RuntimeId {
+            counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),
+        };
+
+        assert!(self.try_block_on_fork(id));
+
+        Runtime {
+            id,
+            revision_guard: Some(revision_guard),
+            shared_state: self.shared_state.clone(),
+            local_state: Default::default(),
+            parent: Some(state),
         }
     }
 
@@ -124,6 +155,15 @@ impl Runtime {
     #[inline]
     pub fn id(&self) -> RuntimeId {
         self.id
+    }
+
+    /// The unique identifier attached to this `SalsaRuntime` and the ids of its parents.
+    /// Each snapshotted runtime has a distinct identifier.
+    pub fn ids<'a>(&'a self) -> impl Iterator<Item = RuntimeId> + 'a {
+        self.parent
+            .iter()
+            .flat_map(|state| state.0.parents.iter().cloned())
+            .chain(Some(self.id()))
     }
 
     /// Returns the database-key for the query that this thread is
@@ -415,12 +455,12 @@ impl Runtime {
             let start_index = query_stack
                 .iter()
                 .rposition(|active_query| active_query.database_key_index == database_key_index)
-                .unwrap();
-            let mut cycle = Vec::new();
+                .expect("bug: query is not on the stack");
             let cycle_participants = &mut query_stack[start_index..];
-            for active_query in &mut *cycle_participants {
-                cycle.push(active_query.database_key_index);
-            }
+            let cycle: Vec<_> = cycle_participants
+                .iter()
+                .map(|active_query| active_query.database_key_index)
+                .collect();
 
             assert!(!cycle.is_empty());
 
@@ -439,13 +479,18 @@ impl Runtime {
             let dependency_graph = self.shared_state.dependency_graph.lock();
 
             let mut cycle = Vec::new();
-            dependency_graph.push_cycle_path(
-                database_key_index,
-                error.to,
-                query_stack.iter().map(|query| query.database_key_index),
-                &mut cycle,
-            );
-            cycle.push(database_key_index);
+            {
+                let cycle_iter = dependency_graph
+                    .get_cycle_path(
+                        &database_key_index,
+                        error.from,
+                        error.to,
+                        query_stack.iter().map(|query| &query.database_key_index),
+                    )
+                    .chain(Some(&database_key_index));
+
+                cycle.extend(cycle_iter.cloned());
+            }
 
             assert!(!cycle.is_empty());
 
@@ -464,28 +509,26 @@ impl Runtime {
         }
     }
 
-    pub(crate) fn mark_cycle_participants(&self, err: &CycleError<DatabaseKeyIndex>) {
+    pub(crate) fn mark_cycle_participants(&self, cycle: &[DatabaseKeyIndex]) {
         for active_query in self
             .local_state
             .borrow_query_stack_mut()
             .iter_mut()
             .rev()
-            .take_while(|active_query| {
-                err.cycle
-                    .iter()
-                    .any(|e| *e == active_query.database_key_index)
-            })
+            .take_while(|active_query| cycle.iter().any(|e| *e == active_query.database_key_index))
         {
-            active_query.cycle = err.cycle.clone();
+            active_query.cycle = cycle.to_owned();
         }
     }
 
     /// Try to make this runtime blocked on `other_id`. Returns true
     /// upon success or false if `other_id` is already blocked on us.
     pub(crate) fn try_block_on(&self, database_key: DatabaseKeyIndex, other_id: RuntimeId) -> bool {
-        self.shared_state.dependency_graph.lock().add_edge(
+        let mut graph = self.shared_state.dependency_graph.lock();
+
+        graph.add_edge(
             self.id(),
-            database_key,
+            Some(&database_key),
             other_id,
             self.local_state
                 .borrow_query_stack()
@@ -494,11 +537,28 @@ impl Runtime {
         )
     }
 
-    pub(crate) fn unblock_queries_blocked_on_self(&self, database_key_index: DatabaseKeyIndex) {
+    pub(crate) fn try_block_on_fork(&self, other_id: RuntimeId) -> bool {
+        let mut graph = self.shared_state.dependency_graph.lock();
+
+        graph.add_edge(
+            self.id(),
+            None,
+            other_id,
+            self.local_state
+                .borrow_query_stack()
+                .iter()
+                .map(|query| query.database_key_index),
+        )
+    }
+
+    pub(crate) fn unblock_queries_blocked_on_self(
+        &self,
+        database_key_index: Option<DatabaseKeyIndex>,
+    ) {
         self.shared_state
             .dependency_graph
             .lock()
-            .remove_edge(database_key_index, self.id())
+            .remove_edge(database_key_index.as_ref(), self.id())
     }
 }
 
@@ -675,8 +735,9 @@ struct DependencyGraph<K: Hash + Eq> {
     /// `K` is blocked on some query executing in the runtime `V`.
     /// This encodes a graph that must be acyclic (or else deadlock
     /// will result).
-    edges: FxHashMap<RuntimeId, Edge<K>>,
+    edges: FxHashMap<RuntimeId, SmallVec<[Edge<K>; 1]>>,
     labels: FxHashMap<K, SmallVec<[RuntimeId; 4]>>,
+    forks: FxHashMap<RuntimeId, SmallVec<[RuntimeId; 4]>>,
 }
 
 impl<K> Default for DependencyGraph<K>
@@ -687,6 +748,7 @@ where
         DependencyGraph {
             edges: Default::default(),
             labels: Default::default(),
+            forks: Default::default(),
         }
     }
 }
@@ -695,92 +757,140 @@ impl<K> DependencyGraph<K>
 where
     K: Hash + Eq + Clone,
 {
+    fn can_add_edge(&self, from_id: RuntimeId, to_id: RuntimeId) -> bool {
+        !self.find_edge(from_id, to_id, &mut |_| ())
+    }
+
+    fn find_edge(
+        &self,
+        from_id: RuntimeId,
+        to_id: RuntimeId,
+        f: &mut impl FnMut(RuntimeId),
+    ) -> bool {
+        // First: walk the chain of things that `to_id` depends on,
+        // looking for us.
+        if from_id == to_id {
+            return true;
+        }
+        if let Some(qs) = self.edges.get(&to_id) {
+            return qs.iter().any(|q| {
+                if self.find_edge(from_id, q.id, f) {
+                    f(q.id);
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+        false
+    }
+
     /// Attempt to add an edge `from_id -> to_id` into the result graph.
     fn add_edge(
         &mut self,
         from_id: RuntimeId,
-        database_key: K,
+        database_key: Option<&K>,
         to_id: RuntimeId,
         path: impl IntoIterator<Item = K>,
     ) -> bool {
         assert_ne!(from_id, to_id);
-        debug_assert!(!self.edges.contains_key(&from_id));
 
-        // First: walk the chain of things that `to_id` depends on,
-        // looking for us.
-        let mut p = to_id;
-        while let Some(q) = self.edges.get(&p).map(|edge| edge.id) {
-            if q == from_id {
-                return false;
-            }
-
-            p = q;
+        if !self.can_add_edge(from_id, to_id) {
+            return false;
         }
 
-        self.edges.insert(
-            from_id,
-            Edge {
-                id: to_id,
-                path: path.into_iter().chain(Some(database_key.clone())).collect(),
-            },
-        );
-        self.labels
-            .entry(database_key.clone())
-            .or_default()
-            .push(from_id);
+        self.edges.entry(from_id).or_default().push(Edge {
+            id: to_id,
+            path: path.into_iter().chain(database_key.cloned()).collect(),
+        });
+
+        if let Some(database_key) = database_key.cloned() {
+            self.labels.entry(database_key).or_default().push(from_id);
+        } else {
+            self.forks.entry(to_id).or_default().push(from_id);
+        }
         true
     }
 
-    fn remove_edge(&mut self, database_key: K, to_id: RuntimeId) {
-        let vec = self.labels.remove(&database_key).unwrap_or_default();
+    fn remove_edge(&mut self, database_key: Option<&K>, to_id: RuntimeId) {
+        let vec = match database_key {
+            Some(database_key) => self.labels.remove(database_key).unwrap_or_default(),
+            None => self.forks.remove(&to_id).unwrap_or_default(),
+        };
 
         for from_id in &vec {
-            let to_id1 = self.edges.remove(from_id).map(|edge| edge.id);
-            assert_eq!(Some(to_id), to_id1);
+            use std::collections::hash_map::Entry;
+            match self.edges.entry(*from_id) {
+                Entry::Occupied(mut entry) => {
+                    let edges = entry.get_mut();
+                    let i = edges
+                        .iter()
+                        .position(|edge| edge.id == to_id)
+                        .expect("Tried to remove edge which did not exist in the edge list");
+                    edges.swap_remove(i);
+
+                    if edges.is_empty() {
+                        entry.remove();
+                    }
+                }
+                Entry::Vacant(_) => unreachable!(),
+            }
         }
     }
 
-    fn push_cycle_path<'a>(
+    fn get_cycle_path<'a>(
         &'a self,
-        database_key: K,
+        database_key: &'a K,
+        from: RuntimeId,
         to: RuntimeId,
-        local_path: impl IntoIterator<Item = K>,
-        output: &mut Vec<K>,
-    ) where
+        local_path: impl IntoIterator<Item = &'a K>,
+    ) -> impl Iterator<Item = &'a K>
+    where
         K: std::fmt::Debug,
     {
-        let mut current = Some((to, std::slice::from_ref(&database_key)));
+        let mut vec = Vec::new();
+        assert!(self.find_edge(from, to, &mut |id| vec.push(id)));
+        vec.push(to);
+
+        let mut current = Some(std::slice::from_ref(database_key));
         let mut last = None;
         let mut local_path = Some(local_path);
+        let mut vec_iter = vec.into_iter().rev().peekable();
+        std::iter::from_fn(move || match current.take() {
+            Some(path) => {
+                let id = vec_iter.next()?;
+                let link_key = path.last().unwrap();
 
-        loop {
-            match current.take() {
-                Some((id, path)) => {
-                    let link_key = path.last().unwrap();
+                current = self.edges.get(&id).and_then(|out_edges| {
+                    let next_id = vec_iter.peek()?;
+                    let edge = out_edges.iter().find(|edge| edge.id == *next_id)?;
 
-                    output.extend(path.iter().cloned());
+                    Some(
+                        edge.path
+                            .iter()
+                            .rposition(|p| p == link_key)
+                            .map(|i| &edge.path[i + 1..])
+                            .unwrap_or_else(|| &edge.path[..]),
+                    )
+                });
 
-                    current = self.edges.get(&id).map(|edge| {
-                        let i = edge.path.iter().rposition(|p| p == link_key).unwrap();
-                        (edge.id, &edge.path[i + 1..])
+                if current.is_none() {
+                    last = local_path.take().map(|local_path| {
+                        local_path
+                            .into_iter()
+                            .skip_while(move |p| *p != link_key)
+                            .skip(1)
                     });
-
-                    if current.is_none() {
-                        last = local_path.take().map(|local_path| {
-                            local_path
-                                .into_iter()
-                                .skip_while(move |p| *p != *link_key)
-                                .skip(1)
-                        });
-                    }
                 }
-                None => break,
-            }
-        }
 
-        if let Some(iter) = &mut last {
-            output.extend(iter);
-        }
+                Some(path)
+            }
+            None => match &mut last {
+                Some(iter) => iter.next().map(std::slice::from_ref),
+                None => None,
+            },
+        })
+        .flat_map(|x| x)
     }
 }
 
@@ -835,11 +945,15 @@ mod tests {
         let mut graph = DependencyGraph::default();
         let a = RuntimeId { counter: 0 };
         let b = RuntimeId { counter: 1 };
-        assert!(graph.add_edge(a, 2, b, vec![1]));
+        assert!(graph.add_edge(a, Some(&2), b, vec![1]));
         // assert!(graph.add_edge(b, &1, a, vec![3, 2]));
-        let mut v = vec![];
-        graph.push_cycle_path(1, a, vec![3, 2], &mut v);
-        assert_eq!(v, vec![1, 2]);
+        assert_eq!(
+            graph
+                .get_cycle_path(&1, b, a, &[3, 2][..])
+                .cloned()
+                .collect::<Vec<i32>>(),
+            vec![1, 2]
+        );
     }
 
     #[test]
@@ -848,11 +962,15 @@ mod tests {
         let a = RuntimeId { counter: 0 };
         let b = RuntimeId { counter: 1 };
         let c = RuntimeId { counter: 2 };
-        assert!(graph.add_edge(a, 3, b, vec![1]));
-        assert!(graph.add_edge(b, 4, c, vec![2, 3]));
+        assert!(graph.add_edge(a, Some(&3), b, vec![1]));
+        assert!(graph.add_edge(b, Some(&4), c, vec![2, 3]));
         // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
-        let mut v = vec![];
-        graph.push_cycle_path(1, a, vec![5, 6, 4, 7], &mut v);
-        assert_eq!(v, vec![1, 3, 4, 7]);
+        assert_eq!(
+            graph
+                .get_cycle_path(&1, c, a, &[5, 6, 4, 7][..])
+                .cloned()
+                .collect::<Vec<i32>>(),
+            vec![1, 3, 4, 7]
+        );
     }
 }

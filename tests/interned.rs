@@ -16,6 +16,12 @@ impl salsa::ParallelDatabase for Database {
             storage: self.storage.snapshot(),
         })
     }
+
+    fn fork(&self, forker: salsa::ForkState) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
+            storage: self.storage.fork(forker),
+        })
+    }
 }
 
 #[salsa::query_group(InternStorage)]
