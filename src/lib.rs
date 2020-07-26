@@ -38,7 +38,6 @@ use std::sync::Arc;
 pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
 pub use crate::interned::InternKey;
-pub use crate::runtime::AsyncDb;
 pub use crate::runtime::Runtime;
 pub use crate::runtime::RuntimeId;
 pub use crate::storage::Storage;
