@@ -695,6 +695,41 @@ where
 /// A boxed future used in the salsa traits
 pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 
+/// Encapsulates a mutable reference to a database while only giving out shared references.
+/// Use for asynchronous queries to make the database references passed `Send`
+#[allow(explicit_outlives_requirements)] // https://github.com/rust-lang/rust/issues/60993
+pub struct OwnedDb<'a, T>
+where
+    T: ?Sized,
+{
+    db: &'a mut T,
+}
+
+impl<'a, T> std::ops::Deref for OwnedDb<'a, T>
+where
+    T: ?Sized,
+{
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        self.db
+    }
+}
+
+impl<'a, T> OwnedDb<'a, T>
+where
+    T: ?Sized,
+{
+    #[doc(hidden)]
+    pub fn new(db: &'a mut T) -> Self {
+        Self { db }
+    }
+
+    #[doc(hidden)]
+    pub fn __internal_get_db(&mut self) -> &mut T {
+        self.db
+    }
+}
+
 // Re-export the procedural macros.
 #[allow(unused_imports)]
 #[macro_use]

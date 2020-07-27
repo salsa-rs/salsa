@@ -1,6 +1,8 @@
 #![cfg(feature = "async")]
 use std::task::Poll;
 
+use salsa::OwnedDb;
+
 #[salsa::database(async AsyncStorage)]
 #[derive(Default)]
 struct AsyncDatabase {
@@ -30,21 +32,21 @@ fn recover(_: &dyn Async, _: &[String], _: &u32) -> u32 {
     0
 }
 
-async fn output(db: &mut OwnedAsync<'_>, x: u32) -> u32 {
+async fn output(db: &mut OwnedDb<'_, (dyn Async + '_)>, x: u32) -> u32 {
     yield_().await;
     db.output_inner(x).await
 }
 
-async fn output_inner(db: &mut OwnedAsync<'_>, x: u32) -> u32 {
+async fn output_inner(db: &mut OwnedDb<'_, (dyn Async + '_)>, x: u32) -> u32 {
     yield_().await;
     db.input(x) * 2
 }
 
-async fn output_dependencies(db: &mut OwnedAsync<'_>, x: u32) -> u32 {
+async fn output_dependencies(db: &mut OwnedDb<'_, (dyn Async + '_)>, x: u32) -> u32 {
     db.output(x).await
 }
 
-async fn output_transparent(db: &mut OwnedAsync<'_>, x: u32) -> u32 {
+async fn output_transparent(db: &mut OwnedDb<'_, (dyn Async + '_)>, x: u32) -> u32 {
     db.output(x).await
 }
 

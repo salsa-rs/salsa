@@ -30,7 +30,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     let trait_vis = input.vis;
     let trait_name = input.ident;
-    let owned_trait_name = syn::Ident::new(&format!("Owned{}", trait_name), trait_name.span());
+    let async_trait_name = syn::Ident::new(&format!("Async{}", trait_name), trait_name.span());
     let _generics = input.generics.clone();
     let dyn_db = quote! { dyn #trait_name };
 
@@ -234,6 +234,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
+    let mut async_query_fn_declarations = proc_macro2::TokenStream::new();
     let mut async_query_fn_definitions = proc_macro2::TokenStream::new();
     let mut storage_fields = proc_macro2::TokenStream::new();
     let mut queries_with_storage = vec![];
@@ -252,6 +253,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 #(#attrs)*
                 fn #fn_name<'f>(&'f mut self, #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value>;
             });
+            async_query_fn_declarations.extend(quote! {
+                #(#attrs)*
+                fn #fn_name<'f>(&'f mut self, #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value>;
+            });
         } else {
             query_fn_declarations.extend(quote! {
                 #(#attrs)*
@@ -267,7 +272,14 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 query_fn_definitions.extend(quote! {
                     fn #fn_name<'f>(&'f mut self, #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
                         Box::pin(async move {
-                            #invoke(&mut #owned_trait_name::new(self), #(#key_names),*).await
+                            #invoke(&mut salsa::OwnedDb::new(self), #(#key_names),*).await
+                        })
+                    }
+                });
+                async_query_fn_definitions.extend(quote! {
+                    fn #fn_name<'f>(&'f mut self, #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
+                        Box::pin(async move {
+                            #invoke(&mut salsa::OwnedDb::new(self.__internal_get_db()), #(#key_names),*).await
                         })
                     }
                 });
@@ -292,7 +304,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     // it's not totally obvious why that should be.
                     fn __shim<'f, 'd>(db: &'f mut (#dyn_db + 'd),  #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
                         Box::pin(async move {
-                            let mut table = salsa::plumbing::get_query_table_async::<#qt>(#owned_trait_name::new(db));
+                            let mut table = salsa::plumbing::get_query_table_async::<#qt>(salsa::OwnedDb::new(db));
                             salsa::QueryTable::get_async(&mut table, (#(#key_names),*)).await
                         })
                     }
@@ -316,8 +328,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         if query.is_async {
             async_query_fn_definitions.extend(quote! {
-                 pub fn #fn_name<'f>(&'f mut self, #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
-                    self.db.#fn_name(#(#key_names),*)
+                fn #fn_name<'f>(&'f mut self, #(#key_names: #keys),*) -> salsa::BoxFuture<'f, #value> {
+                    self.__internal_get_db().#fn_name(#(#key_names),*)
                 }
             });
         }
@@ -450,25 +462,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // for the query methods. Users may still only access a `&` reference (through the `Deref` implementation)
         if has_async {
             output.extend(quote! {
-                #trait_vis struct #owned_trait_name<'a>
-                {
-                    db: &'a mut (#dyn_db + 'a),
+                #trait_vis trait #async_trait_name {
+                    #async_query_fn_declarations
                 }
 
-                impl<'a> std::ops::Deref for #owned_trait_name<'a> {
-                    type Target = #dyn_db + 'a;
-                    fn deref(&self) -> &Self::Target {
-                        self.db
-                    }
-                }
-
-                impl<'a> #owned_trait_name<'a> {
-                    pub fn new(db: &'a mut (#dyn_db + 'a)) -> Self {
-                        Self { db }
-                    }
-                }
-
-                impl #owned_trait_name<'_> {
+                impl #async_trait_name for salsa::OwnedDb<'_, #dyn_db + '_> {
                     #async_query_fn_definitions
                 }
             });
@@ -501,7 +499,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         });
 
         let db = if query.is_async {
-            quote!(#owned_trait_name<'d>)
+            quote!(salsa::OwnedDb<'d, #dyn_db + 'd>)
         } else {
             quote!(&'d (#dyn_db + 'd))
         };
@@ -719,7 +717,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     }
 
     let db = if has_async {
-        quote!(#owned_trait_name<'d>)
+        quote!(salsa::OwnedDb<'d, (#dyn_db + 'd)>)
     } else {
         quote!(&'d (#dyn_db + 'd))
     };
