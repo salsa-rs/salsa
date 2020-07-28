@@ -665,11 +665,21 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 output.extend(quote_spanned! {span=>
                     impl <'f, 'd> salsa::plumbing::AsyncQueryFunction<'f, 'd> for #qt
                     {
+                        type SendDynDb = #dyn_db + 'd;
                         type SendDb = #db;
                     }
                 });
             }
         }
+    }
+
+    let mut query_storage_ops = proc_macro2::TokenStream::new();
+    for (query, query_index) in non_transparent_queries().zip(0_u16..) {
+        let Query { fn_name, .. } = query;
+
+        query_storage_ops.extend(quote! {
+            #query_index => self.#fn_name.clone(),
+        });
     }
 
     let mut fmt_ops = proc_macro2::TokenStream::new();
@@ -726,6 +736,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     // Emit query group storage struct
     output.extend(quote! {
+        #[derive(Clone)]
         #trait_vis struct #group_storage {
             #storage_fields
         }

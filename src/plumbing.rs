@@ -2,6 +2,7 @@
 
 use crate::debug::TableEntry;
 use crate::durability::Durability;
+use crate::AsAsyncDatabase;
 use crate::CycleError;
 use crate::Database;
 use crate::Query;
@@ -69,6 +70,13 @@ pub trait DatabaseOps {
     /// True if the computed value for `input` may have changed since `revision`.
     fn maybe_changed_since(&self, input: DatabaseKeyIndex, revision: Revision) -> bool;
 
+    /// True if the computed value for `input` may have changed since `revision`.
+    fn maybe_changed_since_async(
+        &mut self,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> BoxFuture<'_, bool>;
+
     /// Executes the callback for each kind of query.
     fn for_each_query(&self, op: &mut dyn FnMut(&dyn QueryStorageMassOps));
 }
@@ -111,13 +119,18 @@ pub trait AsyncQueryFunction<'f, 'd>:
     QueryFunction<
     'f,
     'd,
+    DynDb = <Self as AsyncQueryFunction<'f, 'd>>::SendDynDb,
     Db = <Self as AsyncQueryFunction<'f, 'd>>::SendDb,
     Future = crate::BoxFuture<'f, <Self as QueryBase>::Value>,
 >
 where
     <Self as QueryBase>::Value: Send + 'f,
 {
-    type SendDb: std::ops::Deref<Target = Self::DynDb> + Send + 'd;
+    type SendDynDb: ?Sized + Database + HasQueryGroup<Self::Group> + Send + 'd;
+    type SendDb: std::ops::Deref<Target = Self::DynDb>
+        + AsAsyncDatabase<Self::SendDynDb>
+        + Send
+        + 'd;
 }
 
 /// Create a query table, which has access to the storage for the query
