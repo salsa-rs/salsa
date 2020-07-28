@@ -322,8 +322,11 @@ where
             .collect()
     }
 
-    fn peek(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Option<Q::Value> {
-        None // TODO ?
+    fn peek(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Option<Q::Value> {
+        self.intern_check(db, key).map(|slot| {
+            let index = slot.index;
+            <Q::Value>::from_intern_id(index)
+        })
     }
 }
 
@@ -509,9 +512,26 @@ where
             .collect()
     }
 
-    fn peek(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Option<Q::Value> {
-        None // TODO ?
+    fn peek(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Option<Q::Value> {
+        let index = key.as_intern_id();
+        let interned_storage = query_storage::<Q, IQ>(db);
+        let slot = interned_storage.lookup_value(Q::convert_dyn_db(db), index);
+        let value = slot.value.clone();
+        Some(value)
     }
+}
+
+fn query_storage<Q, IQ>(db: &<Q as QueryDb<'_>>::DynDb) -> Arc<InternedStorage<IQ>>
+where
+    Q: Query,
+    Q::Key: InternKey,
+    Q::Value: Eq + Hash,
+    IQ: Query<Key = Q::Value, Value = Q::Key, Storage = InternedStorage<IQ>>,
+    for<'d> Q: EqualDynDb<'d, IQ>,
+{
+    let group_storage =
+        <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db).clone();
+    IQ::query_storage(Q::convert_group_storage(group_storage)).clone()
 }
 
 impl<Q, IQ> QueryStorageOpsSync<Q> for LookupInternedStorage<Q, IQ>
@@ -528,9 +548,7 @@ where
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool {
-        let group_storage =
-            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage)).clone();
+        let interned_storage = query_storage::<Q, IQ>(db);
         interned_storage.maybe_changed_since(Q::convert_db(db), input, revision)
     }
 
@@ -540,9 +558,7 @@ where
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         let index = key.as_intern_id();
-        let group_storage =
-            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db).clone();
-        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage)).clone();
+        let interned_storage = query_storage::<Q, IQ>(db);
         let slot = interned_storage.lookup_value(Q::convert_db(db), index);
         let value = slot.value.clone();
         let interned_at = slot.interned_at;

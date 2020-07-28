@@ -99,8 +99,12 @@ where
             .collect()
     }
 
-    fn peek(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Option<Q::Value> {
-        None // TODO ?
+    fn peek(&self, _db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Option<Q::Value> {
+        let slot = self.slot(key)?;
+
+        let StampedValue { value, .. } = slot.stamped_value.read().clone();
+
+        Some(value)
     }
 }
 
