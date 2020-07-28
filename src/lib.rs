@@ -422,6 +422,32 @@ where
     }
 }
 
+/// Internal trait for conversion to a mutable database. Necessary for maybe_changed_since so it
+/// can select the async version when necessary
+#[doc(hidden)]
+pub trait AsAsyncDatabase<T: ?Sized> {
+    #[doc(hidden)]
+    fn as_async_db(&mut self) -> Option<&mut T>;
+}
+
+impl<T> AsAsyncDatabase<T> for &'_ T
+where
+    T: ?Sized + Database,
+{
+    fn as_async_db(&mut self) -> Option<&mut T> {
+        None
+    }
+}
+
+impl<T> AsAsyncDatabase<T> for OwnedDb<'_, T>
+where
+    T: ?Sized + Database,
+{
+    fn as_async_db(&mut self) -> Option<&mut T> {
+        Some(self.db)
+    }
+}
+
 /// Trait implements by all of the "special types" associated with
 /// each of your queries.
 ///
@@ -431,7 +457,7 @@ pub trait QueryDb<'d>: QueryBase {
     type DynDb: ?Sized + Database + HasQueryGroup<Self::Group> + 'd;
 
     /// Sized version of `DynDb`, &'d Self::DynDb for synchronous queries
-    type Db: std::ops::Deref<Target = Self::DynDb>;
+    type Db: std::ops::Deref<Target = Self::DynDb> + AsAsyncDatabase<Self::DynDb>;
 }
 
 /// Trait implements by all of the "special types" associated with
@@ -728,6 +754,98 @@ where
     pub fn __internal_get_db(&mut self) -> &mut T {
         self.db
     }
+}
+
+impl<'a, T: ?Sized> From<&'a mut T> for OwnedDb<'a, T> {
+    fn from(t: &'a mut T) -> Self {
+        OwnedDb::new(t)
+    }
+}
+
+impl<'a, 'b, T: ?Sized> From<&'a mut OwnedDb<'b, T>> for OwnedDb<'a, T> {
+    fn from(t: &'a mut OwnedDb<'b, T>) -> Self {
+        OwnedDb::new(t.db)
+    }
+}
+
+impl<'a, 'b, T: ParallelDatabase> From<&'a mut Snapshot<T>> for OwnedDb<'a, T> {
+    fn from(t: &'a mut Snapshot<T>) -> Self {
+        OwnedDb::new(&mut t.db)
+    }
+}
+
+impl<T> plumbing::DatabaseOps for OwnedDb<'_, T>
+where
+    T: ?Sized + plumbing::DatabaseOps,
+{
+    fn ops_database(&self) -> &dyn Database {
+        self.db.ops_database()
+    }
+
+    fn ops_salsa_runtime(&self) -> &Runtime {
+        self.db.ops_salsa_runtime()
+    }
+
+    fn ops_salsa_runtime_mut(&mut self) -> &mut Runtime {
+        self.db.ops_salsa_runtime_mut()
+    }
+
+    fn fmt_index(
+        &self,
+        index: DatabaseKeyIndex,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        self.db.fmt_index(index, fmt)
+    }
+
+    fn maybe_changed_since(&self, input: DatabaseKeyIndex, revision: Revision) -> bool {
+        self.db.maybe_changed_since(input, revision)
+    }
+
+    fn maybe_changed_since_async(
+        &mut self,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> BoxFuture<'_, bool> {
+        self.db.maybe_changed_since_async(input, revision)
+    }
+
+    fn for_each_query(&self, op: &mut dyn FnMut(&dyn QueryStorageMassOps)) {
+        self.db.for_each_query(op)
+    }
+}
+
+impl<T> Database for OwnedDb<'_, T>
+where
+    T: ?Sized + Database,
+{
+    fn sweep_all(&self, strategy: SweepStrategy) {
+        self.db.sweep_all(strategy)
+    }
+
+    fn salsa_event(&self, event_fn: Event) {
+        self.db.salsa_event(event_fn)
+    }
+
+    fn on_propagated_panic(&self) -> ! {
+        self.db.on_propagated_panic()
+    }
+
+    fn salsa_runtime(&self) -> &Runtime {
+        self.db.salsa_runtime()
+    }
+
+    fn salsa_runtime_mut(&mut self) -> &mut Runtime {
+        self.db.salsa_runtime_mut()
+    }
+}
+
+/// TODO
+#[macro_export]
+macro_rules! cast_owned_db {
+    ($db: expr => $ty: ty) => {
+        $crate::OwnedDb::new($db.__internal_into_db() as $ty)
+    };
 }
 
 // Re-export the procedural macros.

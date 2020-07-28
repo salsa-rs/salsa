@@ -11,8 +11,8 @@ use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::{
-    CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event, EventKind, QueryBase,
-    QueryDb, SweepStrategy,
+    AsAsyncDatabase, CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event,
+    EventKind, QueryBase, QueryDb, SweepStrategy,
 };
 
 use log::{debug, info};
@@ -137,6 +137,7 @@ enum MaybeChangedSinceState<F> {
     Wait(F),
     Read(Revision),
     Done(bool),
+    Check(Arc<[DatabaseKeyIndex]>, Revision),
 }
 
 impl<Q, MP> Slot<Q, MP>
@@ -255,7 +256,7 @@ where
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
         if let Some(memo) = &mut panic_guard.memo {
-            if let Some(value) = memo.validate_memoized_value(db, revision_now) {
+            if let Some(value) = memo.validate_memoized_value(db, revision_now).await {
                 info!("{:?}: validated old memoized value", self,);
 
                 let runtime = db.salsa_runtime();
@@ -658,6 +659,32 @@ where
                     Err(_) => true,
                 }
             }
+            MaybeChangedSinceState::Check(inputs, revision_now) => {
+                // Iterate the inputs and see if any have maybe changed.
+                let mut maybe_changed = false;
+                match db.as_async_db() {
+                    Some(db) => {
+                        for &input in &inputs[..] {
+                            if db.maybe_changed_since_async(input, revision).await {
+                                debug!("{:?}: input `{:?}` may have changed", self, input);
+                                maybe_changed = true;
+                                break;
+                            }
+                        }
+                    }
+                    None => {
+                        for &input in &inputs[..] {
+                            if db.maybe_changed_since(input, revision) {
+                                debug!("{:?}: input `{:?}` may have changed", self, input);
+                                maybe_changed = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                self.maybe_changed_since_update(maybe_changed, revision_now);
+                maybe_changed
+            }
         }
     }
 
@@ -768,69 +795,63 @@ where
                     // We'll need to update the state anyway (see below), so release the read-lock.
                     std::mem::drop(state);
 
-                    // Iterate the inputs and see if any have maybe changed.
-                    maybe_changed = inputs
-                        .iter()
-                        .filter(|&&input| db.maybe_changed_since(input, revision))
-                        .inspect(|input| debug!("{:?}: input `{:?}` may have changed", self, input))
-                        .next()
-                        .is_some();
+                    return MaybeChangedSinceState::Check(inputs, revision_now);
                 }
             }
         }
+        self.maybe_changed_since_update(maybe_changed, revision_now);
+        MaybeChangedSinceState::Done(maybe_changed)
+    }
 
+    fn maybe_changed_since_update(&self, maybe_changed: bool, revision_now: Revision) {
         // Either way, we have to update our entry.
         //
         // Keep in mind, though, that we released the lock before checking the ipnuts and a lot
         // could have happened in the interim. =) Therefore, we have to probe the current
         // `self.state`  again and in some cases we ought to do nothing.
-        {
-            let mut state = self.state.write();
-            match &mut *state {
-                QueryState::Memoized(memo) => {
-                    if memo.revisions.verified_at == revision_now {
-                        // Since we started verifying inputs, somebody
-                        // else has come along and updated this value
-                        // (they may even have recomputed
-                        // it). Therefore, we should not touch this
-                        // memo.
-                        //
-                        // FIXME: Should we still return whatever
-                        // `maybe_changed` value we computed,
-                        // however..? It seems .. harmless to indicate
-                        // that the value has changed, but possibly
-                        // less efficient? (It may cause some
-                        // downstream value to be recomputed that
-                        // wouldn't otherwise have to be?)
-                    } else if maybe_changed {
-                        // We found this entry is out of date and
-                        // nobody touch it in the meantime. Just
-                        // remove it.
-                        *state = QueryState::NotComputed;
-                    } else {
-                        // We found this entry is valid. Update the
-                        // `verified_at` to reflect the current
-                        // revision.
-                        memo.revisions.verified_at = revision_now;
-                    }
-                }
-
-                QueryState::InProgress { .. } => {
+        let mut state = self.state.write();
+        match &mut *state {
+            QueryState::Memoized(memo) => {
+                if memo.revisions.verified_at == revision_now {
                     // Since we started verifying inputs, somebody
-                    // else has come along and started updated this
-                    // value. Just leave their marker alone and return
-                    // whatever `maybe_changed` value we computed.
-                }
-
-                QueryState::NotComputed => {
-                    // Since we started verifying inputs, somebody
-                    // else has come along and removed this value. The
-                    // GC can do this, for example. That's fine.
+                    // else has come along and updated this value
+                    // (they may even have recomputed
+                    // it). Therefore, we should not touch this
+                    // memo.
+                    //
+                    // FIXME: Should we still return whatever
+                    // `maybe_changed` value we computed,
+                    // however..? It seems .. harmless to indicate
+                    // that the value has changed, but possibly
+                    // less efficient? (It may cause some
+                    // downstream value to be recomputed that
+                    // wouldn't otherwise have to be?)
+                } else if maybe_changed {
+                    // We found this entry is out of date and
+                    // nobody touch it in the meantime. Just
+                    // remove it.
+                    *state = QueryState::NotComputed;
+                } else {
+                    // We found this entry is valid. Update the
+                    // `verified_at` to reflect the current
+                    // revision.
+                    memo.revisions.verified_at = revision_now;
                 }
             }
-        }
 
-        MaybeChangedSinceState::Done(maybe_changed)
+            QueryState::InProgress { .. } => {
+                // Since we started verifying inputs, somebody
+                // else has come along and started updated this
+                // value. Just leave their marker alone and return
+                // whatever `maybe_changed` value we computed.
+            }
+
+            QueryState::NotComputed => {
+                // Since we started verifying inputs, somebody
+                // else has come along and removed this value. The
+                // GC can do this, for example. That's fine.
+            }
+        }
     }
 
     /// Helper:
@@ -992,7 +1013,7 @@ impl<Q, MP, DB> Drop for PanicGuard<'_, '_, Q, MP, DB>
 where
     Q: QueryFunctionBase,
     MP: MemoizationPolicy<Q>,
-    DB: std::ops::Deref,
+    DB: Deref,
     DB::Target: Database,
 {
     fn drop(&mut self) {
@@ -1011,9 +1032,9 @@ impl<Q> Memo<Q>
 where
     for<'f, 'd> Q: QueryFunction<'f, 'd>,
 {
-    fn validate_memoized_value(
+    async fn validate_memoized_value(
         &mut self,
-        db: &<Q as QueryDb<'_>>::DynDb,
+        db: &mut <Q as QueryDb<'_>>::Db,
         revision_now: Revision,
     ) -> Option<StampedValue<Q::Value>> {
         // If we don't have a memoized value, nothing to validate.
@@ -1022,8 +1043,11 @@ where
             Some(v) => v,
         };
 
-        let dyn_db = db.ops_database();
-        if self.revisions.validate_memoized_value(dyn_db, revision_now) {
+        if self
+            .revisions
+            .validate_memoized_value(db, revision_now)
+            .await
+        {
             Some(StampedValue {
                 durability: self.revisions.durability,
                 changed_at: self.revisions.changed_at,
@@ -1036,7 +1060,11 @@ where
 }
 
 impl MemoRevisions {
-    fn validate_memoized_value(&mut self, db: &dyn Database, revision_now: Revision) -> bool {
+    async fn validate_memoized_value<DB>(&mut self, db: &mut DB, revision_now: Revision) -> bool
+    where
+        DB: Deref + AsAsyncDatabase<<DB as Deref>::Target>,
+        DB::Target: Database,
+    {
         assert!(self.verified_at != revision_now);
         let verified_at = self.verified_at;
 
@@ -1065,10 +1093,25 @@ impl MemoRevisions {
             // are only interested in finding out whether the
             // input changed *again*.
             MemoInputs::Tracked { inputs } => {
-                let changed_input = inputs
-                    .iter()
-                    .filter(|&&input| db.maybe_changed_since(input, verified_at))
-                    .next();
+                let mut changed_input = None;
+                match db.as_async_db() {
+                    Some(db) => {
+                        for &input in &inputs[..] {
+                            if db.maybe_changed_since_async(input, verified_at).await {
+                                changed_input = Some(input);
+                                break;
+                            }
+                        }
+                    }
+                    None => {
+                        for &input in &inputs[..] {
+                            if db.maybe_changed_since(input, verified_at) {
+                                changed_input = Some(input);
+                                break;
+                            }
+                        }
+                    }
+                }
 
                 if let Some(input) = changed_input {
                     debug!("validate_memoized_value: `{:?}` may have changed", input);

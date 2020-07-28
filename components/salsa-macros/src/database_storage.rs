@@ -106,7 +106,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     // ANCHOR:DatabaseOps
     let mut fmt_ops = proc_macro2::TokenStream::new();
     let mut maybe_changed_ops = proc_macro2::TokenStream::new();
-    let mut maybe_changed_mut_ops = proc_macro2::TokenStream::new();
+    let mut maybe_changed_async_ops = proc_macro2::TokenStream::new();
     let mut for_each_ops = proc_macro2::TokenStream::new();
     for (
         (
@@ -131,11 +131,11 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         });
 
         if *is_async {
-            maybe_changed_mut_ops.extend(quote! {
+            maybe_changed_async_ops.extend(quote! {
                 #group_index => {
-                    let storage: &#group_storage =
-                        <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
-                    storage.maybe_changed_since(self, input, revision)
+                    let storage =
+                        <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self).clone();
+                    storage.maybe_changed_since(salsa::OwnedDb::new(self), input, revision).await
                 }
             });
         } else {
@@ -153,6 +153,23 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
             storage.for_each_query(runtime, &mut op);
         });
     }
+
+    let maybe_changed_since_async = if maybe_changed_async_ops.is_empty() {
+        quote! {
+            let x = self.maybe_changed_since(input, revision);
+            Box::pin(async move { x })
+        }
+    } else {
+        quote! {
+            Box::pin(async move {
+                match input.group_index() {
+                    #maybe_changed_async_ops
+                    _ => self.maybe_changed_since(input, revision),
+                }
+            })
+        }
+    };
+
     output.extend(quote! {
         impl salsa::plumbing::DatabaseOps for #database_name {
             fn ops_database(&self) -> &dyn salsa::Database {
@@ -187,6 +204,14 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
                     #maybe_changed_ops
                     i => panic!("salsa: invalid group index {}", i)
                 }
+            }
+
+            fn maybe_changed_since_async(
+                &mut self,
+                input: salsa::DatabaseKeyIndex,
+                revision: salsa::Revision
+            ) -> salsa::BoxFuture<'_, bool> {
+                #maybe_changed_since_async
             }
 
             fn for_each_query(
