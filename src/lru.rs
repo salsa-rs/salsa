@@ -1,13 +1,9 @@
 use parking_lot::Mutex;
-use rand::rngs::SmallRng;
-use rand::Rng;
-use rand::SeedableRng;
+use oorandom::Rand64;
 use std::fmt::Debug;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-
-mod test;
 
 /// A simple and approximate concurrent lru list.
 ///
@@ -33,7 +29,7 @@ struct LruData<Node> {
     end_red_zone: usize,
     end_yellow_zone: usize,
     end_green_zone: usize,
-    rng: SmallRng,
+    rng: Rand64,
     entries: Vec<Arc<Node>>,
 }
 
@@ -141,7 +137,7 @@ where
         Self::with_rng(rng_with_seed(seed_str))
     }
 
-    fn with_rng(rng: SmallRng) -> Self {
+    fn with_rng(rng: Rand64) -> Self {
         LruData {
             end_yellow_zone: 0,
             end_green_zone: 0,
@@ -287,7 +283,7 @@ where
 
     fn pick_index(&mut self, zone: std::ops::Range<usize>) -> usize {
         let end_index = std::cmp::min(zone.end, self.entries.len());
-        self.rng.gen_range(zone.start, end_index)
+        self.rng.rand_range(zone.start as u64 .. end_index as u64) as usize
     }
 }
 
@@ -317,12 +313,12 @@ impl LruIndex {
     }
 }
 
-fn rng_with_seed(seed_str: &str) -> SmallRng {
+fn rng_with_seed(seed_str: &str) -> Rand64 {
     let mut seed: [u8; 16] = [0; 16];
     for (i, &b) in seed_str.as_bytes().iter().take(16).enumerate() {
         seed[i] = b;
     }
-    SmallRng::from_seed(seed)
+    Rand64::new(u128::from_le_bytes(seed))
 }
 
 // A note on ordering:
