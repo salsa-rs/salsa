@@ -6,7 +6,8 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
 use syn::{
-    parse_macro_input, parse_quote, Attribute, FnArg, Ident, ItemTrait, ReturnType, TraitItem, Type,
+    parse_macro_input, parse_quote, spanned::Spanned, Attribute, Error, FnArg, Ident, ItemTrait,
+    ReturnType, TraitItem, Type,
 };
 
 /// Implementation for `[salsa::query_group]` decorator.
@@ -16,9 +17,15 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     // println!("args: {:#?}", args);
     // println!("input: {:#?}", input);
 
+    let input_span = input.span();
     let (trait_attrs, salsa_attrs) = filter_attrs(input.attrs);
     if !salsa_attrs.is_empty() {
-        panic!("unsupported attributes: {:?}", salsa_attrs);
+        return Error::new(
+            input_span,
+            format!("unsupported attributes: {:?}", salsa_attrs),
+        )
+        .to_compile_error()
+        .into();
     }
 
     let trait_vis = input.vis;
@@ -43,7 +50,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
                 // Extract attributes.
                 let (attrs, salsa_attrs) = filter_attrs(method.attrs);
-                for SalsaAttr { name, tts } in salsa_attrs {
+                for SalsaAttr { name, tts, span } in salsa_attrs {
                     match name.as_str() {
                         "memoized" => {
                             storage = QueryStorage::Memoized;
@@ -74,26 +81,47 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                             storage = QueryStorage::Transparent;
                             num_storages += 1;
                         }
-                        _ => panic!("unknown salsa attribute `{}`", name),
+                        _ => {
+                            return Error::new(span, format!("unknown salsa attribute `{}`", name))
+                                .to_compile_error()
+                                .into();
+                        }
                     }
                 }
 
                 // Check attribute combinations.
                 if num_storages > 1 {
-                    panic!("multiple storage attributes specified");
+                    return Error::new(method.sig.span(), "multiple storage attributes specified")
+                        .to_compile_error()
+                        .into();
                 }
-                if invoke.is_some() && storage == QueryStorage::Input {
-                    panic!("#[salsa::invoke] cannot be set on #[salsa::input] queries");
+                match &invoke {
+                    Some(invoke) if storage == QueryStorage::Input => {
+                        return Error::new(
+                            invoke.span(),
+                            "#[salsa::invoke] cannot be set on #[salsa::input] queries",
+                        )
+                        .to_compile_error()
+                        .into();
+                    }
+                    _ => {}
                 }
 
                 // Extract keys.
                 let mut iter = method.sig.inputs.iter();
                 match iter.next() {
                     Some(FnArg::Receiver(sr)) if sr.mutability.is_none() => (),
-                    _ => panic!(
-                        "first argument of query `{}` must be `&self`",
-                        method.sig.ident
-                    ),
+                    _ => {
+                        return Error::new(
+                            method.sig.span(),
+                            format!(
+                                "first argument of query `{}` must be `&self`",
+                                method.sig.ident,
+                            ),
+                        )
+                        .to_compile_error()
+                        .into();
+                    }
                 }
                 let mut keys: Vec<Type> = vec![];
                 for arg in iter {
@@ -101,17 +129,34 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                         FnArg::Typed(ref arg) => {
                             keys.push((*arg.ty).clone());
                         }
-                        ref a => panic!("unsupported argument `{:?}` of `{}`", a, method.sig.ident),
+                        ref arg => {
+                            return Error::new(
+                                arg.span(),
+                                format!(
+                                    "unsupported argument `{:?}` of `{}`",
+                                    arg, method.sig.ident,
+                                ),
+                            )
+                            .to_compile_error()
+                            .into();
+                        }
                     }
                 }
 
                 // Extract value.
                 let value = match method.sig.output {
                     ReturnType::Type(_, ref ty) => ty.as_ref().clone(),
-                    ref r => panic!(
-                        "unsupported return type `{:?}` of `{}`",
-                        r, method.sig.ident
-                    ),
+                    ref ret => {
+                        return Error::new(
+                            ret.span(),
+                            format!(
+                                "unsupported return type `{:?}` of `{}`",
+                                ret, method.sig.ident
+                            ),
+                        )
+                        .to_compile_error()
+                        .into();
+                    }
                 };
 
                 // For `#[salsa::interned]` keys, we create a "lookup key" automatically.
@@ -580,6 +625,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 struct SalsaAttr {
     name: String,
     tts: TokenStream,
+    span: Span,
 }
 
 impl std::fmt::Debug for SalsaAttr {
@@ -590,14 +636,17 @@ impl std::fmt::Debug for SalsaAttr {
 
 impl TryFrom<syn::Attribute> for SalsaAttr {
     type Error = syn::Attribute;
+
     fn try_from(attr: syn::Attribute) -> Result<SalsaAttr, syn::Attribute> {
         if is_not_salsa_attr_path(&attr.path) {
             return Err(attr);
         }
 
+        let span = attr.span();
         let name = attr.path.segments[1].ident.to_string();
         let tts = attr.tokens.into();
-        Ok(SalsaAttr { name, tts })
+
+        Ok(SalsaAttr { name, tts, span })
     }
 }
 
