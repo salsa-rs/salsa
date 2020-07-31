@@ -205,6 +205,10 @@ where
             slot.sweep(revision_now, strategy);
         }
     }
+    fn purge(&self) {
+        self.lru_list.purge();
+        *self.slot_map.write() = Default::default();
+    }
 }
 
 impl<Q, MP> LruQueryStorageOps for DerivedStorage<Q, MP>
