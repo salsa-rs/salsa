@@ -448,6 +448,11 @@ where
     pub fn new(db: DB) -> Self {
         Snapshot { db }
     }
+
+    #[doc(hidden)]
+    pub fn __internal_get_db(&mut self) -> &mut DB {
+        &mut self.db
+    }
 }
 
 impl<DB> std::ops::Deref for Snapshot<DB>

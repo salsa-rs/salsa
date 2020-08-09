@@ -25,6 +25,7 @@ salsa-macros = { version = "0.15.0", path = "components/salsa-macros" }
 [dev-dependencies]
 diff = "0.1.0"
 env_logger = "0.7"
+futures-util = { version = "0.3", features = ["async-await"] }
 linked-hash-map = "0.5.2"
 rand = "0.7"
 rand_distr = "0.2.1"

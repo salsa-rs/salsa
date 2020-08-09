@@ -469,6 +469,15 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 impl #async_trait_name for salsa::OwnedDb<'_, #dyn_db + '_> {
                     #async_query_fn_definitions
                 }
+
+                impl<DB> #async_trait_name for salsa::Snapshot<DB>
+                where
+                    #db_bounds
+                    DB: salsa::ParallelDatabase,
+                    DB: salsa::plumbing::HasQueryGroup<#group_struct>,
+                {
+                    #async_query_fn_definitions
+                }
             });
         }
     }
