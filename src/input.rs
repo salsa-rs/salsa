@@ -2,13 +2,13 @@ use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
-use crate::plumbing::QueryStorageOps;
+use crate::plumbing::{QueryStorageOps, QueryStorageOpsSync};
 use crate::revision::Revision;
 use crate::runtime::{FxIndexMap, StampedValue};
 use crate::CycleError;
 use crate::Database;
 use crate::Query;
-use crate::{DatabaseKeyIndex, Runtime, SweepStrategy};
+use crate::{DatabaseKeyIndex, QueryDb, Runtime, SweepStrategy};
 use indexmap::map::Entry;
 use log::debug;
 use parking_lot::RwLock;
@@ -65,7 +65,7 @@ where
 
     fn fmt_index(
         &self,
-        _db: &Q::DynDb,
+        _db: &<Q as QueryDb<'_>>::DynDb,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
@@ -76,9 +76,45 @@ where
         write!(fmt, "{}({:?})", Q::QUERY_NAME, key)
     }
 
+    fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
+        match self.slot(key) {
+            Some(slot) => slot.stamped_value.read().durability,
+            None => panic!("no value set for {:?}({:?})", Q::default(), key),
+        }
+    }
+
+    fn entries<C>(&self, _db: &<Q as QueryDb<'_>>::DynDb) -> C
+    where
+        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
+    {
+        let slots = self.slots.read();
+        slots
+            .values()
+            .map(|slot| {
+                TableEntry::new(
+                    slot.key.clone(),
+                    Some(slot.stamped_value.read().value.clone()),
+                )
+            })
+            .collect()
+    }
+
+    fn peek(&self, _db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Option<Q::Value> {
+        let slot = self.slot(key)?;
+
+        let StampedValue { value, .. } = slot.stamped_value.read().clone();
+
+        Some(value)
+    }
+}
+
+impl<Q> QueryStorageOpsSync<Q> for InputStorage<Q>
+where
+    Q: Query,
+{
     fn maybe_changed_since(
         &self,
-        db: &Q::DynDb,
+        db: &mut <Q as QueryDb<'_>>::Db,
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool {
@@ -96,7 +132,7 @@ where
 
     fn try_fetch(
         &self,
-        db: &Q::DynDb,
+        db: &mut <Q as QueryDb<'_>>::Db,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         let slot = self
@@ -114,36 +150,13 @@ where
 
         Ok(value)
     }
-
-    fn durability(&self, _db: &Q::DynDb, key: &Q::Key) -> Durability {
-        match self.slot(key) {
-            Some(slot) => slot.stamped_value.read().durability,
-            None => panic!("no value set for {:?}({:?})", Q::default(), key),
-        }
-    }
-
-    fn entries<C>(&self, _db: &Q::DynDb) -> C
-    where
-        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
-    {
-        let slots = self.slots.read();
-        slots
-            .values()
-            .map(|slot| {
-                TableEntry::new(
-                    slot.key.clone(),
-                    Some(slot.stamped_value.read().value.clone()),
-                )
-            })
-            .collect()
-    }
 }
 
 impl<Q> Slot<Q>
 where
     Q: Query,
 {
-    fn maybe_changed_since(&self, _db: &Q::DynDb, revision: Revision) -> bool {
+    fn maybe_changed_since(&self, _db: &<Q as QueryDb<'_>>::DynDb, revision: Revision) -> bool {
         debug!(
             "maybe_changed_since(slot={:?}, revision={:?})",
             self, revision,
@@ -171,7 +184,13 @@ impl<Q> InputQueryStorageOps<Q> for InputStorage<Q>
 where
     Q: Query,
 {
-    fn set(&self, db: &mut Q::DynDb, key: &Q::Key, value: Q::Value, durability: Durability) {
+    fn set(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::DynDb,
+        key: &Q::Key,
+        value: Q::Value,
+        durability: Durability,
+    ) {
         log::debug!(
             "{:?}({:?}) = {:?} ({:?})",
             Q::default(),
@@ -257,7 +276,7 @@ where
 #[allow(dead_code)]
 fn check_static<Q>()
 where
-    Q: Query,
+    Q: Query + 'static,
     Q::Key: 'static,
     Q::Value: 'static,
 {

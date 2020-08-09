@@ -3,10 +3,10 @@ use crate::durability::Durability;
 use crate::intern_id::InternId;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
-use crate::plumbing::QueryStorageOps;
+use crate::plumbing::{QueryStorageOps, QueryStorageOpsSync};
 use crate::revision::Revision;
 use crate::Query;
-use crate::{CycleError, Database, DatabaseKeyIndex, DiscardIf, Runtime, SweepStrategy};
+use crate::{CycleError, Database, DatabaseKeyIndex, DiscardIf, QueryDb, Runtime, SweepStrategy};
 use crossbeam_utils::atomic::AtomicCell;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
@@ -35,13 +35,6 @@ where
     Q: Query,
     Q::Key: InternKey,
     Q::Value: Eq + Hash,
-    IQ: Query<
-        Key = Q::Value,
-        Value = Q::Key,
-        Group = Q::Group,
-        DynDb = Q::DynDb,
-        GroupStorage = Q::GroupStorage,
-    >,
 {
     phantom: std::marker::PhantomData<(Q::Key, IQ)>,
 }
@@ -186,7 +179,7 @@ where
     /// In either case, the `accessed_at` field of the slot is updated
     /// to the current revision, ensuring that the slot cannot be GC'd
     /// while the current queries execute.
-    fn intern_index(&self, db: &Q::DynDb, key: &Q::Key) -> Arc<Slot<Q::Key>> {
+    fn intern_index(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Arc<Slot<Q::Key>> {
         if let Some(i) = self.intern_check(db, key) {
             return i;
         }
@@ -268,7 +261,11 @@ where
         slot
     }
 
-    fn intern_check(&self, db: &Q::DynDb, key: &Q::Key) -> Option<Arc<Slot<Q::Key>>> {
+    fn intern_check(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        key: &Q::Key,
+    ) -> Option<Arc<Slot<Q::Key>>> {
         let revision_now = db.salsa_runtime().current_revision();
         let slot = self.tables.read().slot_for_key(key, revision_now)?;
         Some(slot)
@@ -276,7 +273,7 @@ where
 
     /// Given an index, lookup and clone its value, updating the
     /// `accessed_at` time if necessary.
-    fn lookup_value(&self, db: &Q::DynDb, index: InternId) -> Arc<Slot<Q::Key>> {
+    fn lookup_value(&self, db: &<Q as QueryDb<'_>>::DynDb, index: InternId) -> Arc<Slot<Q::Key>> {
         let revision_now = db.salsa_runtime().current_revision();
         self.tables.read().slot_for_index(index, revision_now)
     }
@@ -296,7 +293,7 @@ where
 
     fn fmt_index(
         &self,
-        db: &Q::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
@@ -307,9 +304,40 @@ where
         write!(fmt, "{}({:?})", Q::QUERY_NAME, slot.value)
     }
 
+    fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Durability {
+        INTERN_DURABILITY
+    }
+
+    fn entries<C>(&self, _db: &<Q as QueryDb<'_>>::DynDb) -> C
+    where
+        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
+    {
+        let tables = self.tables.read();
+        tables
+            .map
+            .iter()
+            .map(|(key, index)| {
+                TableEntry::new(key.clone(), Some(<Q::Value>::from_intern_id(*index)))
+            })
+            .collect()
+    }
+
+    fn peek(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Option<Q::Value> {
+        self.intern_check(db, key).map(|slot| {
+            let index = slot.index;
+            <Q::Value>::from_intern_id(index)
+        })
+    }
+}
+
+impl<Q> QueryStorageOpsSync<Q> for InternedStorage<Q>
+where
+    Q: Query,
+    Q::Value: InternKey,
+{
     fn maybe_changed_since(
         &self,
-        db: &Q::DynDb,
+        db: &mut <Q as QueryDb<'_>>::Db,
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool {
@@ -322,7 +350,7 @@ where
 
     fn try_fetch(
         &self,
-        db: &Q::DynDb,
+        db: &mut <Q as QueryDb<'_>>::Db,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         let slot = self.intern_index(db, key);
@@ -334,24 +362,6 @@ where
             changed_at,
         );
         Ok(<Q::Value>::from_intern_id(index))
-    }
-
-    fn durability(&self, _db: &Q::DynDb, _key: &Q::Key) -> Durability {
-        INTERN_DURABILITY
-    }
-
-    fn entries<C>(&self, _db: &Q::DynDb) -> C
-    where
-        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
-    {
-        let tables = self.tables.read();
-        tables
-            .map
-            .iter()
-            .map(|(key, index)| {
-                TableEntry::new(key.clone(), Some(<Q::Value>::from_intern_id(*index)))
-            })
-            .collect()
     }
 }
 
@@ -412,19 +422,56 @@ where
     }
 }
 
+// Workaround for
+// ```
+// IQ: for<'d> QueryDb<
+//     'd,
+//     DynDb = <Q as QueryDb<'d>>::DynDb,
+//     Group = <Q as QueryDb<'d>>::Group,
+//     GroupStorage = <Q as QueryDb<'d>>::GroupStorage,
+// >,
+// ```
+// not working to make rustc know DynDb, Group and GroupStorage being the same in `Q` and `IQ`
+#[doc(hidden)]
+pub trait EqualDynDb<'d, IQ>: QueryDb<'d>
+where
+    IQ: QueryDb<'d>,
+{
+    fn convert_db(d: &mut Self::Db) -> &mut IQ::Db;
+    fn convert_dyn_db(d: &Self::DynDb) -> &IQ::DynDb;
+    fn convert_group_storage(d: &Self::GroupStorage) -> &IQ::GroupStorage;
+}
+
+impl<'d, IQ, Q> EqualDynDb<'d, IQ> for Q
+where
+    Q: QueryDb<
+        'd,
+        Db = IQ::Db,
+        DynDb = IQ::DynDb,
+        Group = IQ::Group,
+        GroupStorage = IQ::GroupStorage,
+    >,
+    Q::DynDb: HasQueryGroup<Q::Group>,
+    IQ: QueryDb<'d>,
+{
+    fn convert_db(d: &mut Self::Db) -> &mut IQ::Db {
+        d
+    }
+    fn convert_dyn_db(d: &Self::DynDb) -> &IQ::DynDb {
+        d
+    }
+    fn convert_group_storage(d: &Self::GroupStorage) -> &IQ::GroupStorage {
+        d
+    }
+}
+
 impl<Q, IQ> QueryStorageOps<Q> for LookupInternedStorage<Q, IQ>
 where
     Q: Query,
     Q::Key: InternKey,
     Q::Value: Eq + Hash,
-    IQ: Query<
-        Key = Q::Value,
-        Value = Q::Key,
-        Storage = InternedStorage<IQ>,
-        Group = Q::Group,
-        DynDb = Q::DynDb,
-        GroupStorage = Q::GroupStorage,
-    >,
+    IQ: Query<Key = Q::Value, Value = Q::Key, Storage = InternedStorage<IQ>>,
+    for<'d> Q: EqualDynDb<'d, IQ>,
 {
     fn new(_group_index: u16) -> Self {
         LookupInternedStorage {
@@ -434,55 +481,27 @@ where
 
     fn fmt_index(
         &self,
-        db: &Q::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        let group_storage = <Q::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(group_storage);
-        interned_storage.fmt_index(db, index, fmt)
+        let group_storage =
+            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
+        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage)).clone();
+        interned_storage.fmt_index(Q::convert_dyn_db(db), index, fmt)
     }
 
-    fn maybe_changed_since(
-        &self,
-        db: &Q::DynDb,
-        input: DatabaseKeyIndex,
-        revision: Revision,
-    ) -> bool {
-        let group_storage = <Q::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(group_storage);
-        interned_storage.maybe_changed_since(db, input, revision)
-    }
-
-    fn try_fetch(
-        &self,
-        db: &Q::DynDb,
-        key: &Q::Key,
-    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
-        let index = key.as_intern_id();
-        let group_storage = <Q::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(group_storage);
-        let slot = interned_storage.lookup_value(db, index);
-        let value = slot.value.clone();
-        let interned_at = slot.interned_at;
-        db.salsa_runtime().report_query_read(
-            slot.database_key_index,
-            INTERN_DURABILITY,
-            interned_at,
-        );
-        Ok(value)
-    }
-
-    fn durability(&self, _db: &Q::DynDb, _key: &Q::Key) -> Durability {
+    fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Durability {
         INTERN_DURABILITY
     }
 
-    fn entries<C>(&self, db: &Q::DynDb) -> C
+    fn entries<C>(&self, db: &<Q as QueryDb<'_>>::DynDb) -> C
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
     {
-        let group_storage = <Q::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(group_storage);
+        let group_storage =
+            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
+        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
         let tables = interned_storage.tables.read();
         tables
             .map
@@ -492,6 +511,64 @@ where
             })
             .collect()
     }
+
+    fn peek(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Option<Q::Value> {
+        let index = key.as_intern_id();
+        let interned_storage = query_storage::<Q, IQ>(db);
+        let slot = interned_storage.lookup_value(Q::convert_dyn_db(db), index);
+        let value = slot.value.clone();
+        Some(value)
+    }
+}
+
+fn query_storage<Q, IQ>(db: &<Q as QueryDb<'_>>::DynDb) -> Arc<InternedStorage<IQ>>
+where
+    Q: Query,
+    Q::Key: InternKey,
+    Q::Value: Eq + Hash,
+    IQ: Query<Key = Q::Value, Value = Q::Key, Storage = InternedStorage<IQ>>,
+    for<'d> Q: EqualDynDb<'d, IQ>,
+{
+    let group_storage =
+        <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db).clone();
+    IQ::query_storage(Q::convert_group_storage(group_storage)).clone()
+}
+
+impl<Q, IQ> QueryStorageOpsSync<Q> for LookupInternedStorage<Q, IQ>
+where
+    Q: Query,
+    Q::Key: InternKey,
+    Q::Value: Eq + Hash,
+    IQ: Query<Key = Q::Value, Value = Q::Key, Storage = InternedStorage<IQ>>,
+    for<'d> Q: EqualDynDb<'d, IQ>,
+{
+    fn maybe_changed_since(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool {
+        let interned_storage = query_storage::<Q, IQ>(db);
+        interned_storage.maybe_changed_since(Q::convert_db(db), input, revision)
+    }
+
+    fn try_fetch(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+        let index = key.as_intern_id();
+        let interned_storage = query_storage::<Q, IQ>(db);
+        let slot = interned_storage.lookup_value(Q::convert_db(db), index);
+        let value = slot.value.clone();
+        let interned_at = slot.interned_at;
+        db.salsa_runtime().report_query_read(
+            slot.database_key_index,
+            INTERN_DURABILITY,
+            interned_at,
+        );
+        Ok(value)
+    }
 }
 
 impl<Q, IQ> QueryStorageMassOps for LookupInternedStorage<Q, IQ>
@@ -499,20 +576,18 @@ where
     Q: Query,
     Q::Key: InternKey,
     Q::Value: Eq + Hash,
-    IQ: Query<
-        Key = Q::Value,
-        Value = Q::Key,
-        Group = Q::Group,
-        DynDb = Q::DynDb,
-        GroupStorage = Q::GroupStorage,
-    >,
+    IQ: Query<Key = Q::Value, Value = Q::Key>,
 {
     fn sweep(&self, _: &Runtime, _strategy: SweepStrategy) {}
     fn purge(&self) {}
 }
 
 impl<K> Slot<K> {
-    fn maybe_changed_since<DB: ?Sized + Database>(&self, db: &DB, revision: Revision) -> bool {
+    fn maybe_changed_since<DB>(&self, db: &mut DB, revision: Revision) -> bool
+    where
+        DB: std::ops::Deref,
+        DB::Target: Database,
+    {
         let revision_now = db.salsa_runtime().current_revision();
         if !self.try_update_accessed_at(revision_now) {
             // if we failed to update accessed-at, then this slot was garbage collected
