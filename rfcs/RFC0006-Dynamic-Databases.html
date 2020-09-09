@@ -414,8 +414,8 @@ and so instead they will now have an associated type, <code>DynDb</code>, that m
 <code>dyn</code> version of the query group trait that the query is associated with.</p>
 <p>Therefore <code>QueryFunction</code> for example can become:</p>
 <pre><code class="language-rust ignore">pub trait QueryFunction: Query {
-    fn execute(db: &amp;Self::DynDb, key: Self::Key) -&gt; Self::Value;
-    fn recover(db: &amp;Self::DynDb, cycle: &amp;[DB::DatabaseKey], key: &amp;Self::Key) -&gt; Option&lt;Self::Value&gt; {
+    fn execute(db: &amp;&lt;Self as QueryDb&lt;'_&gt;&gt;::DynDb, key: Self::Key) -&gt; Self::Value;
+    fn recover(db: &amp;&lt;Self as QueryDb&lt;'_&gt;&gt;::DynDb, cycle: &amp;[DB::DatabaseKey], key: &amp;Self::Key) -&gt; Option&lt;Self::Value&gt; {
         let _ = (db, cycle, key);
         None
     }
@@ -535,7 +535,7 @@ we have to make a few changes:</p>
 <h3><a class="header" href="#salsa-database-trait-requires-static-at-least-for-now" id="salsa-database-trait-requires-static-at-least-for-now">Salsa database trait requires <code>'static</code>, at least for now</a></h3>
 <p>One downside of this proposal is that the <code>salsa::Database</code> trait now has a
 <code>'static</code> bound. This is a result of the lack of GATs -- in particular, the
-queries expect a <code>Q::DynDb</code> as argument. In the query definition, we have
+queries expect a <code>&lt;Q as QueryDb&lt;'_&gt;&gt;::DynDb</code> as argument. In the query definition, we have
 something like <code>type DynDb = dyn QueryGroupDatabase</code>, which in turn defaults to
 <code>dyn::QueryGroupDatabase + 'static</code>.</p>
 <p>At the moment, this limitation is harmless, since salsa databases don't support

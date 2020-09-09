@@ -604,17 +604,14 @@ some of the data about the group that the query is in):</p>
                 type Key = (#(#keys),*);
                 type Value = #value;
                 type Storage = #storage;
-                type Group = #group_struct;
-                type GroupStorage = #group_storage;
-                type DynDb = #dyn_db;
 
                 const QUERY_INDEX: u16 = #query_index;
 
                 const QUERY_NAME: &amp;'static str = #query_name;
 
-                fn query_storage(
-                    group_storage: &amp;Self::GroupStorage,
-                ) -&gt; &amp;std::sync::Arc&lt;Self::Storage&gt; {
+                fn query_storage&lt;'a&gt;(
+                    group_storage: &amp;'a &lt;Self as salsa::QueryDb&lt;'_&gt;&gt;::GroupStorage,
+                ) -&gt; &amp;'a std::sync::Arc&lt;Self::Storage&gt; {
                     &amp;group_storage.#fn_name
                 }
             }
@@ -625,7 +622,7 @@ executing the body of a query. This impl would then include a call to the user's
 actual function.</p>
 <pre><code class="language-rust ignore">                impl salsa::plumbing::QueryFunction for #qt
                 {
-                    fn execute(db: &amp;Self::DynDb, #key_pattern: &lt;Self as salsa::Query&gt;::Key)
+                    fn execute(db: &amp;&lt;Self as salsa::QueryDb&lt;'_&gt;&gt;::DynDb, #key_pattern: &lt;Self as salsa::Query&gt;::Key)
                         -&gt; &lt;Self as salsa::Query&gt;::Value {
 <span class="boring">                        invoke(db, #(#key_names),*)
 </span>                    }
@@ -664,7 +661,7 @@ to some method defined by the query storage:</p>
 <pre><code class="language-rust ignore">        impl #group_storage {
 <span class="boring">            trait_vis fn fmt_index(
 </span>                &amp;self,
-                db: &amp;#dyn_db,
+                db: &amp;(#dyn_db + '_),
                 input: salsa::DatabaseKeyIndex,
                 fmt: &amp;mut std::fmt::Formatter&lt;'_&gt;,
             ) -&gt; std::fmt::Result {
@@ -676,7 +673,7 @@ to some method defined by the query storage:</p>
 
 <span class="boring">            trait_vis fn maybe_changed_since(
 </span>                &amp;self,
-                db: &amp;#dyn_db,
+                db: &amp;(#dyn_db + '_),
                 input: salsa::DatabaseKeyIndex,
                 revision: salsa::Revision,
             ) -&gt; bool {
@@ -2126,8 +2123,8 @@ and so instead they will now have an associated type, <code>DynDb</code>, that m
 <code>dyn</code> version of the query group trait that the query is associated with.</p>
 <p>Therefore <code>QueryFunction</code> for example can become:</p>
 <pre><code class="language-rust ignore">pub trait QueryFunction: Query {
-    fn execute(db: &amp;Self::DynDb, key: Self::Key) -&gt; Self::Value;
-    fn recover(db: &amp;Self::DynDb, cycle: &amp;[DB::DatabaseKey], key: &amp;Self::Key) -&gt; Option&lt;Self::Value&gt; {
+    fn execute(db: &amp;&lt;Self as QueryDb&lt;'_&gt;&gt;::DynDb, key: Self::Key) -&gt; Self::Value;
+    fn recover(db: &amp;&lt;Self as QueryDb&lt;'_&gt;&gt;::DynDb, cycle: &amp;[DB::DatabaseKey], key: &amp;Self::Key) -&gt; Option&lt;Self::Value&gt; {
         let _ = (db, cycle, key);
         None
     }
@@ -2247,7 +2244,7 @@ we have to make a few changes:</p>
 <h3><a class="header" href="#salsa-database-trait-requires-static-at-least-for-now" id="salsa-database-trait-requires-static-at-least-for-now">Salsa database trait requires <code>'static</code>, at least for now</a></h3>
 <p>One downside of this proposal is that the <code>salsa::Database</code> trait now has a
 <code>'static</code> bound. This is a result of the lack of GATs -- in particular, the
-queries expect a <code>Q::DynDb</code> as argument. In the query definition, we have
+queries expect a <code>&lt;Q as QueryDb&lt;'_&gt;&gt;::DynDb</code> as argument. In the query definition, we have
 something like <code>type DynDb = dyn QueryGroupDatabase</code>, which in turn defaults to
 <code>dyn::QueryGroupDatabase + 'static</code>.</p>
 <p>At the moment, this limitation is harmless, since salsa databases don't support
