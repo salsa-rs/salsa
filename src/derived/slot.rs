@@ -11,7 +11,8 @@ use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::{
-    CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event, EventKind, SweepStrategy,
+    CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event, EventKind, QueryDb,
+    SweepStrategy,
 };
 use log::{debug, info};
 use parking_lot::Mutex;
@@ -125,7 +126,7 @@ where
 
     pub(super) fn read(
         &self,
-        db: &Q::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
     ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
         let runtime = db.salsa_runtime();
 
@@ -153,7 +154,7 @@ where
     /// shows a potentially out of date value.
     fn read_upgrade(
         &self,
-        db: &Q::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         revision_now: Revision,
     ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
         let runtime = db.salsa_runtime();
@@ -326,7 +327,7 @@ where
     /// Note that in case `ProbeState::UpToDate`, the lock will have been released.
     fn probe<StateGuard>(
         &self,
-        db: &Q::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         state: StateGuard,
         runtime: &Runtime,
         revision_now: Revision,
@@ -419,7 +420,7 @@ where
         ProbeState::StaleOrAbsent(state)
     }
 
-    pub(super) fn durability(&self, db: &Q::DynDb) -> Durability {
+    pub(super) fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb) -> Durability {
         match &*self.state.read() {
             QueryState::NotComputed => Durability::LOW,
             QueryState::InProgress { .. } => panic!("query in progress"),
@@ -532,7 +533,11 @@ where
         }
     }
 
-    pub(super) fn maybe_changed_since(&self, db: &Q::DynDb, revision: Revision) -> bool {
+    pub(super) fn maybe_changed_since(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        revision: Revision,
+    ) -> bool {
         let runtime = db.salsa_runtime();
         let revision_now = runtime.current_revision();
 
@@ -721,7 +726,7 @@ where
     /// computed (but first drop the lock on the map).
     fn register_with_in_progress_thread(
         &self,
-        _db: &Q::DynDb,
+        _db: &<Q as QueryDb<'_>>::DynDb,
         runtime: &Runtime,
         other_id: RuntimeId,
         waiting: &Mutex<SmallVec<[Promise<WaitResult<Q::Value, DatabaseKeyIndex>>; 2]>>,
@@ -886,7 +891,7 @@ where
 {
     fn validate_memoized_value(
         &mut self,
-        db: &Q::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         revision_now: Revision,
     ) -> Option<StampedValue<Q::Value>> {
         // If we don't have a memoized value, nothing to validate.
@@ -1032,8 +1037,8 @@ where
 #[allow(dead_code)]
 fn check_static<Q, MP>()
 where
-    Q: QueryFunction,
-    MP: MemoizationPolicy<Q>,
+    Q: QueryFunction + 'static,
+    MP: MemoizationPolicy<Q> + 'static,
     Q::Key: 'static,
     Q::Value: 'static,
 {

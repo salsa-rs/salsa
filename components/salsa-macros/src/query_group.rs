@@ -262,7 +262,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 // query crate. Our experiments revealed that this makes a big
                 // difference in total compilation time in rust-analyzer, though
                 // it's not totally obvious why that should be.
-                fn __shim(db: &dyn #trait_name,  #(#key_names: #keys),*) -> #value {
+                fn __shim(db: &(dyn #trait_name + '_),  #(#key_names: #keys),*) -> #value {
                     salsa::plumbing::get_query_table::<#qt>(db).get((#(#key_names),*))
                 }
                 __shim(self, #(#key_names),*)
@@ -461,23 +461,27 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 }
             }
 
+            impl<'d> salsa::QueryDb<'d> for #qt
+            {
+                type DynDb = #dyn_db + 'd;
+                type Group = #group_struct;
+                type GroupStorage = #group_storage;
+            }
+
             // ANCHOR:Query_impl
             impl salsa::Query for #qt
             {
                 type Key = (#(#keys),*);
                 type Value = #value;
                 type Storage = #storage;
-                type Group = #group_struct;
-                type GroupStorage = #group_storage;
-                type DynDb = #dyn_db;
 
                 const QUERY_INDEX: u16 = #query_index;
 
                 const QUERY_NAME: &'static str = #query_name;
 
-                fn query_storage(
-                    group_storage: &Self::GroupStorage,
-                ) -> &std::sync::Arc<Self::Storage> {
+                fn query_storage<'a>(
+                    group_storage: &'a <Self as salsa::QueryDb<'_>>::GroupStorage,
+                ) -> &'a std::sync::Arc<Self::Storage> {
                     &group_storage.#fn_name
                 }
             }
@@ -499,7 +503,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             let recover = if let Some(cycle_recovery_fn) = &query.cycle {
                 quote! {
-                    fn recover(db: &Self::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::Query>::Key)
+                    fn recover(db: &<Self as salsa::QueryDb<'_>>::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::Query>::Key)
                         -> Option<<Self as salsa::Query>::Value> {
                         Some(#cycle_recovery_fn(
                                 db,
@@ -516,7 +520,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 // ANCHOR:QueryFunction_impl
                 impl salsa::plumbing::QueryFunction for #qt
                 {
-                    fn execute(db: &Self::DynDb, #key_pattern: <Self as salsa::Query>::Key)
+                    fn execute(db: &<Self as salsa::QueryDb<'_>>::DynDb, #key_pattern: <Self as salsa::Query>::Key)
                         -> <Self as salsa::Query>::Value {
                         #invoke(db, #(#key_names),*)
                     }
@@ -580,7 +584,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         impl #group_storage {
             #trait_vis fn fmt_index(
                 &self,
-                db: &#dyn_db,
+                db: &(#dyn_db + '_),
                 input: salsa::DatabaseKeyIndex,
                 fmt: &mut std::fmt::Formatter<'_>,
             ) -> std::fmt::Result {
@@ -592,7 +596,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             #trait_vis fn maybe_changed_since(
                 &self,
-                db: &#dyn_db,
+                db: &(#dyn_db + '_),
                 input: salsa::DatabaseKeyIndex,
                 revision: salsa::Revision,
             ) -> bool {

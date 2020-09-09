@@ -45,7 +45,7 @@ pub use crate::storage::Storage;
 /// The base trait which your "query context" must implement. Gives
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
-pub trait Database: 'static + plumbing::DatabaseOps {
+pub trait Database: plumbing::DatabaseOps {
     /// Iterates through all query storage and removes any values that
     /// have not been used since the last revision was created. The
     /// intended use-cycle is that you first execute all of your
@@ -421,7 +421,22 @@ where
 
 /// Trait implements by all of the "special types" associated with
 /// each of your queries.
-pub trait Query: Debug + Default + Sized + 'static {
+///
+/// Base trait of `Query` that has a lifetime parameter to allow the `DynDb` to be non-'static.
+pub trait QueryDb<'d>: Sized {
+    /// Dyn version of the associated trait for this query group.
+    type DynDb: ?Sized + Database + HasQueryGroup<Self::Group> + 'd;
+
+    /// Associate query group struct.
+    type Group: plumbing::QueryGroup<GroupStorage = Self::GroupStorage>;
+
+    /// Generated struct that contains storage for all queries in a group.
+    type GroupStorage;
+}
+
+/// Trait implements by all of the "special types" associated with
+/// each of your queries.
+pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
     type Key: Clone + Debug + Hash + Eq;
@@ -430,16 +445,8 @@ pub trait Query: Debug + Default + Sized + 'static {
     type Value: Clone + Debug;
 
     /// Internal struct storing the values for the query.
-    type Storage: plumbing::QueryStorageOps<Self>;
-
-    /// Associate query group struct.
-    type Group: plumbing::QueryGroup<DynDb = Self::DynDb, GroupStorage = Self::GroupStorage>;
-
-    /// Generated struct that contains storage for all queries in a group.
-    type GroupStorage;
-
-    /// Dyn version of the associated trait for this query group.
-    type DynDb: ?Sized + Database + HasQueryGroup<Self::Group>;
+    // type Storage: plumbing::QueryStorageOps<Self>;
+    type Storage;
 
     /// A unique index identifying this query within the group.
     const QUERY_INDEX: u16;
@@ -448,7 +455,9 @@ pub trait Query: Debug + Default + Sized + 'static {
     const QUERY_NAME: &'static str;
 
     /// Extact storage for this query from the storage for its group.
-    fn query_storage(group_storage: &Self::GroupStorage) -> &Arc<Self::Storage>;
+    fn query_storage<'a>(
+        group_storage: &'a <Self as QueryDb<'_>>::GroupStorage,
+    ) -> &'a Arc<Self::Storage>;
 }
 
 /// Return value from [the `query` method] on `Database`.
@@ -457,18 +466,19 @@ pub trait Query: Debug + Default + Sized + 'static {
 /// [the `query` method]: trait.Database.html#method.query
 pub struct QueryTable<'me, Q>
 where
-    Q: Query + 'me,
+    Q: Query,
 {
-    db: &'me Q::DynDb,
+    db: &'me <Q as QueryDb<'me>>::DynDb,
     storage: &'me Q::Storage,
 }
 
 impl<'me, Q> QueryTable<'me, Q>
 where
     Q: Query,
+    Q::Storage: QueryStorageOps<Q>,
 {
     /// Constructs a new `QueryTable`.
-    pub fn new(db: &'me Q::DynDb, storage: &'me Q::Storage) -> Self {
+    pub fn new(db: &'me <Q as QueryDb<'me>>::DynDb, storage: &'me Q::Storage) -> Self {
         Self { db, storage }
     }
 
@@ -514,7 +524,7 @@ pub struct QueryTableMut<'me, Q>
 where
     Q: Query + 'me,
 {
-    db: &'me mut Q::DynDb,
+    db: &'me mut <Q as QueryDb<'me>>::DynDb,
     storage: Arc<Q::Storage>,
 }
 
@@ -523,7 +533,7 @@ where
     Q: Query,
 {
     /// Constructs a new `QueryTableMut`.
-    pub fn new(db: &'me mut Q::DynDb, storage: Arc<Q::Storage>) -> Self {
+    pub fn new(db: &'me mut <Q as QueryDb<'me>>::DynDb, storage: Arc<Q::Storage>) -> Self {
         Self { db, storage }
     }
 
