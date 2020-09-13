@@ -38,7 +38,7 @@ struct MyDatabase { ... }
 impl FileWatcher for MyDatabase {
     fn watch(&self, path: &Path) { ... }
     fn did_change_file(&mut self, path: &Path) {
-        self.query_mut(ReadQuery).invalidate(path);
+        ReadQuery.in_db_mut(self).invalidate(path);
     }
 }
 ```
