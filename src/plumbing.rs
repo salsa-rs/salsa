@@ -9,6 +9,7 @@ use crate::QueryTable;
 use crate::QueryTableMut;
 use crate::RuntimeId;
 use crate::SweepStrategy;
+use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -197,5 +198,8 @@ pub trait DerivedQueryStorageOps<Q>
 where
     Q: Query,
 {
-    fn invalidate(&self, db: &mut <Q as QueryDb<'_>>::DynDb, key: &Q::Key);
+    fn invalidate<S>(&self, db: &mut <Q as QueryDb<'_>>::DynDb, key: &S)
+    where
+        S: Eq + Hash,
+        Q::Key: Borrow<S>;
 }
