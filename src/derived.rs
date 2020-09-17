@@ -9,7 +9,9 @@ use crate::plumbing::QueryStorageOps;
 use crate::runtime::{FxIndexMap, StampedValue};
 use crate::{CycleError, Database, DatabaseKeyIndex, QueryDb, Revision, Runtime, SweepStrategy};
 use parking_lot::RwLock;
+use std::borrow::Borrow;
 use std::convert::TryFrom;
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -226,7 +228,11 @@ where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
 {
-    fn invalidate(&self, db: &mut <Q as QueryDb<'_>>::DynDb, key: &Q::Key) {
+    fn invalidate<S>(&self, db: &mut <Q as QueryDb<'_>>::DynDb, key: &S)
+    where
+        S: Eq + Hash,
+        Q::Key: Borrow<S>,
+    {
         db.salsa_runtime_mut()
             .with_incremented_revision(&mut |_new_revision| {
                 let map_read = self.slot_map.read();
