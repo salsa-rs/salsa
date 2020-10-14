@@ -1,12 +1,11 @@
 [package]
 name = "salsa"
-version = "0.15.3" # CHECK salsa-macros version
+version = "0.16.0" # CHECK salsa-macros version
 authors = ["Salsa developers"]
 edition = "2018"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/salsa-rs/salsa"
 description = "A generic framework for on-demand, incrementalized computation (experimental)"
-readme = "README.md"
 
 [dependencies]
 crossbeam-utils = { version = "0.8", default-features = false }
@@ -18,7 +17,7 @@ rustc-hash = "1.0"
 smallvec = "1.0.0"
 oorandom = "11"
 
-salsa-macros = { version = "0.15.0", path = "components/salsa-macros" }
+salsa-macros = { version = "0.16.0", path = "components/salsa-macros" }
 
 [dev-dependencies]
 diff = "0.1.0"
