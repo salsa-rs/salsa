@@ -6,7 +6,6 @@ edition = "2018"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/salsa-rs/salsa"
 description = "A generic framework for on-demand, incrementalized computation (experimental)"
-readme = "README.md"
 
 [dependencies]
 crossbeam-utils = { version = "0.8", default-features = false }
