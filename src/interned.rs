@@ -462,8 +462,7 @@ where
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        let group_storage =
-            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
+        let group_storage = <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<<Q as QueryDb<'_>>::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
         interned_storage.fmt_index(Q::convert_db(db), index, fmt)
     }
@@ -474,8 +473,7 @@ where
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool {
-        let group_storage =
-            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
+        let group_storage = <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<<Q as QueryDb<'_>>::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
         interned_storage.maybe_changed_since(Q::convert_db(db), input, revision)
     }
@@ -487,7 +485,7 @@ where
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         let index = key.as_intern_id();
         let group_storage =
-            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
+            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<<Q as QueryDb<'_>>::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
         let slot = interned_storage.lookup_value(Q::convert_db(db), index);
         let value = slot.value.clone();
@@ -509,7 +507,7 @@ where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
     {
         let group_storage =
-            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
+            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<<Q as QueryDb<'_>>::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
         let tables = interned_storage.tables.read();
         tables
