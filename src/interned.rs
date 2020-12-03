@@ -462,7 +462,8 @@ where
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        let group_storage = <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<<Q as QueryDb<'_>>::Group>>::group_storage(db);
+        let group_storage =
+            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<<Q as QueryDb<'_>>::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
         interned_storage.fmt_index(Q::convert_db(db), index, fmt)
     }
@@ -473,7 +474,8 @@ where
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool {
-        let group_storage = <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<<Q as QueryDb<'_>>::Group>>::group_storage(db);
+        let group_storage =
+            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<<Q as QueryDb<'_>>::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
         interned_storage.maybe_changed_since(Q::convert_db(db), input, revision)
     }
