@@ -123,6 +123,14 @@ fn inner_cycle() {
 }
 
 #[test]
+fn cycle_revalidate() {
+    let mut db = DatabaseImpl::default();
+    assert!(db.cycle_a().is_err());
+    CycleLeafQuery.in_db_mut(&mut db).invalidate(&());
+    assert!(db.cycle_a().is_err());
+}
+
+#[test]
 fn parallel_cycle() {
     let _ = env_logger::try_init();
 
