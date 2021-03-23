@@ -6,7 +6,6 @@ struct Error {
 }
 
 #[salsa::database(GroupStruct)]
-#[derive(Default)]
 struct DatabaseImpl {
     storage: salsa::Storage<Self>,
 }
@@ -21,6 +20,16 @@ impl ParallelDatabase for DatabaseImpl {
     }
 }
 
+impl Default for DatabaseImpl {
+    fn default() -> Self {
+        let mut res = DatabaseImpl {
+            storage: salsa::Storage::default(),
+        };
+        res.set_cycle_leaf(true);
+        res
+    }
+}
+
 #[salsa::query_group(GroupStruct)]
 trait Database: salsa::Database {
     // `a` and `b` depend on each other and form a cycle
@@ -29,7 +38,8 @@ trait Database: salsa::Database {
     fn volatile_a(&self) -> ();
     fn volatile_b(&self) -> ();
 
-    fn cycle_leaf(&self) -> ();
+    #[salsa::input]
+    fn cycle_leaf(&self) -> bool;
 
     #[salsa::cycle(recover_a)]
     fn cycle_a(&self) -> Result<(), Error>;
@@ -69,22 +79,22 @@ fn volatile_b(db: &dyn Database) -> () {
     db.volatile_a()
 }
 
-fn cycle_leaf(_db: &dyn Database) -> () {}
-
 fn cycle_a(db: &dyn Database) -> Result<(), Error> {
     let _ = db.cycle_b();
     Ok(())
 }
 
 fn cycle_b(db: &dyn Database) -> Result<(), Error> {
-    db.cycle_leaf();
-    let _ = db.cycle_a();
+    if db.cycle_leaf() {
+        let _ = db.cycle_a();
+    }
     Ok(())
 }
 
 fn cycle_c(db: &dyn Database) -> Result<(), Error> {
     db.cycle_b()
 }
+
 
 #[test]
 #[should_panic(expected = "cycle detected")]
@@ -126,8 +136,25 @@ fn inner_cycle() {
 fn cycle_revalidate() {
     let mut db = DatabaseImpl::default();
     assert!(db.cycle_a().is_err());
-    CycleLeafQuery.in_db_mut(&mut db).invalidate(&());
+    db.set_cycle_leaf(true);
     assert!(db.cycle_a().is_err());
+}
+
+#[test]
+fn cycle_appears() {
+    let mut db = DatabaseImpl::default();
+    db.set_cycle_leaf(false);
+    assert!(db.cycle_a().is_ok());
+    db.set_cycle_leaf(true);
+    assert!(db.cycle_a().is_err());
+}
+
+#[test]
+fn cycle_disappears() {
+    let mut db = DatabaseImpl::default();
+    assert!(db.cycle_a().is_err());
+    db.set_cycle_leaf(false);
+    assert!(db.cycle_a().is_ok());
 }
 
 #[test]
