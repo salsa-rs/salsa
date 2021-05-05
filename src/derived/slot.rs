@@ -280,7 +280,7 @@ where
 
         debug!(
             "read_upgrade({:?}): result.changed_at={:?}, \
-             result.durability={:?}, result.dependencies = {:#?}",
+             result.durability={:?}, result.dependencies = {:?}",
             self, result.changed_at, result.durability, result.dependencies,
         );
 
@@ -297,7 +297,7 @@ where
                 }
             }
         };
-        debug!("read_upgrade({:?}): inputs={:?}", self, inputs);
+        debug!("read_upgrade({:?}): inputs={:#?}", self, inputs.debug(db));
 
         panic_guard.memo = Some(Memo {
             value,
@@ -991,6 +991,47 @@ where
 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(fmt, "{:?}({:?})", Q::default(), self.key)
+    }
+}
+
+impl MemoInputs {
+    fn debug<'a, D: ?Sized>(&'a self, db: &'a D) -> impl std::fmt::Debug + 'a
+    where
+        D: DatabaseOps,
+    {
+        enum DebugMemoInputs<'a, D: ?Sized> {
+            Tracked {
+                inputs: &'a [DatabaseKeyIndex],
+                db: &'a D,
+            },
+            NoInputs,
+            Untracked,
+        }
+
+        impl<D: ?Sized + DatabaseOps> std::fmt::Debug for DebugMemoInputs<'_, D> {
+            fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    DebugMemoInputs::Tracked { inputs, db } => fmt
+                        .debug_struct("Tracked")
+                        .field(
+                            "inputs",
+                            &inputs.iter().map(|key| key.debug(*db)).collect::<Vec<_>>(),
+                        )
+                        .finish(),
+                    DebugMemoInputs::NoInputs => fmt.debug_struct("NoInputs").finish(),
+                    DebugMemoInputs::Untracked => fmt.debug_struct("Untracked").finish(),
+                }
+            }
+        }
+
+        match self {
+            MemoInputs::Tracked { inputs } => DebugMemoInputs::Tracked {
+                inputs: &inputs,
+                db,
+            },
+            MemoInputs::NoInputs => DebugMemoInputs::NoInputs,
+            MemoInputs::Untracked => DebugMemoInputs::Untracked,
+        }
     }
 }
 

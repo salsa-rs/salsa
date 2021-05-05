@@ -603,7 +603,7 @@ pub(crate) struct ComputedQueryResult<V> {
     pub(crate) changed_at: Revision,
 
     /// Complete set of subqueries that were accessed, or `None` if
-    /// there was an untracked the read.
+    /// there was an untracked read.
     pub(crate) dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
 
     /// The cycle if one occured while computing this value
