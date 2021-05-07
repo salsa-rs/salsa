@@ -1,0 +1,5 @@
+status = [
+    "Test (ubuntu-latest)",
+]
+delete_merged_branches = true
+timeout_sec = 1200 # 20 min
