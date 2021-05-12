@@ -30,10 +30,13 @@ use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
+#[cfg(feature = "async")]
+use crate::plumbing::{AsyncQueryFunction, QueryStorageOpsAsync};
+use crate::plumbing::{HasQueryGroup, QueryStorageOpsSync};
 pub use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
@@ -419,24 +422,47 @@ where
     }
 }
 
-/// Trait implements by all of the "special types" associated with
-/// each of your queries.
-///
-/// Base trait of `Query` that has a lifetime parameter to allow the `DynDb` to be non-'static.
-pub trait QueryDb<'d>: Sized {
-    /// Dyn version of the associated trait for this query group.
-    type DynDb: ?Sized + Database + HasQueryGroup<Self::Group> + 'd;
+/// Internal trait for conversion to a mutable database. Necessary for maybe_changed_since so it
+/// can select the async version when necessary
+#[doc(hidden)]
+pub trait AsAsyncDatabase<T: ?Sized> {
+    #[doc(hidden)]
+    fn as_async_db(&mut self) -> Option<&mut T>;
+}
 
-    /// Associate query group struct.
-    type Group: plumbing::QueryGroup<GroupStorage = Self::GroupStorage>;
+impl<T> AsAsyncDatabase<T> for &'_ T
+where
+    T: ?Sized + Database,
+{
+    fn as_async_db(&mut self) -> Option<&mut T> {
+        None
+    }
+}
 
-    /// Generated struct that contains storage for all queries in a group.
-    type GroupStorage;
+impl<T> AsAsyncDatabase<T> for OwnedDb<'_, T>
+where
+    T: ?Sized + Database,
+{
+    fn as_async_db(&mut self) -> Option<&mut T> {
+        Some(self.db)
+    }
 }
 
 /// Trait implements by all of the "special types" associated with
 /// each of your queries.
-pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
+///
+/// Base trait of `Query` that has a lifetime parameter to allow the `DynDb` to be non-'static.
+pub trait QueryDb<'d>: QueryBase {
+    /// Dyn version of the associated trait for this query group.
+    type DynDb: ?Sized + Database + HasQueryGroup<Self::Group> + 'd;
+
+    /// Sized version of `DynDb`, &'d Self::DynDb for synchronous queries
+    type Db: std::ops::Deref<Target = Self::DynDb> + AsAsyncDatabase<Self::DynDb>;
+}
+
+/// Trait implements by all of the "special types" associated with
+/// each of your queries.
+pub trait QueryBase: Debug + Default + Sized {
     /// Type that you you give as a parameter -- for queries with zero
     /// or more than one input, this will be a tuple.
     type Key: Clone + Debug + Hash + Eq;
@@ -454,46 +480,70 @@ pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
     /// Name of the query method (e.g., `foo`)
     const QUERY_NAME: &'static str;
 
+    /// Associate query group struct.
+    type Group: plumbing::QueryGroup<GroupStorage = Self::GroupStorage>;
+
+    /// Generated struct that contains storage for all queries in a group.
+    type GroupStorage;
+
     /// Extact storage for this query from the storage for its group.
-    fn query_storage<'a>(
-        group_storage: &'a <Self as QueryDb<'_>>::GroupStorage,
-    ) -> &'a Arc<Self::Storage>;
+    fn query_storage<'a>(group_storage: &'a Self::GroupStorage) -> &'a Arc<Self::Storage>;
 }
+
+/// Trait implements by all of the "special types" associated with
+/// each of your queries.
+pub trait Query: for<'d> QueryDb<'d> {}
+
+impl<Q> Query for Q where Q: for<'d> QueryDb<'d> {}
 
 /// Return value from [the `query` method] on `Database`.
 /// Gives access to various less common operations on queries.
 ///
 /// [the `query` method]: trait.Database.html#method.query
-pub struct QueryTable<'me, Q>
+pub struct QueryTable<'me, Q, DB>
 where
     Q: Query,
 {
-    db: &'me <Q as QueryDb<'me>>::DynDb,
-    storage: &'me Q::Storage,
+    db: DB,
+    storage: Arc<Q::Storage>,
+    _marker: PhantomData<&'me ()>,
 }
 
-impl<'me, Q> QueryTable<'me, Q>
+impl<'me, Q> QueryTable<'me, Q, &'me <Q as QueryDb<'me>>::DynDb>
 where
     Q: Query,
     Q::Storage: QueryStorageOps<Q>,
 {
     /// Constructs a new `QueryTable`.
-    pub fn new(db: &'me <Q as QueryDb<'me>>::DynDb, storage: &'me Q::Storage) -> Self {
-        Self { db, storage }
+    pub fn new(db: &'me <Q as QueryDb<'me>>::DynDb, storage: Arc<Q::Storage>) -> Self {
+        Self {
+            db,
+            storage,
+            _marker: PhantomData,
+        }
     }
+}
 
-    /// Execute the query on a given input. Usually it's easier to
-    /// invoke the trait method directly. Note that for variadic
-    /// queries (those with no inputs, or those with more than one
-    /// input) the key will be a tuple.
-    pub fn get(&self, key: Q::Key) -> Q::Value {
-        self.try_get(key).unwrap_or_else(|err| panic!("{}", err))
+impl<'me, Q> QueryTable<'me, Q, <Q as QueryDb<'me>>::Db>
+where
+    Q: Query,
+    Q::Storage: QueryStorageOps<Q>,
+{
+    /// Constructs a new `QueryTable`.
+    pub fn new_async(db: <Q as QueryDb<'me>>::Db, storage: Arc<Q::Storage>) -> Self {
+        Self {
+            db,
+            storage,
+            _marker: PhantomData,
+        }
     }
+}
 
-    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
-        self.storage.try_fetch(self.db, &key)
-    }
-
+impl<'me, Q> QueryTable<'me, Q, &'me <Q as QueryDb<'me>>::DynDb>
+where
+    Q: Query,
+    Q::Storage: QueryStorageOps<Q>,
+{
     /// Remove all values for this query that have not been used in
     /// the most recent revision.
     pub fn sweep(&self, strategy: SweepStrategy)
@@ -501,6 +551,57 @@ where
         Q::Storage: plumbing::QueryStorageMassOps,
     {
         self.storage.sweep(self.db.salsa_runtime(), strategy);
+    }
+
+    /// Peeks at the value at `Q::Key`. If it is currently in cache then it returns
+    /// `Some`, otherwise `None`
+    pub fn peek(&self, key: &Q::Key) -> Option<Q::Value> {
+        self.storage.peek(self.db, key)
+    }
+}
+
+impl<'me, Q> QueryTable<'me, Q, <Q as QueryDb<'me>>::Db>
+where
+    Q: Query,
+    Q::Storage: QueryStorageOpsSync<Q>,
+{
+    /// Execute the query on a given input. Usually it's easier to
+    /// invoke the trait method directly. Note that for variadic
+    /// queries (those with no inputs, or those with more than one
+    /// input) the key will be a tuple.
+    pub fn get(&mut self, key: Q::Key) -> Q::Value {
+        self.try_get(key).unwrap_or_else(|err| panic!("{}", err))
+    }
+
+    fn try_get(&mut self, key: Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+        self.storage.try_fetch(&mut self.db, &key)
+    }
+}
+
+#[cfg(feature = "async")]
+impl<'me, Q> QueryTable<'me, Q, <Q as QueryDb<'me>>::Db>
+where
+    Q: QueryBase,
+    Q::Key: Send + Sync,
+    Q::Value: Send + Sync,
+    Q::Storage: QueryStorageOpsAsync<Q>,
+    Q: for<'f, 'd> AsyncQueryFunction<'f, 'd>,
+{
+    /// Execute the query on a given input. Usually it's easier to
+    /// invoke the trait method directly. Note that for variadic
+    /// queries (those with no inputs, or those with more than one
+    /// input) the key will be a tuple.
+    pub async fn get_async(&mut self, key: Q::Key) -> Q::Value {
+        self.try_get_async(key)
+            .await
+            .unwrap_or_else(|err| panic!("{}", err))
+    }
+
+    async fn try_get_async(
+        &mut self,
+        key: Q::Key,
+    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+        self.storage.try_fetch_async(&mut self.db, &key).await
     }
     /// Completely clears the storage for this query.
     ///
@@ -617,10 +718,139 @@ where
     }
 }
 
+/// A boxed future used in the salsa traits
+pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
+
+/// Encapsulates a mutable reference to a database while only giving out shared references.
+/// Use for asynchronous queries to make the database references passed `Send`
+#[allow(explicit_outlives_requirements)] // https://github.com/rust-lang/rust/issues/60993
+pub struct OwnedDb<'a, T>
+where
+    T: ?Sized,
+{
+    db: &'a mut T,
+}
+
+impl<'a, T> std::ops::Deref for OwnedDb<'a, T>
+where
+    T: ?Sized,
+{
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        self.db
+    }
+}
+
+impl<'a, T> OwnedDb<'a, T>
+where
+    T: ?Sized,
+{
+    #[doc(hidden)]
+    pub fn new(db: &'a mut T) -> Self {
+        Self { db }
+    }
+
+    #[doc(hidden)]
+    pub fn __internal_get_db(&mut self) -> &mut T {
+        self.db
+    }
+}
+
+impl<'a, T: ?Sized> From<&'a mut T> for OwnedDb<'a, T> {
+    fn from(t: &'a mut T) -> Self {
+        OwnedDb::new(t)
+    }
+}
+
+impl<'a, 'b, T: ?Sized> From<&'a mut OwnedDb<'b, T>> for OwnedDb<'a, T> {
+    fn from(t: &'a mut OwnedDb<'b, T>) -> Self {
+        OwnedDb::new(t.db)
+    }
+}
+
+impl<'a, 'b, T: ParallelDatabase> From<&'a mut Snapshot<T>> for OwnedDb<'a, T> {
+    fn from(t: &'a mut Snapshot<T>) -> Self {
+        OwnedDb::new(&mut t.db)
+    }
+}
+
+impl<T> plumbing::DatabaseOps for OwnedDb<'_, T>
+where
+    T: ?Sized + plumbing::DatabaseOps,
+{
+    fn ops_database(&self) -> &dyn Database {
+        self.db.ops_database()
+    }
+
+    fn ops_salsa_runtime(&self) -> &Runtime {
+        self.db.ops_salsa_runtime()
+    }
+
+    fn ops_salsa_runtime_mut(&mut self) -> &mut Runtime {
+        self.db.ops_salsa_runtime_mut()
+    }
+
+    fn fmt_index(
+        &self,
+        index: DatabaseKeyIndex,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        self.db.fmt_index(index, fmt)
+    }
+
+    fn maybe_changed_since(&self, input: DatabaseKeyIndex, revision: Revision) -> bool {
+        self.db.maybe_changed_since(input, revision)
+    }
+
+    fn maybe_changed_since_async(
+        &mut self,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> BoxFuture<'_, bool> {
+        self.db.maybe_changed_since_async(input, revision)
+    }
+
+    fn for_each_query(&self, op: &mut dyn FnMut(&dyn QueryStorageMassOps)) {
+        self.db.for_each_query(op)
+    }
+}
+
+impl<T> Database for OwnedDb<'_, T>
+where
+    T: ?Sized + Database,
+{
+    fn sweep_all(&self, strategy: SweepStrategy) {
+        self.db.sweep_all(strategy)
+    }
+
+    fn salsa_event(&self, event_fn: Event) {
+        self.db.salsa_event(event_fn)
+    }
+
+    fn on_propagated_panic(&self) -> ! {
+        self.db.on_propagated_panic()
+    }
+
+    fn salsa_runtime(&self) -> &Runtime {
+        self.db.salsa_runtime()
+    }
+
+    fn salsa_runtime_mut(&mut self) -> &mut Runtime {
+        self.db.salsa_runtime_mut()
+    }
+}
+
+/// TODO
+#[macro_export]
+macro_rules! cast_owned_db {
+    ($db: expr => $ty: ty) => {
+        $crate::OwnedDb::new($db.__internal_into_db() as $ty)
+    };
+}
+
 // Re-export the procedural macros.
 #[allow(unused_imports)]
 #[macro_use]
 extern crate salsa_macros;
-use plumbing::HasQueryGroup;
 #[doc(hidden)]
 pub use salsa_macros::*;

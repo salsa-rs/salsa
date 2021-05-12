@@ -2,7 +2,7 @@ use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
-use crate::plumbing::QueryStorageOps;
+use crate::plumbing::{QueryStorageOps, QueryStorageOpsSync};
 use crate::revision::Revision;
 use crate::runtime::{FxIndexMap, StampedValue};
 use crate::CycleError;
@@ -76,45 +76,6 @@ where
         write!(fmt, "{}({:?})", Q::QUERY_NAME, key)
     }
 
-    fn maybe_changed_since(
-        &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-        input: DatabaseKeyIndex,
-        revision: Revision,
-    ) -> bool {
-        assert_eq!(input.group_index, self.group_index);
-        assert_eq!(input.query_index, Q::QUERY_INDEX);
-        let slot = self
-            .slots
-            .read()
-            .get_index(input.key_index as usize)
-            .unwrap()
-            .1
-            .clone();
-        slot.maybe_changed_since(db, revision)
-    }
-
-    fn try_fetch(
-        &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-        key: &Q::Key,
-    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
-        let slot = self
-            .slot(key)
-            .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
-
-        let StampedValue {
-            value,
-            durability,
-            changed_at,
-        } = slot.stamped_value.read().clone();
-
-        db.salsa_runtime()
-            .report_query_read(slot.database_key_index, durability, changed_at);
-
-        Ok(value)
-    }
-
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
         match self.slot(key) {
             Some(slot) => slot.stamped_value.read().durability,
@@ -136,6 +97,54 @@ where
                 )
             })
             .collect()
+    }
+
+    fn peek(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Option<Q::Value> {
+        None // TODO ?
+    }
+}
+
+impl<Q> QueryStorageOpsSync<Q> for InputStorage<Q>
+where
+    Q: Query,
+{
+    fn maybe_changed_since(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool {
+        assert_eq!(input.group_index, self.group_index);
+        assert_eq!(input.query_index, Q::QUERY_INDEX);
+        let slot = self
+            .slots
+            .read()
+            .get_index(input.key_index as usize)
+            .unwrap()
+            .1
+            .clone();
+        slot.maybe_changed_since(db, revision)
+    }
+
+    fn try_fetch(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::Db,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+        let slot = self
+            .slot(key)
+            .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
+
+        let StampedValue {
+            value,
+            durability,
+            changed_at,
+        } = slot.stamped_value.read().clone();
+
+        db.salsa_runtime()
+            .report_query_read(slot.database_key_index, durability, changed_at);
+
+        Ok(value)
     }
 }
 

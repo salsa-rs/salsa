@@ -542,7 +542,7 @@ changes are made, so that the signature looks like:
 // Before this RFC:
 pub struct DerivedStorage<Q, MP>
 where
-    Q: QueryFunction,
+    for<'f> Q: QueryFunction<'f>,
     MP: MemoizationPolicy<DB, Q>,
 ```
 

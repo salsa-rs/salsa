@@ -28,7 +28,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let query_group_storage_names: Vec<_> = query_groups
         .iter()
-        .map(|QueryGroup { group_path }| {
+        .map(|QueryGroup { group_path, .. }| {
             quote! {
                 <#group_path as salsa::plumbing::QueryGroup>::GroupStorage
             }
@@ -89,7 +89,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
 
     // Create a tuple (D1, D2, ...) where Di is the data for a given query group.
     let mut database_data = vec![];
-    for QueryGroup { group_path } in query_groups {
+    for QueryGroup { group_path, .. } in query_groups {
         database_data.push(quote! {
             <#group_path as salsa::plumbing::QueryGroup>::GroupData
         });
@@ -106,8 +106,18 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     // ANCHOR:DatabaseOps
     let mut fmt_ops = proc_macro2::TokenStream::new();
     let mut maybe_changed_ops = proc_macro2::TokenStream::new();
+    let mut maybe_changed_async_ops = proc_macro2::TokenStream::new();
     let mut for_each_ops = proc_macro2::TokenStream::new();
-    for ((QueryGroup { group_path }, group_storage), group_index) in query_groups
+    for (
+        (
+            QueryGroup {
+                is_async,
+                group_path,
+            },
+            group_storage,
+        ),
+        group_index,
+    ) in query_groups
         .iter()
         .zip(&query_group_storage_names)
         .zip(0_u16..)
@@ -119,19 +129,47 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
                 storage.fmt_index(self, input, fmt)
             }
         });
-        maybe_changed_ops.extend(quote! {
-            #group_index => {
-                let storage: &#group_storage =
-                    <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
-                storage.maybe_changed_since(self, input, revision)
-            }
-        });
+
+        if *is_async {
+            maybe_changed_async_ops.extend(quote! {
+                #group_index => {
+                    let storage =
+                        <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self).clone();
+                    storage.maybe_changed_since(salsa::OwnedDb::new(self), input, revision).await
+                }
+            });
+        } else {
+            maybe_changed_ops.extend(quote! {
+                #group_index => {
+                    let storage: &#group_storage =
+                        <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
+                    storage.maybe_changed_since(self, input, revision)
+                }
+            });
+        }
         for_each_ops.extend(quote! {
             let storage: &#group_storage =
                 <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
             storage.for_each_query(runtime, &mut op);
         });
     }
+
+    let maybe_changed_since_async = if maybe_changed_async_ops.is_empty() {
+        quote! {
+            let x = self.maybe_changed_since(input, revision);
+            Box::pin(async move { x })
+        }
+    } else {
+        quote! {
+            Box::pin(async move {
+                match input.group_index() {
+                    #maybe_changed_async_ops
+                    _ => self.maybe_changed_since(input, revision),
+                }
+            })
+        }
+    };
+
     output.extend(quote! {
         impl salsa::plumbing::DatabaseOps for #database_name {
             fn ops_database(&self) -> &dyn salsa::Database {
@@ -166,6 +204,14 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
                     #maybe_changed_ops
                     i => panic!("salsa: invalid group index {}", i)
                 }
+            }
+
+            fn maybe_changed_since_async(
+                &mut self,
+                input: salsa::DatabaseKeyIndex,
+                revision: salsa::Revision
+            ) -> salsa::BoxFuture<'_, bool> {
+                #maybe_changed_since_async
             }
 
             fn for_each_query(
@@ -204,6 +250,7 @@ impl Parse for QueryGroupList {
 
 #[derive(Clone, Debug)]
 struct QueryGroup {
+    is_async: bool,
     group_path: Path,
 }
 
@@ -219,8 +266,12 @@ impl Parse for QueryGroup {
     ///         impl HelloWorldDatabase;
     /// ```
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let is_async: Option<Token!(async)> = input.parse()?;
         let group_path: Path = input.parse()?;
-        Ok(QueryGroup { group_path })
+        Ok(QueryGroup {
+            is_async: is_async.is_some(),
+            group_path,
+        })
     }
 }
 
