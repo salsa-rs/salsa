@@ -25,6 +25,7 @@ pub mod debug;
 #[doc(hidden)]
 pub mod plumbing;
 
+use crate::plumbing::DatabaseOps;
 use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
@@ -487,7 +488,8 @@ where
     /// queries (those with no inputs, or those with more than one
     /// input) the key will be a tuple.
     pub fn get(&self, key: Q::Key) -> Q::Value {
-        self.try_get(key).unwrap_or_else(|err| panic!("{}", err))
+        self.try_get(key)
+            .unwrap_or_else(|err| panic!("{:?}", err.debug(self.db)))
     }
 
     fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
@@ -513,7 +515,8 @@ where
         Q::Storage: plumbing::QueryStorageMassOps,
     {
         self.storage.purge();
-    }}
+    }
+}
 
 /// Return value from [the `query_mut` method] on `Database`.
 /// Gives access to the `set` method, notably, that is used to
@@ -602,6 +605,30 @@ pub struct CycleError<K> {
     cycle: Vec<K>,
     changed_at: Revision,
     durability: Durability,
+}
+
+impl CycleError<DatabaseKeyIndex> {
+    fn debug<'a, D: ?Sized>(&'a self, db: &'a D) -> impl Debug + 'a
+    where
+        D: DatabaseOps,
+    {
+        struct CycleErrorDebug<'a, D: ?Sized> {
+            db: &'a D,
+            error: &'a CycleError<DatabaseKeyIndex>,
+        }
+
+        impl<'a, D: ?Sized + DatabaseOps> Debug for CycleErrorDebug<'a, D> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                writeln!(f, "Internal error, cycle detected:\n")?;
+                for i in &self.error.cycle {
+                    writeln!(f, "{:?}", i.debug(self.db))?;
+                }
+                Ok(())
+            }
+        }
+
+        CycleErrorDebug { db, error: self }
+    }
 }
 
 impl<K> fmt::Display for CycleError<K>
