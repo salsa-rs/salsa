@@ -22,7 +22,7 @@ Describe effects on end users here.
 
 Describe implementation details or other things here.
 
-## Alternatives and future work
+## Frequently asked questions
 
-Various downsides, rejected approaches, or other considerations.
+Use this section to add in design notes, downsides, rejected approaches, or other considerations.
 
