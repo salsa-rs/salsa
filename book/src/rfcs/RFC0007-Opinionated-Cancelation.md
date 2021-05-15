@@ -1,4 +1,4 @@
-# Description/title
+# Opinionated cancelation
 
 ## Metadata
 
