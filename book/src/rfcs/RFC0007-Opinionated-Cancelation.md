@@ -8,8 +8,8 @@
 
 ## Summary
 
-* Define panic as the one true way to handle cancellation in salsa queries
-* Modify salsa queries to automatically panic when they are canceled
+* Define stack unwinding as the one true way to handle cancellation in salsa queries
+* Modify salsa queries to automatically initiate unwinding when they are canceled
 * Use a distinguished value for this panic so that people can test if the panic was a result of cancellation
 
 ## Motivation
@@ -58,6 +58,5 @@ No. Cancelation in salsa only occurs when there are parallel readers and writers
 ### What about people using panic-as-abort?
 
 This does mean that salsa is not compatible with panic-as-abort. Strictly speaking, you could still use salsa in single-threaded mode, so that cancelation is not possible.
-
 
 
