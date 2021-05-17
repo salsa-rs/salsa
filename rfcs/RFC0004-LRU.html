@@ -17,12 +17,18 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
+        
         <link rel="icon" href="../favicon.svg">
+        
+        
         <link rel="shortcut icon" href="../favicon.png">
+        
         <link rel="stylesheet" href="../css/variables.css">
         <link rel="stylesheet" href="../css/general.css">
         <link rel="stylesheet" href="../css/chrome.css">
+        
         <link rel="stylesheet" href="../css/print.css" media="print">
+        
 
         <!-- Fonts -->
         <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
@@ -126,17 +132,21 @@
                     <h1 class="menu-title">Salsa</h1>
 
                     <div class="right-buttons">
+                        
                         <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         
+                        
+                        
+
                     </div>
                 </div>
 
                 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -157,9 +167,9 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#summary" id="summary">Summary</a></h1>
+                        <h1 id="summary"><a class="header" href="#summary">Summary</a></h1>
 <p>Add Least Recently Used values eviction as a supplement to garbage collection.</p>
-<h1><a class="header" href="#motivation" id="motivation">Motivation</a></h1>
+<h1 id="motivation"><a class="header" href="#motivation">Motivation</a></h1>
 <p>Currently, the single mechanism for controlling memory usage in salsa is garbage
 collection. Experience with rust-analyzer shown that it is insufficient for two
 reasons:</p>
@@ -189,7 +199,7 @@ which values are actually unused.</p>
 usage.</p>
 </li>
 </ul>
-<h1><a class="header" href="#users-guide" id="users-guide">User's guide</a></h1>
+<h1 id="users-guide"><a class="header" href="#users-guide">User's guide</a></h1>
 <p>It is possible to call <code>set_lru_capacity(n)</code> method on any non-input query. The
 effect of this is that the table for the query stores at most <code>n</code> <em>values</em> in
 the database. If a new value is computed, and there are already <code>n</code> existing
@@ -197,7 +207,7 @@ ones in the database, the least recently used one is evicted. Note that
 information about query dependencies is <strong>not</strong> evicted. It is possible to
 change lru capacity at runtime at any time. <code>n == 0</code> is a special case, which
 completely disables LRU logic. LRU is not enabled by default.</p>
-<h1><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h1>
+<h1 id="reference-guide"><a class="header" href="#reference-guide">Reference guide</a></h1>
 <p>Implementation wise, we store a linked hash map of keys, in the recently-used
 order. Because reads of the queries are considered uses, we now need to
 write-lock the query map even if the query is fresh. However we don't do this
@@ -207,7 +217,7 @@ it.</p>
 query with an untracked input). Similarly to GC, evicting such a query could
 lead to an inconsistent database. For this reason, volatile queries are never
 evicted.</p>
-<h1><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h1>
+<h1 id="alternatives-and-future-work"><a class="header" href="#alternatives-and-future-work">Alternatives and future work</a></h1>
 <p>LRU is a compromise, as it is prone to both accidentally evicting useful queries
 and needlessly holding onto useless ones. In particular, in the steady state and
 without additional GC, memory usage will be proportional to the lru capacity: it

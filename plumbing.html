@@ -17,12 +17,18 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
+        
         <link rel="icon" href="favicon.svg">
+        
+        
         <link rel="shortcut icon" href="favicon.png">
+        
         <link rel="stylesheet" href="css/variables.css">
         <link rel="stylesheet" href="css/general.css">
         <link rel="stylesheet" href="css/chrome.css">
+        
         <link rel="stylesheet" href="css/print.css" media="print">
+        
 
         <!-- Fonts -->
         <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
@@ -126,17 +132,21 @@
                     <h1 class="menu-title">Salsa</h1>
 
                     <div class="right-buttons">
+                        
                         <a href="print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         
+                        
+                        
+
                     </div>
                 </div>
 
                 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -157,7 +167,7 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#plumbing" id="plumbing">Plumbing</a></h1>
+                        <h1 id="plumbing"><a class="header" href="#plumbing">Plumbing</a></h1>
 <p>This chapter documents the code that salsa generates and its &quot;inner workings&quot;.
 We refer to this as the &quot;plumbing&quot;.</p>
 <p>This page walks through the <a href="https://github.com/salsa-rs/salsa/blob/master/examples/hello_world/main.rs">&quot;Hello, World!&quot;</a> example and explains the code that
@@ -167,7 +177,7 @@ easily. See the page history below for major updates.</p>
 <p>If you'd like to see for yourself, you can set the environment variable
 <code>SALSA_DUMP</code> to 1 while the procedural macro runs, and it will dump the full
 output to stdout. I recommend piping the output through rustfmt.</p>
-<h2><a class="header" href="#history" id="history">History</a></h2>
+<h2 id="history"><a class="header" href="#history">History</a></h2>
 <ul>
 <li>2020-07-05: Updated to take <a href="rfcs/RFC0006-Dynamic-Databases.html">RFC 6</a> into account.</li>
 <li>2020-06-24: Initial version.</li>

@@ -17,12 +17,18 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
+        
         <link rel="icon" href="favicon.svg">
+        
+        
         <link rel="shortcut icon" href="favicon.png">
+        
         <link rel="stylesheet" href="css/variables.css">
         <link rel="stylesheet" href="css/general.css">
         <link rel="stylesheet" href="css/chrome.css">
+        
         <link rel="stylesheet" href="css/print.css" media="print">
+        
 
         <!-- Fonts -->
         <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
@@ -126,17 +132,21 @@
                     <h1 class="menu-title">Salsa</h1>
 
                     <div class="right-buttons">
+                        
                         <a href="print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         
+                        
+                        
+
                     </div>
                 </div>
 
                 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -157,21 +167,21 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#rfcs" id="rfcs">RFCs</a></h1>
+                        <h1 id="rfcs"><a class="header" href="#rfcs">RFCs</a></h1>
 <p>The Salsa RFC process is used to describe the motivations for major changes made
 to Salsa. RFCs are recorded here in the Salsa book as a historical record of the
 considerations that were raised at the time. Note that the contents of RFCs,
 once merged, is typically not updated to match further changes. Instead, the
 rest of the book is updated to include the RFC text and then kept up to
 date as more PRs land and so forth.</p>
-<h2><a class="header" href="#creating-an-rfc" id="creating-an-rfc">Creating an RFC</a></h2>
+<h2 id="creating-an-rfc"><a class="header" href="#creating-an-rfc">Creating an RFC</a></h2>
 <p>If you'd like to propose a major new Salsa feature, simply clone the repository
 and create a new chapter under the list of RFCs based on the <a href="./rfcs/template.html">RFC template</a>.
 Then open a PR with a subject line that starts with &quot;RFC:&quot;.</p>
-<h2><a class="header" href="#rfc-vs-implementation" id="rfc-vs-implementation">RFC vs Implementation</a></h2>
+<h2 id="rfc-vs-implementation"><a class="header" href="#rfc-vs-implementation">RFC vs Implementation</a></h2>
 <p>The RFC can be in its own PR, or it can also includ work on the implementation
 together, whatever works best for you.</p>
-<h2><a class="header" href="#does-my-change-need-an-rfc" id="does-my-change-need-an-rfc">Does my change need an RFC?</a></h2>
+<h2 id="does-my-change-need-an-rfc"><a class="header" href="#does-my-change-need-an-rfc">Does my change need an RFC?</a></h2>
 <p>Not all PRs require RFCs. RFCs are only needed for larger features or major
 changes to how Salsa works. And they don't have to be super complicated, but
 they should capture the most important reasons you would like to make the

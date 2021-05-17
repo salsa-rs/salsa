@@ -17,12 +17,18 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
+        
         <link rel="icon" href="../favicon.svg">
+        
+        
         <link rel="shortcut icon" href="../favicon.png">
+        
         <link rel="stylesheet" href="../css/variables.css">
         <link rel="stylesheet" href="../css/general.css">
         <link rel="stylesheet" href="../css/chrome.css">
+        
         <link rel="stylesheet" href="../css/print.css" media="print">
+        
 
         <!-- Fonts -->
         <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
@@ -126,17 +132,21 @@
                     <h1 class="menu-title">Salsa</h1>
 
                     <div class="right-buttons">
+                        
                         <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         
+                        
+                        
+
                     </div>
                 </div>
 
                 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -157,7 +167,7 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#selection" id="selection">Selection</a></h1>
+                        <h1 id="selection"><a class="header" href="#selection">Selection</a></h1>
 <p>The &quot;selection&quot; (or &quot;firewall&quot;) pattern is when you have a query Qsel that reads from some
 other Qbase and extracts some small bit of information from Qbase that it returns.
 In particular, Qsel does not combine values from other queries. In some sense,
@@ -165,7 +175,7 @@ then, Qsel is redundant -- you could have just extracted the information
 the information from Qbase yourself, and done without the salsa machinery. But
 Qsel serves a role in that it limits the amount of re-execution that is required
 when Qbase changes.</p>
-<h2><a class="header" href="#example-the-base-query" id="example-the-base-query">Example: the base query</a></h2>
+<h2 id="example-the-base-query"><a class="header" href="#example-the-base-query">Example: the base query</a></h2>
 <p>For example, imagine that you have a query <code>parse</code> that parses the input text of a request
 and returns a <code>ParsedResult</code>, which contains a header and a body:</p>
 <pre><code class="language-rust ignore">#[derive(Clone, Debug, PartialEq, Eq)]
@@ -190,7 +200,7 @@ trait RequestParser {
     fn parse(&amp;self) -&gt; ParsedResult;
 } 
 </code></pre>
-<h2><a class="header" href="#example-a-selecting-query" id="example-a-selecting-query">Example: a selecting query</a></h2>
+<h2 id="example-a-selecting-query"><a class="header" href="#example-a-selecting-query">Example: a selecting query</a></h2>
 <p>And now you have a number of derived queries that only look at the header.
 For example, one might extract the &quot;content-type' header:</p>
 <pre><code class="language-rust ignore">#[salsa::query_group(Request)]
@@ -206,7 +216,7 @@ fn content_type(db: &amp;dyn RequestUtil) -&gt; Option&lt;String&gt; {
         .map(|header| header.value.clone())
 } 
 </code></pre>
-<h2><a class="header" href="#why-prefer-a-selecting-query" id="why-prefer-a-selecting-query">Why prefer a selecting query?</a></h2>
+<h2 id="why-prefer-a-selecting-query"><a class="header" href="#why-prefer-a-selecting-query">Why prefer a selecting query?</a></h2>
 <p>This <code>content_type</code> query is an instance of the <em>selection</em> pattern. It only
 &quot;selects&quot; a small bit of information from the <code>ParsedResult</code>. You might not have
 made it a query at all, but instead made it a method on <code>ParsedResult</code>.</p>
@@ -220,7 +230,7 @@ changes <em>unless</em> the content-type header changes. Consider the dependency
 If that produces a new parsed result, we are <em>also</em> going to re-execute <code>content_type</code>.
 But if the result of <code>content_type</code> has not changed, then we will <em>not</em> re-execute
 the other queries.</p>
-<h2><a class="header" href="#more-levels-of-selection" id="more-levels-of-selection">More levels of selection</a></h2>
+<h2 id="more-levels-of-selection"><a class="header" href="#more-levels-of-selection">More levels of selection</a></h2>
 <p>In fact, in our example we might consider introducing another level of selection.
 Instead of having <code>content_type</code> directly access the results of <code>parse</code>, it might be better
 to insert a selecting query that just extracts the header:</p>
@@ -248,7 +258,7 @@ fn content_type(db: &amp;dyn RequestUtil) -&gt; Option&lt;String&gt; {
 only consume small parts of the request will
 not require us to re-execute <code>content_type</code> at all. This would be particularly
 valuable if there are a lot of dependent headers.</p>
-<h2><a class="header" href="#a-note-on-cloning-and-efficiency" id="a-note-on-cloning-and-efficiency">A note on cloning and efficiency</a></h2>
+<h2 id="a-note-on-cloning-and-efficiency"><a class="header" href="#a-note-on-cloning-and-efficiency">A note on cloning and efficiency</a></h2>
 <p>In this example, we used common Rust types like <code>Vec</code> and <code>String</code>,
 and we cloned them quite frequently. This will work just fine in Salsa,
 but it may not be the most efficient choice. This is because each clone

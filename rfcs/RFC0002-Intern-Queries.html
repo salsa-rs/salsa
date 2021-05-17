@@ -17,12 +17,18 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
+        
         <link rel="icon" href="../favicon.svg">
+        
+        
         <link rel="shortcut icon" href="../favicon.png">
+        
         <link rel="stylesheet" href="../css/variables.css">
         <link rel="stylesheet" href="../css/general.css">
         <link rel="stylesheet" href="../css/chrome.css">
+        
         <link rel="stylesheet" href="../css/print.css" media="print">
+        
 
         <!-- Fonts -->
         <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
@@ -126,17 +132,21 @@
                     <h1 class="menu-title">Salsa</h1>
 
                     <div class="right-buttons">
+                        
                         <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         
+                        
+                        
+
                     </div>
                 </div>
 
                 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -157,7 +167,7 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#summary" id="summary">Summary</a></h1>
+                        <h1 id="summary"><a class="header" href="#summary">Summary</a></h1>
 <ul>
 <li>We introduce <code>#[salsa::interned]</code> queries which convert a <code>Key</code> type
 into a numeric index of type <code>Value</code>, where <code>Value</code> is either the
@@ -175,8 +185,8 @@ has two methods, <code>from_intern_id</code> and <code>as_intern_id</code>.</li>
 query, which means that interned values can be garbage-collected,
 and any computation that was dependent on them will be collected.</li>
 </ul>
-<h1><a class="header" href="#motivation" id="motivation">Motivation</a></h1>
-<h2><a class="header" href="#the-need-for-interning" id="the-need-for-interning">The need for interning</a></h2>
+<h1 id="motivation"><a class="header" href="#motivation">Motivation</a></h1>
+<h2 id="the-need-for-interning"><a class="header" href="#the-need-for-interning">The need for interning</a></h2>
 <p>Many salsa applications wind up needing the ability to construct
 &quot;interned keys&quot;. Frequently this pattern emerges because we wish to
 construct identifiers for things in the input. These identifiers
@@ -194,7 +204,7 @@ rise to a path like so that can be used to identify a given item:</p>
 because they are omnipresent, it is convenient to intern them instead
 and use an integer. Integers are <code>Copy</code> types, which is convenient,
 and they are also small (32 bits typically suffices in practice).</p>
-<h2><a class="header" href="#why-interning-is-difficult-today-garbage-collection" id="why-interning-is-difficult-today-garbage-collection">Why interning is difficult today: garbage collection</a></h2>
+<h2 id="why-interning-is-difficult-today-garbage-collection"><a class="header" href="#why-interning-is-difficult-today-garbage-collection">Why interning is difficult today: garbage collection</a></h2>
 <p>Unfortunately, integrating interning into salsa at present presents
 some hard choices, particularly with a long-lived application. You can
 easily add an interning table into the database, but unless you do
@@ -226,15 +236,15 @@ scheme, but that would require for salsa to add such a mechanism. It
 might also be quite a lot of tracing! The current salsa GC mechanism has no
 need to walk through the values themselves in a memoization table, it only
 examines the keys and the metadata (unless we are freeing a value, of course).</p>
-<h2><a class="header" href="#how-this-rfc-changes-the-situation" id="how-this-rfc-changes-the-situation">How this RFC changes the situation</a></h2>
+<h2 id="how-this-rfc-changes-the-situation"><a class="header" href="#how-this-rfc-changes-the-situation">How this RFC changes the situation</a></h2>
 <p>This RFC presents an alternative. The idea is to move the interning
 into salsa itself by creating special &quot;interning
 queries&quot;. Dependencies on these queries are tracked like any other
 query and hence they integrate naturally with salsa's garbage
 collection mechanisms.</p>
-<h1><a class="header" href="#users-guide" id="users-guide">User's guide</a></h1>
+<h1 id="users-guide"><a class="header" href="#users-guide">User's guide</a></h1>
 <p>This section covers how interned queries are expected to be used.</p>
-<h2><a class="header" href="#declaring-an-interned-query" id="declaring-an-interned-query">Declaring an interned query</a></h2>
+<h2 id="declaring-an-interned-query"><a class="header" href="#declaring-an-interned-query">Declaring an interned query</a></h2>
 <p>You can declare an interned query like so:</p>
 <pre><code class="language-rust ignore">#[salsa::query_group]
 trait Foo {
@@ -253,7 +263,7 @@ type <code>salsa::InternId</code>, but you can implement it for your own.</p>
 a reverse query that will invert the interning step. It is named
 <code>lookup_XXX</code>, where <code>XXX</code> is the name of the query. Hence here it
 would be <code>fn lookup_intern_path(&amp;self, key: salsa::InternId) -&gt; Path</code>.</p>
-<h2><a class="header" href="#the-expected-us" id="the-expected-us">The expected us</a></h2>
+<h2 id="the-expected-us"><a class="header" href="#the-expected-us">The expected us</a></h2>
 <p>Using an interned query is quite straightforward. You simply invoke it
 with a key, and you will get back an integer, and you can use the
 generated <code>lookup</code> method to convert back to the original value:</p>
@@ -264,7 +274,7 @@ let path_data2 = db.lookup_intern_path_data(key);
 values, it is best if that is a cheap operation. Interestingly,
 interning can help to keep recursive, tree-shapes values cheap,
 because the &quot;pointers&quot; within can be replaced with interned keys.</p>
-<h2><a class="header" href="#custom-return-types" id="custom-return-types">Custom return types</a></h2>
+<h2 id="custom-return-types"><a class="header" href="#custom-return-types">Custom return types</a></h2>
 <p>The return type for an intern query does not have to be a <code>InternId</code>. It can
 be any type that implements the <code>salsa::InternKey</code> trait:</p>
 <pre><code class="language-rust ignore">pub trait InternKey {
@@ -275,17 +285,17 @@ be any type that implements the <code>salsa::InternKey</code> trait:</p>
     fn as_intern_id(&amp;self) -&gt; InternId;
 }
 </code></pre>
-<h2><a class="header" href="#recommended-practice" id="recommended-practice">Recommended practice</a></h2>
+<h2 id="recommended-practice"><a class="header" href="#recommended-practice">Recommended practice</a></h2>
 <p>This section shows the recommended practice for using interned keys,
 building on the <code>Path</code> and <code>PathData</code> example that we've been working
 with. </p>
-<h3><a class="header" href="#naming-convention" id="naming-convention">Naming Convention</a></h3>
+<h3 id="naming-convention"><a class="header" href="#naming-convention">Naming Convention</a></h3>
 <p>First, note the recommended naming convention: the <em>intern key</em> is
 <code>Foo</code> and the key's associated data <code>FooData</code> (in our case, <code>Path</code> and
 <code>PathData</code>). The intern key is given the shorter name because it is
 used far more often. Moreover, other types should never store the full
 data, but rather should store the interned key.</p>
-<h3><a class="header" href="#defining-the-intern-key" id="defining-the-intern-key">Defining the intern key</a></h3>
+<h3 id="defining-the-intern-key"><a class="header" href="#defining-the-intern-key">Defining the intern key</a></h3>
 <p>The intern key should always be a newtype struct that implements
 the <code>InternKey</code> trait. So, something like this:</p>
 <pre><code class="language-rust ignore">pub struct Path(InternId);
@@ -300,7 +310,7 @@ impl salsa::InternKey for Path {
     }
 }
 </code></pre>
-<h3><a class="header" href="#convenient-lookup-method" id="convenient-lookup-method">Convenient lookup method</a></h3>
+<h3 id="convenient-lookup-method"><a class="header" href="#convenient-lookup-method">Convenient lookup method</a></h3>
 <p>It is often convenient to add a <code>lookup</code> method to the newtype key:</p>
 <pre><code class="language-rust ignore">impl Path {
     // Adding this method is often convenient, since you can then
@@ -310,7 +320,7 @@ impl salsa::InternKey for Path {
     }
 }
 </code></pre>
-<h3><a class="header" href="#defining-the-data-type" id="defining-the-data-type">Defining the data type</a></h3>
+<h3 id="defining-the-data-type"><a class="header" href="#defining-the-data-type">Defining the data type</a></h3>
 <p>Recall that our paths were defined by a recursive grammar like so:</p>
 <pre><code class="language-notrust">PathData = &lt;file-name&gt;
          | PathData / &lt;identifier&gt;
@@ -331,7 +341,7 @@ for an interned key is looked up, and it may also be cloned to store
 dependency information between queries. So, as an optimization, you
 might prefer to avoid <code>String</code> in favor of <code>Arc&lt;String&gt;</code> -- or even
 intern the strings as well.</p>
-<h2><a class="header" href="#interaction-with-the-garbage-collector" id="interaction-with-the-garbage-collector">Interaction with the garbage collector</a></h2>
+<h2 id="interaction-with-the-garbage-collector"><a class="header" href="#interaction-with-the-garbage-collector">Interaction with the garbage collector</a></h2>
 <p>Interned keys can be garbage collected as normal, with one
 caveat. Even if requested, Salsa will never collect the results
 generated in the current revision. This is because it would permit the
@@ -341,7 +351,7 @@ to distinct intern keys each time.</p>
 re-used.  Salsa's dependency tracking system should ensure that
 anything incorporating the older value is considered dirty, but you
 may see the same index showing up more than once in the logs.</p>
-<h1><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h1>
+<h1 id="reference-guide"><a class="header" href="#reference-guide">Reference guide</a></h1>
 <p>Interned keys are implemented using a hash-map that maps from the
 interned data to its index, as well as a vector containing (for each
 index) various bits of data. In addition to the interned data, we must
@@ -352,7 +362,7 @@ keys that are being re-used. The current implementation never actually
 shrinks the vectors and maps from their maximum size, but this might
 be a useful thing to be able to do (this is effectively a memory
 allocator, so standard allocation strategies could be used here).</p>
-<h2><a class="header" href="#internid" id="internid">InternId</a></h2>
+<h2 id="internid"><a class="header" href="#internid">InternId</a></h2>
 <p>Presently the <code>InternId</code> type is implemented to wrap a <code>NonZeroU32</code>:</p>
 <pre><code class="language-rust ignore">pub struct InternId {
     value: NonZeroU32,
@@ -365,7 +375,7 @@ the <code>InternId</code> constructors require that the value is less than
 <code>0xFFFF_FF00</code>) to allow for more sentinel values in the future (Rust
 doesn't presently expose the capability of having sentinel values
 other than zero on stable, but it is possible on nightly).</p>
-<h1><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h1>
+<h1 id="alternatives-and-future-work"><a class="header" href="#alternatives-and-future-work">Alternatives and future work</a></h1>
 <p>None at present.</p>
 
                     </main>

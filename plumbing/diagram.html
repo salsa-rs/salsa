@@ -17,12 +17,18 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
+        
         <link rel="icon" href="../favicon.svg">
+        
+        
         <link rel="shortcut icon" href="../favicon.png">
+        
         <link rel="stylesheet" href="../css/variables.css">
         <link rel="stylesheet" href="../css/general.css">
         <link rel="stylesheet" href="../css/chrome.css">
+        
         <link rel="stylesheet" href="../css/print.css" media="print">
+        
 
         <!-- Fonts -->
         <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
@@ -126,17 +132,21 @@
                     <h1 class="menu-title">Salsa</h1>
 
                     <div class="right-buttons">
+                        
                         <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         
+                        
+                        
+
                     </div>
                 </div>
 
                 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -157,7 +167,7 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#diagram" id="diagram">Diagram</a></h1>
+                        <h1 id="diagram"><a class="header" href="#diagram">Diagram</a></h1>
 <p>Based on the hello world example:</p>
 <pre><code class="language-rust ignore">#[salsa::query_group(HelloWorldStorage)]
 trait HelloWorld: salsa::Database {
@@ -188,47 +198,47 @@ impl salsa::Database for DatabaseStruct {}
 <pre class="mermaid">graph LR
     classDef diagramNode text-align:left;
     subgraph query group
-        HelloWorldTrait["trait HelloWorld: Database + HasQueryGroup(HelloWorldStroage)"]
-        HelloWorldImpl["impl(DB) HelloWorld for DB<br>where DB: HasQueryGroup(HelloWorldStorage)"]
-        click HelloWorldImpl "http:query_groups.html#impl-of-the-hello-world-trait" "more info"
-        HelloWorldStorage["struct HelloWorldStorage"]
-        click HelloWorldStorage "http:query_groups.html#the-group-struct-and-querygroup-trait" "more info"
-        QueryGroupImpl["impl QueryGroup for HelloWorldStorage<br>&nbsp;&nbsp;type DynDb = dyn HelloWorld<br>&nbsp;&nbsp;type Storage = HelloWorldGroupStorage__;"]
-        click QueryGroupImpl "http:query_groups.html#the-group-struct-and-querygroup-trait" "more info"
-        HelloWorldGroupStorage["struct HelloWorldGroupStorage__"]
-        click HelloWorldGroupStorage "http:query_groups.html#group-storage" "more info"
+        HelloWorldTrait[&quot;trait HelloWorld: Database + HasQueryGroup(HelloWorldStroage)&quot;]
+        HelloWorldImpl[&quot;impl(DB) HelloWorld for DB&lt;br&gt;where DB: HasQueryGroup(HelloWorldStorage)&quot;]
+        click HelloWorldImpl &quot;http:query_groups.html#impl-of-the-hello-world-trait&quot; &quot;more info&quot;
+        HelloWorldStorage[&quot;struct HelloWorldStorage&quot;]
+        click HelloWorldStorage &quot;http:query_groups.html#the-group-struct-and-querygroup-trait&quot; &quot;more info&quot;
+        QueryGroupImpl[&quot;impl QueryGroup for HelloWorldStorage&lt;br&gt;&amp;nbsp;&amp;nbsp;type DynDb = dyn HelloWorld&lt;br&gt;&amp;nbsp;&amp;nbsp;type Storage = HelloWorldGroupStorage__;&quot;]
+        click QueryGroupImpl &quot;http:query_groups.html#the-group-struct-and-querygroup-trait&quot; &quot;more info&quot;
+        HelloWorldGroupStorage[&quot;struct HelloWorldGroupStorage__&quot;]
+        click HelloWorldGroupStorage &quot;http:query_groups.html#group-storage&quot; &quot;more info&quot;
         subgraph for each query...
             LengthQuery[struct LengthQuery]
-            LengthQueryImpl["impl Query for LengthQuery<br>&nbsp;&nbsp;type Key = ()<br>&nbsp;&nbsp;type Value = usize<br>&nbsp;&nbsp;type Storage = salsa::DerivedStorage(Self)<br>&nbsp;&nbsp;type QueryGroup = HelloWorldStorage"]
-            LengthQueryFunctionImpl["impl QueryFunction for LengthQuery<br>&nbsp;&nbsp;fn execute(db: &dyn HelloWorld, key: ()) -> usize"]
-            click LengthQuery "http:query_groups.html#for-each-query-a-query-struct" "more info"
-            click LengthQueryImpl "http:query_groups.html#for-each-query-a-query-struct" "more info"
-            click LengthQueryFunctionImpl "http:query_groups.html#for-each-query-a-query-struct" "more info"
+            LengthQueryImpl[&quot;impl Query for LengthQuery&lt;br&gt;&amp;nbsp;&amp;nbsp;type Key = ()&lt;br&gt;&amp;nbsp;&amp;nbsp;type Value = usize&lt;br&gt;&amp;nbsp;&amp;nbsp;type Storage = salsa::DerivedStorage(Self)&lt;br&gt;&amp;nbsp;&amp;nbsp;type QueryGroup = HelloWorldStorage&quot;]
+            LengthQueryFunctionImpl[&quot;impl QueryFunction for LengthQuery&lt;br&gt;&amp;nbsp;&amp;nbsp;fn execute(db: &amp;dyn HelloWorld, key: ()) -&gt; usize&quot;]
+            click LengthQuery &quot;http:query_groups.html#for-each-query-a-query-struct&quot; &quot;more info&quot;
+            click LengthQueryImpl &quot;http:query_groups.html#for-each-query-a-query-struct&quot; &quot;more info&quot;
+            click LengthQueryFunctionImpl &quot;http:query_groups.html#for-each-query-a-query-struct&quot; &quot;more info&quot;
         end
         class HelloWorldTrait,HelloWorldImpl,HelloWorldStorage,QueryGroupImpl,HelloWorldGroupStorage diagramNode;
         class LengthQuery,LengthQueryImpl,LengthQueryFunctionImpl diagramNode;
     end
     subgraph database
-        DatabaseStruct["struct Database { .. storage: Storage(Self) .. }"]
+        DatabaseStruct[&quot;struct Database { .. storage: Storage(Self) .. }&quot;]
         subgraph for each group...
-            HasQueryGroup["impl plumbing::HasQueryGroup(HelloWorldStorage) for DatabaseStruct"]
-            click HasQueryGroup "http:database.html#the-hasquerygroup-impl" "more info"
+            HasQueryGroup[&quot;impl plumbing::HasQueryGroup(HelloWorldStorage) for DatabaseStruct&quot;]
+            click HasQueryGroup &quot;http:database.html#the-hasquerygroup-impl&quot; &quot;more info&quot;
         end
-        DatabaseStorageTypes["impl plumbing::DatabaseStorageTypes for DatabaseStruct<br>&nbsp;&nbsp;type DatabaseStorage = __SalsaDatabaseStorage"]
-        click DatabaseStorageTypes "http:database.html#the-databasestoragetypes-impl" "more info"
-        DatabaseStorage["struct __SalsaDatabaseStorage"]
-        click DatabaseStorage "http:database.html#the-database-storage-struct" "more info"
-        DatabaseOps["impl plumbing::DatabaseOps for DatabaseStruct"]
-        click DatabaseOps "http:database.html#the-databaseops-impl" "more info"
+        DatabaseStorageTypes[&quot;impl plumbing::DatabaseStorageTypes for DatabaseStruct&lt;br&gt;&amp;nbsp;&amp;nbsp;type DatabaseStorage = __SalsaDatabaseStorage&quot;]
+        click DatabaseStorageTypes &quot;http:database.html#the-databasestoragetypes-impl&quot; &quot;more info&quot;
+        DatabaseStorage[&quot;struct __SalsaDatabaseStorage&quot;]
+        click DatabaseStorage &quot;http:database.html#the-database-storage-struct&quot; &quot;more info&quot;
+        DatabaseOps[&quot;impl plumbing::DatabaseOps for DatabaseStruct&quot;]
+        click DatabaseOps &quot;http:database.html#the-databaseops-impl&quot; &quot;more info&quot;
         class DatabaseStruct,DatabaseStorage,DatabaseStorageTypes,DatabaseOps,HasQueryGroup diagramNode;
     end
     subgraph salsa crate
-        DerivedStorage["DerivedStorage"]
+        DerivedStorage[&quot;DerivedStorage&quot;]
         class DerivedStorage diagramNode;
     end
-    LengthQueryImpl --> DerivedStorage;
-    DatabaseStruct --> HelloWorldImpl
-    HasQueryGroup --> HelloWorldImpl
+    LengthQueryImpl --&gt; DerivedStorage;
+    DatabaseStruct --&gt; HelloWorldImpl
+    HasQueryGroup --&gt; HelloWorldImpl
 </pre>
 
                     </main>

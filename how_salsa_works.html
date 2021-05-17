@@ -17,12 +17,18 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
+        
         <link rel="icon" href="favicon.svg">
+        
+        
         <link rel="shortcut icon" href="favicon.png">
+        
         <link rel="stylesheet" href="css/variables.css">
         <link rel="stylesheet" href="css/general.css">
         <link rel="stylesheet" href="css/chrome.css">
+        
         <link rel="stylesheet" href="css/print.css" media="print">
+        
 
         <!-- Fonts -->
         <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
@@ -126,17 +132,21 @@
                     <h1 class="menu-title">Salsa</h1>
 
                     <div class="right-buttons">
+                        
                         <a href="print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         
+                        
+                        
+
                     </div>
                 </div>
 
                 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -157,14 +167,14 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#how-salsa-works" id="how-salsa-works">How Salsa works</a></h1>
-<h2><a class="header" href="#video-available" id="video-available">Video available</a></h2>
+                        <h1 id="how-salsa-works"><a class="header" href="#how-salsa-works">How Salsa works</a></h1>
+<h2 id="video-available"><a class="header" href="#video-available">Video available</a></h2>
 <p>To get the most complete introduction to Salsa's inner works, check
 out <a href="https://youtu.be/_muY4HjSqVw">the &quot;How Salsa Works&quot; video</a>.  If
 you'd like a deeper dive, <a href="https://www.youtube.com/watch?v=i_IhACacPRY">the &quot;Salsa in more depth&quot;
 video</a> digs into the
 details of the incremental algorithm.</p>
-<h2><a class="header" href="#key-idea" id="key-idea">Key idea</a></h2>
+<h2 id="key-idea"><a class="header" href="#key-idea">Key idea</a></h2>
 <p>The key idea of <code>salsa</code> is that you define your program as a set of
 <strong>queries</strong>. Every query is used like function <code>K -&gt; V</code> that maps from
 some key of type <code>K</code> to a value of type <code>V</code>. Queries come in two basic
@@ -178,7 +188,7 @@ avoid recomputing them a lot. When you make changes to the inputs,
 we'll figure out (fairly intelligently) when we can re-use these
 memoized values and when we have to recompute them.</li>
 </ul>
-<h2><a class="header" href="#how-to-use-salsa-in-three-easy-steps" id="how-to-use-salsa-in-three-easy-steps">How to use Salsa in three easy steps</a></h2>
+<h2 id="how-to-use-salsa-in-three-easy-steps"><a class="header" href="#how-to-use-salsa-in-three-easy-steps">How to use Salsa in three easy steps</a></h2>
 <p>Using salsa is as easy as 1, 2, 3...</p>
 <ol>
 <li>Define one or more <strong>query groups</strong> that contain the inputs
@@ -194,7 +204,7 @@ anything else that your code needs (e.g., configuration data).</li>
 <p>To see an example of this in action, check out <a href="https://github.com/salsa-rs/salsa/blob/master/examples/hello_world/main.rs">the <code>hello_world</code>
 example</a>, which has a number of comments explaining how
 things work.</p>
-<h2><a class="header" href="#digging-into-the-plumbing" id="digging-into-the-plumbing">Digging into the plumbing</a></h2>
+<h2 id="digging-into-the-plumbing"><a class="header" href="#digging-into-the-plumbing">Digging into the plumbing</a></h2>
 <p>Check out the <a href="plumbing.html">plumbing</a> chapter to see a deeper explanation of the
 code that salsa generates and how it connects to the salsa library.</p>
 

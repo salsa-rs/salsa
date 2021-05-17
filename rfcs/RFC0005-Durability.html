@@ -17,12 +17,18 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
+        
         <link rel="icon" href="../favicon.svg">
+        
+        
         <link rel="shortcut icon" href="../favicon.png">
+        
         <link rel="stylesheet" href="../css/variables.css">
         <link rel="stylesheet" href="../css/general.css">
         <link rel="stylesheet" href="../css/chrome.css">
+        
         <link rel="stylesheet" href="../css/print.css" media="print">
+        
 
         <!-- Fonts -->
         <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
@@ -126,17 +132,21 @@
                     <h1 class="menu-title">Salsa</h1>
 
                     <div class="right-buttons">
+                        
                         <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         
+                        
+                        
+
                     </div>
                 </div>
 
                 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -157,15 +167,15 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#summary" id="summary">Summary</a></h1>
+                        <h1 id="summary"><a class="header" href="#summary">Summary</a></h1>
 <ul>
 <li>Introduce a user-visibile concept of <code>Durability</code></li>
 <li>Adjusting the &quot;durability&quot; of an input can allow salsa to skip a lot of validation work</li>
 <li>Garbage collection -- particularly of interned values -- however becomes more complex</li>
 <li>Possible future expansion: automatic detection of more &quot;durable&quot; input values</li>
 </ul>
-<h1><a class="header" href="#motivation" id="motivation">Motivation</a></h1>
-<h2><a class="header" href="#making-validation-faster-by-optimizing-for-durability" id="making-validation-faster-by-optimizing-for-durability">Making validation faster by optimizing for &quot;durability&quot;</a></h2>
+<h1 id="motivation"><a class="header" href="#motivation">Motivation</a></h1>
+<h2 id="making-validation-faster-by-optimizing-for-durability"><a class="header" href="#making-validation-faster-by-optimizing-for-durability">Making validation faster by optimizing for &quot;durability&quot;</a></h2>
 <p>Presently, salsa's validation logic requires traversing all
 dependencies to check that they have not changed. This can sometimes
 be quite costly in practice: rust-analyzer for example sometimes
@@ -192,8 +202,8 @@ only need to traverse the dependencies of Q when the standard library
 changes -- which is unusual. If the standard library <em>does</em> change,
 for example by user's tinkering with the internal sources, then yes we
 walk the dependencies of Q to see if it is affected.</p>
-<h1><a class="header" href="#users-guide" id="users-guide">User's guide</a></h1>
-<h2><a class="header" href="#the-durability-type" id="the-durability-type">The durability type</a></h2>
+<h1 id="users-guide"><a class="header" href="#users-guide">User's guide</a></h1>
+<h2 id="the-durability-type"><a class="header" href="#the-durability-type">The durability type</a></h2>
 <p>We add a new type <code>salsa::Durability</code> which has there associated constants:</p>
 <pre><code class="language-rust ignore">#[derive(Copy, Clone, Debug, Ord)]
 pub struct Durability(..);
@@ -219,13 +229,13 @@ db.set_foo_with_durability(key, value, Durability::LOW);
 // This would indicate that `foo` is not expected to change: 
 db.set_foo_with_durability(key, value, Durability::HIGH);
 </code></pre>
-<h2><a class="header" href="#durability-of-interned-values" id="durability-of-interned-values">Durability of interned values</a></h2>
+<h2 id="durability-of-interned-values"><a class="header" href="#durability-of-interned-values">Durability of interned values</a></h2>
 <p>Interned values are always considered <code>Durability::HIGH</code>. This makes
 sense as many queries that only use high durability inputs will also
 make use of interning internally. A consequence of this is that they
 will not be garbage collected unless you use the specific patterns
 recommended below.</p>
-<h2><a class="header" href="#synthetic-writes" id="synthetic-writes">Synthetic writes</a></h2>
+<h2 id="synthetic-writes"><a class="header" href="#synthetic-writes">Synthetic writes</a></h2>
 <p>Finally, we add one new method, <code>synthetic_write(durability)</code>, 
 available on the salsa runtime:</p>
 <pre><code class="language-rust ignore">db.salsa_runtime().synthetic_write(Durability::HIGH)
@@ -234,7 +244,7 @@ available on the salsa runtime:</p>
 though</em> a write to an input of the given durability had taken
 place. This can be used for benchmarking, but it's also important to
 controlling what values get garbaged collected, as described below.</p>
-<h2><a class="header" href="#tracing-and-garbage-collection" id="tracing-and-garbage-collection">Tracing and garbage collection</a></h2>
+<h2 id="tracing-and-garbage-collection"><a class="header" href="#tracing-and-garbage-collection">Tracing and garbage collection</a></h2>
 <p>Durability affects garbage collection. The <code>SweepStrategy</code> struct is
 modified as follows:</p>
 <pre><code class="language-rust ignore">/// Sweeps values which may be outdated, but which have not
@@ -278,8 +288,8 @@ pub fn sweep_outdated(self) -&gt; SweepStrategy;
 /// sweep unverified values.
 pub fn sweep_unverified(self) -&gt; SweepStrategy;
 </code></pre>
-<h1><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h1>
-<h2><a class="header" href="#review-the-need-for-gc-to-collect-outdated-values" id="review-the-need-for-gc-to-collect-outdated-values">Review: The need for GC to collect outdated values</a></h2>
+<h1 id="reference-guide"><a class="header" href="#reference-guide">Reference guide</a></h1>
+<h2 id="review-the-need-for-gc-to-collect-outdated-values"><a class="header" href="#review-the-need-for-gc-to-collect-outdated-values">Review: The need for GC to collect outdated values</a></h2>
 <p>In general, salsa's lazy validation scheme can lead to the accumulation
 of garbage that is no longer needed. Consider a query like this one:</p>
 <pre><code class="language-rust ignore">fn derived1(db: &amp;impl Database, start: usize) {
@@ -364,7 +374,7 @@ db.sweep_all(...);
 </code></pre>
 <p>In the case of our example, when we execute <code>sweep_all</code>, it would
 collect <code>derived2(44)</code>.</p>
-<h2><a class="header" href="#challenge-durability-lets-us-avoid-tracing" id="challenge-durability-lets-us-avoid-tracing">Challenge: Durability lets us avoid tracing</a></h2>
+<h2 id="challenge-durability-lets-us-avoid-tracing"><a class="header" href="#challenge-durability-lets-us-avoid-tracing">Challenge: Durability lets us avoid tracing</a></h2>
 <p>This tracing model is affected by the move to durability. Now, if some
 derived value has a high durability, we may skip tracing its
 descendants altogether. This means that they would never be &quot;verified&quot;
@@ -380,7 +390,7 @@ values of durability <code>D</code> last changed. Let <code>R_v</code> be the re
 </ul>
 </li>
 </ul>
-<h2><a class="header" href="#collecting-interned-and-untracked-values" id="collecting-interned-and-untracked-values">Collecting interned and untracked values</a></h2>
+<h2 id="collecting-interned-and-untracked-values"><a class="header" href="#collecting-interned-and-untracked-values">Collecting interned and untracked values</a></h2>
 <p>Most values can be collected whenever we like without influencing
 correctness.  However, interned values and those with untracked
 dependencies are an exception -- <strong>they can only be collected when
@@ -393,14 +403,14 @@ If the query is outdated, this is not a problem: anything that
 dependend on its result must also be outdated, and hence would be
 re-executed and would observe the new value. But if the query is <em>not</em>
 outdated, then we could get inconsistent result.s</p>
-<h1><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h1>
-<h2><a class="header" href="#rejected-arbitrary-durabilities" id="rejected-arbitrary-durabilities">Rejected: Arbitrary durabilities</a></h2>
+<h1 id="alternatives-and-future-work"><a class="header" href="#alternatives-and-future-work">Alternatives and future work</a></h1>
+<h2 id="rejected-arbitrary-durabilities"><a class="header" href="#rejected-arbitrary-durabilities">Rejected: Arbitrary durabilities</a></h2>
 <p>We considered permitting arbitrary &quot;levels&quot; of durability -- for
 example, allowing the user to specify a number -- rather than offering
 just three. Ultimately it seemed like that level of control wasn't
 really necessary and that having just three levels would be sufficient
 and simpler.</p>
-<h2><a class="header" href="#rejected-durability-lattices" id="rejected-durability-lattices">Rejected: Durability lattices</a></h2>
+<h2 id="rejected-durability-lattices"><a class="header" href="#rejected-durability-lattices">Rejected: Durability lattices</a></h2>
 <p>We also considered permitting a &quot;lattice&quot; of durabilities -- e.g., to
 mirror the crate DAG in rust-analyzer -- but this is tricky because
 the lattice itself would be dependent on other inputs.</p>

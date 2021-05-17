@@ -17,12 +17,18 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
+        
         <link rel="icon" href="../favicon.svg">
+        
+        
         <link rel="shortcut icon" href="../favicon.png">
+        
         <link rel="stylesheet" href="../css/variables.css">
         <link rel="stylesheet" href="../css/general.css">
         <link rel="stylesheet" href="../css/chrome.css">
+        
         <link rel="stylesheet" href="../css/print.css" media="print">
+        
 
         <!-- Fonts -->
         <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
@@ -126,17 +132,21 @@
                     <h1 class="menu-title">Salsa</h1>
 
                     <div class="right-buttons">
+                        
                         <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         
+                        
+                        
+
                     </div>
                 </div>
 
                 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -157,7 +167,7 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#query-groups-and-query-group-structs" id="query-groups-and-query-group-structs">Query groups and query group structs</a></h1>
+                        <h1 id="query-groups-and-query-group-structs"><a class="header" href="#query-groups-and-query-group-structs">Query groups and query group structs</a></h1>
 <p>When you define a query group trait:</p>
 <pre><code class="language-rust ignore">#[salsa::query_group(HelloWorldStorage)]
 trait HelloWorld: salsa::Database {
@@ -240,7 +250,7 @@ impl salsa::QueryFunction for LengthQuery {
 // hashmaps and other data used to implement the queries.
 struct HelloWorldGroupStorage__ { .. }
 </code></pre>
-<h2><a class="header" href="#the-group-struct-and-querygroup-trait" id="the-group-struct-and-querygroup-trait">The group struct and <code>QueryGroup</code> trait</a></h2>
+<h2 id="the-group-struct-and-querygroup-trait"><a class="header" href="#the-group-struct-and-querygroup-trait">The group struct and <code>QueryGroup</code> trait</a></h2>
 <p>The group struct is the only thing we generate whose name is known to the user.
 For a query group named <code>Foo</code>, it is conventionally called <code>FooStorage</code>, hence
 the name <code>HelloWorldStorage</code> in our example.</p>
@@ -257,7 +267,7 @@ impl salsa::plumbing::QueryGroup for HelloWorldStorage {
 <p>We'll go into detail on these types below and the role they play, but one that
 we didn't mention yet is <code>GroupData</code>. That is a kind of hack used to manage
 send/sync around slots, and it gets covered in the section on slots.</p>
-<h2><a class="header" href="#impl-of-the-hello-world-trait" id="impl-of-the-hello-world-trait">Impl of the hello world trait</a></h2>
+<h2 id="impl-of-the-hello-world-trait"><a class="header" href="#impl-of-the-hello-world-trait">Impl of the hello world trait</a></h2>
 <p>Ultimately, every salsa query group is going to be implemented by your final
 database type, which is not currently known to us (it is created by combining
 multiple salsa query groups). In fact, this salsa query group could be composed
@@ -288,7 +298,7 @@ where
 table&quot; are covered in a future section, but in short this code pulls out the
 hasmap for storing the <code>length</code> results and invokes the generic salsa logic to
 check for a valid result, etc.</p>
-<h2><a class="header" href="#for-each-query-a-query-struct" id="for-each-query-a-query-struct">For each query, a query struct</a></h2>
+<h2 id="for-each-query-a-query-struct"><a class="header" href="#for-each-query-a-query-struct">For each query, a query struct</a></h2>
 <p>As we referenced in the previous section, each query in the trait gets a struct
 that represents it. This struct is named after the query, converted into snake
 case and with the word <code>Query</code> appended. In typical Salsa workflows, these
@@ -330,7 +340,7 @@ actual function.</p>
 <span class="boring">                    recover
 </span>                }
 </code></pre>
-<h2><a class="header" href="#group-storage" id="group-storage">Group storage</a></h2>
+<h2 id="group-storage"><a class="header" href="#group-storage">Group storage</a></h2>
 <p>The &quot;group storage&quot; is the actual struct that contains all the hashtables and
 so forth for each query. The types of these are ultimately defined by the
 <code>Storage</code> associated type for each query type. The struct is generic over the

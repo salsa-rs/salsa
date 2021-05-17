@@ -17,12 +17,18 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
+        
         <link rel="icon" href="../favicon.svg">
+        
+        
         <link rel="shortcut icon" href="../favicon.png">
+        
         <link rel="stylesheet" href="../css/variables.css">
         <link rel="stylesheet" href="../css/general.css">
         <link rel="stylesheet" href="../css/chrome.css">
+        
         <link rel="stylesheet" href="../css/print.css" media="print">
+        
 
         <!-- Fonts -->
         <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
@@ -126,17 +132,21 @@
                     <h1 class="menu-title">Salsa</h1>
 
                     <div class="right-buttons">
+                        
                         <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         
+                        
+                        
+
                     </div>
                 </div>
 
                 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -157,9 +167,9 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#summary" id="summary">Summary</a></h1>
+                        <h1 id="summary"><a class="header" href="#summary">Summary</a></h1>
 <p>Allow to specify a dependency on a query group without making it a super trait.</p>
-<h1><a class="header" href="#motivation" id="motivation">Motivation</a></h1>
+<h1 id="motivation"><a class="header" href="#motivation">Motivation</a></h1>
 <p>Currently, there's only one way to express that queries from group <code>A</code> can use
 another group <code>B</code>: namely, <code>B</code> can be a super-trait of <code>A</code>:</p>
 <pre><code class="language-rust ignore">#[salsa::query_group(AStorage)]
@@ -179,7 +189,7 @@ frequently-changing or volatile queries into higher-level queries which produce
 stable results and contain invalidation. In the current salsa, however, it's
 very easy to accidentally call a low-level volatile query instead of a wrapper,
 introducing and undesired dependency.</p>
-<h1><a class="header" href="#users-guide" id="users-guide">User's guide</a></h1>
+<h1 id="users-guide"><a class="header" href="#users-guide">User's guide</a></h1>
 <p>To specify query dependencies, a <code>requires</code> attribute should be used:</p>
 <pre><code class="language-rust ignore">#[salsa::query_group(SymbolsDatabaseStorage)]
 #[salsa::requires(SyntaxDatabase)]
@@ -213,7 +223,7 @@ attribute:</p>
     // ...
 }
 </code></pre>
-<h1><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h1>
+<h1 id="reference-guide"><a class="header" href="#reference-guide">Reference guide</a></h1>
 <p>The implementation is straightforward and consists of adding traits from
 <code>requires</code> attributes to various <code>where</code> bounds. For example, we would generate
 the following blanket for above example:</p>
@@ -225,7 +235,7 @@ where
     ...
 }
 </code></pre>
-<h1><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h1>
+<h1 id="alternatives-and-future-work"><a class="header" href="#alternatives-and-future-work">Alternatives and future work</a></h1>
 <p>The semantics of <code>requires</code> closely resembles <code>where</code>, so we could imagine a
 syntax based on magical where clauses:</p>
 <pre><code class="language-rust ignore">#[salsa::query_group(SymbolsDatabaseStorage)]

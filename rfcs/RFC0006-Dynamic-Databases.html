@@ -17,12 +17,18 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff" />
 
+        
         <link rel="icon" href="../favicon.svg">
+        
+        
         <link rel="shortcut icon" href="../favicon.png">
+        
         <link rel="stylesheet" href="../css/variables.css">
         <link rel="stylesheet" href="../css/general.css">
         <link rel="stylesheet" href="../css/chrome.css">
+        
         <link rel="stylesheet" href="../css/print.css" media="print">
+        
 
         <!-- Fonts -->
         <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
@@ -126,17 +132,21 @@
                     <h1 class="menu-title">Salsa</h1>
 
                     <div class="right-buttons">
+                        
                         <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
                         
+                        
+                        
+
                     </div>
                 </div>
 
                 
                 <div id="search-wrapper" class="hidden">
                     <form id="searchbar-outer" class="searchbar-outer">
-                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
                     </form>
                     <div id="searchresults-outer" class="searchresults-outer hidden">
                         <div id="searchresults-header" class="searchresults-header"></div>
@@ -157,14 +167,14 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1><a class="header" href="#dynamic-databases" id="dynamic-databases">Dynamic databases</a></h1>
-<h2><a class="header" href="#metadata" id="metadata">Metadata</a></h2>
+                        <h1 id="dynamic-databases"><a class="header" href="#dynamic-databases">Dynamic databases</a></h1>
+<h2 id="metadata"><a class="header" href="#metadata">Metadata</a></h2>
 <ul>
 <li>Author: nikomatsakis</li>
 <li>Date: 2020-06-29</li>
 <li>Introduced in: <a href="https://github.com/salsa-rs/salsa/pull/1">salsa-rs/salsa#1</a> (please update once you open your PR)</li>
 </ul>
-<h2><a class="header" href="#summary" id="summary">Summary</a></h2>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
 <ul>
 <li>Retool Salsa's setup so that the generated code for a query group is not
 dependent on the final database type, and interacts with the database only
@@ -204,25 +214,25 @@ reasoning, although it would be more efficient.)</li>
 </ul>
 </li>
 </ul>
-<h2><a class="header" href="#motivation" id="motivation">Motivation</a></h2>
+<h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
 <p>Under the current salsa setup, all of the &quot;glue code&quot; that manages cache
 invalidation and other logic is ultimately parameterized by a type <code>DB</code> that
 refers to the full database. The problem is that, if you consider a typical
 salsa crate graph, the actual value for that type is not available until the
 final database crate is compiled:</p>
 <pre class="mermaid">graph TD;
-  Database["Crate that defines the database"];
-  QueryGroupA["Crate with query group A"];
-  QueryGroupB["Crate with query group B"];
-  SalsaCrate["the `salsa` crate"];
-  Database -- depends on --> QueryGroupA;
-  Database -- depends on --> QueryGroupB;
-  QueryGroupA -- depends on --> SalsaCrate;
-  QueryGroupB -- depends on --> SalsaCrate;
+  Database[&quot;Crate that defines the database&quot;];
+  QueryGroupA[&quot;Crate with query group A&quot;];
+  QueryGroupB[&quot;Crate with query group B&quot;];
+  SalsaCrate[&quot;the `salsa` crate&quot;];
+  Database -- depends on --&gt; QueryGroupA;
+  Database -- depends on --&gt; QueryGroupB;
+  QueryGroupA -- depends on --&gt; SalsaCrate;
+  QueryGroupB -- depends on --&gt; SalsaCrate;
 </pre>
 <p>The result is that we do not actually compile a good part of the code from
 <code>QueryGroupA</code> or <code>QueryGroupB</code> until we build the final database crate.</p>
-<h3><a class="header" href="#what-you-can-do-today-dyn-traits" id="what-you-can-do-today-dyn-traits">What you can do today: dyn traits</a></h3>
+<h3 id="what-you-can-do-today-dyn-traits"><a class="header" href="#what-you-can-do-today-dyn-traits">What you can do today: dyn traits</a></h3>
 <p>What you can do today is to use define a &quot;dyn-compatible&quot; query group
 trait and then write your derived functions using a <code>dyn</code> type as the
 argument:</p>
@@ -245,14 +255,14 @@ Moreover, as reported in <a href="https://github.com/salsa-rs/salsa/issues/220">
 suggest that this code may be duplicated and accounting for more of the binary
 than we would expect.</p>
 <p>FIXME: I'd like to have better measurements on the above!</p>
-<h3><a class="header" href="#our-goal" id="our-goal">Our goal</a></h3>
+<h3 id="our-goal"><a class="header" href="#our-goal">Our goal</a></h3>
 <p>The primary goal of this RFC is to make it so that the glue code we generate for
 query groups is not dependent on the database type, thus enabling better
 incremental rebuilds.</p>
-<h2><a class="header" href="#users-guide" id="users-guide">User's guide</a></h2>
+<h2 id="users-guide"><a class="header" href="#users-guide">User's guide</a></h2>
 <p>Most of the changes in this RFC are &quot;under the hood&quot;. But there are various user
 visibile changes proposed here.</p>
-<h3><a class="header" href="#all-query-groups-must-be-dyn-safe" id="all-query-groups-must-be-dyn-safe">All query groups must be dyn safe</a></h3>
+<h3 id="all-query-groups-must-be-dyn-safe"><a class="header" href="#all-query-groups-must-be-dyn-safe">All query groups must be dyn safe</a></h3>
 <p>The largest one is that <strong>all Salsa query groups must now be dyn-safe</strong>. The
 existing salsa query methods are all dyn-safe, so what this really implies is
 that one cannot have super-traits that use generic methods or other things that
@@ -269,14 +279,14 @@ trait Foo {
 have two &quot;similar but different&quot; ways of generating plumbing, and I'm not
 convinced that it's worth it. Moreover, it would require some form of opt-in so
 that would be a measure of user complexity as well.</p>
-<h3><a class="header" href="#all-query-functions-must-take-a-dyn-database" id="all-query-functions-must-take-a-dyn-database">All query functions must take a dyn database</a></h3>
+<h3 id="all-query-functions-must-take-a-dyn-database"><a class="header" href="#all-query-functions-must-take-a-dyn-database">All query functions must take a dyn database</a></h3>
 <p>You used to be able to implement queries by using <code>impl MyDatabase</code>, like so:</p>
 <pre><code class="language-rust ignore">fn my_query(db: &amp;impl MyDatabase, ...) { .. }
 </code></pre>
 <p>but you must now use <code>dyn MyDatabase</code>:</p>
 <pre><code class="language-rust ignore">fn my_query(db: &amp;dyn MyDatabase, ...) { .. }
 </code></pre>
-<h3><a class="header" href="#databases-embed-a-storagedb-with-a-fixed-field-name" id="databases-embed-a-storagedb-with-a-fixed-field-name">Databases embed a <code>Storage&lt;DB&gt;</code> with a fixed field name</a></h3>
+<h3 id="databases-embed-a-storagedb-with-a-fixed-field-name"><a class="header" href="#databases-embed-a-storagedb-with-a-fixed-field-name">Databases embed a <code>Storage&lt;DB&gt;</code> with a fixed field name</a></h3>
 <p>The &quot;Hello World&quot; database becomes the following:</p>
 <pre><code class="language-rust ignore">#[salsa::database(QueryGroup1, ..., QueryGroupN)]
 struct MyDatabase {
@@ -301,7 +311,7 @@ combines the <code>Runtime</code> (whose type no longer references <code>DB</cod
 <code>Arc&lt;DB::Storage&gt;</code>. The full type of <code>Storage</code>, since it includes the database
 type, cannot appear in any public interface, it is just used by the various
 implementations that are created by <code>salsa::database</code>.</p>
-<h3><a class="header" href="#instead-of-dbqueryq-you-write-qin_dbdb" id="instead-of-dbqueryq-you-write-qin_dbdb">Instead of <code>db.query(Q)</code>, you write <code>Q.in_db(&amp;db)</code></a></h3>
+<h3 id="instead-of-dbqueryq-you-write-qin_dbdb"><a class="header" href="#instead-of-dbqueryq-you-write-qin_dbdb">Instead of <code>db.query(Q)</code>, you write <code>Q.in_db(&amp;db)</code></a></h3>
 <p>As a consequence of the previous point, the existing <code>query</code> and <code>query_mut</code>
 methods on the <code>salsa::Database</code> trait are changed to methods on the query types
 themselves. So instead of <code>db.query(SomeQuery)</code>, one would write
@@ -309,7 +319,7 @@ themselves. So instead of <code>db.query(SomeQuery)</code>, one would write
 <code>salsa::Database</code> trait dyn-safe and also works better with the new use of <code>dyn</code>
 types, since it permits a coercion from <code>&amp;db</code> to the appropriate <code>dyn</code> database
 type at the point of call.</p>
-<h3><a class="header" href="#the-salsa-event-mechanism-will-move-to-dynamic-dispatch" id="the-salsa-event-mechanism-will-move-to-dynamic-dispatch">The salsa-event mechanism will move to dynamic dispatch</a></h3>
+<h3 id="the-salsa-event-mechanism-will-move-to-dynamic-dispatch"><a class="header" href="#the-salsa-event-mechanism-will-move-to-dynamic-dispatch">The salsa-event mechanism will move to dynamic dispatch</a></h3>
 <p>A further consequence is that the existing <code>salsa_event</code> method will be
 simplified and made suitable for dynamic dispatch. It used to take a closure
 that would produce the event if necessary; it now simply takes the event itself.
@@ -327,15 +337,15 @@ have been static calls that would likely have been optimized away entirely.</p>
 those calls, this has not been tested, and in any case the runtime effects are
 not expected to be high, since all the calls will always go to the same
 function.</p>
-<h3><a class="header" href="#the-salsarequires-function-is-removed" id="the-salsarequires-function-is-removed">The <code>salsa::requires</code> function is removed</a></h3>
+<h3 id="the-salsarequires-function-is-removed"><a class="header" href="#the-salsarequires-function-is-removed">The <code>salsa::requires</code> function is removed</a></h3>
 <p>We currently offer a feature for &quot;private&quot; dependencies between query groups
 called <code>#[salsa::requires(ExtraDatabase)]</code>. This then requires query
 functions to be written like:</p>
 <pre><code class="language-rust ignore">fn query_fn(db: &amp;impl Database + ExtraDatabase, ...) { }
 </code></pre>
 <p>This format is not compatible with <code>dyn</code>, so this feature is removed.</p>
-<h2><a class="header" href="#reference-guide" id="reference-guide">Reference guide</a></h2>
-<h3><a class="header" href="#example" id="example">Example</a></h3>
+<h2 id="reference-guide"><a class="header" href="#reference-guide">Reference guide</a></h2>
+<h3 id="example"><a class="header" href="#example">Example</a></h3>
 <p>To explain the proposal, we'll use the Hello World example, lightly adapted:</p>
 <pre><code class="language-rust ignore">#[salsa::query_group(HelloWorldStorage)]
 trait HelloWorld: salsa::Database {
@@ -368,7 +378,7 @@ impl salsa::Database for DatabaseStruct {
     }
 }
 </code></pre>
-<h3><a class="header" href="#identifying-queries-using-the-databasekeyindex" id="identifying-queries-using-the-databasekeyindex">Identifying queries using the <code>DatabaseKeyIndex</code></a></h3>
+<h3 id="identifying-queries-using-the-databasekeyindex"><a class="header" href="#identifying-queries-using-the-databasekeyindex">Identifying queries using the <code>DatabaseKeyIndex</code></a></h3>
 <p>We introduce the following struct that represents a database key using a series
 of indices:</p>
 <pre><code class="language-rust ignore">struct DatabaseKeyIndex {
@@ -406,7 +416,7 @@ not clear that this is a problem in practice.</p>
 <p>The <code>DatabaseKeyIndex</code> also supports a <code>debug</code> method that returns a value with
 a human readable <code>debug!</code> output, so that you can do <code>debug!(&quot;{:?}&quot;, index.debug(db))</code>. This works by generating a <code>fmt_debug</code> method that is
 supported by the various query groups.</p>
-<h3><a class="header" href="#the-various-query-traits-are-not-generic-over-a-database" id="the-various-query-traits-are-not-generic-over-a-database">The various query traits are not generic over a database</a></h3>
+<h3 id="the-various-query-traits-are-not-generic-over-a-database"><a class="header" href="#the-various-query-traits-are-not-generic-over-a-database">The various query traits are not generic over a database</a></h3>
 <p>Today, the <code>Query</code>, <code>QueryFunction</code>, and <code>QueryGroup</code> traits are generic over
 the database <code>DB</code>, which allows them to name the final database type and
 associated types derived from it. In the new scheme, we never want to do that,
@@ -421,7 +431,7 @@ and so instead they will now have an associated type, <code>DynDb</code>, that m
     }
 }
 </code></pre>
-<h3><a class="header" href="#storing-query-results-and-tracking-dependencies" id="storing-query-results-and-tracking-dependencies">Storing query results and tracking dependencies</a></h3>
+<h3 id="storing-query-results-and-tracking-dependencies"><a class="header" href="#storing-query-results-and-tracking-dependencies">Storing query results and tracking dependencies</a></h3>
 <p>In today's setup, we have all the data for a particular query stored in a
 <code>Slot&lt;Q, DB, MP&gt;</code>, and these slots hold references to one another to track
 dependencies. Because the type of each slot is specific to the particular query
@@ -437,7 +447,7 @@ to a <code>LinkedHashMap</code> of indices.</p>
 <p>We may tinker with other approaches too: the key change in the RFC is that we
 do not need to store a <code>DB::DatabaseKey</code> or <code>Slot&lt;..DB..&gt;</code>, but instead can use
 some type for dependencies that is independent of the dtabase type <code>DB</code>.</p>
-<h3><a class="header" href="#dispatching-methods-from-a-databasekeyindex" id="dispatching-methods-from-a-databasekeyindex">Dispatching methods from a <code>DatabaseKeyIndex</code></a></h3>
+<h3 id="dispatching-methods-from-a-databasekeyindex"><a class="header" href="#dispatching-methods-from-a-databasekeyindex">Dispatching methods from a <code>DatabaseKeyIndex</code></a></h3>
 <p>There are a number of methods that can be dispatched through the database
 interface on a <code>DatabaseKeyIndex</code>. For example, we already mentioned
 <code>fmt_debug</code>, which emits a debug representation of the key, but there is also
@@ -478,7 +488,7 @@ on the query index and invokes a method on the query storage:</p>
 </code></pre>
 <p>Finally, the query storage can use the key index to lookup the appropriate
 data from the <code>FxIndexSet</code>.</p>
-<h3><a class="header" href="#wrap-runtime-in-a-storagedb-type" id="wrap-runtime-in-a-storagedb-type">Wrap runtime in a <code>Storage&lt;DB&gt;</code> type</a></h3>
+<h3 id="wrap-runtime-in-a-storagedb-type"><a class="header" href="#wrap-runtime-in-a-storagedb-type">Wrap runtime in a <code>Storage&lt;DB&gt;</code> type</a></h3>
 <p>The Salsa runtime is currently <code>Runtime&lt;DB&gt;</code> but it will change to just
 <code>Runtime</code> and thus not be generic over the database. This means it can be
 referenced directly by query storage implementations. This is very useful
@@ -519,12 +529,12 @@ impl&lt;DB&gt; Storage&lt;DB&gt; {
 definition. The <code>salsa::database</code> procedural macro, when it generates impls of
 traits like <code>HasQueryGroup</code>, will embed code like <code>self.storage</code> that looks for
 that field.</p>
-<h3><a class="header" href="#salsa_runtime-methods-move-to-databaseops-trait" id="salsa_runtime-methods-move-to-databaseops-trait"><code>salsa_runtime</code> methods move to <code>DatabaseOps</code> trait</a></h3>
+<h3 id="salsa_runtime-methods-move-to-databaseops-trait"><a class="header" href="#salsa_runtime-methods-move-to-databaseops-trait"><code>salsa_runtime</code> methods move to <code>DatabaseOps</code> trait</a></h3>
 <p>The <code>salsa_runtime</code> methods used to be manually implemented by users to define
 the field that contains the salsa runtime. This was always boilerplate. The
 <code>salsa::database</code> macro now handles that job by defining them to invoke the
 corresponding methods on <code>Storage</code>.</p>
-<h3><a class="header" href="#salsa-database-trait-becomes-dyn-safe" id="salsa-database-trait-becomes-dyn-safe">Salsa database trait becomes dyn safe</a></h3>
+<h3 id="salsa-database-trait-becomes-dyn-safe"><a class="header" href="#salsa-database-trait-becomes-dyn-safe">Salsa database trait becomes dyn safe</a></h3>
 <p>Under this proposal, the Salsa database must be dyn safe. This implies that
 we have to make a few changes:</p>
 <ul>
@@ -532,7 +542,7 @@ we have to make a few changes:</p>
 <li>The <code>DatabaseStorageTypes</code> supertrait is removed (that trait is renamed and altered, see next section).</li>
 <li>The <code>salsa_event</code> method changes, as described in the User's guide.</li>
 </ul>
-<h3><a class="header" href="#salsa-database-trait-requires-static-at-least-for-now" id="salsa-database-trait-requires-static-at-least-for-now">Salsa database trait requires <code>'static</code>, at least for now</a></h3>
+<h3 id="salsa-database-trait-requires-static-at-least-for-now"><a class="header" href="#salsa-database-trait-requires-static-at-least-for-now">Salsa database trait requires <code>'static</code>, at least for now</a></h3>
 <p>One downside of this proposal is that the <code>salsa::Database</code> trait now has a
 <code>'static</code> bound. This is a result of the lack of GATs -- in particular, the
 queries expect a <code>&lt;Q as QueryDb&lt;'_&gt;&gt;::DynDb</code> as argument. In the query definition, we have
@@ -548,7 +558,7 @@ could be overcome in the future by:</p>
 like <code>QueryDb&lt;'a&gt;</code>, where <code>Query</code> has the supertrait <code>for&lt;'a&gt; Self: QueryDb&lt;'a&gt;</code>. This would permit the <code>DynDb</code> type to be referenced by writing
 <code>&lt;Q as QueryDb&lt;'a&gt;&gt;::DynDb</code>. </li>
 </ul>
-<h3><a class="header" href="#salsa-query-group-traits-are-extended-with-database-and-hasquerygroup-supertrait" id="salsa-query-group-traits-are-extended-with-database-and-hasquerygroup-supertrait">Salsa query group traits are extended with <code>Database</code> and <code>HasQueryGroup</code> supertrait</a></h3>
+<h3 id="salsa-query-group-traits-are-extended-with-database-and-hasquerygroup-supertrait"><a class="header" href="#salsa-query-group-traits-are-extended-with-database-and-hasquerygroup-supertrait">Salsa query group traits are extended with <code>Database</code> and <code>HasQueryGroup</code> supertrait</a></h3>
 <p>When <code>#[salsa::query_group]</code> is applied to a trait, we currently generate a copy
 of the trait that is &quot;more or less&quot; unmodified (although we sometimes add
 additional synthesized methods, such as the <code>set</code> method for an input). Under
@@ -571,7 +581,7 @@ and defines various plumbing methods that are used by the storage
 implementations.</p>
 <p>One downside of this is that <code>salsa::Database</code> methods become available on the
 trait; we might want to give internal plumbing methods more obscure names.</p>
-<h4><a class="header" href="#bounds-were-already-present-on-the-blanket-impl-of-salsa-query-group-trait" id="bounds-were-already-present-on-the-blanket-impl-of-salsa-query-group-trait">Bounds were already present on the blanket impl of salsa query group trait</a></h4>
+<h4 id="bounds-were-already-present-on-the-blanket-impl-of-salsa-query-group-trait"><a class="header" href="#bounds-were-already-present-on-the-blanket-impl-of-salsa-query-group-trait">Bounds were already present on the blanket impl of salsa query group trait</a></h4>
 <p>The new bounds that are appearing on the trait were always present on the
 blanket impl that the <code>salsa::query_group</code> procedural macro generated, which
 looks like so (and continues unchanged under this RFC):</p>
@@ -586,7 +596,7 @@ where
 <p>The reason we generate the impl is so that the <code>salsa::database</code> procedural
 macro can simply create the <code>HasQueryGroup</code> impl and never needs to know the
 name of the <code>HelloWorld</code> trait, only the <code>HelloWorldStorage</code> type.</p>
-<h3><a class="header" href="#storage-types-no-longer-parameterized-by-the-database" id="storage-types-no-longer-parameterized-by-the-database">Storage types no longer parameterized by the database</a></h3>
+<h3 id="storage-types-no-longer-parameterized-by-the-database"><a class="header" href="#storage-types-no-longer-parameterized-by-the-database">Storage types no longer parameterized by the database</a></h3>
 <p>Today's storage types, such as <code>Derived</code>, are parameterized over both a query <code>Q</code> and a <code>DB</code> (along with the memoization policy <code>MP</code>):</p>
 <pre><code class="language-rust ignore">// Before this RFC:
 pub struct DerivedStorage&lt;DB, Q, MP&gt;
@@ -603,7 +613,7 @@ where
     Q: QueryFunction,
     MP: MemoizationPolicy&lt;DB, Q&gt;,
 </code></pre>
-<h2><a class="header" href="#alternatives-and-future-work" id="alternatives-and-future-work">Alternatives and future work</a></h2>
+<h2 id="alternatives-and-future-work"><a class="header" href="#alternatives-and-future-work">Alternatives and future work</a></h2>
 <p>The 'linch-pin' of this design is the <code>DatabaseKeyIndex</code> type, which allows for
 signatures to refer to &quot;any query in the system&quot; without reference to the <code>DB</code>
 type. The biggest downside of the system is that this type is an integer which
