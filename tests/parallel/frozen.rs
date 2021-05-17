@@ -1,7 +1,10 @@
 use crate::setup::{ParDatabase, ParDatabaseImpl};
 use crate::signal::Signal;
 use salsa::{Database, ParallelDatabase};
-use std::sync::Arc;
+use std::{
+    panic::{catch_unwind, AssertUnwindSafe},
+    sync::Arc,
+};
 
 /// Add test where a call to `sum` is cancelled by a simultaneous
 /// write. Check that we recompute the result in next revision, even
@@ -20,15 +23,17 @@ fn in_par_get_set_cancellation() {
         move || {
             // Check that cancellation flag is not yet set, because
             // `set` cannot have been called yet.
-            assert!(!db.salsa_runtime().is_current_revision_canceled());
+            catch_unwind(AssertUnwindSafe(|| db.salsa_runtime().unwind_if_canceled())).unwrap();
 
             // Signal other thread to proceed.
             signal.signal(1);
 
             // Wait for other thread to signal cancellation
-            while !db.salsa_runtime().is_current_revision_canceled() {
+            catch_unwind(AssertUnwindSafe(|| loop {
+                db.salsa_runtime().unwind_if_canceled();
                 std::thread::yield_now();
-            }
+            }))
+            .unwrap_err();
 
             // Since we have not yet released revision lock, we should
             // see 1 here.

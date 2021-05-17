@@ -1,6 +1,6 @@
-use crate::durability::Durability;
 use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
+use crate::{durability::Durability, Canceled};
 use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
@@ -156,89 +156,31 @@ impl Runtime {
         self.shared_state.pending_revision.load()
     }
 
-    /// Check if the current revision is canceled. If this method ever
-    /// returns true, the currently executing query is also marked as
-    /// having an *untracked read* -- this means that, in the next
-    /// revision, we will always recompute its value "as if" some
-    /// input had changed. This means that, if your revision is
-    /// canceled (which indicates that current query results will be
-    /// ignored) your query is free to shortcircuit and return
-    /// whatever it likes.
+    /// Starts unwinding the stack if the current revision is canceled.
     ///
-    /// This method is useful for implementing cancellation of queries.
-    /// You can do it in one of two ways, via `Result`s or via unwinding.
+    /// This method can be called by query implementations that perform
+    /// potentially expensive computations, in order to speed up propagation of
+    /// cancelation.
     ///
-    /// The `Result` approach looks like this:
-    ///
-    ///   * Some queries invoke `is_current_revision_canceled` and
-    ///     return a special value, like `Err(Canceled)`, if it returns
-    ///     `true`.
-    ///   * Other queries propagate the special value using `?` operator.
-    ///   * API around top-level queries checks if the result is `Ok` or
-    ///     `Err(Canceled)`.
-    ///
-    /// The `panic` approach works in a similar way:
-    ///
-    ///   * Some queries invoke `is_current_revision_canceled` and
-    ///     panic with a special value, like `Canceled`, if it returns
-    ///     true.
-    ///   * The implementation of `Database` trait overrides
-    ///     `on_propagated_panic` to throw this special value as well.
-    ///     This way, panic gets propagated naturally through dependant
-    ///     queries, even across the threads.
-    ///   * API around top-level queries converts a `panic` into `Result` by
-    ///     catching the panic (using either `std::panic::catch_unwind` or
-    ///     threads) and downcasting the payload to `Canceled` (re-raising
-    ///     panic if downcast fails).
-    ///
-    /// Note that salsa is explicitly designed to be panic-safe, so cancellation
-    /// via unwinding is 100% valid approach to cancellation.
+    /// Cancelation will automatically be triggered by salsa on any query
+    /// invocation.
     #[inline]
-    pub fn is_current_revision_canceled(&self) -> bool {
+    pub fn unwind_if_canceled(&self) {
         let current_revision = self.current_revision();
         let pending_revision = self.pending_revision();
         debug!(
-            "is_current_revision_canceled: current_revision={:?}, pending_revision={:?}",
+            "unwind_if_cancelled: current_revision={:?}, pending_revision={:?}",
             current_revision, pending_revision
         );
         if pending_revision > current_revision {
-            self.report_untracked_read();
-            true
-        } else {
-            // Subtle: If the current revision is not canceled, we
-            // still report an **anonymous** read, which will bump up
-            // the revision number to be at least the last
-            // non-canceled revision. This is needed to ensure
-            // deterministic reads and avoid salsa-rs/salsa#66. The
-            // specific scenario we are trying to avoid is tested by
-            // `no_back_dating_in_cancellation`; it works like
-            // this. Imagine we have 3 queries, where Query3 invokes
-            // Query2 which invokes Query1. Then:
-            //
-            // - In Revision R1:
-            //   - Query1: Observes cancelation and returns sentinel S.
-            //     - Recorded inputs: Untracked, because we observed cancelation.
-            //   - Query2: Reads Query1 and propagates sentinel S.
-            //     - Recorded inputs: Query1, changed-at=R1
-            //   - Query3: Reads Query2 and propagates sentinel S. (Inputs = Query2, ChangedAt R1)
-            //     - Recorded inputs: Query2, changed-at=R1
-            // - In Revision R2:
-            //   - Query1: Observes no cancelation. All of its inputs last changed in R0,
-            //     so it returns a valid value with "changed at" of R0.
-            //     - Recorded inputs: ..., changed-at=R0
-            //   - Query2: Recomputes its value and returns correct result.
-            //     - Recorded inputs: Query1, changed-at=R0 <-- key problem!
-            //   - Query3: sees that Query2's result last changed in R0, so it thinks it
-            //     can re-use its value from R1 (which is the sentinel value).
-            //
-            // The anonymous read here prevents that scenario: Query1
-            // winds up with a changed-at setting of R2, which is the
-            // "pending revision", and hence Query2 and Query3
-            // are recomputed.
-            assert_eq!(pending_revision, current_revision);
-            self.report_anon_read(pending_revision);
-            false
+            self.unwind_canceled();
         }
+    }
+
+    #[cold]
+    fn unwind_canceled(&self) {
+        self.report_untracked_read();
+        Canceled::throw();
     }
 
     /// Acquires the **global query write lock** (ensuring that no queries are
@@ -379,18 +321,6 @@ impl Runtime {
     /// This is mostly useful to control the durability level for [on-demand inputs](https://salsa-rs.github.io/salsa/common_patterns/on_demand_inputs.html).
     pub fn report_synthetic_read(&self, durability: Durability) {
         self.local_state.report_synthetic_read(durability);
-    }
-
-    /// An "anonymous" read is a read that doesn't come from executing
-    /// a query, but from some other internal operation. It just
-    /// modifies the "changed at" to be at least the given revision.
-    /// (It also does not disqualify a query from being considered
-    /// constant, since it is used for queries that don't give back
-    /// actual *data*.)
-    ///
-    /// This is used when queries check if they have been canceled.
-    fn report_anon_read(&self, revision: Revision) {
-        self.local_state.report_anon_read(revision)
     }
 
     /// Obviously, this should be user configurable at some point.
@@ -638,10 +568,6 @@ impl ActiveQuery {
 
     fn add_synthetic_read(&mut self, durability: Durability) {
         self.durability = self.durability.min(durability);
-    }
-
-    fn add_anon_read(&mut self, changed_at: Revision) {
-        self.changed_at = self.changed_at.max(changed_at);
     }
 }
 

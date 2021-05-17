@@ -32,9 +32,12 @@ use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 pub use crate::revision::Revision;
-use std::fmt::{self, Debug};
 use std::hash::Hash;
 use std::sync::Arc;
+use std::{
+    fmt::{self, Debug},
+    panic::{self, UnwindSafe},
+};
 
 pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
@@ -74,7 +77,7 @@ pub trait Database: plumbing::DatabaseOps {
     /// This function is invoked when a dependent query is being computed by the
     /// other thread, and that thread panics.
     fn on_propagated_panic(&self) -> ! {
-        panic!("concurrent salsa query panicked")
+        Canceled::throw()
     }
 
     /// Gives access to the underlying salsa runtime.
@@ -277,10 +280,8 @@ pub trait ParallelDatabase: Database + Send {
     /// series of queries in parallel and arranging the results. Using
     /// this method for that purpose ensures that those queries will
     /// see a consistent view of the database (it is also advisable
-    /// for those queries to use the [`is_current_revision_canceled`]
+    /// for those queries to use the [`Runtime::unwind_if_cancelled`]
     /// method to check for cancellation).
-    ///
-    /// [`is_current_revision_canceled`]: struct.Runtime.html#method.is_current_revision_canceled
     ///
     /// # Panics
     ///
@@ -641,6 +642,40 @@ where
             writeln!(f, "{:?}", i)?;
         }
         Ok(())
+    }
+}
+
+/// A panic payload indicating that a salsa revision was canceled.
+#[derive(Debug)]
+pub struct Canceled {
+    _private: (),
+}
+
+impl Canceled {
+    fn throw() -> ! {
+        std::panic::resume_unwind(Box::new(Self { _private: () }));
+    }
+}
+
+impl std::fmt::Display for Canceled {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("canceled")
+    }
+}
+
+impl std::error::Error for Canceled {}
+
+/// Runs `f`, and catches any salsa cancelation.
+pub fn catch_cancellation<F, T>(f: F) -> Result<T, Canceled>
+where
+    F: FnOnce() -> T + UnwindSafe,
+{
+    match panic::catch_unwind(f) {
+        Ok(t) => Ok(t),
+        Err(payload) => match payload.downcast() {
+            Ok(canceled) => Err(*canceled),
+            Err(payload) => panic::resume_unwind(payload),
+        },
     }
 }
 

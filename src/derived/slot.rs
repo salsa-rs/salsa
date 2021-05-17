@@ -541,6 +541,8 @@ where
         let runtime = db.salsa_runtime();
         let revision_now = runtime.current_revision();
 
+        runtime.unwind_if_canceled();
+
         debug!(
             "maybe_changed_since({:?}) called with revision={:?}, revision_now={:?}",
             self, revision, revision_now,
