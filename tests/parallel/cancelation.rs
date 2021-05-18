@@ -13,11 +13,11 @@ macro_rules! assert_canceled {
     };
 }
 
-/// Add test where a call to `sum` is cancelled by a simultaneous
+/// Add test where a call to `sum` is canceled by a simultaneous
 /// write. Check that we recompute the result in next revision, even
 /// though none of the inputs have changed.
 #[test]
-fn in_par_get_set_cancellation_immediate() {
+fn in_par_get_set_cancelation_immediate() {
     let mut db = ParDatabaseImpl::default();
 
     db.set_input('a', 100);
@@ -28,11 +28,11 @@ fn in_par_get_set_cancellation_immediate() {
     let thread1 = std::thread::spawn({
         let db = db.snapshot();
         move || {
-            // This will not return until it sees cancellation is
+            // This will not return until it sees cancelation is
             // signaled.
             db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
-                    .sum_wait_for_cancellation
+                    .sum_wait_for_cancelation
                     .with_value(CancelationFlag::Panic, || db.sum("abc"))
             })
         }
@@ -41,7 +41,7 @@ fn in_par_get_set_cancellation_immediate() {
     // Wait until we have entered `sum` in the other thread.
     db.wait_for(1);
 
-    // Try to set the input. This will signal cancellation.
+    // Try to set the input. This will signal cancelation.
     db.set_input('d', 1000);
 
     // This should re-compute the value (even though no input has changed).
@@ -55,10 +55,10 @@ fn in_par_get_set_cancellation_immediate() {
     assert_eq!(thread2.join().unwrap(), 111);
 }
 
-/// Here, we check that `sum`'s cancellation is propagated
+/// Here, we check that `sum`'s cancelation is propagated
 /// to `sum2` properly.
 #[test]
-fn in_par_get_set_cancellation_transitive() {
+fn in_par_get_set_cancelation_transitive() {
     let mut db = ParDatabaseImpl::default();
 
     db.set_input('a', 100);
@@ -69,11 +69,11 @@ fn in_par_get_set_cancellation_transitive() {
     let thread1 = std::thread::spawn({
         let db = db.snapshot();
         move || {
-            // This will not return until it sees cancellation is
+            // This will not return until it sees cancelation is
             // signaled.
             db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
-                    .sum_wait_for_cancellation
+                    .sum_wait_for_cancelation
                     .with_value(CancelationFlag::Panic, || db.sum2("abc"))
             })
         }
@@ -82,7 +82,7 @@ fn in_par_get_set_cancellation_transitive() {
     // Wait until we have entered `sum` in the other thread.
     db.wait_for(1);
 
-    // Try to set the input. This will signal cancellation.
+    // Try to set the input. This will signal cancelation.
     db.set_input('d', 1000);
 
     // This should re-compute the value (even though no input has changed).
@@ -98,7 +98,7 @@ fn in_par_get_set_cancellation_transitive() {
 
 /// https://github.com/salsa-rs/salsa/issues/66
 #[test]
-fn no_back_dating_in_cancellation() {
+fn no_back_dating_in_cancelation() {
     let mut db = ParDatabaseImpl::default();
 
     db.set_input('a', 1);
@@ -106,10 +106,10 @@ fn no_back_dating_in_cancellation() {
         let db = db.snapshot();
         move || {
             // Here we compute a long-chain of queries,
-            // but the last one gets cancelled.
+            // but the last one gets canceled.
             db.knobs().sum_signal_on_entry.with_value(1, || {
                 db.knobs()
-                    .sum_wait_for_cancellation
+                    .sum_wait_for_cancelation
                     .with_value(CancelationFlag::Panic, || db.sum3("a"))
             })
         }
@@ -120,7 +120,7 @@ fn no_back_dating_in_cancellation() {
     // Set unrelated input to bump revision
     db.set_input('b', 2);
 
-    // Here we should recompuet the whole chain again, clearing the cancellation
+    // Here we should recompuet the whole chain again, clearing the cancelation
     // state. If we get `usize::max()` here, it is a bug!
     assert_eq!(db.sum3("a"), 1);
 

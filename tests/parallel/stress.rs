@@ -56,7 +56,7 @@ enum MutatorOp {
     WriteOp(WriteOp),
     LaunchReader {
         ops: Vec<ReadOp>,
-        check_cancellation: bool,
+        check_cancelation: bool,
     },
 }
 
@@ -85,7 +85,7 @@ impl rand::distributions::Distribution<MutatorOp> for rand::distributions::Stand
         } else {
             MutatorOp::LaunchReader {
                 ops: (0..N_READER_OPS).map(|_| rng.gen()).collect(),
-                check_cancellation: rng.gen(),
+                check_cancelation: rng.gen(),
             }
         }
     }
@@ -118,9 +118,9 @@ impl rand::distributions::Distribution<ReadOp> for rand::distributions::Standard
     }
 }
 
-fn db_reader_thread(db: &StressDatabaseImpl, ops: Vec<ReadOp>, check_cancellation: bool) {
+fn db_reader_thread(db: &StressDatabaseImpl, ops: Vec<ReadOp>, check_cancelation: bool) {
     for op in ops {
-        if check_cancellation {
+        if check_cancelation {
             db.salsa_runtime().unwind_if_canceled();
         }
         op.execute(db);
@@ -188,10 +188,10 @@ fn stress_test() {
             MutatorOp::WriteOp(w) => w.execute(&mut db),
             MutatorOp::LaunchReader {
                 ops,
-                check_cancellation,
+                check_cancelation,
             } => all_threads.push(std::thread::spawn({
                 let db = db.snapshot();
-                move || Canceled::catch(|| db_reader_thread(&db, ops, check_cancellation))
+                move || Canceled::catch(|| db_reader_thread(&db, ops, check_cancelation))
             })),
         }
     }

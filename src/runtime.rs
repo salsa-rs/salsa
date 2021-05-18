@@ -119,7 +119,7 @@ impl Runtime {
     /// Q and then (c) doing a sweep.
     ///
     /// **WARNING:** Just like an ordinary write, this method triggers
-    /// cancellation. If you invoke it while a snapshot exists, it
+    /// cancelation. If you invoke it while a snapshot exists, it
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
     pub fn synthetic_write(&mut self, durability: Durability) {
@@ -180,7 +180,7 @@ impl Runtime {
         let current_revision = self.current_revision();
         let pending_revision = self.pending_revision();
         debug!(
-            "unwind_if_cancelled: current_revision={:?}, pending_revision={:?}",
+            "unwind_if_canceled: current_revision={:?}, pending_revision={:?}",
             current_revision, pending_revision
         );
         if pending_revision > current_revision {
@@ -740,7 +740,7 @@ impl RevisionGuard {
         //
         // This has the side-effect that we are responsible to ensure
         // that people contending for the write lock do not starve,
-        // but this is what we achieve via the cancellation mechanism.
+        // but this is what we achieve via the cancelation mechanism.
         //
         // (In particular, since we only ever have one "mutating
         // handle" to the database, the only contention for the global

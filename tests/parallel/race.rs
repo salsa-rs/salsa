@@ -36,7 +36,7 @@ fn in_par_get_set_race() {
         assert!(value1 == 111 || value1 == 1011, "illegal result {}", value1);
     }
 
-    // thread2 can not observe a cancellation because it performs a
+    // thread2 can not observe a cancelation because it performs a
     // database write before running any other queries.
     assert_eq!(thread2.join().unwrap(), 1000);
 }

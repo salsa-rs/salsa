@@ -274,8 +274,8 @@ pub trait ParallelDatabase: Database + Send {
     /// series of queries in parallel and arranging the results. Using
     /// this method for that purpose ensures that those queries will
     /// see a consistent view of the database (it is also advisable
-    /// for those queries to use the [`Runtime::unwind_if_cancelled`]
-    /// method to check for cancellation).
+    /// for those queries to use the [`Runtime::unwind_if_canceled`]
+    /// method to check for cancelation).
     ///
     /// # Panics
     ///
@@ -539,7 +539,7 @@ where
     /// an active query computation.
     ///
     /// If you are using `snapshot`, see the notes on blocking
-    /// and cancellation on [the `query_mut` method].
+    /// and cancelation on [the `query_mut` method].
     ///
     /// [the `query_mut` method]: trait.Database.html#method.query_mut
     pub fn set(&mut self, key: Q::Key, value: Q::Value)
@@ -554,7 +554,7 @@ where
     /// outside of an active query computation.
     ///
     /// If you are using `snapshot`, see the notes on blocking
-    /// and cancellation on [the `query_mut` method].
+    /// and cancelation on [the `query_mut` method].
     ///
     /// [the `query_mut` method]: trait.Database.html#method.query_mut
     pub fn set_with_durability(&mut self, key: Q::Key, value: Q::Value, durability: Durability)
@@ -651,7 +651,7 @@ impl Canceled {
         std::panic::resume_unwind(Box::new(Self));
     }
 
-    /// Runs `f`, and catches any salsa cancellation.
+    /// Runs `f`, and catches any salsa cancelation.
     pub fn catch<F, T>(f: F) -> Result<T, Canceled>
     where
         F: FnOnce() -> T + UnwindSafe,

@@ -90,9 +90,9 @@ pub(crate) struct KnobsStruct {
     /// If true, invocations of `sum` will panic before they exit.
     pub(crate) sum_should_panic: Cell<bool>,
 
-    /// If true, invocations of `sum` will wait for cancellation before
+    /// If true, invocations of `sum` will wait for cancelation before
     /// they exit.
-    pub(crate) sum_wait_for_cancellation: Cell<CancelationFlag>,
+    pub(crate) sum_wait_for_cancelation: Cell<CancelationFlag>,
 
     /// Invocations of `sum` will wait for this stage prior to exiting.
     pub(crate) sum_wait_for_on_exit: Cell<usize>,
@@ -119,10 +119,10 @@ fn sum(db: &dyn ParDatabase, key: &'static str) -> usize {
         sum += db.input(ch);
     }
 
-    match db.knobs().sum_wait_for_cancellation.get() {
+    match db.knobs().sum_wait_for_cancelation.get() {
         CancelationFlag::Down => (),
         CancelationFlag::Panic => {
-            log::debug!("waiting for cancellation");
+            log::debug!("waiting for cancelation");
             loop {
                 db.salsa_runtime().unwind_if_canceled();
                 std::thread::yield_now();
