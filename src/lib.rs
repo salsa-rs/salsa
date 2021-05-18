@@ -74,12 +74,6 @@ pub trait Database: plumbing::DatabaseOps {
         #![allow(unused_variables)]
     }
 
-    /// This function is invoked when a dependent query is being computed by the
-    /// other thread, and that thread panics.
-    fn on_propagated_panic(&self) -> ! {
-        Canceled::throw()
-    }
-
     /// Gives access to the underlying salsa runtime.
     fn salsa_runtime(&self) -> &Runtime {
         self.ops_salsa_runtime()

@@ -1,4 +1,3 @@
-use crate::blocking_future::{BlockingFuture, Promise};
 use crate::debug::TableEntry;
 use crate::derived::MemoizationPolicy;
 use crate::durability::Durability;
@@ -10,6 +9,10 @@ use crate::revision::Revision;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
+use crate::{
+    blocking_future::{BlockingFuture, Promise},
+    Canceled,
+};
 use crate::{
     CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event, EventKind, QueryDb,
     SweepStrategy,
@@ -353,7 +356,7 @@ where
                             },
                         });
 
-                        let result = future.wait().unwrap_or_else(|| db.on_propagated_panic());
+                        let result = future.wait().unwrap_or_else(|| Canceled::throw());
                         ProbeState::UpToDate(if result.cycle.is_empty() {
                             Ok(result.value)
                         } else {
@@ -576,7 +579,7 @@ where
                         // Release our lock on `self.state`, so other thread can complete.
                         std::mem::drop(state);
 
-                        let result = future.wait().unwrap_or_else(|| db.on_propagated_panic());
+                        let result = future.wait().unwrap_or_else(|| Canceled::throw());
                         return !result.cycle.is_empty() || result.value.changed_at > revision;
                     }
 
