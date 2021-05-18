@@ -1,7 +1,7 @@
 use std::panic::AssertUnwindSafe;
 
 use crate::setup::{ParDatabase, ParDatabaseImpl};
-use salsa::ParallelDatabase;
+use salsa::{Canceled, ParallelDatabase};
 
 /// Test where a read and a set are racing with one another.
 /// Should be atomic.
@@ -16,7 +16,7 @@ fn in_par_get_set_race() {
     let thread1 = std::thread::spawn({
         let db = db.snapshot();
         move || {
-            salsa::catch_cancellation(AssertUnwindSafe(|| {
+            Canceled::catch(AssertUnwindSafe(|| {
                 let v = db.sum("abc");
                 v
             }))

@@ -647,13 +647,28 @@ where
 
 /// A panic payload indicating that a salsa revision was canceled.
 #[derive(Debug)]
-pub struct Canceled {
-    _private: (),
-}
+#[non_exhaustive]
+pub struct Canceled;
 
 impl Canceled {
     fn throw() -> ! {
-        std::panic::resume_unwind(Box::new(Self { _private: () }));
+        // We use resume and not panic here to avoid running the panic
+        // hook (that is, to avoid collecting and printing backtrace).
+        std::panic::resume_unwind(Box::new(Self));
+    }
+
+    /// Runs `f`, and catches any salsa cancellation.
+    pub fn catch<F, T>(f: F) -> Result<T, Canceled>
+    where
+        F: FnOnce() -> T + UnwindSafe,
+    {
+        match panic::catch_unwind(f) {
+            Ok(t) => Ok(t),
+            Err(payload) => match payload.downcast() {
+                Ok(canceled) => Err(*canceled),
+                Err(payload) => panic::resume_unwind(payload),
+            },
+        }
     }
 }
 
@@ -664,20 +679,6 @@ impl std::fmt::Display for Canceled {
 }
 
 impl std::error::Error for Canceled {}
-
-/// Runs `f`, and catches any salsa cancelation.
-pub fn catch_cancellation<F, T>(f: F) -> Result<T, Canceled>
-where
-    F: FnOnce() -> T + UnwindSafe,
-{
-    match panic::catch_unwind(f) {
-        Ok(t) => Ok(t),
-        Err(payload) => match payload.downcast() {
-            Ok(canceled) => Err(*canceled),
-            Err(payload) => panic::resume_unwind(payload),
-        },
-    }
-}
 
 // Re-export the procedural macros.
 #[allow(unused_imports)]

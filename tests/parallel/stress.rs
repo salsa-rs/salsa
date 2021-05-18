@@ -1,10 +1,10 @@
 use rand::seq::SliceRandom;
 use rand::Rng;
 
-use salsa::Database;
 use salsa::ParallelDatabase;
 use salsa::Snapshot;
 use salsa::SweepStrategy;
+use salsa::{Canceled, Database};
 
 // Number of operations a reader performs
 const N_MUTATOR_OPS: usize = 100;
@@ -191,7 +191,7 @@ fn stress_test() {
                 check_cancellation,
             } => all_threads.push(std::thread::spawn({
                 let db = db.snapshot();
-                move || salsa::catch_cancellation(|| db_reader_thread(&db, ops, check_cancellation))
+                move || Canceled::catch(|| db_reader_thread(&db, ops, check_cancellation))
             })),
         }
     }
