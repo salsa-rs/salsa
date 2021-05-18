@@ -1,3 +1,4 @@
+use crate::blocking_future::{BlockingFuture, Promise};
 use crate::debug::TableEntry;
 use crate::derived::MemoizationPolicy;
 use crate::durability::Durability;
@@ -9,10 +10,7 @@ use crate::revision::Revision;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
-use crate::{
-    blocking_future::{BlockingFuture, Promise},
-    Canceled,
-};
+use crate::Canceled;
 use crate::{
     CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event, EventKind, QueryDb,
     SweepStrategy,

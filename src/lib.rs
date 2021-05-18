@@ -32,12 +32,10 @@ use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 pub use crate::revision::Revision;
+use std::fmt::{self, Debug};
 use std::hash::Hash;
+use std::panic::{self, UnwindSafe};
 use std::sync::Arc;
-use std::{
-    fmt::{self, Debug},
-    panic::{self, UnwindSafe},
-};
 
 pub use crate::durability::Durability;
 pub use crate::intern_id::InternId;
