@@ -354,7 +354,12 @@ where
                             },
                         });
 
-                        let result = future.wait().unwrap_or_else(|| Canceled::throw());
+                        let result = future.wait().unwrap_or_else(|| {
+                            // If the other thread panics, we treat this as cancelation: there is no
+                            // need to panic ourselves, since the original panic will already invoke
+                            // the panic hook and bubble up to the thread boundary (or be caught).
+                            Canceled::throw()
+                        });
                         ProbeState::UpToDate(if result.cycle.is_empty() {
                             Ok(result.value)
                         } else {
