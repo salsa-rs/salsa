@@ -162,7 +162,7 @@ where
         db: &<Q as QueryDb<'_>>::DynDb,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
-        db.salsa_runtime().unwind_if_cancelled();
+        db.unwind_if_cancelled();
 
         let slot = self.slot(key);
         let StampedValue {

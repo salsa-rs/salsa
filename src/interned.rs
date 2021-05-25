@@ -322,7 +322,7 @@ where
         db: &<Q as QueryDb<'_>>::DynDb,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
-        db.salsa_runtime().unwind_if_cancelled();
+        db.unwind_if_cancelled();
 
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;

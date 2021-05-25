@@ -8,7 +8,6 @@ use parking_lot::{Mutex, RwLock};
 use rustc_hash::{FxHashMap, FxHasher};
 use smallvec::SmallVec;
 use std::hash::{BuildHasherDefault, Hash};
-use std::panic::RefUnwindSafe;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -39,8 +38,6 @@ pub struct Runtime {
 
     /// Shared state that is accessible via all runtimes.
     shared_state: Arc<SharedState>,
-
-    on_cancellation_check: Option<Box<dyn Fn() + RefUnwindSafe + Send>>,
 }
 
 impl Default for Runtime {
@@ -50,7 +47,6 @@ impl Default for Runtime {
             revision_guard: None,
             shared_state: Default::default(),
             local_state: Default::default(),
-            on_cancellation_check: None,
         }
     }
 }
@@ -89,7 +85,6 @@ impl Runtime {
             revision_guard: Some(revision_guard),
             shared_state: self.shared_state.clone(),
             local_state: Default::default(),
-            on_cancellation_check: None,
         }
     }
 
@@ -157,48 +152,14 @@ impl Runtime {
 
     /// Read current value of the revision counter.
     #[inline]
-    fn pending_revision(&self) -> Revision {
+    pub(crate) fn pending_revision(&self) -> Revision {
         self.shared_state.pending_revision.load()
     }
 
-    /// Starts unwinding the stack if the current revision is cancelled.
-    ///
-    /// This method can be called by query implementations that perform
-    /// potentially expensive computations, in order to speed up propagation of
-    /// cancellation.
-    ///
-    /// Cancellation will automatically be triggered by salsa on any query
-    /// invocation.
-    #[inline]
-    pub fn unwind_if_cancelled(&self) {
-        if let Some(callback) = &self.on_cancellation_check {
-            callback();
-        }
-
-        let current_revision = self.current_revision();
-        let pending_revision = self.pending_revision();
-        debug!(
-            "unwind_if_cancelled: current_revision={:?}, pending_revision={:?}",
-            current_revision, pending_revision
-        );
-        if pending_revision > current_revision {
-            self.unwind_cancelled();
-        }
-    }
-
     #[cold]
-    fn unwind_cancelled(&self) {
+    pub(crate) fn unwind_cancelled(&self) {
         self.report_untracked_read();
         Cancelled::throw();
-    }
-
-    /// Registers a callback to be invoked every time [`Runtime::unwind_if_cancelled`] is called
-    /// (either automatically by salsa, or manually by user code).
-    pub fn set_cancellation_check_callback<F>(&mut self, callback: F)
-    where
-        F: Fn() + Send + RefUnwindSafe + 'static,
-    {
-        self.on_cancellation_check = Some(Box::new(callback));
     }
 
     /// Acquires the **global query write lock** (ensuring that no queries are

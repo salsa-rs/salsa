@@ -23,17 +23,14 @@ fn in_par_get_set_cancellation() {
         move || {
             // Check that cancellation flag is not yet set, because
             // `set` cannot have been called yet.
-            catch_unwind(AssertUnwindSafe(|| {
-                db.salsa_runtime().unwind_if_cancelled()
-            }))
-            .unwrap();
+            catch_unwind(AssertUnwindSafe(|| db.unwind_if_cancelled())).unwrap();
 
             // Signal other thread to proceed.
             signal.signal(1);
 
             // Wait for other thread to signal cancellation
             catch_unwind(AssertUnwindSafe(|| loop {
-                db.salsa_runtime().unwind_if_cancelled();
+                db.unwind_if_cancelled();
                 std::thread::yield_now();
             }))
             .unwrap_err();

@@ -124,7 +124,7 @@ fn sum(db: &dyn ParDatabase, key: &'static str) -> usize {
         CancellationFlag::Panic => {
             log::debug!("waiting for cancellation");
             loop {
-                db.salsa_runtime().unwind_if_cancelled();
+                db.unwind_if_cancelled();
                 std::thread::yield_now();
             }
         }

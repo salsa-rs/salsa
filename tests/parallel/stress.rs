@@ -21,7 +21,7 @@ trait StressDatabase: salsa::Database {
 }
 
 fn b(db: &dyn StressDatabase, key: usize) -> usize {
-    db.salsa_runtime().unwind_if_cancelled();
+    db.unwind_if_cancelled();
     db.a(key)
 }
 
@@ -121,7 +121,7 @@ impl rand::distributions::Distribution<ReadOp> for rand::distributions::Standard
 fn db_reader_thread(db: &StressDatabaseImpl, ops: Vec<ReadOp>, check_cancellation: bool) {
     for op in ops {
         if check_cancellation {
-            db.salsa_runtime().unwind_if_cancelled();
+            db.unwind_if_cancelled();
         }
         op.execute(db);
     }

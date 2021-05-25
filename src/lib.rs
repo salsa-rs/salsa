@@ -55,6 +55,8 @@ pub trait Database: plumbing::DatabaseOps {
     /// consume are marked as used.  You then invoke this method to
     /// remove other values that were not needed for your main query
     /// results.
+    ///
+    /// This method should not be overridden by `Database` implementors.
     fn sweep_all(&self, strategy: SweepStrategy) {
         // Note that we do not acquire the query lock (or any locks)
         // here.  Each table is capable of sweeping itself atomically
@@ -72,12 +74,46 @@ pub trait Database: plumbing::DatabaseOps {
         #![allow(unused_variables)]
     }
 
+    /// Starts unwinding the stack if the current revision is cancelled.
+    ///
+    /// This method can be called by query implementations that perform
+    /// potentially expensive computations, in order to speed up propagation of
+    /// cancellation.
+    ///
+    /// Cancellation will automatically be triggered by salsa on any query
+    /// invocation.
+    ///
+    /// This method should not be overridden by `Database` implementors.
+    #[inline]
+    fn unwind_if_cancelled(&self) {
+        let runtime = self.salsa_runtime();
+        self.salsa_event(Event {
+            runtime_id: runtime.id(),
+            kind: EventKind::WillCheckCancellation,
+        });
+
+        let current_revision = runtime.current_revision();
+        let pending_revision = runtime.pending_revision();
+        log::debug!(
+            "unwind_if_cancelled: current_revision={:?}, pending_revision={:?}",
+            current_revision,
+            pending_revision
+        );
+        if pending_revision > current_revision {
+            runtime.unwind_cancelled();
+        }
+    }
+
     /// Gives access to the underlying salsa runtime.
+    ///
+    /// This method should not be overridden by `Database` implementors.
     fn salsa_runtime(&self) -> &Runtime {
         self.ops_salsa_runtime()
     }
 
     /// Gives access to the underlying salsa runtime.
+    ///
+    /// This method should not be overridden by `Database` implementors.
     fn salsa_runtime_mut(&mut self) -> &mut Runtime {
         self.ops_salsa_runtime_mut()
     }
@@ -140,6 +176,10 @@ pub enum EventKind {
         /// The database-key for the affected value. Implements `Debug`.
         database_key: DatabaseKeyIndex,
     },
+
+    /// Indicates that `unwind_if_cancelled` was called and salsa will check if
+    /// the current revision has been cancelled.
+    WillCheckCancellation,
 }
 
 impl fmt::Debug for EventKind {
@@ -161,6 +201,7 @@ impl fmt::Debug for EventKind {
                 .debug_struct("WillExecute")
                 .field("database_key", database_key)
                 .finish(),
+            EventKind::WillCheckCancellation => fmt.debug_struct("WillCheckCancellation").finish(),
         }
     }
 }
