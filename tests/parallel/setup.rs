@@ -58,14 +58,14 @@ impl<T> WithValue<T> for Cell<T> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CancelationFlag {
+pub(crate) enum CancellationFlag {
     Down,
     Panic,
 }
 
-impl Default for CancelationFlag {
-    fn default() -> CancelationFlag {
-        CancelationFlag::Down
+impl Default for CancellationFlag {
+    fn default() -> CancellationFlag {
+        CancellationFlag::Down
     }
 }
 
@@ -90,9 +90,9 @@ pub(crate) struct KnobsStruct {
     /// If true, invocations of `sum` will panic before they exit.
     pub(crate) sum_should_panic: Cell<bool>,
 
-    /// If true, invocations of `sum` will wait for cancelation before
+    /// If true, invocations of `sum` will wait for cancellation before
     /// they exit.
-    pub(crate) sum_wait_for_cancelation: Cell<CancelationFlag>,
+    pub(crate) sum_wait_for_cancellation: Cell<CancellationFlag>,
 
     /// Invocations of `sum` will wait for this stage prior to exiting.
     pub(crate) sum_wait_for_on_exit: Cell<usize>,
@@ -119,12 +119,12 @@ fn sum(db: &dyn ParDatabase, key: &'static str) -> usize {
         sum += db.input(ch);
     }
 
-    match db.knobs().sum_wait_for_cancelation.get() {
-        CancelationFlag::Down => (),
-        CancelationFlag::Panic => {
-            log::debug!("waiting for cancelation");
+    match db.knobs().sum_wait_for_cancellation.get() {
+        CancellationFlag::Down => (),
+        CancellationFlag::Panic => {
+            log::debug!("waiting for cancellation");
             loop {
-                db.salsa_runtime().unwind_if_canceled();
+                db.salsa_runtime().unwind_if_cancelled();
                 std::thread::yield_now();
             }
         }

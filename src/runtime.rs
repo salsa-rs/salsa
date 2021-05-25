@@ -1,6 +1,6 @@
 use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
-use crate::{durability::Durability, Canceled};
+use crate::{durability::Durability, Cancelled};
 use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
@@ -40,7 +40,7 @@ pub struct Runtime {
     /// Shared state that is accessible via all runtimes.
     shared_state: Arc<SharedState>,
 
-    on_cancelation_check: Option<Box<dyn Fn() + RefUnwindSafe + Send>>,
+    on_cancellation_check: Option<Box<dyn Fn() + RefUnwindSafe + Send>>,
 }
 
 impl Default for Runtime {
@@ -50,7 +50,7 @@ impl Default for Runtime {
             revision_guard: None,
             shared_state: Default::default(),
             local_state: Default::default(),
-            on_cancelation_check: None,
+            on_cancellation_check: None,
         }
     }
 }
@@ -89,7 +89,7 @@ impl Runtime {
             revision_guard: Some(revision_guard),
             shared_state: self.shared_state.clone(),
             local_state: Default::default(),
-            on_cancelation_check: None,
+            on_cancellation_check: None,
         }
     }
 
@@ -117,7 +117,7 @@ impl Runtime {
     /// Q and then (c) doing a sweep.
     ///
     /// **WARNING:** Just like an ordinary write, this method triggers
-    /// cancelation. If you invoke it while a snapshot exists, it
+    /// cancellation. If you invoke it while a snapshot exists, it
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
     pub fn synthetic_write(&mut self, durability: Durability) {
@@ -161,44 +161,44 @@ impl Runtime {
         self.shared_state.pending_revision.load()
     }
 
-    /// Starts unwinding the stack if the current revision is canceled.
+    /// Starts unwinding the stack if the current revision is cancelled.
     ///
     /// This method can be called by query implementations that perform
     /// potentially expensive computations, in order to speed up propagation of
-    /// cancelation.
+    /// cancellation.
     ///
-    /// Cancelation will automatically be triggered by salsa on any query
+    /// Cancellation will automatically be triggered by salsa on any query
     /// invocation.
     #[inline]
-    pub fn unwind_if_canceled(&self) {
-        if let Some(callback) = &self.on_cancelation_check {
+    pub fn unwind_if_cancelled(&self) {
+        if let Some(callback) = &self.on_cancellation_check {
             callback();
         }
 
         let current_revision = self.current_revision();
         let pending_revision = self.pending_revision();
         debug!(
-            "unwind_if_canceled: current_revision={:?}, pending_revision={:?}",
+            "unwind_if_cancelled: current_revision={:?}, pending_revision={:?}",
             current_revision, pending_revision
         );
         if pending_revision > current_revision {
-            self.unwind_canceled();
+            self.unwind_cancelled();
         }
     }
 
     #[cold]
-    fn unwind_canceled(&self) {
+    fn unwind_cancelled(&self) {
         self.report_untracked_read();
-        Canceled::throw();
+        Cancelled::throw();
     }
 
-    /// Registers a callback to be invoked every time [`Runtime::unwind_if_canceled`] is called
+    /// Registers a callback to be invoked every time [`Runtime::unwind_if_cancelled`] is called
     /// (either automatically by salsa, or manually by user code).
-    pub fn set_cancelation_check_callback<F>(&mut self, callback: F)
+    pub fn set_cancellation_check_callback<F>(&mut self, callback: F)
     where
         F: Fn() + Send + RefUnwindSafe + 'static,
     {
-        self.on_cancelation_check = Some(Box::new(callback));
+        self.on_cancellation_check = Some(Box::new(callback));
     }
 
     /// Acquires the **global query write lock** (ensuring that no queries are
@@ -207,7 +207,7 @@ impl Runtime {
     ///
     /// While we wait to acquire the global query write lock, this method will
     /// also increment `pending_revision_increments`, thus signalling to queries
-    /// that their results are "canceled" and they should abort as expeditiously
+    /// that their results are "cancelled" and they should abort as expeditiously
     /// as possible.
     ///
     /// The `op` closure should actually perform the writes needed. It is given
@@ -234,7 +234,7 @@ impl Runtime {
         }
 
         // Set the `pending_revision` field so that people
-        // know current revision is canceled.
+        // know current revision is cancelled.
         let current_revision = self.shared_state.pending_revision.fetch_then_increment();
 
         // To modify the revision, we need the lock.
@@ -464,7 +464,7 @@ struct SharedState {
 
     /// This is typically equal to `revision` -- set to `revision+1`
     /// when a new revision is pending (which implies that the current
-    /// revision is canceled).
+    /// revision is cancelled).
     pending_revision: AtomicRevision,
 
     /// Stores the "last change" revision for values of each duration.
@@ -738,7 +738,7 @@ impl RevisionGuard {
         //
         // This has the side-effect that we are responsible to ensure
         // that people contending for the write lock do not starve,
-        // but this is what we achieve via the cancelation mechanism.
+        // but this is what we achieve via the cancellation mechanism.
         //
         // (In particular, since we only ever have one "mutating
         // handle" to the database, the only contention for the global

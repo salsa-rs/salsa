@@ -1,7 +1,7 @@
 use std::panic::AssertUnwindSafe;
 
 use crate::setup::{ParDatabase, ParDatabaseImpl};
-use salsa::{Canceled, ParallelDatabase};
+use salsa::{Cancelled, ParallelDatabase};
 
 /// Test where a read and a set are racing with one another.
 /// Should be atomic.
@@ -16,7 +16,7 @@ fn in_par_get_set_race() {
     let thread1 = std::thread::spawn({
         let db = db.snapshot();
         move || {
-            Canceled::catch(AssertUnwindSafe(|| {
+            Cancelled::catch(AssertUnwindSafe(|| {
                 let v = db.sum("abc");
                 v
             }))
@@ -30,13 +30,13 @@ fn in_par_get_set_race() {
 
     // If the 1st thread runs first, you get 111, otherwise you get
     // 1011; if they run concurrently and the 1st thread observes the
-    // cancelation, it'll unwind.
+    // cancellation, it'll unwind.
     let result1 = thread1.join().unwrap();
     if let Ok(value1) = result1 {
         assert!(value1 == 111 || value1 == 1011, "illegal result {}", value1);
     }
 
-    // thread2 can not observe a cancelation because it performs a
+    // thread2 can not observe a cancellation because it performs a
     // database write before running any other queries.
     assert_eq!(thread2.join().unwrap(), 1000);
 }

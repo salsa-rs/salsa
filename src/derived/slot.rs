@@ -10,7 +10,7 @@ use crate::revision::Revision;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
-use crate::Canceled;
+use crate::Cancelled;
 use crate::{
     CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event, EventKind, QueryDb,
     SweepStrategy,
@@ -355,10 +355,10 @@ where
                         });
 
                         let result = future.wait().unwrap_or_else(|| {
-                            // If the other thread panics, we treat this as cancelation: there is no
+                            // If the other thread panics, we treat this as cancellation: there is no
                             // need to panic ourselves, since the original panic will already invoke
                             // the panic hook and bubble up to the thread boundary (or be caught).
-                            Canceled::throw()
+                            Cancelled::throw()
                         });
                         ProbeState::UpToDate(if result.cycle.is_empty() {
                             Ok(result.value)
@@ -547,7 +547,7 @@ where
         let runtime = db.salsa_runtime();
         let revision_now = runtime.current_revision();
 
-        runtime.unwind_if_canceled();
+        runtime.unwind_if_cancelled();
 
         debug!(
             "maybe_changed_since({:?}) called with revision={:?}, revision_now={:?}",
@@ -582,7 +582,7 @@ where
                         // Release our lock on `self.state`, so other thread can complete.
                         std::mem::drop(state);
 
-                        let result = future.wait().unwrap_or_else(|| Canceled::throw());
+                        let result = future.wait().unwrap_or_else(|| Cancelled::throw());
                         return !result.cycle.is_empty() || result.value.changed_at > revision;
                     }
 

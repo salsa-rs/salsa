@@ -282,9 +282,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
                 See `{fn_name}` for details.
 
-                *Note:* Setting values will trigger cancelation
+                *Note:* Setting values will trigger cancellation
                 of any ongoing queries; this method blocks until
-                those queries have been canceled.
+                those queries have been cancelled.
             ",
                 fn_name = fn_name
             );
@@ -296,9 +296,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
                 See `{fn_name}` for details.
 
-                *Note:* Setting values will trigger cancelation
+                *Note:* Setting values will trigger cancellation
                 of any ongoing queries; this method blocks until
-                those queries have been canceled.
+                those queries have been cancelled.
             ",
                 fn_name = fn_name
             );
@@ -431,7 +431,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 /// Like `in_db`, but gives access to methods for setting the
                 /// value of an input. Not applicable to derived queries.
                 ///
-                /// # Threads, cancelation, and blocking
+                /// # Threads, cancellation, and blocking
                 ///
                 /// Mutating the value of a query cannot be done while there are
                 /// still other queries executing. If you are using your database
@@ -447,15 +447,15 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 /// deadlock.
                 ///
                 /// Before blocking, the thread that is attempting to `set` will
-                /// also set a cancelation flag. This will cause any query
-                /// invocations in other threads to unwind with a `Canceled`
+                /// also set a cancellation flag. This will cause any query
+                /// invocations in other threads to unwind with a `Cancelled`
                 /// sentinel value and eventually let the `set` succeed once all
                 /// threads have unwound past the salsa invocation.
                 ///
                 /// If your query implementations are performing expensive
                 /// operations without invoking another query, you can also use
-                /// the `Runtime::unwind_if_canceled` method to check for an
-                /// ongoing cancelation and bring those operations to a close,
+                /// the `Runtime::unwind_if_cancelled` method to check for an
+                /// ongoing cancellation and bring those operations to a close,
                 /// thus allowing the `set` to succeed. Otherwise, long-running
                 /// computations may lead to "starvation", meaning that the
                 /// thread attempting to `set` has to wait a long, long time. =)

@@ -1,6 +1,6 @@
 mod setup;
 
-mod cancelation;
+mod cancellation;
 mod frozen;
 mod independent;
 mod race;

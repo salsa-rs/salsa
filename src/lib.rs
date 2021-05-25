@@ -272,8 +272,8 @@ pub trait ParallelDatabase: Database + Send {
     /// series of queries in parallel and arranging the results. Using
     /// this method for that purpose ensures that those queries will
     /// see a consistent view of the database (it is also advisable
-    /// for those queries to use the [`Runtime::unwind_if_canceled`]
-    /// method to check for cancelation).
+    /// for those queries to use the [`Runtime::unwind_if_cancelled`]
+    /// method to check for cancellation).
     ///
     /// # Panics
     ///
@@ -537,7 +537,7 @@ where
     /// an active query computation.
     ///
     /// If you are using `snapshot`, see the notes on blocking
-    /// and cancelation on [the `query_mut` method].
+    /// and cancellation on [the `query_mut` method].
     ///
     /// [the `query_mut` method]: trait.Database.html#method.query_mut
     pub fn set(&mut self, key: Q::Key, value: Q::Value)
@@ -552,7 +552,7 @@ where
     /// outside of an active query computation.
     ///
     /// If you are using `snapshot`, see the notes on blocking
-    /// and cancelation on [the `query_mut` method].
+    /// and cancellation on [the `query_mut` method].
     ///
     /// [the `query_mut` method]: trait.Database.html#method.query_mut
     pub fn set_with_durability(&mut self, key: Q::Key, value: Q::Value, durability: Durability)
@@ -637,40 +637,40 @@ where
     }
 }
 
-/// A panic payload indicating that a salsa revision was canceled.
+/// A panic payload indicating that a salsa revision was cancelled.
 #[derive(Debug)]
 #[non_exhaustive]
-pub struct Canceled;
+pub struct Cancelled;
 
-impl Canceled {
+impl Cancelled {
     fn throw() -> ! {
         // We use resume and not panic here to avoid running the panic
         // hook (that is, to avoid collecting and printing backtrace).
         std::panic::resume_unwind(Box::new(Self));
     }
 
-    /// Runs `f`, and catches any salsa cancelation.
-    pub fn catch<F, T>(f: F) -> Result<T, Canceled>
+    /// Runs `f`, and catches any salsa cancellation.
+    pub fn catch<F, T>(f: F) -> Result<T, Cancelled>
     where
         F: FnOnce() -> T + UnwindSafe,
     {
         match panic::catch_unwind(f) {
             Ok(t) => Ok(t),
             Err(payload) => match payload.downcast() {
-                Ok(canceled) => Err(*canceled),
+                Ok(cancelled) => Err(*cancelled),
                 Err(payload) => panic::resume_unwind(payload),
             },
         }
     }
 }
 
-impl std::fmt::Display for Canceled {
+impl std::fmt::Display for Cancelled {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("canceled")
+        f.write_str("cancelled")
     }
 }
 
-impl std::error::Error for Canceled {}
+impl std::error::Error for Cancelled {}
 
 // Re-export the procedural macros.
 #[allow(unused_imports)]

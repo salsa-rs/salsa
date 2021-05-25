@@ -6,11 +6,11 @@ use std::{
     sync::Arc,
 };
 
-/// Add test where a call to `sum` is canceled by a simultaneous
+/// Add test where a call to `sum` is cancelled by a simultaneous
 /// write. Check that we recompute the result in next revision, even
 /// though none of the inputs have changed.
 #[test]
-fn in_par_get_set_cancelation() {
+fn in_par_get_set_cancellation() {
     let mut db = ParDatabaseImpl::default();
 
     db.set_input('a', 1);
@@ -21,16 +21,19 @@ fn in_par_get_set_cancelation() {
         let db = db.snapshot();
         let signal = signal.clone();
         move || {
-            // Check that cancelation flag is not yet set, because
+            // Check that cancellation flag is not yet set, because
             // `set` cannot have been called yet.
-            catch_unwind(AssertUnwindSafe(|| db.salsa_runtime().unwind_if_canceled())).unwrap();
+            catch_unwind(AssertUnwindSafe(|| {
+                db.salsa_runtime().unwind_if_cancelled()
+            }))
+            .unwrap();
 
             // Signal other thread to proceed.
             signal.signal(1);
 
-            // Wait for other thread to signal cancelation
+            // Wait for other thread to signal cancellation
             catch_unwind(AssertUnwindSafe(|| loop {
-                db.salsa_runtime().unwind_if_canceled();
+                db.salsa_runtime().unwind_if_cancelled();
                 std::thread::yield_now();
             }))
             .unwrap_err();
@@ -40,7 +43,7 @@ fn in_par_get_set_cancelation() {
     let thread2 = std::thread::spawn({
         let signal = signal.clone();
         move || {
-            // Wait until thread 1 has asserted that they are not canceled
+            // Wait until thread 1 has asserted that they are not cancelled
             // before we invoke `set.`
             signal.wait_for(1);
 

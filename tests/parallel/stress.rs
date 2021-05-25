@@ -4,7 +4,7 @@ use rand::Rng;
 use salsa::ParallelDatabase;
 use salsa::Snapshot;
 use salsa::SweepStrategy;
-use salsa::{Canceled, Database};
+use salsa::{Cancelled, Database};
 
 // Number of operations a reader performs
 const N_MUTATOR_OPS: usize = 100;
@@ -21,7 +21,7 @@ trait StressDatabase: salsa::Database {
 }
 
 fn b(db: &dyn StressDatabase, key: usize) -> usize {
-    db.salsa_runtime().unwind_if_canceled();
+    db.salsa_runtime().unwind_if_cancelled();
     db.a(key)
 }
 
@@ -56,7 +56,7 @@ enum MutatorOp {
     WriteOp(WriteOp),
     LaunchReader {
         ops: Vec<ReadOp>,
-        check_cancelation: bool,
+        check_cancellation: bool,
     },
 }
 
@@ -85,7 +85,7 @@ impl rand::distributions::Distribution<MutatorOp> for rand::distributions::Stand
         } else {
             MutatorOp::LaunchReader {
                 ops: (0..N_READER_OPS).map(|_| rng.gen()).collect(),
-                check_cancelation: rng.gen(),
+                check_cancellation: rng.gen(),
             }
         }
     }
@@ -118,10 +118,10 @@ impl rand::distributions::Distribution<ReadOp> for rand::distributions::Standard
     }
 }
 
-fn db_reader_thread(db: &StressDatabaseImpl, ops: Vec<ReadOp>, check_cancelation: bool) {
+fn db_reader_thread(db: &StressDatabaseImpl, ops: Vec<ReadOp>, check_cancellation: bool) {
     for op in ops {
-        if check_cancelation {
-            db.salsa_runtime().unwind_if_canceled();
+        if check_cancellation {
+            db.salsa_runtime().unwind_if_cancelled();
         }
         op.execute(db);
     }
@@ -188,10 +188,10 @@ fn stress_test() {
             MutatorOp::WriteOp(w) => w.execute(&mut db),
             MutatorOp::LaunchReader {
                 ops,
-                check_cancelation,
+                check_cancellation,
             } => all_threads.push(std::thread::spawn({
                 let db = db.snapshot();
-                move || Canceled::catch(|| db_reader_thread(&db, ops, check_cancelation))
+                move || Cancelled::catch(|| db_reader_thread(&db, ops, check_cancellation))
             })),
         }
     }
