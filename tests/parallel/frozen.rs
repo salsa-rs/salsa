@@ -34,16 +34,6 @@ fn in_par_get_set_cancelation() {
                 std::thread::yield_now();
             }))
             .unwrap_err();
-
-            // Since we have not yet released revision lock, we should
-            // see 1 here.
-            let v = db.input('a');
-
-            // Since this is a snapshotted database, we are in a consistent
-            // revision, so this must yield the same value.
-            let w = db.input('a');
-
-            (v, w)
         }
     });
 
@@ -61,9 +51,7 @@ fn in_par_get_set_cancelation() {
         }
     });
 
-    let (a, b) = thread1.join().unwrap();
-    assert_eq!(a, 1);
-    assert_eq!(b, 1);
+    thread1.join().unwrap();
 
     let c = thread2.join().unwrap();
     assert_eq!(c, 2);
