@@ -83,7 +83,9 @@ pub trait Database: plumbing::DatabaseOps {
     /// Cancellation will automatically be triggered by salsa on any query
     /// invocation.
     ///
-    /// This method should not be overridden by `Database` implementors.
+    /// This method should not be overridden by `Database` implementors. A
+    /// `salsa_event` is emitted when this method is called, so that should be
+    /// used instead.
     #[inline]
     fn unwind_if_cancelled(&self) {
         let runtime = self.salsa_runtime();
