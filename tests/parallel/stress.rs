@@ -1,37 +1,31 @@
 use rand::seq::SliceRandom;
 use rand::Rng;
 
-use salsa::Database;
 use salsa::ParallelDatabase;
 use salsa::Snapshot;
 use salsa::SweepStrategy;
+use salsa::{Cancelled, Database};
 
 // Number of operations a reader performs
 const N_MUTATOR_OPS: usize = 100;
 const N_READER_OPS: usize = 100;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Canceled;
-type Cancelable<T> = Result<T, Canceled>;
 
 #[salsa::query_group(Stress)]
 trait StressDatabase: salsa::Database {
     #[salsa::input]
     fn a(&self, key: usize) -> usize;
 
-    fn b(&self, key: usize) -> Cancelable<usize>;
+    fn b(&self, key: usize) -> usize;
 
-    fn c(&self, key: usize) -> Cancelable<usize>;
+    fn c(&self, key: usize) -> usize;
 }
 
-fn b(db: &dyn StressDatabase, key: usize) -> Cancelable<usize> {
-    if db.salsa_runtime().is_current_revision_canceled() {
-        return Err(Canceled);
-    }
-    Ok(db.a(key))
+fn b(db: &dyn StressDatabase, key: usize) -> usize {
+    db.unwind_if_cancelled();
+    db.a(key)
 }
 
-fn c(db: &dyn StressDatabase, key: usize) -> Cancelable<usize> {
+fn c(db: &dyn StressDatabase, key: usize) -> usize {
     db.b(key)
 }
 
@@ -127,9 +121,7 @@ impl rand::distributions::Distribution<ReadOp> for rand::distributions::Standard
 fn db_reader_thread(db: &StressDatabaseImpl, ops: Vec<ReadOp>, check_cancellation: bool) {
     for op in ops {
         if check_cancellation {
-            if db.salsa_runtime().is_current_revision_canceled() {
-                return;
-            }
+            db.unwind_if_cancelled();
         }
         op.execute(db);
     }
@@ -199,12 +191,12 @@ fn stress_test() {
                 check_cancellation,
             } => all_threads.push(std::thread::spawn({
                 let db = db.snapshot();
-                move || db_reader_thread(&db, ops, check_cancellation)
+                move || Cancelled::catch(|| db_reader_thread(&db, ops, check_cancellation))
             })),
         }
     }
 
     for thread in all_threads {
-        thread.join().unwrap();
+        thread.join().unwrap().ok();
     }
 }

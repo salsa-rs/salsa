@@ -2,8 +2,11 @@ use crate::signal::Signal;
 use salsa::Database;
 use salsa::ParallelDatabase;
 use salsa::Snapshot;
-use std::cell::Cell;
 use std::sync::Arc;
+use std::{
+    cell::Cell,
+    panic::{catch_unwind, resume_unwind, AssertUnwindSafe},
+};
 
 #[salsa::query_group(Par)]
 pub(crate) trait ParDatabase: Knobs {
@@ -25,16 +28,6 @@ pub(crate) trait ParDatabase: Knobs {
     fn sum3_drop_sum(&self, key: &'static str) -> usize;
 }
 
-#[derive(PartialEq, Eq)]
-pub(crate) struct Canceled;
-
-impl Canceled {
-    fn throw() -> ! {
-        // Don't print backtrace
-        std::panic::resume_unwind(Box::new(Canceled));
-    }
-}
-
 /// Various "knobs" and utilities used by tests to force
 /// a certain behavior.
 pub(crate) trait Knobs {
@@ -53,24 +46,26 @@ impl<T> WithValue<T> for Cell<T> {
     fn with_value<R>(&self, value: T, closure: impl FnOnce() -> R) -> R {
         let old_value = self.replace(value);
 
-        let result = closure();
+        let result = catch_unwind(AssertUnwindSafe(|| closure()));
 
         self.set(old_value);
 
-        result
+        match result {
+            Ok(r) => r,
+            Err(payload) => resume_unwind(payload),
+        }
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CancelationFlag {
+pub(crate) enum CancellationFlag {
     Down,
     Panic,
-    SpecialValue,
 }
 
-impl Default for CancelationFlag {
-    fn default() -> CancelationFlag {
-        CancelationFlag::Down
+impl Default for CancellationFlag {
+    fn default() -> CancellationFlag {
+        CancellationFlag::Down
     }
 }
 
@@ -97,7 +92,7 @@ pub(crate) struct KnobsStruct {
 
     /// If true, invocations of `sum` will wait for cancellation before
     /// they exit.
-    pub(crate) sum_wait_for_cancellation: Cell<CancelationFlag>,
+    pub(crate) sum_wait_for_cancellation: Cell<CancellationFlag>,
 
     /// Invocations of `sum` will wait for this stage prior to exiting.
     pub(crate) sum_wait_for_on_exit: Cell<usize>,
@@ -125,29 +120,14 @@ fn sum(db: &dyn ParDatabase, key: &'static str) -> usize {
     }
 
     match db.knobs().sum_wait_for_cancellation.get() {
-        CancelationFlag::Down => (),
-        flag => {
+        CancellationFlag::Down => (),
+        CancellationFlag::Panic => {
             log::debug!("waiting for cancellation");
-            while !db.salsa_runtime().is_current_revision_canceled() {
+            loop {
+                db.unwind_if_cancelled();
                 std::thread::yield_now();
             }
-            log::debug!("observed cancelation");
-            if flag == CancelationFlag::Panic {
-                Canceled::throw();
-            }
         }
-    }
-
-    // Check for cancelation and return MAX if so. Note that we check
-    // for cancelation *deterministically* -- but if
-    // `sum_wait_for_cancellation` is set, we will block
-    // beforehand. Deterministic execution is a requirement for valid
-    // salsa user code. It's also important to some tests that `sum`
-    // *attempts* to invoke `is_current_revision_canceled` even if we
-    // know it will not be canceled, because that helps us keep the
-    // accounting up to date.
-    if db.salsa_runtime().is_current_revision_canceled() {
-        return std::usize::MAX; // when we are cancelled, we return usize::MAX.
     }
 
     db.wait_for(db.knobs().sum_wait_for_on_exit.get());
@@ -193,10 +173,6 @@ impl Database for ParDatabaseImpl {
 
             _ => {}
         }
-    }
-
-    fn on_propagated_panic(&self) -> ! {
-        Canceled::throw()
     }
 }
 

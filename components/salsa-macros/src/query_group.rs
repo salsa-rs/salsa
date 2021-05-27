@@ -447,14 +447,18 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 /// deadlock.
                 ///
                 /// Before blocking, the thread that is attempting to `set` will
-                /// also set a cancellation flag. In the threads operating on
-                /// snapshots, you can use the [`is_current_revision_canceled`]
-                /// method to check for this flag and bring those operations to a
-                /// close, thus allowing the `set` to succeed. Ignoring this flag
-                /// may lead to "starvation", meaning that the thread attempting
-                /// to `set` has to wait a long, long time. =)
+                /// also set a cancellation flag. This will cause any query
+                /// invocations in other threads to unwind with a `Cancelled`
+                /// sentinel value and eventually let the `set` succeed once all
+                /// threads have unwound past the salsa invocation.
                 ///
-                /// [`is_current_revision_canceled`]: struct.Runtime.html#method.is_current_revision_canceled
+                /// If your query implementations are performing expensive
+                /// operations without invoking another query, you can also use
+                /// the `Runtime::unwind_if_cancelled` method to check for an
+                /// ongoing cancellation and bring those operations to a close,
+                /// thus allowing the `set` to succeed. Otherwise, long-running
+                /// computations may lead to "starvation", meaning that the
+                /// thread attempting to `set` has to wait a long, long time. =)
                 #trait_vis fn in_db_mut(self, db: &mut #dyn_db) -> salsa::QueryTableMut<'_, Self>
                 {
                     salsa::plumbing::get_query_table_mut::<#qt>(db)

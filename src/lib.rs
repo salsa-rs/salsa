@@ -34,6 +34,7 @@ use crate::plumbing::QueryStorageOps;
 pub use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
+use std::panic::{self, UnwindSafe};
 use std::sync::Arc;
 
 pub use crate::durability::Durability;
@@ -54,6 +55,8 @@ pub trait Database: plumbing::DatabaseOps {
     /// consume are marked as used.  You then invoke this method to
     /// remove other values that were not needed for your main query
     /// results.
+    ///
+    /// This method should not be overridden by `Database` implementors.
     fn sweep_all(&self, strategy: SweepStrategy) {
         // Note that we do not acquire the query lock (or any locks)
         // here.  Each table is capable of sweeping itself atomically
@@ -71,18 +74,48 @@ pub trait Database: plumbing::DatabaseOps {
         #![allow(unused_variables)]
     }
 
-    /// This function is invoked when a dependent query is being computed by the
-    /// other thread, and that thread panics.
-    fn on_propagated_panic(&self) -> ! {
-        panic!("concurrent salsa query panicked")
+    /// Starts unwinding the stack if the current revision is cancelled.
+    ///
+    /// This method can be called by query implementations that perform
+    /// potentially expensive computations, in order to speed up propagation of
+    /// cancellation.
+    ///
+    /// Cancellation will automatically be triggered by salsa on any query
+    /// invocation.
+    ///
+    /// This method should not be overridden by `Database` implementors. A
+    /// `salsa_event` is emitted when this method is called, so that should be
+    /// used instead.
+    #[inline]
+    fn unwind_if_cancelled(&self) {
+        let runtime = self.salsa_runtime();
+        self.salsa_event(Event {
+            runtime_id: runtime.id(),
+            kind: EventKind::WillCheckCancellation,
+        });
+
+        let current_revision = runtime.current_revision();
+        let pending_revision = runtime.pending_revision();
+        log::debug!(
+            "unwind_if_cancelled: current_revision={:?}, pending_revision={:?}",
+            current_revision,
+            pending_revision
+        );
+        if pending_revision > current_revision {
+            runtime.unwind_cancelled();
+        }
     }
 
     /// Gives access to the underlying salsa runtime.
+    ///
+    /// This method should not be overridden by `Database` implementors.
     fn salsa_runtime(&self) -> &Runtime {
         self.ops_salsa_runtime()
     }
 
     /// Gives access to the underlying salsa runtime.
+    ///
+    /// This method should not be overridden by `Database` implementors.
     fn salsa_runtime_mut(&mut self) -> &mut Runtime {
         self.ops_salsa_runtime_mut()
     }
@@ -145,6 +178,10 @@ pub enum EventKind {
         /// The database-key for the affected value. Implements `Debug`.
         database_key: DatabaseKeyIndex,
     },
+
+    /// Indicates that `unwind_if_cancelled` was called and salsa will check if
+    /// the current revision has been cancelled.
+    WillCheckCancellation,
 }
 
 impl fmt::Debug for EventKind {
@@ -166,6 +203,7 @@ impl fmt::Debug for EventKind {
                 .debug_struct("WillExecute")
                 .field("database_key", database_key)
                 .finish(),
+            EventKind::WillCheckCancellation => fmt.debug_struct("WillCheckCancellation").finish(),
         }
     }
 }
@@ -277,10 +315,8 @@ pub trait ParallelDatabase: Database + Send {
     /// series of queries in parallel and arranging the results. Using
     /// this method for that purpose ensures that those queries will
     /// see a consistent view of the database (it is also advisable
-    /// for those queries to use the [`is_current_revision_canceled`]
+    /// for those queries to use the [`Runtime::unwind_if_cancelled`]
     /// method to check for cancellation).
-    ///
-    /// [`is_current_revision_canceled`]: struct.Runtime.html#method.is_current_revision_canceled
     ///
     /// # Panics
     ///
@@ -643,6 +679,41 @@ where
         Ok(())
     }
 }
+
+/// A panic payload indicating that a salsa revision was cancelled.
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct Cancelled;
+
+impl Cancelled {
+    fn throw() -> ! {
+        // We use resume and not panic here to avoid running the panic
+        // hook (that is, to avoid collecting and printing backtrace).
+        std::panic::resume_unwind(Box::new(Self));
+    }
+
+    /// Runs `f`, and catches any salsa cancellation.
+    pub fn catch<F, T>(f: F) -> Result<T, Cancelled>
+    where
+        F: FnOnce() -> T + UnwindSafe,
+    {
+        match panic::catch_unwind(f) {
+            Ok(t) => Ok(t),
+            Err(payload) => match payload.downcast() {
+                Ok(cancelled) => Err(*cancelled),
+                Err(payload) => panic::resume_unwind(payload),
+            },
+        }
+    }
+}
+
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("cancelled")
+    }
+}
+
+impl std::error::Error for Cancelled {}
 
 // Re-export the procedural macros.
 #[allow(unused_imports)]

@@ -99,6 +99,8 @@ where
         db: &<Q as QueryDb<'_>>::DynDb,
         key: &Q::Key,
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+        db.unwind_if_cancelled();
+
         let slot = self
             .slot(key)
             .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
