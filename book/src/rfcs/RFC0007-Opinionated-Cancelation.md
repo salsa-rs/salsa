@@ -4,7 +4,7 @@
 
 * Author: nikomatsakis
 * Date: 2021-05-15
-* Introduced in: N/A
+* Introduced in: [salsa-rs/salsa#265](https://github.com/salsa-rs/salsa/pull/265)
 
 ## Summary
 
@@ -34,12 +34,12 @@ When you do a write to the salsa database, that write will block until any queri
 
 The changes required to implement this RFC are as follows:
 
-* Adjust comments on `is_current_revision_canceled`.
-* Introduce a sentinel type/value `SalsaCancelationToken` that can be used with [`resume_unwind`](https://doc.rust-lang.org/std/panic/fn.resume_unwind.html)
-* Introduce a `unwind_if_canceled` method into the runtime which checks whether cancelation has occured and panics if so.
+* Remove on `is_current_revision_canceled`.
+* Introduce a sentinel cancellation token that can be used with [`resume_unwind`](https://doc.rust-lang.org/std/panic/fn.resume_unwind.html)
+* Introduce a `unwind_if_canceled` method into the `Database` which checks whether cancelation has occured and panics if so.
+    * This method also triggers a `salsa_event` callback.
     * This should probably be inline for the `if` with an outlined function to do the actual panic.
 * Modify the code for the various queries to invoke `unwind_if_canceled` when they are invoked or validated.
-    * QUESTION: Do we want to just check *every query access*, including cache hits? Probably. Is there a convenient time to do this in the runtime
 
 ## Frequently asked questions
 
