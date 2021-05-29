@@ -1,6 +1,6 @@
 [package]
 name = "salsa-macros"
-version = "0.16.0"
+version = "0.17.0-pre.1"
 authors = ["Salsa developers"]
 edition = "2018"
 license = "Apache-2.0 OR MIT"
