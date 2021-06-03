@@ -21,8 +21,8 @@ fn in_par_get_set_cancellation_immediate() {
     let mut db = ParDatabaseImpl::default();
 
     db.set_input('a', 100);
-    db.set_input('b', 010);
-    db.set_input('c', 001);
+    db.set_input('b', 10);
+    db.set_input('c', 1);
     db.set_input('d', 0);
 
     let thread1 = std::thread::spawn({
@@ -62,8 +62,8 @@ fn in_par_get_set_cancellation_transitive() {
     let mut db = ParDatabaseImpl::default();
 
     db.set_input('a', 100);
-    db.set_input('b', 010);
-    db.set_input('c', 001);
+    db.set_input('b', 10);
+    db.set_input('c', 1);
     db.set_input('d', 0);
 
     let thread1 = std::thread::spawn({

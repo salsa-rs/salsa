@@ -8,7 +8,7 @@ trait RequestUtil: RequestParser {
 }
 
 fn header(db: &dyn RequestUtil) -> Vec<ParsedHeader> {
-    db.parse().header.clone()
+    db.parse().header
 }
 
 fn content_type(db: &dyn RequestUtil) -> Option<String> {

@@ -92,7 +92,7 @@ impl rand::distributions::Distribution<WriteOp> for rand::distributions::Standar
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> WriteOp {
         let key = rng.gen::<usize>() % 10;
         let value = rng.gen::<usize>() % 10;
-        return WriteOp::SetA(key, value);
+        WriteOp::SetA(key, value)
     }
 }
 
@@ -100,7 +100,7 @@ impl rand::distributions::Distribution<ReadOp> for rand::distributions::Standard
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> ReadOp {
         let query = rng.gen::<Query>();
         let key = rng.gen::<usize>() % 10;
-        return ReadOp::Get(query, key);
+        ReadOp::Get(query, key)
     }
 }
 

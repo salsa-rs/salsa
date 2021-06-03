@@ -98,7 +98,7 @@ fn main() {
     // interface by maintaining a HashSet of inserted keys.
     // println!("Initially, the length is {}.", db.length(()));
 
-    db.set_input_string((), Arc::new(format!("Hello, world")));
+    db.set_input_string((), Arc::new("Hello, world".to_string()));
 
     println!("Now, the length is {}.", db.length(()));
 }

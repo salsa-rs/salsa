@@ -11,8 +11,8 @@ fn true_parallel_different_keys() {
     let mut db = ParDatabaseImpl::default();
 
     db.set_input('a', 100);
-    db.set_input('b', 010);
-    db.set_input('c', 001);
+    db.set_input('b', 10);
+    db.set_input('c', 1);
 
     // Thread 1 will signal stage 1 when it enters and wait for stage 2.
     let thread1 = std::thread::spawn({
@@ -40,7 +40,7 @@ fn true_parallel_different_keys() {
     });
 
     assert_eq!(thread1.join().unwrap(), 100);
-    assert_eq!(thread2.join().unwrap(), 010);
+    assert_eq!(thread2.join().unwrap(), 10);
 }
 
 /// Add a test that tries to trigger a conflict, where we fetch
@@ -51,8 +51,8 @@ fn true_parallel_same_keys() {
     let mut db = ParDatabaseImpl::default();
 
     db.set_input('a', 100);
-    db.set_input('b', 010);
-    db.set_input('c', 001);
+    db.set_input('b', 10);
+    db.set_input('c', 1);
 
     // Thread 1 will wait_for a barrier in the start of `sum`
     let thread1 = std::thread::spawn({

@@ -9,7 +9,7 @@ use self::compiler::Compiler;
 use self::implementation::DatabaseImpl;
 use self::interner::Interner;
 
-static INPUT_STR: &'static str = r#"
+static INPUT_STR: &str = r#"
 lorem,ipsum
 dolor,sit,amet,
 consectetur,adipiscing,elit

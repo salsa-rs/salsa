@@ -51,25 +51,25 @@ fn recover_b(_db: &dyn Database, cycle: &[String]) -> Result<(), Error> {
     })
 }
 
-fn memoized_a(db: &dyn Database) -> () {
+fn memoized_a(db: &dyn Database) {
     db.memoized_b()
 }
 
-fn memoized_b(db: &dyn Database) -> () {
+fn memoized_b(db: &dyn Database) {
     db.memoized_a()
 }
 
-fn volatile_a(db: &dyn Database) -> () {
+fn volatile_a(db: &dyn Database) {
     db.salsa_runtime().report_untracked_read();
     db.volatile_b()
 }
 
-fn volatile_b(db: &dyn Database) -> () {
+fn volatile_b(db: &dyn Database) {
     db.salsa_runtime().report_untracked_read();
     db.volatile_a()
 }
 
-fn cycle_leaf(_db: &dyn Database) -> () {}
+fn cycle_leaf(_db: &dyn Database) {}
 
 fn cycle_a(db: &dyn Database) -> Result<(), Error> {
     let _ = db.cycle_b();
