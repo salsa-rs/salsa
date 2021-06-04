@@ -52,6 +52,7 @@
   - [RFC 0006: Dynamic database](./rfcs/RFC0006-Dynamic-Databases.md)
   - [RFC 0007: Opinionated cancelation](./rfcs/RFC0007-Opinionated-Cancelation.md)
   - [RFC 0008: Remove garbage collection](./rfcs/RFC0008-Remove-Garbage-Collection.md)
+  - [RFC 0010: Parallel friendly caching](./rfcs/RFC0010-Parallel-Friendly-Caching.md)
 
 # Appendices
 
