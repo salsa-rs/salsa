@@ -40,6 +40,10 @@ pub struct CycleDetected {
 /// the `database_storage` macro, so you shouldn't need to mess
 /// with this trait directly.
 pub trait DatabaseStorageTypes: Database {
+    /// The global storage caches the results of queries that have finished
+    /// executing and whose results were not dependent on context.
+    type DatabaseGlobalStorage: Default;
+
     /// Defines the "storage type", where all the query data is kept.
     /// This type is defined by the `database_storage` macro.
     type DatabaseStorage: Default;
@@ -148,6 +152,8 @@ where
 pub trait QueryGroup: Sized {
     type GroupStorage;
 
+    type GlobalGroupStorage;
+
     /// Dyn version of the associated database trait.
     type DynDb: ?Sized + Database + HasQueryGroup<Self>;
 }
@@ -160,6 +166,9 @@ where
 {
     /// Access the group storage struct from the database.
     fn group_storage(&self) -> &G::GroupStorage;
+
+    /// Access the global group storage struct from the database.
+    fn global_group_storage(&self) -> &G::GlobalGroupStorage;
 }
 
 // ANCHOR:QueryStorageOps
