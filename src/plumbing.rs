@@ -13,10 +13,15 @@ use std::hash::Hash;
 use std::sync::Arc;
 
 pub use crate::derived::DependencyStorage;
+pub use crate::derived::DependencyGlobalStorage;
 pub use crate::derived::MemoizedStorage;
+pub use crate::derived::MemoizedGlobalStorage;
 pub use crate::input::InputStorage;
+pub use crate::input::InputGlobalStorage;
 pub use crate::interned::InternedStorage;
+pub use crate::interned::InternedGlobalStorage;
 pub use crate::interned::LookupInternedStorage;
+pub use crate::interned::LookupInternedGlobalStorage;
 pub use crate::{revision::Revision, DatabaseKeyIndex, QueryDb, Runtime};
 
 #[derive(Clone, Debug)]

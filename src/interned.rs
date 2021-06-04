@@ -14,6 +14,7 @@ use std::collections::hash_map::Entry;
 use std::convert::From;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 const INTERN_DURABILITY: Durability = Durability::HIGH;
@@ -29,6 +30,9 @@ where
     tables: RwLock<InternTables<Q::Key>>,
 }
 
+/// Global storage for interning things.
+pub type InternedGlobalStorage<Q> = PhantomData<Q>;
+
 /// Storage for the looking up interned things.
 pub struct LookupInternedStorage<Q, IQ>
 where
@@ -38,6 +42,9 @@ where
 {
     phantom: std::marker::PhantomData<(Q::Key, IQ)>,
 }
+
+/// Global storage for looking up interned things.
+pub type LookupInternedGlobalStorage<Q, IQ> = PhantomData<(Q, IQ)>;
 
 struct InternTables<K> {
     /// Map from the key to the corresponding intern-index.

@@ -23,10 +23,17 @@ use slot::Slot;
 /// none of those inputs have changed.
 pub type MemoizedStorage<Q> = DerivedStorage<Q, AlwaysMemoizeValue>;
 
+
+/// Global storage for memoized queries.
+pub type MemoizedGlobalStorage<Q> = PhantomData<Q>;
+
 /// "Dependency" queries just track their dependencies and not the
 /// actual value (which they produce on demand). This lessens the
 /// storage requirements.
 pub type DependencyStorage<Q> = DerivedStorage<Q, NeverMemoizeValue>;
+
+/// Global storage for dependency queries.
+pub type DependencyGlobalStorage<Q> = PhantomData<Q>;
 
 /// Handles storage where the value is 'derived' by executing a
 /// function (in contrast to "inputs").

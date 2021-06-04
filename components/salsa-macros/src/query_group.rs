@@ -386,6 +386,16 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             }
             QueryStorage::Transparent => panic!("should have been filtered"),
         };
+        let global_storage = match &query.storage {
+            QueryStorage::Memoized => quote!(salsa::plumbing::MemoizedGlobalStorage<Self>),
+            QueryStorage::Dependencies => quote!(salsa::plumbing::DependencyGlobalStorage<Self>),
+            QueryStorage::Input => quote!(salsa::plumbing::InputGlobalStorage<Self>),
+            QueryStorage::Interned => quote!(salsa::plumbing::InternedGlobalStorage<Self>),
+            QueryStorage::InternedLookup { intern_query_type } => {
+                quote!(salsa::plumbing::LookupInternedGlobalStorage<Self, #intern_query_type>)
+            }
+            QueryStorage::Transparent => panic!("should have been filtered"),
+        };
         let keys = query.keys.iter().map(|(_, ty)| ty);
         let value = &query.value;
         let query_name = &query.query_name;
@@ -461,6 +471,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 type Key = (#(#keys),*);
                 type Value = #value;
                 type Storage = #storage;
+                type GlobalStorage = #global_storage;
 
                 const QUERY_INDEX: u16 = #query_index;
 

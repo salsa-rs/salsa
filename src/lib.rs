@@ -454,6 +454,10 @@ pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
 
     /// Internal struct storing the values for the query.
     // type Storage: plumbing::QueryStorageOps<Self>;
+    type GlobalStorage;
+
+    /// Internal struct storing the values for the query.
+    // type Storage: plumbing::QueryStorageOps<Self>;
     type Storage;
 
     /// A unique index identifying this query within the group.
