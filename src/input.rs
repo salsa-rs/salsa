@@ -13,6 +13,7 @@ use indexmap::map::Entry;
 use log::debug;
 use parking_lot::RwLock;
 use std::convert::TryFrom;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 /// Input queries store the result plus a list of the other queries
@@ -25,6 +26,9 @@ where
     group_index: u16,
     slots: RwLock<FxIndexMap<Q::Key, Arc<Slot<Q>>>>,
 }
+
+/// Global storage for inputs.
+pub type InputGlobalStorage<Q> = PhantomData<Q>;
 
 struct Slot<Q>
 where
