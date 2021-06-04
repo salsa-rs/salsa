@@ -217,6 +217,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         Span::call_site(),
     );
 
+    let global_group_storage = Ident::new(
+        &format!("{}GlobalGroupStorage__", trait_name.to_string()),
+        Span::call_site(),
+    );
+
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
     let mut storage_fields = proc_macro2::TokenStream::new();
@@ -354,6 +359,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         impl salsa::plumbing::QueryGroup for #group_struct
         {
             type DynDb = #dyn_db;
+            type GlobalGroupStorage = #global_group_storage;
             type GroupStorage = #group_storage;
         }
     });
@@ -613,6 +619,17 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             }
         }
         // ANCHOR_END:group_storage_methods
+    });
+    // Emit query group storage struct
+    output.extend(quote! {
+        #trait_vis struct #global_group_storage {
+        }
+
+        impl #global_group_storage {
+            #trait_vis fn new(group_index: u16) -> Self {
+                #global_group_storage { }
+            }
+        }
     });
 
     if std::env::var("SALSA_DUMP").is_ok() {
