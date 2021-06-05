@@ -2,6 +2,7 @@ use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::plumbing::CycleRecoveryStrategy;
 use crate::plumbing::InputQueryStorageOps;
+use crate::plumbing::QueryGlobalStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
@@ -28,7 +29,12 @@ where
 }
 
 /// Global storage for inputs.
-pub type InputGlobalStorage<Q> = PhantomData<Q>;
+pub struct InputGlobalStorage<Q>
+where
+    Q: Query,
+{
+    _data: PhantomData<Q>
+}
 
 struct Slot<Q>
 where
@@ -144,6 +150,17 @@ where
                 )
             })
             .collect()
+    }
+}
+
+impl<Q> QueryGlobalStorageOps<Q> for InputGlobalStorage<Q>
+where
+    Q: Query,
+{
+    fn new(_group_index: u16) -> Self {
+        InputGlobalStorage {
+            _data: PhantomData::<Q>
+        }
     }
 }
 

@@ -4,6 +4,7 @@ use crate::lru::Lru;
 use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
+use crate::plumbing::QueryGlobalStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::{FxIndexMap, StampedValue};
@@ -25,7 +26,7 @@ pub type MemoizedStorage<Q> = DerivedStorage<Q, AlwaysMemoizeValue>;
 
 
 /// Global storage for memoized queries.
-pub type MemoizedGlobalStorage<Q> = PhantomData<Q>;
+pub type MemoizedGlobalStorage<Q> = DerivedGlobalStorage<Q, AlwaysMemoizeValue>;
 
 /// "Dependency" queries just track their dependencies and not the
 /// actual value (which they produce on demand). This lessens the
@@ -33,7 +34,7 @@ pub type MemoizedGlobalStorage<Q> = PhantomData<Q>;
 pub type DependencyStorage<Q> = DerivedStorage<Q, NeverMemoizeValue>;
 
 /// Global storage for dependency queries.
-pub type DependencyGlobalStorage<Q> = PhantomData<Q>;
+pub type DependencyGlobalStorage<Q> = DerivedGlobalStorage<Q, NeverMemoizeValue>;
 
 /// Handles storage where the value is 'derived' by executing a
 /// function (in contrast to "inputs").
@@ -46,6 +47,14 @@ where
     lru_list: Lru<Slot<Q, MP>>,
     slot_map: RwLock<FxIndexMap<Q::Key, Arc<Slot<Q, MP>>>>,
     policy: PhantomData<MP>,
+}
+
+pub struct DerivedGlobalStorage<Q, MP>
+where
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
+{
+    policy: PhantomData<(Q, MP)>,
 }
 
 impl<Q, MP> std::panic::RefUnwindSafe for DerivedStorage<Q, MP>
@@ -203,6 +212,18 @@ where
             .values()
             .filter_map(|slot| slot.as_table_entry())
             .collect()
+    }
+}
+
+impl<Q, MP> QueryGlobalStorageOps<Q> for DerivedGlobalStorage<Q, MP>
+where
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
+{
+    fn new(_group_index: u16) -> Self {
+        DerivedGlobalStorage {
+            policy: PhantomData,
+        }
     }
 }
 
