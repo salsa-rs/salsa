@@ -96,7 +96,7 @@ pub trait QueryFunction: Query {
 pub fn get_query_table<'me, Q>(db: &'me <Q as QueryDb<'me>>::DynDb) -> QueryTable<'me, Q>
 where
     Q: Query + 'me,
-    Q::Storage: QueryStorageOps<Q>,
+     QueryStorageOps<Q>,
 {
     let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
     let query_storage: &Q::Storage = Q::query_storage(group_storage);
