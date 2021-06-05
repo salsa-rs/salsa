@@ -457,8 +457,7 @@ pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
     type GlobalStorage;
 
     /// Internal struct storing the values for the query.
-    // type Storage: plumbing::QueryStorageOps<Self>;
-    type Storage;
+    type Storage: plumbing::QueryStorageOps<Self>;
 
     /// A unique index identifying this query within the group.
     const QUERY_INDEX: u16;
@@ -487,7 +486,6 @@ where
 impl<'me, Q> QueryTable<'me, Q>
 where
     Q: Query,
-    Q::Storage: QueryStorageOps<Q>,
 {
     /// Constructs a new `QueryTable`.
     pub fn new(db: &'me <Q as QueryDb<'me>>::DynDb, storage: &'me Q::Storage) -> Self {
@@ -502,6 +500,15 @@ where
         self.storage.fetch(self.db, &key)
     }
 
+<<<<<<< HEAD
+=======
+    /// Remove all values for this query that have not been used in
+    /// the most recent revision.
+    pub fn sweep(&self, strategy: SweepStrategy)
+    {
+        self.storage.sweep(self.db.salsa_runtime(), strategy);
+    }
+>>>>>>> 0fa0c93... move the bound from where clauses to trait definition
     /// Completely clears the storage for this query.
     ///
     /// This method breaks internal invariants of salsa, so any further queries
@@ -509,8 +516,6 @@ where
     /// circumstances -- for example, when one wants to observe which values
     /// dropped together with the table
     pub fn purge(&self)
-    where
-        Q::Storage: plumbing::QueryStorageMassOps,
     {
         self.storage.purge();
     }
