@@ -2,6 +2,7 @@ use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::intern_id::InternId;
 use crate::plumbing::HasQueryGroup;
+use crate::plumbing::QueryGlobalStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
@@ -30,7 +31,13 @@ where
 }
 
 /// Global storage for interning things.
-pub type InternedGlobalStorage<Q> = PhantomData<Q>;
+pub struct InternedGlobalStorage<Q>
+where
+    Q: Query,
+    Q::Value: InternKey,
+{
+    _data: PhantomData<Q>
+}
 
 /// Storage for the looking up interned things.
 pub struct LookupInternedStorage<Q, IQ>
@@ -39,12 +46,22 @@ where
     Q::Key: InternKey,
     Q::Value: Eq + Hash,
 {
+    /// We don't need any extra data for lookups, 
+    /// because we just reference the data from the interner
     phantom: std::marker::PhantomData<(Q::Key, IQ)>,
 }
 
 /// Global storage for looking up interned things.
-pub type LookupInternedGlobalStorage<Q, IQ> = PhantomData<(Q, IQ)>;
-
+pub struct LookupInternedGlobalStorage<Q, IQ>
+where
+    Q: Query,
+    Q::Key: InternKey,
+    Q::Value: Eq + Hash,
+{
+    /// We don't need any extra data for lookups, 
+    /// because we just reference the data from the interner
+    phantom: std::marker::PhantomData<(Q::Key, IQ)>,
+}
 struct InternTables<K> {
     /// Map from the key to the corresponding intern-index.
     map: FxHashMap<K, InternId>,
@@ -278,6 +295,18 @@ where
     }
 }
 
+impl<Q> QueryGlobalStorageOps<Q> for InternedGlobalStorage<Q>
+where
+    Q: Query,
+    Q::Value: InternKey,
+{
+    fn new(_group_index: u16) -> Self {
+        InternedGlobalStorage {
+            _data: PhantomData
+        }
+    }
+}
+
 // Workaround for
 // ```
 // IQ: for<'d> QueryDb<
@@ -399,6 +428,20 @@ where
     IQ: Query<Key = Q::Value, Value = Q::Key>,
 {
     fn purge(&self) {}
+}
+
+impl<Q, IQ> QueryGlobalStorageOps<Q> for LookupInternedGlobalStorage<Q, IQ>
+where
+    Q: Query,
+    Q::Key: InternKey,
+    Q::Value: Eq + Hash,
+    IQ: Query<Key = Q::Value, Value = Q::Key>,
+{
+    fn new(_group_index: u16) -> Self {
+        LookupInternedGlobalStorage {
+            phantom: PhantomData
+        }
+    }
 }
 
 impl<K> Slot<K> {
