@@ -3,7 +3,6 @@ use rand::Rng;
 
 use salsa::ParallelDatabase;
 use salsa::Snapshot;
-use salsa::SweepStrategy;
 use salsa::{Cancelled, Database};
 
 // Number of operations a reader performs
@@ -68,8 +67,6 @@ enum WriteOp {
 #[derive(Debug)]
 enum ReadOp {
     Get(Query, usize),
-    Gc(Query, SweepStrategy),
-    GcAll(SweepStrategy),
 }
 
 impl rand::distributions::Distribution<Query> for rand::distributions::Standard {
@@ -101,20 +98,9 @@ impl rand::distributions::Distribution<WriteOp> for rand::distributions::Standar
 
 impl rand::distributions::Distribution<ReadOp> for rand::distributions::Standard {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> ReadOp {
-        if rng.gen_bool(0.5) {
-            let query = rng.gen::<Query>();
-            let key = rng.gen::<usize>() % 10;
-            return ReadOp::Get(query, key);
-        }
-        let mut strategy = SweepStrategy::discard_outdated();
-        if rng.gen_bool(0.5) {
-            strategy = strategy.discard_values();
-        }
-        if rng.gen_bool(0.5) {
-            ReadOp::Gc(rng.gen::<Query>(), strategy)
-        } else {
-            ReadOp::GcAll(strategy)
-        }
+        let query = rng.gen::<Query>();
+        let key = rng.gen::<usize>() % 10;
+        return ReadOp::Get(query, key);
     }
 }
 
@@ -151,20 +137,6 @@ impl ReadOp {
                     let _ = db.c(key);
                 }
             },
-            ReadOp::Gc(query, strategy) => match query {
-                Query::A => {
-                    AQuery.in_db(db).sweep(strategy);
-                }
-                Query::B => {
-                    BQuery.in_db(db).sweep(strategy);
-                }
-                Query::C => {
-                    CQuery.in_db(db).sweep(strategy);
-                }
-            },
-            ReadOp::GcAll(strategy) => {
-                db.sweep_all(strategy);
-            }
         }
     }
 }

@@ -20,3 +20,4 @@
   - [RFC 0005: Durability](./rfcs/RFC0005-Durability.md)
   - [RFC 0006: Dynamic database](./rfcs/RFC0006-Dynamic-Databases.md)
   - [RFC 0007: Opinionated cancelation](./rfcs/RFC0007-Opinionated-Cancelation.md)
+  - [RFC 0008: Remove garbage collection](./rfcs/RFC0008-Remove-Garbage-Collection.md)

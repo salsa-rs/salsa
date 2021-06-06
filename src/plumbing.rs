@@ -8,7 +8,6 @@ use crate::Query;
 use crate::QueryTable;
 use crate::QueryTableMut;
 use crate::RuntimeId;
-use crate::SweepStrategy;
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -65,8 +64,6 @@ pub trait DatabaseOps {
 /// (note that these ops do not need to know the identity of the
 /// query, unlike `QueryStorageOps`).
 pub trait QueryStorageMassOps {
-    /// Discards memoized values that are not up to date with the current revision.
-    fn sweep(&self, runtime: &Runtime, strategy: SweepStrategy);
     fn purge(&self);
 }
 
