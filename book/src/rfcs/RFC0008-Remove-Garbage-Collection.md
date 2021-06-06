@@ -4,7 +4,7 @@
 
 * Author: nikomatsakis
 * Date: 2021-06-06
-* Introduced in: https://github.com/salsa-rs/salsa/pull/1 (please update once you open your PR)
+* Introduced in: https://github.com/salsa-rs/salsa/pull/267
 
 ## Summary
 
