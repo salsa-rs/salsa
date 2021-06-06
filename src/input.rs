@@ -24,8 +24,7 @@ pub struct InputStorage<Q>
 where
     Q: Query,
 {
-    group_index: u16,
-    slots: RwLock<FxIndexMap<Q::Key, Arc<Slot<Q>>>>,
+    _data: PhantomData<Q>,
 }
 
 /// Global storage for inputs.
@@ -33,7 +32,8 @@ pub struct InputGlobalStorage<Q>
 where
     Q: Query,
 {
-    _data: PhantomData<Q>,
+    group_index: u16,
+    slots: RwLock<FxIndexMap<Q::Key, Arc<Slot<Q>>>>,
 }
 
 struct Slot<Q>
@@ -53,7 +53,15 @@ where
 {
 }
 
-impl<Q> InputStorage<Q>
+impl<Q> std::panic::RefUnwindSafe for InputGlobalStorage<Q>
+where
+    Q: Query,
+    Q::Key: std::panic::RefUnwindSafe,
+    Q::Value: std::panic::RefUnwindSafe,
+{
+}
+
+impl<Q> InputGlobalStorage<Q>
 where
     Q: Query,
 {
@@ -64,17 +72,52 @@ where
 
 impl<Q> QueryStorageOps<Q> for InputStorage<Q>
 where
-    Q: Query,
+    Q: Query<GlobalStorage = InputGlobalStorage<Q>>,
 {
     const CYCLE_STRATEGY: crate::plumbing::CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
 
-    fn new(group_index: u16) -> Self {
-        InputStorage {
-            group_index,
-            slots: Default::default(),
-        }
+    fn new(_group_index: u16) -> Self {
+        InputStorage { _data: PhantomData }
     }
 
+    fn fmt_index(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        index: DatabaseKeyIndex,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        crate::plumbing::global_query_storage::<Q>(db).fmt_index(db, index, fmt)
+    }
+
+    fn maybe_changed_since(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool {
+        crate::plumbing::global_query_storage::<Q>(db).maybe_changed_since(db, input, revision)
+    }
+
+    fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
+        crate::plumbing::global_query_storage::<Q>(db).fetch(db, key)
+    }
+
+    fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
+        crate::plumbing::global_query_storage::<Q>(db).durability(db, key)
+    }
+
+    fn entries<C>(&self, db: &<Q as QueryDb<'_>>::DynDb) -> C
+    where
+        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
+    {
+        crate::plumbing::global_query_storage::<Q>(db).entries(db)
+    }
+}
+
+impl<Q> InputGlobalStorage<Q>
+where
+    Q: Query,
+{
     fn fmt_index(
         &self,
         _db: &<Q as QueryDb<'_>>::DynDb,
@@ -175,12 +218,26 @@ impl<Q> QueryStorageMassOps for InputStorage<Q>
 where
     Q: Query,
 {
-    fn purge(&self) {
-        *self.slots.write() = Default::default();
-    }
+    fn purge(&self) {}
 }
 
 impl<Q> InputQueryStorageOps<Q> for InputStorage<Q>
+where
+    Q: Query<GlobalStorage = InputGlobalStorage<Q>>,
+{
+    fn set(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::DynDb,
+        key: &Q::Key,
+        value: Q::Value,
+        durability: Durability,
+    ) {
+        let global_storage = crate::plumbing::global_query_storage::<Q>(db).clone();
+        global_storage.set(db, key, value, durability)
+    }
+}
+
+impl<Q> InputGlobalStorage<Q>
 where
     Q: Query,
 {
@@ -260,9 +317,10 @@ impl<Q> QueryGlobalStorageOps<Q> for InputGlobalStorage<Q>
 where
     Q: Query,
 {
-    fn new(_group_index: u16) -> Self {
+    fn new(group_index: u16) -> Self {
         InputGlobalStorage {
-            _data: PhantomData::<Q>,
+            group_index,
+            slots: Default::default(),
         }
     }
 }
@@ -271,7 +329,9 @@ impl<Q> QueryStorageMassOps for InputGlobalStorage<Q>
 where
     Q: Query,
 {
-    fn purge(&self) {}
+    fn purge(&self) {
+        *self.slots.write() = Default::default();
+    }
 }
 
 /// Check that `Slot<Q, MP>: Send + Sync` as long as

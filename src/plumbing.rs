@@ -142,6 +142,17 @@ where
     Q::query_storage(group_storage)
 }
 
+pub(crate) fn global_query_storage<'me, 'db, Q>(
+    db: &'me <Q as QueryDb<'db>>::DynDb,
+) -> &'me Arc<Q::GlobalStorage>
+where
+    Q: Query + 'me,
+    'db: 'me,
+{
+    let global_group_storage = HasQueryGroup::global_group_storage(db);
+    Q::global_query_storage(global_group_storage)
+}
+
 /// Create a query table, which has access to the storage for the query
 /// and offers methods like `get`.
 pub fn get_query_table<'me, Q>(db: &'me <Q as QueryDb<'me>>::DynDb) -> QueryTable<'me, Q>
