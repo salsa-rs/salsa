@@ -33,7 +33,7 @@ pub struct InputGlobalStorage<Q>
 where
     Q: Query,
 {
-    _data: PhantomData<Q>
+    _data: PhantomData<Q>,
 }
 
 struct Slot<Q>
@@ -151,17 +151,6 @@ where
     }
 }
 
-impl<Q> QueryGlobalStorageOps<Q> for InputGlobalStorage<Q>
-where
-    Q: Query,
-{
-    fn new(_group_index: u16) -> Self {
-        InputGlobalStorage {
-            _data: PhantomData::<Q>
-        }
-    }
-}
-
 impl<Q> Slot<Q>
 where
     Q: Query,
@@ -263,6 +252,24 @@ where
                 }
             });
     }
+}
+
+impl<Q> QueryGlobalStorageOps<Q> for InputGlobalStorage<Q>
+where
+    Q: Query,
+{
+    fn new(_group_index: u16) -> Self {
+        InputGlobalStorage {
+            _data: PhantomData::<Q>,
+        }
+    }
+}
+
+impl<Q> QueryStorageMassOps for InputGlobalStorage<Q>
+where
+    Q: Query,
+{
+    fn purge(&self) {}
 }
 
 /// Check that `Slot<Q, MP>: Send + Sync` as long as

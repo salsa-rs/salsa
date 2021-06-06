@@ -12,16 +12,16 @@ use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
 
-pub use crate::derived::DependencyStorage;
 pub use crate::derived::DependencyGlobalStorage;
-pub use crate::derived::MemoizedStorage;
+pub use crate::derived::DependencyStorage;
 pub use crate::derived::MemoizedGlobalStorage;
-pub use crate::input::InputStorage;
+pub use crate::derived::MemoizedStorage;
 pub use crate::input::InputGlobalStorage;
-pub use crate::interned::InternedStorage;
+pub use crate::input::InputStorage;
 pub use crate::interned::InternedGlobalStorage;
-pub use crate::interned::LookupInternedStorage;
+pub use crate::interned::InternedStorage;
 pub use crate::interned::LookupInternedGlobalStorage;
+pub use crate::interned::LookupInternedStorage;
 pub use crate::{revision::Revision, DatabaseKeyIndex, QueryDb, Runtime};
 
 #[derive(Clone, Debug)]
@@ -91,14 +91,22 @@ pub trait QueryFunction: Query {
     }
 }
 
+pub(crate) fn query_storage<'me, Q>(db: &'me <Q as QueryDb<'me>>::DynDb) -> &'me Q::Storage
+where
+    Q: Query + 'me,
+{
+    let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
+    let query_storage: &Q::Storage = Q::query_storage(group_storage);
+    query_storage
+}
+
 /// Create a query table, which has access to the storage for the query
 /// and offers methods like `get`.
 pub fn get_query_table<'me, Q>(db: &'me <Q as QueryDb<'me>>::DynDb) -> QueryTable<'me, Q>
 where
     Q: Query + 'me,
 {
-    let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-    let query_storage: &Q::Storage = Q::query_storage(group_storage);
+    let query_storage = query_storage::<Q>(db);
     QueryTable::new(db, query_storage)
 }
 
@@ -183,6 +191,7 @@ where
 
 pub trait QueryGlobalStorageOps<Q>
 where
+    Self: QueryStorageMassOps,
     Q: Query,
 {
     fn new(group_index: u16) -> Self;
