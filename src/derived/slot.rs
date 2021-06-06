@@ -450,7 +450,7 @@ where
     pub(super) fn evict(&self) {
         let mut state = self.state.write();
         if let QueryState::Memoized(memo) = &mut *state {
-            // Similar to GC, evicting a value with an untracked input could
+            // Evicting a value with an untracked input could
             // lead to inconsistencies. Note that we can't check
             // `has_untracked_input` when we add the value to the cache,
             // because inputs can become untracked in the next revision.

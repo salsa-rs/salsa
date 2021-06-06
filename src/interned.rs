@@ -96,18 +96,12 @@ where
 
 impl<K: Debug + Hash + Eq> InternTables<K> {
     /// Returns the slot for the given key.
-    ///
-    /// The slot will have its "accessed at" field updated to its current revision,
-    /// ensuring that it cannot be GC'd until the current queries complete.
     fn slot_for_key(&self, key: &K) -> Option<Arc<Slot<K>>> {
         let index = self.map.get(key)?;
         Some(self.slot_for_index(*index))
     }
 
     /// Returns the slot at the given index.
-    ///
-    /// The slot will have its "accessed at" field updated to its current revision,
-    /// ensuring that it cannot be GC'd until the current queries complete.
     fn slot_for_index(&self, index: InternId) -> Arc<Slot<K>> {
         let slot = &self.values[index.as_usize()];
         slot.clone()
