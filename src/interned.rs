@@ -37,7 +37,7 @@ where
     Q: Query,
     Q::Value: InternKey,
 {
-    _data: PhantomData<Q>
+    _data: PhantomData<Q>,
 }
 
 /// Storage for the looking up interned things.
@@ -47,7 +47,7 @@ where
     Q::Key: InternKey,
     Q::Value: Eq + Hash,
 {
-    /// We don't need any extra data for lookups, 
+    /// We don't need any extra data for lookups,
     /// because we just reference the data from the interner
     phantom: std::marker::PhantomData<(Q::Key, IQ)>,
 }
@@ -59,7 +59,7 @@ where
     Q::Key: InternKey,
     Q::Value: Eq + Hash,
 {
-    /// We don't need any extra data for lookups, 
+    /// We don't need any extra data for lookups,
     /// because we just reference the data from the interner
     phantom: std::marker::PhantomData<(Q::Key, IQ)>,
 }
@@ -300,10 +300,16 @@ where
     Q::Value: InternKey,
 {
     fn new(_group_index: u16) -> Self {
-        InternedGlobalStorage {
-            _data: PhantomData
-        }
+        InternedGlobalStorage { _data: PhantomData }
     }
+}
+
+impl<Q> QueryStorageMassOps for InternedGlobalStorage<Q>
+where
+    Q: Query,
+    Q::Value: InternKey,
+{
+    fn purge(&self) {}
 }
 
 // Workaround for
@@ -437,11 +443,20 @@ where
 {
     fn new(_group_index: u16) -> Self {
         LookupInternedGlobalStorage {
-            phantom: PhantomData
+            phantom: PhantomData,
         }
     }
 }
 
+impl<Q, IQ> QueryStorageMassOps for LookupInternedGlobalStorage<Q, IQ>
+where
+    Q: Query,
+    Q::Key: InternKey,
+    Q::Value: Eq + Hash,
+    IQ: Query<Key = Q::Value, Value = Q::Key>,
+{
+    fn purge(&self) {}
+}
 impl<K> Slot<K> {
     fn maybe_changed_since(&self, revision: Revision) -> bool {
         self.interned_at > revision

@@ -24,7 +24,6 @@ use slot::Slot;
 /// none of those inputs have changed.
 pub type MemoizedStorage<Q> = DerivedStorage<Q, AlwaysMemoizeValue>;
 
-
 /// Global storage for memoized queries.
 pub type MemoizedGlobalStorage<Q> = DerivedGlobalStorage<Q, AlwaysMemoizeValue>;
 
@@ -215,18 +214,6 @@ where
     }
 }
 
-impl<Q, MP> QueryGlobalStorageOps<Q> for DerivedGlobalStorage<Q, MP>
-where
-    Q: QueryFunction,
-    MP: MemoizationPolicy<Q>,
-{
-    fn new(_group_index: u16) -> Self {
-        DerivedGlobalStorage {
-            policy: PhantomData,
-        }
-    }
-}
-
 impl<Q, MP> QueryStorageMassOps for DerivedStorage<Q, MP>
 where
     Q: QueryFunction,
@@ -271,4 +258,24 @@ where
                 None
             })
     }
+}
+
+impl<Q, MP> QueryGlobalStorageOps<Q> for DerivedGlobalStorage<Q, MP>
+where
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
+{
+    fn new(_group_index: u16) -> Self {
+        DerivedGlobalStorage {
+            policy: PhantomData,
+        }
+    }
+}
+
+impl<Q, MP> QueryStorageMassOps for DerivedGlobalStorage<Q, MP>
+where
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
+{
+    fn purge(&self) {}
 }

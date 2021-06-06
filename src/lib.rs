@@ -499,23 +499,13 @@ where
         self.storage.fetch(self.db, &key)
     }
 
-<<<<<<< HEAD
-=======
-    /// Remove all values for this query that have not been used in
-    /// the most recent revision.
-    pub fn sweep(&self, strategy: SweepStrategy)
-    {
-        self.storage.sweep(self.db.salsa_runtime(), strategy);
-    }
->>>>>>> 0fa0c93... move the bound from where clauses to trait definition
     /// Completely clears the storage for this query.
     ///
     /// This method breaks internal invariants of salsa, so any further queries
     /// might return nonsense results. It is useful only in very specific
     /// circumstances -- for example, when one wants to observe which values
     /// dropped together with the table
-    pub fn purge(&self)
-    {
+    pub fn purge(&self) {
         self.storage.purge();
     }
 }
