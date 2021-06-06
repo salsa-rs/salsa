@@ -436,10 +436,16 @@ pub trait QueryDb<'d>: Sized {
     type DynDb: ?Sized + Database + HasQueryGroup<Self::Group> + 'd;
 
     /// Associate query group struct.
-    type Group: plumbing::QueryGroup<GroupStorage = Self::GroupStorage>;
+    type Group: plumbing::QueryGroup<
+        GroupStorage = Self::GroupStorage,
+        GlobalGroupStorage = Self::GlobalGroupStorage,
+    >;
 
-    /// Generated struct that contains storage for all queries in a group.
+    /// Generated struct that contains local storage for all queries in a group.
     type GroupStorage;
+
+    /// Generated struct that contains global storage for all queries in a group.
+    type GlobalGroupStorage;
 }
 
 /// Trait implements by all of the "special types" associated with
@@ -468,6 +474,11 @@ pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
     fn query_storage<'a>(
         group_storage: &'a <Self as QueryDb<'_>>::GroupStorage,
     ) -> &'a Arc<Self::Storage>;
+
+    /// Extact storage for this query from the storage for its group.
+    fn global_query_storage<'a>(
+        group_storage: &'a <Self as QueryDb<'_>>::GlobalGroupStorage,
+    ) -> &'a Arc<Self::GlobalStorage>;
 }
 
 /// Return value from [the `query` method] on `Database`.

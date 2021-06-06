@@ -333,7 +333,13 @@ where
 
 impl<'d, IQ, Q> EqualDynDb<'d, IQ> for Q
 where
-    Q: QueryDb<'d, DynDb = IQ::DynDb, Group = IQ::Group, GroupStorage = IQ::GroupStorage>,
+    Q: QueryDb<
+        'd,
+        DynDb = IQ::DynDb,
+        Group = IQ::Group,
+        GroupStorage = IQ::GroupStorage,
+        GlobalGroupStorage = IQ::GlobalGroupStorage,
+    >,
     Q::DynDb: HasQueryGroup<Q::Group>,
     IQ: QueryDb<'d>,
 {

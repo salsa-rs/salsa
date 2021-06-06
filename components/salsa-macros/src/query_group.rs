@@ -212,6 +212,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
     let mut storage_fields = proc_macro2::TokenStream::new();
+    let mut global_storage_fields = proc_macro2::TokenStream::new();
     let mut queries_with_storage = vec![];
     for query in &queries {
         let (key_names, keys): (Vec<_>, Vec<_>) =
@@ -317,6 +318,13 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // FIXME(#120): the pub should not be necessary once we complete the transition
         storage_fields.extend(quote! {
             pub #fn_name: std::sync::Arc<<#qt as salsa::Query>::Storage>,
+        });
+
+        // A field for the storage struct
+        //
+        // FIXME(#120): the pub should not be necessary once we complete the transition
+        global_storage_fields.extend(quote! {
+            pub #fn_name: std::sync::Arc<<#qt as salsa::Query>::GlobalStorage>,
         });
     }
 
@@ -463,6 +471,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 type DynDb = #dyn_db + 'd;
                 type Group = #group_struct;
                 type GroupStorage = #group_storage;
+                type GlobalGroupStorage = #global_group_storage;
             }
 
             // ANCHOR:Query_impl
@@ -481,6 +490,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     group_storage: &'a <Self as salsa::QueryDb<'_>>::GroupStorage,
                 ) -> &'a std::sync::Arc<Self::Storage> {
                     &group_storage.#fn_name
+                }
+
+                fn global_query_storage<'a>(
+                    global_group_storage: &'a <Self as salsa::QueryDb<'_>>::GlobalGroupStorage,
+                ) -> &'a std::sync::Arc<Self::GlobalStorage> {
+                    &global_group_storage.#fn_name
                 }
             }
             // ANCHOR_END:Query_impl
@@ -643,11 +658,17 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     // Emit query group storage struct
     output.extend(quote! {
         #trait_vis struct #global_group_storage {
+            #global_storage_fields
         }
 
         impl #global_group_storage {
             #trait_vis fn new(group_index: u16) -> Self {
-                #global_group_storage { }
+                #global_group_storage {
+                    #(
+                        #queries_with_storage:
+                        std::sync::Arc::new(salsa::plumbing::QueryGlobalStorageOps::new(group_index)),
+                    )*
+                }
             }
         }
     });
