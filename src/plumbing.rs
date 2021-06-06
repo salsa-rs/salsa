@@ -131,13 +131,15 @@ pub enum CycleRecoveryStrategy {
     Fallback,
 }
 
-pub(crate) fn query_storage<'me, Q>(db: &'me <Q as QueryDb<'me>>::DynDb) -> &'me Q::Storage
+pub(crate) fn query_storage<'me, 'db, Q>(
+    db: &'me <Q as QueryDb<'db>>::DynDb,
+) -> &'me Arc<Q::Storage>
 where
     Q: Query + 'me,
+    'db: 'me,
 {
-    let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-    let query_storage: &Q::Storage = Q::query_storage(group_storage);
-    query_storage
+    let group_storage = HasQueryGroup::group_storage(db);
+    Q::query_storage(group_storage)
 }
 
 /// Create a query table, which has access to the storage for the query
@@ -147,7 +149,7 @@ where
     Q: Query + 'me,
 {
     let query_storage = query_storage::<Q>(db);
-    QueryTable::new(db, query_storage)
+    QueryTable::new(db, &**query_storage)
 }
 
 /// Create a mutable query table, which has access to the storage
@@ -156,8 +158,7 @@ pub fn get_query_table_mut<'me, Q>(db: &'me mut <Q as QueryDb<'me>>::DynDb) -> Q
 where
     Q: Query,
 {
-    let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-    let query_storage = Q::query_storage(group_storage).clone();
+    let query_storage = query_storage::<Q>(db).clone();
     QueryTableMut::new(db, query_storage)
 }
 
