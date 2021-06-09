@@ -278,8 +278,11 @@ where
 /// An optional trait that is implemented for "user mutable" storage:
 /// that is, storage whose value is not derived from other storage but
 /// is set independently.
-pub trait LruQueryStorageOps {
-    fn set_lru_capacity(&self, new_capacity: usize);
+pub trait LruQueryStorageOps<Q>
+where
+    Q: Query,
+{
+    fn set_lru_capacity(&self, db: &<Q as QueryDb<'_>>::DynDb, new_capacity: usize);
 }
 
 pub trait DerivedQueryStorageOps<Q>

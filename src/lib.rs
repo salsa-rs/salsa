@@ -581,9 +581,9 @@ where
     /// If `cap` is zero, all values are preserved, this is the default.
     pub fn set_lru_capacity(&self, cap: usize)
     where
-        Q::Storage: plumbing::LruQueryStorageOps,
+        Q::Storage: plumbing::LruQueryStorageOps<Q>,
     {
-        self.storage.set_lru_capacity(cap);
+        self.storage.set_lru_capacity(self.db, cap);
     }
 
     /// Marks the computed value as outdated.
