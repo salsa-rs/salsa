@@ -1,4 +1,4 @@
-# Description/title
+# Remove garbage collection
 
 ## Metadata
 
