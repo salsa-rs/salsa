@@ -11,10 +11,7 @@ use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::Cancelled;
-use crate::{
-    CycleError, Database, DatabaseKeyIndex, DiscardIf, DiscardWhat, Event, EventKind, QueryDb,
-    SweepStrategy,
-};
+use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind, QueryDb};
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::{RawRwLock, RwLock};
@@ -453,7 +450,7 @@ where
     pub(super) fn evict(&self) {
         let mut state = self.state.write();
         if let QueryState::Memoized(memo) = &mut *state {
-            // Similar to GC, evicting a value with an untracked input could
+            // Evicting a value with an untracked input could
             // lead to inconsistencies. Note that we can't check
             // `has_untracked_input` when we add the value to the cache,
             // because inputs can become untracked in the next revision.
@@ -461,72 +458,6 @@ where
                 return;
             }
             memo.value = None;
-        }
-    }
-
-    pub(super) fn sweep(&self, revision_now: Revision, strategy: SweepStrategy) {
-        let mut state = self.state.write();
-        match &mut *state {
-            QueryState::NotComputed => (),
-
-            // Leave stuff that is currently being computed -- the
-            // other thread doing that work has unique access to
-            // this slot and we should not interfere.
-            QueryState::InProgress { .. } => {
-                debug!("sweep({:?}): in-progress", self);
-            }
-
-            // Otherwise, drop only value or the whole memo according to the
-            // strategy.
-            QueryState::Memoized(memo) => {
-                debug!(
-                    "sweep({:?}): last verified at {:?}, current revision {:?}",
-                    self, memo.revisions.verified_at, revision_now
-                );
-
-                // Check if this memo read something "untracked"
-                // -- meaning non-deterministic.  In this case, we
-                // can only collect "outdated" data that wasn't
-                // used in the current revision. This is because
-                // if we collected something from the current
-                // revision, we might wind up re-executing the
-                // query later in the revision and getting a
-                // distinct result.
-                let has_untracked_input = memo.revisions.has_untracked_input();
-
-                // Since we don't acquire a query lock in this
-                // method, it *is* possible for the revision to
-                // change while we are executing. However, it is
-                // *not* possible for any memos to have been
-                // written into this table that reflect the new
-                // revision, since we are holding the write lock
-                // when we read `revision_now`.
-                assert!(memo.revisions.verified_at <= revision_now);
-                match strategy.discard_if {
-                    DiscardIf::Never => unreachable!(),
-
-                    // If we are only discarding outdated things,
-                    // and this is not outdated, keep it.
-                    DiscardIf::Outdated if memo.revisions.verified_at == revision_now => (),
-
-                    // As explained on the `has_untracked_input` variable
-                    // definition, if this is a volatile entry, we
-                    // can't discard it unless it is outdated.
-                    DiscardIf::Always
-                        if has_untracked_input && memo.revisions.verified_at == revision_now => {}
-
-                    // Otherwise, we can discard -- discard whatever the user requested.
-                    DiscardIf::Outdated | DiscardIf::Always => match strategy.discard_what {
-                        DiscardWhat::Nothing => unreachable!(),
-                        DiscardWhat::Values => {
-                            memo.value = None;
-                        }
-                        DiscardWhat::Everything => {
-                            *state = QueryState::NotComputed;
-                        }
-                    },
-                }
-            }
         }
     }
 

@@ -48,25 +48,6 @@ pub use crate::storage::Storage;
 /// access to the salsa runtime, which you must embed into your query
 /// context (along with whatever other state you may require).
 pub trait Database: plumbing::DatabaseOps {
-    /// Iterates through all query storage and removes any values that
-    /// have not been used since the last revision was created. The
-    /// intended use-cycle is that you first execute all of your
-    /// "main" queries; this will ensure that all query values they
-    /// consume are marked as used.  You then invoke this method to
-    /// remove other values that were not needed for your main query
-    /// results.
-    ///
-    /// This method should not be overridden by `Database` implementors.
-    fn sweep_all(&self, strategy: SweepStrategy) {
-        // Note that we do not acquire the query lock (or any locks)
-        // here.  Each table is capable of sweeping itself atomically
-        // and there is no need to bring things to a halt. That said,
-        // users may wish to guarantee atomicity.
-
-        let runtime = self.salsa_runtime();
-        self.for_each_query(&mut |query_storage| query_storage.sweep(runtime, strategy));
-    }
-
     /// This function is invoked at key points in the salsa
     /// runtime. It permits the database to be customized and to
     /// inject logging or other custom behavior.
@@ -204,94 +185,6 @@ impl fmt::Debug for EventKind {
                 .field("database_key", database_key)
                 .finish(),
             EventKind::WillCheckCancellation => fmt.debug_struct("WillCheckCancellation").finish(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum DiscardIf {
-    Never,
-    Outdated,
-    Always,
-}
-
-impl Default for DiscardIf {
-    fn default() -> DiscardIf {
-        DiscardIf::Never
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum DiscardWhat {
-    Nothing,
-    Values,
-    Everything,
-}
-
-impl Default for DiscardWhat {
-    fn default() -> DiscardWhat {
-        DiscardWhat::Nothing
-    }
-}
-
-/// The sweep strategy controls what data we will keep/discard when we
-/// do a GC-sweep. The default (`SweepStrategy::default`) is a no-op,
-/// use `SweepStrategy::discard_outdated` constructor or `discard_*`
-/// and `sweep_*` builder functions to construct useful strategies.
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub struct SweepStrategy {
-    discard_if: DiscardIf,
-    discard_what: DiscardWhat,
-    shrink_to_fit: bool,
-}
-
-impl SweepStrategy {
-    /// Convenience function that discards all data not used thus far in the
-    /// current revision.
-    ///
-    /// Equivalent to `SweepStrategy::default().discard_everything()`.
-    pub fn discard_outdated() -> SweepStrategy {
-        SweepStrategy::default()
-            .discard_everything()
-            .sweep_outdated()
-    }
-
-    /// Collects query values.
-    ///
-    /// Query dependencies are left in the database, which allows to quickly
-    /// determine if the query is up to date, and avoid recomputing
-    /// dependencies.
-    pub fn discard_values(self) -> SweepStrategy {
-        SweepStrategy {
-            discard_what: self.discard_what.max(DiscardWhat::Values),
-            ..self
-        }
-    }
-
-    /// Collects both values and information about dependencies.
-    ///
-    /// Dependant queries will be recomputed even if all inputs to this query
-    /// stay the same.
-    pub fn discard_everything(self) -> SweepStrategy {
-        SweepStrategy {
-            discard_what: self.discard_what.max(DiscardWhat::Everything),
-            ..self
-        }
-    }
-
-    /// Process all keys, not verefied at the current revision.
-    pub fn sweep_outdated(self) -> SweepStrategy {
-        SweepStrategy {
-            discard_if: self.discard_if.max(DiscardIf::Outdated),
-            ..self
-        }
-    }
-
-    /// Process all keys.
-    pub fn sweep_all_revisions(self) -> SweepStrategy {
-        SweepStrategy {
-            discard_if: self.discard_if.max(DiscardIf::Always),
-            ..self
         }
     }
 }
@@ -532,14 +425,6 @@ where
         self.storage.try_fetch(self.db, &key)
     }
 
-    /// Remove all values for this query that have not been used in
-    /// the most recent revision.
-    pub fn sweep(&self, strategy: SweepStrategy)
-    where
-        Q::Storage: plumbing::QueryStorageMassOps,
-    {
-        self.storage.sweep(self.db.salsa_runtime(), strategy);
-    }
     /// Completely clears the storage for this query.
     ///
     /// This method breaks internal invariants of salsa, so any further queries

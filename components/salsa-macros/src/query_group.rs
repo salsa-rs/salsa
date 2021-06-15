@@ -413,9 +413,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         output.extend(quote! {
             impl #qt {
-                /// Get access to extra methods pertaining to this query. For
-                /// example, you can use this to run the GC (`sweep`) across a
-                /// single input. You can also use it to invoke this query, though
+                /// Get access to extra methods pertaining to this query.
+                /// You can also use it to invoke this query, though
                 /// it's more common to use the trait method on the database
                 /// itself.
                 #trait_vis fn in_db(self, db: &#dyn_db) -> salsa::QueryTable<'_, Self>

@@ -7,7 +7,7 @@ use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::{FxIndexMap, StampedValue};
-use crate::{CycleError, Database, DatabaseKeyIndex, QueryDb, Revision, Runtime, SweepStrategy};
+use crate::{CycleError, Database, DatabaseKeyIndex, QueryDb, Revision};
 use parking_lot::RwLock;
 use std::borrow::Borrow;
 use std::convert::TryFrom;
@@ -202,13 +202,6 @@ where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
 {
-    fn sweep(&self, runtime: &Runtime, strategy: SweepStrategy) {
-        let map_read = self.slot_map.read();
-        let revision_now = runtime.current_revision();
-        for slot in map_read.values() {
-            slot.sweep(revision_now, strategy);
-        }
-    }
     fn purge(&self) {
         self.lru_list.purge();
         *self.slot_map.write() = Default::default();
