@@ -57,7 +57,7 @@ fn should_panic_safely() {
     let result = panic::catch_unwind(AssertUnwindSafe(|| db.panic_safely()));
     assert!(result.is_ok());
 
-    // Check, that memoized outer is not invalidated by a panic
+    // Check that memoized outer is invalidated by a panic
     {
         assert_eq!(OUTER_CALLS.load(SeqCst), 0);
         db.outer();
@@ -70,7 +70,7 @@ fn should_panic_safely() {
 
         db.set_one(1);
         db.outer();
-        assert_eq!(OUTER_CALLS.load(SeqCst), 1);
+        assert_eq!(OUTER_CALLS.load(SeqCst), 2);
     }
 }
 

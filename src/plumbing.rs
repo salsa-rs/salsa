@@ -13,11 +13,13 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 pub use crate::derived::DependencyStorage;
+pub use crate::derived::MemoizationPolicy;
 pub use crate::derived::MemoizedStorage;
 pub use crate::input::InputStorage;
 pub use crate::interned::InternedStorage;
 pub use crate::interned::LookupInternedStorage;
 pub use crate::{revision::Revision, DatabaseKeyIndex, QueryDb, Runtime};
+use std::mem;
 
 #[derive(Clone, Debug)]
 pub struct CycleDetected {
@@ -70,7 +72,16 @@ pub trait QueryStorageMassOps {
 pub trait DatabaseKey: Clone + Debug + Eq + Hash {}
 
 pub trait QueryFunction: Query {
-    fn execute(db: &<Self as QueryDb<'_>>::DynDb, key: Self::Key) -> Self::Value;
+    fn init(db: &<Self as QueryDb<'_>>::DynDb, key: Self::Key) -> Self::Value;
+
+    fn update<MP: MemoizationPolicy<Self>>(
+        db: &<Self as QueryDb<'_>>::DynDb,
+        key: Self::Key,
+        value: &mut Self::Value,
+    ) -> bool {
+        let old_value = mem::replace(value, Self::init(db, key));
+        !MP::memoized_value_eq(&old_value, value)
+    }
 
     fn recover(
         db: &<Self as QueryDb<'_>>::DynDb,

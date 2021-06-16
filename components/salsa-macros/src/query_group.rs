@@ -40,6 +40,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let mut storage = QueryStorage::Memoized;
             let mut cycle = None;
             let mut invoke = None;
+            let mut update = None;
             let query_name = method.sig.ident.to_string();
             let mut query_type = Ident::new(
                 &format!("{}Query", method.sig.ident.to_string().to_camel_case()),
@@ -72,6 +73,15 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     }
                     "invoke" => {
                         invoke = Some(parse_macro_input!(tts as Parenthesized<syn::Path>).0);
+                    }
+                    "update" => {
+                        let path = if tts.is_empty() {
+                            let ident = format_ident!("update_{}", query_name);
+                            parse_quote! { #ident }
+                        } else {
+                            parse_macro_input!(tts as Parenthesized<syn::Path>).0
+                        };
+                        update = Some(path);
                     }
                     "query_type" => {
                         query_type = parse_macro_input!(tts as Parenthesized<Ident>).0;
@@ -190,6 +200,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     keys: lookup_keys,
                     value: lookup_value,
                     invoke: None,
+                    update: None,
                     cycle: cycle.clone(),
                 })
             } else {
@@ -205,6 +216,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 keys,
                 value,
                 invoke,
+                update,
                 cycle,
             });
 
@@ -386,9 +398,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         let storage = match &query.storage {
             QueryStorage::Memoized => quote!(salsa::plumbing::MemoizedStorage<Self>),
-            QueryStorage::Dependencies => {
-                quote!(salsa::plumbing::DependencyStorage<Self>)
-            }
+            QueryStorage::Dependencies => quote!(salsa::plumbing::DependencyStorage<Self>),
             QueryStorage::Input => quote!(salsa::plumbing::InputStorage<Self>),
             QueryStorage::Interned => quote!(salsa::plumbing::InternedStorage<Self>),
             QueryStorage::InternedLookup { intern_query_type } => {
@@ -499,10 +509,27 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             };
             let invoke = query.invoke_tt();
 
+            let update = if let Some(update) = &query.update {
+                quote! {
+                    fn update<MP: salsa::plumbing::MemoizationPolicy<Self>>(
+                        db: &<Self as salsa::QueryDb<'_>>::DynDb,
+                        #key_pattern: <Self as salsa::Query>::Key,
+                        value: &mut <Self as salsa::Query>::Value,
+                    ) -> bool {
+                        #update(db, value, #(#key_names),*)
+                    }
+                }
+            } else {
+                quote! {}
+            };
+
             let recover = if let Some(cycle_recovery_fn) = &query.cycle {
                 quote! {
-                    fn recover(db: &<Self as salsa::QueryDb<'_>>::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::Query>::Key)
-                        -> Option<<Self as salsa::Query>::Value> {
+                    fn recover(
+                        db: &<Self as salsa::QueryDb<'_>>::DynDb,
+                        cycle: &[salsa::DatabaseKeyIndex],
+                        #key_pattern: &<Self as salsa::Query>::Key,
+                    ) -> Option<<Self as salsa::Query>::Value> {
                         Some(#cycle_recovery_fn(
                                 db,
                                 &cycle.iter().map(|k| format!("{:?}", k.debug(db))).collect::<Vec<String>>(),
@@ -516,13 +543,15 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             output.extend(quote_spanned! {span=>
                 // ANCHOR:QueryFunction_impl
-                impl salsa::plumbing::QueryFunction for #qt
-                {
-                    fn execute(db: &<Self as salsa::QueryDb<'_>>::DynDb, #key_pattern: <Self as salsa::Query>::Key)
-                        -> <Self as salsa::Query>::Value {
+                impl salsa::plumbing::QueryFunction for #qt {
+                    fn init(
+                        db: &<Self as salsa::QueryDb<'_>>::DynDb,
+                        #key_pattern: <Self as salsa::Query>::Key,
+                    ) -> <Self as salsa::Query>::Value {
                         #invoke(db, #(#key_names),*)
                     }
 
+                    #update
                     #recover
                 }
                 // ANCHOR_END:QueryFunction_impl
@@ -686,6 +715,7 @@ struct Query {
     keys: Vec<syn::Type>,
     value: syn::Type,
     invoke: Option<syn::Path>,
+    update: Option<syn::Path>,
     cycle: Option<syn::Path>,
 }
 

@@ -205,7 +205,7 @@ impl Runtime {
         &self,
         db: &DB,
         database_key_index: DatabaseKeyIndex,
-        execute: impl FnOnce() -> V,
+        execute: impl FnOnce() -> (bool, V),
     ) -> ComputedQueryResult<V>
     where
         DB: ?Sized + Database,
@@ -229,7 +229,7 @@ impl Runtime {
             .push_query(database_key_index, max_durability);
 
         // Execute user's code, accumulating inputs etc.
-        let value = execute();
+        let (value_changed, value) = execute();
 
         // Extract accumulated inputs.
         let ActiveQuery {
@@ -242,6 +242,7 @@ impl Runtime {
 
         ComputedQueryResult {
             value,
+            value_changed,
             durability,
             changed_at,
             dependencies,
@@ -484,6 +485,8 @@ struct ActiveQuery {
 pub(crate) struct ComputedQueryResult<V> {
     /// Final value produced
     pub(crate) value: V,
+
+    pub(crate) value_changed: bool,
 
     /// Minimum durability of inputs observed so far.
     pub(crate) durability: Durability,

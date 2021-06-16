@@ -183,7 +183,7 @@ where
         // has been a new revision since the last time we checked. So,
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
-        if let Some(memo) = &mut panic_guard.memo {
+        let value = if let Some(memo) = &mut panic_guard.memo {
             if let Some(value) = memo.validate_memoized_value(db, revision_now) {
                 info!("{:?}: validated old memoized value", self,);
 
@@ -206,14 +206,25 @@ where
 
                 return Ok(value);
             }
-        }
+
+            memo.value.take()
+        } else {
+            None
+        };
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
         let mut result = runtime.execute_query_implementation(db, self.database_key_index, || {
             info!("{:?}: executing query", self);
 
-            Q::execute(db, self.key.clone())
+            let key = self.key.clone();
+            if let Some(mut value) = value {
+                let value_changed = Q::update::<MP>(db, key, &mut value);
+                (value_changed, value)
+            } else {
+                let value = Q::init(db, key);
+                (true, value)
+            }
         });
 
         if !result.cycle.is_empty() {
@@ -245,22 +256,18 @@ where
         // "backdate" its `changed_at` revision to be the same as the
         // old value.
         if let Some(old_memo) = &panic_guard.memo {
-            if let Some(old_value) = &old_memo.value {
-                // Careful: if the value became less durable than it
-                // used to be, that is a "breaking change" that our
-                // consumers must be aware of. Becoming *more* durable
-                // is not. See the test `constant_to_non_constant`.
-                if result.durability >= old_memo.revisions.durability
-                    && MP::memoized_value_eq(&old_value, &result.value)
-                {
-                    debug!(
-                        "read_upgrade({:?}): value is equal, back-dating to {:?}",
-                        self, old_memo.revisions.changed_at,
-                    );
+            // Careful: if the value became less durable than it
+            // used to be, that is a "breaking change" that our
+            // consumers must be aware of. Becoming *more* durable
+            // is not. See the test `constant_to_non_constant`.
+            if result.durability >= old_memo.revisions.durability && !result.value_changed {
+                debug!(
+                    "read_upgrade({:?}): value is equal, back-dating to {:?}",
+                    self, old_memo.revisions.changed_at,
+                );
 
-                    assert!(old_memo.revisions.changed_at <= result.changed_at);
-                    result.changed_at = old_memo.revisions.changed_at;
-                }
+                assert!(old_memo.revisions.changed_at <= result.changed_at);
+                result.changed_at = old_memo.revisions.changed_at;
             }
         }
 
