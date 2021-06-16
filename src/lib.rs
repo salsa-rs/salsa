@@ -605,5 +605,4 @@ impl std::error::Error for Cancelled {}
 #[macro_use]
 extern crate salsa_macros;
 use plumbing::HasQueryGroup;
-#[doc(hidden)]
 pub use salsa_macros::*;
