@@ -21,3 +21,4 @@
   - [RFC 0006: Dynamic database](./rfcs/RFC0006-Dynamic-Databases.md)
   - [RFC 0007: Opinionated cancelation](./rfcs/RFC0007-Opinionated-Cancelation.md)
   - [RFC 0008: Remove garbage collection](./rfcs/RFC0008-Remove-Garbage-Collection.md)
+  - [RFC 0009: Updatable derived queries](./rfcs/RFC0009-Updatable-Derived-Queries.md)
