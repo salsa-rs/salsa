@@ -31,6 +31,7 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         toolchain: ${{ matrix.rust }}
+        components: rustfmt
         default: true
     - uses: actions-rs/cargo@v1
       with:
