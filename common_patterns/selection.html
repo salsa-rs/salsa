@@ -241,7 +241,7 @@ trait RequestUtil: RequestParser {
 }
 
 fn header(db: &amp;dyn RequestUtil) -&gt; Vec&lt;ParsedHeader&gt; {
-    db.parse().header.clone()
+    db.parse().header
 }
 
 fn content_type(db: &amp;dyn RequestUtil) -&gt; Option&lt;String&gt; {
