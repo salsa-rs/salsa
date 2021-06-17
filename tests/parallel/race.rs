@@ -19,7 +19,7 @@ fn in_par_get_set_race() {
     });
 
     let thread2 = std::thread::spawn(move || {
-        db.set_input('a', 1000);
+        db.update_input('a', |value| *value *= 10);
         db.sum("a")
     });
 

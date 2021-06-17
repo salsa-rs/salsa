@@ -182,6 +182,14 @@ where
         new_value: Q::Value,
         durability: Durability,
     );
+
+    fn update(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::DynDb,
+        key: &Q::Key,
+        value_fn: &mut dyn FnMut(&mut Q::Value),
+        durability: Durability,
+    );
 }
 
 /// An optional trait that is implemented for "user mutable" storage:

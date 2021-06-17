@@ -269,6 +269,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let set_fn_name = Ident::new(&format!("set_{}", fn_name), fn_name.span());
             let set_with_durability_fn_name =
                 Ident::new(&format!("set_{}_with_durability", fn_name), fn_name.span());
+            let update_fn_name = Ident::new(&format!("update_{}", fn_name), fn_name.span());
 
             let set_fn_docs = format!(
                 "
@@ -297,13 +298,29 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 fn_name = fn_name
             );
 
+            let update_fn_docs = format!(
+                "
+                Applies a function that updates the value currently in the `{fn_name}` input.
+
+                See `{fn_name}` for details.
+
+                *Note:* Setting values will trigger cancellation
+                of any ongoing queries; this method blocks until
+                those queries have been cancelled.
+            ",
+                fn_name = fn_name
+            );
+
             query_fn_declarations.extend(quote! {
                 # [doc = #set_fn_docs]
                 fn #set_fn_name(&mut self, #(#key_names: #keys,)* value__: #value);
 
-
                 # [doc = #set_constant_fn_docs]
                 fn #set_with_durability_fn_name(&mut self, #(#key_names: #keys,)* value__: #value, durability__: salsa::Durability);
+
+                # [doc = #update_fn_docs]
+                fn #update_fn_name<F>(&mut self, #(#key_names: #keys,)* value_fn__: F)
+                    where Self: Sized, F: FnOnce(&mut #value);
             });
 
             query_fn_definitions.extend(quote! {
@@ -319,6 +336,18 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                         salsa::plumbing::get_query_table_mut::<#qt>(db).set_with_durability((#(#key_names),*), value__, durability__)
                     }
                     __shim(self, #(#key_names,)* value__ ,durability__)
+                }
+
+                fn #update_fn_name<F>(&mut self, #(#key_names: #keys,)* value_fn__: F)
+                    where Self: Sized, F: FnOnce(&mut #value) {
+                    fn __shim<F>(db: &mut dyn #trait_name, #(#key_names: #keys,)* value_fn__: F)
+                        where F: FnOnce(&mut #value) {
+                        let mut value_fn__ = Some(value_fn__);
+                        salsa::plumbing::get_query_table_mut::<#qt>(db).update((#(#key_names),*), &mut |value__| {
+                            value_fn__.take().unwrap()(value__)
+                        })
+                    }
+                    __shim(self, #(#key_names,)* value_fn__)
                 }
             });
         }

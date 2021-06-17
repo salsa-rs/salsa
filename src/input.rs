@@ -242,6 +242,30 @@ where
                 }
             });
     }
+
+    fn update(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::DynDb,
+        key: &<Q as Query>::Key,
+        value_fn: &mut dyn FnMut(&mut Q::Value),
+        durability: Durability,
+    ) {
+        db.salsa_runtime_mut()
+            .with_incremented_revision(&mut |next_revision| {
+                let slots = self.slots.write();
+
+                let slot = slots
+                    .get(key)
+                    .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
+
+                let mut slot_stamped_value = slot.stamped_value.write();
+                let old_durability = slot_stamped_value.durability;
+                value_fn(&mut slot_stamped_value.value);
+                slot_stamped_value.durability = durability;
+                slot_stamped_value.changed_at = next_revision;
+                Some(old_durability)
+            });
+    }
 }
 
 /// Check that `Slot<Q, MP>: Send + Sync` as long as

@@ -44,7 +44,7 @@ fn in_par_get_set_cancellation() {
             signal.wait_for(1);
 
             // This will block until thread1 drops the revision lock.
-            db.set_input('a', 2);
+            db.update_input('a', |value| *value += 1);
 
             db.input('a')
         }
