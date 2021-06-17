@@ -1,5 +1,5 @@
-use parking_lot::Mutex;
 use oorandom::Rand64;
+use parking_lot::Mutex;
 use std::fmt::Debug;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -288,7 +288,7 @@ where
 
     fn pick_index(&mut self, zone: std::ops::Range<usize>) -> usize {
         let end_index = std::cmp::min(zone.end, self.entries.len());
-        self.rng.rand_range(zone.start as u64 .. end_index as u64) as usize
+        self.rng.rand_range(zone.start as u64..end_index as u64) as usize
     }
 }
 
