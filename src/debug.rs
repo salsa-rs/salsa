@@ -31,21 +31,17 @@ pub trait DebugQueryTable {
 
 /// An entry from a query table, for debugging and inspecting the table state.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[non_exhaustive]
 pub struct TableEntry<K, V> {
     /// key of the query
     pub key: K,
     /// value of the query, if it is stored
     pub value: Option<V>,
-    _for_future_use: (),
 }
 
 impl<K, V> TableEntry<K, V> {
     pub(crate) fn new(key: K, value: Option<V>) -> TableEntry<K, V> {
-        TableEntry {
-            key,
-            value,
-            _for_future_use: (),
-        }
+        TableEntry { key, value }
     }
 }
 

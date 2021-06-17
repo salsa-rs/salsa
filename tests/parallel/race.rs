@@ -10,17 +10,12 @@ fn in_par_get_set_race() {
     let mut db = ParDatabaseImpl::default();
 
     db.set_input('a', 100);
-    db.set_input('b', 010);
-    db.set_input('c', 001);
+    db.set_input('b', 10);
+    db.set_input('c', 1);
 
     let thread1 = std::thread::spawn({
         let db = db.snapshot();
-        move || {
-            Cancelled::catch(AssertUnwindSafe(|| {
-                let v = db.sum("abc");
-                v
-            }))
-        }
+        move || Cancelled::catch(AssertUnwindSafe(|| db.sum("abc")))
     });
 
     let thread2 = std::thread::spawn(move || {

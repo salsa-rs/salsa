@@ -46,47 +46,53 @@ impl salsa::InternKey for InternKey {
 #[test]
 fn test_intern1() {
     let db = Database::default();
-    let foo0 = db.intern1(format!("foo"));
-    let bar0 = db.intern1(format!("bar"));
-    let foo1 = db.intern1(format!("foo"));
-    let bar1 = db.intern1(format!("bar"));
+    let foo0 = db.intern1("foo".to_string());
+    let bar0 = db.intern1("bar".to_string());
+    let foo1 = db.intern1("foo".to_string());
+    let bar1 = db.intern1("bar".to_string());
 
     assert_eq!(foo0, foo1);
     assert_eq!(bar0, bar1);
     assert_ne!(foo0, bar0);
 
-    assert_eq!(format!("foo"), db.lookup_intern1(foo0));
-    assert_eq!(format!("bar"), db.lookup_intern1(bar0));
+    assert_eq!("foo".to_string(), db.lookup_intern1(foo0));
+    assert_eq!("bar".to_string(), db.lookup_intern1(bar0));
 }
 
 #[test]
 fn test_intern2() {
     let db = Database::default();
-    let foo0 = db.intern2(format!("x"), format!("foo"));
-    let bar0 = db.intern2(format!("x"), format!("bar"));
-    let foo1 = db.intern2(format!("x"), format!("foo"));
-    let bar1 = db.intern2(format!("x"), format!("bar"));
+    let foo0 = db.intern2("x".to_string(), "foo".to_string());
+    let bar0 = db.intern2("x".to_string(), "bar".to_string());
+    let foo1 = db.intern2("x".to_string(), "foo".to_string());
+    let bar1 = db.intern2("x".to_string(), "bar".to_string());
 
     assert_eq!(foo0, foo1);
     assert_eq!(bar0, bar1);
     assert_ne!(foo0, bar0);
 
-    assert_eq!((format!("x"), format!("foo")), db.lookup_intern2(foo0));
-    assert_eq!((format!("x"), format!("bar")), db.lookup_intern2(bar0));
+    assert_eq!(
+        ("x".to_string(), "foo".to_string()),
+        db.lookup_intern2(foo0)
+    );
+    assert_eq!(
+        ("x".to_string(), "bar".to_string()),
+        db.lookup_intern2(bar0)
+    );
 }
 
 #[test]
 fn test_intern_key() {
     let db = Database::default();
-    let foo0 = db.intern_key(format!("foo"));
-    let bar0 = db.intern_key(format!("bar"));
-    let foo1 = db.intern_key(format!("foo"));
-    let bar1 = db.intern_key(format!("bar"));
+    let foo0 = db.intern_key("foo".to_string());
+    let bar0 = db.intern_key("bar".to_string());
+    let foo1 = db.intern_key("foo".to_string());
+    let bar1 = db.intern_key("bar".to_string());
 
     assert_eq!(foo0, foo1);
     assert_eq!(bar0, bar1);
     assert_ne!(foo0, bar0);
 
-    assert_eq!(format!("foo"), db.lookup_intern_key(foo0));
-    assert_eq!(format!("bar"), db.lookup_intern_key(bar0));
+    assert_eq!("foo".to_string(), db.lookup_intern_key(foo0));
+    assert_eq!("bar".to_string(), db.lookup_intern_key(bar0));
 }

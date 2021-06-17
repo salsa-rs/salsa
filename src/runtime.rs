@@ -257,7 +257,7 @@ impl Runtime {
     /// - `database_key`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    pub(crate) fn report_query_read<'hack>(
+    pub(crate) fn report_query_read(
         &self,
         input: DatabaseKeyIndex,
         durability: Durability,
@@ -607,10 +607,7 @@ where
                 path: path.into_iter().chain(Some(database_key.clone())).collect(),
             },
         );
-        self.labels
-            .entry(database_key.clone())
-            .or_default()
-            .push(from_id);
+        self.labels.entry(database_key).or_default().push(from_id);
         true
     }
 
@@ -623,8 +620,8 @@ where
         }
     }
 
-    fn push_cycle_path<'a>(
-        &'a self,
+    fn push_cycle_path(
+        &self,
         database_key: K,
         to: RuntimeId,
         local_path: impl IntoIterator<Item = K>,
@@ -636,28 +633,22 @@ where
         let mut last = None;
         let mut local_path = Some(local_path);
 
-        loop {
-            match current.take() {
-                Some((id, path)) => {
-                    let link_key = path.last().unwrap();
+        while let Some((id, path)) = current.take() {
+            let link_key = path.last().unwrap();
+            output.extend(path.iter().cloned());
 
-                    output.extend(path.iter().cloned());
+            current = self.edges.get(&id).map(|edge| {
+                let i = edge.path.iter().rposition(|p| p == link_key).unwrap();
+                (edge.id, &edge.path[i + 1..])
+            });
 
-                    current = self.edges.get(&id).map(|edge| {
-                        let i = edge.path.iter().rposition(|p| p == link_key).unwrap();
-                        (edge.id, &edge.path[i + 1..])
-                    });
-
-                    if current.is_none() {
-                        last = local_path.take().map(|local_path| {
-                            local_path
-                                .into_iter()
-                                .skip_while(move |p| *p != *link_key)
-                                .skip(1)
-                        });
-                    }
-                }
-                None => break,
+            if current.is_none() {
+                last = local_path.take().map(|local_path| {
+                    local_path
+                        .into_iter()
+                        .skip_while(move |p| *p != *link_key)
+                        .skip(1)
+                });
             }
         }
 

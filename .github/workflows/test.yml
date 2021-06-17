@@ -31,7 +31,7 @@ jobs:
     - uses: actions-rs/toolchain@v1
       with:
         toolchain: ${{ matrix.rust }}
-        components: rustfmt
+        components: rustfmt, clippy
         default: true
     - uses: actions-rs/cargo@v1
       with:
@@ -49,3 +49,6 @@ jobs:
       with:
         command: fmt
         args: -- --check
+    - uses: actions-rs/cargo@v1
+      with:
+        command: clippy

@@ -86,9 +86,10 @@ fn on_demand_input_durability() {
     let validated = Rc::new(Cell::new(0));
     db.on_event = Some(Box::new({
         let validated = Rc::clone(&validated);
-        move |event| match event.kind {
-            salsa::EventKind::DidValidateMemoizedValue { .. } => validated.set(validated.get() + 1),
-            _ => (),
+        move |event| {
+            if let salsa::EventKind::DidValidateMemoizedValue { .. } = event.kind {
+                validated.set(validated.get() + 1)
+            }
         }
     }));
 

@@ -55,8 +55,7 @@ fn all_classes(db: &dyn Compiler) -> Arc<Vec<Class>> {
 
 fn fields(db: &dyn Compiler, class: Class) -> Arc<Vec<Field>> {
     let class = db.lookup_intern_class(class);
-    let fields = class.fields.clone();
-    Arc::new(fields)
+    Arc::new(class.fields)
 }
 
 fn all_fields(db: &dyn Compiler) -> Arc<Vec<Field>> {

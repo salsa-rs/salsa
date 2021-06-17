@@ -104,7 +104,7 @@ where
         let database_key_index = DatabaseKeyIndex {
             group_index: self.group_index,
             query_index: Q::QUERY_INDEX,
-            key_index: key_index,
+            key_index,
         };
         entry
             .or_insert_with(|| Arc::new(Slot::new(key.clone(), database_key_index)))
