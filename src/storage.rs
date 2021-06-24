@@ -7,7 +7,7 @@ use std::sync::Arc;
 /// Storage<Self>` field.
 pub struct Storage<DB: DatabaseStorageTypes> {
     global_storage: Arc<DB::DatabaseGlobalStorage>,
-    local_storage: Arc<DB::DatabaseLocalStorage>,
+    local_storage: DB::DatabaseLocalStorage,
     runtime: Runtime,
 }
 
@@ -55,7 +55,7 @@ impl<DB: DatabaseStorageTypes> Storage<DB> {
     pub fn snapshot(&self) -> Self {
         Storage {
             global_storage: self.global_storage.clone(),
-            local_storage: self.local_storage.clone(),
+            local_storage: Default::default(),
             runtime: self.runtime.snapshot(),
         }
     }
