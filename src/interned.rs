@@ -1,10 +1,10 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::intern_id::InternId;
+use crate::plumbing::GlobalQueryStorageOps;
 use crate::plumbing::HasQueryGroup;
-use crate::plumbing::QueryGlobalStorageOps;
+use crate::plumbing::LocalQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
-use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use crate::Query;
 use crate::{CycleError, Database, DatabaseKeyIndex, QueryDb};
@@ -281,7 +281,7 @@ where
     }
 }
 
-impl<Q> QueryStorageOps<Q> for InternedStorage<Q>
+impl<Q> LocalQueryStorageOps<Q> for InternedStorage<Q>
 where
     Q: Query<GlobalStorage = InternedGlobalStorage<Q>>,
     Q::Value: InternKey,
@@ -336,7 +336,7 @@ where
     fn purge(&self) {}
 }
 
-impl<Q> QueryGlobalStorageOps<Q> for InternedGlobalStorage<Q>
+impl<Q> GlobalQueryStorageOps<Q> for InternedGlobalStorage<Q>
 where
     Q: Query,
     Q::Value: InternKey,
@@ -365,10 +365,10 @@ where
 //     'd,
 //     DynDb = <Q as QueryDb<'d>>::DynDb,
 //     Group = <Q as QueryDb<'d>>::Group,
-//     GroupStorage = <Q as QueryDb<'d>>::GroupStorage,
+//     GlobalGroupStorage = <Q as QueryDb<'d>>::GlobalGroupStorage,
 // >,
 // ```
-// not working to make rustc know DynDb, Group and GroupStorage being the same in `Q` and `IQ`
+// not working to make rustc know DynDb, Group and GlobalGroupStorage being the same in `Q` and `IQ`
 #[doc(hidden)]
 pub trait EqualDynDb<'d, IQ>: QueryDb<'d>
 where
@@ -384,7 +384,7 @@ where
         'd,
         DynDb = IQ::DynDb,
         Group = IQ::Group,
-        GroupStorage = IQ::GroupStorage,
+        LocalGroupStorage = IQ::LocalGroupStorage,
         GlobalGroupStorage = IQ::GlobalGroupStorage,
     >,
     Q::DynDb: HasQueryGroup<Q::Group>,
@@ -398,7 +398,7 @@ where
     }
 }
 
-impl<Q, IQ> QueryStorageOps<Q> for LookupInternedStorage<Q, IQ>
+impl<Q, IQ> LocalQueryStorageOps<Q> for LookupInternedStorage<Q, IQ>
 where
     Q: Query,
     Q::Key: InternKey,
@@ -406,7 +406,7 @@ where
     IQ: Query<
         Key = Q::Value,
         Value = Q::Key,
-        Storage = InternedStorage<IQ>,
+        LocalStorage = InternedStorage<IQ>,
         GlobalStorage = InternedGlobalStorage<IQ>,
     >,
     for<'d> Q: EqualDynDb<'d, IQ>,
@@ -497,7 +497,7 @@ where
     fn purge(&self) {}
 }
 
-impl<Q, IQ> QueryGlobalStorageOps<Q> for LookupInternedGlobalStorage<Q, IQ>
+impl<Q, IQ> GlobalQueryStorageOps<Q> for LookupInternedGlobalStorage<Q, IQ>
 where
     Q: Query,
     Q::Key: InternKey,

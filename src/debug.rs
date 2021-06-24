@@ -2,7 +2,7 @@
 //! debugging your application but aren't ordinarily needed.
 
 use crate::durability::Durability;
-use crate::plumbing::QueryStorageOps;
+use crate::plumbing::LocalQueryStorageOps;
 use crate::Query;
 use crate::QueryTable;
 use std::iter::FromIterator;

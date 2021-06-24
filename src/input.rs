@@ -1,9 +1,9 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
+use crate::plumbing::GlobalQueryStorageOps;
 use crate::plumbing::InputQueryStorageOps;
-use crate::plumbing::QueryGlobalStorageOps;
+use crate::plumbing::LocalQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
-use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use crate::runtime::{FxIndexMap, StampedValue};
 use crate::CycleError;
@@ -70,7 +70,7 @@ where
     }
 }
 
-impl<Q> QueryStorageOps<Q> for InputStorage<Q>
+impl<Q> LocalQueryStorageOps<Q> for InputStorage<Q>
 where
     Q: Query<GlobalStorage = InputGlobalStorage<Q>>,
 {
@@ -315,7 +315,7 @@ where
     }
 }
 
-impl<Q> QueryGlobalStorageOps<Q> for InputGlobalStorage<Q>
+impl<Q> GlobalQueryStorageOps<Q> for InputGlobalStorage<Q>
 where
     Q: Query,
 {
