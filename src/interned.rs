@@ -27,8 +27,7 @@ where
     Q: Query,
     Q::Value: InternKey,
 {
-    group_index: u16,
-    tables: RwLock<InternTables<Q::Key>>,
+    _data: PhantomData<Q>,
 }
 
 /// Global storage for interning things.
@@ -37,7 +36,8 @@ where
     Q: Query,
     Q::Value: InternKey,
 {
-    _data: PhantomData<Q>,
+    group_index: u16,
+    tables: RwLock<InternTables<Q::Key>>,
 }
 
 /// Storage for the looking up interned things.
@@ -119,6 +119,15 @@ where
 {
 }
 
+impl<Q> std::panic::RefUnwindSafe for InternedGlobalStorage<Q>
+where
+    Q: Query,
+    Q::Key: std::panic::RefUnwindSafe,
+    Q::Value: InternKey,
+    Q::Value: std::panic::RefUnwindSafe,
+{
+}
+
 impl<K: Debug + Hash + Eq> InternTables<K> {
     /// Returns the slot for the given key.
     fn slot_for_key(&self, key: &K) -> Option<Arc<Slot<K>>> {
@@ -145,7 +154,7 @@ where
     }
 }
 
-impl<Q> InternedStorage<Q>
+impl<Q> InternedGlobalStorage<Q>
 where
     Q: Query,
     Q::Key: Eq + Hash + Clone,
@@ -209,21 +218,6 @@ where
     fn lookup_value(&self, index: InternId) -> Arc<Slot<Q::Key>> {
         self.tables.read().slot_for_index(index)
     }
-}
-
-impl<Q> QueryStorageOps<Q> for InternedStorage<Q>
-where
-    Q: Query,
-    Q::Value: InternKey,
-{
-    const CYCLE_STRATEGY: crate::plumbing::CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
-
-    fn new(group_index: u16) -> Self {
-        InternedStorage {
-            group_index,
-            tables: RwLock::new(InternTables::default()),
-        }
-    }
 
     fn fmt_index(
         &self,
@@ -284,14 +278,57 @@ where
     }
 }
 
+impl<Q> QueryStorageOps<Q> for InternedStorage<Q>
+where
+    Q: Query<GlobalStorage = InternedGlobalStorage<Q>>,
+    Q::Value: InternKey,
+{
+    const CYCLE_STRATEGY: crate::plumbing::CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
+
+    fn new(_group_index: u16) -> Self {
+        InternedStorage { _data: PhantomData }
+    }
+
+    fn fmt_index(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        index: DatabaseKeyIndex,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        crate::plumbing::global_query_storage::<Q>(db).fmt_index(db, index, fmt)
+    }
+
+    fn maybe_changed_since(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool {
+        crate::plumbing::global_query_storage::<Q>(db).maybe_changed_since(db, input, revision)
+    }
+
+    fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
+        crate::plumbing::global_query_storage::<Q>(db).fetch(db, key)
+    }
+
+    fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
+        crate::plumbing::global_query_storage::<Q>(db).durability(db, key)
+    }
+
+    fn entries<C>(&self, db: &<Q as QueryDb<'_>>::DynDb) -> C
+    where
+        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
+    {
+        crate::plumbing::global_query_storage::<Q>(db).entries(db)
+    }
+}
+
 impl<Q> QueryStorageMassOps for InternedStorage<Q>
 where
     Q: Query,
     Q::Value: InternKey,
 {
-    fn purge(&self) {
-        *self.tables.write() = Default::default();
-    }
+    fn purge(&self) {}
 }
 
 impl<Q> QueryGlobalStorageOps<Q> for InternedGlobalStorage<Q>
@@ -299,8 +336,11 @@ where
     Q: Query,
     Q::Value: InternKey,
 {
-    fn new(_group_index: u16) -> Self {
-        InternedGlobalStorage { _data: PhantomData }
+    fn new(group_index: u16) -> Self {
+        InternedGlobalStorage {
+            group_index,
+            tables: RwLock::new(InternTables::default()),
+        }
     }
 }
 
@@ -309,7 +349,9 @@ where
     Q: Query,
     Q::Value: InternKey,
 {
-    fn purge(&self) {}
+    fn purge(&self) {
+        *self.tables.write() = Default::default();
+    }
 }
 
 // Workaround for
@@ -328,7 +370,7 @@ where
     IQ: QueryDb<'d>,
 {
     fn convert_db(d: &Self::DynDb) -> &IQ::DynDb;
-    fn convert_group_storage(d: &Self::GroupStorage) -> &IQ::GroupStorage;
+    fn convert_global_group_storage(d: &Self::GlobalGroupStorage) -> &IQ::GlobalGroupStorage;
 }
 
 impl<'d, IQ, Q> EqualDynDb<'d, IQ> for Q
@@ -346,7 +388,7 @@ where
     fn convert_db(d: &Self::DynDb) -> &IQ::DynDb {
         d
     }
-    fn convert_group_storage(d: &Self::GroupStorage) -> &IQ::GroupStorage {
+    fn convert_global_group_storage(d: &Self::GlobalGroupStorage) -> &IQ::GlobalGroupStorage {
         d
     }
 }
@@ -356,7 +398,12 @@ where
     Q: Query,
     Q::Key: InternKey,
     Q::Value: Eq + Hash,
-    IQ: Query<Key = Q::Value, Value = Q::Key, Storage = InternedStorage<IQ>>,
+    IQ: Query<
+        Key = Q::Value,
+        Value = Q::Key,
+        Storage = InternedStorage<IQ>,
+        GlobalStorage = InternedGlobalStorage<IQ>,
+    >,
     for<'d> Q: EqualDynDb<'d, IQ>,
 {
     const CYCLE_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
@@ -373,10 +420,11 @@ where
         index: DatabaseKeyIndex,
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        let group_storage =
-            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
-        interned_storage.fmt_index(Q::convert_db(db), index, fmt)
+        let global_group_storage =
+            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::global_group_storage(db);
+        let interned_global_storage =
+            IQ::global_query_storage(Q::convert_global_group_storage(global_group_storage));
+        interned_global_storage.fmt_index(Q::convert_db(db), index, fmt)
     }
 
     fn maybe_changed_since(
@@ -385,18 +433,20 @@ where
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool {
-        let group_storage =
-            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
-        interned_storage.maybe_changed_since(Q::convert_db(db), input, revision)
+        let global_group_storage =
+            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::global_group_storage(db);
+        let interned_global_storage =
+            IQ::global_query_storage(Q::convert_global_group_storage(global_group_storage));
+        interned_global_storage.maybe_changed_since(Q::convert_db(db), input, revision)
     }
 
     fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
         let index = key.as_intern_id();
-        let group_storage =
-            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
-        let slot = interned_storage.lookup_value(index);
+        let global_group_storage =
+            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::global_group_storage(db);
+        let interned_global_storage =
+            IQ::global_query_storage(Q::convert_global_group_storage(global_group_storage));
+        let slot = interned_global_storage.lookup_value(index);
         let value = slot.value.clone();
         let interned_at = slot.interned_at;
         db.salsa_runtime()
@@ -416,10 +466,11 @@ where
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
     {
-        let group_storage =
-            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
-        let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
-        let tables = interned_storage.tables.read();
+        let global_group_storage =
+            <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::global_group_storage(db);
+        let interned_global_storage =
+            IQ::global_query_storage(Q::convert_global_group_storage(global_group_storage));
+        let tables = interned_global_storage.tables.read();
         tables
             .map
             .iter()
