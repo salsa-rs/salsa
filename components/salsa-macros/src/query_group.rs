@@ -202,7 +202,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         }
     }
 
-    let group_storage = format_ident!("{}GroupStorage__", trait_name, span = Span::call_site());
+    let group_storage = format_ident!(
+        "{}LocalGroupStorage__",
+        trait_name,
+        span = Span::call_site()
+    );
 
     let global_group_storage = Ident::new(
         &format!("{}GlobalGroupStorage__", trait_name.to_string()),
@@ -211,7 +215,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
-    let mut storage_fields = proc_macro2::TokenStream::new();
+    let mut local_storage_fields = proc_macro2::TokenStream::new();
     let mut global_storage_fields = proc_macro2::TokenStream::new();
     let mut queries_with_storage = vec![];
     for query in &queries {
@@ -316,8 +320,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // A field for the storage struct
         //
         // FIXME(#120): the pub should not be necessary once we complete the transition
-        storage_fields.extend(quote! {
-            pub #fn_name: std::sync::Arc<<#qt as salsa::Query>::Storage>,
+        local_storage_fields.extend(quote! {
+            pub #fn_name: std::sync::Arc<<#qt as salsa::Query>::LocalStorage>,
         });
 
         // A field for the storage struct
@@ -351,8 +355,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         impl salsa::plumbing::QueryGroup for #group_struct
         {
             type DynDb = #dyn_db;
+            type LocalGroupStorage = #group_storage;
             type GlobalGroupStorage = #global_group_storage;
-            type GroupStorage = #group_storage;
         }
     });
 
@@ -384,9 +388,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         let storage = match &query.storage {
             QueryStorage::Memoized => quote!(salsa::plumbing::MemoizedStorage<Self>),
-            QueryStorage::Dependencies => {
-                quote!(salsa::plumbing::DependencyStorage<Self>)
-            }
+            QueryStorage::Dependencies => quote!(salsa::plumbing::DependencyStorage<Self>),
             QueryStorage::Input => quote!(salsa::plumbing::InputStorage<Self>),
             QueryStorage::Interned => quote!(salsa::plumbing::InternedStorage<Self>),
             QueryStorage::InternedLookup { intern_query_type } => {
@@ -470,7 +472,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             {
                 type DynDb = #dyn_db + 'd;
                 type Group = #group_struct;
-                type GroupStorage = #group_storage;
+                type LocalGroupStorage = #group_storage;
                 type GlobalGroupStorage = #global_group_storage;
             }
 
@@ -479,16 +481,16 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             {
                 type Key = (#(#keys),*);
                 type Value = #value;
-                type Storage = #storage;
+                type LocalStorage = #storage;
                 type GlobalStorage = #global_storage;
 
                 const QUERY_INDEX: u16 = #query_index;
 
                 const QUERY_NAME: &'static str = #query_name;
 
-                fn query_storage<'a>(
-                    group_storage: &'a <Self as salsa::QueryDb<'_>>::GroupStorage,
-                ) -> &'a std::sync::Arc<Self::Storage> {
+                fn local_query_storage<'a>(
+                    group_storage: &'a <Self as salsa::QueryDb<'_>>::LocalGroupStorage,
+                ) -> &'a std::sync::Arc<Self::LocalStorage> {
                     &group_storage.#fn_name
                 }
 
@@ -553,7 +555,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     for (Query { fn_name, .. }, query_index) in non_transparent_queries().zip(0_u16..) {
         fmt_ops.extend(quote! {
             #query_index => {
-                salsa::plumbing::QueryStorageOps::fmt_index(
+                salsa::plumbing::LocalQueryStorageOps::fmt_index(
                     &*self.#fn_name, db, input, fmt,
                 )
             }
@@ -564,7 +566,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     for (Query { fn_name, .. }, query_index) in non_transparent_queries().zip(0_u16..) {
         maybe_changed_ops.extend(quote! {
             #query_index => {
-                salsa::plumbing::QueryStorageOps::maybe_changed_since(
+                salsa::plumbing::LocalQueryStorageOps::maybe_changed_since(
                     &*self.#fn_name, db, input, revision
                 )
             }
@@ -575,7 +577,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     for (Query { fn_name, .. }, query_index) in non_transparent_queries().zip(0_u16..) {
         cycle_recovery_strategy_ops.extend(quote! {
             #query_index => {
-                salsa::plumbing::QueryStorageOps::cycle_recovery_strategy(
+                salsa::plumbing::LocalQueryStorageOps::cycle_recovery_strategy(
                     &*self.#fn_name
                 )
             }
@@ -592,7 +594,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     // Emit query group storage struct
     output.extend(quote! {
         #trait_vis struct #group_storage {
-            #storage_fields
+            #local_storage_fields
         }
 
         // ANCHOR:group_storage_new
@@ -601,7 +603,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 #group_storage {
                     #(
                         #queries_with_storage:
-                        std::sync::Arc::new(salsa::plumbing::QueryStorageOps::new(group_index)),
+                        std::sync::Arc::new(salsa::plumbing::LocalQueryStorageOps::new(group_index)),
                     )*
                 }
             }
@@ -666,7 +668,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 #global_group_storage {
                     #(
                         #queries_with_storage:
-                        std::sync::Arc::new(salsa::plumbing::QueryGlobalStorageOps::new(group_index)),
+                        std::sync::Arc::new(salsa::plumbing::GlobalQueryStorageOps::new(group_index)),
                     )*
                 }
             }

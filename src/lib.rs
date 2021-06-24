@@ -29,9 +29,9 @@ pub mod plumbing;
 use crate::plumbing::CycleRecoveryStrategy;
 use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::InputQueryStorageOps;
+use crate::plumbing::LocalQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
-use crate::plumbing::QueryStorageOps;
 pub use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
@@ -437,12 +437,12 @@ pub trait QueryDb<'d>: Sized {
 
     /// Associate query group struct.
     type Group: plumbing::QueryGroup<
-        GroupStorage = Self::GroupStorage,
+        LocalGroupStorage = Self::LocalGroupStorage,
         GlobalGroupStorage = Self::GlobalGroupStorage,
     >;
 
     /// Generated struct that contains local storage for all queries in a group.
-    type GroupStorage;
+    type LocalGroupStorage;
 
     /// Generated struct that contains global storage for all queries in a group.
     type GlobalGroupStorage;
@@ -459,10 +459,10 @@ pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
     type Value: Clone + Debug;
 
     /// Internal struct storing the values for the query.
-    type GlobalStorage: plumbing::QueryGlobalStorageOps<Self>;
+    type GlobalStorage: plumbing::GlobalQueryStorageOps<Self>;
 
     /// Internal struct storing the values for the query.
-    type Storage: plumbing::QueryStorageOps<Self>;
+    type LocalStorage: plumbing::LocalQueryStorageOps<Self>;
 
     /// A unique index identifying this query within the group.
     const QUERY_INDEX: u16;
@@ -471,9 +471,9 @@ pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
     const QUERY_NAME: &'static str;
 
     /// Extact storage for this query from the storage for its group.
-    fn query_storage<'a>(
-        group_storage: &'a <Self as QueryDb<'_>>::GroupStorage,
-    ) -> &'a Arc<Self::Storage>;
+    fn local_query_storage<'a>(
+        group_storage: &'a <Self as QueryDb<'_>>::LocalGroupStorage,
+    ) -> &'a Arc<Self::LocalStorage>;
 
     /// Extact storage for this query from the storage for its group.
     fn global_query_storage<'a>(
@@ -490,7 +490,7 @@ where
     Q: Query,
 {
     db: &'me <Q as QueryDb<'me>>::DynDb,
-    storage: &'me Q::Storage,
+    storage: &'me Q::LocalStorage,
 }
 
 impl<'me, Q> QueryTable<'me, Q>
@@ -498,7 +498,7 @@ where
     Q: Query,
 {
     /// Constructs a new `QueryTable`.
-    pub fn new(db: &'me <Q as QueryDb<'me>>::DynDb, storage: &'me Q::Storage) -> Self {
+    pub fn new(db: &'me <Q as QueryDb<'me>>::DynDb, storage: &'me Q::LocalStorage) -> Self {
         Self { db, storage }
     }
 
@@ -531,7 +531,7 @@ where
     Q: Query + 'me,
 {
     db: &'me mut <Q as QueryDb<'me>>::DynDb,
-    storage: Arc<Q::Storage>,
+    storage: Arc<Q::LocalStorage>,
 }
 
 impl<'me, Q> QueryTableMut<'me, Q>
@@ -539,7 +539,7 @@ where
     Q: Query,
 {
     /// Constructs a new `QueryTableMut`.
-    pub fn new(db: &'me mut <Q as QueryDb<'me>>::DynDb, storage: Arc<Q::Storage>) -> Self {
+    pub fn new(db: &'me mut <Q as QueryDb<'me>>::DynDb, storage: Arc<Q::LocalStorage>) -> Self {
         Self { db, storage }
     }
 
@@ -552,7 +552,7 @@ where
     /// [the `query_mut` method]: trait.Database.html#method.query_mut
     pub fn set(&mut self, key: Q::Key, value: Q::Value)
     where
-        Q::Storage: plumbing::InputQueryStorageOps<Q>,
+        Q::LocalStorage: plumbing::InputQueryStorageOps<Q>,
     {
         self.set_with_durability(key, value, Durability::LOW);
     }
@@ -567,7 +567,7 @@ where
     /// [the `query_mut` method]: trait.Database.html#method.query_mut
     pub fn set_with_durability(&mut self, key: Q::Key, value: Q::Value, durability: Durability)
     where
-        Q::Storage: plumbing::InputQueryStorageOps<Q>,
+        Q::LocalStorage: plumbing::InputQueryStorageOps<Q>,
     {
         self.storage.set(self.db, &key, value, durability);
     }
@@ -581,7 +581,7 @@ where
     /// If `cap` is zero, all values are preserved, this is the default.
     pub fn set_lru_capacity(&self, cap: usize)
     where
-        Q::Storage: plumbing::LruQueryStorageOps<Q>,
+        Q::LocalStorage: plumbing::LruQueryStorageOps<Q>,
     {
         self.storage.set_lru_capacity(self.db, cap);
     }
@@ -595,7 +595,7 @@ where
     /// pattern](https://salsa-rs.github.io/salsa/common_patterns/on_demand_inputs.html).
     pub fn invalidate(&mut self, key: &Q::Key)
     where
-        Q::Storage: plumbing::DerivedQueryStorageOps<Q>,
+        Q::LocalStorage: plumbing::DerivedQueryStorageOps<Q>,
     {
         self.storage.invalidate(self.db, key)
     }

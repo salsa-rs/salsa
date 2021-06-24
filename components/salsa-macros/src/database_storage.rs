@@ -26,11 +26,11 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         })
         .collect();
 
-    let query_group_storage_names: Vec<_> = query_groups
+    let query_group_local_storage_names: Vec<_> = query_groups
         .iter()
         .map(|QueryGroup { group_path }| {
             quote! {
-                <#group_path as salsa::plumbing::QueryGroup>::GroupStorage
+                <#group_path as salsa::plumbing::QueryGroup>::LocalGroupStorage
             }
         })
         .collect();
@@ -44,31 +44,32 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         })
         .collect();
 
-        // For each query group `foo::MyGroup` create a link to its
+    // For each query group `foo::MyGroup` create a link to its
     // `foo::MyGroupGroupStorage`
-    let mut storage_fields = proc_macro2::TokenStream::new();
-    let mut storage_initializers = proc_macro2::TokenStream::new();
+    let mut local_storage_fields = proc_macro2::TokenStream::new();
+    let mut local_storage_initializers = proc_macro2::TokenStream::new();
     let mut global_storage_fields = proc_macro2::TokenStream::new();
     let mut global_storage_initializers = proc_macro2::TokenStream::new();
     let mut has_group_impls = proc_macro2::TokenStream::new();
-    for ((((query_group, group_name_snake), group_storage), global_group_storage), group_index) in query_groups
-        .iter()
-        .zip(&query_group_names_snake)
-        .zip(&query_group_storage_names)
-        .zip(&query_group_global_storage_names)
-        .zip(0_u16..)
+    for ((((query_group, group_name_snake), group_storage), global_group_storage), group_index) in
+        query_groups
+            .iter()
+            .zip(&query_group_names_snake)
+            .zip(&query_group_local_storage_names)
+            .zip(&query_group_global_storage_names)
+            .zip(0_u16..)
     {
         let group_path = &query_group.group_path;
 
         // rewrite the last identifier (`MyGroup`, above) to
         // (e.g.) `MyGroupGroupStorage`.
-        storage_fields.extend(quote! {
+        local_storage_fields.extend(quote! {
             #group_name_snake: #group_storage,
         });
 
         // rewrite the last identifier (`MyGroup`, above) to
         // (e.g.) `MyGroupGroupStorage`.
-        storage_initializers.extend(quote! {
+        local_storage_initializers.extend(quote! {
             #group_name_snake: #group_storage::new(#group_index),
         });
 
@@ -87,8 +88,8 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
         // ANCHOR:HasQueryGroup
         has_group_impls.extend(quote! {
             impl salsa::plumbing::HasQueryGroup<#group_path> for #database_name {
-                fn group_storage(&self) -> &#group_storage {
-                    &self.#db_storage_field.query_store().#group_name_snake
+                fn local_group_storage(&self) -> &#group_storage {
+                    &self.#db_storage_field.local_storage().#group_name_snake
                 }
                 fn global_group_storage(&self) -> &#global_group_storage {
                     &self.#db_storage_field.global_storage().#group_name_snake
@@ -117,14 +118,14 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     // create group storage wrapper struct
     output.extend(quote! {
         #[doc(hidden)]
-        #visibility struct __SalsaDatabaseStorage {
-            #storage_fields
+        #visibility struct __SalsaDatabaseLocalStorage {
+            #local_storage_fields
         }
 
-        impl Default for __SalsaDatabaseStorage {
+        impl Default for __SalsaDatabaseLocalStorage {
             fn default() -> Self {
                 Self {
-                    #storage_initializers
+                    #local_storage_initializers
                 }
             }
         }
@@ -142,7 +143,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     output.extend(quote! {
         impl salsa::plumbing::DatabaseStorageTypes for #database_name {
             type DatabaseGlobalStorage = __SalsaDatabaseGlobalStorage;
-            type DatabaseStorage = __SalsaDatabaseStorage;
+            type DatabaseLocalStorage = __SalsaDatabaseLocalStorage;
         }
     });
     // ANCHOR_END:DatabaseStorageTypes
@@ -154,33 +155,33 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut for_each_ops = proc_macro2::TokenStream::new();
     for ((QueryGroup { group_path }, group_storage), group_index) in query_groups
         .iter()
-        .zip(&query_group_storage_names)
+        .zip(&query_group_local_storage_names)
         .zip(0_u16..)
     {
         fmt_ops.extend(quote! {
             #group_index => {
                 let storage: &#group_storage =
-                    <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
+                    <Self as salsa::plumbing::HasQueryGroup<#group_path>>::local_group_storage(self);
                 storage.fmt_index(self, input, fmt)
             }
         });
         maybe_changed_ops.extend(quote! {
             #group_index => {
                 let storage: &#group_storage =
-                    <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
+                    <Self as salsa::plumbing::HasQueryGroup<#group_path>>::local_group_storage(self);
                 storage.maybe_changed_since(self, input, revision)
             }
         });
         cycle_recovery_strategy_ops.extend(quote! {
             #group_index => {
                 let storage: &#group_storage =
-                    <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
+                    <Self as salsa::plumbing::HasQueryGroup<#group_path>>::local_group_storage(self);
                 storage.cycle_recovery_strategy(self, input)
             }
         });
         for_each_ops.extend(quote! {
             let storage: &#group_storage =
-                <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
+                <Self as salsa::plumbing::HasQueryGroup<#group_path>>::local_group_storage(self);
             storage.for_each_query(runtime, &mut op);
         });
     }

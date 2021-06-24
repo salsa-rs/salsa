@@ -2,11 +2,11 @@ use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::lru::Lru;
 use crate::plumbing::DerivedQueryStorageOps;
+use crate::plumbing::GlobalQueryStorageOps;
+use crate::plumbing::LocalQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
-use crate::plumbing::QueryGlobalStorageOps;
 use crate::plumbing::QueryStorageMassOps;
-use crate::plumbing::QueryStorageOps;
 use crate::runtime::{FxIndexMap, StampedValue};
 use crate::{Database, DatabaseKeyIndex, QueryDb, Revision};
 use parking_lot::RwLock;
@@ -113,7 +113,7 @@ where
     }
 }
 
-impl<Q, MP> QueryStorageOps<Q> for DerivedStorage<Q, MP>
+impl<Q, MP> LocalQueryStorageOps<Q> for DerivedStorage<Q, MP>
 where
     Q: QueryFunction<GlobalStorage = DerivedGlobalStorage<Q, MP>>,
     MP: MemoizationPolicy<Q>,
@@ -193,7 +193,7 @@ where
     }
 }
 
-impl<Q, MP> QueryGlobalStorageOps<Q> for DerivedGlobalStorage<Q, MP>
+impl<Q, MP> GlobalQueryStorageOps<Q> for DerivedGlobalStorage<Q, MP>
 where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,

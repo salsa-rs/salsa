@@ -36,7 +36,7 @@ structs. In the hello world example, it looks something like:
 
 ```rust,ignore
 struct __SalsaDatabaseStorage {
-    hello_world: <HelloWorldStorage as salsa::plumbing::QueryGroup<DatabaseStruct>>::GroupStorage
+    hello_world: <HelloWorldStorage as salsa::plumbing::QueryGroup<DatabaseStruct>>::LocalGroupStorage
 }
 ```
 

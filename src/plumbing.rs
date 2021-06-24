@@ -49,9 +49,9 @@ pub trait DatabaseStorageTypes: Database {
     /// executing and whose results were not dependent on context.
     type DatabaseGlobalStorage: Default;
 
-    /// Defines the "storage type", where all the query data is kept.
+    /// Defines the local storage, which is specific to a particular thread.
     /// This type is defined by the `database_storage` macro.
-    type DatabaseStorage: Default;
+    type DatabaseLocalStorage: Default;
 }
 
 /// Internal operations that the runtime uses to operate on the database.
@@ -84,7 +84,8 @@ pub trait DatabaseOps {
 
 /// Internal operations performed on the query storage as a whole
 /// (note that these ops do not need to know the identity of the
-/// query, unlike `QueryStorageOps`).
+/// query, unlike `QueryStorageOps`). These ops are performed on BOTH
+/// the local AND global storage.
 pub trait QueryStorageMassOps {
     fn purge(&self);
 }
@@ -131,15 +132,15 @@ pub enum CycleRecoveryStrategy {
     Fallback,
 }
 
-pub(crate) fn query_storage<'me, 'db, Q>(
+pub(crate) fn local_query_storage<'me, 'db, Q>(
     db: &'me <Q as QueryDb<'db>>::DynDb,
-) -> &'me Arc<Q::Storage>
+) -> &'me Arc<Q::LocalStorage>
 where
     Q: Query + 'me,
     'db: 'me,
 {
-    let group_storage = HasQueryGroup::group_storage(db);
-    Q::query_storage(group_storage)
+    let group_storage = HasQueryGroup::local_group_storage(db);
+    Q::local_query_storage(group_storage)
 }
 
 pub(crate) fn global_query_storage<'me, 'db, Q>(
@@ -159,7 +160,7 @@ pub fn get_query_table<'me, Q>(db: &'me <Q as QueryDb<'me>>::DynDb) -> QueryTabl
 where
     Q: Query + 'me,
 {
-    let query_storage = query_storage::<Q>(db);
+    let query_storage = local_query_storage::<Q>(db);
     QueryTable::new(db, &**query_storage)
 }
 
@@ -169,12 +170,12 @@ pub fn get_query_table_mut<'me, Q>(db: &'me mut <Q as QueryDb<'me>>::DynDb) -> Q
 where
     Q: Query,
 {
-    let query_storage = query_storage::<Q>(db).clone();
+    let query_storage = local_query_storage::<Q>(db).clone();
     QueryTableMut::new(db, query_storage)
 }
 
 pub trait QueryGroup: Sized {
-    type GroupStorage;
+    type LocalGroupStorage;
 
     type GlobalGroupStorage;
 
@@ -189,14 +190,14 @@ where
     G: QueryGroup,
 {
     /// Access the group storage struct from the database.
-    fn group_storage(&self) -> &G::GroupStorage;
+    fn local_group_storage(&self) -> &G::LocalGroupStorage;
 
     /// Access the global group storage struct from the database.
     fn global_group_storage(&self) -> &G::GlobalGroupStorage;
 }
 
-// ANCHOR:QueryStorageOps
-pub trait QueryStorageOps<Q>
+// ANCHOR:LocalQueryStorageOps
+pub trait LocalQueryStorageOps<Q>
 where
     Self: QueryStorageMassOps,
     Q: Query,
@@ -251,7 +252,7 @@ where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>;
 }
 
-pub trait QueryGlobalStorageOps<Q>
+pub trait GlobalQueryStorageOps<Q>
 where
     Self: QueryStorageMassOps,
     Q: Query,
