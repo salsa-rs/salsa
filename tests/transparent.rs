@@ -33,7 +33,7 @@ fn transparent_queries_work() {
     assert_eq!(db.get(1), 10);
     assert_eq!(db.get(1), 10);
 
-    db.set_input(1, 92);
+    db.update_input(1, |value| *value += 82);
     assert_eq!(db.get(1), 92);
     assert_eq!(db.get(1), 92);
 }

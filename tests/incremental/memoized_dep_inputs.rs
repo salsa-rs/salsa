@@ -47,7 +47,7 @@ fn revalidate() {
     db.assert_log(&["Memoized1 invoked", "Derived1 invoked", "Memoized2 invoked"]);
 
     // Here validation of Memoized1 succeeds so Memoized2 never runs.
-    db.set_dep_input1(45);
+    db.update_dep_input1(|value| *value += 1);
     let v = db.dep_memoized2();
     assert_eq!(v, 44);
     db.assert_log(&["Memoized1 invoked", "Derived1 invoked"]);

@@ -61,6 +61,7 @@ enum MutatorOp {
 
 #[derive(Debug)]
 enum WriteOp {
+    AddA(usize, isize),
     SetA(usize, usize),
 }
 
@@ -92,7 +93,11 @@ impl rand::distributions::Distribution<WriteOp> for rand::distributions::Standar
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> WriteOp {
         let key = rng.gen::<usize>() % 10;
         let value = rng.gen::<usize>() % 10;
-        WriteOp::SetA(key, value)
+        if rng.gen_bool(0.5) {
+            WriteOp::AddA(key, value as isize - 5)
+        } else {
+            WriteOp::SetA(key, value)
+        }
     }
 }
 
@@ -116,6 +121,11 @@ fn db_reader_thread(db: &StressDatabaseImpl, ops: Vec<ReadOp>, check_cancellatio
 impl WriteOp {
     fn execute(self, db: &mut StressDatabaseImpl) {
         match self {
+            WriteOp::AddA(key, value_delta) => {
+                db.update_a(key, |value| {
+                    *value = (*value as isize + value_delta) as usize
+                });
+            }
             WriteOp::SetA(key, value) => {
                 db.set_a(key, value);
             }

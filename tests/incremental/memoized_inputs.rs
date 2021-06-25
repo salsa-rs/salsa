@@ -47,12 +47,19 @@ fn revalidate() {
     db.set_input1(64);
     db.assert_log(&[]);
 
+    db.update_input1(|value| *value += 1);
+    db.assert_log(&[]);
+    db.update_input2(|value| *value += 1);
+    db.assert_log(&[]);
+    db.update_input1(|value| *value += 1);
+    db.assert_log(&[]);
+
     let v = db.max();
-    assert_eq!(v, 66);
+    assert_eq!(v, 67);
     db.assert_log(&["Max invoked"]);
 
     let v = db.max();
-    assert_eq!(v, 66);
+    assert_eq!(v, 67);
     db.assert_log(&[]);
 }
 
@@ -70,6 +77,11 @@ fn set_after_no_change() {
     db.assert_log(&["Max invoked"]);
 
     db.set_input1(44);
+    let v = db.max();
+    assert_eq!(v, 44);
+    db.assert_log(&["Max invoked"]);
+
+    db.update_input1(|_value| { /* do nothing */ });
     let v = db.max();
     assert_eq!(v, 44);
     db.assert_log(&["Max invoked"]);

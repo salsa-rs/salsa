@@ -491,6 +491,21 @@ where
         self.storage.set(self.db, &key, value, durability);
     }
 
+    /// Applies a function that updates the value currently in an "input query".
+    /// Must be used outside of an active query computation.
+    ///
+    /// If you are using `snapshot`, see the notes on blocking
+    /// and cancellation on [the `query_mut` method].
+    ///
+    /// [the `query_mut` method]: trait.Database.html#method.query_mut
+    pub fn update(&mut self, key: Q::Key, value_fn: &mut dyn FnMut(&mut Q::Value))
+    where
+        Q::Storage: plumbing::InputQueryStorageOps<Q>,
+    {
+        self.storage
+            .update(self.db, &key, value_fn, Durability::LOW);
+    }
+
     /// Sets the size of LRU cache of values for this query table.
     ///
     /// That is, at most `cap` values will be preset in the table at the same
