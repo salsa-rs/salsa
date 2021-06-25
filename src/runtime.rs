@@ -1,7 +1,7 @@
 use crate::plumbing::CycleDetected;
 use crate::revision::{AtomicRevision, Revision};
 use crate::{durability::Durability, Cancelled};
-use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind};
+use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind, ValueChanged};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
@@ -205,7 +205,7 @@ impl Runtime {
         &self,
         db: &DB,
         database_key_index: DatabaseKeyIndex,
-        execute: impl FnOnce() -> (bool, V),
+        execute: impl FnOnce() -> (ValueChanged, V),
     ) -> ComputedQueryResult<V>
     where
         DB: ?Sized + Database,
@@ -486,7 +486,8 @@ pub(crate) struct ComputedQueryResult<V> {
     /// Final value produced
     pub(crate) value: V,
 
-    pub(crate) value_changed: bool,
+    /// Indicates whether the query function thinks it changed the value
+    pub(crate) value_changed: ValueChanged,
 
     /// Minimum durability of inputs observed so far.
     pub(crate) durability: Durability,

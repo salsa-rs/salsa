@@ -8,6 +8,7 @@ use crate::Query;
 use crate::QueryTable;
 use crate::QueryTableMut;
 use crate::RuntimeId;
+use crate::ValueChanged;
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -78,9 +79,9 @@ pub trait QueryFunction: Query {
         db: &<Self as QueryDb<'_>>::DynDb,
         key: Self::Key,
         value: &mut Self::Value,
-    ) -> bool {
+    ) -> ValueChanged {
         let old_value = mem::replace(value, Self::init(db, key));
-        !MP::memoized_value_eq(&old_value, value)
+        MP::memoized_value_changed(&old_value, value)
     }
 
     fn recover(

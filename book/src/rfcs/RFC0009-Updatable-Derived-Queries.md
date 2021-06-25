@@ -47,8 +47,8 @@ fn formatted_value(db: &dyn MyDatabase, key: u32) -> String {
 When you apply the `#[salsa::update]` attribute to the function, Salsa looks for a second function,
 which it calls to update an existing value in response to changes in the query's dependencies. By
 default the update function has the word `update_` prepended to its name. Salsa passes an
-`&mut Value` reference to the update function, and it expects the update function to return `true`
-unless the value is unchanged.
+`&mut Value` reference to the update function, and it expects the update function to return
+`ValueChanged::True` unless the value is unchanged.
 
 ```rust
 #[salsa::query_group]
@@ -63,7 +63,7 @@ fn formatted_value(db: &dyn MyDatabase, key: u32) -> String {
     db.some_input(key).to_string()
 }
 
-fn update_formatted_value(db: &dyn MyDatabase, value: &mut String, key: u32) -> bool {
+fn update_formatted_value(db: &dyn MyDatabase, value: &mut String, key: u32) -> salsa::ValueChanged {
     // Write a new value into the existing String.
   
     // 1. Clear the existing String while keeping the memory allocation intact.
@@ -73,8 +73,8 @@ fn update_formatted_value(db: &dyn MyDatabase, value: &mut String, key: u32) -> 
     use std::fmt::Write;
     let _ = write!(value, "{}", db.some_input(key));
 
-    // 3. Return true, as we assume the value in the String has changed.
-    true
+    // 3. We assume the value in the String has changed.
+    salsa::ValueChanged::True
 }
 ```
 
@@ -84,7 +84,7 @@ fn update_formatted_value(db: &dyn MyDatabase, value: &mut String, key: u32) -> 
 The `QueryFunction` trait has functions `init` and `update`, corresponding to the two functions
 implemented by the user. The `update` function is responsible for making a best-effort determination
 of whether it changed the value: it has access to the `MP: MemoizationPolicy` generic parameter and
-returns `value_changed: bool`.
+returns `Value_changed`.
 
 ### Query execution
 In the case where no cached value exists (either the query is being called for the first time, or
@@ -94,8 +94,8 @@ Where a cached value does exist, `Slot::read_upgrade` does the following:
 1. `Option::take` on the cached value, to move the cached value to a local variable within
    `read_upgrade` and set the cached value to `None` while the query is being executed.
 2. Call `QueryFunction::update` with a mutable reference to the value. `update` modifies the value
-   in place through the reference and returns `value_changed: bool`.
-3. When `!value_changed`, resets `memo.revisions.changed_at` to the revision it had before the
+   in place through the reference and returns `ValueChanged`.
+3. When `ValueChanged == True`, resets `memo.revisions.changed_at` to the revision it had before the
    update
 4. Moves the value back to the cache
 
@@ -109,8 +109,7 @@ fn init(db, key) {
 
 fn update<MP>(db, key, value) {
     let old_value = mem::replace(value, execute(db, key));
-    let value_is_eq = MP::memoized_value_eq(&old_value, value);
-    !value_is_eq
+    MP::memoized_value_changed(&old_value, value)
 }
 ```
 
@@ -196,11 +195,11 @@ whereby the old value is preserved and the cache is not invalidated.
 
 ### What happens if `update` returns the wrong `value_changed` flag?
 
-It's not a logic error for `update` to always return `true`. The effect of this is that downstream
-queries are re-run even though this query's value has not changed.
+It's not a logic error for `update` to always return `ValueChanged::True`. The effect of this is
+that downstream queries are re-run even though this query's value has not changed.
 
-Returning `false` from `update`, when the value has in fact changed, causes downstream values to
-remain stale. This gives unexpected results but is not unsound. It's equivalent to a buggy
+Returning `ValueChanged::False` from `update`, when the value has in fact changed, causes downstream
+values to remain stale. This gives unexpected results but is not unsound. It's equivalent to a buggy
 `PartialEq::eq` or `Hash::hash`.
 
 ### Is there a chance that `update` forgets to update and stale data remains in the value?

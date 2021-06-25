@@ -11,7 +11,7 @@ use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::Cancelled;
-use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind, QueryDb};
+use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind, QueryDb, ValueChanged};
 use log::{debug, info};
 use parking_lot::Mutex;
 use parking_lot::{RawRwLock, RwLock};
@@ -223,7 +223,7 @@ where
                 (value_changed, value)
             } else {
                 let value = Q::init(db, key);
-                (true, value)
+                (ValueChanged::True, value)
             }
         });
 
@@ -260,7 +260,9 @@ where
             // used to be, that is a "breaking change" that our
             // consumers must be aware of. Becoming *more* durable
             // is not. See the test `constant_to_non_constant`.
-            if result.durability >= old_memo.revisions.durability && !result.value_changed {
+            if result.durability >= old_memo.revisions.durability
+                && matches!(result.value_changed, ValueChanged::False)
+            {
                 debug!(
                     "read_upgrade({:?}): value is equal, back-dating to {:?}",
                     self, old_memo.revisions.changed_at,

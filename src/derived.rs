@@ -7,7 +7,7 @@ use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::{FxIndexMap, StampedValue};
-use crate::{CycleError, Database, DatabaseKeyIndex, QueryDb, Revision};
+use crate::{CycleError, Database, DatabaseKeyIndex, QueryDb, Revision, ValueChanged};
 use parking_lot::RwLock;
 use std::borrow::Borrow;
 use std::convert::TryFrom;
@@ -50,13 +50,16 @@ where
 {
 }
 
+/// Decides whether the result of a derived query should be stored.
 pub trait MemoizationPolicy<Q>: Send + Sync
 where
     Q: QueryFunction,
 {
+    /// Should we store a value for this key?
     fn should_memoize_value(key: &Q::Key) -> bool;
 
-    fn memoized_value_eq(old_value: &Q::Value, new_value: &Q::Value) -> bool;
+    /// Compares two values and returns a flag indicating whether they are different.
+    fn memoized_value_changed(old_value: &Q::Value, new_value: &Q::Value) -> ValueChanged;
 }
 
 pub enum AlwaysMemoizeValue {}
@@ -69,8 +72,12 @@ where
         true
     }
 
-    fn memoized_value_eq(old_value: &Q::Value, new_value: &Q::Value) -> bool {
-        old_value == new_value
+    fn memoized_value_changed(old_value: &Q::Value, new_value: &Q::Value) -> ValueChanged {
+        if old_value == new_value {
+            ValueChanged::False
+        } else {
+            ValueChanged::True
+        }
     }
 }
 
@@ -83,7 +90,7 @@ where
         false
     }
 
-    fn memoized_value_eq(_old_value: &Q::Value, _new_value: &Q::Value) -> bool {
+    fn memoized_value_changed(_old_value: &Q::Value, _new_value: &Q::Value) -> ValueChanged {
         panic!("cannot reach since we never memoize")
     }
 }
