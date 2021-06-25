@@ -182,6 +182,8 @@ where
         new_value: Q::Value,
         durability: Durability,
     );
+
+    fn remove(&self, db: &mut <Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value;
 }
 
 /// An optional trait that is implemented for "user mutable" storage:

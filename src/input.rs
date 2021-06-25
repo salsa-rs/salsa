@@ -13,7 +13,6 @@ use indexmap::map::Entry;
 use log::debug;
 use parking_lot::RwLock;
 use std::convert::TryFrom;
-use std::sync::Arc;
 
 /// Input queries store the result plus a list of the other queries
 /// that they invoked. This means we can avoid recomputing them when
@@ -23,7 +22,7 @@ where
     Q: Query,
 {
     group_index: u16,
-    slots: RwLock<FxIndexMap<Q::Key, Arc<Slot<Q>>>>,
+    slots: RwLock<FxIndexMap<Q::Key, Slot<Q>>>,
 }
 
 struct Slot<Q>
@@ -41,15 +40,6 @@ where
     Q::Key: std::panic::RefUnwindSafe,
     Q::Value: std::panic::RefUnwindSafe,
 {
-}
-
-impl<Q> InputStorage<Q>
-where
-    Q: Query,
-{
-    fn slot(&self, key: &Q::Key) -> Option<Arc<Slot<Q>>> {
-        self.slots.read().get(key).cloned()
-    }
 }
 
 impl<Q> QueryStorageOps<Q> for InputStorage<Q>
@@ -84,13 +74,8 @@ where
     ) -> bool {
         assert_eq!(input.group_index, self.group_index);
         assert_eq!(input.query_index, Q::QUERY_INDEX);
-        let slot = self
-            .slots
-            .read()
-            .get_index(input.key_index as usize)
-            .unwrap()
-            .1
-            .clone();
+        let slots = self.slots.read();
+        let (_, slot) = slots.get_index(input.key_index as usize).unwrap();
         slot.maybe_changed_since(db, revision)
     }
 
@@ -101,8 +86,10 @@ where
     ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
         db.unwind_if_cancelled();
 
-        let slot = self
-            .slot(key)
+        let slots = self.slots.read();
+
+        let slot = slots
+            .get(key)
             .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
 
         let StampedValue {
@@ -118,7 +105,8 @@ where
     }
 
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
-        match self.slot(key) {
+        let slots = self.slots.read();
+        match slots.get(key) {
             Some(slot) => slot.stamped_value.read().durability,
             None => panic!("no value set for {:?}({:?})", Q::default(), key),
         }
@@ -232,15 +220,32 @@ where
                             query_index: Q::QUERY_INDEX,
                             key_index,
                         };
-                        entry.insert(Arc::new(Slot {
+                        entry.insert(Slot {
                             key: key.clone(),
                             database_key_index,
                             stamped_value: RwLock::new(stamped_value),
-                        }));
+                        });
                         None
                     }
                 }
             });
+    }
+
+    fn remove(
+        &self,
+        db: &mut <Q as QueryDb<'_>>::DynDb,
+        key: &<Q as Query>::Key,
+    ) -> <Q as Query>::Value {
+        let mut value = None;
+        db.salsa_runtime_mut().with_incremented_revision(&mut |_| {
+            let mut slots = self.slots.write();
+            let slot = slots.remove(key)?;
+            let slot_stamped_value = slot.stamped_value.into_inner();
+            value = Some(slot_stamped_value.value);
+            Some(slot_stamped_value.durability)
+        });
+
+        value.unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key))
     }
 }
 
