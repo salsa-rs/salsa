@@ -61,3 +61,9 @@ Salsa is designed to invalidate downstream queries when an input has its value s
 whether the value changed. This proposal does not change this assumption, and a call like
 `db.update_some_input(|_value| { /* do nothing */ })` will invalidate all queries that depend on
 `some_input`.
+
+### What happens if the closure panics?
+
+Any updates made by the closure are visible; updates are not rolled back as the old value is no
+longer available. Salsa's current revision number is incremented regardless, and any derived queries
+are re-computed against the partially-updated value.
