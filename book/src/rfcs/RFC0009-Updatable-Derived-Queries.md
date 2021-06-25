@@ -63,7 +63,7 @@ fn formatted_value(db: &dyn MyDatabase, key: u32) -> String {
     db.some_input(key).to_string()
 }
 
-fn update_formatted_value(db: &dyn MyDatabase, value: &mut String, key: u32) -> salsa::ValueChanged {
+fn update_formatted_value(db: &dyn MyDatabase, key: u32, value: &mut String) -> salsa::ValueChanged {
     // Write a new value into the existing String.
   
     // 1. Clear the existing String while keeping the memory allocation intact.

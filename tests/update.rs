@@ -16,7 +16,11 @@ fn formatted_value(db: &dyn QueryGroup, x: u32) -> Rc<String> {
     db.input(x).to_string().into()
 }
 
-fn update_formatted_value(db: &dyn QueryGroup, value: &mut Rc<String>, x: u32) -> salsa::ValueChanged {
+fn update_formatted_value(
+    db: &dyn QueryGroup,
+    x: u32,
+    value: &mut Rc<String>,
+) -> salsa::ValueChanged {
     let value = Rc::make_mut(value);
     value.clear();
 
@@ -28,7 +32,11 @@ fn reverse_formatted_value(db: &dyn QueryGroup, x: u32) -> Rc<String> {
     Rc::new(db.input(x).to_string().chars().rev().collect())
 }
 
-fn reverse_formatted_value_update(db: &dyn QueryGroup, value: &mut Rc<String>, x: u32) -> salsa::ValueChanged {
+fn reverse_formatted_value_update(
+    db: &dyn QueryGroup,
+    x: u32,
+    value: &mut Rc<String>,
+) -> salsa::ValueChanged {
     let value = Rc::make_mut(value);
     value.clear();
     value.extend(db.formatted_value(x).chars().rev());

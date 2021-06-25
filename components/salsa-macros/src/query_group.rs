@@ -516,7 +516,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                         #key_pattern: <Self as salsa::Query>::Key,
                         value: &mut <Self as salsa::Query>::Value,
                     ) -> salsa::ValueChanged {
-                        #update(db, value, #(#key_names),*)
+                        #update(db, #(#key_names,)* value)
                     }
                 }
             } else {
