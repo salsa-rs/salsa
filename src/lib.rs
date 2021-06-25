@@ -520,6 +520,19 @@ where
     }
 }
 
+/// Indicates whether an update function changed a query's value.
+///
+/// Note that this flag must be accurate and returning `ValueChanged::False` from an update function
+/// is not only a hint. A query function should return `ValueChanged::True` if it is uncertain as
+/// to whether it changed the value, such as when checking the value requires an expensive clone.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ValueChanged {
+    /// The update function is certain that it did not change the query's value.
+    False,
+    /// The update function may have changed the query's value.
+    True,
+}
+
 /// The error returned when a query could not be resolved due to a cycle
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct CycleError<K> {
