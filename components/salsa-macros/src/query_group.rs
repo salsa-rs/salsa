@@ -269,6 +269,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let set_fn_name = Ident::new(&format!("set_{}", fn_name), fn_name.span());
             let set_with_durability_fn_name =
                 Ident::new(&format!("set_{}_with_durability", fn_name), fn_name.span());
+            let remove_fn_name = Ident::new(&format!("remove_{}", fn_name), fn_name.span());
 
             let set_fn_docs = format!(
                 "
@@ -297,13 +298,30 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 fn_name = fn_name
             );
 
+            let remove_fn_docs = format!(
+                "
+                Remove the value from the `{fn_name}` input.
+
+                See `{fn_name}` for details. Panics if a value has
+                not previously been set using `set_{fn_name}` or
+                `set_{fn_name}_with_durability`.
+
+                *Note:* Setting values will trigger cancellation
+                of any ongoing queries; this method blocks until
+                those queries have been cancelled.
+            ",
+                fn_name = fn_name
+            );
+
             query_fn_declarations.extend(quote! {
                 # [doc = #set_fn_docs]
                 fn #set_fn_name(&mut self, #(#key_names: #keys,)* value__: #value);
 
-
                 # [doc = #set_constant_fn_docs]
                 fn #set_with_durability_fn_name(&mut self, #(#key_names: #keys,)* value__: #value, durability__: salsa::Durability);
+
+                # [doc = #remove_fn_docs]
+                fn #remove_fn_name(&mut self, #(#key_names: #keys,)*) -> #value;
             });
 
             query_fn_definitions.extend(quote! {
@@ -319,6 +337,13 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                         salsa::plumbing::get_query_table_mut::<#qt>(db).set_with_durability((#(#key_names),*), value__, durability__)
                     }
                     __shim(self, #(#key_names,)* value__ ,durability__)
+                }
+
+                fn #remove_fn_name(&mut self, #(#key_names: #keys,)*) -> #value {
+                    fn __shim(db: &mut dyn #trait_name, #(#key_names: #keys,)*) -> #value {
+                        salsa::plumbing::get_query_table_mut::<#qt>(db).remove((#(#key_names),*))
+                    }
+                    __shim(self, #(#key_names,)*)
                 }
             });
         }
