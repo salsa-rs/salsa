@@ -1,4 +1,4 @@
-# Description/title
+# Parallel friendly caching
 
 ## Metadata
 
@@ -8,20 +8,32 @@
 
 ## Summary
 
-* Create a separate cache that stores only completed items.
-* Move cycle detection to be per-thread.
-* Introduce a special 
+* Split local/global query state
+    * Local query state is specific to each worker thread
+    * Global query state is used across all worker threads
+* Global query state will store:
+    * Monotonically growing map from key to Slot Id (an integer)
+    * Completed query results (and their dependencies)
+        * This is a simple data structure, which permits a query hit to complete without any atomic writes
+    * Where appropriate, a "synchronization set", storing the indices of queries that are currently executing
+        * This is optional, which permits us to have the same query running multiple times in parallel if desired
+* Local query state will store:
+    * Provisional cached items, in the case of fixed-point cycles (needed by chalk; not covered in this RFC)
 
 ## Motivation
 
-* To prepare for a more "parallel by default" future:
+Two-fold:
+
+* To integrate chalk caching with salsa more deeply, we need to be able to handle cycles more gracefully.
+    * In chalk, cycles are handled by iterating until a fixed-point is reached. This could be useful in other salsa applications as well.
+    * For this to work, we need caching of *provisional results* that are produced during those iterations. These results should not be exposed outside the cycle.
+    * In general, it would be simpler if we could move cycle handling to *per-thread*, although there are limits to how much we can do this.
+* We are moving towards a 'parallel by default' future for Salsa.   
     * Eventual goal: Cache hit requires only reads (no locks).
+    * Creates the option of queries where a cache hit requires no atomic writes.
     * Validation and execution require no locks and few atomic writes.
         * Although synchronization remains an option.
     * This RFC brings that within sight, although it is not achieved.
-* To prepare for better cycle handling, where caching is less "all or nothing"
-    * To support chalk-style solving, we need caching of provisional results.
-    * Also want more graceful ability to recover from cycles.
 
 ## User's guide
 
@@ -104,108 +116,6 @@ This is just a sketch of what will be needed.
         * May have removals/writes if data is from older revision
     * Internal index `X` to memo map
         * Purely monotonic (should we fix that?)
-
-### Older material
-
-* A `Database` (per thread) contains a
-    * Storage<DB>
-* A `Storage<DB>` (per thread) contains a
-    * `Arc<SharedStorage<DB>>`
-    * `LocalStorage<DB>`
-    * `Runtime`
-* A `SharedStorage<DB>` contains
-    * `SharedQueryStorage<Q>` for each query `Q` in `DB`
-* A `SharedQueryStorage<Q>` contains
-    * `RwLock<FxIndexSet<Q::Key>>` to map from key to internal index `X`
-    * lru information
-    * a map from internal index `X` to a `Memo<Q>`
-* A `Memo<Q>` contains
-    * a `Option<Q::Value>` -- can we represent this more efficiently?
-    * lru information (perhaps)
-    * a `MemoRevisions` containing
-        * `verified_at: Revision`
-        * `changed_at: Revision`
-        * `durability: Revision`
-        * `inputs: MemoInputs`
-* A `LocalStorage<DB>` contains
-    * `LocalQueryStorage<Q>` for each query `Q` in `DB`
-* A `LocalQueryStorage<Q>` contains
-    * a map from an internal index `X` to a `LocalMemo<Q>`
-* A `LocalMemo<Q>` contains
-    * an optional value `Q::Value`
-    * an optional index into the stack
-    * some kind of upper bound, maybe an `Rc<Cell<usize>>`?, indicating how high on the stack it goes
-* A `Runtime` contains
-    * `SharedRuntimeState`
-    * `LocalRuntimeState`
-* `SharedRuntimeState` contains
-    * data for synchronized queries
-* `LocalRuntimeState` contains
-    * `RefCell<Vec<MemoizedValue>>`
-
-* To perform a query
-    * Check global cache. If entry found:
-        * Validate. If validation successful:
-            * Return the result.
-    * If this is a fixed point query Q:
-        * Check local cache.
-    * Otherwise:
-        * Check if query is on the stack at depth D.
-        * 
-    * Check local cache. If entry found:
-        * Check if it is on the stack at index S0. If so:
-            * (handle cycle XXX)
-        * Not on stack. Return provisional value and register a read at depth within cache.
-    * Insert a local cache
-
-* How do cycles work?
-    * When we find a query, we check the local cache
-    * If there is a local memo and the memo is on the stack:
-        * Check if there is a value. If not, panic with a cycle error.
-        * If this is a "fixed point" query and all things on the stack are the same query:
-            * How to manage inductive/coinductive cycles? Could have different goals.
-            * Otherwise, we have some kind of callback to generate the result
-                * It can be given a `Iterator<Q::Key>`
-                * And the current cached value
-        * If not a fixed point query or mixed queries:
-            * Can have a "cycle error" result somehow, maybe
-* How do synchronized queries work?
-* Tag the query synchronized
-    * It will call `runtime.synchronized(|| ...)` at the start or whatever
-    * Manage cycles
-
-```rust
-type K = u32;
-
-/// For each query, we have a `QueryStorage` struct.
-struct DerivedStorage<Q: Query> {
-    /// used to construct a `DatabaseKeyIndex`
-    key_map: RwLock<FxIndexSet<Q::Key>>,
-    lru_list: ...,
-    cache: RwLock<FxHashMap<K, MemoizedValue<Q>>>
-}
-
-/// Storage for things being actively executed
-struct StackStorage<Q: Query> {
-    /// used to construct a `DatabaseKeyIndex`
-    provisional_cache: FxHashMap<K, MemoizedStackValue<Q>>,
-}
-
-struct MemoizedValue<Q>
-where
-    Q: QueryFunction,
-{
-    /// The result of the query, if we decide to memoize it.
-    value: Option<Q::Value>,
-
-    /// Revision information
-    revisions: MemoRevisions,
-}
-```
-
-* How to get the per-thread storage?
-* Not THAT many options
-* Right now the Storage 
 
 ## Frequently asked questions
 
