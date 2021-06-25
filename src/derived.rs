@@ -2,10 +2,11 @@ use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::lru::Lru;
 use crate::plumbing::DerivedQueryStorageOps;
+use crate::plumbing::GlobalQueryStorageOps;
+use crate::plumbing::LocalQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
-use crate::plumbing::QueryStorageOps;
 use crate::runtime::{FxIndexMap, StampedValue};
 use crate::{CycleError, Database, DatabaseKeyIndex, QueryDb, Revision};
 use parking_lot::RwLock;
@@ -23,10 +24,16 @@ use slot::Slot;
 /// none of those inputs have changed.
 pub type MemoizedStorage<Q> = DerivedStorage<Q, AlwaysMemoizeValue>;
 
+/// Global storage for memoized queries.
+pub type MemoizedGlobalStorage<Q> = DerivedGlobalStorage<Q, AlwaysMemoizeValue>;
+
 /// "Dependency" queries just track their dependencies and not the
 /// actual value (which they produce on demand). This lessens the
 /// storage requirements.
 pub type DependencyStorage<Q> = DerivedStorage<Q, NeverMemoizeValue>;
+
+/// Global storage for dependency queries.
+pub type DependencyGlobalStorage<Q> = DerivedGlobalStorage<Q, NeverMemoizeValue>;
 
 /// Handles storage where the value is 'derived' by executing a
 /// function (in contrast to "inputs").
@@ -35,13 +42,31 @@ where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
 {
+    policy: PhantomData<(Q, MP)>,
+}
+
+pub struct DerivedGlobalStorage<Q, MP>
+where
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
+{
     group_index: u16,
     lru_list: Lru<Slot<Q, MP>>,
     slot_map: RwLock<FxIndexMap<Q::Key, Arc<Slot<Q, MP>>>>,
-    policy: PhantomData<MP>,
+
+    policy: PhantomData<(Q, MP)>,
 }
 
 impl<Q, MP> std::panic::RefUnwindSafe for DerivedStorage<Q, MP>
+where
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
+    Q::Key: std::panic::RefUnwindSafe,
+    Q::Value: std::panic::RefUnwindSafe,
+{
+}
+
+impl<Q, MP> std::panic::RefUnwindSafe for DerivedGlobalStorage<Q, MP>
 where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
@@ -88,7 +113,115 @@ where
     }
 }
 
-impl<Q, MP> DerivedStorage<Q, MP>
+impl<Q, MP> LocalQueryStorageOps<Q> for DerivedStorage<Q, MP>
+where
+    Q: QueryFunction<GlobalStorage = DerivedGlobalStorage<Q, MP>>,
+    MP: MemoizationPolicy<Q>,
+{
+    fn new(_group_index: u16) -> Self {
+        DerivedStorage {
+            policy: PhantomData,
+        }
+    }
+
+    fn fmt_index(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        index: DatabaseKeyIndex,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        crate::plumbing::global_query_storage::<Q>(db).fmt_index(db, index, fmt)
+    }
+
+    fn maybe_changed_since(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        input: DatabaseKeyIndex,
+        revision: Revision,
+    ) -> bool {
+        crate::plumbing::global_query_storage::<Q>(db).maybe_changed_since(db, input, revision)
+    }
+
+    fn try_fetch(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        key: &Q::Key,
+    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+        crate::plumbing::global_query_storage::<Q>(db).try_fetch(db, key)
+    }
+
+    fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
+        crate::plumbing::global_query_storage::<Q>(db).durability(db, key)
+    }
+
+    fn entries<C>(&self, db: &<Q as QueryDb<'_>>::DynDb) -> C
+    where
+        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
+    {
+        crate::plumbing::global_query_storage::<Q>(db).entries(db)
+    }
+}
+
+impl<Q, MP> QueryStorageMassOps for DerivedStorage<Q, MP>
+where
+    Q: QueryFunction<GlobalStorage = DerivedGlobalStorage<Q, MP>>,
+    MP: MemoizationPolicy<Q>,
+{
+    fn purge(&self) {}
+}
+
+impl<Q, MP> LruQueryStorageOps<Q> for DerivedStorage<Q, MP>
+where
+    Q: QueryFunction<GlobalStorage = DerivedGlobalStorage<Q, MP>>,
+    MP: MemoizationPolicy<Q>,
+{
+    fn set_lru_capacity(&self, db: &<Q as QueryDb<'_>>::DynDb, new_capacity: usize) {
+        crate::plumbing::global_query_storage::<Q>(db).set_lru_capacity(db, new_capacity)
+    }
+}
+
+impl<Q, MP> DerivedQueryStorageOps<Q> for DerivedStorage<Q, MP>
+where
+    Q: QueryFunction<GlobalStorage = DerivedGlobalStorage<Q, MP>>,
+    MP: MemoizationPolicy<Q>,
+{
+    fn invalidate<S>(&self, db: &mut <Q as QueryDb<'_>>::DynDb, key: &S)
+    where
+        S: Eq + Hash,
+        Q::Key: Borrow<S>,
+    {
+        let global_storage = crate::plumbing::global_query_storage::<Q>(db).clone();
+        global_storage.invalidate(db, key)
+    }
+}
+
+impl<Q, MP> GlobalQueryStorageOps<Q> for DerivedGlobalStorage<Q, MP>
+where
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
+{
+    fn new(group_index: u16) -> Self {
+        DerivedGlobalStorage {
+            group_index,
+            slot_map: RwLock::new(FxIndexMap::default()),
+            lru_list: Default::default(),
+            policy: PhantomData,
+        }
+    }
+}
+
+impl<Q, MP> QueryStorageMassOps for DerivedGlobalStorage<Q, MP>
+where
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
+{
+    fn purge(&self) {
+        self.lru_list.purge();
+        *self.slot_map.write() = Default::default();
+    }
+}
+
+impl<Q, MP> DerivedGlobalStorage<Q, MP>
 where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
@@ -109,21 +242,6 @@ where
         entry
             .or_insert_with(|| Arc::new(Slot::new(key.clone(), database_key_index)))
             .clone()
-    }
-}
-
-impl<Q, MP> QueryStorageOps<Q> for DerivedStorage<Q, MP>
-where
-    Q: QueryFunction,
-    MP: MemoizationPolicy<Q>,
-{
-    fn new(group_index: u16) -> Self {
-        DerivedStorage {
-            group_index,
-            slot_map: RwLock::new(FxIndexMap::default()),
-            lru_list: Default::default(),
-            policy: PhantomData,
-        }
     }
 
     fn fmt_index(
@@ -195,34 +313,7 @@ where
             .filter_map(|slot| slot.as_table_entry())
             .collect()
     }
-}
 
-impl<Q, MP> QueryStorageMassOps for DerivedStorage<Q, MP>
-where
-    Q: QueryFunction,
-    MP: MemoizationPolicy<Q>,
-{
-    fn purge(&self) {
-        self.lru_list.purge();
-        *self.slot_map.write() = Default::default();
-    }
-}
-
-impl<Q, MP> LruQueryStorageOps for DerivedStorage<Q, MP>
-where
-    Q: QueryFunction,
-    MP: MemoizationPolicy<Q>,
-{
-    fn set_lru_capacity(&self, new_capacity: usize) {
-        self.lru_list.set_lru_capacity(new_capacity);
-    }
-}
-
-impl<Q, MP> DerivedQueryStorageOps<Q> for DerivedStorage<Q, MP>
-where
-    Q: QueryFunction,
-    MP: MemoizationPolicy<Q>,
-{
     fn invalidate<S>(&self, db: &mut <Q as QueryDb<'_>>::DynDb, key: &S)
     where
         S: Eq + Hash,
@@ -240,5 +331,9 @@ where
 
                 None
             })
+    }
+
+    fn set_lru_capacity(&self, _db: &<Q as QueryDb<'_>>::DynDb, new_capacity: usize) {
+        self.lru_list.set_lru_capacity(new_capacity);
     }
 }

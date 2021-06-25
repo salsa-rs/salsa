@@ -172,8 +172,8 @@ final database type:
 
 ```rust,ignore
 struct HelloWorldGroupStorage__ {
-    input: <InputQuery as Query::Storage,
-    length: <LengthQuery as Query>::Storage,
+    input: <InputQuery as Query::LocalStorage,
+    length: <LengthQuery as Query>::LocalStorage,
 }
 ```
 

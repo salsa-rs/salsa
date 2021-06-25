@@ -2,7 +2,7 @@
 //! debugging your application but aren't ordinarily needed.
 
 use crate::durability::Durability;
-use crate::plumbing::QueryStorageOps;
+use crate::plumbing::LocalQueryStorageOps;
 use crate::Query;
 use crate::QueryTable;
 use std::iter::FromIterator;
@@ -48,7 +48,6 @@ impl<K, V> TableEntry<K, V> {
 impl<'d, Q> DebugQueryTable for QueryTable<'_, Q>
 where
     Q: Query,
-    Q::Storage: QueryStorageOps<Q>,
 {
     type Key = Q::Key;
     type Value = Q::Value;

@@ -6,14 +6,16 @@ use std::sync::Arc;
 /// manage query execution. Every database must include a `storage:
 /// Storage<Self>` field.
 pub struct Storage<DB: DatabaseStorageTypes> {
-    query_store: Arc<DB::DatabaseStorage>,
+    global_storage: Arc<DB::DatabaseGlobalStorage>,
+    local_storage: DB::DatabaseLocalStorage,
     runtime: Runtime,
 }
 
 impl<DB: DatabaseStorageTypes> Default for Storage<DB> {
     fn default() -> Self {
         Self {
-            query_store: Default::default(),
+            global_storage: Default::default(),
+            local_storage: Default::default(),
             runtime: Default::default(),
         }
     }
@@ -32,8 +34,14 @@ impl<DB: DatabaseStorageTypes> Storage<DB> {
 
     /// Access the query storage tables. Not meant to be used directly by end
     /// users.
-    pub fn query_store(&self) -> &DB::DatabaseStorage {
-        &self.query_store
+    pub fn global_storage(&self) -> &DB::DatabaseGlobalStorage {
+        &self.global_storage
+    }
+
+    /// Access the query storage tables. Not meant to be used directly by end
+    /// users.
+    pub fn local_storage(&self) -> &DB::DatabaseLocalStorage {
+        &self.local_storage
     }
 
     /// Returns a "snapshotted" storage, suitable for use in a forked database.
@@ -46,7 +54,8 @@ impl<DB: DatabaseStorageTypes> Storage<DB> {
     /// deadlock.
     pub fn snapshot(&self) -> Self {
         Storage {
-            query_store: self.query_store.clone(),
+            global_storage: self.global_storage.clone(),
+            local_storage: Default::default(),
             runtime: self.runtime.snapshot(),
         }
     }

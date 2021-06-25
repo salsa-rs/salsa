@@ -11,11 +11,17 @@ use crate::RuntimeId;
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::sync::Arc;
 
+pub use crate::derived::DependencyGlobalStorage;
 pub use crate::derived::DependencyStorage;
+pub use crate::derived::MemoizedGlobalStorage;
 pub use crate::derived::MemoizedStorage;
+pub use crate::input::InputGlobalStorage;
 pub use crate::input::InputStorage;
+pub use crate::interned::InternedGlobalStorage;
 pub use crate::interned::InternedStorage;
+pub use crate::interned::LookupInternedGlobalStorage;
 pub use crate::interned::LookupInternedStorage;
 pub use crate::{revision::Revision, DatabaseKeyIndex, QueryDb, Runtime};
 
@@ -30,9 +36,13 @@ pub struct CycleDetected {
 /// the `database_storage` macro, so you shouldn't need to mess
 /// with this trait directly.
 pub trait DatabaseStorageTypes: Database {
-    /// Defines the "storage type", where all the query data is kept.
+    /// The global storage caches the results of queries that have finished
+    /// executing and whose results were not dependent on context.
+    type DatabaseGlobalStorage: Default;
+
+    /// Defines the local storage, which is specific to a particular thread.
     /// This type is defined by the `database_storage` macro.
-    type DatabaseStorage: Default;
+    type DatabaseLocalStorage: Default;
 }
 
 /// Internal operations that the runtime uses to operate on the database.
@@ -62,7 +72,8 @@ pub trait DatabaseOps {
 
 /// Internal operations performed on the query storage as a whole
 /// (note that these ops do not need to know the identity of the
-/// query, unlike `QueryStorageOps`).
+/// query, unlike `QueryStorageOps`). These ops are performed on BOTH
+/// the local AND global storage.
 pub trait QueryStorageMassOps {
     fn purge(&self);
 }
@@ -82,16 +93,36 @@ pub trait QueryFunction: Query {
     }
 }
 
+pub(crate) fn local_query_storage<'me, 'db, Q>(
+    db: &'me <Q as QueryDb<'db>>::DynDb,
+) -> &'me Arc<Q::LocalStorage>
+where
+    Q: Query + 'me,
+    'db: 'me,
+{
+    let group_storage = HasQueryGroup::local_group_storage(db);
+    Q::local_query_storage(group_storage)
+}
+
+pub(crate) fn global_query_storage<'me, 'db, Q>(
+    db: &'me <Q as QueryDb<'db>>::DynDb,
+) -> &'me Arc<Q::GlobalStorage>
+where
+    Q: Query + 'me,
+    'db: 'me,
+{
+    let global_group_storage = HasQueryGroup::global_group_storage(db);
+    Q::global_query_storage(global_group_storage)
+}
+
 /// Create a query table, which has access to the storage for the query
 /// and offers methods like `get`.
 pub fn get_query_table<'me, Q>(db: &'me <Q as QueryDb<'me>>::DynDb) -> QueryTable<'me, Q>
 where
     Q: Query + 'me,
-    Q::Storage: QueryStorageOps<Q>,
 {
-    let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-    let query_storage: &Q::Storage = Q::query_storage(group_storage);
-    QueryTable::new(db, query_storage)
+    let query_storage = local_query_storage::<Q>(db);
+    QueryTable::new(db, &**query_storage)
 }
 
 /// Create a mutable query table, which has access to the storage
@@ -100,13 +131,14 @@ pub fn get_query_table_mut<'me, Q>(db: &'me mut <Q as QueryDb<'me>>::DynDb) -> Q
 where
     Q: Query,
 {
-    let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-    let query_storage = Q::query_storage(group_storage).clone();
+    let query_storage = local_query_storage::<Q>(db).clone();
     QueryTableMut::new(db, query_storage)
 }
 
 pub trait QueryGroup: Sized {
-    type GroupStorage;
+    type LocalGroupStorage;
+
+    type GlobalGroupStorage;
 
     /// Dyn version of the associated database trait.
     type DynDb: ?Sized + Database + HasQueryGroup<Self>;
@@ -119,10 +151,13 @@ where
     G: QueryGroup,
 {
     /// Access the group storage struct from the database.
-    fn group_storage(&self) -> &G::GroupStorage;
+    fn local_group_storage(&self) -> &G::LocalGroupStorage;
+
+    /// Access the global group storage struct from the database.
+    fn global_group_storage(&self) -> &G::GlobalGroupStorage;
 }
 
-pub trait QueryStorageOps<Q>
+pub trait LocalQueryStorageOps<Q>
 where
     Self: QueryStorageMassOps,
     Q: Query,
@@ -168,6 +203,14 @@ where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>;
 }
 
+pub trait GlobalQueryStorageOps<Q>
+where
+    Self: QueryStorageMassOps,
+    Q: Query,
+{
+    fn new(group_index: u16) -> Self;
+}
+
 /// An optional trait that is implemented for "user mutable" storage:
 /// that is, storage whose value is not derived from other storage but
 /// is set independently.
@@ -187,8 +230,11 @@ where
 /// An optional trait that is implemented for "user mutable" storage:
 /// that is, storage whose value is not derived from other storage but
 /// is set independently.
-pub trait LruQueryStorageOps {
-    fn set_lru_capacity(&self, new_capacity: usize);
+pub trait LruQueryStorageOps<Q>
+where
+    Q: Query,
+{
+    fn set_lru_capacity(&self, db: &<Q as QueryDb<'_>>::DynDb, new_capacity: usize);
 }
 
 pub trait DerivedQueryStorageOps<Q>
