@@ -122,13 +122,17 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     .into();
                 }
             }
-            let mut keys: Vec<Type> = vec![];
-            for arg in iter {
-                match *arg {
-                    FnArg::Typed(ref arg) => {
-                        keys.push((*arg.ty).clone());
-                    }
-                    ref arg => {
+            let mut keys: Vec<(Ident, Type)> = vec![];
+            for (idx, arg) in iter.enumerate() {
+                match arg {
+                    FnArg::Typed(syn::PatType { pat, ty, .. }) => keys.push((
+                        match pat.as_ref() {
+                            syn::Pat::Ident(ident_pat) => ident_pat.ident.clone(),
+                            _ => Ident::new(&format!("key{}", idx), Span::call_site()),
+                        },
+                        Type::clone(ty),
+                    )),
+                    arg => {
                         return Error::new(
                             arg.span(),
                             format!("unsupported argument `{:?}` of `{}`", arg, method.sig.ident,),
@@ -176,9 +180,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     &format!("lookup_{}", method.sig.ident.to_string()),
                     method.sig.ident.span(),
                 );
-                let keys = &keys;
+                let keys = keys.iter().map(|(_, ty)| ty);
                 let lookup_value: Type = parse_quote!((#(#keys),*));
-                let lookup_keys = vec![value.clone()];
+                let lookup_keys = vec![(parse_quote! { key }, value.clone())];
                 Some(Query {
                     query_type: lookup_query_type,
                     query_name: format!("lookup_{}", query_name),
@@ -222,10 +226,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     let mut storage_fields = proc_macro2::TokenStream::new();
     let mut queries_with_storage = vec![];
     for query in &queries {
-        let key_names: &Vec<_> = &(0..query.keys.len())
-            .map(|i| Ident::new(&format!("key{}", i), Span::call_site()))
-            .collect();
-        let keys = &query.keys;
+        let (key_names, keys): (Vec<_>, Vec<_>) =
+            query.keys.iter().map(|(pat, ty)| (pat, ty)).unzip();
         let value = &query.value;
         let fn_name = &query.fn_name;
         let qt = &query.query_type;
@@ -396,7 +398,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             }
             QueryStorage::Transparent => panic!("should have been filtered"),
         };
-        let keys = &query.keys;
+        let keys = query.keys.iter().map(|(_, ty)| ty);
         let value = &query.value;
         let query_name = &query.query_name;
 
@@ -489,9 +491,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         // Implement the QueryFunction trait for queries which need it.
         if query.storage.needs_query_function() {
             let span = query.fn_name.span();
-            let key_names: &Vec<_> = &(0..query.keys.len())
-                .map(|i| Ident::new(&format!("key{}", i), Span::call_site()))
-                .collect();
+
+            let key_names: Vec<_> = query.keys.iter().map(|(pat, _)| pat).collect();
             let key_pattern = if query.keys.len() == 1 {
                 quote! { #(#key_names),* }
             } else {
@@ -683,7 +684,7 @@ struct Query {
     attrs: Vec<syn::Attribute>,
     query_type: Ident,
     storage: QueryStorage,
-    keys: Vec<syn::Type>,
+    keys: Vec<(Ident, syn::Type)>,
     value: syn::Type,
     invoke: Option<syn::Path>,
     cycle: Option<syn::Path>,
