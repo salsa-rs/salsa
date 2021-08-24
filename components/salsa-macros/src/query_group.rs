@@ -37,14 +37,13 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     let mut queries = vec![];
     for item in input.items {
         if let TraitItem::Method(method) = item {
+            let query_name = method.sig.ident.to_string();
+
             let mut storage = QueryStorage::Memoized;
             let mut cycle = None;
             let mut invoke = None;
-            let query_name = method.sig.ident.to_string();
-            let mut query_type = Ident::new(
-                &format!("{}Query", method.sig.ident.to_string().to_camel_case()),
-                Span::call_site(),
-            );
+
+            let mut query_type = format_ident!("{}Query", query_name.to_string().to_camel_case());
             let mut num_storages = 0;
 
             // Extract attributes.
@@ -88,9 +87,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 }
             }
 
+            let sig_span = method.sig.span();
             // Check attribute combinations.
             if num_storages > 1 {
-                return Error::new(method.sig.span(), "multiple storage attributes specified")
+                return Error::new(sig_span, "multiple storage attributes specified")
                     .to_compile_error()
                     .into();
             }
@@ -112,11 +112,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 Some(FnArg::Receiver(sr)) if sr.mutability.is_none() => (),
                 _ => {
                     return Error::new(
-                        method.sig.span(),
-                        format!(
-                            "first argument of query `{}` must be `&self`",
-                            method.sig.ident,
-                        ),
+                        sig_span,
+                        format!("first argument of query `{}` must be `&self`", query_name),
                     )
                     .to_compile_error()
                     .into();
@@ -128,14 +125,14 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     FnArg::Typed(syn::PatType { pat, ty, .. }) => keys.push((
                         match pat.as_ref() {
                             syn::Pat::Ident(ident_pat) => ident_pat.ident.clone(),
-                            _ => Ident::new(&format!("key{}", idx), Span::call_site()),
+                            _ => format_ident!("key{}", idx),
                         },
                         Type::clone(ty),
                     )),
                     arg => {
                         return Error::new(
                             arg.span(),
-                            format!("unsupported argument `{:?}` of `{}`", arg, method.sig.ident,),
+                            format!("unsupported argument `{:?}` of `{}`", arg, query_name,),
                         )
                         .to_compile_error()
                         .into();
@@ -149,10 +146,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 ref ret => {
                     return Error::new(
                         ret.span(),
-                        format!(
-                            "unsupported return type `{:?}` of `{}`",
-                            ret, method.sig.ident
-                        ),
+                        format!("unsupported return type `{:?}` of `{}`", ret, query_name),
                     )
                     .to_compile_error()
                     .into();
@@ -169,23 +163,15 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             //
             //     fn lookup_foo(&self, x: u32) -> (Key1, Key2)
             let lookup_query = if let QueryStorage::Interned = storage {
-                let lookup_query_type = Ident::new(
-                    &format!(
-                        "{}LookupQuery",
-                        method.sig.ident.to_string().to_camel_case()
-                    ),
-                    Span::call_site(),
-                );
-                let lookup_fn_name = Ident::new(
-                    &format!("lookup_{}", method.sig.ident.to_string()),
-                    method.sig.ident.span(),
-                );
+                let lookup_query_type =
+                    format_ident!("{}LookupQuery", query_name.to_string().to_camel_case());
+                let lookup_fn_name = format_ident!("lookup_{}", query_name);
                 let keys = keys.iter().map(|(_, ty)| ty);
                 let lookup_value: Type = parse_quote!((#(#keys),*));
                 let lookup_keys = vec![(parse_quote! { key }, value.clone())];
                 Some(Query {
                     query_type: lookup_query_type,
-                    query_name: format!("lookup_{}", query_name),
+                    query_name: format!("{}", lookup_fn_name),
                     fn_name: lookup_fn_name,
                     attrs: vec![], // FIXME -- some automatically generated docs on this method?
                     storage: QueryStorage::InternedLookup {
@@ -216,10 +202,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         }
     }
 
-    let group_storage = Ident::new(
-        &format!("{}GroupStorage__", trait_name.to_string()),
-        Span::call_site(),
-    );
+    let group_storage = format_ident!("{}GroupStorage__", trait_name, span = Span::call_site());
 
     let mut query_fn_declarations = proc_macro2::TokenStream::new();
     let mut query_fn_definitions = proc_macro2::TokenStream::new();
@@ -268,9 +251,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
         // For input queries, we need `set_foo` etc
         if let QueryStorage::Input = query.storage {
-            let set_fn_name = Ident::new(&format!("set_{}", fn_name), fn_name.span());
-            let set_with_durability_fn_name =
-                Ident::new(&format!("set_{}_with_durability", fn_name), fn_name.span());
+            let set_fn_name = format_ident!("set_{}", fn_name);
+            let set_with_durability_fn_name = format_ident!("set_{}_with_durability", fn_name);
 
             let set_fn_docs = format!(
                 "
