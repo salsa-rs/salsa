@@ -403,7 +403,6 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             }
         });
 
-        if query.storage.supports_mut() {}
         output.extend(quote! {
             impl #qt {
                 /// Like `in_db`, but gives access to methods for setting the
@@ -700,18 +699,6 @@ impl QueryStorage {
             | QueryStorage::InternedLookup { .. }
             | QueryStorage::Transparent => false,
             QueryStorage::Memoized | QueryStorage::Dependencies => true,
-        }
-    }
-
-    /// Does this type of query support `&mut` operations?
-    fn supports_mut(&self) -> bool {
-        match self {
-            QueryStorage::Input => true,
-            QueryStorage::Interned
-            | QueryStorage::InternedLookup { .. }
-            | QueryStorage::Transparent
-            | QueryStorage::Memoized
-            | QueryStorage::Dependencies => false,
         }
     }
 }
