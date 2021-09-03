@@ -81,9 +81,9 @@ impl LocalState {
         }
     }
 
-    pub(super) fn report_synthetic_read(&self, durability: Durability) {
+    pub(super) fn report_synthetic_read(&self, durability: Durability, current_revision: Revision) {
         if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_synthetic_read(durability);
+            top_query.add_synthetic_read(durability, current_revision);
         }
     }
 }

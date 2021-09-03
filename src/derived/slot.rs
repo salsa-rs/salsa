@@ -461,12 +461,16 @@ where
         }
     }
 
-    pub(super) fn invalidate(&self) -> Option<Durability> {
-        if let QueryState::Memoized(memo) = &mut *self.state.write() {
-            memo.revisions.inputs = MemoInputs::Untracked;
-            Some(memo.revisions.durability)
-        } else {
-            None
+    pub(super) fn invalidate(&self, new_revision: Revision) -> Option<Durability> {
+        log::debug!("Slot::invalidate(new_revision = {:?})", new_revision);
+        match &mut *self.state.write() {
+            QueryState::Memoized(memo) => {
+                memo.revisions.inputs = MemoInputs::Untracked;
+                memo.revisions.changed_at = new_revision;
+                Some(memo.revisions.durability)
+            }
+            QueryState::NotComputed => None,
+            QueryState::InProgress { .. } => unreachable!(),
         }
     }
 
@@ -495,7 +499,7 @@ where
             // entry, that must mean that it was found to be out
             // of date and removed.
             QueryState::NotComputed => {
-                debug!("maybe_changed_since({:?}: no value", self);
+                debug!("maybe_changed_since({:?}): no value", self);
                 return true;
             }
 
@@ -505,7 +509,7 @@ where
             QueryState::InProgress { id, waiting } => {
                 let other_id = *id;
                 debug!(
-                    "maybe_changed_since({:?}: blocking on thread `{:?}`",
+                    "maybe_changed_since({:?}): blocking on thread `{:?}`",
                     self, other_id,
                 );
                 match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
@@ -527,7 +531,7 @@ where
 
         if memo.revisions.verified_at == revision_now {
             debug!(
-                "maybe_changed_since({:?}: {:?} since up-to-date memo that changed at {:?}",
+                "maybe_changed_since({:?}): {:?} since up-to-date memo that changed at {:?}",
                 self,
                 memo.revisions.changed_at > revision,
                 memo.revisions.changed_at,
@@ -857,7 +861,10 @@ impl MemoRevisions {
         assert!(self.verified_at != revision_now);
         let verified_at = self.verified_at;
 
-        debug!("validate_memoized_value: verified_at={:#?}", self.inputs,);
+        debug!(
+            "validate_memoized_value: verified_at={:?}, revision_now={:?}, inputs={:#?}",
+            verified_at, revision_now, self.inputs
+        );
 
         if self.check_durability(db.salsa_runtime()) {
             return self.mark_value_as_verified(revision_now);
@@ -866,7 +873,7 @@ impl MemoRevisions {
         match &self.inputs {
             // We can't validate values that had untracked inputs; just have to
             // re-execute.
-            MemoInputs::Untracked { .. } => {
+            MemoInputs::Untracked => {
                 return false;
             }
 
