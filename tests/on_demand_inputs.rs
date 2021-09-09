@@ -73,6 +73,12 @@ fn on_demand_input_works() {
     AQuery.in_db_mut(&mut db).invalidate(&1);
     assert_eq!(db.b(1), 92);
     assert_eq!(db.a(1), 92);
+
+    // Downstream queries should also be rerun if we call `a` first.
+    db.external_state.insert(1, 50);
+    AQuery.in_db_mut(&mut db).invalidate(&1);
+    assert_eq!(db.a(1), 50);
+    assert_eq!(db.b(1), 50);
 }
 
 #[test]
