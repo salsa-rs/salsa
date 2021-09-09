@@ -8,6 +8,8 @@ you'd like a deeper dive, [the "Salsa in more depth"
 video](https://www.youtube.com/watch?v=i_IhACacPRY) digs into the
 details of the incremental algorithm.
 
+> If you're in China, watch videos on ["How Salsa Works"](https://www.bilibili.com/video/BV1Df4y1A7t3/), ["Salsa In More Depth"](https://www.bilibili.com/video/BV1AM4y1G7E4/).
+
 ## Key idea
 
 The key idea of `salsa` is that you define your program as a set of
