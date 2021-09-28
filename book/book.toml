@@ -16,7 +16,7 @@ additional-js =["mermaid.min.js", "mermaid-init.js"]
 [output.linkcheck]
 follow-web-links = true
 traverse-parent-directories = false
+exclude = ['bilibili\.com']
 [preprocessor]
 [preprocessor.mermaid]
 command = "mdbook-mermaid"
-
