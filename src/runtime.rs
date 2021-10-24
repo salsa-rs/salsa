@@ -300,10 +300,20 @@ impl Runtime {
 
         if error.from == error.to {
             // All queries in the cycle is local
-            let start_index = query_stack
+            let start_index = match query_stack
                 .iter()
                 .rposition(|active_query| active_query.database_key_index == database_key_index)
-                .unwrap();
+            {
+                Some(i) => i,
+                None => panic!(
+                    "did not find {:?} on the stack: {:?}",
+                    database_key_index,
+                    query_stack
+                        .iter()
+                        .map(|s| s.database_key_index)
+                        .collect::<Vec<_>>()
+                ),
+            };
             let mut cycle = Vec::new();
             let cycle_participants = &mut query_stack[start_index..];
             for active_query in &mut *cycle_participants {
