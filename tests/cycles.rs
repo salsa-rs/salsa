@@ -1,4 +1,5 @@
 use salsa::{ParallelDatabase, Snapshot};
+use test_env_log::test;
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 struct Error {
@@ -148,6 +149,7 @@ fn cycle_appears() {
     db.set_cycle_leaf(false);
     assert!(db.cycle_a().is_ok());
     db.set_cycle_leaf(true);
+    log::debug!("Set Cycle Leaf");
     assert!(db.cycle_a().is_err());
 }
 
