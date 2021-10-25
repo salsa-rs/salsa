@@ -296,6 +296,19 @@ impl Runtime {
             database_key_index
         );
 
+        let cycle = self.find_cycle_participants(database_key_index, error);
+        CycleError {
+            cycle,
+            changed_at,
+            durability: Durability::MAX,
+        }
+    }
+
+    fn find_cycle_participants(
+        &self,
+        database_key_index: DatabaseKeyIndex,
+        error: CycleDetected,
+    ) -> Vec<DatabaseKeyIndex> {
         let mut query_stack = self.local_state.borrow_query_stack_mut();
 
         if error.from == error.to {
@@ -326,11 +339,7 @@ impl Runtime {
                 active_query.cycle = cycle.clone();
             }
 
-            crate::CycleError {
-                cycle,
-                changed_at,
-                durability: Durability::MAX,
-            }
+            cycle
         } else {
             // Part of the cycle is on another thread so we need to lock and inspect the shared
             // state
@@ -354,11 +363,7 @@ impl Runtime {
                 active_query.cycle = cycle.clone();
             }
 
-            crate::CycleError {
-                cycle,
-                changed_at,
-                durability: Durability::MAX,
-            }
+            cycle
         }
     }
 
