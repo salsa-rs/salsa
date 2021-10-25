@@ -117,6 +117,8 @@ where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
 {
+    const CYCLE_STRATEGY: crate::plumbing::CycleRecoveryStrategy = Q::CYCLE_STRATEGY;
+
     fn new(group_index: u16) -> Self {
         DerivedStorage {
             group_index,

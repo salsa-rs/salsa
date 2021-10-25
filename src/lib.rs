@@ -438,6 +438,11 @@ where
     {
         self.storage.purge();
     }
+
+    #[allow(dead_code)] // FIXME
+    pub(crate) fn cycle_recovery_strategy(&self) -> plumbing::CycleRecoveryStrategy {
+        Q::Storage::CYCLE_STRATEGY
+    }
 }
 
 /// Return value from [the `query_mut` method] on `Database`.

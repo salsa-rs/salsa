@@ -1,6 +1,7 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::intern_id::InternId;
+use crate::plumbing::CycleRecoveryStrategy;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
@@ -191,6 +192,8 @@ where
     Q: Query,
     Q::Value: InternKey,
 {
+    const CYCLE_STRATEGY: crate::plumbing::CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
+
     fn new(group_index: u16) -> Self {
         InternedStorage {
             group_index,
@@ -312,6 +315,8 @@ where
     IQ: Query<Key = Q::Value, Value = Q::Key, Storage = InternedStorage<IQ>>,
     for<'d> Q: EqualDynDb<'d, IQ>,
 {
+    const CYCLE_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
+
     fn new(_group_index: u16) -> Self {
         LookupInternedStorage {
             phantom: std::marker::PhantomData,

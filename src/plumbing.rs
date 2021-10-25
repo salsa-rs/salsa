@@ -70,8 +70,7 @@ pub trait QueryStorageMassOps {
 pub trait DatabaseKey: Clone + Debug + Eq + Hash {}
 
 pub trait QueryFunction: Query {
-    /// Cycle recovery strategy: Is this query capable of recovering from
-    /// a cycle that results from executing the function? If so, how?
+    /// See `CycleRecoveryStrategy`
     const CYCLE_STRATEGY: CycleRecoveryStrategy;
 
     fn execute(db: &<Self as QueryDb<'_>>::DynDb, key: Self::Key) -> Self::Value;
@@ -86,6 +85,8 @@ pub trait QueryFunction: Query {
     }
 }
 
+/// Cycle recovery strategy: Is this query capable of recovering from
+/// a cycle that results from executing the function? If so, how?
 pub enum CycleRecoveryStrategy {
     /// Cannot recover from cycles: panic.
     ///
@@ -98,6 +99,7 @@ pub enum CycleRecoveryStrategy {
     Panic,
 
     /// Recovers from cycles by storing a sentinel value.
+    ///
     /// This value is computed by the `QueryFunction::cycle_fallback`
     /// function.
     Fallback,
@@ -148,6 +150,9 @@ where
     Self: QueryStorageMassOps,
     Q: Query,
 {
+    /// See CycleRecoveryStrategy
+    const CYCLE_STRATEGY: CycleRecoveryStrategy;
+
     fn new(group_index: u16) -> Self;
 
     /// Format a database key index in a suitable way.

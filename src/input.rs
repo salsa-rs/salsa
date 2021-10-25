@@ -1,5 +1,6 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
+use crate::plumbing::CycleRecoveryStrategy;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
@@ -56,6 +57,8 @@ impl<Q> QueryStorageOps<Q> for InputStorage<Q>
 where
     Q: Query,
 {
+    const CYCLE_STRATEGY: crate::plumbing::CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
+
     fn new(group_index: u16) -> Self {
         InputStorage {
             group_index,
