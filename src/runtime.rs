@@ -1,6 +1,7 @@
-use crate::plumbing::CycleDetected;
+use crate::durability::Durability;
+use crate::plumbing::{CycleDetected, CycleRecoveryStrategy};
 use crate::revision::{AtomicRevision, Revision};
-use crate::{durability::Durability, Cancelled};
+use crate::Cancelled;
 use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
@@ -287,6 +288,7 @@ impl Runtime {
     /// Obviously, this should be user configurable at some point.
     pub(crate) fn report_unexpected_cycle(
         &self,
+        db: &dyn Database,
         database_key_index: DatabaseKeyIndex,
         error: CycleDetected,
         changed_at: Revision,
@@ -297,10 +299,36 @@ impl Runtime {
         );
 
         let cycle = self.find_cycle_participants(database_key_index, error);
+        let crs = self.mutual_cycle_recovery_strategy(db, &cycle);
+        debug!(
+            "cycle recovery strategy {:?} for participants {:?}",
+            crs, cycle
+        );
         CycleError {
             cycle,
             changed_at,
             durability: Durability::MAX,
+        }
+    }
+
+    fn mutual_cycle_recovery_strategy(
+        &self,
+        db: &dyn Database,
+        cycle: &[DatabaseKeyIndex],
+    ) -> CycleRecoveryStrategy {
+        let crs = db.cycle_recovery_strategy(cycle[0]);
+        if let Some(key) = cycle[1..]
+            .iter()
+            .copied()
+            .find(|&key| db.cycle_recovery_strategy(key) != crs)
+        {
+            debug!("mutual_cycle_recovery_strategy: cycle had multiple strategies ({:?} for {:?} vs {:?} for {:?})",
+                crs, cycle[0],
+                db.cycle_recovery_strategy(key), key
+            );
+            CycleRecoveryStrategy::Panic
+        } else {
+            crs
         }
     }
 

@@ -378,6 +378,7 @@ where
 
                     Err(err) => {
                         let err = runtime.report_unexpected_cycle(
+                            db.ops_database(),
                             self.database_key_index,
                             err,
                             revision_now,

@@ -90,6 +90,7 @@ pub trait QueryFunction: Query {
 
 /// Cycle recovery strategy: Is this query capable of recovering from
 /// a cycle that results from executing the function? If so, how?
+#[derive(Debug, PartialEq, Eq)]
 pub enum CycleRecoveryStrategy {
     /// Cannot recover from cycles: panic.
     ///
