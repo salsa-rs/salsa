@@ -106,6 +106,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     // ANCHOR:DatabaseOps
     let mut fmt_ops = proc_macro2::TokenStream::new();
     let mut maybe_changed_ops = proc_macro2::TokenStream::new();
+    let mut cycle_recovery_strategy_ops = proc_macro2::TokenStream::new();
     let mut for_each_ops = proc_macro2::TokenStream::new();
     for ((QueryGroup { group_path }, group_storage), group_index) in query_groups
         .iter()
@@ -124,6 +125,13 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
                 let storage: &#group_storage =
                     <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
                 storage.maybe_changed_since(self, input, revision)
+            }
+        });
+        cycle_recovery_strategy_ops.extend(quote! {
+            #group_index => {
+                let storage: &#group_storage =
+                    <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
+                storage.cycle_recovery_strategy(self, input)
             }
         });
         for_each_ops.extend(quote! {
@@ -164,6 +172,16 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
             ) -> bool {
                 match input.group_index() {
                     #maybe_changed_ops
+                    i => panic!("salsa: invalid group index {}", i)
+                }
+            }
+
+            fn cycle_recovery_strategy(
+                &self,
+                input: salsa::DatabaseKeyIndex,
+            ) -> salsa::plumbing::CycleRecoveryStrategy {
+                match input.group_index() {
+                    #cycle_recovery_strategy_ops
                     i => panic!("salsa: invalid group index {}", i)
                 }
             }

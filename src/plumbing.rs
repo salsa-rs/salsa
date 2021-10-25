@@ -56,6 +56,9 @@ pub trait DatabaseOps {
     /// True if the computed value for `input` may have changed since `revision`.
     fn maybe_changed_since(&self, input: DatabaseKeyIndex, revision: Revision) -> bool;
 
+    /// Find the `CycleRecoveryStrategy` for a given input.
+    fn cycle_recovery_strategy(&self, input: DatabaseKeyIndex) -> CycleRecoveryStrategy;
+
     /// Executes the callback for each kind of query.
     fn for_each_query(&self, op: &mut dyn FnMut(&dyn QueryStorageMassOps));
 }
@@ -171,6 +174,10 @@ where
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool;
+
+    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
+        Self::CYCLE_STRATEGY
+    }
 
     /// Execute the query, returning the result (often, the result
     /// will be memoized).  This is the "main method" for
