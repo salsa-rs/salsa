@@ -217,7 +217,7 @@ where
         });
 
         if !result.cycle.is_empty() {
-            result.value = match Q::recover(db, &result.cycle, &self.key) {
+            result.value = match Q::cycle_fallback(db, &result.cycle, &self.key) {
                 Some(v) => v,
                 None => {
                     let err = CycleError {
@@ -366,7 +366,7 @@ where
                                 durability: result.value.durability,
                             };
                             runtime.mark_cycle_participants(&err);
-                            Q::recover(db, &err.cycle, &self.key)
+                            Q::cycle_fallback(db, &err.cycle, &self.key)
                                 .map(|value| StampedValue {
                                     value,
                                     durability: err.durability,
@@ -383,7 +383,7 @@ where
                             revision_now,
                         );
                         ProbeState::UpToDate(
-                            Q::recover(db, &err.cycle, &self.key)
+                            Q::cycle_fallback(db, &err.cycle, &self.key)
                                 .map(|value| StampedValue {
                                     value,
                                     changed_at: err.changed_at,

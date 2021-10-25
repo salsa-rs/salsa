@@ -483,7 +483,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             let recover = if let Some(cycle_recovery_fn) = &query.cycle {
                 quote! {
-                    fn recover(db: &<Self as salsa::QueryDb<'_>>::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::Query>::Key)
+                    const CYCLE_STRATEGY: salsa::plumbing::CycleRecoveryStrategy =
+                        salsa::plumbing::CycleRecoveryStrategy::Fallback;
+                    fn cycle_fallback(db: &<Self as salsa::QueryDb<'_>>::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::Query>::Key)
                         -> Option<<Self as salsa::Query>::Value> {
                         Some(#cycle_recovery_fn(
                                 db,
@@ -493,7 +495,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                     }
                 }
             } else {
-                quote! {}
+                quote! {
+                    const CYCLE_STRATEGY: salsa::plumbing::CycleRecoveryStrategy =
+                        salsa::plumbing::CycleRecoveryStrategy::Panic;
+                }
             };
 
             output.extend(quote_spanned! {span=>

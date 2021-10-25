@@ -70,9 +70,13 @@ pub trait QueryStorageMassOps {
 pub trait DatabaseKey: Clone + Debug + Eq + Hash {}
 
 pub trait QueryFunction: Query {
+    /// Cycle recovery strategy: Is this query capable of recovering from
+    /// a cycle that results from executing the function? If so, how?
+    const CYCLE_STRATEGY: CycleRecoveryStrategy;
+
     fn execute(db: &<Self as QueryDb<'_>>::DynDb, key: Self::Key) -> Self::Value;
 
-    fn recover(
+    fn cycle_fallback(
         db: &<Self as QueryDb<'_>>::DynDb,
         cycle: &[DatabaseKeyIndex],
         key: &Self::Key,
@@ -80,6 +84,23 @@ pub trait QueryFunction: Query {
         let _ = (db, cycle, key);
         None
     }
+}
+
+pub enum CycleRecoveryStrategy {
+    /// Cannot recover from cycles: panic.
+    ///
+    /// This is the default. It is also what happens if a cycle
+    /// occurs and the queries involved have different recovery
+    /// strategies.
+    ///
+    /// In the case of a failure due to a cycle, the panic
+    /// value will be XXX (FIXME).
+    Panic,
+
+    /// Recovers from cycles by storing a sentinel value.
+    /// This value is computed by the `QueryFunction::cycle_fallback`
+    /// function.
+    Fallback,
 }
 
 /// Create a query table, which has access to the storage for the query
