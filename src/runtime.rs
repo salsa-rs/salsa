@@ -397,19 +397,19 @@ impl Runtime {
         }
     }
 
-    pub(crate) fn mark_cycle_participants(&self, err: &CycleError<DatabaseKeyIndex>) {
+    pub(crate) fn mark_cycle_participants(&self, participants: &[DatabaseKeyIndex]) {
         for active_query in self
             .local_state
             .borrow_query_stack_mut()
             .iter_mut()
             .rev()
             .take_while(|active_query| {
-                err.cycle
+                participants
                     .iter()
                     .any(|e| *e == active_query.database_key_index)
             })
         {
-            active_query.cycle = err.cycle.clone();
+            active_query.cycle = participants.to_owned();
         }
     }
 

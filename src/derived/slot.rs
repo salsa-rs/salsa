@@ -353,16 +353,11 @@ where
                         ProbeState::UpToDate(if result.cycle.is_empty() {
                             Ok(result.value)
                         } else {
-                            let err = CycleError {
-                                cycle: result.cycle,
-                                changed_at: result.value.changed_at,
-                                durability: result.value.durability,
-                            };
-                            runtime.mark_cycle_participants(&err);
+                            runtime.mark_cycle_participants(&result.cycle);
                             Ok(StampedValue {
-                                value: Q::cycle_fallback(db, &err.cycle, &self.key),
-                                durability: err.durability,
-                                changed_at: err.changed_at,
+                                value: Q::cycle_fallback(db, &result.cycle, &self.key),
+                                durability: result.value.durability,
+                                changed_at: result.value.changed_at,
                             })
                         })
                     }

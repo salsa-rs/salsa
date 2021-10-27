@@ -92,7 +92,7 @@ pub trait QueryFunction: Query {
 
 /// Cycle recovery strategy: Is this query capable of recovering from
 /// a cycle that results from executing the function? If so, how?
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum CycleRecoveryStrategy {
     /// Cannot recover from cycles: panic.
     ///
@@ -244,6 +244,7 @@ pub struct CycleError<K> {
     pub(crate) cycle: Vec<K>,
     pub(crate) changed_at: Revision,
     pub(crate) durability: Durability,
+    // pub(crate) recovery_strategy: CycleRecoveryStrategy,
 }
 
 impl CycleError<DatabaseKeyIndex> {
