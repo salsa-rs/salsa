@@ -38,7 +38,7 @@ impl<T> BlockingFuture<T> {
 }
 
 impl<T> Promise<T> {
-    pub(crate) fn fulfil(mut self, value: T) {
+    pub(crate) fn fulfill(mut self, value: T) {
         self.fulfilled = true;
         self.transition(State::Full(value));
     }

@@ -780,7 +780,7 @@ where
                     // list, notify them that the value is available.
                     Some((new_value, ref cycle)) => {
                         for promise in waiting.into_inner() {
-                            promise.fulfil(WaitResult {
+                            promise.fulfill(WaitResult {
                                 value: new_value.clone(),
                                 cycle: cycle.clone(),
                             });
