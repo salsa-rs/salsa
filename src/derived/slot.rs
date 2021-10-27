@@ -33,9 +33,9 @@ where
 }
 
 #[derive(Clone)]
-struct WaitResult<V, K> {
-    value: StampedValue<V>,
-    cycle: Vec<K>,
+struct WaitResult {
+    value: StampedValue<()>,
+    cycle: Vec<DatabaseKeyIndex>,
 }
 
 /// Defines the "current state" of query's memoized results.
@@ -50,7 +50,7 @@ where
     /// indeeds a cycle.
     InProgress {
         id: RuntimeId,
-        waiting: Mutex<SmallVec<[Promise<WaitResult<Q::Value, DatabaseKeyIndex>>; 2]>>,
+        waiting: Mutex<SmallVec<[Promise<WaitResult>; 2]>>,
     },
 
     /// We have computed the query already, and here is the result.
@@ -100,6 +100,7 @@ pub(super) enum MemoInputs {
 /// Return value of `probe` helper.
 enum ProbeState<V, K, G> {
     UpToDate(Result<V, CycleError<K>>),
+    Retry,
     StaleOrAbsent(G),
 }
 
@@ -138,9 +139,12 @@ where
         info!("{:?}: invoked at {:?}", self, revision_now,);
 
         // First, do a check with a read-lock.
-        match self.probe(db, self.state.read(), runtime, revision_now) {
-            ProbeState::UpToDate(v) => return v,
-            ProbeState::StaleOrAbsent(_guard) => (),
+        loop {
+            match self.probe(db, self.state.read(), runtime, revision_now) {
+                ProbeState::UpToDate(v) => return v,
+                ProbeState::StaleOrAbsent(_guard) => break,
+                ProbeState::Retry => continue,
+            }
         }
 
         self.read_upgrade(db, revision_now)
@@ -162,18 +166,21 @@ where
         // Check with an upgradable read to see if there is a value
         // already. (This permits other readers but prevents anyone
         // else from running `read_upgrade` at the same time.)
-        let old_memo = match self.probe(db, self.state.upgradable_read(), runtime, revision_now) {
-            ProbeState::UpToDate(v) => return v,
-            ProbeState::StaleOrAbsent(state) => {
-                type RwLockUpgradableReadGuard<'a, T> =
-                    lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
+        let old_memo = loop {
+            match self.probe(db, self.state.upgradable_read(), runtime, revision_now) {
+                ProbeState::UpToDate(v) => return v,
+                ProbeState::StaleOrAbsent(state) => {
+                    type RwLockUpgradableReadGuard<'a, T> =
+                        lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
 
-                let mut state = RwLockUpgradableReadGuard::upgrade(state);
-                match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
-                    QueryState::Memoized(old_memo) => Some(old_memo),
-                    QueryState::InProgress { .. } => unreachable!(),
-                    QueryState::NotComputed => None,
+                    let mut state = RwLockUpgradableReadGuard::upgrade(state);
+                    match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
+                        QueryState::Memoized(old_memo) => break Some(old_memo),
+                        QueryState::InProgress { .. } => unreachable!(),
+                        QueryState::NotComputed => break None,
+                    }
                 }
+                ProbeState::Retry => continue,
             }
         };
 
@@ -350,16 +357,16 @@ where
                             "received result from other thread: cycle = {:?}",
                             result.cycle
                         );
-                        ProbeState::UpToDate(if result.cycle.is_empty() {
-                            Ok(result.value)
+                        if result.cycle.is_empty() {
+                            ProbeState::Retry
                         } else {
                             runtime.mark_cycle_participants(&result.cycle);
-                            Ok(StampedValue {
+                            ProbeState::UpToDate(Ok(StampedValue {
                                 value: Q::cycle_fallback(db, &result.cycle, &self.key),
                                 durability: result.value.durability,
                                 changed_at: result.value.changed_at,
-                            })
-                        })
+                            }))
+                        }
                     }
 
                     Err(err) => ProbeState::UpToDate(
@@ -657,8 +664,8 @@ where
         _db: &<Q as QueryDb<'_>>::DynDb,
         runtime: &Runtime,
         other_id: RuntimeId,
-        waiting: &Mutex<SmallVec<[Promise<WaitResult<Q::Value, DatabaseKeyIndex>>; 2]>>,
-    ) -> Result<BlockingFuture<WaitResult<Q::Value, DatabaseKeyIndex>>, CycleDetected> {
+        waiting: &Mutex<SmallVec<[Promise<WaitResult>; 2]>>,
+    ) -> Result<BlockingFuture<WaitResult>, CycleDetected> {
         let id = runtime.id();
         if other_id == id {
             debug!(
@@ -781,7 +788,11 @@ where
                     Some((new_value, ref cycle)) => {
                         for promise in waiting.into_inner() {
                             promise.fulfill(WaitResult {
-                                value: new_value.clone(),
+                                value: StampedValue {
+                                    value: (),
+                                    durability: new_value.durability,
+                                    changed_at: new_value.changed_at,
+                                },
                                 cycle: cycle.clone(),
                             });
                         }
