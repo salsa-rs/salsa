@@ -1,28 +1,24 @@
-use crate::RuntimeId;
+use crate::{DatabaseKeyIndex, RuntimeId};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
-use std::hash::Hash;
 
 #[derive(Debug)]
-pub(super) struct DependencyGraph<K: Hash + Eq> {
+pub(super) struct DependencyGraph {
     /// A `(K -> V)` pair in this map indicates that the the runtime
     /// `K` is blocked on some query executing in the runtime `V`.
     /// This encodes a graph that must be acyclic (or else deadlock
     /// will result).
-    edges: FxHashMap<RuntimeId, Edge<K>>,
-    labels: FxHashMap<K, SmallVec<[RuntimeId; 4]>>,
+    edges: FxHashMap<RuntimeId, Edge>,
+    labels: FxHashMap<DatabaseKeyIndex, SmallVec<[RuntimeId; 4]>>,
 }
 
 #[derive(Debug)]
-struct Edge<K> {
+struct Edge {
     id: RuntimeId,
-    path: Vec<K>,
+    path: Vec<DatabaseKeyIndex>,
 }
 
-impl<K> Default for DependencyGraph<K>
-where
-    K: Hash + Eq,
-{
+impl Default for DependencyGraph {
     fn default() -> Self {
         DependencyGraph {
             edges: Default::default(),
@@ -31,17 +27,14 @@ where
     }
 }
 
-impl<K> DependencyGraph<K>
-where
-    K: Hash + Eq + Clone,
-{
+impl DependencyGraph {
     /// Attempt to add an edge `from_id -> to_id` into the result graph.
     pub(super) fn add_edge(
         &mut self,
         from_id: RuntimeId,
-        database_key: K,
+        database_key: DatabaseKeyIndex,
         to_id: RuntimeId,
-        path: impl IntoIterator<Item = K>,
+        path: impl IntoIterator<Item = DatabaseKeyIndex>,
     ) -> bool {
         assert_ne!(from_id, to_id);
         debug_assert!(!self.edges.contains_key(&from_id));
@@ -71,7 +64,7 @@ where
         true
     }
 
-    pub(super) fn remove_edge(&mut self, database_key: K, to_id: RuntimeId) {
+    pub(super) fn remove_edge(&mut self, database_key: DatabaseKeyIndex, to_id: RuntimeId) {
         let vec = self.labels.remove(&database_key).unwrap_or_default();
 
         for from_id in &vec {
@@ -82,13 +75,11 @@ where
 
     pub(super) fn push_cycle_path(
         &self,
-        database_key: K,
+        database_key: DatabaseKeyIndex,
         to: RuntimeId,
-        local_path: impl IntoIterator<Item = K>,
-        output: &mut Vec<K>,
-    ) where
-        K: std::fmt::Debug,
-    {
+        local_path: impl IntoIterator<Item = DatabaseKeyIndex>,
+        output: &mut Vec<DatabaseKeyIndex>,
+    ) {
         let mut current = Some((to, std::slice::from_ref(&database_key)));
         let mut last = None;
         let mut local_path = Some(local_path);
@@ -121,5 +112,49 @@ where
         if let Some(iter) = &mut last {
             output.extend(iter);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dki(n: u32) -> DatabaseKeyIndex {
+        DatabaseKeyIndex {
+            group_index: 0,
+            query_index: 0,
+            key_index: n,
+        }
+    }
+
+    macro_rules! dkivec {
+        ($($n:expr),*) => {
+            vec![$(dki($n)),*]
+        }
+    }
+
+    #[test]
+    fn dependency_graph_path1() {
+        let mut graph = DependencyGraph::default();
+        let a = RuntimeId { counter: 0 };
+        let b = RuntimeId { counter: 1 };
+        assert!(graph.add_edge(a, dki(2), b, dkivec![1]));
+        let mut v = vec![];
+        graph.push_cycle_path(dki(1), a, dkivec![3, 2], &mut v);
+        assert_eq!(v, vec![dki(1), dki(2)]);
+    }
+
+    #[test]
+    fn dependency_graph_path2() {
+        let mut graph = DependencyGraph::default();
+        let a = RuntimeId { counter: 0 };
+        let b = RuntimeId { counter: 1 };
+        let c = RuntimeId { counter: 2 };
+        assert!(graph.add_edge(a, dki(3), b, dkivec![1]));
+        assert!(graph.add_edge(b, dki(4), c, dkivec![2, 3]));
+        // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
+        let mut v = vec![];
+        graph.push_cycle_path(dki(1), a, dkivec![5, 6, 4, 7], &mut v);
+        assert_eq!(v, dkivec![1, 3, 4, 7]);
     }
 }

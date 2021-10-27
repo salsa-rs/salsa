@@ -470,7 +470,7 @@ struct SharedState {
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
-    dependency_graph: Mutex<DependencyGraph<DatabaseKeyIndex>>,
+    dependency_graph: Mutex<DependencyGraph>,
 }
 
 impl SharedState {
@@ -634,36 +634,5 @@ impl Drop for RevisionGuard {
         unsafe {
             self.shared_state.query_lock.raw().unlock_shared();
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dependency_graph_path1() {
-        let mut graph = DependencyGraph::default();
-        let a = RuntimeId { counter: 0 };
-        let b = RuntimeId { counter: 1 };
-        assert!(graph.add_edge(a, 2, b, vec![1]));
-        // assert!(graph.add_edge(b, &1, a, vec![3, 2]));
-        let mut v = vec![];
-        graph.push_cycle_path(1, a, vec![3, 2], &mut v);
-        assert_eq!(v, vec![1, 2]);
-    }
-
-    #[test]
-    fn dependency_graph_path2() {
-        let mut graph = DependencyGraph::default();
-        let a = RuntimeId { counter: 0 };
-        let b = RuntimeId { counter: 1 };
-        let c = RuntimeId { counter: 2 };
-        assert!(graph.add_edge(a, 3, b, vec![1]));
-        assert!(graph.add_edge(b, 4, c, vec![2, 3]));
-        // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
-        let mut v = vec![];
-        graph.push_cycle_path(1, a, vec![5, 6, 4, 7], &mut v);
-        assert_eq!(v, vec![1, 3, 4, 7]);
     }
 }
