@@ -36,7 +36,8 @@ use test_env_log::test;
 // | Intra  | Fallback | Both     | Tracked   | direct   | cycle_revalidate |
 // | Intra  | Fallback | New      | Tracked   | direct   | cycle_appears |
 // | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears |
-// | Cross  | Fallback | N/A      | Tracked   | both     | parallel_cycle |
+// | Cross  | Fallback | N/A      | Tracked   | both     | parallel/cycles.rs: recover_parallel_cycle |
+// | Cross  | Panic    | N/A      | Tracked   | both     | parallel/cycles.rs: panic_parallel_cycle |
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 struct Error {
@@ -197,43 +198,4 @@ fn cycle_disappears() {
     assert!(db.cycle_a().is_err());
     db.set_should_create_cycle(false);
     assert!(db.cycle_a().is_ok());
-}
-
-#[test]
-fn parallel_cycle() {
-    let _ = env_logger::try_init();
-
-    let db = DatabaseImpl::default();
-    let thread1 = std::thread::spawn({
-        let db = db.snapshot();
-        move || {
-            let result = db.cycle_a();
-            assert!(result.is_err(), "Expected cycle error");
-            let cycle = result.unwrap_err().cycle;
-            assert!(
-                cycle
-                    .iter()
-                    .all(|l| ["cycle_b", "cycle_a"].iter().any(|r| l.contains(r))),
-                "{:#?}",
-                cycle
-            );
-        }
-    });
-
-    let thread2 = std::thread::spawn(move || {
-        let result = db.cycle_c();
-        assert!(result.is_err(), "Expected cycle error");
-        let cycle = result.unwrap_err().cycle;
-        assert!(
-            cycle
-                .iter()
-                .all(|l| ["cycle_b", "cycle_a"].iter().any(|r| l.contains(r))),
-            "{:#?}",
-            cycle
-        );
-    });
-
-    thread1.join().unwrap();
-    thread2.join().unwrap();
-    eprintln!("OK");
 }

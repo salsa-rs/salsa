@@ -26,6 +26,29 @@ pub(crate) trait ParDatabase: Knobs {
 
     /// Invokes `sum2_drop_sum`
     fn sum3_drop_sum(&self, key: &'static str) -> usize;
+
+    // Cycle tests:
+    //
+    // A ───────► B
+    //
+    // ▲          │
+    // └──────────┘
+    //  if key > 0
+    //  && should_cycle
+
+    #[salsa::input]
+    fn should_cycle(&self) -> bool;
+    #[salsa::cycle(crate::cycles::recover_cycle)]
+    #[salsa::invoke(crate::cycles::recover_cycle_a)]
+    fn recover_cycle_a(&self, key: i32) -> i32;
+    #[salsa::cycle(crate::cycles::recover_cycle)]
+    #[salsa::invoke(crate::cycles::recover_cycle_b)]
+    fn recover_cycle_b(&self, key: i32) -> i32;
+
+    #[salsa::invoke(crate::cycles::panic_cycle_a)]
+    fn panic_cycle_a(&self, key: i32) -> i32;
+    #[salsa::invoke(crate::cycles::panic_cycle_b)]
+    fn panic_cycle_b(&self, key: i32) -> i32;
 }
 
 /// Various "knobs" and utilities used by tests to force
