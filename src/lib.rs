@@ -26,7 +26,7 @@ pub mod debug;
 #[doc(hidden)]
 pub mod plumbing;
 
-use crate::plumbing::DatabaseOps;
+use crate::plumbing::CycleError;
 use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
@@ -522,52 +522,6 @@ where
         Q::Storage: plumbing::DerivedQueryStorageOps<Q>,
     {
         self.storage.invalidate(self.db, key)
-    }
-}
-
-/// The error returned when a query could not be resolved due to a cycle
-#[derive(Eq, PartialEq, Clone, Debug)]
-pub struct CycleError<K> {
-    /// The queries that were part of the cycle
-    cycle: Vec<K>,
-    changed_at: Revision,
-    durability: Durability,
-}
-
-impl CycleError<DatabaseKeyIndex> {
-    fn debug<'a, D: ?Sized>(&'a self, db: &'a D) -> impl Debug + 'a
-    where
-        D: DatabaseOps,
-    {
-        struct CycleErrorDebug<'a, D: ?Sized> {
-            db: &'a D,
-            error: &'a CycleError<DatabaseKeyIndex>,
-        }
-
-        impl<'a, D: ?Sized + DatabaseOps> Debug for CycleErrorDebug<'a, D> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                writeln!(f, "Internal error, cycle detected:\n")?;
-                for i in &self.error.cycle {
-                    writeln!(f, "{:?}", i.debug(self.db))?;
-                }
-                Ok(())
-            }
-        }
-
-        CycleErrorDebug { db, error: self }
-    }
-}
-
-impl<K> fmt::Display for CycleError<K>
-where
-    K: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Internal error, cycle detected:\n")?;
-        for i in &self.cycle {
-            writeln!(f, "{:?}", i)?;
-        }
-        Ok(())
     }
 }
 

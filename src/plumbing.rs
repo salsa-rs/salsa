@@ -2,7 +2,6 @@
 
 use crate::debug::TableEntry;
 use crate::durability::Durability;
-use crate::CycleError;
 use crate::Database;
 use crate::Query;
 use crate::QueryTable;
@@ -236,4 +235,50 @@ where
     where
         S: Eq + Hash,
         Q::Key: Borrow<S>;
+}
+
+/// The error returned when a query could not be resolved due to a cycle
+#[derive(Eq, PartialEq, Clone, Debug)]
+pub struct CycleError<K> {
+    /// The queries that were part of the cycle
+    pub(crate) cycle: Vec<K>,
+    pub(crate) changed_at: Revision,
+    pub(crate) durability: Durability,
+}
+
+impl CycleError<DatabaseKeyIndex> {
+    pub(crate) fn debug<'a, D: ?Sized>(&'a self, db: &'a D) -> impl Debug + 'a
+    where
+        D: DatabaseOps,
+    {
+        struct CycleErrorDebug<'a, D: ?Sized> {
+            db: &'a D,
+            error: &'a CycleError<DatabaseKeyIndex>,
+        }
+
+        impl<'a, D: ?Sized + DatabaseOps> Debug for CycleErrorDebug<'a, D> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                writeln!(f, "Internal error, cycle detected:\n")?;
+                for i in &self.error.cycle {
+                    writeln!(f, "{:?}", i.debug(self.db))?;
+                }
+                Ok(())
+            }
+        }
+
+        CycleErrorDebug { db, error: self }
+    }
+}
+
+impl<K> std::fmt::Display for CycleError<K>
+where
+    K: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Internal error, cycle detected:\n")?;
+        for i in &self.cycle {
+            writeln!(f, "{:?}", i)?;
+        }
+        Ok(())
+    }
 }

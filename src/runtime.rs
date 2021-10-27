@@ -1,8 +1,7 @@
 use crate::durability::Durability;
-use crate::plumbing::{CycleDetected, CycleRecoveryStrategy};
+use crate::plumbing::{CycleDetected, CycleError, CycleRecoveryStrategy};
 use crate::revision::{AtomicRevision, Revision};
-use crate::Cancelled;
-use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind};
+use crate::{Cancelled, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};

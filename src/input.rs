@@ -1,12 +1,12 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
+use crate::plumbing::CycleError;
 use crate::plumbing::CycleRecoveryStrategy;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use crate::runtime::{FxIndexMap, StampedValue};
-use crate::CycleError;
 use crate::Database;
 use crate::Query;
 use crate::{DatabaseKeyIndex, QueryDb};
