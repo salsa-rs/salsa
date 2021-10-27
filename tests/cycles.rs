@@ -1,6 +1,43 @@
 use salsa::{ParallelDatabase, Snapshot};
 use test_env_log::test;
 
+// Axes:
+//
+// Threading
+// * Intra-thread
+// * Cross-thread -- part of cycle is on one thread, part on another
+//
+// Recovery strategies:
+// * Panic
+// * Fallback
+// * Mixed -- multiple strategies within cycle participants
+//
+// Across revisions:
+// * N/A -- only one revision
+// * Present in new revision, not old
+// * Present in old revision, not new
+// * Present in both revisions
+//
+// Dependencies
+// * Tracked
+// * Untracked -- cycle participant(s) contain untracked reads
+//
+// Layers
+// * Direct -- cycle participant is directly invoked from test
+// * Indirect -- invoked a query that invokes the cycle
+//
+//
+// | Thread | Recovery | Old, New | Dep style | Layers   | Test Name      |
+// | ------ | -------- | -------- | --------- | ------   | ---------      |
+// | Intra  | Panic    | N/A      | Tracked   | direct   | cycle_memoized |
+// | Intra  | Panic    | N/A      | Untracked | direct   | cycle_volatile |
+// | Intra  | Fallback | N/A      | Tracked   | direct   | cycle_cycle  |
+// | Intra  | Fallback | N/A      | Tracked   | indirect | inner_cycle |
+// | Intra  | Fallback | Both     | Tracked   | direct   | cycle_revalidate |
+// | Intra  | Fallback | New      | Tracked   | direct   | cycle_appears |
+// | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears |
+// | Cross  | Fallback | N/A      | Tracked   | both     | parallel_cycle |
+
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 struct Error {
     cycle: Vec<String>,
@@ -26,7 +63,7 @@ impl Default for DatabaseImpl {
         let mut res = DatabaseImpl {
             storage: salsa::Storage::default(),
         };
-        res.set_cycle_leaf(true);
+        res.set_should_create_cycle(true);
         res
     }
 }
@@ -40,10 +77,11 @@ trait Database: salsa::Database {
     fn volatile_b(&self) -> ();
 
     #[salsa::input]
-    fn cycle_leaf(&self) -> bool;
+    fn should_create_cycle(&self) -> bool;
 
     #[salsa::cycle(recover_a)]
     fn cycle_a(&self) -> Result<(), Error>;
+
     #[salsa::cycle(recover_b)]
     fn cycle_b(&self) -> Result<(), Error>;
 
@@ -86,7 +124,7 @@ fn cycle_a(db: &dyn Database) -> Result<(), Error> {
 }
 
 fn cycle_b(db: &dyn Database) -> Result<(), Error> {
-    if db.cycle_leaf() {
+    if db.should_create_cycle() {
         let _ = db.cycle_a();
     }
     Ok(())
@@ -138,7 +176,7 @@ fn inner_cycle() {
 fn cycle_revalidate() {
     let mut db = DatabaseImpl::default();
     assert!(db.cycle_a().is_err());
-    db.set_cycle_leaf(true);
+    db.set_should_create_cycle(true);
     assert!(db.cycle_a().is_err());
 }
 
@@ -146,9 +184,9 @@ fn cycle_revalidate() {
 #[should_panic] // FIXME -- this reflects current state, not desired state
 fn cycle_appears() {
     let mut db = DatabaseImpl::default();
-    db.set_cycle_leaf(false);
+    db.set_should_create_cycle(false);
     assert!(db.cycle_a().is_ok());
-    db.set_cycle_leaf(true);
+    db.set_should_create_cycle(true);
     log::debug!("Set Cycle Leaf");
     assert!(db.cycle_a().is_err());
 }
@@ -157,7 +195,7 @@ fn cycle_appears() {
 fn cycle_disappears() {
     let mut db = DatabaseImpl::default();
     assert!(db.cycle_a().is_err());
-    db.set_cycle_leaf(false);
+    db.set_should_create_cycle(false);
     assert!(db.cycle_a().is_ok());
 }
 
