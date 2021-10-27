@@ -82,9 +82,12 @@ pub trait QueryFunction: Query {
         db: &<Self as QueryDb<'_>>::DynDb,
         cycle: &[DatabaseKeyIndex],
         key: &Self::Key,
-    ) -> Option<Self::Value> {
+    ) -> Self::Value {
         let _ = (db, cycle, key);
-        None
+        panic!(
+            "query `{:?}` doesn't support cycle fallback",
+            Self::default()
+        )
     }
 }
 

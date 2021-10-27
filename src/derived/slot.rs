@@ -4,7 +4,7 @@ use crate::derived::MemoizationPolicy;
 use crate::durability::Durability;
 use crate::lru::LruIndex;
 use crate::lru::LruNode;
-use crate::plumbing::CycleDetected;
+use crate::plumbing::{CycleDetected, CycleRecoveryStrategy};
 use crate::plumbing::{DatabaseOps, QueryFunction};
 use crate::revision::Revision;
 use crate::runtime::Runtime;
@@ -217,18 +217,7 @@ where
         });
 
         if !result.cycle.is_empty() {
-            result.value = match Q::cycle_fallback(db, &result.cycle, &self.key) {
-                Some(v) => v,
-                None => {
-                    let err = CycleError {
-                        cycle: result.cycle,
-                        durability: result.durability,
-                        changed_at: result.changed_at,
-                    };
-                    panic_guard.report_unexpected_cycle();
-                    return Err(err);
-                }
-            };
+            result.value = Q::cycle_fallback(db, &result.cycle, &self.key);
         }
 
         // We assume that query is side-effect free -- that is, does
@@ -357,6 +346,10 @@ where
                             // the panic hook and bubble up to the thread boundary (or be caught).
                             Cancelled::throw()
                         });
+                        debug!(
+                            "received result from other thread: cycle = {:?}",
+                            result.cycle
+                        );
                         ProbeState::UpToDate(if result.cycle.is_empty() {
                             Ok(result.value)
                         } else {
@@ -366,33 +359,29 @@ where
                                 durability: result.value.durability,
                             };
                             runtime.mark_cycle_participants(&err);
-                            Q::cycle_fallback(db, &err.cycle, &self.key)
-                                .map(|value| StampedValue {
-                                    value,
-                                    durability: err.durability,
-                                    changed_at: err.changed_at,
-                                })
-                                .ok_or(err)
+                            Ok(StampedValue {
+                                value: Q::cycle_fallback(db, &err.cycle, &self.key),
+                                durability: err.durability,
+                                changed_at: err.changed_at,
+                            })
                         })
                     }
 
-                    Err(err) => {
-                        let err = runtime.report_unexpected_cycle(
+                    Err(err) => ProbeState::UpToDate(
+                        match runtime.report_unexpected_cycle(
                             db.ops_database(),
                             self.database_key_index,
                             err,
                             revision_now,
-                        );
-                        ProbeState::UpToDate(
-                            Q::cycle_fallback(db, &err.cycle, &self.key)
-                                .map(|value| StampedValue {
-                                    value,
-                                    changed_at: err.changed_at,
-                                    durability: err.durability,
-                                })
-                                .ok_or(err),
-                        )
-                    }
+                        ) {
+                            (CycleRecoveryStrategy::Panic, err) => Err(err),
+                            (CycleRecoveryStrategy::Fallback, err) => Ok(StampedValue {
+                                value: Q::cycle_fallback(db, &err.cycle, &self.key),
+                                changed_at: err.changed_at,
+                                durability: err.durability,
+                            }),
+                        },
+                    ),
                 };
             }
 
@@ -677,9 +666,17 @@ where
     ) -> Result<BlockingFuture<WaitResult<Q::Value, DatabaseKeyIndex>>, CycleDetected> {
         let id = runtime.id();
         if other_id == id {
+            debug!(
+                "register_with_in_progress_thread: runtime {:?} cannot block on self",
+                id
+            );
             Err(CycleDetected { from: id, to: id })
         } else {
             if !runtime.try_block_on(self.database_key_index, other_id) {
+                debug!(
+                    "register_with_in_progress_thread: runtime {:?} cannot block on {:?}, cycle detected",
+                    id, other_id
+                );
                 return Err(CycleDetected {
                     from: id,
                     to: other_id,
@@ -691,6 +688,11 @@ where
             // The reader of this will have to acquire map
             // lock, we don't need any particular ordering.
             waiting.lock().push(promise);
+
+            debug!(
+                "register_with_in_progress_thread: runtime {:?} blocked on {:?}",
+                id, other_id
+            );
 
             Ok(future)
         }
@@ -748,11 +750,6 @@ where
     /// are out of scope.
     fn proceed(mut self, new_value: &StampedValue<Q::Value>, cycle: Vec<DatabaseKeyIndex>) {
         self.overwrite_placeholder(Some((new_value, cycle)));
-        std::mem::forget(self)
-    }
-
-    fn report_unexpected_cycle(mut self) {
-        self.overwrite_placeholder(None);
         std::mem::forget(self)
     }
 

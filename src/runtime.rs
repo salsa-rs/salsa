@@ -292,7 +292,7 @@ impl Runtime {
         database_key_index: DatabaseKeyIndex,
         error: CycleDetected,
         changed_at: Revision,
-    ) -> crate::CycleError<DatabaseKeyIndex> {
+    ) -> (CycleRecoveryStrategy, crate::CycleError<DatabaseKeyIndex>) {
         debug!(
             "report_unexpected_cycle(database_key={:?})",
             database_key_index
@@ -304,11 +304,14 @@ impl Runtime {
             "cycle recovery strategy {:?} for participants {:?}",
             crs, cycle
         );
-        CycleError {
-            cycle,
-            changed_at,
-            durability: Durability::MAX,
-        }
+        (
+            crs,
+            CycleError {
+                cycle,
+                changed_at,
+                durability: Durability::MAX,
+            },
+        )
     }
 
     fn mutual_cycle_recovery_strategy(
