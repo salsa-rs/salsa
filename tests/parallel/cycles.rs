@@ -116,7 +116,7 @@ fn recover_parallel_cycle() {
 
 #[test]
 fn panic_parallel_cycle() {
-    let mut db = ParDatabaseImpl::default();
+    let db = ParDatabaseImpl::default();
     db.knobs().signal_on_will_block.set(3);
 
     let thread_a = std::thread::spawn({
