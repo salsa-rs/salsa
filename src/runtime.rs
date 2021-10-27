@@ -418,15 +418,22 @@ impl Runtime {
     /// Try to make this runtime blocked on `other_id`. Returns true
     /// upon success or false if `other_id` is already blocked on us.
     pub(crate) fn try_block_on(&self, database_key: DatabaseKeyIndex, other_id: RuntimeId) -> bool {
-        self.shared_state.dependency_graph.lock().add_edge(
-            self.id(),
-            database_key,
-            other_id,
-            self.local_state
-                .borrow_query_stack()
-                .iter()
-                .map(|query| query.database_key_index),
-        )
+        let mut dg = self.shared_state.dependency_graph.lock();
+
+        if dg.depends_on(other_id, self.id()) {
+            false
+        } else {
+            dg.add_edge(
+                self.id(),
+                database_key,
+                other_id,
+                self.local_state
+                    .borrow_query_stack()
+                    .iter()
+                    .map(|query| query.database_key_index),
+            );
+            true
+        }
     }
 
     pub(crate) fn unblock_queries_blocked_on_self(&self, database_key_index: DatabaseKeyIndex) {

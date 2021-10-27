@@ -28,27 +28,35 @@ impl Default for DependencyGraph {
 }
 
 impl DependencyGraph {
-    /// Attempt to add an edge `from_id -> to_id` into the result graph.
+    /// True if `from_id` depends on `to_id`.
+    ///
+    /// (i.e., there is a path from `from_id` to `to_id` in the graph.)
+    pub(super) fn depends_on(&mut self, from_id: RuntimeId, to_id: RuntimeId) -> bool {
+        let mut p = from_id;
+        while let Some(q) = self.edges.get(&p).map(|edge| edge.id) {
+            if q == to_id {
+                return true;
+            }
+
+            p = q;
+        }
+        false
+    }
+
+    /// Attempt to add an edge `from_id -> to_id` into the result graph,
+    /// meaning that `from_id` is blocked on `to_id`.
+    ///
+    /// Precondition: No path from `to_id` to `from_id`.
     pub(super) fn add_edge(
         &mut self,
         from_id: RuntimeId,
         database_key: DatabaseKeyIndex,
         to_id: RuntimeId,
         path: impl IntoIterator<Item = DatabaseKeyIndex>,
-    ) -> bool {
+    ) {
         assert_ne!(from_id, to_id);
         debug_assert!(!self.edges.contains_key(&from_id));
-
-        // First: walk the chain of things that `to_id` depends on,
-        // looking for us.
-        let mut p = to_id;
-        while let Some(q) = self.edges.get(&p).map(|edge| edge.id) {
-            if q == from_id {
-                return false;
-            }
-
-            p = q;
-        }
+        debug_assert!(!self.depends_on(to_id, from_id));
 
         self.edges.insert(
             from_id,
@@ -61,7 +69,6 @@ impl DependencyGraph {
             .entry(database_key.clone())
             .or_default()
             .push(from_id);
-        true
     }
 
     pub(super) fn remove_edge(&mut self, database_key: DatabaseKeyIndex, to_id: RuntimeId) {
@@ -138,7 +145,7 @@ mod tests {
         let mut graph = DependencyGraph::default();
         let a = RuntimeId { counter: 0 };
         let b = RuntimeId { counter: 1 };
-        assert!(graph.add_edge(a, dki(2), b, dkivec![1]));
+        graph.add_edge(a, dki(2), b, dkivec![1]);
         let mut v = vec![];
         graph.push_cycle_path(dki(1), a, dkivec![3, 2], &mut v);
         assert_eq!(v, vec![dki(1), dki(2)]);
@@ -150,8 +157,8 @@ mod tests {
         let a = RuntimeId { counter: 0 };
         let b = RuntimeId { counter: 1 };
         let c = RuntimeId { counter: 2 };
-        assert!(graph.add_edge(a, dki(3), b, dkivec![1]));
-        assert!(graph.add_edge(b, dki(4), c, dkivec![2, 3]));
+        graph.add_edge(a, dki(3), b, dkivec![1]);
+        graph.add_edge(b, dki(4), c, dkivec![2, 3]);
         // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
         let mut v = vec![];
         graph.push_cycle_path(dki(1), a, dkivec![5, 6, 4, 7], &mut v);
