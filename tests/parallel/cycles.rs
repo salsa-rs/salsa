@@ -97,7 +97,7 @@ pub(crate) fn panic_cycle_b(db: &dyn ParDatabase, key: i32) -> i32 {
 
 #[test]
 fn recover_parallel_cycle() {
-    let mut db = ParDatabaseImpl::default();
+    let db = ParDatabaseImpl::default();
     db.knobs().signal_on_will_block.set(3);
 
     let thread_a = std::thread::spawn({
