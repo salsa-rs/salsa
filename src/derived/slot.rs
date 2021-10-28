@@ -11,6 +11,7 @@ use crate::revision::Revision;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
+use crate::runtime::WaitResult;
 use crate::{Cancelled, Database, DatabaseKeyIndex, Event, EventKind, QueryDb};
 use log::{debug, info};
 use parking_lot::Mutex;
@@ -30,12 +31,6 @@ where
     state: RwLock<QueryState<Q>>,
     policy: PhantomData<MP>,
     lru_index: LruIndex,
-}
-
-#[derive(Clone)]
-struct WaitResult {
-    value: StampedValue<()>,
-    cycle: Vec<DatabaseKeyIndex>,
 }
 
 /// Defines the "current state" of query's memoized results.

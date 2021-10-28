@@ -42,6 +42,12 @@ pub struct Runtime {
     shared_state: Arc<SharedState>,
 }
 
+#[derive(Clone)]
+pub(crate) struct WaitResult {
+    pub(crate) value: StampedValue<()>,
+    pub(crate) cycle: Vec<DatabaseKeyIndex>,
+}
+
 impl Default for Runtime {
     fn default() -> Self {
         Runtime {
