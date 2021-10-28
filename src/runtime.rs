@@ -423,7 +423,8 @@ impl Runtime {
         if dg.depends_on(other_id, self.id()) {
             false
         } else {
-            dg.add_edge(
+            DependencyGraph::block_on(
+                dg,
                 self.id(),
                 database_key,
                 other_id,

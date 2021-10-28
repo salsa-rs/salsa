@@ -1,4 +1,5 @@
 use crate::{DatabaseKeyIndex, RuntimeId};
+use parking_lot::MutexGuard;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
@@ -37,11 +38,33 @@ impl DependencyGraph {
         false
     }
 
-    /// Attempt to add an edge `from_id -> to_id` into the result graph,
-    /// meaning that `from_id` is blocked on `to_id`.
+    /// Modifies the graph so that `from_id` is blocked
+    /// on `database_key`, which is being computed by
+    /// `to_id`.
     ///
-    /// Precondition: No path from `to_id` to `from_id`.
-    pub(super) fn add_edge(
+    /// For this to be reasonable, the lock on the
+    /// results table for `database_key` must be held.
+    /// This ensures that computing `database_key` doesn't
+    /// complete before `block_on` executes.
+    ///
+    /// Preconditions:
+    /// * No path from `to_id` to `from_id`
+    ///   (i.e., `me.depends_on(to_id, from_id)` is false)
+    /// * Read lock (or stronger) on `database_key` table is held
+    pub(super) fn block_on(
+        mut me: MutexGuard<'_, Self>,
+        from_id: RuntimeId,
+        database_key: DatabaseKeyIndex,
+        to_id: RuntimeId,
+        path: impl IntoIterator<Item = DatabaseKeyIndex>,
+    ) {
+        me.add_edge(from_id, database_key, to_id, path);
+    }
+
+    /// Helper for `block_on`: performs actual graph modification
+    /// to add a dependency edge from `from_id` to `to_id`, which is
+    /// computing `database_key`.
+    fn add_edge(
         &mut self,
         from_id: RuntimeId,
         database_key: DatabaseKeyIndex,
