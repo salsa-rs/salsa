@@ -2,7 +2,7 @@ use crate::{DatabaseKeyIndex, RuntimeId};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(super) struct DependencyGraph {
     /// A `(K -> V)` pair in this map indicates that the the runtime
     /// `K` is blocked on some query executing in the runtime `V`.
@@ -19,15 +19,6 @@ pub(super) struct DependencyGraph {
 struct Edge {
     id: RuntimeId,
     path: Vec<DatabaseKeyIndex>,
-}
-
-impl Default for DependencyGraph {
-    fn default() -> Self {
-        DependencyGraph {
-            edges: Default::default(),
-            query_dependents: Default::default(),
-        }
-    }
 }
 
 impl DependencyGraph {
