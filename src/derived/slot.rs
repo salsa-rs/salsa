@@ -1,4 +1,3 @@
-use crate::blocking_future::{BlockingFuture, Promise};
 use crate::debug::TableEntry;
 use crate::derived::MemoizationPolicy;
 use crate::durability::Durability;
@@ -14,11 +13,10 @@ use crate::runtime::StampedValue;
 use crate::runtime::WaitResult;
 use crate::{Cancelled, Database, DatabaseKeyIndex, Event, EventKind, QueryDb};
 use log::{debug, info};
-use parking_lot::Mutex;
 use parking_lot::{RawRwLock, RwLock};
-use smallvec::SmallVec;
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 pub(super) struct Slot<Q, MP>
@@ -41,11 +39,13 @@ where
     NotComputed,
 
     /// The runtime with the given id is currently computing the
-    /// result of this query; if we see this value in the table, it
-    /// indeeds a cycle.
+    /// result of this query.
     InProgress {
         id: RuntimeId,
-        waiting: Mutex<SmallVec<[Promise<WaitResult>; 2]>>,
+
+        /// Set to true if any other queries are blocked,
+        /// waiting for this query to complete.
+        anyone_waiting: AtomicBool,
     },
 
     /// We have computed the query already, and here is the result.
@@ -327,27 +327,21 @@ where
         match &*state {
             QueryState::NotComputed => { /* fall through */ }
 
-            QueryState::InProgress { id, waiting } => {
+            QueryState::InProgress { id, anyone_waiting } => {
                 let other_id = *id;
-                return match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
-                    Ok(future) => {
-                        // Release our lock on `self.state`, so other thread can complete.
-                        std::mem::drop(state);
 
-                        db.salsa_event(Event {
-                            runtime_id: runtime.id(),
-                            kind: EventKind::WillBlockOn {
-                                other_runtime_id: other_id,
-                                database_key: self.database_key_index,
-                            },
-                        });
+                // NB: `Ordering::Relaxed` is sufficient here,
+                // as there are no loads that are "gated" on this
+                // value. Everything that is written is also protected
+                // by a lock that must be acquired. The role of this
+                // boolean is to decide *whether* to acquire the lock,
+                // not to gate future atomic reads.
+                anyone_waiting.store(true, Ordering::Relaxed);
 
-                        let result = future.wait().unwrap_or_else(|| {
-                            // If the other thread panics, we treat this as cancellation: there is no
-                            // need to panic ourselves, since the original panic will already invoke
-                            // the panic hook and bubble up to the thread boundary (or be caught).
-                            Cancelled::throw()
-                        });
+                return match self.block_on_in_progress_thread(db, runtime, other_id, state) {
+                    // If other thread panicked, consider ourselves to be cancelled.
+                    Ok(None) => Cancelled::throw(),
+                    Ok(Some(result)) => {
                         debug!(
                             "received result from other thread: cycle = {:?}",
                             result.cycle
@@ -493,24 +487,35 @@ where
             // This value is being actively recomputed. Wait for
             // that thread to finish (assuming it's not dependent
             // on us...) and check its associated revision.
-            QueryState::InProgress { id, waiting } => {
+            QueryState::InProgress { id, anyone_waiting } => {
                 let other_id = *id;
                 debug!(
                     "maybe_changed_since({:?}): blocking on thread `{:?}`",
                     self, other_id,
                 );
-                match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
-                    Ok(future) => {
-                        // Release our lock on `self.state`, so other thread can complete.
-                        std::mem::drop(state);
 
-                        let result = future.wait().unwrap_or_else(|| Cancelled::throw());
-                        return !result.cycle.is_empty() || result.value.changed_at > revision;
+                // NB: `Ordering::Relaxed` is sufficient here,
+                // see `probe` for more details.
+                anyone_waiting.store(true, Ordering::Relaxed);
+
+                return match self.block_on_in_progress_thread(db, runtime, other_id, state) {
+                    Ok(None) => Cancelled::throw(),
+                    Ok(Some(result)) => {
+                        debug!(
+                            "received result from other thread: cycle = {:?}",
+                            result.cycle
+                        );
+                        if !result.cycle.is_empty() {
+                            // Consider cycles to have changed.
+                            true
+                        } else {
+                            result.value.changed_at > revision
+                        }
                     }
 
-                    // Consider a cycle to have changed.
-                    Err(_) => return true,
-                }
+                    // Consider cycles to have changed.
+                    Err(_) => true,
+                };
             }
 
             QueryState::Memoized(memo) => memo,
@@ -651,48 +656,22 @@ where
     ///
     /// When we encounter an `InProgress` indicator, we need to either
     /// report a cycle or else register ourselves to be notified when
-    /// that work completes. This helper does that; it returns a port
-    /// where you can wait for the final value that wound up being
-    /// computed (but first drop the lock on the map).
-    fn register_with_in_progress_thread(
+    /// that work completes. This helper does that. If a cycle is detected,
+    /// it returns immediately, but otherwise it blocks `self.database_key_index`
+    /// has completed and returns the corresponding result.
+    fn block_on_in_progress_thread<MutexGuard>(
         &self,
-        _db: &<Q as QueryDb<'_>>::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         runtime: &Runtime,
         other_id: RuntimeId,
-        waiting: &Mutex<SmallVec<[Promise<WaitResult>; 2]>>,
-    ) -> Result<BlockingFuture<WaitResult>, CycleDetected> {
-        let id = runtime.id();
-        if other_id == id {
-            debug!(
-                "register_with_in_progress_thread: runtime {:?} cannot block on self",
-                id
-            );
-            Err(CycleDetected { from: id, to: id })
-        } else {
-            if !runtime.try_block_on(self.database_key_index, other_id) {
-                debug!(
-                    "register_with_in_progress_thread: runtime {:?} cannot block on {:?}, cycle detected",
-                    id, other_id
-                );
-                return Err(CycleDetected {
-                    from: id,
-                    to: other_id,
-                });
-            }
-
-            let (future, promise) = BlockingFuture::new();
-
-            // The reader of this will have to acquire map
-            // lock, we don't need any particular ordering.
-            waiting.lock().push(promise);
-
-            debug!(
-                "register_with_in_progress_thread: runtime {:?} blocked on {:?}",
-                id, other_id
-            );
-
-            Ok(future)
-        }
+        mutex_guard: MutexGuard,
+    ) -> Result<Option<WaitResult>, CycleDetected> {
+        runtime.try_block_on(
+            db.ops_database(),
+            self.database_key_index,
+            other_id,
+            mutex_guard,
+        )
     }
 
     fn should_memoize_value(&self, key: &Q::Key) -> bool {
@@ -707,7 +686,7 @@ where
     fn in_progress(id: RuntimeId) -> Self {
         QueryState::InProgress {
             id,
-            waiting: Default::default(),
+            anyone_waiting: Default::default(),
         }
     }
 }
@@ -771,25 +750,25 @@ where
         };
 
         match old_value {
-            QueryState::InProgress { id, waiting } => {
+            QueryState::InProgress { id, anyone_waiting } => {
                 assert_eq!(id, self.runtime.id());
 
-                let opt_wait_result = new_value.map(|(new_value, ref cycle)| WaitResult {
-                    value: StampedValue {
-                        value: (),
-                        durability: new_value.durability,
-                        changed_at: new_value.changed_at,
-                    },
-                    cycle: cycle.clone(),
-                });
+                // NB: As noted on the `store`, `Ordering::Relaxed` is
+                // sufficient here. This boolean signals us on whether to
+                // acquire a mutex; the mutex will guarantee that all writes
+                // we are interested in are visible.
+                if anyone_waiting.load(Ordering::Relaxed) {
+                    let opt_wait_result = new_value.map(|(new_value, ref cycle)| WaitResult {
+                        value: StampedValue {
+                            value: (),
+                            durability: new_value.durability,
+                            changed_at: new_value.changed_at,
+                        },
+                        cycle: cycle.clone(),
+                    });
 
-                self.runtime
-                    .unblock_queries_blocked_on(self.database_key_index, opt_wait_result.clone());
-
-                if let Some(wait_result) = opt_wait_result {
-                    for w in waiting.into_inner() {
-                        w.fulfill(wait_result.clone());
-                    }
+                    self.runtime
+                        .unblock_queries_blocked_on(self.database_key_index, opt_wait_result);
                 }
             }
             _ => panic!(

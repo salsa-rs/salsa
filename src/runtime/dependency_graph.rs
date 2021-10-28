@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::runtime::WaitResult;
 use crate::{DatabaseKeyIndex, RuntimeId};
 use parking_lot::MutexGuard;
@@ -19,7 +21,11 @@ pub(super) struct DependencyGraph {
     /// When a key K completes which had dependent queries Qs blocked on it,
     /// it stores its `WaitResult` here. As they wake up, each query Q in Qs will
     /// come here to fetch their results.
-    wait_resuilts: FxHashMap<RuntimeId, WaitResult>,
+    wait_results: FxHashMap<RuntimeId, Option<WaitResult>>,
+
+    /// Signalled whenever a query with dependents completes.
+    /// Allows those dependents to check if they are ready to unblock.
+    condvar: Arc<parking_lot::Condvar>,
 }
 
 #[derive(Debug)]
@@ -56,15 +62,32 @@ impl DependencyGraph {
     /// Preconditions:
     /// * No path from `to_id` to `from_id`
     ///   (i.e., `me.depends_on(to_id, from_id)` is false)
-    /// * Read lock (or stronger) on `database_key` table is held
-    pub(super) fn block_on(
+    /// * `held_mutex` is a read lock (or stronger) on `database_key`
+    pub(super) fn block_on<QueryMutexGuard>(
         mut me: MutexGuard<'_, Self>,
         from_id: RuntimeId,
         database_key: DatabaseKeyIndex,
         to_id: RuntimeId,
         path: impl IntoIterator<Item = DatabaseKeyIndex>,
-    ) {
+        query_mutex_guard: QueryMutexGuard,
+    ) -> Option<WaitResult> {
         me.add_edge(from_id, database_key, to_id, path);
+
+        // Release the mut&mut meex that prevents `database_key`
+        // from completing, now that the edge has been added.
+        drop(query_mutex_guard);
+
+        // Condvar is in an Arc so that the type system knows
+        // that nobody frees it while we are waiting:
+        let condvar = me.condvar.clone();
+
+        loop {
+            if let Some(wait_result) = me.wait_results.remove(&from_id) {
+                debug_assert!(!me.edges.contains_key(&from_id));
+                return wait_result;
+            }
+            condvar.wait(&mut me);
+        }
     }
 
     /// Helper for `block_on`: performs actual graph modification
@@ -104,12 +127,13 @@ impl DependencyGraph {
     ) {
         let dependents = self.remove_edge(database_key, to_id);
 
-        // FIXME: Not ready for this yet
-        //
-        // for d in dependents {
-        //    self.wait_resuilts.insert(d, wait_result.clone());
-        // }
-        drop(dependents);
+        for d in dependents {
+            self.wait_results.insert(d, wait_result.clone());
+        }
+
+        // Now that we have inserted the `wait_results`,
+        // notify all potential dependents.
+        self.condvar.notify_all();
     }
 
     /// Remove all dependency edges into `database_key`

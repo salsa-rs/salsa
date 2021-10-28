@@ -8,7 +8,6 @@
 //! re-execute the derived queries and it will try to re-use results
 //! from previous invocations as appropriate.
 
-mod blocking_future;
 mod derived;
 mod doctest;
 mod durability;

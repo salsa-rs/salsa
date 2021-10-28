@@ -423,13 +423,30 @@ impl Runtime {
 
     /// Try to make this runtime blocked on `other_id`. Returns true
     /// upon success or false if `other_id` is already blocked on us.
-    pub(crate) fn try_block_on(&self, database_key: DatabaseKeyIndex, other_id: RuntimeId) -> bool {
+    pub(crate) fn try_block_on<QueryMutexGuard>(
+        &self,
+        db: &dyn Database,
+        database_key: DatabaseKeyIndex,
+        other_id: RuntimeId,
+        query_mutex_guard: QueryMutexGuard,
+    ) -> Result<Option<WaitResult>, CycleDetected> {
         let mut dg = self.shared_state.dependency_graph.lock();
 
-        if dg.depends_on(other_id, self.id()) {
-            false
+        if self.id() == other_id || dg.depends_on(other_id, self.id()) {
+            Err(CycleDetected {
+                from: self.id(),
+                to: other_id,
+            })
         } else {
-            DependencyGraph::block_on(
+            db.salsa_event(Event {
+                runtime_id: self.id(),
+                kind: EventKind::WillBlockOn {
+                    other_runtime_id: other_id,
+                    database_key: database_key,
+                },
+            });
+
+            Ok(DependencyGraph::block_on(
                 dg,
                 self.id(),
                 database_key,
@@ -438,8 +455,8 @@ impl Runtime {
                     .borrow_query_stack()
                     .iter()
                     .map(|query| query.database_key_index),
-            );
-            true
+                query_mutex_guard,
+            ))
         }
     }
 
