@@ -305,16 +305,26 @@ impl Runtime {
             database_key_index
         );
 
-        let cycle = self.find_cycle_participants(database_key_index, error);
-        let crs = self.mutual_cycle_recovery_strategy(db, &cycle);
+        let mut cycle_participants = vec![];
+        let mut stack = self.local_state.take_query_stack();
+        let mut dg = self.shared_state.dependency_graph.lock();
+        dg.for_each_cycle_participant(error.from, &mut stack, database_key_index, error.to, |aq| {
+            cycle_participants.push(aq.database_key_index)
+        });
+        dg.for_each_cycle_participant(error.from, &mut stack, database_key_index, error.to, |aq| {
+            aq.cycle = cycle_participants.clone()
+        });
+        self.local_state.restore_query_stack(stack);
+        let crs = self.mutual_cycle_recovery_strategy(db, &cycle_participants);
         debug!(
             "cycle recovery strategy {:?} for participants {:?}",
-            crs, cycle
+            crs, cycle_participants
         );
+
         (
             crs,
             CycleError {
-                cycle,
+                cycle: cycle_participants,
                 changed_at,
                 durability: Durability::MAX,
             },
@@ -339,85 +349,6 @@ impl Runtime {
             CycleRecoveryStrategy::Panic
         } else {
             crs
-        }
-    }
-
-    fn find_cycle_participants(
-        &self,
-        database_key_index: DatabaseKeyIndex,
-        error: CycleDetected,
-    ) -> Vec<DatabaseKeyIndex> {
-        let mut query_stack = self.local_state.borrow_query_stack_mut();
-
-        if error.from == error.to {
-            // All queries in the cycle is local
-            let start_index = match query_stack
-                .iter()
-                .rposition(|active_query| active_query.database_key_index == database_key_index)
-            {
-                Some(i) => i,
-                None => panic!(
-                    "did not find {:?} on the stack: {:?}",
-                    database_key_index,
-                    query_stack
-                        .iter()
-                        .map(|s| s.database_key_index)
-                        .collect::<Vec<_>>()
-                ),
-            };
-            let mut cycle = Vec::new();
-            let cycle_participants = &mut query_stack[start_index..];
-            for active_query in &mut *cycle_participants {
-                cycle.push(active_query.database_key_index);
-            }
-
-            assert!(!cycle.is_empty());
-
-            for active_query in cycle_participants {
-                active_query.cycle = cycle.clone();
-            }
-
-            cycle
-        } else {
-            // Part of the cycle is on another thread so we need to lock and inspect the shared
-            // state
-            let dependency_graph = self.shared_state.dependency_graph.lock();
-
-            let mut cycle = Vec::new();
-            dependency_graph.push_cycle_path(
-                database_key_index,
-                error.to,
-                query_stack.iter().map(|query| query.database_key_index),
-                &mut cycle,
-            );
-            cycle.push(database_key_index);
-
-            assert!(!cycle.is_empty());
-
-            for active_query in query_stack
-                .iter_mut()
-                .filter(|query| cycle.iter().any(|key| *key == query.database_key_index))
-            {
-                active_query.cycle = cycle.clone();
-            }
-
-            cycle
-        }
-    }
-
-    pub(crate) fn mark_cycle_participants(&self, participants: &[DatabaseKeyIndex]) {
-        for active_query in self
-            .local_state
-            .borrow_query_stack_mut()
-            .iter_mut()
-            .rev()
-            .take_while(|active_query| {
-                participants
-                    .iter()
-                    .any(|e| *e == active_query.database_key_index)
-            })
-        {
-            active_query.cycle = participants.to_owned();
         }
     }
 
@@ -446,17 +377,20 @@ impl Runtime {
                 },
             });
 
-            Ok(DependencyGraph::block_on(
+            let stack = self.local_state.take_query_stack();
+
+            let (stack, result) = DependencyGraph::block_on(
                 dg,
                 self.id(),
                 database_key,
                 other_id,
-                self.local_state
-                    .borrow_query_stack()
-                    .iter()
-                    .map(|query| query.database_key_index),
+                stack,
                 query_mutex_guard,
-            ))
+            );
+
+            self.local_state.restore_query_stack(stack);
+
+            Ok(result)
         }
     }
 
@@ -550,6 +484,7 @@ impl std::fmt::Debug for SharedState {
     }
 }
 
+#[derive(Debug)]
 struct ActiveQuery {
     /// What query is executing
     database_key_index: DatabaseKeyIndex,

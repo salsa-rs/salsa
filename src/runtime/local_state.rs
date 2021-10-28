@@ -2,7 +2,7 @@ use crate::durability::Durability;
 use crate::runtime::ActiveQuery;
 use crate::runtime::Revision;
 use crate::DatabaseKeyIndex;
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::RefCell;
 
 /// State that is specific to a single execution thread.
 ///
@@ -13,15 +13,18 @@ use std::cell::{Ref, RefCell, RefMut};
 pub(super) struct LocalState {
     /// Vector of active queries.
     ///
+    /// This is normally `Some`, but it is set to `None`
+    /// while the query is blocked waiting for a result.
+    ///
     /// Unwinding note: pushes onto this vector must be popped -- even
     /// during unwinding.
-    query_stack: RefCell<Vec<ActiveQuery>>,
+    query_stack: RefCell<Option<Vec<ActiveQuery>>>,
 }
 
 impl Default for LocalState {
     fn default() -> Self {
         LocalState {
-            query_stack: Default::default(),
+            query_stack: RefCell::new(Some(Vec::new())),
         }
     }
 }
@@ -33,6 +36,7 @@ impl LocalState {
         max_durability: Durability,
     ) -> ActiveQueryGuard<'_> {
         let mut query_stack = self.query_stack.borrow_mut();
+        let query_stack = query_stack.as_mut().expect("local stack taken");
         query_stack.push(ActiveQuery::new(database_key_index, max_durability));
         ActiveQueryGuard {
             local_state: self,
@@ -40,28 +44,24 @@ impl LocalState {
         }
     }
 
-    /// Returns a reference to the active query stack.
-    ///
-    /// **Warning:** Because this reference holds the ref-cell lock,
-    /// you should not use any mutating methods of `LocalState` while
-    /// reading from it.
-    pub(super) fn borrow_query_stack(&self) -> Ref<'_, Vec<ActiveQuery>> {
-        self.query_stack.borrow()
-    }
-
-    pub(super) fn borrow_query_stack_mut(&self) -> RefMut<'_, Vec<ActiveQuery>> {
-        self.query_stack.borrow_mut()
+    fn with_query_stack<R>(&self, c: impl FnOnce(&mut Vec<ActiveQuery>) -> R) -> R {
+        c(self
+            .query_stack
+            .borrow_mut()
+            .as_mut()
+            .expect("query stack taken"))
     }
 
     pub(super) fn query_in_progress(&self) -> bool {
-        !self.query_stack.borrow().is_empty()
+        self.with_query_stack(|stack| !stack.is_empty())
     }
 
     pub(super) fn active_query(&self) -> Option<DatabaseKeyIndex> {
-        self.query_stack
-            .borrow()
-            .last()
-            .map(|active_query| active_query.database_key_index)
+        self.with_query_stack(|stack| {
+            stack
+                .last()
+                .map(|active_query| active_query.database_key_index)
+        })
     }
 
     pub(super) fn report_query_read(
@@ -70,21 +70,45 @@ impl LocalState {
         durability: Durability,
         changed_at: Revision,
     ) {
-        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_read(input, durability, changed_at);
-        }
+        self.with_query_stack(|stack| {
+            if let Some(top_query) = stack.last_mut() {
+                top_query.add_read(input, durability, changed_at);
+            }
+        })
     }
 
     pub(super) fn report_untracked_read(&self, current_revision: Revision) {
-        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_untracked_read(current_revision);
-        }
+        self.with_query_stack(|stack| {
+            if let Some(top_query) = stack.last_mut() {
+                top_query.add_untracked_read(current_revision);
+            }
+        })
     }
 
     pub(super) fn report_synthetic_read(&self, durability: Durability, current_revision: Revision) {
-        if let Some(top_query) = self.query_stack.borrow_mut().last_mut() {
-            top_query.add_synthetic_read(durability, current_revision);
-        }
+        self.with_query_stack(|stack| {
+            if let Some(top_query) = stack.last_mut() {
+                top_query.add_synthetic_read(durability, current_revision);
+            }
+        })
+    }
+
+    /// Takes the query stack and returns it. This is used when
+    /// the current thread is blocking. The stack must be restored
+    /// with [`Self::restore_query_stack`] when the thread unblocks.
+    pub(super) fn take_query_stack(&self) -> Vec<ActiveQuery> {
+        assert!(
+            self.query_stack.borrow().is_some(),
+            "query stack already taken"
+        );
+        self.query_stack.replace(None).unwrap()
+    }
+
+    /// Restores a query stack taken with [`Self::take_query_stack`] once
+    /// the thread unblocks.
+    pub(super) fn restore_query_stack(&self, stack: Vec<ActiveQuery>) {
+        assert!(self.query_stack.borrow().is_none(), "query stack not taken");
+        self.query_stack.replace(Some(stack));
     }
 }
 
@@ -101,12 +125,12 @@ pub(super) struct ActiveQueryGuard<'me> {
 
 impl ActiveQueryGuard<'_> {
     fn pop_helper(&self) -> ActiveQuery {
-        let mut query_stack = self.local_state.query_stack.borrow_mut();
+        self.local_state.with_query_stack(|stack| {
+            // Sanity check: pushes and pops should be balanced.
+            assert_eq!(stack.len(), self.push_len);
 
-        // Sanity check: pushes and pops should be balanced.
-        assert_eq!(query_stack.len(), self.push_len);
-
-        query_stack.pop().unwrap()
+            stack.pop().unwrap()
+        })
     }
 
     /// Invoked when the query has successfully completed execution.

@@ -349,7 +349,6 @@ where
                         if result.cycle.is_empty() {
                             ProbeState::Retry
                         } else {
-                            runtime.mark_cycle_participants(&result.cycle);
                             ProbeState::UpToDate(Ok(StampedValue {
                                 value: Q::cycle_fallback(db, &result.cycle, &self.key),
                                 durability: result.value.durability,

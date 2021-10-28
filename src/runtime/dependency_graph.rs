@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
-use crate::runtime::WaitResult;
 use crate::{DatabaseKeyIndex, RuntimeId};
 use parking_lot::MutexGuard;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
+
+use super::{ActiveQuery, WaitResult};
+
+type QueryStack = Vec<ActiveQuery>;
 
 #[derive(Debug, Default)]
 pub(super) struct DependencyGraph {
@@ -21,7 +24,7 @@ pub(super) struct DependencyGraph {
     /// When a key K completes which had dependent queries Qs blocked on it,
     /// it stores its `WaitResult` here. As they wake up, each query Q in Qs will
     /// come here to fetch their results.
-    wait_results: FxHashMap<RuntimeId, Option<WaitResult>>,
+    wait_results: FxHashMap<RuntimeId, (QueryStack, Option<WaitResult>)>,
 
     /// Signalled whenever a query with dependents completes.
     /// Allows those dependents to check if they are ready to unblock.
@@ -30,8 +33,9 @@ pub(super) struct DependencyGraph {
 
 #[derive(Debug)]
 struct Edge {
-    id: RuntimeId,
-    path: Vec<DatabaseKeyIndex>,
+    blocked_on_id: RuntimeId,
+    blocked_on_key: DatabaseKeyIndex,
+    stack: QueryStack,
 }
 
 impl DependencyGraph {
@@ -40,14 +44,78 @@ impl DependencyGraph {
     /// (i.e., there is a path from `from_id` to `to_id` in the graph.)
     pub(super) fn depends_on(&mut self, from_id: RuntimeId, to_id: RuntimeId) -> bool {
         let mut p = from_id;
-        while let Some(q) = self.edges.get(&p).map(|edge| edge.id) {
+        while let Some(q) = self.edges.get(&p).map(|edge| edge.blocked_on_id) {
             if q == to_id {
                 return true;
             }
 
             p = q;
         }
-        false
+        p == to_id
+    }
+
+    /// Invokes `closure` with a `&mut ActiveQuery` for each query that participates in the cycle.
+    /// The cycle runs as follows:
+    ///
+    /// 1. The runtime `from_id`, which has the stack `from_stack`, would like to invoke `database_key`...
+    /// 2. ...but `database_key` is already being executed by `to_id`...
+    /// 3. ...and `to_id` is transitively dependent on something which is present on `from_stack`.
+    pub(super) fn for_each_cycle_participant(
+        &mut self,
+        from_id: RuntimeId,
+        from_stack: &mut QueryStack,
+        database_key: DatabaseKeyIndex,
+        to_id: RuntimeId,
+        mut closure: impl FnMut(&mut ActiveQuery),
+    ) {
+        debug_assert!(self.depends_on(to_id, from_id));
+
+        // To understand this algorithm, consider this [drawing](https://is.gd/TGLI9v):
+        //
+        //    database_key = QB2
+        //    from_id = A
+        //    to_id = B
+        //    from_stack = [QA1, QA2, QA3]
+        //
+        //    self.edges[B] = { C, QC2, [QB1..QB3] }
+        //    self.edges[C] = { A, QA2, [QC1..QC3] }
+        //
+        //         The cyclic
+        //         edge we have
+        //         failed to add.
+        //           :
+        //    A      :    B         C
+        //           :
+        //    QA1    v    QB1       QC1
+        // ┌► QA2    ┌──► QB2   ┌─► QC2
+        // │  QA3 ───┘    QB3 ──┘   QC3 ───┐
+        // │                               │
+        // └───────────────────────────────┘
+        //
+        // Final output: [QB2, QB3, QC2, QC3, QA2, QA3]
+
+        let mut id = to_id;
+        let mut key = database_key;
+        while id != from_id {
+            // Looking at the diagram above, the idea is to
+            // take the edge from `to_id` starting at `key`
+            // (inclusive) and down to the end. We can then
+            // load up the next thread (i.e., we start at B/QB2,
+            // and then load up the dependency on C/QC2).
+            let edge = self.edges.get_mut(&id).unwrap();
+            edge.stack
+                .iter_mut()
+                .skip_while(|p| p.database_key_index != key)
+                .for_each(&mut closure);
+            id = edge.blocked_on_id;
+            key = edge.blocked_on_key;
+        }
+
+        // Finally, we copy in the results from `from_stack`.
+        from_stack
+            .iter_mut()
+            .skip_while(|p| p.database_key_index != key)
+            .for_each(&mut closure);
     }
 
     /// Modifies the graph so that `from_id` is blocked
@@ -68,10 +136,10 @@ impl DependencyGraph {
         from_id: RuntimeId,
         database_key: DatabaseKeyIndex,
         to_id: RuntimeId,
-        path: impl IntoIterator<Item = DatabaseKeyIndex>,
+        from_stack: QueryStack,
         query_mutex_guard: QueryMutexGuard,
-    ) -> Option<WaitResult> {
-        me.add_edge(from_id, database_key, to_id, path);
+    ) -> (QueryStack, Option<WaitResult>) {
+        me.add_edge(from_id, database_key, to_id, from_stack);
 
         // Release the mut&mut meex that prevents `database_key`
         // from completing, now that the edge has been added.
@@ -82,9 +150,9 @@ impl DependencyGraph {
         let condvar = me.condvar.clone();
 
         loop {
-            if let Some(wait_result) = me.wait_results.remove(&from_id) {
+            if let Some(stack_and_result) = me.wait_results.remove(&from_id) {
                 debug_assert!(!me.edges.contains_key(&from_id));
-                return wait_result;
+                return stack_and_result;
             }
             condvar.wait(&mut me);
         }
@@ -98,7 +166,7 @@ impl DependencyGraph {
         from_id: RuntimeId,
         database_key: DatabaseKeyIndex,
         to_id: RuntimeId,
-        path: impl IntoIterator<Item = DatabaseKeyIndex>,
+        from_stack: QueryStack,
     ) {
         assert_ne!(from_id, to_id);
         debug_assert!(!self.edges.contains_key(&from_id));
@@ -107,8 +175,9 @@ impl DependencyGraph {
         self.edges.insert(
             from_id,
             Edge {
-                id: to_id,
-                path: path.into_iter().chain(Some(database_key.clone())).collect(),
+                blocked_on_id: to_id,
+                blocked_on_key: database_key,
+                stack: from_stack,
             },
         );
         self.query_dependents
@@ -125,121 +194,20 @@ impl DependencyGraph {
         to_id: RuntimeId,
         wait_result: Option<WaitResult>,
     ) {
-        let dependents = self.remove_edge(database_key, to_id);
+        let dependents = self
+            .query_dependents
+            .remove(&database_key)
+            .unwrap_or_default();
 
-        for d in dependents {
-            self.wait_results.insert(d, wait_result.clone());
+        for from_id in dependents {
+            let edge = self.edges.remove(&from_id).expect("no edge for dependent");
+            assert_eq!(to_id, edge.blocked_on_id);
+            self.wait_results
+                .insert(from_id, (edge.stack, wait_result.clone()));
         }
 
         // Now that we have inserted the `wait_results`,
         // notify all potential dependents.
         self.condvar.notify_all();
-    }
-
-    /// Remove all dependency edges into `database_key`
-    /// (being computed by `to_id`) and return the list of
-    /// dependent runtimes that were waiting for `database_key`
-    /// to complete.
-    fn remove_edge(
-        &mut self,
-        database_key: DatabaseKeyIndex,
-        to_id: RuntimeId,
-    ) -> impl IntoIterator<Item = RuntimeId> {
-        let vec = self
-            .query_dependents
-            .remove(&database_key)
-            .unwrap_or_default();
-
-        for from_id in &vec {
-            let to_id1 = self.edges.remove(from_id).map(|edge| edge.id);
-            assert_eq!(Some(to_id), to_id1);
-        }
-
-        vec
-    }
-
-    pub(super) fn push_cycle_path(
-        &self,
-        database_key: DatabaseKeyIndex,
-        to: RuntimeId,
-        local_path: impl IntoIterator<Item = DatabaseKeyIndex>,
-        output: &mut Vec<DatabaseKeyIndex>,
-    ) {
-        let mut current = Some((to, std::slice::from_ref(&database_key)));
-        let mut last = None;
-        let mut local_path = Some(local_path);
-
-        loop {
-            match current.take() {
-                Some((id, path)) => {
-                    let link_key = path.last().unwrap();
-
-                    output.extend(path.iter().cloned());
-
-                    current = self.edges.get(&id).map(|edge| {
-                        let i = edge.path.iter().rposition(|p| p == link_key).unwrap();
-                        (edge.id, &edge.path[i + 1..])
-                    });
-
-                    if current.is_none() {
-                        last = local_path.take().map(|local_path| {
-                            local_path
-                                .into_iter()
-                                .skip_while(move |p| *p != *link_key)
-                                .skip(1)
-                        });
-                    }
-                }
-                None => break,
-            }
-        }
-
-        if let Some(iter) = &mut last {
-            output.extend(iter);
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn dki(n: u32) -> DatabaseKeyIndex {
-        DatabaseKeyIndex {
-            group_index: 0,
-            query_index: 0,
-            key_index: n,
-        }
-    }
-
-    macro_rules! dkivec {
-        ($($n:expr),*) => {
-            vec![$(dki($n)),*]
-        }
-    }
-
-    #[test]
-    fn dependency_graph_path1() {
-        let mut graph = DependencyGraph::default();
-        let a = RuntimeId { counter: 0 };
-        let b = RuntimeId { counter: 1 };
-        graph.add_edge(a, dki(2), b, dkivec![1]);
-        let mut v = vec![];
-        graph.push_cycle_path(dki(1), a, dkivec![3, 2], &mut v);
-        assert_eq!(v, vec![dki(1), dki(2)]);
-    }
-
-    #[test]
-    fn dependency_graph_path2() {
-        let mut graph = DependencyGraph::default();
-        let a = RuntimeId { counter: 0 };
-        let b = RuntimeId { counter: 1 };
-        let c = RuntimeId { counter: 2 };
-        graph.add_edge(a, dki(3), b, dkivec![1]);
-        graph.add_edge(b, dki(4), c, dkivec![2, 3]);
-        // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
-        let mut v = vec![];
-        graph.push_cycle_path(dki(1), a, dkivec![5, 6, 4, 7], &mut v);
-        assert_eq!(v, dkivec![1, 3, 4, 7]);
     }
 }
