@@ -1,3 +1,4 @@
+use crate::runtime::WaitResult;
 use crate::{DatabaseKeyIndex, RuntimeId};
 use parking_lot::MutexGuard;
 use rustc_hash::FxHashMap;
@@ -14,6 +15,11 @@ pub(super) struct DependencyGraph {
     /// Encodes the `RuntimeId` that are blocked waiting for the result
     /// of a given query.
     query_dependents: FxHashMap<DatabaseKeyIndex, SmallVec<[RuntimeId; 4]>>,
+
+    /// When a key K completes which had dependent queries Qs blocked on it,
+    /// it stores its `WaitResult` here. As they wake up, each query Q in Qs will
+    /// come here to fetch their results.
+    wait_resuilts: FxHashMap<RuntimeId, WaitResult>,
 }
 
 #[derive(Debug)]
@@ -88,7 +94,33 @@ impl DependencyGraph {
             .push(from_id);
     }
 
-    pub(super) fn remove_edge(&mut self, database_key: DatabaseKeyIndex, to_id: RuntimeId) {
+    /// Invoked when runtime `to_id` completes executing
+    /// `database_key`.
+    pub(super) fn unblock_dependents_of(
+        &mut self,
+        database_key: DatabaseKeyIndex,
+        to_id: RuntimeId,
+        wait_result: Option<WaitResult>,
+    ) {
+        let dependents = self.remove_edge(database_key, to_id);
+
+        // FIXME: Not ready for this yet
+        //
+        // for d in dependents {
+        //    self.wait_resuilts.insert(d, wait_result.clone());
+        // }
+        drop(dependents);
+    }
+
+    /// Remove all dependency edges into `database_key`
+    /// (being computed by `to_id`) and return the list of
+    /// dependent runtimes that were waiting for `database_key`
+    /// to complete.
+    fn remove_edge(
+        &mut self,
+        database_key: DatabaseKeyIndex,
+        to_id: RuntimeId,
+    ) -> impl IntoIterator<Item = RuntimeId> {
         let vec = self
             .query_dependents
             .remove(&database_key)
@@ -98,6 +130,8 @@ impl DependencyGraph {
             let to_id1 = self.edges.remove(from_id).map(|edge| edge.id);
             assert_eq!(Some(to_id), to_id1);
         }
+
+        vec
     }
 
     pub(super) fn push_cycle_path(

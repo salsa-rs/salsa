@@ -774,30 +774,22 @@ where
             QueryState::InProgress { id, waiting } => {
                 assert_eq!(id, self.runtime.id());
 
+                let opt_wait_result = new_value.map(|(new_value, ref cycle)| WaitResult {
+                    value: StampedValue {
+                        value: (),
+                        durability: new_value.durability,
+                        changed_at: new_value.changed_at,
+                    },
+                    cycle: cycle.clone(),
+                });
+
                 self.runtime
-                    .unblock_queries_blocked_on_self(self.database_key_index);
+                    .unblock_queries_blocked_on(self.database_key_index, opt_wait_result.clone());
 
-                match new_value {
-                    // If anybody has installed themselves in our "waiting"
-                    // list, notify them that the value is available.
-                    Some((new_value, ref cycle)) => {
-                        for promise in waiting.into_inner() {
-                            promise.fulfill(WaitResult {
-                                value: StampedValue {
-                                    value: (),
-                                    durability: new_value.durability,
-                                    changed_at: new_value.changed_at,
-                                },
-                                cycle: cycle.clone(),
-                            });
-                        }
+                if let Some(wait_result) = opt_wait_result {
+                    for w in waiting.into_inner() {
+                        w.fulfill(wait_result.clone());
                     }
-
-                    // We have no value to send when we are panicking.
-                    // Therefore, we need to drop the sending half of the
-                    // channel so that our panic propagates to those waiting
-                    // on the receiving half.
-                    None => std::mem::drop(waiting),
                 }
             }
             _ => panic!(

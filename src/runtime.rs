@@ -42,7 +42,7 @@ pub struct Runtime {
     shared_state: Arc<SharedState>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct WaitResult {
     pub(crate) value: StampedValue<()>,
     pub(crate) cycle: Vec<DatabaseKeyIndex>,
@@ -443,11 +443,20 @@ impl Runtime {
         }
     }
 
-    pub(crate) fn unblock_queries_blocked_on_self(&self, database_key_index: DatabaseKeyIndex) {
+    /// Invoked when this runtime completed computing `database_key` with
+    /// the given result `wait_result` (`wait_result` should be `None` if
+    /// computing `database_key` panicked and could not complete).
+    /// This function unblocks any dependent queries and allows them
+    /// to continue executing.
+    pub(crate) fn unblock_queries_blocked_on(
+        &self,
+        database_key: DatabaseKeyIndex,
+        wait_result: Option<WaitResult>,
+    ) {
         self.shared_state
             .dependency_graph
             .lock()
-            .remove_edge(database_key_index, self.id())
+            .unblock_dependents_of(database_key, self.id(), wait_result);
     }
 }
 
