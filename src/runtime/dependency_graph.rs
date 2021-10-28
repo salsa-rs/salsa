@@ -9,7 +9,10 @@ pub(super) struct DependencyGraph {
     /// This encodes a graph that must be acyclic (or else deadlock
     /// will result).
     edges: FxHashMap<RuntimeId, Edge>,
-    labels: FxHashMap<DatabaseKeyIndex, SmallVec<[RuntimeId; 4]>>,
+
+    /// Encodes the `RuntimeId` that are blocked waiting for the result
+    /// of a given query.
+    query_dependents: FxHashMap<DatabaseKeyIndex, SmallVec<[RuntimeId; 4]>>,
 }
 
 #[derive(Debug)]
@@ -22,7 +25,7 @@ impl Default for DependencyGraph {
     fn default() -> Self {
         DependencyGraph {
             edges: Default::default(),
-            labels: Default::default(),
+            query_dependents: Default::default(),
         }
     }
 }
@@ -65,14 +68,17 @@ impl DependencyGraph {
                 path: path.into_iter().chain(Some(database_key.clone())).collect(),
             },
         );
-        self.labels
+        self.query_dependents
             .entry(database_key.clone())
             .or_default()
             .push(from_id);
     }
 
     pub(super) fn remove_edge(&mut self, database_key: DatabaseKeyIndex, to_id: RuntimeId) {
-        let vec = self.labels.remove(&database_key).unwrap_or_default();
+        let vec = self
+            .query_dependents
+            .remove(&database_key)
+            .unwrap_or_default();
 
         for from_id in &vec {
             let to_id1 = self.edges.remove(from_id).map(|edge| edge.id);
