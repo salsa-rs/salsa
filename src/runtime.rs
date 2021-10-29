@@ -299,7 +299,7 @@ impl Runtime {
         database_key_index: DatabaseKeyIndex,
         error: CycleDetected,
         changed_at: Revision,
-    ) -> (CycleRecoveryStrategy, crate::CycleError<DatabaseKeyIndex>) {
+    ) -> (CycleRecoveryStrategy, crate::CycleError) {
         debug!(
             "report_unexpected_cycle(database_key={:?})",
             database_key_index

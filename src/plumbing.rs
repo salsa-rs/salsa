@@ -193,7 +193,7 @@ where
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         key: &Q::Key,
-    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>>;
+    ) -> Result<Q::Value, CycleError>;
 
     /// Returns the durability associated with a given key.
     fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability;
@@ -239,22 +239,22 @@ where
 
 /// The error returned when a query could not be resolved due to a cycle
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub struct CycleError<K> {
+pub struct CycleError {
     /// The queries that were part of the cycle
-    pub(crate) cycle: Vec<K>,
+    pub(crate) cycle: Vec<DatabaseKeyIndex>,
     pub(crate) changed_at: Revision,
     pub(crate) durability: Durability,
     // pub(crate) recovery_strategy: CycleRecoveryStrategy,
 }
 
-impl CycleError<DatabaseKeyIndex> {
+impl CycleError {
     pub(crate) fn debug<'a, D: ?Sized>(&'a self, db: &'a D) -> impl Debug + 'a
     where
         D: DatabaseOps,
     {
         struct CycleErrorDebug<'a, D: ?Sized> {
             db: &'a D,
-            error: &'a CycleError<DatabaseKeyIndex>,
+            error: &'a CycleError,
         }
 
         impl<'a, D: ?Sized + DatabaseOps> Debug for CycleErrorDebug<'a, D> {
@@ -271,10 +271,7 @@ impl CycleError<DatabaseKeyIndex> {
     }
 }
 
-impl<K> std::fmt::Display for CycleError<K>
-where
-    K: std::fmt::Debug,
-{
+impl std::fmt::Display for CycleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Internal error, cycle detected:\n")?;
         for i in &self.cycle {

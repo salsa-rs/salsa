@@ -93,8 +93,8 @@ pub(super) enum MemoInputs {
 }
 
 /// Return value of `probe` helper.
-enum ProbeState<V, K, G> {
-    UpToDate(Result<V, CycleError<K>>),
+enum ProbeState<V, G> {
+    UpToDate(Result<V, CycleError>),
     Retry,
     StaleOrAbsent(G),
 }
@@ -121,7 +121,7 @@ where
     pub(super) fn read(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
-    ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
+    ) -> Result<StampedValue<Q::Value>, CycleError> {
         let runtime = db.salsa_runtime();
 
         // NB: We don't need to worry about people modifying the
@@ -153,7 +153,7 @@ where
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         revision_now: Revision,
-    ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
+    ) -> Result<StampedValue<Q::Value>, CycleError> {
         let runtime = db.salsa_runtime();
 
         debug!("{:?}: read_upgrade(revision_now={:?})", self, revision_now,);
@@ -320,7 +320,7 @@ where
         state: StateGuard,
         runtime: &Runtime,
         revision_now: Revision,
-    ) -> ProbeState<StampedValue<Q::Value>, DatabaseKeyIndex, StateGuard>
+    ) -> ProbeState<StampedValue<Q::Value>, StateGuard>
     where
         StateGuard: Deref<Target = QueryState<Q>>,
     {

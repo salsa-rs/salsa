@@ -101,7 +101,7 @@ where
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         key: &Q::Key,
-    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+    ) -> Result<Q::Value, CycleError> {
         db.unwind_if_cancelled();
 
         let slot = self

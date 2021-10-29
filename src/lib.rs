@@ -421,7 +421,7 @@ where
             .unwrap_or_else(|err| panic!("{:?}", err.debug(self.db)))
     }
 
-    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError> {
         self.storage.try_fetch(self.db, &key)
     }
 

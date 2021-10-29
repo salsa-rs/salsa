@@ -231,9 +231,8 @@ where
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         key: &Q::Key,
-    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+    ) -> Result<Q::Value, CycleError> {
         db.unwind_if_cancelled();
-
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
         let index = slot.index;
@@ -351,7 +350,7 @@ where
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         key: &Q::Key,
-    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+    ) -> Result<Q::Value, CycleError> {
         let index = key.as_intern_id();
         let group_storage =
             <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
