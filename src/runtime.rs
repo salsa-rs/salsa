@@ -42,10 +42,10 @@ pub struct Runtime {
     shared_state: Arc<SharedState>,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct WaitResult {
-    pub(crate) value: StampedValue<()>,
-    pub(crate) cycle: Option<CycleParticipants>,
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum WaitResult {
+    Completed,
+    Panicked,
 }
 
 impl Default for Runtime {
@@ -361,7 +361,7 @@ impl Runtime {
         database_key: DatabaseKeyIndex,
         other_id: RuntimeId,
         query_mutex_guard: QueryMutexGuard,
-    ) -> Result<Option<WaitResult>, CycleDetected> {
+    ) -> Result<WaitResult, CycleDetected> {
         let mut dg = self.shared_state.dependency_graph.lock();
 
         if self.id() == other_id || dg.depends_on(other_id, self.id()) {
@@ -403,7 +403,7 @@ impl Runtime {
     pub(crate) fn unblock_queries_blocked_on(
         &self,
         database_key: DatabaseKeyIndex,
-        wait_result: Option<WaitResult>,
+        wait_result: WaitResult,
     ) {
         self.shared_state
             .dependency_graph

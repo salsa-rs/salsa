@@ -4,7 +4,6 @@ use crate::durability::Durability;
 use crate::lru::LruIndex;
 use crate::lru::LruNode;
 use crate::plumbing::CycleError;
-use crate::plumbing::CycleParticipants;
 use crate::plumbing::{CycleDetected, CycleRecoveryStrategy};
 use crate::plumbing::{DatabaseOps, QueryFunction};
 use crate::revision::Revision;
@@ -197,15 +196,7 @@ where
                     },
                 });
 
-                panic_guard.proceed(
-                    &value,
-                    // The returned value could have been produced as part of a cycle but since
-                    // we returned the memoized value we know we short-circuited the execution
-                    // just as we entered the cycle. Therefore there is no values to invalidate
-                    // and no need to call a cycle handler so we do not need to return the
-                    // actual cycle
-                    None,
-                );
+                panic_guard.proceed();
 
                 return Ok(value);
             }
@@ -299,7 +290,7 @@ where
             },
         });
 
-        panic_guard.proceed(&new_value, result.cycle);
+        panic_guard.proceed();
 
         Ok(new_value)
     }
@@ -340,24 +331,8 @@ where
                 anyone_waiting.store(true, Ordering::Relaxed);
 
                 return match self.block_on_in_progress_thread(db, runtime, other_id, state) {
-                    // If other thread panicked, consider ourselves to be cancelled.
-                    Ok(None) => Cancelled::throw(),
-                    Ok(Some(result)) => {
-                        debug!(
-                            "received result from other thread: cycle = {:?}",
-                            result.cycle
-                        );
-                        if let Some(cycle) = &result.cycle {
-                            ProbeState::UpToDate(Ok(StampedValue {
-                                value: Q::cycle_fallback(db, &cycle, &self.key),
-                                durability: result.value.durability,
-                                changed_at: result.value.changed_at,
-                            }))
-                        } else {
-                            ProbeState::Retry
-                        }
-                    }
-
+                    Ok(WaitResult::Panicked) => Cancelled::throw(),
+                    Ok(WaitResult::Completed) => ProbeState::Retry,
                     Err(err) => ProbeState::UpToDate(
                         match runtime.report_unexpected_cycle(
                             db.ops_database(),
@@ -499,21 +474,11 @@ where
                 anyone_waiting.store(true, Ordering::Relaxed);
 
                 return match self.block_on_in_progress_thread(db, runtime, other_id, state) {
-                    Ok(None) => Cancelled::throw(),
-                    Ok(Some(result)) => {
-                        debug!(
-                            "received result from other thread: cycle = {:?}",
-                            result.cycle
-                        );
-                        if result.cycle.is_some() {
-                            // Consider cycles to have changed.
-                            true
-                        } else {
-                            result.value.changed_at > revision
-                        }
-                    }
-
-                    // Consider cycles to have changed.
+                    // The other thread has completed. Have to try again. We've lost our lock,
+                    // so just recurse. (We should probably clean this up to a loop later,
+                    // but recursing is not terrible: this shouldn't happen more than once per revision.)
+                    Ok(WaitResult::Completed) => self.maybe_changed_since(db, revision),
+                    Ok(WaitResult::Panicked) => Cancelled::throw(),
                     Err(_) => true,
                 };
             }
@@ -665,7 +630,7 @@ where
         runtime: &Runtime,
         other_id: RuntimeId,
         mutex_guard: MutexGuard,
-    ) -> Result<Option<WaitResult>, CycleDetected> {
+    ) -> Result<WaitResult, CycleDetected> {
         runtime.try_block_on(
             db.ops_database(),
             self.database_key_index,
@@ -724,18 +689,15 @@ where
     /// Proceed with our panic guard by overwriting the placeholder for `key`.
     /// Once that completes, ensure that our deconstructor is not run once we
     /// are out of scope.
-    fn proceed(mut self, new_value: &StampedValue<Q::Value>, cycle: Option<CycleParticipants>) {
-        self.overwrite_placeholder(Some((new_value, cycle)));
+    fn proceed(mut self) {
+        self.overwrite_placeholder(WaitResult::Completed);
         std::mem::forget(self)
     }
 
     /// Overwrites the `InProgress` placeholder for `key` that we
     /// inserted; if others were blocked, waiting for us to finish,
     /// then notify them.
-    fn overwrite_placeholder(
-        &mut self,
-        new_value: Option<(&StampedValue<Q::Value>, Option<CycleParticipants>)>,
-    ) {
+    fn overwrite_placeholder(&mut self, wait_result: WaitResult) {
         let mut write = self.slot.state.write();
 
         let old_value = match self.memo.take() {
@@ -758,17 +720,8 @@ where
                 // acquire a mutex; the mutex will guarantee that all writes
                 // we are interested in are visible.
                 if anyone_waiting.load(Ordering::Relaxed) {
-                    let opt_wait_result = new_value.map(|(new_value, ref cycle)| WaitResult {
-                        value: StampedValue {
-                            value: (),
-                            durability: new_value.durability,
-                            changed_at: new_value.changed_at,
-                        },
-                        cycle: cycle.clone(),
-                    });
-
                     self.runtime
-                        .unblock_queries_blocked_on(self.database_key_index, opt_wait_result);
+                        .unblock_queries_blocked_on(self.database_key_index, wait_result);
                 }
             }
             _ => panic!(
@@ -789,7 +742,7 @@ where
     fn drop(&mut self) {
         if std::thread::panicking() {
             // We panicked before we could proceed and need to remove `key`.
-            self.overwrite_placeholder(None)
+            self.overwrite_placeholder(WaitResult::Panicked)
         } else {
             // If no panic occurred, then panic guard ought to be
             // "forgotten" and so this Drop code should never run.

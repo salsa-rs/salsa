@@ -24,7 +24,7 @@ pub(super) struct DependencyGraph {
     /// When a key K completes which had dependent queries Qs blocked on it,
     /// it stores its `WaitResult` here. As they wake up, each query Q in Qs will
     /// come here to fetch their results.
-    wait_results: FxHashMap<RuntimeId, (QueryStack, Option<WaitResult>)>,
+    wait_results: FxHashMap<RuntimeId, (QueryStack, WaitResult)>,
 
     /// Signalled whenever a query with dependents completes.
     /// Allows those dependents to check if they are ready to unblock.
@@ -138,7 +138,7 @@ impl DependencyGraph {
         to_id: RuntimeId,
         from_stack: QueryStack,
         query_mutex_guard: QueryMutexGuard,
-    ) -> (QueryStack, Option<WaitResult>) {
+    ) -> (QueryStack, WaitResult) {
         me.add_edge(from_id, database_key, to_id, from_stack);
 
         // Release the mut&mut meex that prevents `database_key`
@@ -192,7 +192,7 @@ impl DependencyGraph {
         &mut self,
         database_key: DatabaseKeyIndex,
         to_id: RuntimeId,
-        wait_result: Option<WaitResult>,
+        wait_result: WaitResult,
     ) {
         let dependents = self
             .query_dependents

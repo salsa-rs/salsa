@@ -263,7 +263,7 @@ impl CycleError {
         impl<'a, D: ?Sized + DatabaseOps> Debug for CycleErrorDebug<'a, D> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 writeln!(f, "Internal error, cycle detected:\n")?;
-                for i in &self.error.cycle {
+                for i in &*self.error.cycle {
                     writeln!(f, "{:?}", i.debug(self.db))?;
                 }
                 Ok(())
