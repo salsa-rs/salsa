@@ -10,6 +10,7 @@ use crate::RuntimeId;
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::sync::Arc;
 
 pub use crate::derived::DependencyStorage;
 pub use crate::derived::MemoizedStorage;
@@ -237,11 +238,13 @@ where
         Q::Key: Borrow<S>;
 }
 
+pub type CycleParticipants = Arc<Vec<DatabaseKeyIndex>>;
+
 /// The error returned when a query could not be resolved due to a cycle
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct CycleError {
     /// The queries that were part of the cycle
-    pub(crate) cycle: Vec<DatabaseKeyIndex>,
+    pub(crate) cycle: CycleParticipants,
     pub(crate) changed_at: Revision,
     pub(crate) durability: Durability,
     // pub(crate) recovery_strategy: CycleRecoveryStrategy,
@@ -274,7 +277,7 @@ impl CycleError {
 impl std::fmt::Display for CycleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Internal error, cycle detected:\n")?;
-        for i in &self.cycle {
+        for i in &*self.cycle {
             writeln!(f, "{:?}", i)?;
         }
         Ok(())

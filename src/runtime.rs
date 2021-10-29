@@ -1,5 +1,5 @@
 use crate::durability::Durability;
-use crate::plumbing::{CycleDetected, CycleError, CycleRecoveryStrategy};
+use crate::plumbing::{CycleDetected, CycleError, CycleParticipants, CycleRecoveryStrategy};
 use crate::revision::{AtomicRevision, Revision};
 use crate::{Cancelled, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
@@ -45,7 +45,7 @@ pub struct Runtime {
 #[derive(Clone, Debug)]
 pub(crate) struct WaitResult {
     pub(crate) value: StampedValue<()>,
-    pub(crate) cycle: Vec<DatabaseKeyIndex>,
+    pub(crate) cycle: Option<CycleParticipants>,
 }
 
 impl Default for Runtime {
@@ -309,10 +309,11 @@ impl Runtime {
         let mut stack = self.local_state.take_query_stack();
         let mut dg = self.shared_state.dependency_graph.lock();
         dg.for_each_cycle_participant(error.from, &mut stack, database_key_index, error.to, |aq| {
-            cycle_participants.push(aq.database_key_index)
+            cycle_participants.push(aq.database_key_index);
         });
+        let cycle_participants = Arc::new(cycle_participants);
         dg.for_each_cycle_participant(error.from, &mut stack, database_key_index, error.to, |aq| {
-            aq.cycle = cycle_participants.clone()
+            aq.cycle = Some(cycle_participants.clone());
         });
         self.local_state.restore_query_stack(stack);
         let crs = self.mutual_cycle_recovery_strategy(db, &cycle_participants);
@@ -501,7 +502,7 @@ struct ActiveQuery {
     dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
 
     /// Stores the entire cycle, if one is found and this query is part of it.
-    cycle: Vec<DatabaseKeyIndex>,
+    cycle: Option<CycleParticipants>,
 }
 
 pub(crate) struct ComputedQueryResult<V> {
@@ -520,7 +521,7 @@ pub(crate) struct ComputedQueryResult<V> {
     pub(crate) dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
 
     /// The cycle if one occured while computing this value
-    pub(crate) cycle: Vec<DatabaseKeyIndex>,
+    pub(crate) cycle: Option<CycleParticipants>,
 }
 
 impl ActiveQuery {
@@ -530,7 +531,7 @@ impl ActiveQuery {
             durability: max_durability,
             changed_at: Revision::start(),
             dependencies: Some(FxIndexSet::default()),
-            cycle: Vec::new(),
+            cycle: None,
         }
     }
 

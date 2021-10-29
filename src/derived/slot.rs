@@ -4,6 +4,7 @@ use crate::durability::Durability;
 use crate::lru::LruIndex;
 use crate::lru::LruNode;
 use crate::plumbing::CycleError;
+use crate::plumbing::CycleParticipants;
 use crate::plumbing::{CycleDetected, CycleRecoveryStrategy};
 use crate::plumbing::{DatabaseOps, QueryFunction};
 use crate::revision::Revision;
@@ -203,7 +204,7 @@ where
                     // just as we entered the cycle. Therefore there is no values to invalidate
                     // and no need to call a cycle handler so we do not need to return the
                     // actual cycle
-                    Vec::new(),
+                    None,
                 );
 
                 return Ok(value);
@@ -218,8 +219,8 @@ where
             Q::execute(db, self.key.clone())
         });
 
-        if !result.cycle.is_empty() {
-            result.value = Q::cycle_fallback(db, &result.cycle, &self.key);
+        if let Some(cycle) = &result.cycle {
+            result.value = Q::cycle_fallback(db, cycle, &self.key);
         }
 
         // We assume that query is side-effect free -- that is, does
@@ -346,14 +347,14 @@ where
                             "received result from other thread: cycle = {:?}",
                             result.cycle
                         );
-                        if result.cycle.is_empty() {
-                            ProbeState::Retry
-                        } else {
+                        if let Some(cycle) = &result.cycle {
                             ProbeState::UpToDate(Ok(StampedValue {
-                                value: Q::cycle_fallback(db, &result.cycle, &self.key),
+                                value: Q::cycle_fallback(db, &cycle, &self.key),
                                 durability: result.value.durability,
                                 changed_at: result.value.changed_at,
                             }))
+                        } else {
+                            ProbeState::Retry
                         }
                     }
 
@@ -504,7 +505,7 @@ where
                             "received result from other thread: cycle = {:?}",
                             result.cycle
                         );
-                        if !result.cycle.is_empty() {
+                        if result.cycle.is_some() {
                             // Consider cycles to have changed.
                             true
                         } else {
@@ -723,7 +724,7 @@ where
     /// Proceed with our panic guard by overwriting the placeholder for `key`.
     /// Once that completes, ensure that our deconstructor is not run once we
     /// are out of scope.
-    fn proceed(mut self, new_value: &StampedValue<Q::Value>, cycle: Vec<DatabaseKeyIndex>) {
+    fn proceed(mut self, new_value: &StampedValue<Q::Value>, cycle: Option<CycleParticipants>) {
         self.overwrite_placeholder(Some((new_value, cycle)));
         std::mem::forget(self)
     }
@@ -733,7 +734,7 @@ where
     /// then notify them.
     fn overwrite_placeholder(
         &mut self,
-        new_value: Option<(&StampedValue<Q::Value>, Vec<DatabaseKeyIndex>)>,
+        new_value: Option<(&StampedValue<Q::Value>, Option<CycleParticipants>)>,
     ) {
         let mut write = self.slot.state.write();
 
