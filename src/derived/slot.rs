@@ -224,6 +224,16 @@ where
             }
         }
 
+        Ok(self.execute(db, runtime, revision_now, panic_guard))
+    }
+
+    fn execute(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        runtime: &Runtime,
+        revision_now: Revision,
+        mut panic_guard: PanicGuard<'_, Q, MP>,
+    ) -> StampedValue<Q::Value> {
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
         let mut result = runtime.execute_query_implementation(db, self.database_key_index, || {
@@ -314,7 +324,7 @@ where
 
         panic_guard.proceed();
 
-        Ok(new_value)
+        new_value
     }
 
     /// Helper for `read` that does a shallow check (not recursive) if we have an up-to-date value.
