@@ -30,14 +30,10 @@ impl Default for LocalState {
 }
 
 impl LocalState {
-    pub(super) fn push_query(
-        &self,
-        database_key_index: DatabaseKeyIndex,
-        max_durability: Durability,
-    ) -> ActiveQueryGuard<'_> {
+    pub(super) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
         let mut query_stack = self.query_stack.borrow_mut();
         let query_stack = query_stack.as_mut().expect("local stack taken");
-        query_stack.push(ActiveQuery::new(database_key_index, max_durability));
+        query_stack.push(ActiveQuery::new(database_key_index));
         ActiveQueryGuard {
             local_state: self,
             push_len: query_stack.len(),

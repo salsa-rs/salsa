@@ -231,10 +231,7 @@ impl Runtime {
         });
 
         // Push the active query onto the stack.
-        let max_durability = Durability::MAX;
-        let active_query = self
-            .local_state
-            .push_query(database_key_index, max_durability);
+        let active_query = self.local_state.push_query(database_key_index);
 
         // Execute user's code, accumulating inputs etc.
         let value = execute();
@@ -526,10 +523,10 @@ pub(crate) struct ComputedQueryResult<V> {
 }
 
 impl ActiveQuery {
-    fn new(database_key_index: DatabaseKeyIndex, max_durability: Durability) -> Self {
+    fn new(database_key_index: DatabaseKeyIndex) -> Self {
         ActiveQuery {
             database_key_index,
-            durability: max_durability,
+            durability: Durability::MAX,
             changed_at: Revision::start(),
             dependencies: Some(FxIndexSet::default()),
             cycle: None,
