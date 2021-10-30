@@ -250,11 +250,9 @@ where
     ) -> StampedValue<Q::Value> {
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = runtime.execute_query_implementation(db, self.database_key_index, || {
-            info!("{:?}: executing query", self);
-
-            Q::execute(db, self.key.clone())
-        });
+        let mut result = runtime
+            .push_query(self.database_key_index)
+            .pop_and_execute(db, || Q::execute(db, self.key.clone()));
 
         if let Some(cycle) = &result.cycle {
             result.value = Q::cycle_fallback(db, cycle, &self.key);

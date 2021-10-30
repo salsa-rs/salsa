@@ -16,8 +16,10 @@ pub(crate) type FxIndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasherDefault<F
 mod dependency_graph;
 use dependency_graph::DependencyGraph;
 
-mod local_state;
+pub(crate) mod local_state;
 use local_state::LocalState;
+
+use self::local_state::ActiveQueryGuard;
 
 /// The salsa runtime stores the storage for all queries as well as
 /// tracking the query stack and dependencies between cycles.
@@ -209,49 +211,9 @@ impl Runtime {
         self.revision_guard.is_none() && !self.local_state.query_in_progress()
     }
 
-    pub(crate) fn execute_query_implementation<DB, V>(
-        &self,
-        db: &DB,
-        database_key_index: DatabaseKeyIndex,
-        execute: impl FnOnce() -> V,
-    ) -> ComputedQueryResult<V>
-    where
-        DB: ?Sized + Database,
-    {
-        debug!(
-            "{:?}: execute_query_implementation invoked",
-            database_key_index
-        );
-
-        db.salsa_event(Event {
-            runtime_id: self.id(),
-            kind: EventKind::WillExecute {
-                database_key: database_key_index,
-            },
-        });
-
-        // Push the active query onto the stack.
-        let active_query = self.local_state.push_query(database_key_index);
-
-        // Execute user's code, accumulating inputs etc.
-        let value = execute();
-
-        // Extract accumulated inputs.
-        let ActiveQuery {
-            dependencies,
-            changed_at,
-            durability,
-            cycle,
-            ..
-        } = active_query.complete();
-
-        ComputedQueryResult {
-            value,
-            durability,
-            changed_at,
-            dependencies,
-            cycle,
-        }
+    #[inline]
+    pub(crate) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
+        self.local_state.push_query(database_key_index)
     }
 
     /// Reports that the currently active query read the result from
@@ -501,25 +463,6 @@ struct ActiveQuery {
 
     /// Stores the entire cycle, if one is found and this query is part of it.
     cycle: Option<CycleParticipants>,
-}
-
-pub(crate) struct ComputedQueryResult<V> {
-    /// Final value produced
-    pub(crate) value: V,
-
-    /// Minimum durability of inputs observed so far.
-    pub(crate) durability: Durability,
-
-    /// Maximum revision of all inputs observed. If we observe an
-    /// untracked read, this will be set to the most recent revision.
-    pub(crate) changed_at: Revision,
-
-    /// Complete set of subqueries that were accessed, or `None` if
-    /// there was an untracked read.
-    pub(crate) dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
-
-    /// The cycle if one occured while computing this value
-    pub(crate) cycle: Option<CycleParticipants>,
 }
 
 impl ActiveQuery {

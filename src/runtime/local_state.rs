@@ -1,8 +1,14 @@
 use crate::durability::Durability;
+use crate::plumbing::CycleParticipants;
 use crate::runtime::ActiveQuery;
 use crate::runtime::Revision;
+use crate::Database;
 use crate::DatabaseKeyIndex;
+use crate::Event;
+use crate::EventKind;
 use std::cell::RefCell;
+
+use super::FxIndexSet;
 
 /// State that is specific to a single execution thread.
 ///
@@ -21,6 +27,25 @@ pub(super) struct LocalState {
     query_stack: RefCell<Option<Vec<ActiveQuery>>>,
 }
 
+pub(crate) struct ComputedQueryResult<V> {
+    /// Final value produced
+    pub(crate) value: V,
+
+    /// Minimum durability of inputs observed so far.
+    pub(crate) durability: Durability,
+
+    /// Maximum revision of all inputs observed. If we observe an
+    /// untracked read, this will be set to the most recent revision.
+    pub(crate) changed_at: Revision,
+
+    /// Complete set of subqueries that were accessed, or `None` if
+    /// there was an untracked the read.
+    pub(crate) dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
+
+    /// The cycle if one occured while computing this value
+    pub(crate) cycle: Option<CycleParticipants>,
+}
+
 impl Default for LocalState {
     fn default() -> Self {
         LocalState {
@@ -30,12 +55,14 @@ impl Default for LocalState {
 }
 
 impl LocalState {
+    #[inline]
     pub(super) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
         let mut query_stack = self.query_stack.borrow_mut();
         let query_stack = query_stack.as_mut().expect("local stack taken");
         query_stack.push(ActiveQuery::new(database_key_index));
         ActiveQueryGuard {
             local_state: self,
+            database_key_index,
             push_len: query_stack.len(),
         }
     }
@@ -116,9 +143,10 @@ impl std::panic::RefUnwindSafe for LocalState {}
 /// is returned to represent its slot. The guard can be used to pop
 /// the query from the stack -- in the case of unwinding, the guard's
 /// destructor will also remove the query.
-pub(super) struct ActiveQueryGuard<'me> {
+pub(crate) struct ActiveQueryGuard<'me> {
     local_state: &'me LocalState,
     push_len: usize,
+    database_key_index: DatabaseKeyIndex,
 }
 
 impl ActiveQueryGuard<'_> {
@@ -126,7 +154,10 @@ impl ActiveQueryGuard<'_> {
         self.local_state.with_query_stack(|stack| {
             // Sanity check: pushes and pops should be balanced.
             assert_eq!(stack.len(), self.push_len);
-
+            debug_assert_eq!(
+                stack.last().unwrap().database_key_index,
+                self.database_key_index
+            );
             stack.pop().unwrap()
         })
     }
@@ -136,6 +167,52 @@ impl ActiveQueryGuard<'_> {
         let query = self.pop_helper();
         std::mem::forget(self);
         query
+    }
+
+    /// As the final action from a pushed query, you can
+    /// execute the query implementation. This invokes the
+    /// given closure and then returns the "computed query result",
+    /// which includes the returned value as well as dependency
+    /// and cycle information.
+    ///
+    /// Executing this method pops the query from the stack.
+    #[inline]
+    pub(crate) fn pop_and_execute<DB, V>(
+        self,
+        db: &DB,
+        execute: impl FnOnce() -> V,
+    ) -> ComputedQueryResult<V>
+    where
+        DB: ?Sized + Database,
+    {
+        log::info!("{:?}: executing query", self.database_key_index);
+
+        db.salsa_event(Event {
+            runtime_id: db.salsa_runtime().id(),
+            kind: EventKind::WillExecute {
+                database_key: self.database_key_index,
+            },
+        });
+
+        // Execute user's code, accumulating inputs etc.
+        let value = execute();
+
+        // Extract accumulated inputs.
+        let ActiveQuery {
+            dependencies,
+            changed_at,
+            durability,
+            cycle,
+            database_key_index: _,
+        } = self.complete();
+
+        ComputedQueryResult {
+            value,
+            durability,
+            changed_at,
+            dependencies,
+            cycle,
+        }
     }
 }
 
