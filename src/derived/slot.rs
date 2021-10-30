@@ -96,7 +96,8 @@ pub(super) enum MemoInputs {
 enum ProbeState<V, G> {
     UpToDate(Result<V, CycleError>),
     Retry,
-    StaleOrAbsent(G),
+    Stale(G),
+    Absent(G),
 }
 
 impl<Q, MP> Slot<Q, MP>
@@ -137,7 +138,7 @@ where
         loop {
             match self.probe(db, self.state.read(), runtime, revision_now) {
                 ProbeState::UpToDate(v) => return v,
-                ProbeState::StaleOrAbsent(_guard) => break,
+                ProbeState::Stale(_) | ProbeState::Absent(_) => break,
                 ProbeState::Retry => continue,
             }
         }
@@ -164,7 +165,7 @@ where
         let old_memo = loop {
             match self.probe(db, self.state.upgradable_read(), runtime, revision_now) {
                 ProbeState::UpToDate(v) => return v,
-                ProbeState::StaleOrAbsent(state) => {
+                ProbeState::Stale(state) | ProbeState::Absent(state) => {
                     type RwLockUpgradableReadGuard<'a, T> =
                         lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
 
@@ -317,7 +318,7 @@ where
         StateGuard: Deref<Target = QueryState<Q>>,
     {
         match &*state {
-            QueryState::NotComputed => { /* fall through */ }
+            QueryState::NotComputed => ProbeState::Absent(state),
 
             QueryState::InProgress { id, anyone_waiting } => {
                 let other_id = *id;
@@ -357,26 +358,28 @@ where
                     self, memo.revisions.verified_at, memo.revisions.changed_at,
                 );
 
+                if memo.revisions.verified_at < revision_now {
+                    return ProbeState::Stale(state);
+                }
+
                 if let Some(value) = &memo.value {
-                    if memo.revisions.verified_at == revision_now {
-                        let value = StampedValue {
-                            durability: memo.revisions.durability,
-                            changed_at: memo.revisions.changed_at,
-                            value: value.clone(),
-                        };
+                    let value = StampedValue {
+                        durability: memo.revisions.durability,
+                        changed_at: memo.revisions.changed_at,
+                        value: value.clone(),
+                    };
 
-                        info!(
-                            "{:?}: returning memoized value changed at {:?}",
-                            self, value.changed_at
-                        );
+                    info!(
+                        "{:?}: returning memoized value changed at {:?}",
+                        self, value.changed_at
+                    );
 
-                        return ProbeState::UpToDate(Ok(value));
-                    }
+                    ProbeState::UpToDate(Ok(value))
+                } else {
+                    ProbeState::Absent(state)
                 }
             }
         }
-
-        ProbeState::StaleOrAbsent(state)
     }
 
     pub(super) fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb) -> Durability {
