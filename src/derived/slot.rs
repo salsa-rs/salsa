@@ -94,10 +94,27 @@ pub(super) enum MemoInputs {
 
 /// Return value of `probe` helper.
 enum ProbeState<V, G> {
-    UpToDate(Result<V, CycleError>),
+    /// Another thread was active but has completed.
+    /// Try again!
     Retry,
+
+    /// No entry for this key at all.
+    NotComputed(G),
+
+    /// There is an entry, but its contents have not been
+    /// verified in this revision.
     Stale(G),
-    Absent(G),
+
+    /// There is an entry, and it has been verified
+    /// in this revision, but it has no cached
+    /// value. The `Revision` is the revision where the
+    /// value last changed (if we were to recompute it).
+    NoValue(G, Revision),
+
+    /// There is an entry which has been verified,
+    /// and it has the following value-- or, we blocked
+    /// on another thread, and that resulted in a cycle.
+    UpToDate(Result<V, CycleError>),
 }
 
 impl<Q, MP> Slot<Q, MP>
@@ -138,7 +155,9 @@ where
         loop {
             match self.probe(db, self.state.read(), runtime, revision_now) {
                 ProbeState::UpToDate(v) => return v,
-                ProbeState::Stale(_) | ProbeState::Absent(_) => break,
+                ProbeState::Stale(..) | ProbeState::NoValue(..) | ProbeState::NotComputed(..) => {
+                    break
+                }
                 ProbeState::Retry => continue,
             }
         }
@@ -165,7 +184,9 @@ where
         let old_memo = loop {
             match self.probe(db, self.state.upgradable_read(), runtime, revision_now) {
                 ProbeState::UpToDate(v) => return v,
-                ProbeState::Stale(state) | ProbeState::Absent(state) => {
+                ProbeState::Stale(state)
+                | ProbeState::NotComputed(state)
+                | ProbeState::NoValue(state, _) => {
                     type RwLockUpgradableReadGuard<'a, T> =
                         lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
 
@@ -318,7 +339,7 @@ where
         StateGuard: Deref<Target = QueryState<Q>>,
     {
         match &*state {
-            QueryState::NotComputed => ProbeState::Absent(state),
+            QueryState::NotComputed => ProbeState::NotComputed(state),
 
             QueryState::InProgress { id, anyone_waiting } => {
                 let other_id = *id;
@@ -376,7 +397,8 @@ where
 
                     ProbeState::UpToDate(Ok(value))
                 } else {
-                    ProbeState::Absent(state)
+                    let changed_at = memo.revisions.changed_at;
+                    ProbeState::NoValue(state, changed_at)
                 }
             }
         }
