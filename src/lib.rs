@@ -114,11 +114,42 @@ pub struct Event {
     pub kind: EventKind,
 }
 
+impl Event {
+    /// Returns a type that gives a user-readable debug output.
+    /// Use like `println!("{:?}", index.debug(db))`.
+    pub fn debug<D: ?Sized>(self, db: &D) -> impl std::fmt::Debug + '_
+    where
+        D: plumbing::DatabaseOps,
+    {
+        EventDebug { event: self, db }
+    }
+}
+
 impl fmt::Debug for Event {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("Event")
             .field("runtime_id", &self.runtime_id)
             .field("kind", &self.kind)
+            .finish()
+    }
+}
+
+struct EventDebug<'db, D: ?Sized>
+where
+    D: plumbing::DatabaseOps,
+{
+    event: Event,
+    db: &'db D,
+}
+
+impl<'db, D: ?Sized> fmt::Debug for EventDebug<'db, D>
+where
+    D: plumbing::DatabaseOps,
+{
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.debug_struct("Event")
+            .field("runtime_id", &self.event.runtime_id)
+            .field("kind", &self.event.kind.debug(self.db))
             .finish()
     }
 }
@@ -165,6 +196,17 @@ pub enum EventKind {
     WillCheckCancellation,
 }
 
+impl EventKind {
+    /// Returns a type that gives a user-readable debug output.
+    /// Use like `println!("{:?}", index.debug(db))`.
+    pub fn debug<'me, D: ?Sized>(&'me self, db: &'me D) -> impl std::fmt::Debug + 'me
+    where
+        D: plumbing::DatabaseOps,
+    {
+        EventKindDebug { kind: self, db }
+    }
+}
+
 impl fmt::Debug for EventKind {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -183,6 +225,41 @@ impl fmt::Debug for EventKind {
             EventKind::WillExecute { database_key } => fmt
                 .debug_struct("WillExecute")
                 .field("database_key", database_key)
+                .finish(),
+            EventKind::WillCheckCancellation => fmt.debug_struct("WillCheckCancellation").finish(),
+        }
+    }
+}
+
+struct EventKindDebug<'me, D: ?Sized>
+where
+    D: plumbing::DatabaseOps,
+{
+    kind: &'me EventKind,
+    db: &'me D,
+}
+
+impl<'me, D: ?Sized> fmt::Debug for EventKindDebug<'me, D>
+where
+    D: plumbing::DatabaseOps,
+{
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            EventKind::DidValidateMemoizedValue { database_key } => fmt
+                .debug_struct("DidValidateMemoizedValue")
+                .field("database_key", &database_key.debug(self.db))
+                .finish(),
+            EventKind::WillBlockOn {
+                other_runtime_id,
+                database_key,
+            } => fmt
+                .debug_struct("WillBlockOn")
+                .field("other_runtime_id", &other_runtime_id)
+                .field("database_key", &database_key.debug(self.db))
+                .finish(),
+            EventKind::WillExecute { database_key } => fmt
+                .debug_struct("WillExecute")
+                .field("database_key", &database_key.debug(self.db))
                 .finish(),
             EventKind::WillCheckCancellation => fmt.debug_struct("WillCheckCancellation").finish(),
         }
