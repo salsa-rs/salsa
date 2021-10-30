@@ -279,7 +279,7 @@ where
                 // consumers must be aware of. Becoming *more* durable
                 // is not. See the test `constant_to_non_constant`.
                 if result.durability >= old_memo.revisions.durability
-                    && MP::memoized_value_eq(&old_value, &result.value)
+                    && MP::memoized_value_eq(old_value, &result.value)
                 {
                     debug!(
                         "read_upgrade({:?}): value is equal, back-dating to {:?}",
@@ -792,11 +792,8 @@ impl MemoRevisions {
         &mut self,
         db: &dyn Database,
         revision_now: Revision,
-        active_query: &ActiveQueryGuard<'_>,
+        _active_query: &ActiveQueryGuard<'_>,
     ) -> bool {
-        // Noop that silences the unused parameter lint.
-        drop(active_query);
-
         assert!(self.verified_at != revision_now);
         let verified_at = self.verified_at;
 
@@ -905,10 +902,7 @@ impl MemoInputs {
         }
 
         match self {
-            MemoInputs::Tracked { inputs } => DebugMemoInputs::Tracked {
-                inputs: &inputs,
-                db,
-            },
+            MemoInputs::Tracked { inputs } => DebugMemoInputs::Tracked { inputs, db },
             MemoInputs::NoInputs => DebugMemoInputs::NoInputs,
             MemoInputs::Untracked => DebugMemoInputs::Untracked,
         }

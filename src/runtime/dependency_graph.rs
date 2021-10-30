@@ -181,7 +181,7 @@ impl DependencyGraph {
             },
         );
         self.query_dependents
-            .entry(database_key.clone())
+            .entry(database_key)
             .or_default()
             .push(from_id);
     }
@@ -203,7 +203,7 @@ impl DependencyGraph {
             let edge = self.edges.remove(&from_id).expect("no edge for dependent");
             assert_eq!(to_id, edge.blocked_on_id);
             self.wait_results
-                .insert(from_id, (edge.stack, wait_result.clone()));
+                .insert(from_id, (edge.stack, wait_result));
         }
 
         // Now that we have inserted the `wait_results`,

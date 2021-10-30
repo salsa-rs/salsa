@@ -334,7 +334,7 @@ impl Runtime {
                 runtime_id: self.id(),
                 kind: EventKind::WillBlockOn {
                     other_runtime_id: other_id,
-                    database_key: database_key,
+                    database_key,
                 },
             });
 
