@@ -24,6 +24,7 @@ pub(crate) struct TestContextImpl {
 }
 
 impl TestContextImpl {
+    #[track_caller]
     pub(crate) fn assert_log(&self, expected_log: &[&str]) {
         let expected_text = &format!("{:#?}", expected_log);
         let actual_text = &format!("{:#?}", self.log().take());
