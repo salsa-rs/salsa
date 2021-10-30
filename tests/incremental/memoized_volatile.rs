@@ -60,7 +60,7 @@ fn revalidate() {
     // will not (still 0, as 1/2 = 0)
     query.salsa_runtime_mut().synthetic_write(Durability::LOW);
     query.memoized2();
-    query.assert_log(&["Memoized1 invoked", "Volatile invoked"]);
+    query.assert_log(&["Volatile invoked", "Memoized1 invoked"]);
     query.memoized2();
     query.assert_log(&[]);
 
@@ -70,7 +70,7 @@ fn revalidate() {
     query.salsa_runtime_mut().synthetic_write(Durability::LOW);
 
     query.memoized2();
-    query.assert_log(&["Memoized1 invoked", "Volatile invoked", "Memoized2 invoked"]);
+    query.assert_log(&["Volatile invoked", "Memoized1 invoked", "Memoized2 invoked"]);
 
     query.memoized2();
     query.assert_log(&[]);

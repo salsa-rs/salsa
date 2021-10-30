@@ -288,8 +288,9 @@ impl Runtime {
     ///
     /// This is mostly useful to control the durability level for [on-demand inputs](https://salsa-rs.github.io/salsa/common_patterns/on_demand_inputs.html).
     pub fn report_synthetic_read(&self, durability: Durability) {
+        let changed_at = self.last_changed_revision(durability);
         self.local_state
-            .report_synthetic_read(durability, self.current_revision());
+            .report_synthetic_read(durability, changed_at);
     }
 
     /// Obviously, this should be user configurable at some point.
@@ -550,9 +551,10 @@ impl ActiveQuery {
         self.changed_at = changed_at;
     }
 
-    fn add_synthetic_read(&mut self, durability: Durability, current_revision: Revision) {
+    fn add_synthetic_read(&mut self, durability: Durability, revision: Revision) {
+        self.dependencies = None;
         self.durability = self.durability.min(durability);
-        self.changed_at = current_revision;
+        self.changed_at = self.changed_at.max(revision);
     }
 }
 

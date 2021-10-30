@@ -117,7 +117,7 @@ pub struct Event {
 impl Event {
     /// Returns a type that gives a user-readable debug output.
     /// Use like `println!("{:?}", index.debug(db))`.
-    pub fn debug<D: ?Sized>(self, db: &D) -> impl std::fmt::Debug + '_
+    pub fn debug<'me, D: ?Sized>(&'me self, db: &'me D) -> impl std::fmt::Debug + 'me
     where
         D: plumbing::DatabaseOps,
     {
@@ -134,15 +134,15 @@ impl fmt::Debug for Event {
     }
 }
 
-struct EventDebug<'db, D: ?Sized>
+struct EventDebug<'me, D: ?Sized>
 where
     D: plumbing::DatabaseOps,
 {
-    event: Event,
-    db: &'db D,
+    event: &'me Event,
+    db: &'me D,
 }
 
-impl<'db, D: ?Sized> fmt::Debug for EventDebug<'db, D>
+impl<'me, D: ?Sized> fmt::Debug for EventDebug<'me, D>
 where
     D: plumbing::DatabaseOps,
 {

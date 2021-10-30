@@ -85,10 +85,12 @@ impl LocalState {
         })
     }
 
-    pub(super) fn report_synthetic_read(&self, durability: Durability, current_revision: Revision) {
+    /// Update the top query on the stack to act as though it read a value
+    /// of durability `durability` which changed in `revision`.
+    pub(super) fn report_synthetic_read(&self, durability: Durability, revision: Revision) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.add_synthetic_read(durability, current_revision);
+                top_query.add_synthetic_read(durability, revision);
             }
         })
     }
