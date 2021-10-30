@@ -217,13 +217,14 @@ where
         };
 
         let mut panic_guard = PanicGuard::new(self.database_key_index, self, old_memo, runtime);
+        let active_query = runtime.push_query(self.database_key_index);
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
         if let Some(memo) = &mut panic_guard.memo {
-            if let Some(value) = memo.validate_memoized_value(db, revision_now) {
+            if let Some(value) = memo.validate_memoized_value(db, revision_now, &active_query) {
                 info!("{:?}: validated old memoized value", self,);
 
                 db.salsa_event(Event {
@@ -239,7 +240,6 @@ where
             }
         }
 
-        let active_query = runtime.push_query(self.database_key_index);
         Ok(self.execute(db, runtime, revision_now, active_query, panic_guard))
     }
 
@@ -580,11 +580,12 @@ where
 
         let mut panic_guard =
             PanicGuard::new(self.database_key_index, self, Some(old_memo), runtime);
+        let active_query = runtime.push_query(self.database_key_index);
 
         let memo = panic_guard.memo.as_mut().unwrap();
         if memo
             .revisions
-            .validate_memoized_value(db.ops_database(), revision_now)
+            .validate_memoized_value(db.ops_database(), revision_now, &active_query)
         {
             let maybe_changed = memo.revisions.changed_at > revision;
             panic_guard.proceed();
@@ -593,7 +594,6 @@ where
             // We found that this memoized value may have changed
             // but we have an old value. We can re-run the code and
             // actually *check* if it has changed.
-            let active_query = runtime.push_query(self.database_key_index);
             let StampedValue { changed_at, .. } =
                 self.execute(db, runtime, revision_now, active_query, panic_guard);
             changed_at > revision
@@ -745,10 +745,18 @@ impl<Q> Memo<Q>
 where
     Q: QueryFunction,
 {
+    /// Determines whether the memo is still valid in the current
+    /// revision. If needed, this will walk each dependency and
+    /// recursively invoke `maybe_changed_since`, which may in turn
+    /// re-execute the dependency. This can cause cycles to occur,
+    /// so the current query must be pushed onto the
+    /// stack to permit cycle detection and recovery: therefore,
+    /// takes the `active_query` argument as evidence.
     fn validate_memoized_value(
         &mut self,
         db: &<Q as QueryDb<'_>>::DynDb,
         revision_now: Revision,
+        active_query: &ActiveQueryGuard<'_>,
     ) -> Option<StampedValue<Q::Value>> {
         // If we don't have a memoized value, nothing to validate.
         let value = match &self.value {
@@ -757,7 +765,10 @@ where
         };
 
         let dyn_db = db.ops_database();
-        if self.revisions.validate_memoized_value(dyn_db, revision_now) {
+        if self
+            .revisions
+            .validate_memoized_value(dyn_db, revision_now, active_query)
+        {
             Some(StampedValue {
                 durability: self.revisions.durability,
                 changed_at: self.revisions.changed_at,
@@ -770,7 +781,22 @@ where
 }
 
 impl MemoRevisions {
-    fn validate_memoized_value(&mut self, db: &dyn Database, revision_now: Revision) -> bool {
+    /// Determines whether a memo with these revisions is still
+    /// valid in the current revision. If needed, this will walk each
+    /// dependency and recursively invoke `maybe_changed_since`, which
+    /// may in turn re-execute the dependency. This can cause cycles to occur,
+    /// so the current query must be pushed onto the
+    /// stack to permit cycle detection and recovery: therefore,
+    /// takes the `active_query` argument as evidence.
+    fn validate_memoized_value(
+        &mut self,
+        db: &dyn Database,
+        revision_now: Revision,
+        active_query: &ActiveQueryGuard<'_>,
+    ) -> bool {
+        // Noop that silences the unused parameter lint.
+        drop(active_query);
+
         assert!(self.verified_at != revision_now);
         let verified_at = self.verified_at;
 
