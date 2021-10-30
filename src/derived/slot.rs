@@ -7,6 +7,7 @@ use crate::plumbing::CycleError;
 use crate::plumbing::{CycleDetected, CycleRecoveryStrategy};
 use crate::plumbing::{DatabaseOps, QueryFunction};
 use crate::revision::Revision;
+use crate::runtime::local_state::ActiveQueryGuard;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
@@ -238,7 +239,8 @@ where
             }
         }
 
-        Ok(self.execute(db, runtime, revision_now, panic_guard))
+        let active_query = runtime.push_query(self.database_key_index);
+        Ok(self.execute(db, runtime, revision_now, active_query, panic_guard))
     }
 
     fn execute(
@@ -246,13 +248,12 @@ where
         db: &<Q as QueryDb<'_>>::DynDb,
         runtime: &Runtime,
         revision_now: Revision,
+        active_query: ActiveQueryGuard<'_>,
         mut panic_guard: PanicGuard<'_, Q, MP>,
     ) -> StampedValue<Q::Value> {
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = runtime
-            .push_query(self.database_key_index)
-            .pop_and_execute(db, || Q::execute(db, self.key.clone()));
+        let mut result = active_query.pop_and_execute(db, || Q::execute(db, self.key.clone()));
 
         if let Some(cycle) = &result.cycle {
             result.value = Q::cycle_fallback(db, cycle, &self.key);
@@ -592,8 +593,9 @@ where
             // We found that this memoized value may have changed
             // but we have an old value. We can re-run the code and
             // actually *check* if it has changed.
+            let active_query = runtime.push_query(self.database_key_index);
             let StampedValue { changed_at, .. } =
-                self.execute(db, runtime, revision_now, panic_guard);
+                self.execute(db, runtime, revision_now, active_query, panic_guard);
             changed_at > revision
         } else {
             // We found that inputs to this memoized value may have chanced
