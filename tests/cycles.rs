@@ -36,6 +36,8 @@ use test_env_log::test;
 // | Intra  | Fallback | Both     | Tracked   | direct   | cycle_revalidate |
 // | Intra  | Fallback | New      | Tracked   | direct   | cycle_appears |
 // | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears |
+// | Intra  | Mixed    | N/A      | Tracked   | direct   | cycle_mixed_1 |
+// | Intra  | Mixed    | N/A      | Tracked   | direct   | cycle_mixed_2 |
 // | Cross  | Fallback | N/A      | Tracked   | both     | parallel/cycles.rs: recover_parallel_cycle |
 // | Cross  | Panic    | N/A      | Tracked   | both     | parallel/cycles.rs: panic_parallel_cycle |
 
@@ -64,9 +66,29 @@ impl Default for DatabaseImpl {
         let mut res = DatabaseImpl {
             storage: salsa::Storage::default(),
         };
-        res.set_should_create_cycle(true);
+
+        // Default configuration:
+        //
+        //     A --> B <-- C
+        //     ^     |
+        //     +-----+
+
+        res.set_a_invokes(CycleQuery::B);
+        res.set_b_invokes(CycleQuery::A);
+        res.set_c_invokes(CycleQuery::B);
         res
     }
+}
+
+/// The queries A, B, and C in `Database` can be configured
+/// to invoke one another in arbitrary ways using this
+/// enum.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum CycleQuery {
+    None,
+    A,
+    B,
+    C,
 }
 
 #[salsa::query_group(GroupStruct)]
@@ -78,7 +100,13 @@ trait Database: salsa::Database {
     fn volatile_b(&self) -> ();
 
     #[salsa::input]
-    fn should_create_cycle(&self) -> bool;
+    fn a_invokes(&self) -> CycleQuery;
+
+    #[salsa::input]
+    fn b_invokes(&self) -> CycleQuery;
+
+    #[salsa::input]
+    fn c_invokes(&self) -> CycleQuery;
 
     #[salsa::cycle(recover_a)]
     fn cycle_a(&self) -> Result<(), Error>;
@@ -119,20 +147,27 @@ fn volatile_b(db: &dyn Database) {
     db.volatile_a()
 }
 
+impl CycleQuery {
+    fn invoke(self, db: &dyn Database) -> Result<(), Error> {
+        match self {
+            CycleQuery::A => db.cycle_a(),
+            CycleQuery::B => db.cycle_b(),
+            CycleQuery::C => db.cycle_c(),
+            CycleQuery::None => Ok(()),
+        }
+    }
+}
+
 fn cycle_a(db: &dyn Database) -> Result<(), Error> {
-    let _ = db.cycle_b();
-    Ok(())
+    db.a_invokes().invoke(db)
 }
 
 fn cycle_b(db: &dyn Database) -> Result<(), Error> {
-    if db.should_create_cycle() {
-        let _ = db.cycle_a();
-    }
-    Ok(())
+    db.b_invokes().invoke(db)
 }
 
 fn cycle_c(db: &dyn Database) -> Result<(), Error> {
-    db.cycle_b()
+    db.c_invokes().invoke(db)
 }
 
 #[test]
@@ -197,16 +232,16 @@ fn inner_cycle() {
 fn cycle_revalidate() {
     let mut db = DatabaseImpl::default();
     assert!(db.cycle_a().is_err());
-    db.set_should_create_cycle(true);
+    db.set_b_invokes(CycleQuery::A); // same value as default
     assert!(db.cycle_a().is_err());
 }
 
 #[test]
 fn cycle_appears() {
     let mut db = DatabaseImpl::default();
-    db.set_should_create_cycle(false);
+    db.set_b_invokes(CycleQuery::None);
     assert!(db.cycle_a().is_ok());
-    db.set_should_create_cycle(true);
+    db.set_b_invokes(CycleQuery::A);
     log::debug!("Set Cycle Leaf");
     assert!(db.cycle_a().is_err());
 }
@@ -215,6 +250,62 @@ fn cycle_appears() {
 fn cycle_disappears() {
     let mut db = DatabaseImpl::default();
     assert!(db.cycle_a().is_err());
-    db.set_should_create_cycle(false);
+    db.set_b_invokes(CycleQuery::None);
     assert!(db.cycle_a().is_ok());
+}
+
+#[test]
+fn cycle_mixed_1() {
+    let mut db = DatabaseImpl::default();
+    // Configuration:
+    //
+    //     A --> B <-- C
+    //           |     ^
+    //           +-----+
+    db.set_b_invokes(CycleQuery::C);
+    match Cancelled::catch(|| db.cycle_a()) {
+        Err(Cancelled::UnexpectedCycle(u)) => {
+            insta::assert_debug_snapshot!((u.all_participants(&db), u.unexpected_participants(&db)), @r###"
+            (
+                [
+                    "cycle_b(())",
+                    "cycle_c(())",
+                ],
+                [
+                    "cycle_c(())",
+                ],
+            )
+            "###);
+        }
+        v => panic!("unexpected result: {:?}", v),
+    }
+}
+
+#[test]
+fn cycle_mixed_2() {
+    let mut db = DatabaseImpl::default();
+    // Configuration:
+    //
+    //     A --> B --> C
+    //     ^           |
+    //     +-----------+
+    db.set_b_invokes(CycleQuery::C);
+    db.set_c_invokes(CycleQuery::A);
+    match Cancelled::catch(|| db.cycle_a()) {
+        Err(Cancelled::UnexpectedCycle(u)) => {
+            insta::assert_debug_snapshot!((u.all_participants(&db), u.unexpected_participants(&db)), @r###"
+            (
+                [
+                    "cycle_a(())",
+                    "cycle_b(())",
+                    "cycle_c(())",
+                ],
+                [
+                    "cycle_c(())",
+                ],
+            )
+            "###);
+        }
+        v => panic!("unexpected result: {:?}", v),
+    }
 }
