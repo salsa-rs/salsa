@@ -11,6 +11,6 @@ impl Log {
     }
 
     pub(crate) fn take(&self) -> Vec<String> {
-        std::mem::take(&mut *self.data.borrow_mut())
+        self.data.take()
     }
 }
