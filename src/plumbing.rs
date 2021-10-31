@@ -238,7 +238,7 @@ pub type CycleParticipants = Arc<Vec<DatabaseKeyIndex>>;
 
 /// The error returned when a query could not be resolved due to a cycle
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub struct CycleError {
+pub(crate) struct CycleError {
     /// The queries that were part of the cycle
     pub(crate) cycle: CycleParticipants,
     pub(crate) changed_at: Revision,
