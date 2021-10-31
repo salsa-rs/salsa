@@ -6,6 +6,7 @@ use crate::Database;
 use crate::Query;
 use crate::QueryTable;
 use crate::QueryTableMut;
+use crate::UnexpectedCycle;
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -21,7 +22,7 @@ pub use crate::{revision::Revision, DatabaseKeyIndex, QueryDb, Runtime};
 #[derive(Clone, Debug)]
 pub struct CycleDetected {
     pub(crate) recovery_strategy: CycleRecoveryStrategy,
-    pub(crate) cycle_error: crate::CycleError,
+    pub(crate) cycle_error: CycleError,
 }
 
 /// Defines various associated types. An impl of this
@@ -189,11 +190,7 @@ where
     /// Returns `Err` in the event of a cycle, meaning that computing
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
-    fn try_fetch(
-        &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-        key: &Q::Key,
-    ) -> Result<Q::Value, CycleError>;
+    fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value;
 
     /// Returns the durability associated with a given key.
     fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability;
@@ -250,26 +247,10 @@ pub struct CycleError {
 }
 
 impl CycleError {
-    pub(crate) fn debug<'a, D: ?Sized>(&'a self, db: &'a D) -> impl Debug + 'a
-    where
-        D: DatabaseOps,
-    {
-        struct CycleErrorDebug<'a, D: ?Sized> {
-            db: &'a D,
-            error: &'a CycleError,
+    pub(crate) fn into_unexpected_cycle(self) -> UnexpectedCycle {
+        UnexpectedCycle {
+            participants: self.cycle,
         }
-
-        impl<'a, D: ?Sized + DatabaseOps> Debug for CycleErrorDebug<'a, D> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                writeln!(f, "Internal error, cycle detected:\n")?;
-                for i in &*self.error.cycle {
-                    writeln!(f, "{:?}", i.debug(self.db))?;
-                }
-                Ok(())
-            }
-        }
-
-        CycleErrorDebug { db, error: self }
     }
 }
 

@@ -25,7 +25,7 @@ pub mod debug;
 #[doc(hidden)]
 pub mod plumbing;
 
-use crate::plumbing::CycleError;
+use crate::plumbing::CycleRecoveryStrategy;
 use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
@@ -494,12 +494,7 @@ where
     /// queries (those with no inputs, or those with more than one
     /// input) the key will be a tuple.
     pub fn get(&self, key: Q::Key) -> Q::Value {
-        self.try_get(key)
-            .unwrap_or_else(|err| panic!("{:?}", err.debug(self.db)))
-    }
-
-    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError> {
-        self.storage.try_fetch(self.db, &key)
+        self.storage.fetch(self.db, &key)
     }
 
     /// Completely clears the storage for this query.
@@ -601,16 +596,33 @@ where
     }
 }
 
-/// A panic payload indicating that a salsa revision was cancelled.
+/// A panic payload indicating that execution of a salsa query was cancelled.
+///
+/// This can occur for a few reasons:
+/// *
+/// *
+/// *
 #[derive(Debug)]
 #[non_exhaustive]
-pub struct Cancelled;
+pub enum Cancelled {
+    /// The query was operating on revision R, but there is a pending write to move to revision R+1.
+    #[non_exhaustive]
+    PendingWrite,
+
+    /// The query was blocked on another thread, and that thread panicked.
+    #[non_exhaustive]
+    PropagatedPanic,
+
+    /// The query encountered an "unexpected" cycle, meaning one in which some
+    /// participants lacked cycle recovery annotations.
+    UnexpectedCycle(UnexpectedCycle),
+}
 
 impl Cancelled {
-    fn throw() -> ! {
+    fn throw(self) -> ! {
         // We use resume and not panic here to avoid running the panic
         // hook (that is, to avoid collecting and printing backtrace).
-        std::panic::resume_unwind(Box::new(Self));
+        std::panic::resume_unwind(Box::new(self));
     }
 
     /// Runs `f`, and catches any salsa cancellation.
@@ -630,11 +642,68 @@ impl Cancelled {
 
 impl std::fmt::Display for Cancelled {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("cancelled")
+        let why = match self {
+            Cancelled::PendingWrite => "pending write",
+            Cancelled::PropagatedPanic => "propagated panic",
+            Cancelled::UnexpectedCycle(_) => "unexpected cycle",
+        };
+        f.write_str("cancelled because of ")?;
+        f.write_str(why)
     }
 }
 
 impl std::error::Error for Cancelled {}
+
+/// Information about an "unexpected" cycle, meaning one where some of the
+/// participants lacked cycle recovery annotations.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnexpectedCycle {
+    participants: plumbing::CycleParticipants,
+}
+
+impl UnexpectedCycle {
+    /// Returns a vector with the debug information for
+    /// all the participants in the cycle.
+    pub fn all_participants(&self, db: &dyn Database) -> Vec<String> {
+        self.participants
+            .iter()
+            .map(|d| format!("{:?}", d.debug(db)))
+            .collect()
+    }
+
+    /// Returns a vector with the debug information for
+    /// those participants in the cycle that lacked recovery
+    /// information.
+    pub fn unexpected_participants(&self, db: &dyn Database) -> Vec<String> {
+        self.participants
+            .iter()
+            .filter(|&&d| db.cycle_recovery_strategy(d) == CycleRecoveryStrategy::Panic)
+            .map(|d| format!("{:?}", d.debug(db)))
+            .collect()
+    }
+
+    /// Returns a "debug" view onto this strict that can be used to print out information.
+    pub fn debug<'me>(&'me self, db: &'me dyn Database) -> impl std::fmt::Debug + 'me {
+        struct UnexpectedCycleDebug<'me> {
+            c: &'me UnexpectedCycle,
+            db: &'me dyn Database,
+        }
+
+        impl<'me> std::fmt::Debug for UnexpectedCycleDebug<'me> {
+            fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                fmt.debug_struct("UnexpectedCycle")
+                    .field("all_participants", &self.c.all_participants(self.db))
+                    .field(
+                        "unexpected_participants",
+                        &self.c.unexpected_participants(self.db),
+                    )
+                    .finish()
+            }
+        }
+
+        UnexpectedCycleDebug { c: self, db }
+    }
+}
 
 // Re-export the procedural macros.
 #[allow(unused_imports)]

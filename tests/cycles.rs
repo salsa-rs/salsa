@@ -1,4 +1,4 @@
-use salsa::{ParallelDatabase, Snapshot};
+use salsa::{Cancelled, ParallelDatabase, Snapshot};
 use test_env_log::test;
 
 // Axes:
@@ -136,17 +136,39 @@ fn cycle_c(db: &dyn Database) -> Result<(), Error> {
 }
 
 #[test]
-#[should_panic(expected = "cycle detected")]
 fn cycle_memoized() {
-    let query = DatabaseImpl::default();
-    query.memoized_a();
+    let db = DatabaseImpl::default();
+    match Cancelled::catch(|| {
+        db.memoized_a();
+    }) {
+        Err(Cancelled::UnexpectedCycle(c)) => {
+            insta::assert_debug_snapshot!(c.unexpected_participants(&db), @r###"
+            [
+                "memoized_a(())",
+                "memoized_b(())",
+            ]
+            "###);
+        }
+        v => panic!("unexpected result: {:#?}", v),
+    }
 }
 
 #[test]
-#[should_panic(expected = "cycle detected")]
 fn cycle_volatile() {
-    let query = DatabaseImpl::default();
-    query.volatile_a();
+    let db = DatabaseImpl::default();
+    match Cancelled::catch(|| {
+        db.volatile_a();
+    }) {
+        Err(Cancelled::UnexpectedCycle(c)) => {
+            insta::assert_debug_snapshot!(c.unexpected_participants(&db), @r###"
+            [
+                "volatile_a(())",
+                "volatile_b(())",
+            ]
+            "###);
+        }
+        v => panic!("unexpected result: {:#?}", v),
+    }
 }
 
 #[test]

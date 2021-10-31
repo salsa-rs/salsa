@@ -132,14 +132,15 @@ fn panic_parallel_cycle() {
     // We expect B to panic because it detects a cycle (it is the one that calls A, ultimately).
     // Right now, it panics with a string.
     let err_b = thread_b.join().unwrap_err();
-    if let Some(str_b) = err_b.downcast_ref::<String>() {
-        assert!(
-            str_b.contains("cycle detected"),
-            "unexpeced string: {:?}",
-            str_b
-        );
+    if let Some(Cancelled::UnexpectedCycle(c)) = err_b.downcast_ref::<Cancelled>() {
+        insta::assert_debug_snapshot!(c.unexpected_participants(&db), @r###"
+        [
+            "panic_cycle_a(-1)",
+            "panic_cycle_b(-1)",
+        ]
+        "###);
     } else {
-        panic!("b failed in an unexpected way");
+        panic!("b failed in an unexpected way: {:?}", err_b);
     }
 
     // We expect A to propagate a panic, which causes us to use the sentinel

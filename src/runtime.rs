@@ -150,7 +150,7 @@ impl Runtime {
     #[cold]
     pub(crate) fn unwind_cancelled(&self) {
         self.report_untracked_read();
-        Cancelled::throw();
+        Cancelled::PendingWrite.throw();
     }
 
     /// Acquires the **global query write lock** (ensuring that no queries are

@@ -1,6 +1,5 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
-use crate::plumbing::CycleError;
 use crate::plumbing::CycleRecoveryStrategy;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
@@ -97,11 +96,7 @@ where
         slot.maybe_changed_since(db, revision)
     }
 
-    fn try_fetch(
-        &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-        key: &Q::Key,
-    ) -> Result<Q::Value, CycleError> {
+    fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
         db.unwind_if_cancelled();
 
         let slot = self
@@ -117,7 +112,7 @@ where
         db.salsa_runtime()
             .report_query_read(slot.database_key_index, durability, changed_at);
 
-        Ok(value)
+        value
     }
 
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {

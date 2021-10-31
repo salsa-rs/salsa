@@ -3,7 +3,6 @@ use crate::derived::MemoizationPolicy;
 use crate::durability::Durability;
 use crate::lru::LruIndex;
 use crate::lru::LruNode;
-use crate::plumbing::CycleError;
 use crate::plumbing::{CycleDetected, CycleRecoveryStrategy};
 use crate::plumbing::{DatabaseOps, QueryFunction};
 use crate::revision::Revision;
@@ -115,7 +114,7 @@ enum ProbeState<V, G> {
     /// There is an entry which has been verified,
     /// and it has the following value-- or, we blocked
     /// on another thread, and that resulted in a cycle.
-    UpToDate(Result<V, CycleError>),
+    UpToDate(V),
 }
 
 /// Return value of `maybe_changed_since_probe` helper.
@@ -151,10 +150,7 @@ where
         self.database_key_index
     }
 
-    pub(super) fn read(
-        &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-    ) -> Result<StampedValue<Q::Value>, CycleError> {
+    pub(super) fn read(&self, db: &<Q as QueryDb<'_>>::DynDb) -> StampedValue<Q::Value> {
         let runtime = db.salsa_runtime();
 
         // NB: We don't need to worry about people modifying the
@@ -188,7 +184,7 @@ where
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         revision_now: Revision,
-    ) -> Result<StampedValue<Q::Value>, CycleError> {
+    ) -> StampedValue<Q::Value> {
         let runtime = db.salsa_runtime();
 
         debug!("{:?}: read_upgrade(revision_now={:?})", self, revision_now,);
@@ -236,11 +232,11 @@ where
 
                 panic_guard.proceed();
 
-                return Ok(value);
+                return value;
             }
         }
 
-        Ok(self.execute(db, runtime, revision_now, active_query, panic_guard))
+        self.execute(db, runtime, revision_now, active_query, panic_guard)
     }
 
     fn execute(
@@ -376,18 +372,20 @@ where
                 anyone_waiting.store(true, Ordering::Relaxed);
 
                 return match self.block_on_in_progress_thread(db, runtime, other_id, state) {
-                    Ok(WaitResult::Panicked) => Cancelled::throw(),
+                    Ok(WaitResult::Panicked) => Cancelled::PropagatedPanic.throw(),
                     Ok(WaitResult::Completed) => ProbeState::Retry,
                     Err(CycleDetected {
                         recovery_strategy,
                         cycle_error,
                     }) => ProbeState::UpToDate(match recovery_strategy {
-                        CycleRecoveryStrategy::Panic => Err(cycle_error),
-                        CycleRecoveryStrategy::Fallback => Ok(StampedValue {
+                        CycleRecoveryStrategy::Panic => {
+                            Cancelled::UnexpectedCycle(cycle_error.into_unexpected_cycle()).throw()
+                        }
+                        CycleRecoveryStrategy::Fallback => StampedValue {
                             value: Q::cycle_fallback(db, &cycle_error.cycle, &self.key),
                             changed_at: cycle_error.changed_at,
                             durability: cycle_error.durability,
-                        }),
+                        },
                     }),
                 };
             }
@@ -414,7 +412,7 @@ where
                         self, value.changed_at
                     );
 
-                    ProbeState::UpToDate(Ok(value))
+                    ProbeState::UpToDate(value)
                 } else {
                     let changed_at = memo.revisions.changed_at;
                     ProbeState::NoValue(state, changed_at)
@@ -524,17 +522,14 @@ where
             // If we know when value last changed, we can return right away.
             // Note that we don't need the actual value to be available.
             ProbeState::NoValue(_, changed_at)
-            | ProbeState::UpToDate(Ok(StampedValue {
+            | ProbeState::UpToDate(StampedValue {
                 value: _,
                 durability: _,
                 changed_at,
-            })) => MaybeChangedSinceProbeState::ChangedAt(changed_at),
+            }) => MaybeChangedSinceProbeState::ChangedAt(changed_at),
 
             // If we have nothing cached, then value may have changed.
             ProbeState::NotComputed(_) => MaybeChangedSinceProbeState::ChangedAt(revision_now),
-
-            // Consider cycles as potentially having changed.
-            ProbeState::UpToDate(Err(_)) => MaybeChangedSinceProbeState::ChangedAt(revision_now),
         }
     }
 

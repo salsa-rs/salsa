@@ -7,7 +7,7 @@ use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use crate::Query;
-use crate::{CycleError, Database, DatabaseKeyIndex, QueryDb};
+use crate::{Database, DatabaseKeyIndex, QueryDb};
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
@@ -227,11 +227,7 @@ where
         slot.maybe_changed_since(revision)
     }
 
-    fn try_fetch(
-        &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-        key: &Q::Key,
-    ) -> Result<Q::Value, CycleError> {
+    fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
         db.unwind_if_cancelled();
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
@@ -241,7 +237,7 @@ where
             INTERN_DURABILITY,
             changed_at,
         );
-        Ok(<Q::Value>::from_intern_id(index))
+        <Q::Value>::from_intern_id(index)
     }
 
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Durability {
@@ -346,11 +342,7 @@ where
         interned_storage.maybe_changed_since(Q::convert_db(db), input, revision)
     }
 
-    fn try_fetch(
-        &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-        key: &Q::Key,
-    ) -> Result<Q::Value, CycleError> {
+    fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
         let index = key.as_intern_id();
         let group_storage =
             <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
@@ -363,7 +355,7 @@ where
             INTERN_DURABILITY,
             interned_at,
         );
-        Ok(value)
+        value
     }
 
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Durability {
