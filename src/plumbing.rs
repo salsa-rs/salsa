@@ -6,7 +6,6 @@ use crate::Database;
 use crate::Query;
 use crate::QueryTable;
 use crate::QueryTableMut;
-use crate::RuntimeId;
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -21,8 +20,8 @@ pub use crate::{revision::Revision, DatabaseKeyIndex, QueryDb, Runtime};
 
 #[derive(Clone, Debug)]
 pub struct CycleDetected {
-    pub(crate) from: RuntimeId,
-    pub(crate) to: RuntimeId,
+    pub(crate) recovery_strategy: CycleRecoveryStrategy,
+    pub(crate) cycle_error: crate::CycleError,
 }
 
 /// Defines various associated types. An impl of this

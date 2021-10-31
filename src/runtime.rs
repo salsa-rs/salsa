@@ -4,7 +4,7 @@ use crate::revision::{AtomicRevision, Revision};
 use crate::{Cancelled, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, MutexGuard, RwLock};
 use rustc_hash::FxHasher;
 use std::hash::{BuildHasherDefault, Hash};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -252,44 +252,69 @@ impl Runtime {
             .report_synthetic_read(durability, changed_at);
     }
 
-    /// Obviously, this should be user configurable at some point.
-    pub(crate) fn report_unexpected_cycle(
+    fn create_cycle_error(
         &self,
         db: &dyn Database,
+        mut dg: MutexGuard<'_, DependencyGraph>,
         database_key_index: DatabaseKeyIndex,
-        error: CycleDetected,
-        changed_at: Revision,
-    ) -> (CycleRecoveryStrategy, crate::CycleError) {
-        debug!(
-            "report_unexpected_cycle(database_key={:?})",
-            database_key_index
-        );
+        to_id: RuntimeId,
+    ) -> CycleDetected {
+        debug!("create_cycle_error(database_key={:?})", database_key_index);
 
-        let mut cycle_participants = vec![];
-        let mut stack = self.local_state.take_query_stack();
-        let mut dg = self.shared_state.dependency_graph.lock();
-        dg.for_each_cycle_participant(error.from, &mut stack, database_key_index, error.to, |aq| {
-            cycle_participants.push(aq.database_key_index);
-        });
-        let cycle_participants = Arc::new(cycle_participants);
-        dg.for_each_cycle_participant(error.from, &mut stack, database_key_index, error.to, |aq| {
-            aq.cycle = Some(cycle_participants.clone());
-        });
-        self.local_state.restore_query_stack(stack);
-        let crs = self.mutual_cycle_recovery_strategy(db, &cycle_participants);
-        debug!(
-            "cycle recovery strategy {:?} for participants {:?}",
-            crs, cycle_participants
-        );
+        let mut from_stack = self.local_state.take_query_stack();
+        let from_id = self.id();
 
-        (
-            crs,
-            CycleError {
+        // Extract the changed_at and durability values from the top of the stack;
+        // these reflect the queries which were executed thus far and which
+        // led to the cycle.
+        let changed_at = from_stack.last().unwrap().changed_at;
+        let durability = from_stack.last().unwrap().durability;
+
+        // Identify the cycle participants:
+        let cycle_participants = {
+            let mut v = vec![];
+            dg.for_each_cycle_participant(
+                from_id,
+                &mut from_stack,
+                database_key_index,
+                to_id,
+                |aq| v.push(aq.database_key_index),
+            );
+            Arc::new(v)
+        };
+        debug!("cycle participants {:?}", cycle_participants);
+
+        // Identify cycle recovery strategy:
+        let recovery_strategy = self.mutual_cycle_recovery_strategy(db, &cycle_participants);
+        debug!("cycle recovery strategy {:?}", recovery_strategy);
+
+        // If using fallback, we have to mark the cycle participants, so they know to recover.
+        match recovery_strategy {
+            CycleRecoveryStrategy::Panic => {}
+            CycleRecoveryStrategy::Fallback => {
+                // Mark the cycle participants, so they know to recover:
+                dg.for_each_cycle_participant(
+                    from_id,
+                    &mut from_stack,
+                    database_key_index,
+                    to_id,
+                    |aq| {
+                        aq.cycle = Some(cycle_participants.clone());
+                    },
+                );
+            }
+        }
+
+        self.local_state.restore_query_stack(from_stack);
+
+        CycleDetected {
+            recovery_strategy,
+            cycle_error: CycleError {
                 cycle: cycle_participants,
                 changed_at,
-                durability: Durability::MAX,
+                durability,
             },
-        )
+        }
     }
 
     fn mutual_cycle_recovery_strategy(
@@ -325,10 +350,7 @@ impl Runtime {
         let mut dg = self.shared_state.dependency_graph.lock();
 
         if self.id() == other_id || dg.depends_on(other_id, self.id()) {
-            Err(CycleDetected {
-                from: self.id(),
-                to: other_id,
-            })
+            Err(self.create_cycle_error(db, dg, database_key, other_id))
         } else {
             db.salsa_event(Event {
                 runtime_id: self.id(),

@@ -378,21 +378,17 @@ where
                 return match self.block_on_in_progress_thread(db, runtime, other_id, state) {
                     Ok(WaitResult::Panicked) => Cancelled::throw(),
                     Ok(WaitResult::Completed) => ProbeState::Retry,
-                    Err(err) => ProbeState::UpToDate(
-                        match runtime.report_unexpected_cycle(
-                            db.ops_database(),
-                            self.database_key_index,
-                            err,
-                            revision_now,
-                        ) {
-                            (CycleRecoveryStrategy::Panic, err) => Err(err),
-                            (CycleRecoveryStrategy::Fallback, err) => Ok(StampedValue {
-                                value: Q::cycle_fallback(db, &err.cycle, &self.key),
-                                changed_at: err.changed_at,
-                                durability: err.durability,
-                            }),
-                        },
-                    ),
+                    Err(CycleDetected {
+                        recovery_strategy,
+                        cycle_error,
+                    }) => ProbeState::UpToDate(match recovery_strategy {
+                        CycleRecoveryStrategy::Panic => Err(cycle_error),
+                        CycleRecoveryStrategy::Fallback => Ok(StampedValue {
+                            value: Q::cycle_fallback(db, &cycle_error.cycle, &self.key),
+                            changed_at: cycle_error.changed_at,
+                            durability: cycle_error.durability,
+                        }),
+                    }),
                 };
             }
 
