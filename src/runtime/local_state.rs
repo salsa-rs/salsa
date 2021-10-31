@@ -126,7 +126,7 @@ impl LocalState {
             self.query_stack.borrow().is_some(),
             "query stack already taken"
         );
-        self.query_stack.replace(None).unwrap()
+        self.query_stack.take().unwrap()
     }
 
     /// Restores a query stack taken with [`Self::take_query_stack`] once
