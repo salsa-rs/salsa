@@ -49,15 +49,12 @@ where
     },
 
     /// We have computed the query already, and here is the result.
-    Memoized(Memo<Q>),
+    Memoized(Memo<Q::Value>),
 }
 
-struct Memo<Q>
-where
-    Q: QueryFunction,
-{
+struct Memo<V> {
     /// The result of the query, if we decide to memoize it.
-    value: Option<Q::Value>,
+    value: Option<V>,
 
     /// Revision information
     revisions: MemoRevisions,
@@ -220,7 +217,9 @@ where
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
         if let Some(memo) = &mut panic_guard.memo {
-            if let Some(value) = memo.validate_memoized_value(db, revision_now, &active_query) {
+            if let Some(value) =
+                memo.validate_memoized_value(db.ops_database(), revision_now, &active_query)
+            {
                 info!("{:?}: validated old memoized value", self,);
 
                 db.salsa_event(Event {
@@ -649,7 +648,7 @@ where
 {
     database_key_index: DatabaseKeyIndex,
     slot: &'me Slot<Q, MP>,
-    memo: Option<Memo<Q>>,
+    memo: Option<Memo<Q::Value>>,
     runtime: &'me Runtime,
 }
 
@@ -661,7 +660,7 @@ where
     fn new(
         database_key_index: DatabaseKeyIndex,
         slot: &'me Slot<Q, MP>,
-        memo: Option<Memo<Q>>,
+        memo: Option<Memo<Q::Value>>,
         runtime: &'me Runtime,
     ) -> Self {
         Self {
@@ -737,9 +736,9 @@ where
     }
 }
 
-impl<Q> Memo<Q>
+impl<V> Memo<V>
 where
-    Q: QueryFunction,
+    V: Clone,
 {
     /// Determines whether the memo is still valid in the current
     /// revision. If needed, this will walk each dependency and
@@ -750,20 +749,19 @@ where
     /// takes the `active_query` argument as evidence.
     fn validate_memoized_value(
         &mut self,
-        db: &<Q as QueryDb<'_>>::DynDb,
+        db: &dyn Database,
         revision_now: Revision,
         active_query: &ActiveQueryGuard<'_>,
-    ) -> Option<StampedValue<Q::Value>> {
+    ) -> Option<StampedValue<V>> {
         // If we don't have a memoized value, nothing to validate.
         let value = match &self.value {
             None => return None,
             Some(v) => v,
         };
 
-        let dyn_db = db.ops_database();
         if self
             .revisions
-            .validate_memoized_value(dyn_db, revision_now, active_query)
+            .validate_memoized_value(db, revision_now, active_query)
         {
             Some(StampedValue {
                 durability: self.revisions.durability,
