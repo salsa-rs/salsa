@@ -117,15 +117,15 @@ trait Database: salsa::Database {
     fn cycle_c(&self) -> Result<(), Error>;
 }
 
-fn recover_a(_db: &dyn Database, cycle: &[String]) -> Result<(), Error> {
+fn recover_a(db: &dyn Database, cycle: &salsa::Cycle) -> Result<(), Error> {
     Err(Error {
-        cycle: cycle.to_owned(),
+        cycle: cycle.all_participants(db),
     })
 }
 
-fn recover_b(_db: &dyn Database, cycle: &[String]) -> Result<(), Error> {
+fn recover_b(db: &dyn Database, cycle: &salsa::Cycle) -> Result<(), Error> {
     Err(Error {
-        cycle: cycle.to_owned(),
+        cycle: cycle.all_participants(db),
     })
 }
 
@@ -218,14 +218,12 @@ fn inner_cycle() {
     let err = query.cycle_c();
     assert!(err.is_err());
     let cycle = err.unwrap_err().cycle;
-    assert!(
-        cycle
-            .iter()
-            .zip(&["cycle_b", "cycle_a"])
-            .all(|(l, r)| l.contains(r)),
-        "{:#?}",
-        cycle
-    );
+    insta::assert_debug_snapshot!(cycle, @r###"
+    [
+        "cycle_a(())",
+        "cycle_b(())",
+    ]
+    "###);
 }
 
 #[test]
@@ -308,4 +306,31 @@ fn cycle_mixed_2() {
         }
         v => panic!("unexpected result: {:?}", v),
     }
+}
+
+#[test]
+fn cycle_deterministic_order() {
+    // No matter whether we start from A or B, we get the same set of participants:
+    let a = DatabaseImpl::default().cycle_a();
+    let b = DatabaseImpl::default().cycle_b();
+    insta::assert_debug_snapshot!((a, b), @r###"
+    (
+        Err(
+            Error {
+                cycle: [
+                    "cycle_a(())",
+                    "cycle_b(())",
+                ],
+            },
+        ),
+        Err(
+            Error {
+                cycle: [
+                    "cycle_a(())",
+                    "cycle_b(())",
+                ],
+            },
+        ),
+    )
+    "###);
 }

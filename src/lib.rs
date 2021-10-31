@@ -615,7 +615,7 @@ pub enum Cancelled {
 
     /// The query encountered an "unexpected" cycle, meaning one in which some
     /// participants lacked cycle recovery annotations.
-    UnexpectedCycle(UnexpectedCycle),
+    UnexpectedCycle(Cycle),
 }
 
 impl Cancelled {
@@ -657,16 +657,32 @@ impl std::error::Error for Cancelled {}
 /// Information about an "unexpected" cycle, meaning one where some of the
 /// participants lacked cycle recovery annotations.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnexpectedCycle {
+pub struct Cycle {
     participants: plumbing::CycleParticipants,
 }
 
-impl UnexpectedCycle {
+impl Cycle {
+    pub(crate) fn new(participants: plumbing::CycleParticipants) -> Self {
+        Self { participants }
+    }
+
+    /// Iterate over the [`DatabaseKeyIndex`] for each query participating
+    /// in the cycle. The start point of this iteration within the cycle
+    /// is arbitrary but deterministic, but the ordering is otherwise determined
+    /// by the execution.
+    pub fn participant_keys(&self) -> impl Iterator<Item = DatabaseKeyIndex> + '_ {
+        let min = self.participants.iter().min().unwrap();
+        let index = self.participants.iter().position(|p| p == min).unwrap();
+        self.participants[index..]
+            .iter()
+            .chain(self.participants[..index].iter())
+            .copied()
+    }
+
     /// Returns a vector with the debug information for
     /// all the participants in the cycle.
-    pub fn all_participants(&self, db: &dyn Database) -> Vec<String> {
-        self.participants
-            .iter()
+    pub fn all_participants<DB: ?Sized + Database>(&self, db: &DB) -> Vec<String> {
+        self.participant_keys()
             .map(|d| format!("{:?}", d.debug(db)))
             .collect()
     }
@@ -674,18 +690,17 @@ impl UnexpectedCycle {
     /// Returns a vector with the debug information for
     /// those participants in the cycle that lacked recovery
     /// information.
-    pub fn unexpected_participants(&self, db: &dyn Database) -> Vec<String> {
-        self.participants
-            .iter()
-            .filter(|&&d| db.cycle_recovery_strategy(d) == CycleRecoveryStrategy::Panic)
+    pub fn unexpected_participants<DB: ?Sized + Database>(&self, db: &DB) -> Vec<String> {
+        self.participant_keys()
+            .filter(|&d| db.cycle_recovery_strategy(d) == CycleRecoveryStrategy::Panic)
             .map(|d| format!("{:?}", d.debug(db)))
             .collect()
     }
 
     /// Returns a "debug" view onto this strict that can be used to print out information.
-    pub fn debug<'me>(&'me self, db: &'me dyn Database) -> impl std::fmt::Debug + 'me {
+    pub fn debug<'me, DB: ?Sized + Database>(&'me self, db: &'me DB) -> impl std::fmt::Debug + 'me {
         struct UnexpectedCycleDebug<'me> {
-            c: &'me UnexpectedCycle,
+            c: &'me Cycle,
             db: &'me dyn Database,
         }
 
@@ -701,7 +716,10 @@ impl UnexpectedCycle {
             }
         }
 
-        UnexpectedCycleDebug { c: self, db }
+        UnexpectedCycleDebug {
+            c: self,
+            db: db.ops_database(),
+        }
     }
 }
 

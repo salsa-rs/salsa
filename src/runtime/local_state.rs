@@ -1,7 +1,7 @@
 use crate::durability::Durability;
-use crate::plumbing::CycleParticipants;
 use crate::runtime::ActiveQuery;
 use crate::runtime::Revision;
+use crate::Cycle;
 use crate::Database;
 use crate::DatabaseKeyIndex;
 use crate::Event;
@@ -42,8 +42,9 @@ pub(crate) struct ComputedQueryResult<V> {
     /// there was an untracked the read.
     pub(crate) dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
 
-    /// The cycle if one occured while computing this value
-    pub(crate) cycle: Option<CycleParticipants>,
+    /// If this node participated in a cycle, then this value is set
+    /// to the cycle in which it participated.
+    pub(crate) cycle_participant: Option<Cycle>,
 }
 
 impl Default for LocalState {
@@ -211,7 +212,7 @@ impl ActiveQueryGuard<'_> {
             durability,
             changed_at,
             dependencies,
-            cycle,
+            cycle_participant: cycle,
         }
     }
 }

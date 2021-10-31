@@ -251,7 +251,12 @@ where
         // stale, or value is absent. Let's execute!
         let mut result = active_query.pop_and_execute(db, || Q::execute(db, self.key.clone()));
 
-        if let Some(cycle) = &result.cycle {
+        // Subtle: if we were a participant in a cycle, and we have "fallback" cycle recovery,
+        // then we need to overwrite the returned value with the fallback value so that our callers
+        // do not observe the actual value we returned (which is not valid). It's important that
+        // we ignore the actual value that was returned because otherwise it is easy to have
+        // "recovery" where the final value is dependent on which node started the cycle.
+        if let Some(cycle) = &result.cycle_participant {
             result.value = Q::cycle_fallback(db, cycle, &self.key);
         }
 
@@ -379,7 +384,7 @@ where
                         cycle_error,
                     }) => ProbeState::UpToDate(match recovery_strategy {
                         CycleRecoveryStrategy::Panic => {
-                            Cancelled::UnexpectedCycle(cycle_error.into_unexpected_cycle()).throw()
+                            Cancelled::UnexpectedCycle(cycle_error.cycle).throw()
                         }
                         CycleRecoveryStrategy::Fallback => StampedValue {
                             value: Q::cycle_fallback(db, &cycle_error.cycle, &self.key),

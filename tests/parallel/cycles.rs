@@ -28,22 +28,38 @@ use test_env_log::test;
 // a2 sees cycle, recovers
 // a1 completes, recovers
 
-pub(crate) fn recover_from_cycle_a1(_db: &dyn ParDatabase, _cycle: &[String], key: &i32) -> i32 {
+pub(crate) fn recover_from_cycle_a1(
+    _db: &dyn ParDatabase,
+    _cycle: &salsa::Cycle,
+    key: &i32,
+) -> i32 {
     log::debug!("recover_from_cycle_a1");
     key * 10 + 1
 }
 
-pub(crate) fn recover_from_cycle_a2(_db: &dyn ParDatabase, _cycle: &[String], key: &i32) -> i32 {
+pub(crate) fn recover_from_cycle_a2(
+    _db: &dyn ParDatabase,
+    _cycle: &salsa::Cycle,
+    key: &i32,
+) -> i32 {
     log::debug!("recover_from_cycle_a2");
     key * 10 + 2
 }
 
-pub(crate) fn recover_from_cycle_b1(_db: &dyn ParDatabase, _cycle: &[String], key: &i32) -> i32 {
+pub(crate) fn recover_from_cycle_b1(
+    _db: &dyn ParDatabase,
+    _cycle: &salsa::Cycle,
+    key: &i32,
+) -> i32 {
     log::debug!("recover_from_cycle_b1");
     key * 20 + 1
 }
 
-pub(crate) fn recover_from_cycle_b2(_db: &dyn ParDatabase, _cycle: &[String], key: &i32) -> i32 {
+pub(crate) fn recover_from_cycle_b2(
+    _db: &dyn ParDatabase,
+    _cycle: &salsa::Cycle,
+    key: &i32,
+) -> i32 {
     log::debug!("recover_from_cycle_b2");
     key * 20 + 2
 }

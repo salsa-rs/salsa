@@ -2,11 +2,11 @@
 
 use crate::debug::TableEntry;
 use crate::durability::Durability;
+use crate::Cycle;
 use crate::Database;
 use crate::Query;
 use crate::QueryTable;
 use crate::QueryTableMut;
-use crate::UnexpectedCycle;
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -80,7 +80,7 @@ pub trait QueryFunction: Query {
 
     fn cycle_fallback(
         db: &<Self as QueryDb<'_>>::DynDb,
-        cycle: &[DatabaseKeyIndex],
+        cycle: &Cycle,
         key: &Self::Key,
     ) -> Self::Value {
         let _ = (db, cycle, key);
@@ -240,26 +240,14 @@ pub type CycleParticipants = Arc<Vec<DatabaseKeyIndex>>;
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub(crate) struct CycleError {
     /// The queries that were part of the cycle
-    pub(crate) cycle: CycleParticipants,
+    pub(crate) cycle: Cycle,
     pub(crate) changed_at: Revision,
     pub(crate) durability: Durability,
     // pub(crate) recovery_strategy: CycleRecoveryStrategy,
 }
 
-impl CycleError {
-    pub(crate) fn into_unexpected_cycle(self) -> UnexpectedCycle {
-        UnexpectedCycle {
-            participants: self.cycle,
-        }
-    }
-}
-
 impl std::fmt::Display for CycleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Internal error, cycle detected:\n")?;
-        for i in &*self.cycle {
-            writeln!(f, "{:?}", i)?;
-        }
-        Ok(())
+        writeln!(f, "Internal error, cycle detected: {:?}", self.cycle)
     }
 }

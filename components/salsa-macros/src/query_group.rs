@@ -485,11 +485,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 quote! {
                     const CYCLE_STRATEGY: salsa::plumbing::CycleRecoveryStrategy =
                         salsa::plumbing::CycleRecoveryStrategy::Fallback;
-                    fn cycle_fallback(db: &<Self as salsa::QueryDb<'_>>::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::Query>::Key)
+                    fn cycle_fallback(db: &<Self as salsa::QueryDb<'_>>::DynDb, cycle: &salsa::Cycle, #key_pattern: &<Self as salsa::Query>::Key)
                         -> <Self as salsa::Query>::Value {
                         #cycle_recovery_fn(
                                 db,
-                                &cycle.iter().map(|k| format!("{:?}", k.debug(db))).collect::<Vec<String>>(),
+                                cycle,
                                 #(#key_names),*
                         )
                     }

@@ -1,7 +1,7 @@
 use crate::durability::Durability;
-use crate::plumbing::{CycleDetected, CycleError, CycleParticipants, CycleRecoveryStrategy};
+use crate::plumbing::{CycleDetected, CycleError, CycleRecoveryStrategy};
 use crate::revision::{AtomicRevision, Revision};
-use crate::{Cancelled, Database, DatabaseKeyIndex, Event, EventKind};
+use crate::{Cancelled, Cycle, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, MutexGuard, RwLock};
@@ -271,7 +271,7 @@ impl Runtime {
         let durability = from_stack.last().unwrap().durability;
 
         // Identify the cycle participants:
-        let cycle_participants = {
+        let cycle = {
             let mut v = vec![];
             dg.for_each_cycle_participant(
                 from_id,
@@ -280,12 +280,12 @@ impl Runtime {
                 to_id,
                 |aq| v.push(aq.database_key_index),
             );
-            Arc::new(v)
+            Cycle::new(Arc::new(v))
         };
-        debug!("cycle participants {:?}", cycle_participants);
+        debug!("cycle {:?}", cycle.debug(db));
 
         // Identify cycle recovery strategy:
-        let recovery_strategy = self.mutual_cycle_recovery_strategy(db, &cycle_participants);
+        let recovery_strategy = self.mutual_cycle_recovery_strategy(db, &cycle);
         debug!("cycle recovery strategy {:?}", recovery_strategy);
 
         // If using fallback, we have to mark the cycle participants, so they know to recover.
@@ -299,7 +299,7 @@ impl Runtime {
                     database_key_index,
                     to_id,
                     |aq| {
-                        aq.cycle = Some(cycle_participants.clone());
+                        aq.cycle = Some(cycle.clone());
                     },
                 );
             }
@@ -310,7 +310,7 @@ impl Runtime {
         CycleDetected {
             recovery_strategy,
             cycle_error: CycleError {
-                cycle: cycle_participants,
+                cycle,
                 changed_at,
                 durability,
             },
@@ -320,16 +320,17 @@ impl Runtime {
     fn mutual_cycle_recovery_strategy(
         &self,
         db: &dyn Database,
-        cycle: &[DatabaseKeyIndex],
+        cycle: &Cycle,
     ) -> CycleRecoveryStrategy {
-        let crs = db.cycle_recovery_strategy(cycle[0]);
-        if let Some(key) = cycle[1..]
+        let participants = &cycle.participants;
+        let crs = db.cycle_recovery_strategy(participants[0]);
+        if let Some(key) = participants[1..]
             .iter()
             .copied()
             .find(|&key| db.cycle_recovery_strategy(key) != crs)
         {
             debug!("mutual_cycle_recovery_strategy: cycle had multiple strategies ({:?} for {:?} vs {:?} for {:?})",
-                crs, cycle[0],
+                crs, participants[0],
                 db.cycle_recovery_strategy(key), key
             );
             CycleRecoveryStrategy::Panic
@@ -484,7 +485,7 @@ struct ActiveQuery {
     dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
 
     /// Stores the entire cycle, if one is found and this query is part of it.
-    cycle: Option<CycleParticipants>,
+    cycle: Option<Cycle>,
 }
 
 impl ActiveQuery {
