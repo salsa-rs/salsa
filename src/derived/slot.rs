@@ -7,6 +7,8 @@ use crate::plumbing::{CycleDetected, CycleRecoveryStrategy};
 use crate::plumbing::{DatabaseOps, QueryFunction};
 use crate::revision::Revision;
 use crate::runtime::local_state::ActiveQueryGuard;
+use crate::runtime::local_state::QueryInputs;
+use crate::runtime::local_state::QueryRevisions;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
@@ -17,7 +19,6 @@ use parking_lot::{RawRwLock, RwLock};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 pub(super) struct Slot<Q, MP>
 where
@@ -56,37 +57,12 @@ struct Memo<V> {
     /// The result of the query, if we decide to memoize it.
     value: Option<V>,
 
+    /// Last revision when this memo was verified; this begins
+    /// as the current revision.
+    pub(crate) verified_at: Revision,
+
     /// Revision information
-    revisions: MemoRevisions,
-}
-
-struct MemoRevisions {
-    /// Last revision when this memo was verified (if there are
-    /// untracked inputs, this will also be when the memo was
-    /// created).
-    verified_at: Revision,
-
-    /// Last revision when the memoized value was observed to change.
-    changed_at: Revision,
-
-    /// Minimum durability of the inputs to this query.
-    durability: Durability,
-
-    /// The inputs that went into our query, if we are tracking them.
-    inputs: MemoInputs,
-}
-
-/// An insertion-order-preserving set of queries. Used to track the
-/// inputs accessed during query execution.
-pub(super) enum MemoInputs {
-    /// Non-empty set of inputs, fully known
-    Tracked { inputs: Arc<[DatabaseKeyIndex]> },
-
-    /// Empty set of inputs, fully known.
-    NoInputs,
-
-    /// Unknown quantity of inputs
-    Untracked,
+    revisions: QueryRevisions,
 }
 
 /// Return value of `probe` helper.
@@ -217,9 +193,7 @@ where
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
         if let Some(memo) = &mut panic_guard.memo {
-            if let Some(value) =
-                memo.validate_memoized_value(db.ops_database(), revision_now, &active_query)
-            {
+            if let Some(value) = memo.verify_value(db.ops_database(), revision_now, &active_query) {
                 info!("{:?}: validated old memoized value", self,);
 
                 db.salsa_event(Event {
@@ -278,7 +252,7 @@ where
                 // used to be, that is a "breaking change" that our
                 // consumers must be aware of. Becoming *more* durable
                 // is not. See the test `constant_to_non_constant`.
-                if result.durability >= old_memo.revisions.durability
+                if result.revisions.durability >= old_memo.revisions.durability
                     && MP::memoized_value_eq(old_value, &result.value)
                 {
                     debug!(
@@ -286,16 +260,16 @@ where
                         self, old_memo.revisions.changed_at,
                     );
 
-                    assert!(old_memo.revisions.changed_at <= result.changed_at);
-                    result.changed_at = old_memo.revisions.changed_at;
+                    assert!(old_memo.revisions.changed_at <= result.revisions.changed_at);
+                    result.revisions.changed_at = old_memo.revisions.changed_at;
                 }
             }
         }
 
         let new_value = StampedValue {
             value: result.value,
-            durability: result.durability,
-            changed_at: result.changed_at,
+            durability: result.revisions.durability,
+            changed_at: result.revisions.changed_at,
         };
 
         let value = if self.should_memoize_value(&self.key) {
@@ -305,34 +279,14 @@ where
         };
 
         debug!(
-            "read_upgrade({:?}): result.changed_at={:?}, \
-             result.durability={:?}, result.dependencies = {:?}",
-            self, result.changed_at, result.durability, result.dependencies,
+            "read_upgrade({:?}): result.revisions = {:#?}",
+            self, result.revisions,
         );
-
-        let inputs = match result.dependencies {
-            None => MemoInputs::Untracked,
-
-            Some(dependencies) => {
-                if dependencies.is_empty() {
-                    MemoInputs::NoInputs
-                } else {
-                    MemoInputs::Tracked {
-                        inputs: dependencies.into_iter().collect(),
-                    }
-                }
-            }
-        };
-        debug!("read_upgrade({:?}): inputs={:#?}", self, inputs.debug(db));
 
         panic_guard.memo = Some(Memo {
             value,
-            revisions: MemoRevisions {
-                changed_at: result.changed_at,
-                verified_at: revision_now,
-                inputs,
-                durability: result.durability,
-            },
+            verified_at: revision_now,
+            revisions: result.revisions,
         });
 
         panic_guard.proceed();
@@ -397,10 +351,10 @@ where
             QueryState::Memoized(memo) => {
                 debug!(
                     "{:?}: found memoized value, verified_at={:?}, changed_at={:?}",
-                    self, memo.revisions.verified_at, memo.revisions.changed_at,
+                    self, memo.verified_at, memo.revisions.changed_at,
                 );
 
-                if memo.revisions.verified_at < revision_now {
+                if memo.verified_at < revision_now {
                     return ProbeState::Stale(state);
                 }
 
@@ -430,7 +384,7 @@ where
             QueryState::NotComputed => Durability::LOW,
             QueryState::InProgress { .. } => panic!("query in progress"),
             QueryState::Memoized(memo) => {
-                if memo.revisions.check_durability(db.salsa_runtime()) {
+                if memo.check_durability(db.salsa_runtime()) {
                     memo.revisions.durability
                 } else {
                     Durability::LOW
@@ -456,7 +410,7 @@ where
             // lead to inconsistencies. Note that we can't check
             // `has_untracked_input` when we add the value to the cache,
             // because inputs can become untracked in the next revision.
-            if memo.revisions.has_untracked_input() {
+            if memo.has_untracked_input() {
                 return;
             }
             memo.value = None;
@@ -467,7 +421,7 @@ where
         log::debug!("Slot::invalidate(new_revision = {:?})", new_revision);
         match &mut *self.state.write() {
             QueryState::Memoized(memo) => {
-                memo.revisions.inputs = MemoInputs::Untracked;
+                memo.revisions.inputs = QueryInputs::Untracked;
                 memo.revisions.changed_at = new_revision;
                 Some(memo.revisions.durability)
             }
@@ -578,10 +532,7 @@ where
         let active_query = runtime.push_query(self.database_key_index);
 
         let memo = panic_guard.memo.as_mut().unwrap();
-        if memo
-            .revisions
-            .validate_memoized_value(db.ops_database(), revision_now, &active_query)
-        {
+        if memo.verify_revisions(db.ops_database(), revision_now, &active_query) {
             let maybe_changed = memo.revisions.changed_at > revision;
             panic_guard.proceed();
             maybe_changed
@@ -740,49 +691,45 @@ impl<V> Memo<V>
 where
     V: Clone,
 {
-    /// Determines whether the memo is still valid in the current
-    /// revision. If needed, this will walk each dependency and
+    /// Determines whether the value stored in this memo (if any) is still
+    /// valid in the current revision. If so, returns a stamped value.
+    ///
+    /// If needed, this will walk each dependency and
     /// recursively invoke `maybe_changed_since`, which may in turn
     /// re-execute the dependency. This can cause cycles to occur,
     /// so the current query must be pushed onto the
     /// stack to permit cycle detection and recovery: therefore,
     /// takes the `active_query` argument as evidence.
-    fn validate_memoized_value(
+    fn verify_value(
         &mut self,
         db: &dyn Database,
         revision_now: Revision,
         active_query: &ActiveQueryGuard<'_>,
     ) -> Option<StampedValue<V>> {
         // If we don't have a memoized value, nothing to validate.
-        let value = match &self.value {
-            None => return None,
-            Some(v) => v,
-        };
-
-        if self
-            .revisions
-            .validate_memoized_value(db, revision_now, active_query)
-        {
+        if self.value.is_none() {
+            return None;
+        }
+        if self.verify_revisions(db, revision_now, active_query) {
             Some(StampedValue {
                 durability: self.revisions.durability,
                 changed_at: self.revisions.changed_at,
-                value: value.clone(),
+                value: self.value.as_ref().unwrap().clone(),
             })
         } else {
             None
         }
     }
-}
 
-impl MemoRevisions {
-    /// Determines whether a memo with these revisions is still
-    /// valid in the current revision. If needed, this will walk each
+    /// Determines whether the value represented by this memo is still
+    /// valid in the current revision; note that the value itself is
+    /// not needed for this check. If needed, this will walk each
     /// dependency and recursively invoke `maybe_changed_since`, which
     /// may in turn re-execute the dependency. This can cause cycles to occur,
     /// so the current query must be pushed onto the
     /// stack to permit cycle detection and recovery: therefore,
     /// takes the `active_query` argument as evidence.
-    fn validate_memoized_value(
+    fn verify_revisions(
         &mut self,
         db: &dyn Database,
         revision_now: Revision,
@@ -792,22 +739,22 @@ impl MemoRevisions {
         let verified_at = self.verified_at;
 
         debug!(
-            "validate_memoized_value: verified_at={:?}, revision_now={:?}, inputs={:#?}",
-            verified_at, revision_now, self.inputs
+            "verify_revisions: verified_at={:?}, revision_now={:?}, inputs={:#?}",
+            verified_at, revision_now, self.revisions.inputs
         );
 
         if self.check_durability(db.salsa_runtime()) {
             return self.mark_value_as_verified(revision_now);
         }
 
-        match &self.inputs {
+        match &self.revisions.inputs {
             // We can't validate values that had untracked inputs; just have to
             // re-execute.
-            MemoInputs::Untracked => {
+            QueryInputs::Untracked => {
                 return false;
             }
 
-            MemoInputs::NoInputs => {}
+            QueryInputs::NoInputs => {}
 
             // Check whether any of our inputs changed since the
             // **last point where we were verified** (not since we
@@ -818,7 +765,7 @@ impl MemoRevisions {
             // R1. But our *verification* date will be R2, and we
             // are only interested in finding out whether the
             // input changed *again*.
-            MemoInputs::Tracked { inputs } => {
+            QueryInputs::Tracked { inputs } => {
                 let changed_input = inputs
                     .iter()
                     .find(|&&input| db.maybe_changed_since(input, verified_at));
@@ -835,7 +782,7 @@ impl MemoRevisions {
 
     /// True if this memo is known not to have changed based on its durability.
     fn check_durability(&self, runtime: &Runtime) -> bool {
-        let last_changed = runtime.last_changed_revision(self.durability);
+        let last_changed = runtime.last_changed_revision(self.revisions.durability);
         debug!(
             "check_durability(last_changed={:?} <= verified_at={:?}) = {:?}",
             last_changed,
@@ -851,7 +798,7 @@ impl MemoRevisions {
     }
 
     fn has_untracked_input(&self) -> bool {
-        matches!(self.inputs, MemoInputs::Untracked)
+        matches!(self.revisions.inputs, QueryInputs::Untracked)
     }
 }
 
@@ -862,56 +809,6 @@ where
 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(fmt, "{:?}({:?})", Q::default(), self.key)
-    }
-}
-
-impl MemoInputs {
-    fn debug<'a, D: ?Sized>(&'a self, db: &'a D) -> impl std::fmt::Debug + 'a
-    where
-        D: DatabaseOps,
-    {
-        enum DebugMemoInputs<'a, D: ?Sized> {
-            Tracked {
-                inputs: &'a [DatabaseKeyIndex],
-                db: &'a D,
-            },
-            NoInputs,
-            Untracked,
-        }
-
-        impl<D: ?Sized + DatabaseOps> std::fmt::Debug for DebugMemoInputs<'_, D> {
-            fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    DebugMemoInputs::Tracked { inputs, db } => fmt
-                        .debug_struct("Tracked")
-                        .field(
-                            "inputs",
-                            &inputs.iter().map(|key| key.debug(*db)).collect::<Vec<_>>(),
-                        )
-                        .finish(),
-                    DebugMemoInputs::NoInputs => fmt.debug_struct("NoInputs").finish(),
-                    DebugMemoInputs::Untracked => fmt.debug_struct("Untracked").finish(),
-                }
-            }
-        }
-
-        match self {
-            MemoInputs::Tracked { inputs } => DebugMemoInputs::Tracked { inputs, db },
-            MemoInputs::NoInputs => DebugMemoInputs::NoInputs,
-            MemoInputs::Untracked => DebugMemoInputs::Untracked,
-        }
-    }
-}
-
-impl std::fmt::Debug for MemoInputs {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MemoInputs::Tracked { inputs } => {
-                fmt.debug_struct("Tracked").field("inputs", inputs).finish()
-            }
-            MemoInputs::NoInputs => fmt.debug_struct("NoInputs").finish(),
-            MemoInputs::Untracked => fmt.debug_struct("Untracked").finish(),
-        }
     }
 }
 

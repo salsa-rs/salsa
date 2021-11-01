@@ -7,8 +7,7 @@ use crate::DatabaseKeyIndex;
 use crate::Event;
 use crate::EventKind;
 use std::cell::RefCell;
-
-use super::FxIndexSet;
+use std::sync::Arc;
 
 /// State that is specific to a single execution thread.
 ///
@@ -31,20 +30,39 @@ pub(crate) struct ComputedQueryResult<V> {
     /// Final value produced
     pub(crate) value: V,
 
-    /// Minimum durability of inputs observed so far.
-    pub(crate) durability: Durability,
-
-    /// Maximum revision of all inputs observed. If we observe an
-    /// untracked read, this will be set to the most recent revision.
-    pub(crate) changed_at: Revision,
-
-    /// Complete set of subqueries that were accessed, or `None` if
-    /// there was an untracked the read.
-    pub(crate) dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
+    /// Information about the other queries that were
+    /// accessed.
+    pub(crate) revisions: QueryRevisions,
 
     /// If this node participated in a cycle, then this value is set
     /// to the cycle in which it participated.
     pub(crate) cycle_participant: Option<Cycle>,
+}
+
+/// Summarizes "all the inputs that a query used"
+#[derive(Debug, Clone)]
+pub(crate) struct QueryRevisions {
+    /// The most revision in which some input changed.
+    pub(crate) changed_at: Revision,
+
+    /// Minimum durability of the inputs to this query.
+    pub(crate) durability: Durability,
+
+    /// The inputs that went into our query, if we are tracking them.
+    pub(crate) inputs: QueryInputs,
+}
+
+/// Every input.
+#[derive(Debug, Clone)]
+pub(crate) enum QueryInputs {
+    /// Non-empty set of inputs, fully known
+    Tracked { inputs: Arc<[DatabaseKeyIndex]> },
+
+    /// Empty set of inputs, fully known.
+    NoInputs,
+
+    /// Unknown quantity of inputs
+    Untracked,
 }
 
 impl Default for LocalState {
@@ -199,20 +217,14 @@ impl ActiveQueryGuard<'_> {
         let value = execute();
 
         // Extract accumulated inputs.
-        let ActiveQuery {
-            dependencies,
-            changed_at,
-            durability,
-            cycle,
-            database_key_index: _,
-        } = self.complete();
+        let popped_query = self.complete();
+
+        let revisions = popped_query.revisions();
 
         ComputedQueryResult {
             value,
-            durability,
-            changed_at,
-            dependencies,
-            cycle_participant: cycle,
+            revisions,
+            cycle_participant: popped_query.cycle,
         }
     }
 }

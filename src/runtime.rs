@@ -19,7 +19,7 @@ use dependency_graph::DependencyGraph;
 pub(crate) mod local_state;
 use local_state::LocalState;
 
-use self::local_state::ActiveQueryGuard;
+use self::local_state::{ActiveQueryGuard, QueryInputs, QueryRevisions};
 
 /// The salsa runtime stores the storage for all queries as well as
 /// tracking the query stack and dependencies between cycles.
@@ -518,6 +518,28 @@ impl ActiveQuery {
         self.dependencies = None;
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(revision);
+    }
+
+    pub(crate) fn revisions(&self) -> QueryRevisions {
+        let inputs = match &self.dependencies {
+            None => QueryInputs::Untracked,
+
+            Some(dependencies) => {
+                if dependencies.is_empty() {
+                    QueryInputs::NoInputs
+                } else {
+                    QueryInputs::Tracked {
+                        inputs: dependencies.iter().copied().collect(),
+                    }
+                }
+            }
+        };
+
+        QueryRevisions {
+            changed_at: self.changed_at,
+            inputs,
+            durability: self.durability,
+        }
     }
 }
 
