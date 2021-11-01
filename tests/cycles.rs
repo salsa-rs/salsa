@@ -89,6 +89,7 @@ enum CycleQuery {
     A,
     B,
     C,
+    AthenC,
 }
 
 #[salsa::query_group(GroupStruct)]
@@ -153,20 +154,27 @@ impl CycleQuery {
             CycleQuery::A => db.cycle_a(),
             CycleQuery::B => db.cycle_b(),
             CycleQuery::C => db.cycle_c(),
+            CycleQuery::AthenC => {
+                let _ = db.cycle_a();
+                db.cycle_c()
+            }
             CycleQuery::None => Ok(()),
         }
     }
 }
 
 fn cycle_a(db: &dyn Database) -> Result<(), Error> {
+    dbg!("cycle_a");
     db.a_invokes().invoke(db)
 }
 
 fn cycle_b(db: &dyn Database) -> Result<(), Error> {
+    dbg!("cycle_b");
     db.b_invokes().invoke(db)
 }
 
 fn cycle_c(db: &dyn Database) -> Result<(), Error> {
+    dbg!("cycle_c");
     db.c_invokes().invoke(db)
 }
 
@@ -315,6 +323,56 @@ fn cycle_deterministic_order() {
     let b = DatabaseImpl::default().cycle_b();
     insta::assert_debug_snapshot!((a, b), @r###"
     (
+        Err(
+            Error {
+                cycle: [
+                    "cycle_a(())",
+                    "cycle_b(())",
+                ],
+            },
+        ),
+        Err(
+            Error {
+                cycle: [
+                    "cycle_a(())",
+                    "cycle_b(())",
+                ],
+            },
+        ),
+    )
+    "###);
+}
+
+#[test]
+fn cycle_multiple() {
+    // No matter whether we start from A or B, we get the same set of participants:
+    let mut db = DatabaseImpl::default();
+
+    // Configuration:
+    //
+    //     A --> B <-- C
+    //     ^     |     ^
+    //     +-----+     |
+    //           |     |
+    //           +-----+
+    //
+    // Here, conceptually, B encounters a cycle with A and then
+    // recovers.
+
+    db.set_b_invokes(CycleQuery::AthenC);
+    let c = db.cycle_c();
+    let b = db.cycle_b();
+    let a = db.cycle_a();
+    insta::assert_debug_snapshot!((a, b, c), @r###"
+    (
+        Err(
+            Error {
+                cycle: [
+                    "cycle_a(())",
+                    "cycle_b(())",
+                ],
+            },
+        ),
         Err(
             Error {
                 cycle: [

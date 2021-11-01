@@ -13,6 +13,8 @@ use std::sync::Arc;
 pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
 pub(crate) type FxIndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasherDefault<FxHasher>>;
 
+pub(crate) mod cycle_participant;
+
 mod dependency_graph;
 use dependency_graph::DependencyGraph;
 
@@ -219,19 +221,23 @@ impl Runtime {
     /// Reports that the currently active query read the result from
     /// another query.
     ///
+    /// Also checks whether the "cycle participant" flag is set on
+    /// the current stack frame -- if so, panics with `CycleParticipant`
+    /// value, which should be caught by the code executing the query.
+    ///
     /// # Parameters
     ///
     /// - `database_key`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    pub(crate) fn report_query_read(
+    pub(crate) fn report_query_read_and_panic_if_cycle_resulted(
         &self,
         input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
     ) {
         self.local_state
-            .report_query_read(input, durability, changed_at);
+            .report_query_read_and_panic_if_cycle_resulted(input, durability, changed_at);
     }
 
     /// Reports that the query depends on some state unknown to salsa.

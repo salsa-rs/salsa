@@ -6,6 +6,7 @@ use crate::lru::LruNode;
 use crate::plumbing::{CycleDetected, CycleRecoveryStrategy};
 use crate::plumbing::{DatabaseOps, QueryFunction};
 use crate::revision::Revision;
+use crate::runtime::cycle_participant::CycleParticipant;
 use crate::runtime::local_state::ActiveQueryGuard;
 use crate::runtime::local_state::QueryInputs;
 use crate::runtime::local_state::QueryRevisions;
@@ -220,18 +221,25 @@ where
         active_query: ActiveQueryGuard<'_>,
         mut panic_guard: PanicGuard<'_, Q, MP>,
     ) -> StampedValue<Q::Value> {
+        log::info!("{:?}: executing query", self.database_key_index.debug(db));
+
+        db.salsa_event(Event {
+            runtime_id: db.salsa_runtime().id(),
+            kind: EventKind::WillExecute {
+                database_key: self.database_key_index,
+            },
+        });
+
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let mut result = active_query.pop_and_execute(db, || Q::execute(db, self.key.clone()));
+        let value = CycleParticipant::recover(
+            || Q::execute(db, self.key.clone()),
+            // If a recoverable cycle occurs, `Q::execute` will throw
+            // and this closure will be executed with the cycle information.
+            |cycle| Q::cycle_fallback(db, &cycle, &self.key),
+        );
 
-        // Subtle: if we were a participant in a cycle, and we have "fallback" cycle recovery,
-        // then we need to overwrite the returned value with the fallback value so that our callers
-        // do not observe the actual value we returned (which is not valid). It's important that
-        // we ignore the actual value that was returned because otherwise it is easy to have
-        // "recovery" where the final value is dependent on which node started the cycle.
-        if let Some(cycle) = &result.cycle_participant {
-            result.value = Q::cycle_fallback(db, cycle, &self.key);
-        }
+        let mut revisions = active_query.pop();
 
         // We assume that query is side-effect free -- that is, does
         // not mutate the "inputs" to the query system. Sanity check
@@ -252,27 +260,27 @@ where
                 // used to be, that is a "breaking change" that our
                 // consumers must be aware of. Becoming *more* durable
                 // is not. See the test `constant_to_non_constant`.
-                if result.revisions.durability >= old_memo.revisions.durability
-                    && MP::memoized_value_eq(old_value, &result.value)
+                if revisions.durability >= old_memo.revisions.durability
+                    && MP::memoized_value_eq(old_value, &value)
                 {
                     debug!(
                         "read_upgrade({:?}): value is equal, back-dating to {:?}",
                         self, old_memo.revisions.changed_at,
                     );
 
-                    assert!(old_memo.revisions.changed_at <= result.revisions.changed_at);
-                    result.revisions.changed_at = old_memo.revisions.changed_at;
+                    assert!(old_memo.revisions.changed_at <= revisions.changed_at);
+                    revisions.changed_at = old_memo.revisions.changed_at;
                 }
             }
         }
 
         let new_value = StampedValue {
-            value: result.value,
-            durability: result.revisions.durability,
-            changed_at: result.revisions.changed_at,
+            value: value,
+            durability: revisions.durability,
+            changed_at: revisions.changed_at,
         };
 
-        let value = if self.should_memoize_value(&self.key) {
+        let memo_value = if self.should_memoize_value(&self.key) {
             Some(new_value.value.clone())
         } else {
             None
@@ -280,13 +288,13 @@ where
 
         debug!(
             "read_upgrade({:?}): result.revisions = {:#?}",
-            self, result.revisions,
+            self, revisions,
         );
 
         panic_guard.memo = Some(Memo {
-            value,
+            value: memo_value,
             verified_at: revision_now,
-            revisions: result.revisions,
+            revisions: revisions,
         });
 
         panic_guard.proceed();

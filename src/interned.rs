@@ -232,11 +232,12 @@ where
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
         let index = slot.index;
-        db.salsa_runtime().report_query_read(
-            slot.database_key_index,
-            INTERN_DURABILITY,
-            changed_at,
-        );
+        db.salsa_runtime()
+            .report_query_read_and_panic_if_cycle_resulted(
+                slot.database_key_index,
+                INTERN_DURABILITY,
+                changed_at,
+            );
         <Q::Value>::from_intern_id(index)
     }
 
@@ -350,11 +351,12 @@ where
         let slot = interned_storage.lookup_value(index);
         let value = slot.value.clone();
         let interned_at = slot.interned_at;
-        db.salsa_runtime().report_query_read(
-            slot.database_key_index,
-            INTERN_DURABILITY,
-            interned_at,
-        );
+        db.salsa_runtime()
+            .report_query_read_and_panic_if_cycle_resulted(
+                slot.database_key_index,
+                INTERN_DURABILITY,
+                interned_at,
+            );
         value
     }
 

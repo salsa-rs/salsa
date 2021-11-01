@@ -110,7 +110,11 @@ where
         } = slot.stamped_value.read().clone();
 
         db.salsa_runtime()
-            .report_query_read(slot.database_key_index, durability, changed_at);
+            .report_query_read_and_panic_if_cycle_resulted(
+                slot.database_key_index,
+                durability,
+                changed_at,
+            );
 
         value
     }

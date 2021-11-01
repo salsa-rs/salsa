@@ -1,13 +1,11 @@
 use crate::durability::Durability;
 use crate::runtime::ActiveQuery;
 use crate::runtime::Revision;
-use crate::Cycle;
-use crate::Database;
 use crate::DatabaseKeyIndex;
-use crate::Event;
-use crate::EventKind;
 use std::cell::RefCell;
 use std::sync::Arc;
+
+use super::cycle_participant::CycleParticipant;
 
 /// State that is specific to a single execution thread.
 ///
@@ -24,19 +22,6 @@ pub(super) struct LocalState {
     /// Unwinding note: pushes onto this vector must be popped -- even
     /// during unwinding.
     query_stack: RefCell<Option<Vec<ActiveQuery>>>,
-}
-
-pub(crate) struct ComputedQueryResult<V> {
-    /// Final value produced
-    pub(crate) value: V,
-
-    /// Information about the other queries that were
-    /// accessed.
-    pub(crate) revisions: QueryRevisions,
-
-    /// If this node participated in a cycle, then this value is set
-    /// to the cycle in which it participated.
-    pub(crate) cycle_participant: Option<Cycle>,
 }
 
 /// Summarizes "all the inputs that a query used"
@@ -106,7 +91,7 @@ impl LocalState {
         })
     }
 
-    pub(super) fn report_query_read(
+    pub(super) fn report_query_read_and_panic_if_cycle_resulted(
         &self,
         input: DatabaseKeyIndex,
         durability: Durability,
@@ -115,6 +100,10 @@ impl LocalState {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_read(input, durability, changed_at);
+
+                if let Some(cycle) = top_query.cycle.take() {
+                    CycleParticipant::new(cycle).throw()
+                }
             }
         })
     }
@@ -188,44 +177,18 @@ impl ActiveQueryGuard<'_> {
         query
     }
 
-    /// As the final action from a pushed query, you can
-    /// execute the query implementation. This invokes the
-    /// given closure and then returns the "computed query result",
-    /// which includes the returned value as well as dependency
-    /// and cycle information.
-    ///
-    /// Executing this method pops the query from the stack.
+    /// Pops an active query from the stack. Returns the [`QueryRevisions`]
+    /// which summarizes the other queries that were accessed during this
+    /// query's execution.
     #[inline]
-    pub(crate) fn pop_and_execute<DB, V>(
-        self,
-        db: &DB,
-        execute: impl FnOnce() -> V,
-    ) -> ComputedQueryResult<V>
-    where
-        DB: ?Sized + Database,
-    {
-        log::info!("{:?}: executing query", self.database_key_index);
-
-        db.salsa_event(Event {
-            runtime_id: db.salsa_runtime().id(),
-            kind: EventKind::WillExecute {
-                database_key: self.database_key_index,
-            },
-        });
-
-        // Execute user's code, accumulating inputs etc.
-        let value = execute();
-
+    pub(crate) fn pop(self) -> QueryRevisions {
         // Extract accumulated inputs.
         let popped_query = self.complete();
 
-        let revisions = popped_query.revisions();
+        // If this frame were a cycle participant, it would have unwound.
+        assert!(popped_query.cycle.is_none());
 
-        ComputedQueryResult {
-            value,
-            revisions,
-            cycle_participant: popped_query.cycle,
-        }
+        popped_query.revisions()
     }
 }
 
