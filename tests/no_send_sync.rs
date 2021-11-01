@@ -29,5 +29,5 @@ fn no_send_sync() {
     let db = DatabaseImpl::default();
 
     assert_eq!(db.no_send_sync_value(true), Rc::new(true));
-    assert_eq!(db.no_send_sync_key(Rc::new(false)), false);
+    assert!(!db.no_send_sync_key(Rc::new(false)));
 }

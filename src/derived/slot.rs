@@ -275,7 +275,7 @@ where
         }
 
         let new_value = StampedValue {
-            value: value,
+            value,
             durability: revisions.durability,
             changed_at: revisions.changed_at,
         };
@@ -294,7 +294,7 @@ where
         panic_guard.memo = Some(Memo {
             value: memo_value,
             verified_at: revision_now,
-            revisions: revisions,
+            revisions,
         });
 
         panic_guard.proceed();
@@ -337,7 +337,7 @@ where
                 // not to gate future atomic reads.
                 anyone_waiting.store(true, Ordering::Relaxed);
 
-                return match self.block_on_in_progress_thread(db, runtime, other_id, state) {
+                match self.block_on_in_progress_thread(db, runtime, other_id, state) {
                     Ok(WaitResult::Panicked) => Cancelled::PropagatedPanic.throw(),
                     Ok(WaitResult::Completed) => ProbeState::Retry,
                     Err(CycleDetected {
@@ -353,7 +353,7 @@ where
                             durability: cycle_error.durability,
                         },
                     }),
-                };
+                }
             }
 
             QueryState::Memoized(memo) => {
