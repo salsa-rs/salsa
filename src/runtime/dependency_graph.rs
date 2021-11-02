@@ -141,7 +141,7 @@ impl DependencyGraph {
     ) -> (QueryStack, WaitResult) {
         me.add_edge(from_id, database_key, to_id, from_stack);
 
-        // Release the mut&mut meex that prevents `database_key`
+        // Release the mutex that prevents `database_key`
         // from completing, now that the edge has been added.
         drop(query_mutex_guard);
 
