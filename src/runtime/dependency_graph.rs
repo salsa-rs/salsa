@@ -202,8 +202,7 @@ impl DependencyGraph {
         for from_id in dependents {
             let edge = self.edges.remove(&from_id).expect("no edge for dependent");
             assert_eq!(to_id, edge.blocked_on_id);
-            self.wait_results
-                .insert(from_id, (edge.stack, wait_result));
+            self.wait_results.insert(from_id, (edge.stack, wait_result));
         }
 
         // Now that we have inserted the `wait_results`,
