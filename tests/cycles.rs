@@ -63,19 +63,10 @@ impl ParallelDatabase for DatabaseImpl {
 
 impl Default for DatabaseImpl {
     fn default() -> Self {
-        let mut res = DatabaseImpl {
+        let res = DatabaseImpl {
             storage: salsa::Storage::default(),
         };
 
-        // Default configuration:
-        //
-        //     A --> B <-- C
-        //     ^     |
-        //     +-----+
-
-        res.set_a_invokes(CycleQuery::B);
-        res.set_b_invokes(CycleQuery::A);
-        res.set_c_invokes(CycleQuery::B);
         res
     }
 }
@@ -216,13 +207,30 @@ fn cycle_volatile() {
 
 #[test]
 fn cycle_cycle() {
-    let query = DatabaseImpl::default();
+    let mut query = DatabaseImpl::default();
+
+    //     A --> B
+    //     ^     |
+    //     +-----+
+
+    query.set_a_invokes(CycleQuery::B);
+    query.set_b_invokes(CycleQuery::A);
+
     assert!(query.cycle_a().is_err());
 }
 
 #[test]
 fn inner_cycle() {
-    let query = DatabaseImpl::default();
+    let mut query = DatabaseImpl::default();
+
+    //     A --> B <-- C
+    //     ^     |
+    //     +-----+
+
+    query.set_a_invokes(CycleQuery::B);
+    query.set_b_invokes(CycleQuery::A);
+    query.set_c_invokes(CycleQuery::B);
+
     let err = query.cycle_c();
     assert!(err.is_err());
     let cycle = err.unwrap_err().cycle;
@@ -237,6 +245,13 @@ fn inner_cycle() {
 #[test]
 fn cycle_revalidate() {
     let mut db = DatabaseImpl::default();
+
+    //     A --> B
+    //     ^     |
+    //     +-----+
+    db.set_a_invokes(CycleQuery::B);
+    db.set_b_invokes(CycleQuery::A);
+
     assert!(db.cycle_a().is_err());
     db.set_b_invokes(CycleQuery::A); // same value as default
     assert!(db.cycle_a().is_err());
@@ -245,8 +260,15 @@ fn cycle_revalidate() {
 #[test]
 fn cycle_appears() {
     let mut db = DatabaseImpl::default();
+
+    //     A --> B
+    db.set_a_invokes(CycleQuery::B);
     db.set_b_invokes(CycleQuery::None);
     assert!(db.cycle_a().is_ok());
+
+    //     A --> B
+    //     ^     |
+    //     +-----+
     db.set_b_invokes(CycleQuery::A);
     log::debug!("Set Cycle Leaf");
     assert!(db.cycle_a().is_err());
@@ -255,7 +277,15 @@ fn cycle_appears() {
 #[test]
 fn cycle_disappears() {
     let mut db = DatabaseImpl::default();
+
+    //     A --> B
+    //     ^     |
+    //     +-----+
+    db.set_a_invokes(CycleQuery::B);
+    db.set_b_invokes(CycleQuery::A);
     assert!(db.cycle_a().is_err());
+
+    //     A --> B
     db.set_b_invokes(CycleQuery::None);
     assert!(db.cycle_a().is_ok());
 }
@@ -263,12 +293,13 @@ fn cycle_disappears() {
 #[test]
 fn cycle_mixed_1() {
     let mut db = DatabaseImpl::default();
-    // Configuration:
-    //
     //     A --> B <-- C
     //           |     ^
     //           +-----+
+    db.set_a_invokes(CycleQuery::B);
     db.set_b_invokes(CycleQuery::C);
+    db.set_c_invokes(CycleQuery::B);
+
     match Cancelled::catch(|| db.cycle_a()) {
         Err(Cancelled::UnexpectedCycle(u)) => {
             insta::assert_debug_snapshot!((u.all_participants(&db), u.unexpected_participants(&db)), @r###"
@@ -290,13 +321,16 @@ fn cycle_mixed_1() {
 #[test]
 fn cycle_mixed_2() {
     let mut db = DatabaseImpl::default();
+
     // Configuration:
     //
     //     A --> B --> C
     //     ^           |
     //     +-----------+
+    db.set_a_invokes(CycleQuery::B);
     db.set_b_invokes(CycleQuery::C);
     db.set_c_invokes(CycleQuery::A);
+
     match Cancelled::catch(|| db.cycle_a()) {
         Err(Cancelled::UnexpectedCycle(u)) => {
             insta::assert_debug_snapshot!((u.all_participants(&db), u.unexpected_participants(&db)), @r###"
@@ -319,8 +353,17 @@ fn cycle_mixed_2() {
 #[test]
 fn cycle_deterministic_order() {
     // No matter whether we start from A or B, we get the same set of participants:
-    let a = DatabaseImpl::default().cycle_a();
-    let b = DatabaseImpl::default().cycle_b();
+    let db = || {
+        let mut db = DatabaseImpl::default();
+        //     A --> B
+        //     ^     |
+        //     +-----+
+        db.set_a_invokes(CycleQuery::B);
+        db.set_b_invokes(CycleQuery::A);
+        db
+    };
+    let a = db().cycle_a();
+    let b = db().cycle_b();
     insta::assert_debug_snapshot!((a, b), @r###"
     (
         Err(
@@ -358,8 +401,10 @@ fn cycle_multiple() {
     //
     // Here, conceptually, B encounters a cycle with A and then
     // recovers.
-
+    db.set_a_invokes(CycleQuery::B);
     db.set_b_invokes(CycleQuery::AthenC);
+    db.set_c_invokes(CycleQuery::B);
+
     let c = db.cycle_c();
     let b = db.cycle_b();
     let a = db.cycle_a();
