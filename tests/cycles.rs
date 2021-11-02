@@ -36,6 +36,7 @@ use test_env_log::test;
 // | Intra  | Fallback | Both     | Tracked   | direct   | cycle_revalidate |
 // | Intra  | Fallback | New      | Tracked   | direct   | cycle_appears |
 // | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears |
+// | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears_durability |
 // | Intra  | Mixed    | N/A      | Tracked   | direct   | cycle_mixed_1 |
 // | Intra  | Mixed    | N/A      | Tracked   | direct   | cycle_mixed_2 |
 // | Cross  | Fallback | N/A      | Tracked   | both     | parallel/cycles.rs: recover_parallel_cycle |
@@ -290,6 +291,31 @@ fn cycle_disappears() {
     assert!(db.cycle_a().is_ok());
 }
 
+/// A variant on `cycle_disappears` in which the values of
+/// `a_invokes` and `b_invokes` are set with durability values.
+/// If we are not careful, this could cause us to overlook
+/// the fact that the cycle will no longer occur.
+#[test]
+fn cycle_disappears_durability() {
+    let mut db = DatabaseImpl::default();
+    db.set_a_invokes_with_durability(CycleQuery::B, Durability::LOW);
+    db.set_b_invokes_with_durability(CycleQuery::A, Durability::HIGH);
+
+    let res = db.cycle_a();
+    assert!(res.is_err());
+
+    // At this point, `a` read `LOW` input, and `b` read `HIGH` input. However,
+    // because `b` participates in the same cycle as `a`, its final durability
+    // should be `LOW`.
+    //
+    // Check that setting a `LOW` input causes us to re-execute `b` query, and
+    // observe that the cycle goes away.
+    db.set_a_invokes_with_durability(CycleQuery::None, Durability::LOW);
+
+    let res = db.cycle_b();
+    assert!(res.is_ok());
+}
+
 #[test]
 fn cycle_mixed_1() {
     let mut db = DatabaseImpl::default();
@@ -436,25 +462,4 @@ fn cycle_multiple() {
         ),
     )
     "###);
-}
-
-#[test]
-fn cycle_propagates_durability_durability() {
-    let mut db = DatabaseImpl::default();
-    db.set_a_invokes_with_durability(CycleQuery::B, Durability::LOW);
-    db.set_b_invokes_with_durability(CycleQuery::A, Durability::HIGH);
-
-    let res = db.cycle_a();
-    assert!(res.is_err());
-
-    // At this point, `a` read `LOW` input, and `b` read `HIGH` input. However,
-    // because `b` participates in the same cycle as `a`, its final durability
-    // should be `LOW`.
-    //
-    // Check that setting a `LOW` input causes us to re-execute `b` query, and
-    // observe that the cycle goes away.
-    db.set_a_invokes_with_durability(CycleQuery::None, Durability::LOW);
-
-    let res = db.cycle_b();
-    assert!(res.is_ok());
 }
