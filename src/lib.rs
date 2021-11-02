@@ -667,12 +667,7 @@ impl Cycle {
     /// is arbitrary but deterministic, but the ordering is otherwise determined
     /// by the execution.
     pub fn participant_keys(&self) -> impl Iterator<Item = DatabaseKeyIndex> + '_ {
-        let min = self.participants.iter().min().unwrap();
-        let index = self.participants.iter().position(|p| p == min).unwrap();
-        self.participants[index..]
-            .iter()
-            .chain(self.participants[..index].iter())
-            .copied()
+        self.participants.iter().copied()
     }
 
     /// Returns a vector with the debug information for

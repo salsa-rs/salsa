@@ -286,6 +286,18 @@ impl Runtime {
                 to_id,
                 |aq| v.push(aq.database_key_index),
             );
+
+            // We want to give the participants in a deterministic order
+            // (at least for this execution, not necessarily across executions),
+            // no matter where it started on the stack. Find the minimum
+            // key and rotate it to the front.
+            let min = v.iter().min().unwrap();
+            let index = v.iter().position(|p| p == min).unwrap();
+            v.rotate_left(index);
+
+            // No need to store extra memory.
+            v.shrink_to_fit();
+
             Cycle::new(Arc::new(v))
         };
         debug!("cycle {:?}", cycle.debug(db));
