@@ -346,7 +346,7 @@ where
                         durability,
                         cycle,
                     }) => match recovery_strategy {
-                        CycleRecoveryStrategy::Panic => Cancelled::UnexpectedCycle(cycle).throw(),
+                        CycleRecoveryStrategy::Panic => cycle.throw(),
 
                         // This is an interesting case. Here we have the 'final edge' of the
                         // cycle:

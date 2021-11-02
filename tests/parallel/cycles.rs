@@ -148,7 +148,7 @@ fn panic_parallel_cycle() {
     // We expect B to panic because it detects a cycle (it is the one that calls A, ultimately).
     // Right now, it panics with a string.
     let err_b = thread_b.join().unwrap_err();
-    if let Some(Cancelled::UnexpectedCycle(c)) = err_b.downcast_ref::<Cancelled>() {
+    if let Some(c) = err_b.downcast_ref::<salsa::Cycle>() {
         insta::assert_debug_snapshot!(c.unexpected_participants(&db), @r###"
         [
             "panic_cycle_a(-1)",

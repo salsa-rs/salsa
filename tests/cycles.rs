@@ -1,4 +1,6 @@
-use salsa::{Cancelled, Durability, ParallelDatabase, Snapshot};
+use std::panic::UnwindSafe;
+
+use salsa::{Durability, ParallelDatabase, Snapshot};
 use test_env_log::test;
 
 // Axes:
@@ -170,40 +172,38 @@ fn cycle_c(db: &dyn Database) -> Result<(), Error> {
     db.c_invokes().invoke(db)
 }
 
+fn extract_cycle(f: impl FnOnce() + UnwindSafe) -> salsa::Cycle {
+    let v = std::panic::catch_unwind(f);
+    if let Err(d) = &v {
+        if let Some(cycle) = d.downcast_ref::<salsa::Cycle>() {
+            return cycle.clone();
+        }
+    }
+    panic!("unexpected value: {:?}", v)
+}
+
 #[test]
 fn cycle_memoized() {
     let db = DatabaseImpl::default();
-    match Cancelled::catch(|| {
-        db.memoized_a();
-    }) {
-        Err(Cancelled::UnexpectedCycle(c)) => {
-            insta::assert_debug_snapshot!(c.unexpected_participants(&db), @r###"
-            [
-                "memoized_a(())",
-                "memoized_b(())",
-            ]
-            "###);
-        }
-        v => panic!("unexpected result: {:#?}", v),
-    }
+    let cycle = extract_cycle(|| db.memoized_a());
+    insta::assert_debug_snapshot!(cycle.unexpected_participants(&db), @r###"
+    [
+        "memoized_a(())",
+        "memoized_b(())",
+    ]
+    "###);
 }
 
 #[test]
 fn cycle_volatile() {
     let db = DatabaseImpl::default();
-    match Cancelled::catch(|| {
-        db.volatile_a();
-    }) {
-        Err(Cancelled::UnexpectedCycle(c)) => {
-            insta::assert_debug_snapshot!(c.unexpected_participants(&db), @r###"
+    let cycle = extract_cycle(|| db.volatile_a());
+    insta::assert_debug_snapshot!(cycle.unexpected_participants(&db), @r###"
             [
                 "volatile_a(())",
                 "volatile_b(())",
             ]
             "###);
-        }
-        v => panic!("unexpected result: {:#?}", v),
-    }
 }
 
 #[test]
@@ -326,9 +326,10 @@ fn cycle_mixed_1() {
     db.set_b_invokes(CycleQuery::C);
     db.set_c_invokes(CycleQuery::B);
 
-    match Cancelled::catch(|| db.cycle_a()) {
-        Err(Cancelled::UnexpectedCycle(u)) => {
-            insta::assert_debug_snapshot!((u.all_participants(&db), u.unexpected_participants(&db)), @r###"
+    let u = extract_cycle(|| {
+        let _ = db.cycle_a();
+    });
+    insta::assert_debug_snapshot!((u.all_participants(&db), u.unexpected_participants(&db)), @r###"
             (
                 [
                     "cycle_b(())",
@@ -339,9 +340,6 @@ fn cycle_mixed_1() {
                 ],
             )
             "###);
-        }
-        v => panic!("unexpected result: {:?}", v),
-    }
 }
 
 #[test]
@@ -357,9 +355,10 @@ fn cycle_mixed_2() {
     db.set_b_invokes(CycleQuery::C);
     db.set_c_invokes(CycleQuery::A);
 
-    match Cancelled::catch(|| db.cycle_a()) {
-        Err(Cancelled::UnexpectedCycle(u)) => {
-            insta::assert_debug_snapshot!((u.all_participants(&db), u.unexpected_participants(&db)), @r###"
+    let u = extract_cycle(|| {
+        let _ = db.cycle_a();
+    });
+    insta::assert_debug_snapshot!((u.all_participants(&db), u.unexpected_participants(&db)), @r###"
             (
                 [
                     "cycle_a(())",
@@ -371,9 +370,6 @@ fn cycle_mixed_2() {
                 ],
             )
             "###);
-        }
-        v => panic!("unexpected result: {:?}", v),
-    }
 }
 
 #[test]

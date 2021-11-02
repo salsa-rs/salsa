@@ -8,7 +8,6 @@
 
 ## Summary
 
-* Expand `Cancelled` type (introduced in [RFC 7]) to carry information about *why* cancellation occurred.
 * Introduce `Cycle` type that carries information about a cycle.
 * Modify cycle recovery to take a `&Cycle`.
 * Report cycle participants in a deterministic order.
@@ -21,23 +20,7 @@ Cycle recovery has been found to have some subtle bugs that could lead to panics
 
 ## User's guide
 
-By default, when Salsa detects a cycle in the computation graph, Salsa will panic with a `Cancelled::UnexpectedCycle` as the panic value. This variant includes a `Cycle` structure that describes the cycle, which can be useful for diagnosing what went wrong. You can catch panics like these and inspect the cycle like so:
-
-```rust
-match Cancelled::catch(|| {
-    db.do_query()
-}) {
-    Ok(v) => v,
-    Err(Cancelled::UnexpectedCycle(cycle)) => {
-        eprintln("cycle results: {:#?}", cycle.debug(db))
-    }
-    Err(_) => {
-        /* ... */        
-    }
-}
-```
-
-The `Cancelled::catch` method should not be invoked from inside an active query. See the documentation on cancellation for more details.
+By default, when Salsa detects a cycle in the computation graph, Salsa will panic with a `salsa::Cycle` as the panic value. The `salsa::Cycle` structure that describes the cycle, which can be useful for diagnosing what went wrong. 
 
 ### The `Cycle` type: inspecting cycles
 

@@ -608,10 +608,6 @@ pub enum Cancelled {
     /// The query was blocked on another thread, and that thread panicked.
     #[non_exhaustive]
     PropagatedPanic,
-
-    /// The query encountered an "unexpected" cycle, meaning one in which some
-    /// participants lacked cycle recovery annotations.
-    UnexpectedCycle(Cycle),
 }
 
 impl Cancelled {
@@ -641,7 +637,6 @@ impl std::fmt::Display for Cancelled {
         let why = match self {
             Cancelled::PendingWrite => "pending write",
             Cancelled::PropagatedPanic => "propagated panic",
-            Cancelled::UnexpectedCycle(_) => "unexpected cycle",
         };
         f.write_str("cancelled because of ")?;
         f.write_str(why)
@@ -660,6 +655,10 @@ pub struct Cycle {
 impl Cycle {
     pub(crate) fn new(participants: plumbing::CycleParticipants) -> Self {
         Self { participants }
+    }
+
+    pub(crate) fn throw(self) -> ! {
+        std::panic::resume_unwind(Box::new(self))
     }
 
     /// Iterate over the [`DatabaseKeyIndex`] for each query participating
