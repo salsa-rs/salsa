@@ -337,7 +337,7 @@ where
                 // not to gate future atomic reads.
                 anyone_waiting.store(true, Ordering::Relaxed);
 
-                match self.block_on_in_progress_thread(db, runtime, other_id, state) {
+                match self.try_block_on_in_progress_query(db, runtime, other_id, state) {
                     Ok(WaitResult::Panicked) => Cancelled::PropagatedPanic.throw(),
                     Ok(WaitResult::Completed) => ProbeState::Retry,
                     Err(CycleDetected {
@@ -568,7 +568,7 @@ where
     /// that work completes. This helper does that. If a cycle is detected,
     /// it returns immediately, but otherwise it blocks `self.database_key_index`
     /// has completed and returns the corresponding result.
-    fn block_on_in_progress_thread<MutexGuard>(
+    fn try_block_on_in_progress_query<MutexGuard>(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         runtime: &Runtime,
