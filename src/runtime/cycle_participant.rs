@@ -11,7 +11,7 @@ impl CycleParticipant {
         Self { cycle }
     }
 
-    pub(crate) fn throw(self) {
+    pub(crate) fn throw(self) -> ! {
         std::panic::resume_unwind(Box::new(self));
     }
 

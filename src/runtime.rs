@@ -1,5 +1,5 @@
 use crate::durability::Durability;
-use crate::plumbing::{CycleDetected, CycleError, CycleRecoveryStrategy};
+use crate::plumbing::{CycleDetected, CycleRecoveryStrategy};
 use crate::revision::{AtomicRevision, Revision};
 use crate::{Cancelled, Cycle, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
@@ -270,11 +270,12 @@ impl Runtime {
         let mut from_stack = self.local_state.take_query_stack();
         let from_id = self.id();
 
-        // Extract the changed_at and durability values from the top of the stack;
-        // these reflect the queries which were executed thus far and which
-        // led to the cycle.
-        let changed_at = from_stack.last().unwrap().changed_at;
-        let durability = from_stack.last().unwrap().durability;
+        // As we iterate through the cycle, we will compute the max "changed at"
+        // revision and the min "durability" across all participants. Then, if we are
+        // participating in cycle recovery, we will propagate those results
+        // to all participants.
+        let mut changed_at = Revision::start();
+        let mut durability = Durability::MAX;
 
         // Identify the cycle participants:
         let cycle = {
@@ -284,7 +285,11 @@ impl Runtime {
                 &mut from_stack,
                 database_key_index,
                 to_id,
-                |aq| v.push(aq.database_key_index),
+                |aq| {
+                    durability = durability.min(aq.durability);
+                    changed_at = changed_at.max(aq.changed_at);
+                    v.push(aq.database_key_index);
+                },
             );
 
             // We want to give the participants in a deterministic order
@@ -300,13 +305,20 @@ impl Runtime {
 
             Cycle::new(Arc::new(v))
         };
-        debug!("cycle {:?}", cycle.debug(db));
+        debug!(
+            "cycle {:?}, changed_at {:?}, durability: {:?}",
+            cycle.debug(db),
+            changed_at,
+            durability
+        );
 
         // Identify cycle recovery strategy:
         let recovery_strategy = self.mutual_cycle_recovery_strategy(db, &cycle);
         debug!("cycle recovery strategy {:?}", recovery_strategy);
 
         // If using fallback, we have to mark the cycle participants, so they know to recover.
+        // In this case, we also want to modify their changed-at and durability values to
+        // be the max/min we computed across the entire cycle.
         match recovery_strategy {
             CycleRecoveryStrategy::Panic => {}
             CycleRecoveryStrategy::Fallback => {
@@ -317,6 +329,8 @@ impl Runtime {
                     database_key_index,
                     to_id,
                     |aq| {
+                        aq.changed_at = changed_at;
+                        aq.durability = durability;
                         aq.cycle = Some(cycle.clone());
                     },
                 );
@@ -327,11 +341,9 @@ impl Runtime {
 
         CycleDetected {
             recovery_strategy,
-            cycle_error: CycleError {
-                cycle,
-                changed_at,
-                durability,
-            },
+            changed_at,
+            durability,
+            cycle,
         }
     }
 

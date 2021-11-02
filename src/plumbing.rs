@@ -21,8 +21,18 @@ pub use crate::{revision::Revision, DatabaseKeyIndex, QueryDb, Runtime};
 
 #[derive(Clone, Debug)]
 pub struct CycleDetected {
+    /// Common recovery strategy to all participants in the cycle,
+    /// or [`CycleRecoveryStrategy::Panic`] otherwise.
     pub(crate) recovery_strategy: CycleRecoveryStrategy,
-    pub(crate) cycle_error: CycleError,
+
+    /// Max `changed_at` from all participants in the cycle.
+    pub(crate) changed_at: Revision,
+
+    /// Min `durability` from all participants in the cycle.
+    pub(crate) durability: Durability,
+
+    /// Cycle participants.
+    pub(crate) cycle: Cycle,
 }
 
 /// Defines various associated types. An impl of this
@@ -235,19 +245,3 @@ where
 }
 
 pub type CycleParticipants = Arc<Vec<DatabaseKeyIndex>>;
-
-/// The error returned when a query could not be resolved due to a cycle
-#[derive(Eq, PartialEq, Clone, Debug)]
-pub(crate) struct CycleError {
-    /// The queries that were part of the cycle
-    pub(crate) cycle: Cycle,
-    pub(crate) changed_at: Revision,
-    pub(crate) durability: Durability,
-    // pub(crate) recovery_strategy: CycleRecoveryStrategy,
-}
-
-impl std::fmt::Display for CycleError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Internal error, cycle detected: {:?}", self.cycle)
-    }
-}

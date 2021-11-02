@@ -342,17 +342,39 @@ where
                     Ok(WaitResult::Completed) => ProbeState::Retry,
                     Err(CycleDetected {
                         recovery_strategy,
-                        cycle_error,
-                    }) => ProbeState::UpToDate(match recovery_strategy {
-                        CycleRecoveryStrategy::Panic => {
-                            Cancelled::UnexpectedCycle(cycle_error.cycle).throw()
-                        }
-                        CycleRecoveryStrategy::Fallback => StampedValue {
-                            value: Q::cycle_fallback(db, &cycle_error.cycle, &self.key),
-                            changed_at: cycle_error.changed_at,
-                            durability: cycle_error.durability,
-                        },
-                    }),
+                        changed_at,
+                        durability,
+                        cycle,
+                    }) => match recovery_strategy {
+                        CycleRecoveryStrategy::Panic => Cancelled::UnexpectedCycle(cycle).throw(),
+
+                        // This is an interesting case. Here we have the 'final edge' of the
+                        // cycle:
+                        //
+                        //     C0 --> ... --> Cn --> C0
+                        //                        ^
+                        //                        :
+                        //         This edge -----+
+                        //
+                        // `self` reflects the query C0, but we are being executed from within
+                        // the current query of Cn. After having invoked `try_block_on_in_progress_query`,
+                        // we will have marked the active frames C0 .. Cn as cycle participants.
+                        // But we will need some value to return to Cn! Therefore, we invoke the cycle
+                        // fallback code here for C0 to create it.
+                        //
+                        // Cn will, in turn, record this dependency on C0 (along with the changed-at and
+                        // durability values that result) and then observe that it was a cycle participant.
+                        // After making that observation, Cn will panic and install its own recovery value.
+                        // This repeats until we have replaced the cached values of C0...Cn with their
+                        // recovery values.
+                        //
+                        // Note that the "cycle fallback" routine for C0 executes twice.
+                        CycleRecoveryStrategy::Fallback => ProbeState::UpToDate(StampedValue {
+                            value: Q::cycle_fallback(db, &cycle, &self.key),
+                            changed_at,
+                            durability,
+                        }),
+                    },
                 }
             }
 

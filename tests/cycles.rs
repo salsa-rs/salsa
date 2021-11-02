@@ -1,4 +1,4 @@
-use salsa::{Cancelled, ParallelDatabase, Snapshot};
+use salsa::{Cancelled, Durability, ParallelDatabase, Snapshot};
 use test_env_log::test;
 
 // Axes:
@@ -436,4 +436,25 @@ fn cycle_multiple() {
         ),
     )
     "###);
+}
+
+#[test]
+fn cycle_propagates_durability_durability() {
+    let mut db = DatabaseImpl::default();
+    db.set_a_invokes_with_durability(CycleQuery::B, Durability::LOW);
+    db.set_b_invokes_with_durability(CycleQuery::A, Durability::HIGH);
+
+    let res = db.cycle_a();
+    assert!(res.is_err());
+
+    // At this point, `a` read `LOW` input, and `b` read `HIGH` input. However,
+    // because `b` participates in the same cycle as `a`, its final durability
+    // should be `LOW`.
+    //
+    // Check that setting a `LOW` input causes us to re-execute `b` query, and
+    // observe that the cycle goes away.
+    db.set_a_invokes_with_durability(CycleQuery::None, Durability::LOW);
+
+    let res = db.cycle_b();
+    assert!(res.is_ok());
 }
