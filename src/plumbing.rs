@@ -162,11 +162,14 @@ where
     fn group_storage(&self) -> &G::GroupStorage;
 }
 
+// ANCHOR:QueryStorageOps
 pub trait QueryStorageOps<Q>
 where
     Self: QueryStorageMassOps,
     Q: Query,
 {
+    // ANCHOR_END:QueryStorageOps
+
     /// See CycleRecoveryStrategy
     const CYCLE_STRATEGY: CycleRecoveryStrategy;
 
@@ -180,6 +183,7 @@ where
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result;
 
+    // ANCHOR:maybe_changed_since
     /// True if the value of `input`, which must be from this query, may have
     /// changed since the given revision.
     fn maybe_changed_since(
@@ -188,11 +192,13 @@ where
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool;
+    // ANCHOR_END:maybe_changed_since
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
         Self::CYCLE_STRATEGY
     }
 
+    // ANCHOR:fetch
     /// Execute the query, returning the result (often, the result
     /// will be memoized).  This is the "main method" for
     /// queries.
@@ -201,6 +207,7 @@ where
     /// the value for this `key` is recursively attempting to fetch
     /// itself.
     fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value;
+    // ANCHOR_END:fetch
 
     /// Returns the durability associated with a given key.
     fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability;

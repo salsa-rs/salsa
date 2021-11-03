@@ -1,18 +1,31 @@
 # Summary
 
 - [About salsa](./about_salsa.md)
+
+# How to use Salsa
+
 - [How to use Salsa](./how_to_use.md)
-- [How Salsa works](./how_salsa_works.md)
 - [Common patterns](./common_patterns.md)
   - [Selection](./common_patterns/selection.md)
   - [On-demand (Lazy) inputs](./common_patterns/on_demand_inputs.md)
+
+# How Salsa works internally
+
+- [How Salsa works](./how_salsa_works.md)
 - [Videos](./videos.md)
 - [Plumbing](./plumbing.md)
   - [Generated code](./plumbing/generated_code.md)
     - [Diagram](./plumbing/diagram.md)
     - [Query groups](./plumbing/query_groups.md)
     - [Database](./plumbing/database.md)
-  - [Runtime](./plumbing/runtime.md)
+  - [The `salsa` crate](./plumbing/salsa_crate.md)
+    - [Query operations](./plumbing/query_ops.md)
+      - [Maybe changed since](./plumbing/maybe_changed_since.md)
+      - [Fetch](./plumbing/fetch.md)
+    - [Derived queries flowchart](./plumbing/derived_flowchart.md)
+
+# Salsa RFCs
+
 - [RFCs](./rfcs.md)
   - [Template](./rfcs/template.md)
   - [RFC 0001: Query group traits](./rfcs/RFC0001-Query-Group-Traits.md)
@@ -23,3 +36,8 @@
   - [RFC 0006: Dynamic database](./rfcs/RFC0006-Dynamic-Databases.md)
   - [RFC 0007: Opinionated cancelation](./rfcs/RFC0007-Opinionated-Cancelation.md)
   - [RFC 0008: Remove garbage collection](./rfcs/RFC0008-Remove-Garbage-Collection.md)
+
+# Appendices
+
+- [Meta: about the book itself](./meta.md)
+
