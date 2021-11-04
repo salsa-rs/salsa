@@ -23,6 +23,20 @@
       - [Maybe changed since](./plumbing/maybe_changed_since.md)
       - [Fetch](./plumbing/fetch.md)
     - [Derived queries flowchart](./plumbing/derived_flowchart.md)
+  - [Terminology](./plumbing/terminology.md)
+    - [Backdate](./plumbing/terminology/backdate.md)
+    - [Changed at](./plumbing/terminology/changed_at.md)
+    - [Dependency](./plumbing/terminology/dependency.md)
+    - [Derived query](./plumbing/terminology/derived_query.md)
+    - [Durability](./plumbing/terminology/durability.md)
+    - [Input query](./plumbing/terminology/input_query.md)
+    - [LRU](./plumbing/terminology/LRU.md)
+    - [Memo](./plumbing/terminology/memo.md)
+    - [Query](./plumbing/terminology/query.md)
+    - [Query function](./plumbing/terminology/query_function.md)
+    - [Revision](./plumbing/terminology/revision.md)
+    - [Untracked dependency](./plumbing/terminology/untracked.md)
+    - [Verified](./plumbing/terminology/verified.md)
 
 # Salsa RFCs
 
