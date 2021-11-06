@@ -42,6 +42,7 @@ where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
 {
+    /// There is no data here yet -- but there will be!
     policy: PhantomData<(Q, MP)>,
 }
 

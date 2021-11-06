@@ -27,6 +27,7 @@ where
     Q: Query,
     Q::Value: InternKey,
 {
+    /// There is no data here-- for interning, all the storage is global.
     _data: PhantomData<Q>,
 }
 

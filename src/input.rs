@@ -24,6 +24,7 @@ pub struct InputStorage<Q>
 where
     Q: Query,
 {
+    /// There is no data here-- for inputs, all the storage is global.
     _data: PhantomData<Q>,
 }
 
