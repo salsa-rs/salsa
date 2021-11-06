@@ -645,8 +645,21 @@ impl std::fmt::Display for Cancelled {
 
 impl std::error::Error for Cancelled {}
 
-/// Information about an "unexpected" cycle, meaning one where some of the
-/// participants lacked cycle recovery annotations.
+/// Captuers the participants of a cycle that occurred when executing a query.
+///
+/// This type is meant to be used to help give meaningful error messages to the
+/// user or to help salsa developers figure out why their program is resulting
+/// in a computation cycle.
+///
+/// It is used in a few ways:
+///
+/// * During [cycle recovery](https://https://salsa-rs.github.io/salsa/cycles/fallback.html),
+///   where it is given to the fallback function.
+/// * As the panic value when an unexpected cycle (i.e., a cycle where one or more participants
+///   lacks cycle recovery information) occurs.
+///
+/// You can read more about cycle handling in
+/// the [salsa book](https://https://salsa-rs.github.io/salsa/cycles.html).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Cycle {
     participants: plumbing::CycleParticipants,
