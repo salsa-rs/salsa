@@ -27,7 +27,6 @@ Two-fold:
 * To integrate chalk caching with salsa more deeply, we need to be able to handle cycles more gracefully.
     * In chalk, cycles are handled by iterating until a fixed-point is reached. This could be useful in other salsa applications as well.
     * For this to work, we need caching of *provisional results* that are produced during those iterations. These results should not be exposed outside the cycle.
-    * In general, it would be simpler if we could move cycle handling to *per-thread*, although there are limits to how much we can do this.
 * We are moving towards a 'parallel by default' future for Salsa.   
     * Eventual goal: Cache hit requires only reads (no locks).
     * Creates the option of queries where a cache hit requires no atomic writes.
@@ -53,71 +52,175 @@ No user visible change
 
 ## Reference guide
 
-### Phase 1 (this RFC)
+### Phase 0 (design before this RFC)
 
-The overall structure should look like
+Today, the **overall structure** looks like this (some generic parameters and details elided):
 
 * Each `Storage<DB>` has
-    * handle to the `Arc<SharedQueryQuery<DB>>`
-    * its own `LocalStorage<DB>`
-    * a `Runtime`
+    * a `Runtime` (per-thread runtime),
+    * handle to the `Arc<DB::DatabaseStorage>` (global storage for all queries).
+* Each `Runtime` has
+    * its own `LocalState` which contains the query stack,
+    * handle to the `Arc<SharedState>` which contains cross-thread dependency information.
 * Each query has
-    * a `SharedStorage<Q>` found in the `SharedQueryQuery<DB>`:
-        * monotonically growing map from keys (`Q::Key`) to internal index `X`
-        * lru set
-        * map from internal index `X` to a cached memo `Arc<Memo<Q>>`
-        * synchronized map from internal index `X` to thread id + latch
-    * a `LocalStorage<Q>` found in the `LocalStorage<DB>`
-        * map from internal index `X` to stack depth
-* A `Memo<Q>` contains a `Option<Q::Value>` and dependency information
-    * This information is (largely) immutable with a few `AtomicCell` instances.
+    * an `impl QueryStorageOps<Q>` that defines [maybe changed since] and [fetch].
+    * *Input* and *interned* queries have
+        * *In `DB::DatabaseStorage`:* hashmaps from key -> value
+    * *Derived* queries have:
+        * *In `DB::DatabaseStorage`:* a `DerivedStorage<Q>` that contains:
+            * the `slot_map`, a monotonically growing, indexable map from keys (`Q::Key`) to the `Slot<Q>` for the given key
+            * lru list
+* Each `Slot<Q>` has
+    * r-w locked query-state that can be:
+        * not-computed
+        * in-progress with synchronization storage:
+            * `id` of the runtime computing the value
+            * `anyone_waiting`: `AtomicBool` set to true if other threads are awaiting result
+        * a `Memo<Q>`
+* A `Memo<Q>` has
+    * an optional value `Option<Q::Value>`
+    * dependency information:
+        * verified-at
+        * changed-at
+        * durability
+        * input set (typically a `Arc<[DatabaseKeyIndex]>`)
 
-To execute a query `Q`:
+[maybe changed since]: ../plumbing/maybe_changed_since.md
+[fetch]: ../plumbing/fetch.md
 
-* Find the internal index `X` (read lock)
-* Check the shared query storage for `X` (read lock) and extract (optional) memo `M`.
-* If a memo `M` was found and has a value:
-    * Validate the memo `M`. Return clone of value if valid.
-* Check local storage to see if this query is already executing
-    * If so, recover from cycle and return
-* If synchronized query (always true in this RFC):
-    * Insert into synchronization map. If an entry is already present:
-        * Wait on the latch and start again when it is complete.
-* Push on the local stack
-* Push index on local stack into local storage
-* Execute the query function
-    * Result is: a value V, a set of dependents D, and a minimum stack depth M
-* If the minimum stack depth is less than the current stack depth, do not move the result into the full cache.
-    * It can stay in the local storage, but it will have to be cleared out when `D` is complete. For now, let's pop it.
+**Fetching the value for a query** works as follows:
 
-To recover from a cycle on a query `Q`:
+* *Derived* queries:
+    * Acquire the read lock on the (indexable) `slot_map` and hash key to find the slot.
+        * If no slot exists, acquire write lock and insert.
+    * Acquire the slot's internal lock to perform the [fetch] operation.
+* *Input* queries:
+    * Acquire the read lock on the (indexable) `slot_map` and hash key to find the slot.
+        * If no slot exists, acquire write lock and insert.
+    * Acquire the write lock on the slot to modify the value.
+* *Interned* queries:
+    * Acquire the read lock on the (indexable) `slot_map` and hash key to find the slot.
+        * If slot exists, return the corresponding index.
+        * If no slot exists, acquire write lock and insert new memo.
 
-To validate an internal index `X`:
+**Verifying a dependency** uses a scheme introduced in [RFC #6](./RFC0006-Dynamic-Databases.md). Each dependency is represented as a `DatabaseKeyIndex` which contains three indices (group, query, and key). The group and query indices are used to find the query storage via `match` statements and then the next operation depends on the query type:
 
-* Load and validate the memo `M`
+* *Derived* queries:
+    * Acquire the read lock on the (indexable) `slot_map` and use key index to load the slot. Read lock is released afterwards.
+    * Acquire the slot's internal lock to perform the [maybe changed since] operation.
+* *Input* queries:
+    * Acquire the read lock on the (indexable) `slot_map` and use key index to load the slot. Read lock is released afterwards.
+    * Acquire the read lock on the slot to read the 'last changed' revision.
+* *Interned* queries:
+    * Acquire the read lock on the (indexable) `slot_map` and use key index to load the slot. Read lock is released afterwards.
+    * Read the 'last changed' revision directly: slots for interned queries are immutable, so no locks are needed.
 
-To validate a memo `M` (returns false if may have changed in this revision):
+### Phase 1 (this RFC)
 
-* Load the `verified_at` revision `V`. If it is the current revision, return true ("no change")
-* If the "last change" `LC` revision for `M.durability` is greater than `V` (and hence we may have changed):
-    * Iterate over the dependences in `M` and check if they have changed since `V`
-        * If so, return false ("maybe changed")
-            * Should we set `verified_at` to INT_MAX or some marker value?
-* Adjust `verified_at` to the current revision, return true ("maybe changed")
+The **overall structure** we are creating looks like this.
+
+* Each `Storage<DB>` has
+    * a `Runtime` (per-thread runtime),
+    * its own `LocalStorage<DB>` (per-thread storage for all queries),
+        * This *local storage* can be used to store intermediate results.
+    * handle to the `Arc<GlobalQueryStorage<DB>>` (global storage for all queries).
+        * This *global storage* is used to store completed results.
+* Each `Runtime` has
+    * its own `LocalState` which contains the query stack,
+    * handle to the `Arc<SharedState>` which contains cross-thread dependency information.
+* Each query has
+    * an `impl LocalQueryStorageOps<Q>` that defines [maybe changed since] and [fetch]
+        * these "local" ops can access the global storage as needed
+    * *Input* and *interned* queries have:
+        * Local storage (`LocalStorage<DB>`): phantom data
+        * Global storage (`GlobalQueryStorage<DB>`): hashmaps from key -> value
+    * *Derived* queries have:
+        * a `LocalStorage<Q>` found in the `LocalStorage<DB>`
+            * map from internal index `X` to stack depth
+        * an `SharedStorage<Q>` found in the `GlobalQueryStorage<DB>`:
+            * various hashmaps, all implemented as concurrent hashmaps (e.g., via [`DashMap`](https://crates.io/crates/dashmap)):
+                * `key_map`: maps from `Q::Key` to an internal key index `K`
+                * `memo_map`: maps from `K` to cached memo `Arc<Memo<Q>>`
+                * `sync_map`: maps from `K` to a `Sync<Q>` synchronization value
+            * lru set with `Memo<Q>` as the nodes
+* A `Memo<Q>` has
+    * an *immutable* optional value `Option<Q::Value>`
+    * dependency information:
+        * *updatable* verified-at (`AtomicCell<Option<Revision>>`)
+        * *immutable* changed-at (`Revision`)
+        * *immutable* durability (`Durability`)
+        * *immutable* input set (typically a `Arc<[DatabaseKeyIndex]>`)
+    * information for LRU:
+        * `DatabaseKeyIndex`
+        * `lru_index`, an `AtomicUsize`
+* A `Sync<Q>` has
+    * `id` of the runtime computing the value
+    * `anyone_waiting`: `AtomicBool` set to true if other threads are awaiting result
+
+**Fetching the value for a *derived* query** will work as follows. Fetching values for *interned* and *input* queries is unchanged.
+
+1. Find internal index `K` by hashing key, as today.
+    * Precise operation for this will depend on the concurrent hashmap implementation.
+2. Load memo `M: Arc<Memo<Q>>` from `memo_map[K]` (if present):
+    * If verified is `None`, then another thread has found this memo to be invalid; ignore it.
+    * Else, let `Rv` be the "last verified revision".
+    * If `Rv` is the current revision, **return** memoized value.
+    * If last change to an input with durability `M.durability` was before `Rv`: 
+        * Update `verified_at` to current revision and **return** memoized value.
+    * Iterate over each dependency `D` and check `db.maybe_changed_since(D, Rv)`.
+        * If no dependency has changed, update `verified_at` to current revision and **return** memoized value.
+    * Mark memo as invalid by storing `None` in the verified-at.
+3. Atomically check `sync_map` for an existing `Sync<Q>`:
+    * If one exists, block on the thread within and return to step 2 after it completes:
+        * If this results in a cycle, unwind as today.
+    * If none exists, insert a new entry with current runtime-id.
+4. Construct the new memo:
+    * Push query onto the local stack and execute the query function:
+        * If this query is found to be a cycle participant, execute recovery function.
+    * Backdate result if it is equal to the old memo's value.
+    * Allocate new memo.
+5. Store results:
+    * Store new memo into `memo_map[K]`.
+    * Remove query from the `sync_map`.
+6. **Return** newly constructed value._
+
+**Verifying a dependency for a *derived* query** will work as follows. Verifying dependencies for other sorts of queries is unchanged.
+
+1. Find internal index `K` by hashing key, as today.
+    * Precise operation for this will depend on the concurrent hashmap implementation.
+2. Load memo `M: Arc<Memo<Q>>` from `memo_map[K]` (if present):
+    * If verified is `None`, then another thread has found this memo to be invalid; ignore it.
+    * Else, let `Rv` be the "last verified revision".
+    * If `Rv` is the current revision, **return** memoized value.
+    * If last change to an input with durability `M.durability` was before `Rv`: 
+        * Update `verified_at` to current revision and **return** memoized value.
+    * Iterate over each dependency `D` and check `db.maybe_changed_since(D, Rv)`.
+        * If no dependency has changed, update `verified_at` to current revision and **return** memoized value.
+    * Mark memo as invalid by storing `None` in the verified-at.
+3. Atomically check `sync_map` for an existing `Sync<Q>`:
+    * If one exists, block on the thread within and return to step 2 after it completes:
+        * If this results in a cycle, unwind as today.
+    * If none exists, insert a new entry with current runtime-id.
+4. Construct the new memo:
+    * Push query onto the local stack and execute the query function:
+        * If this query is found to be a cycle participant, execute recovery function.
+    * Backdate result if it is equal to the old memo's value.
+    * Allocate new memo.
+5. Store results:
+    * Store new memo into `memo_map[K]`.
+    * Remove query from the `sync_map`.
+6. **Return** true or false depending on whether memo was backdated.
 
 ### Phase 2 (future RFCs)
 
-This is just a sketch of what will be needed.
-
-* For fixed-point queries, the local storage will contain a map to an in-progress value along with information about what stack depth it depends on.
-* For regular queries, the local will contain a map to a cycle value declared by user (if any).
-* The following maps can be made more optimal:
-    * Key `Q::Key` to internal index `X` map
-        * May have removals/writes if data is from older revision
-    * Internal index `X` to memo map
-        * Purely monotonic (should we fix that?)
+One of the goal of this RFC is to pave the way for a future extension in which we can support "fixed point cycle recovery". This is the form of cycle recovery used by chalk's recursive solver and it is appropriate for queries whose results repesent a search for answers.
 
 ## Frequently asked questions
 
-Use this section to add in design notes, downsides, rejected approaches, or other considerations.
+### Why is the local query state important?
 
+We don't actually use the local state in this RFC, that's true. It's purpose is to pave the way for fixed point cycle recovery.
+
+### How do the synchronized / atomic operations compare after this RFC?
+
+In order to perform a query, we used to acquire a read-lock to get the slot index and then a read-lock on the slot's contents to read its value or to verify its dependencies. The read-lock on the slot's contents was mandatory because it was possible.
