@@ -66,6 +66,11 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
                 fn group_storage(&self) -> &#group_storage {
                     &self.#db_storage_field.query_store().#group_name_snake
                 }
+
+                fn group_storage_mut(&mut self) -> (&#group_storage, &mut salsa::Runtime) {
+                    let (query_store_mut, runtime) = self.#db_storage_field.query_store_mut();
+                    (&query_store_mut.#group_name_snake, runtime)
+                }
             }
         });
         // ANCHOR_END:HasQueryGroup

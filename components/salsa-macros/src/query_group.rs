@@ -465,6 +465,12 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 ) -> &'a std::sync::Arc<Self::Storage> {
                     &group_storage.#fn_name
                 }
+
+                fn query_storage_mut<'a>(
+                    group_storage: &'a <Self as salsa::QueryDb<'_>>::GroupStorage,
+                ) -> &'a std::sync::Arc<Self::Storage> {
+                    &group_storage.#fn_name
+                }
             }
             // ANCHOR_END:Query_impl
         });

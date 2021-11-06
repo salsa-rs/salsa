@@ -8,6 +8,7 @@ use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::StampedValue;
+use crate::Runtime;
 use crate::{Database, DatabaseKeyIndex, QueryDb, Revision};
 use parking_lot::RwLock;
 use std::borrow::Borrow;
@@ -227,22 +228,21 @@ where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
 {
-    fn invalidate<S>(&self, db: &mut <Q as QueryDb<'_>>::DynDb, key: &S)
+    fn invalidate<S>(&self, runtime: &mut Runtime, key: &S)
     where
         S: Eq + Hash,
         Q::Key: Borrow<S>,
     {
-        db.salsa_runtime_mut()
-            .with_incremented_revision(|new_revision| {
-                let map_read = self.slot_map.read();
+        runtime.with_incremented_revision(|new_revision| {
+            let map_read = self.slot_map.read();
 
-                if let Some(slot) = map_read.get(key) {
-                    if let Some(durability) = slot.invalidate(new_revision) {
-                        return Some(durability);
-                    }
+            if let Some(slot) = map_read.get(key) {
+                if let Some(durability) = slot.invalidate(new_revision) {
+                    return Some(durability);
                 }
+            }
 
-                None
-            })
+            None
+        })
     }
 }
