@@ -12,6 +12,7 @@
 mod derived;
 mod doctest;
 mod durability;
+mod hash;
 mod input;
 mod intern_id;
 mod interned;

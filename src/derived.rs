@@ -1,12 +1,13 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
+use crate::hash::FxIndexMap;
 use crate::lru::Lru;
 use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
 use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
-use crate::runtime::{FxIndexMap, StampedValue};
+use crate::runtime::StampedValue;
 use crate::{Database, DatabaseKeyIndex, QueryDb, Revision};
 use parking_lot::RwLock;
 use std::borrow::Borrow;
