@@ -1,6 +1,6 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
-use crate::hash::FxIndexMap;
+use crate::hash::FxDashMap;
 use crate::lru::Lru;
 use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
@@ -10,9 +10,8 @@ use crate::plumbing::QueryStorageOps;
 use crate::runtime::StampedValue;
 use crate::Runtime;
 use crate::{Database, DatabaseKeyIndex, QueryDb, Revision};
-use parking_lot::RwLock;
+use crossbeam_utils::atomic::AtomicCell;
 use std::borrow::Borrow;
-use std::convert::TryFrom;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -39,9 +38,22 @@ where
 {
     group_index: u16,
     lru_list: Lru<Slot<Q, MP>>,
-    slot_map: RwLock<FxIndexMap<Q::Key, Arc<Slot<Q, MP>>>>,
+    indices: AtomicCell<u32>,
+    index_map: FxDashMap<Q::Key, DerivedKeyIndex>,
+    slot_map: FxDashMap<DerivedKeyIndex, KeySlot<Q, MP>>,
     policy: PhantomData<MP>,
 }
+
+struct KeySlot<Q, MP>
+where
+    Q: QueryFunction,
+    MP: MemoizationPolicy<Q>,
+{
+    key: Q::Key,
+    slot: Arc<Slot<Q, MP>>,
+}
+
+type DerivedKeyIndex = u32;
 
 impl<Q, MP> std::panic::RefUnwindSafe for DerivedStorage<Q, MP>
 where
@@ -95,22 +107,52 @@ where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
 {
-    fn slot(&self, key: &Q::Key) -> Arc<Slot<Q, MP>> {
-        if let Some(v) = self.slot_map.read().get(key) {
-            return v.clone();
+    fn slot_for_key(&self, key: &Q::Key) -> Arc<Slot<Q, MP>> {
+        // Common case: get an existing key
+        if let Some(v) = self.index_map.get(key) {
+            let index = *v;
+
+            // release the read-write lock early, for no particular reason
+            // apart from it bothers me
+            drop(v);
+
+            return self.slot_for_key_index(index);
         }
 
-        let mut write = self.slot_map.write();
-        let entry = write.entry(key.clone());
-        let key_index = u32::try_from(entry.index()).unwrap();
-        let database_key_index = DatabaseKeyIndex {
-            group_index: self.group_index,
-            query_index: Q::QUERY_INDEX,
-            key_index,
-        };
-        entry
-            .or_insert_with(|| Arc::new(Slot::new(key.clone(), database_key_index)))
-            .clone()
+        // Less common case: (potentially) create a new slot
+        match self.index_map.entry(key.clone()) {
+            dashmap::mapref::entry::Entry::Occupied(entry) => self.slot_for_key_index(*entry.get()),
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                let key_index = self.indices.fetch_add(1);
+                let database_key_index = DatabaseKeyIndex {
+                    group_index: self.group_index,
+                    query_index: Q::QUERY_INDEX,
+                    key_index,
+                };
+                let slot = Arc::new(Slot::new(key.clone(), database_key_index));
+                // Subtle: store the new slot *before* the new index, so that
+                // other threads only see the new index once the slot is also available.
+                self.slot_map.insert(
+                    key_index,
+                    KeySlot {
+                        key: key.clone(),
+                        slot: slot.clone(),
+                    },
+                );
+                entry.insert(key_index);
+                slot
+            }
+        }
+    }
+
+    fn slot_for_key_index(&self, index: DerivedKeyIndex) -> Arc<Slot<Q, MP>> {
+        return self.slot_map.get(&index).unwrap().slot.clone();
+    }
+
+    fn slot_for_db_index(&self, index: DatabaseKeyIndex) -> Arc<Slot<Q, MP>> {
+        assert_eq!(index.group_index, self.group_index);
+        assert_eq!(index.query_index, Q::QUERY_INDEX);
+        self.slot_for_key_index(index.key_index)
     }
 }
 
@@ -124,9 +166,11 @@ where
     fn new(group_index: u16) -> Self {
         DerivedStorage {
             group_index,
-            slot_map: RwLock::new(FxIndexMap::default()),
+            index_map: Default::default(),
+            slot_map: Default::default(),
             lru_list: Default::default(),
             policy: PhantomData,
+            indices: Default::default(),
         }
     }
 
@@ -138,9 +182,8 @@ where
     ) -> std::fmt::Result {
         assert_eq!(index.group_index, self.group_index);
         assert_eq!(index.query_index, Q::QUERY_INDEX);
-        let slot_map = self.slot_map.read();
-        let key = slot_map.get_index(index.key_index as usize).unwrap().0;
-        write!(fmt, "{}({:?})", Q::QUERY_NAME, key)
+        let key_slot = self.slot_map.get(&index.key_index).unwrap();
+        write!(fmt, "{}({:?})", Q::QUERY_NAME, key_slot.key)
     }
 
     fn maybe_changed_after(
@@ -149,23 +192,15 @@ where
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool {
-        assert_eq!(input.group_index, self.group_index);
-        assert_eq!(input.query_index, Q::QUERY_INDEX);
         debug_assert!(revision < db.salsa_runtime().current_revision());
-        let slot = self
-            .slot_map
-            .read()
-            .get_index(input.key_index as usize)
-            .unwrap()
-            .1
-            .clone();
+        let slot = self.slot_for_db_index(input);
         slot.maybe_changed_after(db, revision)
     }
 
     fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
         db.unwind_if_cancelled();
 
-        let slot = self.slot(key);
+        let slot = self.slot_for_key(key);
         let StampedValue {
             value,
             durability,
@@ -187,17 +222,16 @@ where
     }
 
     fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
-        self.slot(key).durability(db)
+        self.slot_for_key(key).durability(db)
     }
 
     fn entries<C>(&self, _db: &<Q as QueryDb<'_>>::DynDb) -> C
     where
         C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
     {
-        let slot_map = self.slot_map.read();
-        slot_map
-            .values()
-            .filter_map(|slot| slot.as_table_entry())
+        self.slot_map
+            .iter()
+            .filter_map(|r| r.value().slot.as_table_entry())
             .collect()
     }
 }
@@ -209,7 +243,9 @@ where
 {
     fn purge(&self) {
         self.lru_list.purge();
-        *self.slot_map.write() = Default::default();
+        self.indices.store(0);
+        self.index_map.clear();
+        self.slot_map.clear();
     }
 }
 
@@ -234,14 +270,12 @@ where
         Q::Key: Borrow<S>,
     {
         runtime.with_incremented_revision(|new_revision| {
-            let map_read = self.slot_map.read();
-
-            if let Some(slot) = map_read.get(key) {
+            if let Some(key_index) = self.index_map.get(key) {
+                let slot = self.slot_for_key_index(*key_index);
                 if let Some(durability) = slot.invalidate(new_revision) {
                     return Some(durability);
                 }
             }
-
             None
         })
     }
