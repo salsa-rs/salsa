@@ -259,6 +259,32 @@ fn cycle_revalidate() {
 }
 
 #[test]
+fn cycle_revalidate_unchanged_twice() {
+    let mut db = DatabaseImpl::default();
+
+    //     A --> B
+    //     ^     |
+    //     +-----+
+    db.set_a_invokes(CycleQuery::B);
+    db.set_b_invokes(CycleQuery::A);
+
+    assert!(db.cycle_a().is_err());
+    db.set_c_invokes(CycleQuery::A); // force new revisi5on
+
+    // on this run
+    insta::assert_debug_snapshot!(db.cycle_a(), @r###"
+    Err(
+        Error {
+            cycle: [
+                "cycle_a(())",
+                "cycle_b(())",
+            ],
+        },
+    )
+    "###);
+}
+
+#[test]
 fn cycle_appears() {
     let mut db = DatabaseImpl::default();
 

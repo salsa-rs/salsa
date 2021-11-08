@@ -11,7 +11,10 @@ impl CycleParticipant {
         Self { cycle }
     }
 
-    pub(crate) fn throw(self) -> ! {
+    /// Initiate unwinding. This is called `unwind` and not `throw` or `panic`
+    /// because every call to `unwind` here ought to be caught by a
+    /// matching call to [`recover`].
+    pub(crate) fn unwind(self) -> ! {
         std::panic::resume_unwind(Box::new(self));
     }
 

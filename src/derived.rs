@@ -174,7 +174,7 @@ where
         }
 
         db.salsa_runtime()
-            .report_query_read_and_panic_if_cycle_resulted(
+            .report_query_read_and_unwind_if_cycle_resulted(
                 slot.database_key_index(),
                 durability,
                 changed_at,

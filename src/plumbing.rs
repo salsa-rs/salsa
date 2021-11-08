@@ -19,22 +19,6 @@ pub use crate::interned::InternedStorage;
 pub use crate::interned::LookupInternedStorage;
 pub use crate::{revision::Revision, DatabaseKeyIndex, QueryDb, Runtime};
 
-#[derive(Clone, Debug)]
-pub struct CycleDetected {
-    /// Common recovery strategy to all participants in the cycle,
-    /// or [`CycleRecoveryStrategy::Panic`] otherwise.
-    pub(crate) recovery_strategy: CycleRecoveryStrategy,
-
-    /// Max `changed_at` from all participants in the cycle.
-    pub(crate) changed_at: Revision,
-
-    /// Min `durability` from all participants in the cycle.
-    pub(crate) durability: Durability,
-
-    /// Cycle participants.
-    pub(crate) cycle: Cycle,
-}
-
 /// Defines various associated types. An impl of this
 /// should be generated for your query-context type automatically by
 /// the `database_storage` macro, so you shouldn't need to mess

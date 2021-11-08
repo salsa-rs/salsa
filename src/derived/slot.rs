@@ -3,7 +3,6 @@ use crate::derived::MemoizationPolicy;
 use crate::durability::Durability;
 use crate::lru::LruIndex;
 use crate::lru::LruNode;
-use crate::plumbing::{CycleDetected, CycleRecoveryStrategy};
 use crate::plumbing::{DatabaseOps, QueryFunction};
 use crate::revision::Revision;
 use crate::runtime::cycle_participant::CycleParticipant;
@@ -14,7 +13,7 @@ use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::runtime::WaitResult;
-use crate::{Cancelled, Database, DatabaseKeyIndex, Event, EventKind, QueryDb};
+use crate::{Database, DatabaseKeyIndex, Event, EventKind, QueryDb};
 use log::{debug, info};
 use parking_lot::{RawRwLock, RwLock};
 use std::marker::PhantomData;
@@ -337,45 +336,10 @@ where
                 // not to gate future atomic reads.
                 anyone_waiting.store(true, Ordering::Relaxed);
 
-                match self.try_block_on_in_progress_query(db, runtime, other_id, state) {
-                    Ok(WaitResult::Panicked) => Cancelled::PropagatedPanic.throw(),
-                    Ok(WaitResult::Completed) => ProbeState::Retry,
-                    Err(CycleDetected {
-                        recovery_strategy,
-                        changed_at,
-                        durability,
-                        cycle,
-                    }) => match recovery_strategy {
-                        CycleRecoveryStrategy::Panic => cycle.throw(),
+                self.block_on_or_unwind(db, runtime, other_id, state);
 
-                        // This is an interesting case. Here we have the 'final edge' of the
-                        // cycle:
-                        //
-                        //     C0 --> ... --> Cn --> C0
-                        //                        ^
-                        //                        :
-                        //         This edge -----+
-                        //
-                        // `self` reflects the query C0, but we are being executed from within
-                        // the current query of Cn. After having invoked `try_block_on_in_progress_query`,
-                        // we will have marked the active frames C0 .. Cn as cycle participants.
-                        // But we will need some value to return to Cn! Therefore, we invoke the cycle
-                        // fallback code here for C0 to create it.
-                        //
-                        // Cn will, in turn, record this dependency on C0 (along with the changed-at and
-                        // durability values that result) and then observe that it was a cycle participant.
-                        // After making that observation, Cn will panic and install its own recovery value.
-                        // This repeats until we have replaced the cached values of C0...Cn with their
-                        // recovery values.
-                        //
-                        // Note that the "cycle fallback" routine for C0 executes twice.
-                        CycleRecoveryStrategy::Fallback => ProbeState::UpToDate(StampedValue {
-                            value: Q::cycle_fallback(db, &cycle, &self.key),
-                            changed_at,
-                            durability,
-                        }),
-                    },
-                }
+                // Other thread completely normally, so our value may be available now.
+                ProbeState::Retry
             }
 
             QueryState::Memoized(memo) => {
@@ -583,21 +547,15 @@ where
         }
     }
 
-    /// Helper:
-    ///
-    /// When we encounter an `InProgress` indicator, we need to either
-    /// report a cycle or else register ourselves to be notified when
-    /// that work completes. This helper does that. If a cycle is detected,
-    /// it returns immediately, but otherwise it blocks `self.database_key_index`
-    /// has completed and returns the corresponding result.
-    fn try_block_on_in_progress_query<MutexGuard>(
+    /// Helper: see [`Runtime::try_block_on_or_unwind`].
+    fn block_on_or_unwind<MutexGuard>(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         runtime: &Runtime,
         other_id: RuntimeId,
         mutex_guard: MutexGuard,
-    ) -> Result<WaitResult, CycleDetected> {
-        runtime.try_block_on(
+    ) {
+        runtime.block_on_or_unwind(
             db.ops_database(),
             self.database_key_index,
             other_id,

@@ -91,7 +91,7 @@ impl LocalState {
         })
     }
 
-    pub(super) fn report_query_read_and_panic_if_cycle_resulted(
+    pub(super) fn report_query_read_and_unwind_if_cycle_resulted(
         &self,
         input: DatabaseKeyIndex,
         durability: Durability,
@@ -101,8 +101,29 @@ impl LocalState {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_read(input, durability, changed_at);
 
+                // We are a cycle participant:
+                //
+                //     C0 --> ... --> Ci --> Ci+1 -> ... -> Cn --> C0
+                //                        ^   ^
+                //                        :   |
+                //         This edge -----+   |
+                //                            |
+                //                            |
+                //                            N0
+                //
+                // In this case, the value we have just read from `Ci+1`
+                // is actually the cycle fallback value and not especially
+                // interesting. We unwind now with `CycleParticipant` to avoid
+                // executing the rest of our query function. This unwinding
+                // will be caught and our own fallback value will be used.
+                //
+                // Note that `Ci+1` may` have *other* callers who are not
+                // participants in the cycle (e.g., N0 in the graph above).
+                // They will not have the `cycle` marker set in their
+                // stack frames, so they will just read the fallback value
+                // from `Ci+1` and continue on their merry way.
                 if let Some(cycle) = top_query.cycle.take() {
-                    CycleParticipant::new(cycle).throw()
+                    CycleParticipant::new(cycle).unwind()
                 }
             }
         })

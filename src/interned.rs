@@ -233,7 +233,7 @@ where
         let changed_at = slot.interned_at;
         let index = slot.index;
         db.salsa_runtime()
-            .report_query_read_and_panic_if_cycle_resulted(
+            .report_query_read_and_unwind_if_cycle_resulted(
                 slot.database_key_index,
                 INTERN_DURABILITY,
                 changed_at,
@@ -352,7 +352,7 @@ where
         let value = slot.value.clone();
         let interned_at = slot.interned_at;
         db.salsa_runtime()
-            .report_query_read_and_panic_if_cycle_resulted(
+            .report_query_read_and_unwind_if_cycle_resulted(
                 slot.database_key_index,
                 INTERN_DURABILITY,
                 interned_at,
