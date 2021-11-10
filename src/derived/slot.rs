@@ -165,7 +165,7 @@ where
         // Check with an upgradable read to see if there is a value
         // already. (This permits other readers but prevents anyone
         // else from running `read_upgrade` at the same time.)
-        let old_memo = loop {
+        let mut old_memo = loop {
             match self.probe(db, self.state.upgradable_read(), runtime, revision_now) {
                 ProbeState::UpToDate(v) => return v,
                 ProbeState::Stale(state)
@@ -185,14 +185,14 @@ where
             }
         };
 
-        let mut panic_guard = PanicGuard::new(self.database_key_index, self, old_memo, runtime);
+        let panic_guard = PanicGuard::new(self.database_key_index, self, runtime);
         let active_query = runtime.push_query(self.database_key_index);
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
-        if let Some(memo) = &mut panic_guard.memo {
+        if let Some(memo) = &mut old_memo {
             if let Some(value) = memo.verify_value(db.ops_database(), revision_now, &active_query) {
                 info!("{:?}: validated old memoized value", self,);
 
@@ -203,13 +203,20 @@ where
                     },
                 });
 
-                panic_guard.proceed();
+                panic_guard.proceed(old_memo);
 
                 return value;
             }
         }
 
-        self.execute(db, runtime, revision_now, active_query, panic_guard)
+        self.execute(
+            db,
+            runtime,
+            revision_now,
+            active_query,
+            panic_guard,
+            old_memo,
+        )
     }
 
     fn execute(
@@ -218,7 +225,8 @@ where
         runtime: &Runtime,
         revision_now: Revision,
         active_query: ActiveQueryGuard<'_>,
-        mut panic_guard: PanicGuard<'_, Q, MP>,
+        panic_guard: PanicGuard<'_, Q, MP>,
+        old_memo: Option<Memo<Q::Value>>,
     ) -> StampedValue<Q::Value> {
         log::info!("{:?}: executing query", self.database_key_index.debug(db));
 
@@ -253,7 +261,7 @@ where
         // really change, even if some of its inputs have. So we can
         // "backdate" its `changed_at` revision to be the same as the
         // old value.
-        if let Some(old_memo) = &panic_guard.memo {
+        if let Some(old_memo) = &old_memo {
             if let Some(old_value) = &old_memo.value {
                 // Careful: if the value became less durable than it
                 // used to be, that is a "breaking change" that our
@@ -290,13 +298,11 @@ where
             self, revisions,
         );
 
-        panic_guard.memo = Some(Memo {
+        panic_guard.proceed(Some(Memo {
             value: memo_value,
             verified_at: revision_now,
             revisions,
-        });
-
-        panic_guard.proceed();
+        }));
 
         new_value
     }
@@ -496,7 +502,7 @@ where
         // Get an upgradable read lock, which permits other reads but no writers.
         // Probe again. If the value is stale (needs to be verified), then upgrade
         // to a write lock and swap it with InProgress while we work.
-        let old_memo = match self.maybe_changed_since_probe(
+        let mut old_memo = match self.maybe_changed_since_probe(
             db,
             self.state.upgradable_read(),
             runtime,
@@ -521,28 +527,31 @@ where
             }
         };
 
-        let mut panic_guard =
-            PanicGuard::new(self.database_key_index, self, Some(old_memo), runtime);
+        let panic_guard = PanicGuard::new(self.database_key_index, self, runtime);
         let active_query = runtime.push_query(self.database_key_index);
 
-        let memo = panic_guard.memo.as_mut().unwrap();
-        if memo.verify_revisions(db.ops_database(), revision_now, &active_query) {
-            let maybe_changed = memo.revisions.changed_at > revision;
-            panic_guard.proceed();
+        if old_memo.verify_revisions(db.ops_database(), revision_now, &active_query) {
+            let maybe_changed = old_memo.revisions.changed_at > revision;
+            panic_guard.proceed(Some(old_memo));
             maybe_changed
-        } else if memo.value.is_some() {
+        } else if old_memo.value.is_some() {
             // We found that this memoized value may have changed
             // but we have an old value. We can re-run the code and
             // actually *check* if it has changed.
-            let StampedValue { changed_at, .. } =
-                self.execute(db, runtime, revision_now, active_query, panic_guard);
+            let StampedValue { changed_at, .. } = self.execute(
+                db,
+                runtime,
+                revision_now,
+                active_query,
+                panic_guard,
+                Some(old_memo),
+            );
             changed_at > revision
         } else {
             // We found that inputs to this memoized value may have chanced
             // but we don't have an old value to compare against or re-use.
             // No choice but to drop the memo and say that its value may have changed.
-            panic_guard.memo = None;
-            panic_guard.proceed();
+            panic_guard.proceed(None);
             true
         }
     }
@@ -587,7 +596,6 @@ where
 {
     database_key_index: DatabaseKeyIndex,
     slot: &'me Slot<Q, MP>,
-    memo: Option<Memo<Q::Value>>,
     runtime: &'me Runtime,
 }
 
@@ -599,32 +607,31 @@ where
     fn new(
         database_key_index: DatabaseKeyIndex,
         slot: &'me Slot<Q, MP>,
-        memo: Option<Memo<Q::Value>>,
         runtime: &'me Runtime,
     ) -> Self {
         Self {
             database_key_index,
             slot,
-            memo,
             runtime,
         }
     }
 
-    /// Proceed with our panic guard by overwriting the placeholder for `key`.
-    /// Once that completes, ensure that our deconstructor is not run once we
-    /// are out of scope.
-    fn proceed(mut self) {
-        self.overwrite_placeholder(WaitResult::Completed);
+    /// Indicates that we have concluded normally (without panicking).
+    /// If `opt_memo` is some, then this memo is installed as the new
+    /// memoized value. If `opt_memo` is `None`, then the slot is cleared
+    /// and has no value.
+    fn proceed(mut self, opt_memo: Option<Memo<Q::Value>>) {
+        self.overwrite_placeholder(WaitResult::Completed, opt_memo);
         std::mem::forget(self)
     }
 
     /// Overwrites the `InProgress` placeholder for `key` that we
     /// inserted; if others were blocked, waiting for us to finish,
     /// then notify them.
-    fn overwrite_placeholder(&mut self, wait_result: WaitResult) {
+    fn overwrite_placeholder(&mut self, wait_result: WaitResult, opt_memo: Option<Memo<Q::Value>>) {
         let mut write = self.slot.state.write();
 
-        let old_value = match self.memo.take() {
+        let old_value = match opt_memo {
             // Replace the `InProgress` marker that we installed with the new
             // memo, thus releasing our unique access to this key.
             Some(memo) => std::mem::replace(&mut *write, QueryState::Memoized(memo)),
@@ -666,7 +673,7 @@ where
     fn drop(&mut self) {
         if std::thread::panicking() {
             // We panicked before we could proceed and need to remove `key`.
-            self.overwrite_placeholder(WaitResult::Panicked)
+            self.overwrite_placeholder(WaitResult::Panicked, None)
         } else {
             // If no panic occurred, then panic guard ought to be
             // "forgotten" and so this Drop code should never run.

@@ -70,7 +70,7 @@ fn should_panic_safely() {
 
         db.set_one(1);
         db.outer();
-        assert_eq!(OUTER_CALLS.load(SeqCst), 1);
+        assert_eq!(OUTER_CALLS.load(SeqCst), 2);
     }
 }
 
