@@ -172,6 +172,7 @@ fn cycle_c(db: &dyn Database) -> Result<(), Error> {
     db.c_invokes().invoke(db)
 }
 
+#[track_caller]
 fn extract_cycle(f: impl FnOnce() + UnwindSafe) -> salsa::Cycle {
     let v = std::panic::catch_unwind(f);
     if let Err(d) = &v {
@@ -352,20 +353,17 @@ fn cycle_mixed_1() {
     db.set_b_invokes(CycleQuery::C);
     db.set_c_invokes(CycleQuery::B);
 
-    let u = extract_cycle(|| {
-        let _ = db.cycle_a();
-    });
-    insta::assert_debug_snapshot!((u.all_participants(&db), u.unexpected_participants(&db)), @r###"
-            (
-                [
-                    "cycle_b(())",
-                    "cycle_c(())",
-                ],
-                [
-                    "cycle_c(())",
-                ],
-            )
-            "###);
+    let u = db.cycle_c();
+    insta::assert_debug_snapshot!(u, @r###"
+    Err(
+        Error {
+            cycle: [
+                "cycle_b(())",
+                "cycle_c(())",
+            ],
+        },
+    )
+    "###);
 }
 
 #[test]
@@ -381,21 +379,18 @@ fn cycle_mixed_2() {
     db.set_b_invokes(CycleQuery::C);
     db.set_c_invokes(CycleQuery::A);
 
-    let u = extract_cycle(|| {
-        let _ = db.cycle_a();
-    });
-    insta::assert_debug_snapshot!((u.all_participants(&db), u.unexpected_participants(&db)), @r###"
-            (
-                [
-                    "cycle_a(())",
-                    "cycle_b(())",
-                    "cycle_c(())",
-                ],
-                [
-                    "cycle_c(())",
-                ],
-            )
-            "###);
+    let u = db.cycle_a();
+    insta::assert_debug_snapshot!(u, @r###"
+    Err(
+        Error {
+            cycle: [
+                "cycle_a(())",
+                "cycle_b(())",
+                "cycle_c(())",
+            ],
+        },
+    )
+    "###);
 }
 
 #[test]

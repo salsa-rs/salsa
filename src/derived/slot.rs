@@ -5,7 +5,6 @@ use crate::lru::LruIndex;
 use crate::lru::LruNode;
 use crate::plumbing::{DatabaseOps, QueryFunction};
 use crate::revision::Revision;
-use crate::runtime::cycle_participant::CycleParticipant;
 use crate::runtime::local_state::ActiveQueryGuard;
 use crate::runtime::local_state::QueryInputs;
 use crate::runtime::local_state::QueryRevisions;
@@ -13,6 +12,7 @@ use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
 use crate::runtime::WaitResult;
+use crate::Cycle;
 use crate::{Database, DatabaseKeyIndex, Event, EventKind, QueryDb};
 use log::{debug, info};
 use parking_lot::{RawRwLock, RwLock};
@@ -239,12 +239,29 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let value = CycleParticipant::recover(
-            || Q::execute(db, self.key.clone()),
-            // If a recoverable cycle occurs, `Q::execute` will throw
-            // and this closure will be executed with the cycle information.
-            |cycle| Q::cycle_fallback(db, &cycle, &self.key),
-        );
+        let value = match Cycle::catch(|| Q::execute(db, self.key.clone())) {
+            Ok(v) => v,
+            Err(cycle) => {
+                log::debug!(
+                    "{:?}: caught cycle {:?}, have strategy {:?}",
+                    self.database_key_index.debug(db),
+                    cycle,
+                    Q::CYCLE_STRATEGY,
+                );
+                match Q::CYCLE_STRATEGY {
+                    crate::plumbing::CycleRecoveryStrategy::Panic => {
+                        panic_guard.proceed(None);
+                        cycle.throw()
+                    }
+                    crate::plumbing::CycleRecoveryStrategy::Fallback => {
+                        if let Some(c) = active_query.take_cycle() {
+                            assert!(c.is(&cycle));
+                        }
+                        Q::cycle_fallback(db, &cycle, &self.key)
+                    }
+                }
+            }
+        };
 
         let mut revisions = active_query.pop();
 

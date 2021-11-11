@@ -1,11 +1,12 @@
+use log::debug;
+
 use crate::durability::Durability;
 use crate::runtime::ActiveQuery;
 use crate::runtime::Revision;
+use crate::Cycle;
 use crate::DatabaseKeyIndex;
 use std::cell::RefCell;
 use std::sync::Arc;
-
-use super::cycle_participant::CycleParticipant;
 
 /// State that is specific to a single execution thread.
 ///
@@ -97,6 +98,10 @@ impl LocalState {
         durability: Durability,
         changed_at: Revision,
     ) {
+        debug!(
+            "report_query_read_and_unwind_if_cycle_resulted(input={:?}, durability={:?}, changed_at={:?})",
+            input, durability, changed_at
+        );
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_read(input, durability, changed_at);
@@ -123,7 +128,7 @@ impl LocalState {
                 // stack frames, so they will just read the fallback value
                 // from `Ci+1` and continue on their merry way.
                 if let Some(cycle) = top_query.cycle.take() {
-                    CycleParticipant::new(cycle).unwind()
+                    cycle.throw()
                 }
             }
         })
@@ -210,6 +215,13 @@ impl ActiveQueryGuard<'_> {
         assert!(popped_query.cycle.is_none());
 
         popped_query.revisions()
+    }
+
+    /// If the active query is registered as a cycle participant, remove and
+    /// return that cycle.
+    pub(crate) fn take_cycle(&self) -> Option<Cycle> {
+        self.local_state
+            .with_query_stack(|stack| stack.last_mut()?.cycle.take())
     }
 }
 

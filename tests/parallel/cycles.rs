@@ -3,7 +3,7 @@
 //! both intra and cross thread.
 
 use crate::setup::{Knobs, ParDatabase, ParDatabaseImpl};
-use salsa::{Cancelled, ParallelDatabase};
+use salsa::ParallelDatabase;
 use test_env_log::test;
 
 // Recover cycle test:
@@ -164,6 +164,6 @@ fn panic_parallel_cycle() {
     assert!(thread_a
         .join()
         .unwrap_err()
-        .downcast_ref::<Cancelled>()
+        .downcast_ref::<salsa::Cycle>()
         .is_some());
 }

@@ -13,15 +13,12 @@ use std::sync::Arc;
 pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
 pub(crate) type FxIndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasherDefault<FxHasher>>;
 
-pub(crate) mod cycle_participant;
-
 mod dependency_graph;
 use dependency_graph::DependencyGraph;
 
 pub(crate) mod local_state;
 use local_state::LocalState;
 
-use self::cycle_participant::CycleParticipant;
 use self::local_state::{ActiveQueryGuard, QueryInputs, QueryRevisions};
 
 /// The salsa runtime stores the storage for all queries as well as
@@ -269,13 +266,13 @@ impl Runtime {
             .report_synthetic_read(durability, changed_at);
     }
 
-    fn create_cycle_error(
+    fn throw_cycle_error(
         &self,
         db: &dyn Database,
         mut dg: MutexGuard<'_, DependencyGraph>,
         database_key_index: DatabaseKeyIndex,
         to_id: RuntimeId,
-    ) -> (CycleRecoveryStrategy, Cycle) {
+    ) -> ! {
         debug!("create_cycle_error(database_key={:?})", database_key_index);
 
         let mut from_stack = self.local_state.take_query_stack();
@@ -319,80 +316,32 @@ impl Runtime {
             cycle_query,
         );
 
-        // Identify cycle recovery strategy:
-        let recovery_strategy = self.mutual_cycle_recovery_strategy(db, &cycle);
-        debug!("cycle recovery strategy {:?}", recovery_strategy);
+        // We can remove the cycle participants from the list of dependencies;
+        // they are a strongly connected component (SCC) and we only care about
+        // dependencies to things outside the SCC that control whether it will
+        // form again.
+        cycle_query.remove_cycle_participants(&cycle);
 
-        // If using fallback, we have to mark the cycle participants, so they know to recover.
-        // In this case, we also want to modify their changed-at and durability values to
-        // be the max/min we computed across the entire cycle.
-        match recovery_strategy {
-            CycleRecoveryStrategy::Panic => {}
-            CycleRecoveryStrategy::Fallback => {
-                // We don't need to include the cycle participants in the input.
-                // Everyone depends on all the external dependencies.
-                cycle_query.remove_cycle_participants(&cycle);
+        // Mark the cycle participants so they know to recover.
+        // This only matters for queries that have a fallback value specified;
+        // the others will just unwind without storing any recovery information.
+        dg.for_each_cycle_participant(from_id, &mut from_stack, database_key_index, to_id, |aq| {
+            match db.cycle_recovery_strategy(aq.database_key_index) {
+                CycleRecoveryStrategy::Fallback => {
+                    debug!("marking {:?} for fallback", aq.database_key_index.debug(db));
+                    aq.take_inputs_from(&cycle_query);
+                    aq.cycle = Some(cycle.clone());
+                }
 
-                // Mark the cycle participants, so they know to recover:
-                dg.for_each_cycle_participant(
-                    from_id,
-                    &mut from_stack,
-                    database_key_index,
-                    to_id,
-                    |aq| {
-                        aq.take_inputs_from(&cycle_query);
-                        aq.cycle = Some(cycle.clone());
-                    },
-                );
-
-                // The top of the current stack is a bit of a special case:
-                //
-                //     C0 --> ... --> Cn-1 -> Cn --> C0
-                //                                ^
-                //                                :
-                //         This edge -------------+
-                //
-                // Each query Ci in C0..=Cn-1 will recover the "usual" way:
-                // the query Ci+1 will recover from [`CycleParticipant::unwind`]
-                // and store a recovery value in the table. This value will
-                // be returned to Ci, which will invoke
-                // `report_query_read_and_unwind_if_cycle_resulted` to record
-                // the dependency Ci -> Ci+1. This method will see the `cycle` flag
-                // set on the `ActiveQuery` for `Ci` and will unwind.
-                //
-                // However, the cyclic edge `Cn -> C0` is a bit different:
-                // since C0 has not recovered yet, we don't have an easy value
-                // to return and propagate upwards. Instead, we just add the dependency
-                // *here* and then (in our caller) unwind with `CycleParticipant`.
-                from_stack.last_mut().unwrap().cycle = None;
+                CycleRecoveryStrategy::Panic => {
+                    // NB: Don't mark these frames!
+                }
             }
-        }
+        });
 
         self.local_state.restore_query_stack(from_stack);
 
-        (recovery_strategy, cycle)
-    }
-
-    fn mutual_cycle_recovery_strategy(
-        &self,
-        db: &dyn Database,
-        cycle: &Cycle,
-    ) -> CycleRecoveryStrategy {
-        let participants = &cycle.participants;
-        let crs = db.cycle_recovery_strategy(participants[0]);
-        if let Some(key) = participants[1..]
-            .iter()
-            .copied()
-            .find(|&key| db.cycle_recovery_strategy(key) != crs)
-        {
-            debug!("mutual_cycle_recovery_strategy: cycle had multiple strategies ({:?} for {:?} vs {:?} for {:?})",
-                crs, participants[0],
-                db.cycle_recovery_strategy(key), key
-            );
-            CycleRecoveryStrategy::Panic
-        } else {
-            crs
-        }
+        cycle.throw()
     }
 
     /// Block until `other_id` completes executing `database_key`;
@@ -427,40 +376,37 @@ impl Runtime {
         let mut dg = self.shared_state.dependency_graph.lock();
 
         if self.id() == other_id || dg.depends_on(other_id, self.id()) {
-            match self.create_cycle_error(db, dg, database_key, other_id) {
-                (CycleRecoveryStrategy::Panic, cycle) => cycle.throw(),
-                (CycleRecoveryStrategy::Fallback, cycle) => CycleParticipant::new(cycle).unwind(),
-            }
-        } else {
-            db.salsa_event(Event {
-                runtime_id: self.id(),
-                kind: EventKind::WillBlockOn {
-                    other_runtime_id: other_id,
-                    database_key,
-                },
-            });
+            self.throw_cycle_error(db, dg, database_key, other_id)
+        }
 
-            let stack = self.local_state.take_query_stack();
-
-            let (stack, result) = DependencyGraph::block_on(
-                dg,
-                self.id(),
+        db.salsa_event(Event {
+            runtime_id: self.id(),
+            kind: EventKind::WillBlockOn {
+                other_runtime_id: other_id,
                 database_key,
-                other_id,
-                stack,
-                query_mutex_guard,
-            );
+            },
+        });
 
-            self.local_state.restore_query_stack(stack);
+        let stack = self.local_state.take_query_stack();
 
-            match result {
-                WaitResult::Completed => (),
+        let (stack, result) = DependencyGraph::block_on(
+            dg,
+            self.id(),
+            database_key,
+            other_id,
+            stack,
+            query_mutex_guard,
+        );
 
-                // If the other thread panicked, then we consider this thread
-                // cancelled. The assumption is that the panic will be detected
-                // by the other thread and responded to appropriately.
-                WaitResult::Panicked => Cancelled::PropagatedPanic.throw(),
-            }
+        self.local_state.restore_query_stack(stack);
+
+        match result {
+            WaitResult::Completed => (),
+
+            // If the other thread panicked, then we consider this thread
+            // cancelled. The assumption is that the panic will be detected
+            // by the other thread and responded to appropriately.
+            WaitResult::Panicked => Cancelled::PropagatedPanic.throw(),
         }
     }
 

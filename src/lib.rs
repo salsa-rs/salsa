@@ -35,6 +35,7 @@ use crate::plumbing::QueryStorageOps;
 pub use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
+use std::panic::AssertUnwindSafe;
 use std::panic::{self, UnwindSafe};
 use std::sync::Arc;
 
@@ -645,7 +646,7 @@ impl std::fmt::Display for Cancelled {
 
 impl std::error::Error for Cancelled {}
 
-/// Captuers the participants of a cycle that occurred when executing a query.
+/// Captures the participants of a cycle that occurred when executing a query.
 ///
 /// This type is meant to be used to help give meaningful error messages to the
 /// user or to help salsa developers figure out why their program is resulting
@@ -670,8 +671,24 @@ impl Cycle {
         Self { participants }
     }
 
+    /// True if two `Cycle` values represent the same cycle.
+    pub(crate) fn is(&self, cycle: &Cycle) -> bool {
+        Arc::ptr_eq(&self.participants, &cycle.participants)
+    }
+
     pub(crate) fn throw(self) -> ! {
+        log::debug!("throwing cycle {:?}", self);
         std::panic::resume_unwind(Box::new(self))
+    }
+
+    pub(crate) fn catch<T>(execute: impl FnOnce() -> T) -> Result<T, Cycle> {
+        match std::panic::catch_unwind(AssertUnwindSafe(execute)) {
+            Ok(v) => Ok(v),
+            Err(err) => match err.downcast::<Cycle>() {
+                Ok(cycle) => Err(*cycle),
+                Err(other) => std::panic::resume_unwind(other),
+            },
+        }
     }
 
     /// Iterate over the [`DatabaseKeyIndex`] for each query participating
