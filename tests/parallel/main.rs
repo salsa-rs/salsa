@@ -1,9 +1,10 @@
 mod setup;
 
 mod cancellation;
-mod cycles;
 mod frozen;
 mod independent;
+mod parallel_cycle_all_recover;
+mod parallel_cycle_none_recover;
 mod race;
 mod signal;
 mod stress;

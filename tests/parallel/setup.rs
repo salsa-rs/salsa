@@ -26,27 +26,6 @@ pub(crate) trait ParDatabase: Knobs {
 
     /// Invokes `sum2_drop_sum`
     fn sum3_drop_sum(&self, key: &'static str) -> usize;
-
-    #[salsa::cycle(crate::cycles::recover_from_cycle_a1)]
-    #[salsa::invoke(crate::cycles::recover_cycle_a1)]
-    fn recover_cycle_a1(&self, key: i32) -> i32;
-
-    #[salsa::cycle(crate::cycles::recover_from_cycle_a2)]
-    #[salsa::invoke(crate::cycles::recover_cycle_a2)]
-    fn recover_cycle_a2(&self, key: i32) -> i32;
-
-    #[salsa::cycle(crate::cycles::recover_from_cycle_b1)]
-    #[salsa::invoke(crate::cycles::recover_cycle_b1)]
-    fn recover_cycle_b1(&self, key: i32) -> i32;
-
-    #[salsa::cycle(crate::cycles::recover_from_cycle_b2)]
-    #[salsa::invoke(crate::cycles::recover_cycle_b2)]
-    fn recover_cycle_b2(&self, key: i32) -> i32;
-
-    #[salsa::invoke(crate::cycles::panic_cycle_a)]
-    fn panic_cycle_a(&self, key: i32) -> i32;
-    #[salsa::invoke(crate::cycles::panic_cycle_b)]
-    fn panic_cycle_b(&self, key: i32) -> i32;
 }
 
 /// Various "knobs" and utilities used by tests to force
@@ -178,7 +157,11 @@ fn sum3_drop_sum(db: &dyn ParDatabase, key: &'static str) -> usize {
     db.sum2_drop_sum(key)
 }
 
-#[salsa::database(Par)]
+#[salsa::database(
+    Par,
+    crate::parallel_cycle_all_recover::ParallelCycleAllRecover,
+    crate::parallel_cycle_none_recover::ParallelCycleNoneRecover
+)]
 #[derive(Default)]
 pub(crate) struct ParDatabaseImpl {
     storage: salsa::Storage<Self>,
