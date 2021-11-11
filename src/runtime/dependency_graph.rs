@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{DatabaseKeyIndex, RuntimeId};
-use parking_lot::MutexGuard;
+use parking_lot::{Condvar, MutexGuard};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
@@ -25,10 +25,6 @@ pub(super) struct DependencyGraph {
     /// it stores its `WaitResult` here. As they wake up, each query Q in Qs will
     /// come here to fetch their results.
     wait_results: FxHashMap<RuntimeId, (QueryStack, WaitResult)>,
-
-    /// Signalled whenever a query with dependents completes.
-    /// Allows those dependents to check if they are ready to unblock.
-    condvar: Arc<parking_lot::Condvar>,
 }
 
 #[derive(Debug)]
@@ -36,6 +32,10 @@ struct Edge {
     blocked_on_id: RuntimeId,
     blocked_on_key: DatabaseKeyIndex,
     stack: QueryStack,
+
+    /// Signalled whenever a query with dependents completes.
+    /// Allows those dependents to check if they are ready to unblock.
+    condvar: Arc<parking_lot::Condvar>,
 }
 
 impl DependencyGraph {
@@ -139,15 +139,11 @@ impl DependencyGraph {
         from_stack: QueryStack,
         query_mutex_guard: QueryMutexGuard,
     ) -> (QueryStack, WaitResult) {
-        me.add_edge(from_id, database_key, to_id, from_stack);
+        let condvar = me.add_edge(from_id, database_key, to_id, from_stack);
 
         // Release the mutex that prevents `database_key`
         // from completing, now that the edge has been added.
         drop(query_mutex_guard);
-
-        // Condvar is in an Arc so that the type system knows
-        // that nobody frees it while we are waiting:
-        let condvar = me.condvar.clone();
 
         loop {
             if let Some(stack_and_result) = me.wait_results.remove(&from_id) {
@@ -167,23 +163,26 @@ impl DependencyGraph {
         database_key: DatabaseKeyIndex,
         to_id: RuntimeId,
         from_stack: QueryStack,
-    ) {
+    ) -> Arc<parking_lot::Condvar> {
         assert_ne!(from_id, to_id);
         debug_assert!(!self.edges.contains_key(&from_id));
         debug_assert!(!self.depends_on(to_id, from_id));
 
+        let condvar = Arc::new(Condvar::new());
         self.edges.insert(
             from_id,
             Edge {
                 blocked_on_id: to_id,
                 blocked_on_key: database_key,
                 stack: from_stack,
+                condvar: condvar.clone(),
             },
         );
         self.query_dependents
             .entry(database_key)
             .or_default()
             .push(from_id);
+        condvar
     }
 
     /// Invoked when runtime `to_id` completes executing
@@ -203,10 +202,10 @@ impl DependencyGraph {
             let edge = self.edges.remove(&from_id).expect("no edge for dependent");
             assert_eq!(to_id, edge.blocked_on_id);
             self.wait_results.insert(from_id, (edge.stack, wait_result));
-        }
 
-        // Now that we have inserted the `wait_results`,
-        // notify all potential dependents.
-        self.condvar.notify_all();
+            // Now that we have inserted the `wait_results`,
+            // notify the thread.
+            edge.condvar.notify_one();
+        }
     }
 }
