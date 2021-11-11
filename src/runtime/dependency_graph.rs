@@ -187,10 +187,9 @@ impl DependencyGraph {
 
     /// Invoked when runtime `to_id` completes executing
     /// `database_key`.
-    pub(super) fn unblock_dependents_of(
+    pub(super) fn unblock_runtimes_blocked_on(
         &mut self,
         database_key: DatabaseKeyIndex,
-        to_id: RuntimeId,
         wait_result: WaitResult,
     ) {
         let dependents = self
@@ -199,13 +198,19 @@ impl DependencyGraph {
             .unwrap_or_default();
 
         for from_id in dependents {
-            let edge = self.edges.remove(&from_id).expect("no edge for dependent");
-            assert_eq!(to_id, edge.blocked_on_id);
-            self.wait_results.insert(from_id, (edge.stack, wait_result));
-
-            // Now that we have inserted the `wait_results`,
-            // notify the thread.
-            edge.condvar.notify_one();
+            self.unblock_runtime(from_id, wait_result);
         }
+    }
+
+    /// Unblock the runtime with the given id with the given wait-result.
+    /// This will cause it resume execution (though it will have to grab
+    /// the lock on this data structure first, to recover the wait result).
+    fn unblock_runtime(&mut self, id: RuntimeId, wait_result: WaitResult) {
+        let edge = self.edges.remove(&id).expect("not blocked");
+        self.wait_results.insert(id, (edge.stack, wait_result));
+
+        // Now that we have inserted the `wait_results`,
+        // notify the thread.
+        edge.condvar.notify_one();
     }
 }

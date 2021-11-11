@@ -423,7 +423,7 @@ impl Runtime {
         self.shared_state
             .dependency_graph
             .lock()
-            .unblock_dependents_of(database_key, self.id(), wait_result);
+            .unblock_runtimes_blocked_on(database_key, wait_result);
     }
 }
 
