@@ -8,23 +8,23 @@
 
 ## Summary
 
-* Introduce `Cycle` type that carries information about a cycle.
+* Permit cycle recovery as long as at least one participant has recovery enabled.
 * Modify cycle recovery to take a `&Cycle`.
-* Report cycle participants in a deterministic order.
+* Introduce `Cycle` type that carries information about a cycle and lists participants in a deterministic order.
 
 [RFC 7]: ./RFC0007-Opinionated-Cancelation.md
 
 ## Motivation
 
-Cycle recovery has been found to have some subtle bugs that could lead to panics. Furthermore, the existing cycle recovery APIs give limited and non-deterministic information. This RFC tweaks the user exposed APIs to correct these shortcomings. It also describes a major overhaul of how cycles are handled internally.
+Cycle recovery has been found to have some subtle bugs that could lead to panics. Furthermore, the existing cycle recovery APIs require all participants in a cycle to have recovery enabled and give limited and non-deterministic information. This RFC tweaks the user exposed APIs to correct these shortcomings. It also describes a major overhaul of how cycles are handled internally.
 
 ## User's guide
 
-By default, when Salsa detects a cycle in the computation graph, Salsa will panic with a `salsa::Cycle` as the panic value. The `salsa::Cycle` structure that describes the cycle, which can be useful for diagnosing what went wrong. 
+By default, cycles in the computation graph are considered a "programmer bug" and result in a panic. Sometimes, though, cycles are outside of the programmer's control. Salsa provides mechanisms to recover from cycles that can help in those cases.
 
-### The `Cycle` type: inspecting cycles
+### Default cycle handling: panic
 
-The `Cycle` type stores information about a cycle. It offers a few methods for inspecting the participants in the cycle:
+By default, when Salsa detects a cycle in the computation graph, Salsa will panic with a `salsa::Cycle` as the panic value. Your queries should not attempt to catch this value; rather, the `salsa::Cycle` is meant to be caught by the outermost thread, which can print out information from it to diagnose what went wrong. The `Cycle` type offers a few methods for inspecting the participants in the cycle:
 
 * `participant_keys` -- returns an iterator over the `DatabaseKeyIndex` for each participant in the cycle.
 * `all_participants` -- returns an iterator over `String` values for each participant in the cycle (debug output).
@@ -36,7 +36,7 @@ The `Cycle` type stores information about a cycle. It offers a few methods for i
 
 Panicking when a cycle occurs is ok for situations where you believe a cycle is impossible. But sometimes cycles can result from illegal user input and cannot be statically prevented. In these cases, you might prefer to gracefully recover from a cycle rather than panicking the entire query. Salsa supports that with the idea of *cycle recovery*.
 
-To use cycle recovery, you annotate every potential participant in the cycle with a `#[salsa::recover(my_recover_fn)]` attribute. When a cycle occurs, if **all** participants have recovery information, then no panic will result. Instead, salsa will abort the execution of the cycle participants and invoke the recovery function `my_recover_fn` instead. The result of this recovery will be returned as the query result. 
+To use cycle recovery, you annotate potential participants in the cycle with a `#[salsa::recover(my_recover_fn)]` attribute. When a cycle occurs, if any participant P has recovery information, then no panic occurs. Instead, the execution of P is aborted and P will execute the recovery function to generate its result. Participants in the cycle that do not have recovery information continue executing as normal, using this recovery result.
 
 The recovery function has a similar signature to a query function. It is given a reference to your database along with a `salsa::Cycle` describing the cycle that occurred; it returns the result of the query. Example:
 
