@@ -4,7 +4,7 @@ use crate::revision::{AtomicRevision, Revision};
 use crate::{Cancelled, Cycle, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
-use parking_lot::{Mutex, MutexGuard, RwLock};
+use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHasher;
 use std::hash::{BuildHasherDefault, Hash};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -44,10 +44,11 @@ pub struct Runtime {
     shared_state: Arc<SharedState>,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum WaitResult {
     Completed,
     Panicked,
+    Cycle(Cycle),
 }
 
 impl Default for Runtime {
@@ -266,14 +267,25 @@ impl Runtime {
             .report_synthetic_read(durability, changed_at);
     }
 
-    fn throw_cycle_error(
+    /// Handles a cycle in the dependency graph that was detected when the
+    /// current thread tried to block on `database_key_index` which is being
+    /// executed by `to_id`. If this function returns, then `to_id` no longer
+    /// depends on the current thread, and so we should continue executing
+    /// as normal. Otherwise, the function will throw a `Cycle` which is expected
+    /// to be caught by some frame on our stack. This occurs either if there is
+    /// a frame on our stack with cycle recovery (possibly the top one!) or if there
+    /// is no cycle recovery at all.
+    fn unblock_cycle_and_maybe_throw(
         &self,
         db: &dyn Database,
-        mut dg: MutexGuard<'_, DependencyGraph>,
+        dg: &mut DependencyGraph,
         database_key_index: DatabaseKeyIndex,
         to_id: RuntimeId,
-    ) -> ! {
-        debug!("create_cycle_error(database_key={:?})", database_key_index);
+    ) {
+        debug!(
+            "unblock_cycle_and_maybe_throw(database_key={:?})",
+            database_key_index
+        );
 
         let mut from_stack = self.local_state.take_query_stack();
         let from_id = self.id();
@@ -291,9 +303,11 @@ impl Runtime {
                 &mut from_stack,
                 database_key_index,
                 to_id,
-                |aq| {
-                    cycle_query.add_from(aq);
-                    v.push(aq.database_key_index);
+                |aqs| {
+                    aqs.iter_mut().for_each(|aq| {
+                        cycle_query.add_from(aq);
+                        v.push(aq.database_key_index);
+                    });
                 },
             );
 
@@ -325,23 +339,38 @@ impl Runtime {
         // Mark the cycle participants so they know to recover.
         // This only matters for queries that have a fallback value specified;
         // the others will just unwind without storing any recovery information.
-        dg.for_each_cycle_participant(from_id, &mut from_stack, database_key_index, to_id, |aq| {
-            match db.cycle_recovery_strategy(aq.database_key_index) {
-                CycleRecoveryStrategy::Fallback => {
+        dg.for_each_cycle_participant(from_id, &mut from_stack, database_key_index, to_id, |aqs| {
+            aqs.iter_mut()
+                .skip_while(
+                    |aq| match db.cycle_recovery_strategy(aq.database_key_index) {
+                        CycleRecoveryStrategy::Panic => true,
+                        CycleRecoveryStrategy::Fallback => false,
+                    },
+                )
+                .for_each(|aq| {
                     debug!("marking {:?} for fallback", aq.database_key_index.debug(db));
                     aq.take_inputs_from(&cycle_query);
+                    assert!(aq.cycle.is_none());
                     aq.cycle = Some(cycle.clone());
-                }
-
-                CycleRecoveryStrategy::Panic => {
-                    // NB: Don't mark these frames!
-                }
-            }
+                });
         });
+
+        // Unblock every thread that has cycle recovery with a `WaitResult::Cycle`.
+        // They will throw the cycle, which will be caught by the frame that has
+        // cycle recovery so that it can execute that recovery.
+        let (me_recovered, others_recovered) =
+            dg.maybe_unblock_runtimes_in_cycle(from_id, &from_stack, database_key_index, to_id);
 
         self.local_state.restore_query_stack(from_stack);
 
-        cycle.throw()
+        if me_recovered || !others_recovered {
+            // if me_recovered: If the current thread has recovery, we want to throw
+            // so that it can begin.
+            //
+            // otherwise, if !others_recorded: then no threads have recovery, so we want
+            // to throw the cycle so that salsa can abort.
+            cycle.throw();
+        }
     }
 
     /// Block until `other_id` completes executing `database_key`;
@@ -375,8 +404,12 @@ impl Runtime {
     ) {
         let mut dg = self.shared_state.dependency_graph.lock();
 
-        if self.id() == other_id || dg.depends_on(other_id, self.id()) {
-            self.throw_cycle_error(db, dg, database_key, other_id)
+        if dg.depends_on(other_id, self.id()) {
+            self.unblock_cycle_and_maybe_throw(db, &mut dg, database_key, other_id);
+
+            // If the above fn returns, then (via cycle recovery) it has unblocked the
+            // cycle, so we can continue.
+            assert!(!dg.depends_on(other_id, self.id()));
         }
 
         db.salsa_event(Event {
@@ -407,6 +440,8 @@ impl Runtime {
             // cancelled. The assumption is that the panic will be detected
             // by the other thread and responded to appropriately.
             WaitResult::Panicked => Cancelled::PropagatedPanic.throw(),
+
+            WaitResult::Cycle(c) => c.throw(),
         }
     }
 

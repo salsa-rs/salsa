@@ -160,7 +160,9 @@ fn sum3_drop_sum(db: &dyn ParDatabase, key: &'static str) -> usize {
 #[salsa::database(
     Par,
     crate::parallel_cycle_all_recover::ParallelCycleAllRecover,
-    crate::parallel_cycle_none_recover::ParallelCycleNoneRecover
+    crate::parallel_cycle_none_recover::ParallelCycleNoneRecover,
+    crate::parallel_cycle_mid_recover::ParallelCycleMidRecovers,
+    crate::parallel_cycle_one_recovers::ParallelCycleOneRecovers
 )]
 #[derive(Default)]
 pub(crate) struct ParDatabaseImpl {

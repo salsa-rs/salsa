@@ -66,7 +66,7 @@ impl DependencyGraph {
         from_stack: &mut QueryStack,
         database_key: DatabaseKeyIndex,
         to_id: RuntimeId,
-        mut closure: impl FnMut(&mut ActiveQuery),
+        mut closure: impl FnMut(&mut [ActiveQuery]),
     ) {
         debug_assert!(self.depends_on(to_id, from_id));
 
@@ -103,19 +103,83 @@ impl DependencyGraph {
             // load up the next thread (i.e., we start at B/QB2,
             // and then load up the dependency on C/QC2).
             let edge = self.edges.get_mut(&id).unwrap();
-            edge.stack
+            let prefix = edge
+                .stack
                 .iter_mut()
-                .skip_while(|p| p.database_key_index != key)
-                .for_each(&mut closure);
+                .take_while(|p| p.database_key_index != key)
+                .count();
+            closure(&mut edge.stack[prefix..]);
             id = edge.blocked_on_id;
             key = edge.blocked_on_key;
         }
 
         // Finally, we copy in the results from `from_stack`.
-        from_stack
+        let prefix = from_stack
             .iter_mut()
-            .skip_while(|p| p.database_key_index != key)
-            .for_each(&mut closure);
+            .take_while(|p| p.database_key_index != key)
+            .count();
+        closure(&mut from_stack[prefix..]);
+    }
+
+    /// For each runtime that is blocked as part of this cycle excluding the current one,
+    /// execute `should_unblock` with its portion of the stack. If that function returns true,
+    /// then unblocks the given edge. The function is also invoked on the current runtime,
+    /// but in that case the return value (true or false) is simply returned directly as part
+    /// of the return tuple, since it is up to the caller to "unblock" or "block".
+    ///
+    /// Returns a boolean (Current, Others) where:
+    /// * Current is true if the current runtime should be unblocked and
+    /// * Others is true if other runtimes were unblocked.
+    pub(super) fn maybe_unblock_runtimes_in_cycle(
+        &mut self,
+        from_id: RuntimeId,
+        from_stack: &QueryStack,
+        database_key: DatabaseKeyIndex,
+        to_id: RuntimeId,
+    ) -> (bool, bool) {
+        // See diagram in `for_each_cycle_participant`.
+        let mut id = to_id;
+        let mut key = database_key;
+        let mut others_unblocked = false;
+        while id != from_id {
+            let edge = self.edges.get(&id).unwrap();
+            let prefix = edge
+                .stack
+                .iter()
+                .take_while(|p| p.database_key_index != key)
+                .count();
+            let next_id = edge.blocked_on_id;
+            let next_key = edge.blocked_on_key;
+
+            if let Some(cycle) = edge.stack[prefix..]
+                .iter()
+                .rev()
+                .filter_map(|aq| aq.cycle.clone())
+                .next()
+            {
+                // Remove `id` from the list of runtimes blocked on `next_key`:
+                self.query_dependents
+                    .get_mut(&next_key)
+                    .unwrap()
+                    .retain(|r| *r != id);
+
+                // Unblock runtime so that it can resume execution once lock is released:
+                self.unblock_runtime(id, WaitResult::Cycle(cycle));
+
+                others_unblocked = true;
+            }
+
+            id = next_id;
+            key = next_key;
+        }
+
+        let prefix = from_stack
+            .iter()
+            .take_while(|p| p.database_key_index != key)
+            .count();
+        let this_unblocked = from_stack[prefix..].iter().any(|aq| aq.cycle.is_some());
+
+        (this_unblocked, others_unblocked)
     }
 
     /// Modifies the graph so that `from_id` is blocked
@@ -198,7 +262,7 @@ impl DependencyGraph {
             .unwrap_or_default();
 
         for from_id in dependents {
-            self.unblock_runtime(from_id, wait_result);
+            self.unblock_runtime(from_id, wait_result.clone());
         }
     }
 
