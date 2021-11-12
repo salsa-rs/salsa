@@ -77,22 +77,52 @@ These two cases are handled internally by the `Runtime::try_block_on` function. 
 
 When a cycle is detected, the current thread `T1` has full access to the query stacks that are participating in the cycle. Consider: naturally, `T1` has access to its own stack. There is also a path `T2 -> ... -> Tn -> T1` of blocked threads. Each of the blocked threads `T2 ..= Tn` will have moved their query stacks into the dependency graph, so those query stacks are available for inspection.
 
-Using the available stacks, we can create a list of cycle participants `Q0 ... Qn`. We can then check the cycle recovery setting for `Q0 ... Qn`. If any queries have the "panic" setting, then the cycle is irrecoverable, and we can throw a `Cancelled` error. This will result in the various queries being unrolled and their memoized values being removed from the tables. If all the queries have the "recover" setting, then we can commence with recovery.
+Using the available stacks, we can create a list of cycle participants `Q0 ... Qn` and store that into a `Cycle` struct. If none of the participants `Q0 ... Qn` have cycle recovery enabled, we panic with the `Cycle` struct, which will trigger all the queries on this thread to panic.
 
-### Cycle recovery
+### Cycle recovery via fallback
 
-Cycle recovery begins with a set of active cycle participants `Q0 ... Qn`, all of which are tagged with a recovery function. For those querries, we compute a maximal `changed_at` and a minimum `duration` for all participating queries. These values reflect all the inputs (external to the query) which were accessed thus far. Unless those inputs change, we can be assured that any attempt to re-execute `Q0 ... Qn` will result in the same cycle.
+If any of the cycle participants `Q0 ... Qn` has cycle recovery set, we recover from the cycle. To help explain how this works, we will use this example cycle which contains three threads. Beginning with the current query, the cycle participants are `QA3`, `QB2`, `QB3`, `QC2`, `QC3`, and `QA2`.
 
-Next, we modify the query stack frame for each participant `Q0 .. Qn` to reflect that it is recovering from a cycle:
+```
+        The cyclic
+        edge we have
+        failed to add.
+          :
+   A      :    B         C
+          :
+   QA1    v    QB1       QC1
+┌► QA2    ┌──► QB2   ┌─► QC2
+│  QA3 ───┘    QB3 ──┘   QC3 ───┐
+│                               │
+└───────────────────────────────┘
+```
 
-* We upgrade its `changed_at` and `durability` to reflect the values for the cycle as a whole.
-* We store the cycle participants in the `cycle` field.
+Recovery works in phases:
 
-We will now begin unwinding the stack and computing the recovery values for `Q0 .. Qn` in turn. Query recovery is an "internal" affair: that is, when a query `Qi` stores its recovery value, it returns a normal-looking value to its caller (though the changed-at/durability values will reflect the cycle as a whole). If the caller was not a participant in the cycle, it can simply use that value like it normally would and continue execution.
+* **Analyze:** As we enumerate the query participants, we collect their collective inputs (all queries invoked so far by any cycle participant) and the max changed-at and min duration. We then remove the cycle participants themselves from this list of inputs, leaving only the queries external to the cycle.
+* **Mark**: For each query Q that is annotated with `#[salsa::recover]`, we mark it and all of its successors on the same thread by setting its `cycle` flag to the `c: Cycle` we constructed earlier; we also reset its inputs to the collective inputs gathering during analysis. If those queries resume execution later, those marks will trigger them to immediately unwind and use cycle recovery, and the inputs will be used as the inputs to the recovery value.
+    * Note that we mark *all* the successors of Q on the same thread, whether or not they have recovery set. We'll discuss later how this is important in the case where the active thread (A, here) doesn't have any recovery set.
+* **Unblock**: Each blocked thread T that has a recovering query is forcibly reawoken; the outgoing edge from that thread to its successor in the cycle is removed. Its condvar is signalled with a `WaitResult::Cycle(c)`. When the thread reawakens, it will see that and start unwinding with the cycle `c`.
+* **Handle the current thread:** Finally, we have to choose how to have the current thread proceed. If the current thread includes any cycle with recovery information, then we can begin unwinding. Otherwise, the current thread simply continues as if there had been no cycle, and so the cyclic edge is added to the graph and the current thread blocks. This is possible because some other thread had recovery information and therefore has been awoken.
 
-Queries that *are* participants in the cycle, however, are marked by their `cycle` field. Consider some query `Qi` in the middle of the cycle. `Qi` will receive the return value from the next query `Qi+1` in the cycle as normal. `Qi` will then record its dependency on `Qi+1` and, in the process, observe that the cycle field in `Qi`'s stack frame is set. Thus `Qi` can judge that it was a participant in some cycle and it will panic to avoid continuing to execute. This panic is caught by the code that invoked `Qi`'s query function, and we then invoke the recovery function instead to produce the recovery value for `Qi`. This is stored into the memoization tables like any other value, and `Qi` returns to `Qi-1`, and the process continues. After `Q0` returns, though, its caller was not a participant in the cycle, and thus doesn't have the cycle flag set. That caller can just continue as normal.
+Let's walk through the process with a few examples.
 
-There is one other edge case to consider. The query `Qn` was in the process of invoking `Q0` when the cycle was uncovered. That process needs to conclude with *some* value so that `Qn` can observe the cycle field and initiative recovery. For that, we simply invoke the recovery function for `Q0`. Thus, the `Q0` recovery function will in fact be invoked twice. Once to produce a value for `Qn` (which will probably be ignored...) and once to produce the final memoized value for `Q0`.
+#### Example 1: Recovery on the detecting thread
+
+Consider the case where only the query QA2 has recovery set. It and QA3 will be marked as cycle participants. No threads will be unblocked, as they do not have any cycle recovery nodes. The current thread will unwind with the cycle. This will unwind through QA3 and be caught by QA2. QA2 will substitute the recovery value and return normally. QA1 and QC3 will then complete normally and so forth, on up until all queries have completed.
+
+#### Example 2: Recovery in two queries on the detecting thread
+
+Consider the case where both query QA2 and QA3 have recovery set. It proceeds the same Example 1 until the the current initiates unwinding, as described in Example 1. When QA3 receives the cycle, it stores its recovery value and completes normally. QA2 then adds QA3 as an input dependency: at that point, QA2 observes that it too has the cycle mark set, and so it initiates unwinding. The rest of QA2 therefore never executes. This unwinding is caught by QA2's entry point and it stores the recovery value and returns normally. QA1 and QC3 then continue normally, as they are not marked as cycle participants.
+
+#### Example 3: Recovery on another thread
+
+Now consider the case where only the query QB2 has recovery set. It and QB3 will be marked as cycle participants and thread B will be unblocked; the edge QB3 -> QC2 will be removed from the dependency graph. Thread A will then add an edge QA3 -> QB2 and block on thread B. At that point, thread A releases the lock on the dependency graph, and so thread B is re-awoken. It observes the `WaitResult::Cycle` and initiates unwinding. Unwinding proceeds through QB3 and into QB2, which recovers. QB1 is then able to execute normally, as is QA3, and execution proceeds from there.
+
+#### Example 4: Recovery on all queries
+
+Now consider the case where all the queries have recovery set. In that case, they are all marked as participants, and all the cross-thread edges are removed from the graph. Each thread will independently awaken and initiate unwinding. Each query will recover.
+
 
 ## Frequently asked questions
 
@@ -100,9 +130,27 @@ There is one other edge case to consider. The query `Qn` was in the process of i
 
 In the past, when one thread T1 blocked on some query Q being executed by another thread T2, we would create a custom channel between the threads. T2 would then send the result of Q directly to T1, and T1 had no need to retry. This mechanism was simplified in this RFC because we don't always have a value available: sometimes the cycle results when T2 is just verifying whether a memoized value is still valid. In that case, the value may not have been computed, and so when T1 retries it will in fact go on to compute the value. (Previously, this case was overlooked by the cycle handling logic and resulted in a panic.)
 
-### Why do we invoke the recovery fn for Q0 twice? Why not have queries return a `Result`?
+### Why do we use unwinding to manage cycle recovery?
 
-In the section on cycle recovery, we describe how the query `Qn` needs to get *some* value from `Q0` before it can initiative recovery. Currently, we handle this by invoking the `Q0` recovery function twice. However, `Qn` only needs this value because the function signature for `probe` needs to return *something*; it never actually reads this value, since it begins cycle recovery before it could do so. We could handle this by having the function signature return a `Result` or an `Option` instead. In the case of a cycle, we would return `Err` or `None`. We didn't do this because cycle recovery is meant to be an exceptional case and is not required to be particularly fast. It seemed better to optimize for the 'common case' of no cycle.
+When a query Q participates in cycle recovery, we use unwinding to get from the point where the cycle is detected back to the query's execution function. This ensures that the rest of Q never runs. This is important because Q might otherwise go on to create new cycles even while recovery is proceeding. Consider an example like:
+
+```rust
+#[salsa::recovery]
+fn query_q1(db: &dyn Database) {
+    db.query_q2()
+    db.query_q3() // <-- this never runs, thanks to unwinding
+}
+
+#[salsa::recovery]
+fn query_q2(db: &dyn Database) {
+    db.query_q1()
+}
+
+#[salsa::recovery]
+fn query_q3(db: &dyn Database) {
+    db.query_q1()
+}
+```
 
 ### Why not invoke the recovery functions all at once?
 
