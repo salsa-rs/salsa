@@ -7,6 +7,7 @@ use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHasher;
 use std::hash::{BuildHasherDefault, Hash};
+use std::panic::panic_any;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -363,13 +364,15 @@ impl Runtime {
 
         self.local_state.restore_query_stack(from_stack);
 
-        if me_recovered || !others_recovered {
-            // if me_recovered: If the current thread has recovery, we want to throw
+        if me_recovered {
+            // If the current thread has recovery, we want to throw
             // so that it can begin.
-            //
-            // otherwise, if !others_recorded: then no threads have recovery, so we want
-            // to throw the cycle so that salsa can abort.
-            cycle.throw();
+            cycle.throw()
+        } else if others_recovered {
+            // If other threads have recovery but we didn't: return and we will block on them.
+        } else {
+            // if nobody has recover, then we panic
+            panic_any(cycle);
         }
     }
 

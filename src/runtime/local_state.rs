@@ -127,8 +127,8 @@ impl LocalState {
                 // They will not have the `cycle` marker set in their
                 // stack frames, so they will just read the fallback value
                 // from `Ci+1` and continue on their merry way.
-                if let Some(cycle) = top_query.cycle.take() {
-                    cycle.throw()
+                if let Some(cycle) = &top_query.cycle {
+                    cycle.clone().throw()
                 }
             }
         })

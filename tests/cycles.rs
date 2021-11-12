@@ -480,3 +480,22 @@ fn cycle_multiple() {
     )
     "###);
 }
+
+#[test]
+fn cycle_recovery_set_but_not_participating() {
+    let mut db = DatabaseImpl::default();
+
+    //     A --> C -+
+    //           ^  |
+    //           +--+
+    db.set_a_invokes(CycleQuery::C);
+    db.set_c_invokes(CycleQuery::C);
+
+    // Here we expect C to panic and A not to recover:
+    let r = extract_cycle(|| drop(db.cycle_a()));
+    insta::assert_debug_snapshot!(r.all_participants(&db), @r###"
+    [
+        "cycle_c(())",
+    ]
+    "###);
+}
