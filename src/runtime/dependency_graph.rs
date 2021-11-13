@@ -152,8 +152,7 @@ impl DependencyGraph {
             if let Some(cycle) = edge.stack[prefix..]
                 .iter()
                 .rev()
-                .filter_map(|aq| aq.cycle.clone())
-                .next()
+                .find_map(|aq| aq.cycle.clone())
             {
                 // Remove `id` from the list of runtimes blocked on `next_key`:
                 self.query_dependents
