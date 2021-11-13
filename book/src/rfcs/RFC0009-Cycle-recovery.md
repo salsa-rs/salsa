@@ -58,15 +58,16 @@ If a cycle occurs and *some* of the participant queries have `#[salsa::recover]`
 ## Reference guide
 
 This RFC accompanies a rather long and complex PR with a number of changes to the implementation. We summarize the most important points here.
+# Cycles
 
-### Cross-thread blocking
+## Cross-thread blocking
 
 The interface for blocking across threads now works as follows:
 
 * When one thread `T1` wishes to block on a query `Q` being executed by another thread `T2`, it invokes `Runtime::try_block_on`. This will check for cycles. Assuming no cycle is detected, it will block `T1` until `T2` has completed with `Q`. At that point, `T1` reawakens. However, we don't know the result of executing `Q`, so `T1` now has to "retry". Typically, this will result in successfully reading the cached value.
 * While `T1` is blocking, the runtime moves its query stack (a `Vec`) into the shared dependency graph data structure. When `T1` reawakens, it recovers ownership of its query stack before returning from `try_block_on`.
 
-### Cycle detection
+## Cycle detection
 
 When a thread `T1` attempts to execute a query `Q`, it will try to load the value for `Q` from the memoization tables. If it finds an `InProgress` marker, that indicates that `Q` is currently being computed. This indicates a potential cycle. `T1` will then try to block on the query `Q`:
 
@@ -79,7 +80,7 @@ When a cycle is detected, the current thread `T1` has full access to the query s
 
 Using the available stacks, we can create a list of cycle participants `Q0 ... Qn` and store that into a `Cycle` struct. If none of the participants `Q0 ... Qn` have cycle recovery enabled, we panic with the `Cycle` struct, which will trigger all the queries on this thread to panic.
 
-### Cycle recovery via fallback
+## Cycle recovery via fallback
 
 If any of the cycle participants `Q0 ... Qn` has cycle recovery set, we recover from the cycle. To help explain how this works, we will use this example cycle which contains three threads. Beginning with the current query, the cycle participants are `QA3`, `QB2`, `QB3`, `QC2`, `QC3`, and `QA2`.
 
@@ -107,22 +108,21 @@ Recovery works in phases:
 
 Let's walk through the process with a few examples.
 
-#### Example 1: Recovery on the detecting thread
+### Example 1: Recovery on the detecting thread
 
-Consider the case where only the query QA2 has recovery set. It and QA3 will be marked as cycle participants. No threads will be unblocked, as they do not have any cycle recovery nodes. The current thread will unwind with the cycle. This will unwind through QA3 and be caught by QA2. QA2 will substitute the recovery value and return normally. QA1 and QC3 will then complete normally and so forth, on up until all queries have completed.
+Consider the case where only the query QA2 has recovery set. It and QA3 will be marked with their `cycle` flag set to `c: Cycle`. Threads B and C will not be unblocked, as they do not have any cycle recovery nodes. The current thread (Thread A) will initiate unwinding with the cycle `c` as the value. Unwinding will pass through QA3 and be caught by QA2. QA2 will substitute the recovery value and return normally. QA1 and QC3 will then complete normally and so forth, on up until all queries have completed.
 
-#### Example 2: Recovery in two queries on the detecting thread
+### Example 2: Recovery in two queries on the detecting thread
 
-Consider the case where both query QA2 and QA3 have recovery set. It proceeds the same Example 1 until the the current initiates unwinding, as described in Example 1. When QA3 receives the cycle, it stores its recovery value and completes normally. QA2 then adds QA3 as an input dependency: at that point, QA2 observes that it too has the cycle mark set, and so it initiates unwinding. The rest of QA2 therefore never executes. This unwinding is caught by QA2's entry point and it stores the recovery value and returns normally. QA1 and QC3 then continue normally, as they are not marked as cycle participants.
+Consider the case where both query QA2 and QA3 have recovery set. It proceeds the same Example 1 until the the current initiates unwinding, as described in Example 1. When QA3 receives the cycle, it stores its recovery value and completes normally. QA2 then adds QA3 as an input dependency: at that point, QA2 observes that it too has the cycle mark set, and so it initiates unwinding. The rest of QA2 therefore never executes. This unwinding is caught by QA2's entry point and it stores the recovery value and returns normally. QA1 and QC3 then continue normally, as they have not had their `cycle` flag set.
 
-#### Example 3: Recovery on another thread
+### Example 3: Recovery on another thread
 
-Now consider the case where only the query QB2 has recovery set. It and QB3 will be marked as cycle participants and thread B will be unblocked; the edge QB3 -> QC2 will be removed from the dependency graph. Thread A will then add an edge QA3 -> QB2 and block on thread B. At that point, thread A releases the lock on the dependency graph, and so thread B is re-awoken. It observes the `WaitResult::Cycle` and initiates unwinding. Unwinding proceeds through QB3 and into QB2, which recovers. QB1 is then able to execute normally, as is QA3, and execution proceeds from there.
+Now consider the case where only the query QB2 has recovery set. It and QB3 will be marked with the cycle `c: Cycle` and thread B will be unblocked; the edge `QB3 -> QC2` will be removed from the dependency graph. Thread A will then add an edge `QA3 -> QB2` and block on thread B. At that point, thread A releases the lock on the dependency graph, and so thread B is re-awoken. It observes the `WaitResult::Cycle` and initiates unwinding. Unwinding proceeds through QB3 and into QB2, which recovers. QB1 is then able to execute normally, as is QA3, and execution proceeds from there.
 
-#### Example 4: Recovery on all queries
+### Example 4: Recovery on all queries
 
-Now consider the case where all the queries have recovery set. In that case, they are all marked as participants, and all the cross-thread edges are removed from the graph. Each thread will independently awaken and initiate unwinding. Each query will recover.
-
+Now consider the case where all the queries have recovery set. In that case, they are all marked with the cycle, and all the cross-thread edges are removed from the graph. Each thread will independently awaken and initiate unwinding. Each query will recover.
 
 ## Frequently asked questions
 
