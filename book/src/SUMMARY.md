@@ -25,6 +25,7 @@
       - [Maybe changed since](./plumbing/maybe_changed_since.md)
       - [Fetch](./plumbing/fetch.md)
     - [Derived queries flowchart](./plumbing/derived_flowchart.md)
+    - [Cycle handling](./plumbing/cycles.md)
   - [Terminology](./plumbing/terminology.md)
     - [Backdate](./plumbing/terminology/backdate.md)
     - [Changed at](./plumbing/terminology/changed_at.md)
