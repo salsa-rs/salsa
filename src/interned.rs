@@ -214,17 +214,18 @@ where
         write!(fmt, "{}({:?})", Q::QUERY_NAME, slot.value)
     }
 
-    fn maybe_changed_since(
+    fn maybe_changed_after(
         &self,
-        _db: &<Q as QueryDb<'_>>::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool {
         assert_eq!(input.group_index, self.group_index);
         assert_eq!(input.query_index, Q::QUERY_INDEX);
+        debug_assert!(revision < db.salsa_runtime().current_revision());
         let intern_id = InternId::from(input.key_index);
         let slot = self.lookup_value(intern_id);
-        slot.maybe_changed_since(revision)
+        slot.maybe_changed_after(revision)
     }
 
     fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
@@ -331,7 +332,7 @@ where
         interned_storage.fmt_index(Q::convert_db(db), index, fmt)
     }
 
-    fn maybe_changed_since(
+    fn maybe_changed_after(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         input: DatabaseKeyIndex,
@@ -340,7 +341,7 @@ where
         let group_storage =
             <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
-        interned_storage.maybe_changed_since(Q::convert_db(db), input, revision)
+        interned_storage.maybe_changed_after(Q::convert_db(db), input, revision)
     }
 
     fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
@@ -393,7 +394,7 @@ where
 }
 
 impl<K> Slot<K> {
-    fn maybe_changed_since(&self, revision: Revision) -> bool {
+    fn maybe_changed_after(&self, revision: Revision) -> bool {
         self.interned_at > revision
     }
 }

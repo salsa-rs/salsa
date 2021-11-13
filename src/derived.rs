@@ -141,7 +141,7 @@ where
         write!(fmt, "{}({:?})", Q::QUERY_NAME, key)
     }
 
-    fn maybe_changed_since(
+    fn maybe_changed_after(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         input: DatabaseKeyIndex,
@@ -149,6 +149,7 @@ where
     ) -> bool {
         assert_eq!(input.group_index, self.group_index);
         assert_eq!(input.query_index, Q::QUERY_INDEX);
+        debug_assert!(revision < db.salsa_runtime().current_revision());
         let slot = self
             .slot_map
             .read()
@@ -156,7 +157,7 @@ where
             .unwrap()
             .1
             .clone();
-        slot.maybe_changed_since(db, revision)
+        slot.maybe_changed_after(db, revision)
     }
 
     fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {

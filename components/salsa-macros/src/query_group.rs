@@ -532,7 +532,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     for (Query { fn_name, .. }, query_index) in non_transparent_queries().zip(0_u16..) {
         maybe_changed_ops.extend(quote! {
             #query_index => {
-                salsa::plumbing::QueryStorageOps::maybe_changed_since(
+                salsa::plumbing::QueryStorageOps::maybe_changed_after(
                     &*self.#fn_name, db, input, revision
                 )
             }
@@ -590,7 +590,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 }
             }
 
-            #trait_vis fn maybe_changed_since(
+            #trait_vis fn maybe_changed_after(
                 &self,
                 db: &(#dyn_db + '_),
                 input: salsa::DatabaseKeyIndex,

@@ -1,14 +1,14 @@
-# Maybe changed since
+# Maybe changed after
 
 ```rust,no_run,noplayground
-{{#include ../../../src/plumbing.rs:maybe_changed_since}}
+{{#include ../../../src/plumbing.rs:maybe_changed_after}}
 ```
 
-The `maybe_changed_since` operation computes whether a query's value *may have changed* since the given revision.
+The `maybe_changed_after` operation computes whether a query's value *may have changed* **after** the given revision. In other words, `Q.maybe_change_since(R)` is true if the value of the query `Q` may have changed in the revisions `(R+1)..R_now`, where `R_now` is the current revision. Note that it doesn't make sense to ask `maybe_changed_after(R_now)`.
 
 ## Input queries
 
-Input queries are set explicitly by the user. `maybe_changed_since` can therefore just check when the value was last set and compare.
+Input queries are set explicitly by the user. `maybe_changed_after` can therefore just check when the value was last set and compare.
 
 ## Interned queries
 
@@ -20,7 +20,7 @@ The logic for derived queries is more complex. We summarize the high-level ideas
 * Otherwise, we must check whether [dependencies] have been modified:
     * Let R be the revision in which the memo was last verified; we wish to know if any of the dependencies have changed since revision R.
     * First, we check the [durability]. For each memo, we track the minimum durability of the memo's dependencies. If the memo has durability D, and there have been no changes to an input with durability D since the last time the memo was verified, then we can consider the memo verified without any further work.
-    * If the durability check is not sufficient, then we must check the dependencies individually. For this, we iterate over each dependency D and invoke the [maybe changed since](./maybe_changed_since.md) operation to check whether D has changed since the revision R.
+    * If the durability check is not sufficient, then we must check the dependencies individually. For this, we iterate over each dependency D and invoke the [maybe changed after](./maybe_changed_after.md) operation to check whether D has changed since the revision R.
     * If no dependency was modified:
         * We can mark the memo as verified and use its [changed at] revision to return true or false.
 * Assuming dependencies have been modified:

@@ -343,7 +343,7 @@ some type for dependencies that is independent of the dtabase type `DB`.
 There are a number of methods that can be dispatched through the database
 interface on a `DatabaseKeyIndex`. For example, we already mentioned
 `fmt_debug`, which emits a debug representation of the key, but there is also
-`maybe_changed_since`, which checks whether the value for a given key may have
+`maybe_changed_after`, which checks whether the value for a given key may have
 changed since the given revision. Each of these methods is a member of the
 `DatabaseOps` trait and they are dispatched as follows.
 

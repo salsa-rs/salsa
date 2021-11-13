@@ -22,7 +22,7 @@
     - [Database](./plumbing/database.md)
   - [The `salsa` crate](./plumbing/salsa_crate.md)
     - [Query operations](./plumbing/query_ops.md)
-      - [Maybe changed since](./plumbing/maybe_changed_since.md)
+      - [maybe changed after](./plumbing/maybe_changed_after.md)
       - [Fetch](./plumbing/fetch.md)
     - [Derived queries flowchart](./plumbing/derived_flowchart.md)
     - [Cycle handling](./plumbing/cycles.md)

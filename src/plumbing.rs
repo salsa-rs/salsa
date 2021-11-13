@@ -48,7 +48,7 @@ pub trait DatabaseOps {
     ) -> std::fmt::Result;
 
     /// True if the computed value for `input` may have changed since `revision`.
-    fn maybe_changed_since(&self, input: DatabaseKeyIndex, revision: Revision) -> bool;
+    fn maybe_changed_after(&self, input: DatabaseKeyIndex, revision: Revision) -> bool;
 
     /// Find the `CycleRecoveryStrategy` for a given input.
     fn cycle_recovery_strategy(&self, input: DatabaseKeyIndex) -> CycleRecoveryStrategy;
@@ -167,16 +167,19 @@ where
         fmt: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result;
 
-    // ANCHOR:maybe_changed_since
+    // ANCHOR:maybe_changed_after
     /// True if the value of `input`, which must be from this query, may have
-    /// changed since the given revision.
-    fn maybe_changed_since(
+    /// changed after the given revision ended.
+    ///
+    /// This function should only be invoked with a revision less than the current
+    /// revision.
+    fn maybe_changed_after(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool;
-    // ANCHOR_END:maybe_changed_since
+    // ANCHOR_END:maybe_changed_after
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
         Self::CYCLE_STRATEGY

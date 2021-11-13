@@ -22,7 +22,7 @@ The logic for derived queries is more complex. We summarize the high-level ideas
 * Otherwise, if the memo contains a memoized value, we must check whether [dependencies] have been modified:
     * Let R be the revision in which the memo was last verified; we wish to know if any of the dependencies have changed since revision R.
     * First, we check the [durability]. For each memo, we track the minimum durability of the memo's dependencies. If the memo has durability D, and there have been no changes to an input with durability D since the last time the memo was verified, then we can consider the memo verified without any further work.
-    * If the durability check is not sufficient, then we must check the dependencies individually. For this, we iterate over each dependency D and invoke the [maybe changed since](./maybe_changed_since.md) operation to check whether D has changed since the revision R.
+    * If the durability check is not sufficient, then we must check the dependencies individually. For this, we iterate over each dependency D and invoke the [maybe changed after](./maybe_changed_after.md) operation to check whether D has changed since the revision R.
     * If no dependency was modified:
         * We can mark the memo as verified and return its memoized value.
 * Assuming dependencies have been modified or the memo does not contain a memoized value:

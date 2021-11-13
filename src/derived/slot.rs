@@ -90,7 +90,7 @@ enum ProbeState<V, G> {
     UpToDate(V),
 }
 
-/// Return value of `maybe_changed_since_probe` helper.
+/// Return value of `maybe_changed_after_probe` helper.
 enum MaybeChangedSinceProbeState<G> {
     /// Another thread was active but has completed.
     /// Try again!
@@ -453,7 +453,7 @@ where
         }
     }
 
-    pub(super) fn maybe_changed_since(
+    pub(super) fn maybe_changed_after(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         revision: Revision,
@@ -464,7 +464,7 @@ where
         db.unwind_if_cancelled();
 
         debug!(
-            "maybe_changed_since({:?}) called with revision={:?}, revision_now={:?}",
+            "maybe_changed_after({:?}) called with revision={:?}, revision_now={:?}",
             self, revision, revision_now,
         );
 
@@ -474,18 +474,18 @@ where
         // but hasn't been verified in this revision, we'll have to
         // do more.
         loop {
-            match self.maybe_changed_since_probe(db, self.state.read(), runtime, revision_now) {
+            match self.maybe_changed_after_probe(db, self.state.read(), runtime, revision_now) {
                 MaybeChangedSinceProbeState::Retry => continue,
                 MaybeChangedSinceProbeState::ChangedAt(changed_at) => return changed_at > revision,
                 MaybeChangedSinceProbeState::Stale(state) => {
                     drop(state);
-                    return self.maybe_changed_since_upgrade(db, revision);
+                    return self.maybe_changed_after_upgrade(db, revision);
                 }
             }
         }
     }
 
-    fn maybe_changed_since_probe<StateGuard>(
+    fn maybe_changed_after_probe<StateGuard>(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         state: StateGuard,
@@ -514,7 +514,7 @@ where
         }
     }
 
-    fn maybe_changed_since_upgrade(
+    fn maybe_changed_after_upgrade(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         revision: Revision,
@@ -525,7 +525,7 @@ where
         // Get an upgradable read lock, which permits other reads but no writers.
         // Probe again. If the value is stale (needs to be verified), then upgrade
         // to a write lock and swap it with InProgress while we work.
-        let mut old_memo = match self.maybe_changed_since_probe(
+        let mut old_memo = match self.maybe_changed_after_probe(
             db,
             self.state.upgradable_read(),
             runtime,
@@ -536,7 +536,7 @@ where
             // If another thread was active, then the cache line is going to be
             // either verified or cleared out. Just recurse to figure out which.
             // Note that we don't need an upgradable read.
-            MaybeChangedSinceProbeState::Retry => return self.maybe_changed_since(db, revision),
+            MaybeChangedSinceProbeState::Retry => return self.maybe_changed_after(db, revision),
 
             MaybeChangedSinceProbeState::Stale(state) => {
                 type RwLockUpgradableReadGuard<'a, T> =
@@ -713,7 +713,7 @@ where
     /// valid in the current revision. If so, returns a stamped value.
     ///
     /// If needed, this will walk each dependency and
-    /// recursively invoke `maybe_changed_since`, which may in turn
+    /// recursively invoke `maybe_changed_after`, which may in turn
     /// re-execute the dependency. This can cause cycles to occur,
     /// so the current query must be pushed onto the
     /// stack to permit cycle detection and recovery: therefore,
@@ -742,7 +742,7 @@ where
     /// Determines whether the value represented by this memo is still
     /// valid in the current revision; note that the value itself is
     /// not needed for this check. If needed, this will walk each
-    /// dependency and recursively invoke `maybe_changed_since`, which
+    /// dependency and recursively invoke `maybe_changed_after`, which
     /// may in turn re-execute the dependency. This can cause cycles to occur,
     /// so the current query must be pushed onto the
     /// stack to permit cycle detection and recovery: therefore,
@@ -786,7 +786,7 @@ where
             QueryInputs::Tracked { inputs } => {
                 let changed_input = inputs
                     .iter()
-                    .find(|&&input| db.maybe_changed_since(input, verified_at));
+                    .find(|&&input| db.maybe_changed_after(input, verified_at));
                 if let Some(input) = changed_input {
                     debug!("validate_memoized_value: `{:?}` may have changed", input);
 

@@ -124,7 +124,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
             #group_index => {
                 let storage: &#group_storage =
                     <Self as salsa::plumbing::HasQueryGroup<#group_path>>::group_storage(self);
-                storage.maybe_changed_since(self, input, revision)
+                storage.maybe_changed_after(self, input, revision)
             }
         });
         cycle_recovery_strategy_ops.extend(quote! {
@@ -165,7 +165,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
                 }
             }
 
-            fn maybe_changed_since(
+            fn maybe_changed_after(
                 &self,
                 input: salsa::DatabaseKeyIndex,
                 revision: salsa::Revision
