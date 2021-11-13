@@ -337,9 +337,9 @@ impl Runtime {
         // form again.
         cycle_query.remove_cycle_participants(&cycle);
 
-        // Mark the cycle participants so they know to recover.
-        // This only matters for queries that have a fallback value specified;
-        // the others will just unwind without storing any recovery information.
+        // Mark each cycle participant that has recovery set, along with
+        // any frames that come after them on the same thread. Those frames
+        // are going to be unwound so that fallback can occur.
         dg.for_each_cycle_participant(from_id, &mut from_stack, database_key_index, to_id, |aqs| {
             aqs.iter_mut()
                 .skip_while(

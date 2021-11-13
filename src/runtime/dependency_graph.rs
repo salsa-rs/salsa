@@ -121,14 +121,12 @@ impl DependencyGraph {
         closure(&mut from_stack[prefix..]);
     }
 
-    /// For each runtime that is blocked as part of this cycle excluding the current one,
-    /// execute `should_unblock` with its portion of the stack. If that function returns true,
-    /// then unblocks the given edge. The function is also invoked on the current runtime,
-    /// but in that case the return value (true or false) is simply returned directly as part
-    /// of the return tuple, since it is up to the caller to "unblock" or "block".
+    /// Unblock each blocked runtime (excluding the current one) if some
+    /// query executing in that runtime is participating in cycle fallback.
     ///
     /// Returns a boolean (Current, Others) where:
-    /// * Current is true if the current runtime should be unblocked and
+    /// * Current is true if the current runtime has cycle participants
+    ///   with fallback;
     /// * Others is true if other runtimes were unblocked.
     pub(super) fn maybe_unblock_runtimes_in_cycle(
         &mut self,
