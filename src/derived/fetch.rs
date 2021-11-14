@@ -19,6 +19,8 @@ where
         db: &<Q as QueryDb<'_>>::DynDb,
         key_index: DerivedKeyIndex,
     ) -> Q::Value {
+        db.unwind_if_cancelled();
+
         let StampedValue {
             value,
             durability,

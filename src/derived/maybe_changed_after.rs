@@ -22,6 +22,8 @@ where
         key_index: DerivedKeyIndex,
         revision: Revision,
     ) -> bool {
+        db.unwind_if_cancelled();
+
         loop {
             let runtime = db.salsa_runtime();
             let database_key_index = self.database_key_index(key_index);

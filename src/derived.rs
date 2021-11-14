@@ -163,7 +163,6 @@ where
     }
 
     fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
-        db.unwind_if_cancelled();
         let key_index = self.key_map.key_index_for_key(key);
         self.fetch(db, key_index)
     }
