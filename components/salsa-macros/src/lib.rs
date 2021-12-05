@@ -146,3 +146,81 @@ pub fn query_group(args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn database(args: TokenStream, input: TokenStream) -> TokenStream {
     database_storage::database(args, input)
 }
+
+/// Helper attribute for [`macro@query_group`] setting the storage
+/// to memoized for this query. This is the default storage.
+///
+/// The result is memoized between calls. If the inputs have
+/// changed, we will recompute the value, but then compare against
+/// the old memoized value, which can significantly reduce the
+/// amount of recomputation required in new revisions. This does
+/// require that the value implements `Eq`.
+#[proc_macro_attribute]
+pub fn memoized(_: TokenStream, _: TokenStream) -> TokenStream {
+    panic!("`memoized` may only be used on functions inside a `query_group` annotated trait")
+}
+
+/// Helper attribute for [`macro@query_group`] setting the storage
+/// to dependencies for this query.
+///
+/// The value is not cached, so the query will be recomputed every time
+/// it is needed. We do track the inputs, however, so if they have not
+/// changed, then things that rely on this query may be known not to
+/// have changed.
+#[proc_macro_attribute]
+pub fn dependencies(_: TokenStream, _: TokenStream) -> TokenStream {
+    panic!("`dependencies` may only be used on functions inside a `query_group` annotated trait")
+}
+
+/// Helper attribute for [`macro@query_group`] setting the storage
+/// to input for this query.
+///
+/// Specifying `storage input` will give you an **input
+/// query**. Unlike derived queries, whose value is given by a
+/// function, input queries are explicitly set by doing
+/// `db.query(QueryType).set(key, value)` (where `QueryType` is the
+/// `type` specified for the query). Accessing a value that has not
+/// yet been set will panic. Each time you invoke `set`, we assume the
+/// value has changed, and so we will potentially re-execute derived
+/// queries that read (transitively) from this input.
+#[proc_macro_attribute]
+pub fn input(_: TokenStream, _: TokenStream) -> TokenStream {
+    panic!("`input` may only be used on functions inside a `query_group` annotated trait")
+}
+
+/// Helper attribute for [`macro@query_group`] setting the storage
+/// to interned for this query.
+#[proc_macro_attribute]
+pub fn interned(_: TokenStream, _: TokenStream) -> TokenStream {
+    panic!("`interned` may only be used on functions inside a `query_group` annotated trait")
+}
+
+/// Helper attribute for [`macro@query_group`].
+#[proc_macro_attribute]
+pub fn cycle(_: TokenStream, _: TokenStream) -> TokenStream {
+    panic!("`cycle` may only be used on functions inside a `query_group` annotated trait")
+}
+
+/// Helper attribute for [`macro@query_group`] which explicitly sets
+/// the function to call when this query must be recomputed.
+/// The default is to call a function in the same module with the
+/// same name as the query.
+#[proc_macro_attribute]
+pub fn invoke(_: TokenStream, _: TokenStream) -> TokenStream {
+    panic!("`invoke` may only be used on functions inside a `query_group` annotated trait")
+}
+
+/// Helper attribute for [`macro@query_group`], specifies the name of the
+/// dummy struct created for the query. Default is the name of the
+/// query, in camel case, plus the word "Query" (e.g.,
+/// `MyQueryQuery` and `OtherQueryQuery` in the examples above).
+#[proc_macro_attribute]
+pub fn query_type(_: TokenStream, _: TokenStream) -> TokenStream {
+    panic!("`query_type` may only be used on functions inside a `query_group` annotated trait")
+}
+
+/// Helper attribute for [`macro@query_group`].
+#[proc_macro_attribute]
+pub fn transparent(_: TokenStream, _: TokenStream) -> TokenStream {
+    panic!("`transparent` may only be used on functions inside a `query_group` annotated trait")
+}
