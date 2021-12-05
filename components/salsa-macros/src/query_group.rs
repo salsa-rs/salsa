@@ -14,18 +14,17 @@ use syn::{
 pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream {
     let group_struct = parse_macro_input!(args as Ident);
     let input: ItemTrait = parse_macro_input!(input as ItemTrait);
+    let mut errors = Vec::new();
     // println!("args: {:#?}", args);
     // println!("input: {:#?}", input);
 
     let input_span = input.span();
     let (trait_attrs, salsa_attrs) = filter_attrs(input.attrs);
     if !salsa_attrs.is_empty() {
-        return Error::new(
+        errors.push(Error::new(
             input_span,
             format!("unsupported attributes: {:?}", salsa_attrs),
-        )
-        .to_compile_error()
-        .into();
+        ));
     }
 
     let trait_vis = input.vis;
@@ -79,30 +78,26 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                         storage = QueryStorage::Transparent;
                         num_storages += 1;
                     }
-                    _ => {
-                        return Error::new(span, format!("unknown salsa attribute `{}`", name))
-                            .to_compile_error()
-                            .into();
-                    }
+                    _ => errors.push(Error::new(
+                        span,
+                        format!("unknown salsa attribute `{}`", name),
+                    )),
                 }
             }
 
             let sig_span = method.sig.span();
             // Check attribute combinations.
             if num_storages > 1 {
-                return Error::new(sig_span, "multiple storage attributes specified")
-                    .to_compile_error()
-                    .into();
+                errors.push(Error::new(
+                    sig_span,
+                    "multiple storage attributes specified",
+                ));
             }
             match &invoke {
-                Some(invoke) if storage == QueryStorage::Input => {
-                    return Error::new(
-                        invoke.span(),
-                        "#[salsa::invoke] cannot be set on #[salsa::input] queries",
-                    )
-                    .to_compile_error()
-                    .into();
-                }
+                Some(invoke) if storage == QueryStorage::Input => errors.push(Error::new(
+                    invoke.span(),
+                    "#[salsa::invoke] cannot be set on #[salsa::input] queries",
+                )),
                 _ => {}
             }
 
@@ -110,14 +105,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let mut iter = method.sig.inputs.iter();
             match iter.next() {
                 Some(FnArg::Receiver(sr)) if sr.mutability.is_none() => (),
-                _ => {
-                    return Error::new(
-                        sig_span,
-                        format!("first argument of query `{}` must be `&self`", query_name),
-                    )
-                    .to_compile_error()
-                    .into();
-                }
+                _ => errors.push(Error::new(
+                    sig_span,
+                    format!("first argument of query `{}` must be `&self`", query_name),
+                )),
             }
             let mut keys: Vec<(Ident, Type)> = vec![];
             for (idx, arg) in iter.enumerate() {
@@ -129,14 +120,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                         },
                         Type::clone(ty),
                     )),
-                    arg => {
-                        return Error::new(
-                            arg.span(),
-                            format!("unsupported argument `{:?}` of `{}`", arg, query_name,),
-                        )
-                        .to_compile_error()
-                        .into();
-                    }
+                    arg => errors.push(Error::new(
+                        arg.span(),
+                        format!("unsupported argument `{:?}` of `{}`", arg, query_name,),
+                    )),
                 }
             }
 
@@ -144,12 +131,11 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let value = match method.sig.output {
                 ReturnType::Type(_, ref ty) => ty.as_ref().clone(),
                 ref ret => {
-                    return Error::new(
+                    errors.push(Error::new(
                         ret.span(),
                         format!("unsupported return type `{:?}` of `{}`", ret, query_name),
-                    )
-                    .to_compile_error()
-                    .into();
+                    ));
+                    continue;
                 }
             };
 
@@ -603,6 +589,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         println!("~~~ query_group");
     }
 
+    output.extend(errors.into_iter().map(|e| e.to_compile_error()));
     output.into()
 }
 
