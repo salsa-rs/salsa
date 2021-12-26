@@ -8,7 +8,6 @@ repository = "https://github.com/salsa-rs/salsa"
 description = "A generic framework for on-demand, incrementalized computation (experimental)"
 
 [dependencies]
-crossbeam-utils = { version = "0.8", default-features = false }
 indexmap = "1.0.1"
 lock_api = "0.4"
 log = "0.4.5"
