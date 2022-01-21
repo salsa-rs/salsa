@@ -1,4 +1,5 @@
 #![allow(clippy::type_complexity)]
+#![allow(clippy::question_mark)]
 #![warn(rust_2018_idioms)]
 #![warn(missing_docs)]
 
@@ -8,7 +9,6 @@
 //! re-execute the derived queries and it will try to re-use results
 //! from previous invocations as appropriate.
 
-mod blocking_future;
 mod derived;
 mod doctest;
 mod durability;
@@ -26,7 +26,7 @@ pub mod debug;
 #[doc(hidden)]
 pub mod plumbing;
 
-use crate::plumbing::DatabaseOps;
+use crate::plumbing::CycleRecoveryStrategy;
 use crate::plumbing::DerivedQueryStorageOps;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::LruQueryStorageOps;
@@ -35,6 +35,7 @@ use crate::plumbing::QueryStorageOps;
 pub use crate::revision::Revision;
 use std::fmt::{self, Debug};
 use std::hash::Hash;
+use std::panic::AssertUnwindSafe;
 use std::panic::{self, UnwindSafe};
 use std::sync::Arc;
 
@@ -115,11 +116,42 @@ pub struct Event {
     pub kind: EventKind,
 }
 
+impl Event {
+    /// Returns a type that gives a user-readable debug output.
+    /// Use like `println!("{:?}", index.debug(db))`.
+    pub fn debug<'me, D: ?Sized>(&'me self, db: &'me D) -> impl std::fmt::Debug + 'me
+    where
+        D: plumbing::DatabaseOps,
+    {
+        EventDebug { event: self, db }
+    }
+}
+
 impl fmt::Debug for Event {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("Event")
             .field("runtime_id", &self.runtime_id)
             .field("kind", &self.kind)
+            .finish()
+    }
+}
+
+struct EventDebug<'me, D: ?Sized>
+where
+    D: plumbing::DatabaseOps,
+{
+    event: &'me Event,
+    db: &'me D,
+}
+
+impl<'me, D: ?Sized> fmt::Debug for EventDebug<'me, D>
+where
+    D: plumbing::DatabaseOps,
+{
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.debug_struct("Event")
+            .field("runtime_id", &self.event.runtime_id)
+            .field("kind", &self.event.kind.debug(self.db))
             .finish()
     }
 }
@@ -166,6 +198,17 @@ pub enum EventKind {
     WillCheckCancellation,
 }
 
+impl EventKind {
+    /// Returns a type that gives a user-readable debug output.
+    /// Use like `println!("{:?}", index.debug(db))`.
+    pub fn debug<'me, D: ?Sized>(&'me self, db: &'me D) -> impl std::fmt::Debug + 'me
+    where
+        D: plumbing::DatabaseOps,
+    {
+        EventKindDebug { kind: self, db }
+    }
+}
+
 impl fmt::Debug for EventKind {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -184,6 +227,41 @@ impl fmt::Debug for EventKind {
             EventKind::WillExecute { database_key } => fmt
                 .debug_struct("WillExecute")
                 .field("database_key", database_key)
+                .finish(),
+            EventKind::WillCheckCancellation => fmt.debug_struct("WillCheckCancellation").finish(),
+        }
+    }
+}
+
+struct EventKindDebug<'me, D: ?Sized>
+where
+    D: plumbing::DatabaseOps,
+{
+    kind: &'me EventKind,
+    db: &'me D,
+}
+
+impl<'me, D: ?Sized> fmt::Debug for EventKindDebug<'me, D>
+where
+    D: plumbing::DatabaseOps,
+{
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            EventKind::DidValidateMemoizedValue { database_key } => fmt
+                .debug_struct("DidValidateMemoizedValue")
+                .field("database_key", &database_key.debug(self.db))
+                .finish(),
+            EventKind::WillBlockOn {
+                other_runtime_id,
+                database_key,
+            } => fmt
+                .debug_struct("WillBlockOn")
+                .field("other_runtime_id", &other_runtime_id)
+                .field("database_key", &database_key.debug(self.db))
+                .finish(),
+            EventKind::WillExecute { database_key } => fmt
+                .debug_struct("WillExecute")
+                .field("database_key", &database_key.debug(self.db))
                 .finish(),
             EventKind::WillCheckCancellation => fmt.debug_struct("WillCheckCancellation").finish(),
         }
@@ -418,12 +496,7 @@ where
     /// queries (those with no inputs, or those with more than one
     /// input) the key will be a tuple.
     pub fn get(&self, key: Q::Key) -> Q::Value {
-        self.try_get(key)
-            .unwrap_or_else(|err| panic!("{:?}", err.debug(self.db)))
-    }
-
-    fn try_get(&self, key: Q::Key) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
-        self.storage.try_fetch(self.db, &key)
+        self.storage.fetch(self.db, &key)
     }
 
     /// Completely clears the storage for this query.
@@ -520,62 +593,29 @@ where
     }
 }
 
-/// The error returned when a query could not be resolved due to a cycle
-#[derive(Eq, PartialEq, Clone, Debug)]
-pub struct CycleError<K> {
-    /// The queries that were part of the cycle
-    cycle: Vec<K>,
-    changed_at: Revision,
-    durability: Durability,
-}
-
-impl CycleError<DatabaseKeyIndex> {
-    fn debug<'a, D: ?Sized>(&'a self, db: &'a D) -> impl Debug + 'a
-    where
-        D: DatabaseOps,
-    {
-        struct CycleErrorDebug<'a, D: ?Sized> {
-            db: &'a D,
-            error: &'a CycleError<DatabaseKeyIndex>,
-        }
-
-        impl<'a, D: ?Sized + DatabaseOps> Debug for CycleErrorDebug<'a, D> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                writeln!(f, "Internal error, cycle detected:\n")?;
-                for i in &self.error.cycle {
-                    writeln!(f, "{:?}", i.debug(self.db))?;
-                }
-                Ok(())
-            }
-        }
-
-        CycleErrorDebug { db, error: self }
-    }
-}
-
-impl<K> fmt::Display for CycleError<K>
-where
-    K: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Internal error, cycle detected:\n")?;
-        for i in &self.cycle {
-            writeln!(f, "{:?}", i)?;
-        }
-        Ok(())
-    }
-}
-
-/// A panic payload indicating that a salsa revision was cancelled.
+/// A panic payload indicating that execution of a salsa query was cancelled.
+///
+/// This can occur for a few reasons:
+/// *
+/// *
+/// *
 #[derive(Debug)]
 #[non_exhaustive]
-pub struct Cancelled;
+pub enum Cancelled {
+    /// The query was operating on revision R, but there is a pending write to move to revision R+1.
+    #[non_exhaustive]
+    PendingWrite,
+
+    /// The query was blocked on another thread, and that thread panicked.
+    #[non_exhaustive]
+    PropagatedPanic,
+}
 
 impl Cancelled {
-    fn throw() -> ! {
+    fn throw(self) -> ! {
         // We use resume and not panic here to avoid running the panic
         // hook (that is, to avoid collecting and printing backtrace).
-        std::panic::resume_unwind(Box::new(Self));
+        std::panic::resume_unwind(Box::new(self));
     }
 
     /// Runs `f`, and catches any salsa cancellation.
@@ -595,11 +635,113 @@ impl Cancelled {
 
 impl std::fmt::Display for Cancelled {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("cancelled")
+        let why = match self {
+            Cancelled::PendingWrite => "pending write",
+            Cancelled::PropagatedPanic => "propagated panic",
+        };
+        f.write_str("cancelled because of ")?;
+        f.write_str(why)
     }
 }
 
 impl std::error::Error for Cancelled {}
+
+/// Captures the participants of a cycle that occurred when executing a query.
+///
+/// This type is meant to be used to help give meaningful error messages to the
+/// user or to help salsa developers figure out why their program is resulting
+/// in a computation cycle.
+///
+/// It is used in a few ways:
+///
+/// * During [cycle recovery](https://https://salsa-rs.github.io/salsa/cycles/fallback.html),
+///   where it is given to the fallback function.
+/// * As the panic value when an unexpected cycle (i.e., a cycle where one or more participants
+///   lacks cycle recovery information) occurs.
+///
+/// You can read more about cycle handling in
+/// the [salsa book](https://https://salsa-rs.github.io/salsa/cycles.html).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Cycle {
+    participants: plumbing::CycleParticipants,
+}
+
+impl Cycle {
+    pub(crate) fn new(participants: plumbing::CycleParticipants) -> Self {
+        Self { participants }
+    }
+
+    /// True if two `Cycle` values represent the same cycle.
+    pub(crate) fn is(&self, cycle: &Cycle) -> bool {
+        Arc::ptr_eq(&self.participants, &cycle.participants)
+    }
+
+    pub(crate) fn throw(self) -> ! {
+        log::debug!("throwing cycle {:?}", self);
+        std::panic::resume_unwind(Box::new(self))
+    }
+
+    pub(crate) fn catch<T>(execute: impl FnOnce() -> T) -> Result<T, Cycle> {
+        match std::panic::catch_unwind(AssertUnwindSafe(execute)) {
+            Ok(v) => Ok(v),
+            Err(err) => match err.downcast::<Cycle>() {
+                Ok(cycle) => Err(*cycle),
+                Err(other) => std::panic::resume_unwind(other),
+            },
+        }
+    }
+
+    /// Iterate over the [`DatabaseKeyIndex`] for each query participating
+    /// in the cycle. The start point of this iteration within the cycle
+    /// is arbitrary but deterministic, but the ordering is otherwise determined
+    /// by the execution.
+    pub fn participant_keys(&self) -> impl Iterator<Item = DatabaseKeyIndex> + '_ {
+        self.participants.iter().copied()
+    }
+
+    /// Returns a vector with the debug information for
+    /// all the participants in the cycle.
+    pub fn all_participants<DB: ?Sized + Database>(&self, db: &DB) -> Vec<String> {
+        self.participant_keys()
+            .map(|d| format!("{:?}", d.debug(db)))
+            .collect()
+    }
+
+    /// Returns a vector with the debug information for
+    /// those participants in the cycle that lacked recovery
+    /// information.
+    pub fn unexpected_participants<DB: ?Sized + Database>(&self, db: &DB) -> Vec<String> {
+        self.participant_keys()
+            .filter(|&d| db.cycle_recovery_strategy(d) == CycleRecoveryStrategy::Panic)
+            .map(|d| format!("{:?}", d.debug(db)))
+            .collect()
+    }
+
+    /// Returns a "debug" view onto this strict that can be used to print out information.
+    pub fn debug<'me, DB: ?Sized + Database>(&'me self, db: &'me DB) -> impl std::fmt::Debug + 'me {
+        struct UnexpectedCycleDebug<'me> {
+            c: &'me Cycle,
+            db: &'me dyn Database,
+        }
+
+        impl<'me> std::fmt::Debug for UnexpectedCycleDebug<'me> {
+            fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                fmt.debug_struct("UnexpectedCycle")
+                    .field("all_participants", &self.c.all_participants(self.db))
+                    .field(
+                        "unexpected_participants",
+                        &self.c.unexpected_participants(self.db),
+                    )
+                    .finish()
+            }
+        }
+
+        UnexpectedCycleDebug {
+            c: self,
+            db: db.ops_database(),
+        }
+    }
+}
 
 // Re-export the procedural macros.
 #[allow(unused_imports)]

@@ -1,11 +1,11 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
+use crate::plumbing::CycleRecoveryStrategy;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use crate::runtime::{FxIndexMap, StampedValue};
-use crate::CycleError;
 use crate::Database;
 use crate::Query;
 use crate::{DatabaseKeyIndex, QueryDb};
@@ -56,6 +56,8 @@ impl<Q> QueryStorageOps<Q> for InputStorage<Q>
 where
     Q: Query,
 {
+    const CYCLE_STRATEGY: crate::plumbing::CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
+
     fn new(group_index: u16) -> Self {
         InputStorage {
             group_index,
@@ -76,7 +78,7 @@ where
         write!(fmt, "{}({:?})", Q::QUERY_NAME, key)
     }
 
-    fn maybe_changed_since(
+    fn maybe_changed_after(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         input: DatabaseKeyIndex,
@@ -84,6 +86,7 @@ where
     ) -> bool {
         assert_eq!(input.group_index, self.group_index);
         assert_eq!(input.query_index, Q::QUERY_INDEX);
+        debug_assert!(revision < db.salsa_runtime().current_revision());
         let slot = self
             .slots
             .read()
@@ -91,14 +94,10 @@ where
             .unwrap()
             .1
             .clone();
-        slot.maybe_changed_since(db, revision)
+        slot.maybe_changed_after(db, revision)
     }
 
-    fn try_fetch(
-        &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-        key: &Q::Key,
-    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+    fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
         db.unwind_if_cancelled();
 
         let slot = self
@@ -112,9 +111,13 @@ where
         } = slot.stamped_value.read().clone();
 
         db.salsa_runtime()
-            .report_query_read(slot.database_key_index, durability, changed_at);
+            .report_query_read_and_unwind_if_cycle_resulted(
+                slot.database_key_index,
+                durability,
+                changed_at,
+            );
 
-        Ok(value)
+        value
     }
 
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
@@ -145,15 +148,15 @@ impl<Q> Slot<Q>
 where
     Q: Query,
 {
-    fn maybe_changed_since(&self, _db: &<Q as QueryDb<'_>>::DynDb, revision: Revision) -> bool {
+    fn maybe_changed_after(&self, _db: &<Q as QueryDb<'_>>::DynDb, revision: Revision) -> bool {
         debug!(
-            "maybe_changed_since(slot={:?}, revision={:?})",
+            "maybe_changed_after(slot={:?}, revision={:?})",
             self, revision,
         );
 
         let changed_at = self.stamped_value.read().changed_at;
 
-        debug!("maybe_changed_since: changed_at = {:?}", changed_at);
+        debug!("maybe_changed_after: changed_at = {:?}", changed_at);
 
         changed_at > revision
     }

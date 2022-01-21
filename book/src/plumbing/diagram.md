@@ -1,21 +1,13 @@
 # Diagram
 
-Based on the hello world example:
-
-```rust,ignore
-{{#include ../../../examples/hello_world/main.rs:trait}}
-```
-
-```rust,ignore
-{{#include ../../../examples/hello_world/main.rs:database}}
-```
+This diagram shows the items that get generated from the Hello World query group and database struct. You can click on each item to be taken to the explanation of its purpose. The diagram is wide so be sure to scroll over!
 
 ```mermaid
 graph LR
     classDef diagramNode text-align:left;
     subgraph query group
         HelloWorldTrait["trait HelloWorld: Database + HasQueryGroup(HelloWorldStroage)"]
-        HelloWorldImpl["impl(DB) HelloWorld for DB<br>where DB: HasQueryGroup(HelloWorldStorage)"]
+        HelloWorldImpl["impl&lt;DB&gt; HelloWorld for DB<br>where DB: HasQueryGroup(HelloWorldStorage)"]
         click HelloWorldImpl "http:query_groups.html#impl-of-the-hello-world-trait" "more info"
         HelloWorldStorage["struct HelloWorldStorage"]
         click HelloWorldStorage "http:query_groups.html#the-group-struct-and-querygroup-trait" "more info"
@@ -53,6 +45,6 @@ graph LR
         class DerivedStorage diagramNode;
     end
     LengthQueryImpl --> DerivedStorage;
-    DatabaseStruct --> HelloWorldImpl
-    HasQueryGroup --> HelloWorldImpl
+    DatabaseStruct -- "used by" --> HelloWorldImpl
+    HasQueryGroup -- "used by" --> HelloWorldImpl
 ```

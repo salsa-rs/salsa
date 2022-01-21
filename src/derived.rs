@@ -7,7 +7,7 @@ use crate::plumbing::QueryFunction;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::runtime::{FxIndexMap, StampedValue};
-use crate::{CycleError, Database, DatabaseKeyIndex, QueryDb, Revision};
+use crate::{Database, DatabaseKeyIndex, QueryDb, Revision};
 use parking_lot::RwLock;
 use std::borrow::Borrow;
 use std::convert::TryFrom;
@@ -117,6 +117,8 @@ where
     Q: QueryFunction,
     MP: MemoizationPolicy<Q>,
 {
+    const CYCLE_STRATEGY: crate::plumbing::CycleRecoveryStrategy = Q::CYCLE_STRATEGY;
+
     fn new(group_index: u16) -> Self {
         DerivedStorage {
             group_index,
@@ -139,7 +141,7 @@ where
         write!(fmt, "{}({:?})", Q::QUERY_NAME, key)
     }
 
-    fn maybe_changed_since(
+    fn maybe_changed_after(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         input: DatabaseKeyIndex,
@@ -147,6 +149,7 @@ where
     ) -> bool {
         assert_eq!(input.group_index, self.group_index);
         assert_eq!(input.query_index, Q::QUERY_INDEX);
+        debug_assert!(revision < db.salsa_runtime().current_revision());
         let slot = self
             .slot_map
             .read()
@@ -154,14 +157,10 @@ where
             .unwrap()
             .1
             .clone();
-        slot.maybe_changed_since(db, revision)
+        slot.maybe_changed_after(db, revision)
     }
 
-    fn try_fetch(
-        &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-        key: &Q::Key,
-    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+    fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
         db.unwind_if_cancelled();
 
         let slot = self.slot(key);
@@ -169,16 +168,20 @@ where
             value,
             durability,
             changed_at,
-        } = slot.read(db)?;
+        } = slot.read(db);
 
         if let Some(evicted) = self.lru_list.record_use(&slot) {
             evicted.evict();
         }
 
         db.salsa_runtime()
-            .report_query_read(slot.database_key_index(), durability, changed_at);
+            .report_query_read_and_unwind_if_cycle_resulted(
+                slot.database_key_index(),
+                durability,
+                changed_at,
+            );
 
-        Ok(value)
+        value
     }
 
     fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {

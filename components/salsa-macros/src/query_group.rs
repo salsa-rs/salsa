@@ -483,17 +483,22 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
             let recover = if let Some(cycle_recovery_fn) = &query.cycle {
                 quote! {
-                    fn recover(db: &<Self as salsa::QueryDb<'_>>::DynDb, cycle: &[salsa::DatabaseKeyIndex], #key_pattern: &<Self as salsa::Query>::Key)
-                        -> Option<<Self as salsa::Query>::Value> {
-                        Some(#cycle_recovery_fn(
+                    const CYCLE_STRATEGY: salsa::plumbing::CycleRecoveryStrategy =
+                        salsa::plumbing::CycleRecoveryStrategy::Fallback;
+                    fn cycle_fallback(db: &<Self as salsa::QueryDb<'_>>::DynDb, cycle: &salsa::Cycle, #key_pattern: &<Self as salsa::Query>::Key)
+                        -> <Self as salsa::Query>::Value {
+                        #cycle_recovery_fn(
                                 db,
-                                &cycle.iter().map(|k| format!("{:?}", k.debug(db))).collect::<Vec<String>>(),
+                                cycle,
                                 #(#key_names),*
-                        ))
+                        )
                     }
                 }
             } else {
-                quote! {}
+                quote! {
+                    const CYCLE_STRATEGY: salsa::plumbing::CycleRecoveryStrategy =
+                        salsa::plumbing::CycleRecoveryStrategy::Panic;
+                }
             };
 
             output.extend(quote_spanned! {span=>
@@ -527,8 +532,19 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     for (Query { fn_name, .. }, query_index) in non_transparent_queries().zip(0_u16..) {
         maybe_changed_ops.extend(quote! {
             #query_index => {
-                salsa::plumbing::QueryStorageOps::maybe_changed_since(
+                salsa::plumbing::QueryStorageOps::maybe_changed_after(
                     &*self.#fn_name, db, input, revision
+                )
+            }
+        });
+    }
+
+    let mut cycle_recovery_strategy_ops = proc_macro2::TokenStream::new();
+    for (Query { fn_name, .. }, query_index) in non_transparent_queries().zip(0_u16..) {
+        cycle_recovery_strategy_ops.extend(quote! {
+            #query_index => {
+                salsa::plumbing::QueryStorageOps::cycle_recovery_strategy(
+                    &*self.#fn_name
                 )
             }
         });
@@ -574,7 +590,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 }
             }
 
-            #trait_vis fn maybe_changed_since(
+            #trait_vis fn maybe_changed_after(
                 &self,
                 db: &(#dyn_db + '_),
                 input: salsa::DatabaseKeyIndex,
@@ -582,6 +598,17 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             ) -> bool {
                 match input.query_index() {
                     #maybe_changed_ops
+                    i => panic!("salsa: impossible query index {}", i),
+                }
+            }
+
+            #trait_vis fn cycle_recovery_strategy(
+                &self,
+                db: &(#dyn_db + '_),
+                input: salsa::DatabaseKeyIndex,
+            ) -> salsa::plumbing::CycleRecoveryStrategy {
+                match input.query_index() {
+                    #cycle_recovery_strategy_ops
                     i => panic!("salsa: impossible query index {}", i),
                 }
             }

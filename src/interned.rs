@@ -1,12 +1,13 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
 use crate::intern_id::InternId;
+use crate::plumbing::CycleRecoveryStrategy;
 use crate::plumbing::HasQueryGroup;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
 use crate::Query;
-use crate::{CycleError, Database, DatabaseKeyIndex, QueryDb};
+use crate::{Database, DatabaseKeyIndex, QueryDb};
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
@@ -191,6 +192,8 @@ where
     Q: Query,
     Q::Value: InternKey,
 {
+    const CYCLE_STRATEGY: crate::plumbing::CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
+
     fn new(group_index: u16) -> Self {
         InternedStorage {
             group_index,
@@ -211,35 +214,32 @@ where
         write!(fmt, "{}({:?})", Q::QUERY_NAME, slot.value)
     }
 
-    fn maybe_changed_since(
+    fn maybe_changed_after(
         &self,
-        _db: &<Q as QueryDb<'_>>::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
         input: DatabaseKeyIndex,
         revision: Revision,
     ) -> bool {
         assert_eq!(input.group_index, self.group_index);
         assert_eq!(input.query_index, Q::QUERY_INDEX);
+        debug_assert!(revision < db.salsa_runtime().current_revision());
         let intern_id = InternId::from(input.key_index);
         let slot = self.lookup_value(intern_id);
-        slot.maybe_changed_since(revision)
+        slot.maybe_changed_after(revision)
     }
 
-    fn try_fetch(
-        &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-        key: &Q::Key,
-    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+    fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
         db.unwind_if_cancelled();
-
         let slot = self.intern_index(db, key);
         let changed_at = slot.interned_at;
         let index = slot.index;
-        db.salsa_runtime().report_query_read(
-            slot.database_key_index,
-            INTERN_DURABILITY,
-            changed_at,
-        );
-        Ok(<Q::Value>::from_intern_id(index))
+        db.salsa_runtime()
+            .report_query_read_and_unwind_if_cycle_resulted(
+                slot.database_key_index,
+                INTERN_DURABILITY,
+                changed_at,
+            );
+        <Q::Value>::from_intern_id(index)
     }
 
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Durability {
@@ -312,6 +312,8 @@ where
     IQ: Query<Key = Q::Value, Value = Q::Key, Storage = InternedStorage<IQ>>,
     for<'d> Q: EqualDynDb<'d, IQ>,
 {
+    const CYCLE_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
+
     fn new(_group_index: u16) -> Self {
         LookupInternedStorage {
             phantom: std::marker::PhantomData,
@@ -330,7 +332,7 @@ where
         interned_storage.fmt_index(Q::convert_db(db), index, fmt)
     }
 
-    fn maybe_changed_since(
+    fn maybe_changed_after(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         input: DatabaseKeyIndex,
@@ -339,14 +341,10 @@ where
         let group_storage =
             <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
         let interned_storage = IQ::query_storage(Q::convert_group_storage(group_storage));
-        interned_storage.maybe_changed_since(Q::convert_db(db), input, revision)
+        interned_storage.maybe_changed_after(Q::convert_db(db), input, revision)
     }
 
-    fn try_fetch(
-        &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-        key: &Q::Key,
-    ) -> Result<Q::Value, CycleError<DatabaseKeyIndex>> {
+    fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
         let index = key.as_intern_id();
         let group_storage =
             <<Q as QueryDb<'_>>::DynDb as HasQueryGroup<Q::Group>>::group_storage(db);
@@ -354,12 +352,13 @@ where
         let slot = interned_storage.lookup_value(index);
         let value = slot.value.clone();
         let interned_at = slot.interned_at;
-        db.salsa_runtime().report_query_read(
-            slot.database_key_index,
-            INTERN_DURABILITY,
-            interned_at,
-        );
-        Ok(value)
+        db.salsa_runtime()
+            .report_query_read_and_unwind_if_cycle_resulted(
+                slot.database_key_index,
+                INTERN_DURABILITY,
+                interned_at,
+            );
+        value
     }
 
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, _key: &Q::Key) -> Durability {
@@ -395,7 +394,7 @@ where
 }
 
 impl<K> Slot<K> {
-    fn maybe_changed_since(&self, revision: Revision) -> bool {
+    fn maybe_changed_after(&self, revision: Revision) -> bool {
         self.interned_at > revision
     }
 }

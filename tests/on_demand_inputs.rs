@@ -4,9 +4,9 @@
 //! via a b query with zero inputs, which uses `add_synthetic_read` to
 //! tweak durability and `invalidate` to clear the input.
 
-use std::{cell::Cell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use salsa::{Database as _, Durability};
+use salsa::{Database as _, Durability, EventKind};
 
 #[salsa::query_group(QueryGroupStorage)]
 trait QueryGroup: salsa::Database + AsRef<HashMap<u32, u32>> {
@@ -39,13 +39,15 @@ fn c(db: &dyn QueryGroup, x: u32) -> u32 {
 struct Database {
     storage: salsa::Storage<Self>,
     external_state: HashMap<u32, u32>,
-    on_event: Option<Box<dyn Fn(salsa::Event)>>,
+    on_event: Option<Box<dyn Fn(&Database, salsa::Event)>>,
 }
 
 impl salsa::Database for Database {
     fn salsa_event(&self, event: salsa::Event) {
+        dbg!(event.debug(self));
+
         if let Some(cb) = &self.on_event {
-            cb(event)
+            cb(self, event)
         }
     }
 }
@@ -84,30 +86,68 @@ fn on_demand_input_works() {
 #[test]
 fn on_demand_input_durability() {
     let mut db = Database::default();
-    db.external_state.insert(1, 10);
-    db.external_state.insert(2, 20);
-    assert_eq!(db.b(1), 10);
-    assert_eq!(db.b(2), 20);
 
-    let validated = Rc::new(Cell::new(0));
+    let events = Rc::new(RefCell::new(vec![]));
     db.on_event = Some(Box::new({
-        let validated = Rc::clone(&validated);
-        move |event| {
-            if let salsa::EventKind::DidValidateMemoizedValue { .. } = event.kind {
-                validated.set(validated.get() + 1)
+        let events = events.clone();
+        move |db, event| {
+            if let EventKind::WillCheckCancellation = event.kind {
+                // these events are not interesting
+            } else {
+                events.borrow_mut().push(format!("{:?}", event.debug(db)))
             }
         }
     }));
 
-    db.salsa_runtime_mut().synthetic_write(Durability::LOW);
-    validated.set(0);
-    assert_eq!(db.c(1), 10);
-    assert_eq!(db.c(2), 20);
-    assert_eq!(validated.get(), 2);
+    events.replace(vec![]);
+    db.external_state.insert(1, 10);
+    db.external_state.insert(2, 20);
+    assert_eq!(db.b(1), 10);
+    assert_eq!(db.b(2), 20);
+    insta::assert_debug_snapshot!(events, @r###"
+    RefCell {
+        value: [
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: b(1) } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: a(1) } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: b(2) } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: a(2) } }",
+        ],
+    }
+    "###);
 
-    db.salsa_runtime_mut().synthetic_write(Durability::HIGH);
-    validated.set(0);
+    eprintln!("------------------");
+    db.salsa_runtime_mut().synthetic_write(Durability::LOW);
+    events.replace(vec![]);
     assert_eq!(db.c(1), 10);
     assert_eq!(db.c(2), 20);
-    assert_eq!(validated.get(), 4);
+    // Re-execute `a(2)` because that has low durability, but not `a(1)`
+    insta::assert_debug_snapshot!(events, @r###"
+    RefCell {
+        value: [
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: c(1) } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: b(1) } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: c(2) } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: a(2) } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: b(2) } }",
+        ],
+    }
+    "###);
+
+    eprintln!("------------------");
+    db.salsa_runtime_mut().synthetic_write(Durability::HIGH);
+    events.replace(vec![]);
+    assert_eq!(db.c(1), 10);
+    assert_eq!(db.c(2), 20);
+    // Re-execute both `a(1)` and `a(2)`, but we don't re-execute any `b` queries as the
+    // result didn't actually change.
+    insta::assert_debug_snapshot!(events, @r###"
+    RefCell {
+        value: [
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: a(1) } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: c(1) } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: a(2) } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: c(2) } }",
+        ],
+    }
+    "###);
 }

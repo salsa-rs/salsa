@@ -1,24 +1,24 @@
-use crate::blocking_future::{BlockingFuture, Promise};
 use crate::debug::TableEntry;
 use crate::derived::MemoizationPolicy;
 use crate::durability::Durability;
 use crate::lru::LruIndex;
 use crate::lru::LruNode;
-use crate::plumbing::CycleDetected;
 use crate::plumbing::{DatabaseOps, QueryFunction};
 use crate::revision::Revision;
+use crate::runtime::local_state::ActiveQueryGuard;
+use crate::runtime::local_state::QueryInputs;
+use crate::runtime::local_state::QueryRevisions;
 use crate::runtime::Runtime;
 use crate::runtime::RuntimeId;
 use crate::runtime::StampedValue;
-use crate::Cancelled;
-use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind, QueryDb};
+use crate::runtime::WaitResult;
+use crate::Cycle;
+use crate::{Database, DatabaseKeyIndex, Event, EventKind, QueryDb};
 use log::{debug, info};
-use parking_lot::Mutex;
 use parking_lot::{RawRwLock, RwLock};
-use smallvec::SmallVec;
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(super) struct Slot<Q, MP>
 where
@@ -32,12 +32,6 @@ where
     lru_index: LruIndex,
 }
 
-#[derive(Clone)]
-struct WaitResult<V, K> {
-    value: StampedValue<V>,
-    cycle: Vec<K>,
-}
-
 /// Defines the "current state" of query's memoized results.
 enum QueryState<Q>
 where
@@ -46,61 +40,68 @@ where
     NotComputed,
 
     /// The runtime with the given id is currently computing the
-    /// result of this query; if we see this value in the table, it
-    /// indeeds a cycle.
+    /// result of this query.
     InProgress {
         id: RuntimeId,
-        waiting: Mutex<SmallVec<[Promise<WaitResult<Q::Value, DatabaseKeyIndex>>; 2]>>,
+
+        /// Set to true if any other queries are blocked,
+        /// waiting for this query to complete.
+        anyone_waiting: AtomicBool,
     },
 
     /// We have computed the query already, and here is the result.
-    Memoized(Memo<Q>),
+    Memoized(Memo<Q::Value>),
 }
 
-struct Memo<Q>
-where
-    Q: QueryFunction,
-{
+struct Memo<V> {
     /// The result of the query, if we decide to memoize it.
-    value: Option<Q::Value>,
+    value: Option<V>,
+
+    /// Last revision when this memo was verified; this begins
+    /// as the current revision.
+    pub(crate) verified_at: Revision,
 
     /// Revision information
-    revisions: MemoRevisions,
-}
-
-struct MemoRevisions {
-    /// Last revision when this memo was verified (if there are
-    /// untracked inputs, this will also be when the memo was
-    /// created).
-    verified_at: Revision,
-
-    /// Last revision when the memoized value was observed to change.
-    changed_at: Revision,
-
-    /// Minimum durability of the inputs to this query.
-    durability: Durability,
-
-    /// The inputs that went into our query, if we are tracking them.
-    inputs: MemoInputs,
-}
-
-/// An insertion-order-preserving set of queries. Used to track the
-/// inputs accessed during query execution.
-pub(super) enum MemoInputs {
-    /// Non-empty set of inputs, fully known
-    Tracked { inputs: Arc<[DatabaseKeyIndex]> },
-
-    /// Empty set of inputs, fully known.
-    NoInputs,
-
-    /// Unknown quantity of inputs
-    Untracked,
+    revisions: QueryRevisions,
 }
 
 /// Return value of `probe` helper.
-enum ProbeState<V, K, G> {
-    UpToDate(Result<V, CycleError<K>>),
-    StaleOrAbsent(G),
+enum ProbeState<V, G> {
+    /// Another thread was active but has completed.
+    /// Try again!
+    Retry,
+
+    /// No entry for this key at all.
+    NotComputed(G),
+
+    /// There is an entry, but its contents have not been
+    /// verified in this revision.
+    Stale(G),
+
+    /// There is an entry, and it has been verified
+    /// in this revision, but it has no cached
+    /// value. The `Revision` is the revision where the
+    /// value last changed (if we were to recompute it).
+    NoValue(G, Revision),
+
+    /// There is an entry which has been verified,
+    /// and it has the following value-- or, we blocked
+    /// on another thread, and that resulted in a cycle.
+    UpToDate(V),
+}
+
+/// Return value of `maybe_changed_after_probe` helper.
+enum MaybeChangedSinceProbeState<G> {
+    /// Another thread was active but has completed.
+    /// Try again!
+    Retry,
+
+    /// Value may have changed in the given revision.
+    ChangedAt(Revision),
+
+    /// There is a stale cache entry that has not been
+    /// verified in this revision, so we can't say.
+    Stale(G),
 }
 
 impl<Q, MP> Slot<Q, MP>
@@ -122,10 +123,7 @@ where
         self.database_key_index
     }
 
-    pub(super) fn read(
-        &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-    ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
+    pub(super) fn read(&self, db: &<Q as QueryDb<'_>>::DynDb) -> StampedValue<Q::Value> {
         let runtime = db.salsa_runtime();
 
         // NB: We don't need to worry about people modifying the
@@ -138,9 +136,14 @@ where
         info!("{:?}: invoked at {:?}", self, revision_now,);
 
         // First, do a check with a read-lock.
-        match self.probe(db, self.state.read(), runtime, revision_now) {
-            ProbeState::UpToDate(v) => return v,
-            ProbeState::StaleOrAbsent(_guard) => (),
+        loop {
+            match self.probe(db, self.state.read(), runtime, revision_now) {
+                ProbeState::UpToDate(v) => return v,
+                ProbeState::Stale(..) | ProbeState::NoValue(..) | ProbeState::NotComputed(..) => {
+                    break
+                }
+                ProbeState::Retry => continue,
+            }
         }
 
         self.read_upgrade(db, revision_now)
@@ -154,7 +157,7 @@ where
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         revision_now: Revision,
-    ) -> Result<StampedValue<Q::Value>, CycleError<DatabaseKeyIndex>> {
+    ) -> StampedValue<Q::Value> {
         let runtime = db.salsa_runtime();
 
         debug!("{:?}: read_upgrade(revision_now={:?})", self, revision_now,);
@@ -162,29 +165,35 @@ where
         // Check with an upgradable read to see if there is a value
         // already. (This permits other readers but prevents anyone
         // else from running `read_upgrade` at the same time.)
-        let old_memo = match self.probe(db, self.state.upgradable_read(), runtime, revision_now) {
-            ProbeState::UpToDate(v) => return v,
-            ProbeState::StaleOrAbsent(state) => {
-                type RwLockUpgradableReadGuard<'a, T> =
-                    lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
+        let mut old_memo = loop {
+            match self.probe(db, self.state.upgradable_read(), runtime, revision_now) {
+                ProbeState::UpToDate(v) => return v,
+                ProbeState::Stale(state)
+                | ProbeState::NotComputed(state)
+                | ProbeState::NoValue(state, _) => {
+                    type RwLockUpgradableReadGuard<'a, T> =
+                        lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
 
-                let mut state = RwLockUpgradableReadGuard::upgrade(state);
-                match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
-                    QueryState::Memoized(old_memo) => Some(old_memo),
-                    QueryState::InProgress { .. } => unreachable!(),
-                    QueryState::NotComputed => None,
+                    let mut state = RwLockUpgradableReadGuard::upgrade(state);
+                    match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
+                        QueryState::Memoized(old_memo) => break Some(old_memo),
+                        QueryState::InProgress { .. } => unreachable!(),
+                        QueryState::NotComputed => break None,
+                    }
                 }
+                ProbeState::Retry => continue,
             }
         };
 
-        let mut panic_guard = PanicGuard::new(self.database_key_index, self, old_memo, runtime);
+        let panic_guard = PanicGuard::new(self.database_key_index, self, runtime);
+        let active_query = runtime.push_query(self.database_key_index);
 
         // If we have an old-value, it *may* now be stale, since there
         // has been a new revision since the last time we checked. So,
         // first things first, let's walk over each of our previous
         // inputs and check whether they are out of date.
-        if let Some(memo) = &mut panic_guard.memo {
-            if let Some(value) = memo.validate_memoized_value(db, revision_now) {
+        if let Some(memo) = &mut old_memo {
+            if let Some(value) = memo.verify_value(db.ops_database(), revision_now, &active_query) {
                 info!("{:?}: validated old memoized value", self,);
 
                 db.salsa_event(Event {
@@ -194,42 +203,73 @@ where
                     },
                 });
 
-                panic_guard.proceed(
-                    &value,
-                    // The returned value could have been produced as part of a cycle but since
-                    // we returned the memoized value we know we short-circuited the execution
-                    // just as we entered the cycle. Therefore there is no values to invalidate
-                    // and no need to call a cycle handler so we do not need to return the
-                    // actual cycle
-                    Vec::new(),
-                );
+                panic_guard.proceed(old_memo);
 
-                return Ok(value);
+                return value;
             }
         }
 
-        // Query was not previously executed, or value is potentially
-        // stale, or value is absent. Let's execute!
-        let mut result = runtime.execute_query_implementation(db, self.database_key_index, || {
-            info!("{:?}: executing query", self);
+        self.execute(
+            db,
+            runtime,
+            revision_now,
+            active_query,
+            panic_guard,
+            old_memo,
+        )
+    }
 
-            Q::execute(db, self.key.clone())
+    fn execute(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        runtime: &Runtime,
+        revision_now: Revision,
+        active_query: ActiveQueryGuard<'_>,
+        panic_guard: PanicGuard<'_, Q, MP>,
+        old_memo: Option<Memo<Q::Value>>,
+    ) -> StampedValue<Q::Value> {
+        log::info!("{:?}: executing query", self.database_key_index.debug(db));
+
+        db.salsa_event(Event {
+            runtime_id: db.salsa_runtime().id(),
+            kind: EventKind::WillExecute {
+                database_key: self.database_key_index,
+            },
         });
 
-        if !result.cycle.is_empty() {
-            result.value = match Q::recover(db, &result.cycle, &self.key) {
-                Some(v) => v,
-                None => {
-                    let err = CycleError {
-                        cycle: result.cycle,
-                        durability: result.durability,
-                        changed_at: result.changed_at,
-                    };
-                    panic_guard.report_unexpected_cycle();
-                    return Err(err);
+        // Query was not previously executed, or value is potentially
+        // stale, or value is absent. Let's execute!
+        let value = match Cycle::catch(|| Q::execute(db, self.key.clone())) {
+            Ok(v) => v,
+            Err(cycle) => {
+                log::debug!(
+                    "{:?}: caught cycle {:?}, have strategy {:?}",
+                    self.database_key_index.debug(db),
+                    cycle,
+                    Q::CYCLE_STRATEGY,
+                );
+                match Q::CYCLE_STRATEGY {
+                    crate::plumbing::CycleRecoveryStrategy::Panic => {
+                        panic_guard.proceed(None);
+                        cycle.throw()
+                    }
+                    crate::plumbing::CycleRecoveryStrategy::Fallback => {
+                        if let Some(c) = active_query.take_cycle() {
+                            assert!(c.is(&cycle));
+                            Q::cycle_fallback(db, &cycle, &self.key)
+                        } else {
+                            // we are not a participant in this cycle
+                            debug_assert!(!cycle
+                                .participant_keys()
+                                .any(|k| k == self.database_key_index));
+                            cycle.throw()
+                        }
+                    }
                 }
-            };
-        }
+            }
+        };
+
+        let mut revisions = active_query.pop();
 
         // We assume that query is side-effect free -- that is, does
         // not mutate the "inputs" to the query system. Sanity check
@@ -244,72 +284,50 @@ where
         // really change, even if some of its inputs have. So we can
         // "backdate" its `changed_at` revision to be the same as the
         // old value.
-        if let Some(old_memo) = &panic_guard.memo {
+        if let Some(old_memo) = &old_memo {
             if let Some(old_value) = &old_memo.value {
                 // Careful: if the value became less durable than it
                 // used to be, that is a "breaking change" that our
                 // consumers must be aware of. Becoming *more* durable
                 // is not. See the test `constant_to_non_constant`.
-                if result.durability >= old_memo.revisions.durability
-                    && MP::memoized_value_eq(&old_value, &result.value)
+                if revisions.durability >= old_memo.revisions.durability
+                    && MP::memoized_value_eq(old_value, &value)
                 {
                     debug!(
                         "read_upgrade({:?}): value is equal, back-dating to {:?}",
                         self, old_memo.revisions.changed_at,
                     );
 
-                    assert!(old_memo.revisions.changed_at <= result.changed_at);
-                    result.changed_at = old_memo.revisions.changed_at;
+                    assert!(old_memo.revisions.changed_at <= revisions.changed_at);
+                    revisions.changed_at = old_memo.revisions.changed_at;
                 }
             }
         }
 
         let new_value = StampedValue {
-            value: result.value,
-            durability: result.durability,
-            changed_at: result.changed_at,
+            value,
+            durability: revisions.durability,
+            changed_at: revisions.changed_at,
         };
 
-        let value = if self.should_memoize_value(&self.key) {
+        let memo_value = if self.should_memoize_value(&self.key) {
             Some(new_value.value.clone())
         } else {
             None
         };
 
         debug!(
-            "read_upgrade({:?}): result.changed_at={:?}, \
-             result.durability={:?}, result.dependencies = {:?}",
-            self, result.changed_at, result.durability, result.dependencies,
+            "read_upgrade({:?}): result.revisions = {:#?}",
+            self, revisions,
         );
 
-        let inputs = match result.dependencies {
-            None => MemoInputs::Untracked,
+        panic_guard.proceed(Some(Memo {
+            value: memo_value,
+            verified_at: revision_now,
+            revisions,
+        }));
 
-            Some(dependencies) => {
-                if dependencies.is_empty() {
-                    MemoInputs::NoInputs
-                } else {
-                    MemoInputs::Tracked {
-                        inputs: dependencies.into_iter().collect(),
-                    }
-                }
-            }
-        };
-        debug!("read_upgrade({:?}): inputs={:#?}", self, inputs.debug(db));
-
-        panic_guard.memo = Some(Memo {
-            value,
-            revisions: MemoRevisions {
-                changed_at: result.changed_at,
-                verified_at: revision_now,
-                inputs,
-                durability: result.durability,
-            },
-        });
-
-        panic_guard.proceed(&new_value, result.cycle);
-
-        Ok(new_value)
+        new_value
     }
 
     /// Helper for `read` that does a shallow check (not recursive) if we have an up-to-date value.
@@ -329,98 +347,59 @@ where
         state: StateGuard,
         runtime: &Runtime,
         revision_now: Revision,
-    ) -> ProbeState<StampedValue<Q::Value>, DatabaseKeyIndex, StateGuard>
+    ) -> ProbeState<StampedValue<Q::Value>, StateGuard>
     where
         StateGuard: Deref<Target = QueryState<Q>>,
     {
         match &*state {
-            QueryState::NotComputed => { /* fall through */ }
+            QueryState::NotComputed => ProbeState::NotComputed(state),
 
-            QueryState::InProgress { id, waiting } => {
+            QueryState::InProgress { id, anyone_waiting } => {
                 let other_id = *id;
-                return match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
-                    Ok(future) => {
-                        // Release our lock on `self.state`, so other thread can complete.
-                        std::mem::drop(state);
 
-                        db.salsa_event(Event {
-                            runtime_id: runtime.id(),
-                            kind: EventKind::WillBlockOn {
-                                other_runtime_id: other_id,
-                                database_key: self.database_key_index,
-                            },
-                        });
+                // NB: `Ordering::Relaxed` is sufficient here,
+                // as there are no loads that are "gated" on this
+                // value. Everything that is written is also protected
+                // by a lock that must be acquired. The role of this
+                // boolean is to decide *whether* to acquire the lock,
+                // not to gate future atomic reads.
+                anyone_waiting.store(true, Ordering::Relaxed);
 
-                        let result = future.wait().unwrap_or_else(|| {
-                            // If the other thread panics, we treat this as cancellation: there is no
-                            // need to panic ourselves, since the original panic will already invoke
-                            // the panic hook and bubble up to the thread boundary (or be caught).
-                            Cancelled::throw()
-                        });
-                        ProbeState::UpToDate(if result.cycle.is_empty() {
-                            Ok(result.value)
-                        } else {
-                            let err = CycleError {
-                                cycle: result.cycle,
-                                changed_at: result.value.changed_at,
-                                durability: result.value.durability,
-                            };
-                            runtime.mark_cycle_participants(&err);
-                            Q::recover(db, &err.cycle, &self.key)
-                                .map(|value| StampedValue {
-                                    value,
-                                    durability: err.durability,
-                                    changed_at: err.changed_at,
-                                })
-                                .ok_or(err)
-                        })
-                    }
+                self.block_on_or_unwind(db, runtime, other_id, state);
 
-                    Err(err) => {
-                        let err = runtime.report_unexpected_cycle(
-                            self.database_key_index,
-                            err,
-                            revision_now,
-                        );
-                        ProbeState::UpToDate(
-                            Q::recover(db, &err.cycle, &self.key)
-                                .map(|value| StampedValue {
-                                    value,
-                                    changed_at: err.changed_at,
-                                    durability: err.durability,
-                                })
-                                .ok_or(err),
-                        )
-                    }
-                };
+                // Other thread completely normally, so our value may be available now.
+                ProbeState::Retry
             }
 
             QueryState::Memoized(memo) => {
                 debug!(
                     "{:?}: found memoized value, verified_at={:?}, changed_at={:?}",
-                    self, memo.revisions.verified_at, memo.revisions.changed_at,
+                    self, memo.verified_at, memo.revisions.changed_at,
                 );
 
+                if memo.verified_at < revision_now {
+                    return ProbeState::Stale(state);
+                }
+
                 if let Some(value) = &memo.value {
-                    if memo.revisions.verified_at == revision_now {
-                        let value = StampedValue {
-                            durability: memo.revisions.durability,
-                            changed_at: memo.revisions.changed_at,
-                            value: value.clone(),
-                        };
+                    let value = StampedValue {
+                        durability: memo.revisions.durability,
+                        changed_at: memo.revisions.changed_at,
+                        value: value.clone(),
+                    };
 
-                        info!(
-                            "{:?}: returning memoized value changed at {:?}",
-                            self, value.changed_at
-                        );
+                    info!(
+                        "{:?}: returning memoized value changed at {:?}",
+                        self, value.changed_at
+                    );
 
-                        return ProbeState::UpToDate(Ok(value));
-                    }
+                    ProbeState::UpToDate(value)
+                } else {
+                    let changed_at = memo.revisions.changed_at;
+                    ProbeState::NoValue(state, changed_at)
                 }
             }
         }
-
-        ProbeState::StaleOrAbsent(state)
     }
 
     pub(super) fn durability(&self, db: &<Q as QueryDb<'_>>::DynDb) -> Durability {
@@ -428,7 +407,7 @@ where
             QueryState::NotComputed => Durability::LOW,
             QueryState::InProgress { .. } => panic!("query in progress"),
             QueryState::Memoized(memo) => {
-                if memo.revisions.check_durability(db.salsa_runtime()) {
+                if memo.check_durability(db.salsa_runtime()) {
                     memo.revisions.durability
                 } else {
                     Durability::LOW
@@ -454,7 +433,7 @@ where
             // lead to inconsistencies. Note that we can't check
             // `has_untracked_input` when we add the value to the cache,
             // because inputs can become untracked in the next revision.
-            if memo.revisions.has_untracked_input() {
+            if memo.has_untracked_input() {
                 return;
             }
             memo.value = None;
@@ -465,7 +444,7 @@ where
         log::debug!("Slot::invalidate(new_revision = {:?})", new_revision);
         match &mut *self.state.write() {
             QueryState::Memoized(memo) => {
-                memo.revisions.inputs = MemoInputs::Untracked;
+                memo.revisions.inputs = QueryInputs::Untracked;
                 memo.revisions.changed_at = new_revision;
                 Some(memo.revisions.durability)
             }
@@ -474,7 +453,7 @@ where
         }
     }
 
-    pub(super) fn maybe_changed_since(
+    pub(super) fn maybe_changed_after(
         &self,
         db: &<Q as QueryDb<'_>>::DynDb,
         revision: Revision,
@@ -485,214 +464,135 @@ where
         db.unwind_if_cancelled();
 
         debug!(
-            "maybe_changed_since({:?}) called with revision={:?}, revision_now={:?}",
+            "maybe_changed_after({:?}) called with revision={:?}, revision_now={:?}",
             self, revision, revision_now,
         );
 
-        // Acquire read lock to start. In some of the arms below, we
-        // drop this explicitly.
-        let state = self.state.read();
-
-        // Look for a memoized value.
-        let memo = match &*state {
-            // If somebody depends on us, but we have no map
-            // entry, that must mean that it was found to be out
-            // of date and removed.
-            QueryState::NotComputed => {
-                debug!("maybe_changed_since({:?}): no value", self);
-                return true;
-            }
-
-            // This value is being actively recomputed. Wait for
-            // that thread to finish (assuming it's not dependent
-            // on us...) and check its associated revision.
-            QueryState::InProgress { id, waiting } => {
-                let other_id = *id;
-                debug!(
-                    "maybe_changed_since({:?}): blocking on thread `{:?}`",
-                    self, other_id,
-                );
-                match self.register_with_in_progress_thread(db, runtime, other_id, waiting) {
-                    Ok(future) => {
-                        // Release our lock on `self.state`, so other thread can complete.
-                        std::mem::drop(state);
-
-                        let result = future.wait().unwrap_or_else(|| Cancelled::throw());
-                        return !result.cycle.is_empty() || result.value.changed_at > revision;
-                    }
-
-                    // Consider a cycle to have changed.
-                    Err(_) => return true,
-                }
-            }
-
-            QueryState::Memoized(memo) => memo,
-        };
-
-        if memo.revisions.verified_at == revision_now {
-            debug!(
-                "maybe_changed_since({:?}): {:?} since up-to-date memo that changed at {:?}",
-                self,
-                memo.revisions.changed_at > revision,
-                memo.revisions.changed_at,
-            );
-            return memo.revisions.changed_at > revision;
-        }
-
-        let maybe_changed;
-
-        // If we only depended on constants, and no constant has been
-        // modified since then, we cannot have changed; no need to
-        // trace our inputs.
-        if memo.revisions.check_durability(runtime) {
-            std::mem::drop(state);
-            maybe_changed = false;
-        } else {
-            match &memo.revisions.inputs {
-                MemoInputs::Untracked => {
-                    // we don't know the full set of
-                    // inputs, so if there is a new
-                    // revision, we must assume it is
-                    // dirty
-                    debug!(
-                        "maybe_changed_since({:?}: true since untracked inputs",
-                        self,
-                    );
-                    return true;
-                }
-
-                MemoInputs::NoInputs => {
-                    std::mem::drop(state);
-                    maybe_changed = false;
-                }
-
-                MemoInputs::Tracked { inputs } => {
-                    // At this point, the value may be dirty (we have
-                    // to check the database-keys). If we have a cached
-                    // value, we'll just fall back to invoking `read`,
-                    // which will do that checking (and a bit more) --
-                    // note that we skip the "pure read" part as we
-                    // already know the result.
-                    assert!(inputs.len() > 0);
-                    if memo.value.is_some() {
-                        std::mem::drop(state);
-                        return match self.read_upgrade(db, revision_now) {
-                            Ok(v) => {
-                                debug!(
-                                    "maybe_changed_since({:?}: {:?} since (recomputed) value changed at {:?}",
-                                    self,
-                                    v.changed_at > revision,
-                                    v.changed_at,
-                                );
-                                v.changed_at > revision
-                            }
-                            Err(_) => true,
-                        };
-                    }
-
-                    // We have a **tracked set of inputs** that need to be validated.
-                    let inputs = inputs.clone();
-                    // We'll need to update the state anyway (see below), so release the read-lock.
-                    std::mem::drop(state);
-
-                    // Iterate the inputs and see if any have maybe changed.
-                    maybe_changed = inputs
-                        .iter()
-                        .filter(|&&input| db.maybe_changed_since(input, revision))
-                        .inspect(|input| debug!("{:?}: input `{:?}` may have changed", self, input))
-                        .next()
-                        .is_some();
-                }
-            }
-        }
-
-        // Either way, we have to update our entry.
+        // Do an initial probe with just the read-lock.
         //
-        // Keep in mind, though, that we released the lock before checking the ipnuts and a lot
-        // could have happened in the interim. =) Therefore, we have to probe the current
-        // `self.state`  again and in some cases we ought to do nothing.
-        {
-            let mut state = self.state.write();
-            match &mut *state {
-                QueryState::Memoized(memo) => {
-                    if memo.revisions.verified_at == revision_now {
-                        // Since we started verifying inputs, somebody
-                        // else has come along and updated this value
-                        // (they may even have recomputed
-                        // it). Therefore, we should not touch this
-                        // memo.
-                        //
-                        // FIXME: Should we still return whatever
-                        // `maybe_changed` value we computed,
-                        // however..? It seems .. harmless to indicate
-                        // that the value has changed, but possibly
-                        // less efficient? (It may cause some
-                        // downstream value to be recomputed that
-                        // wouldn't otherwise have to be?)
-                    } else if maybe_changed {
-                        // We found this entry is out of date and
-                        // nobody touch it in the meantime. Just
-                        // remove it.
-                        *state = QueryState::NotComputed;
-                    } else {
-                        // We found this entry is valid. Update the
-                        // `verified_at` to reflect the current
-                        // revision.
-                        memo.revisions.verified_at = revision_now;
-                    }
-                }
-
-                QueryState::InProgress { .. } => {
-                    // Since we started verifying inputs, somebody
-                    // else has come along and started updated this
-                    // value. Just leave their marker alone and return
-                    // whatever `maybe_changed` value we computed.
-                }
-
-                QueryState::NotComputed => {
-                    // Since we started verifying inputs, somebody
-                    // else has come along and removed this value. The
-                    // GC can do this, for example. That's fine.
+        // If we find that a cache entry for the value is present
+        // but hasn't been verified in this revision, we'll have to
+        // do more.
+        loop {
+            match self.maybe_changed_after_probe(db, self.state.read(), runtime, revision_now) {
+                MaybeChangedSinceProbeState::Retry => continue,
+                MaybeChangedSinceProbeState::ChangedAt(changed_at) => return changed_at > revision,
+                MaybeChangedSinceProbeState::Stale(state) => {
+                    drop(state);
+                    return self.maybe_changed_after_upgrade(db, revision);
                 }
             }
         }
-
-        maybe_changed
     }
 
-    /// Helper:
-    ///
-    /// When we encounter an `InProgress` indicator, we need to either
-    /// report a cycle or else register ourselves to be notified when
-    /// that work completes. This helper does that; it returns a port
-    /// where you can wait for the final value that wound up being
-    /// computed (but first drop the lock on the map).
-    fn register_with_in_progress_thread(
+    fn maybe_changed_after_probe<StateGuard>(
         &self,
-        _db: &<Q as QueryDb<'_>>::DynDb,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        state: StateGuard,
+        runtime: &Runtime,
+        revision_now: Revision,
+    ) -> MaybeChangedSinceProbeState<StateGuard>
+    where
+        StateGuard: Deref<Target = QueryState<Q>>,
+    {
+        match self.probe(db, state, runtime, revision_now) {
+            ProbeState::Retry => MaybeChangedSinceProbeState::Retry,
+
+            ProbeState::Stale(state) => MaybeChangedSinceProbeState::Stale(state),
+
+            // If we know when value last changed, we can return right away.
+            // Note that we don't need the actual value to be available.
+            ProbeState::NoValue(_, changed_at)
+            | ProbeState::UpToDate(StampedValue {
+                value: _,
+                durability: _,
+                changed_at,
+            }) => MaybeChangedSinceProbeState::ChangedAt(changed_at),
+
+            // If we have nothing cached, then value may have changed.
+            ProbeState::NotComputed(_) => MaybeChangedSinceProbeState::ChangedAt(revision_now),
+        }
+    }
+
+    fn maybe_changed_after_upgrade(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
+        revision: Revision,
+    ) -> bool {
+        let runtime = db.salsa_runtime();
+        let revision_now = runtime.current_revision();
+
+        // Get an upgradable read lock, which permits other reads but no writers.
+        // Probe again. If the value is stale (needs to be verified), then upgrade
+        // to a write lock and swap it with InProgress while we work.
+        let mut old_memo = match self.maybe_changed_after_probe(
+            db,
+            self.state.upgradable_read(),
+            runtime,
+            revision_now,
+        ) {
+            MaybeChangedSinceProbeState::ChangedAt(changed_at) => return changed_at > revision,
+
+            // If another thread was active, then the cache line is going to be
+            // either verified or cleared out. Just recurse to figure out which.
+            // Note that we don't need an upgradable read.
+            MaybeChangedSinceProbeState::Retry => return self.maybe_changed_after(db, revision),
+
+            MaybeChangedSinceProbeState::Stale(state) => {
+                type RwLockUpgradableReadGuard<'a, T> =
+                    lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
+
+                let mut state = RwLockUpgradableReadGuard::upgrade(state);
+                match std::mem::replace(&mut *state, QueryState::in_progress(runtime.id())) {
+                    QueryState::Memoized(old_memo) => old_memo,
+                    QueryState::NotComputed | QueryState::InProgress { .. } => unreachable!(),
+                }
+            }
+        };
+
+        let panic_guard = PanicGuard::new(self.database_key_index, self, runtime);
+        let active_query = runtime.push_query(self.database_key_index);
+
+        if old_memo.verify_revisions(db.ops_database(), revision_now, &active_query) {
+            let maybe_changed = old_memo.revisions.changed_at > revision;
+            panic_guard.proceed(Some(old_memo));
+            maybe_changed
+        } else if old_memo.value.is_some() {
+            // We found that this memoized value may have changed
+            // but we have an old value. We can re-run the code and
+            // actually *check* if it has changed.
+            let StampedValue { changed_at, .. } = self.execute(
+                db,
+                runtime,
+                revision_now,
+                active_query,
+                panic_guard,
+                Some(old_memo),
+            );
+            changed_at > revision
+        } else {
+            // We found that inputs to this memoized value may have chanced
+            // but we don't have an old value to compare against or re-use.
+            // No choice but to drop the memo and say that its value may have changed.
+            panic_guard.proceed(None);
+            true
+        }
+    }
+
+    /// Helper: see [`Runtime::try_block_on_or_unwind`].
+    fn block_on_or_unwind<MutexGuard>(
+        &self,
+        db: &<Q as QueryDb<'_>>::DynDb,
         runtime: &Runtime,
         other_id: RuntimeId,
-        waiting: &Mutex<SmallVec<[Promise<WaitResult<Q::Value, DatabaseKeyIndex>>; 2]>>,
-    ) -> Result<BlockingFuture<WaitResult<Q::Value, DatabaseKeyIndex>>, CycleDetected> {
-        let id = runtime.id();
-        if other_id == id {
-            Err(CycleDetected { from: id, to: id })
-        } else {
-            if !runtime.try_block_on(self.database_key_index, other_id) {
-                return Err(CycleDetected {
-                    from: id,
-                    to: other_id,
-                });
-            }
-
-            let (future, promise) = BlockingFuture::new();
-
-            // The reader of this will have to acquire map
-            // lock, we don't need any particular ordering.
-            waiting.lock().push(promise);
-
-            Ok(future)
-        }
+        mutex_guard: MutexGuard,
+    ) {
+        runtime.block_on_or_unwind(
+            db.ops_database(),
+            self.database_key_index,
+            other_id,
+            mutex_guard,
+        )
     }
 
     fn should_memoize_value(&self, key: &Q::Key) -> bool {
@@ -707,7 +607,7 @@ where
     fn in_progress(id: RuntimeId) -> Self {
         QueryState::InProgress {
             id,
-            waiting: Default::default(),
+            anyone_waiting: Default::default(),
         }
     }
 }
@@ -719,7 +619,6 @@ where
 {
     database_key_index: DatabaseKeyIndex,
     slot: &'me Slot<Q, MP>,
-    memo: Option<Memo<Q>>,
     runtime: &'me Runtime,
 }
 
@@ -731,40 +630,31 @@ where
     fn new(
         database_key_index: DatabaseKeyIndex,
         slot: &'me Slot<Q, MP>,
-        memo: Option<Memo<Q>>,
         runtime: &'me Runtime,
     ) -> Self {
         Self {
             database_key_index,
             slot,
-            memo,
             runtime,
         }
     }
 
-    /// Proceed with our panic guard by overwriting the placeholder for `key`.
-    /// Once that completes, ensure that our deconstructor is not run once we
-    /// are out of scope.
-    fn proceed(mut self, new_value: &StampedValue<Q::Value>, cycle: Vec<DatabaseKeyIndex>) {
-        self.overwrite_placeholder(Some((new_value, cycle)));
-        std::mem::forget(self)
-    }
-
-    fn report_unexpected_cycle(mut self) {
-        self.overwrite_placeholder(None);
+    /// Indicates that we have concluded normally (without panicking).
+    /// If `opt_memo` is some, then this memo is installed as the new
+    /// memoized value. If `opt_memo` is `None`, then the slot is cleared
+    /// and has no value.
+    fn proceed(mut self, opt_memo: Option<Memo<Q::Value>>) {
+        self.overwrite_placeholder(WaitResult::Completed, opt_memo);
         std::mem::forget(self)
     }
 
     /// Overwrites the `InProgress` placeholder for `key` that we
     /// inserted; if others were blocked, waiting for us to finish,
     /// then notify them.
-    fn overwrite_placeholder(
-        &mut self,
-        new_value: Option<(&StampedValue<Q::Value>, Vec<DatabaseKeyIndex>)>,
-    ) {
+    fn overwrite_placeholder(&mut self, wait_result: WaitResult, opt_memo: Option<Memo<Q::Value>>) {
         let mut write = self.slot.state.write();
 
-        let old_value = match self.memo.take() {
+        let old_value = match opt_memo {
             // Replace the `InProgress` marker that we installed with the new
             // memo, thus releasing our unique access to this key.
             Some(memo) => std::mem::replace(&mut *write, QueryState::Memoized(memo)),
@@ -776,29 +666,16 @@ where
         };
 
         match old_value {
-            QueryState::InProgress { id, waiting } => {
+            QueryState::InProgress { id, anyone_waiting } => {
                 assert_eq!(id, self.runtime.id());
 
-                self.runtime
-                    .unblock_queries_blocked_on_self(self.database_key_index);
-
-                match new_value {
-                    // If anybody has installed themselves in our "waiting"
-                    // list, notify them that the value is available.
-                    Some((new_value, ref cycle)) => {
-                        for promise in waiting.into_inner() {
-                            promise.fulfil(WaitResult {
-                                value: new_value.clone(),
-                                cycle: cycle.clone(),
-                            });
-                        }
-                    }
-
-                    // We have no value to send when we are panicking.
-                    // Therefore, we need to drop the sending half of the
-                    // channel so that our panic propagates to those waiting
-                    // on the receiving half.
-                    None => std::mem::drop(waiting),
+                // NB: As noted on the `store`, `Ordering::Relaxed` is
+                // sufficient here. This boolean signals us on whether to
+                // acquire a mutex; the mutex will guarantee that all writes
+                // we are interested in are visible.
+                if anyone_waiting.load(Ordering::Relaxed) {
+                    self.runtime
+                        .unblock_queries_blocked_on(self.database_key_index, wait_result);
                 }
             }
             _ => panic!(
@@ -819,7 +696,7 @@ where
     fn drop(&mut self) {
         if std::thread::panicking() {
             // We panicked before we could proceed and need to remove `key`.
-            self.overwrite_placeholder(None)
+            self.overwrite_placeholder(WaitResult::Panicked, None)
         } else {
             // If no panic occurred, then panic guard ought to be
             // "forgotten" and so this Drop code should never run.
@@ -828,56 +705,74 @@ where
     }
 }
 
-impl<Q> Memo<Q>
+impl<V> Memo<V>
 where
-    Q: QueryFunction,
+    V: Clone,
 {
-    fn validate_memoized_value(
+    /// Determines whether the value stored in this memo (if any) is still
+    /// valid in the current revision. If so, returns a stamped value.
+    ///
+    /// If needed, this will walk each dependency and
+    /// recursively invoke `maybe_changed_after`, which may in turn
+    /// re-execute the dependency. This can cause cycles to occur,
+    /// so the current query must be pushed onto the
+    /// stack to permit cycle detection and recovery: therefore,
+    /// takes the `active_query` argument as evidence.
+    fn verify_value(
         &mut self,
-        db: &<Q as QueryDb<'_>>::DynDb,
+        db: &dyn Database,
         revision_now: Revision,
-    ) -> Option<StampedValue<Q::Value>> {
+        active_query: &ActiveQueryGuard<'_>,
+    ) -> Option<StampedValue<V>> {
         // If we don't have a memoized value, nothing to validate.
-        let value = match &self.value {
-            None => return None,
-            Some(v) => v,
-        };
-
-        let dyn_db = db.ops_database();
-        if self.revisions.validate_memoized_value(dyn_db, revision_now) {
+        if self.value.is_none() {
+            return None;
+        }
+        if self.verify_revisions(db, revision_now, active_query) {
             Some(StampedValue {
                 durability: self.revisions.durability,
                 changed_at: self.revisions.changed_at,
-                value: value.clone(),
+                value: self.value.as_ref().unwrap().clone(),
             })
         } else {
             None
         }
     }
-}
 
-impl MemoRevisions {
-    fn validate_memoized_value(&mut self, db: &dyn Database, revision_now: Revision) -> bool {
+    /// Determines whether the value represented by this memo is still
+    /// valid in the current revision; note that the value itself is
+    /// not needed for this check. If needed, this will walk each
+    /// dependency and recursively invoke `maybe_changed_after`, which
+    /// may in turn re-execute the dependency. This can cause cycles to occur,
+    /// so the current query must be pushed onto the
+    /// stack to permit cycle detection and recovery: therefore,
+    /// takes the `active_query` argument as evidence.
+    fn verify_revisions(
+        &mut self,
+        db: &dyn Database,
+        revision_now: Revision,
+        _active_query: &ActiveQueryGuard<'_>,
+    ) -> bool {
         assert!(self.verified_at != revision_now);
         let verified_at = self.verified_at;
 
         debug!(
-            "validate_memoized_value: verified_at={:?}, revision_now={:?}, inputs={:#?}",
-            verified_at, revision_now, self.inputs
+            "verify_revisions: verified_at={:?}, revision_now={:?}, inputs={:#?}",
+            verified_at, revision_now, self.revisions.inputs
         );
 
         if self.check_durability(db.salsa_runtime()) {
             return self.mark_value_as_verified(revision_now);
         }
 
-        match &self.inputs {
+        match &self.revisions.inputs {
             // We can't validate values that had untracked inputs; just have to
             // re-execute.
-            MemoInputs::Untracked => {
+            QueryInputs::Untracked => {
                 return false;
             }
 
-            MemoInputs::NoInputs => {}
+            QueryInputs::NoInputs => {}
 
             // Check whether any of our inputs changed since the
             // **last point where we were verified** (not since we
@@ -888,10 +783,10 @@ impl MemoRevisions {
             // R1. But our *verification* date will be R2, and we
             // are only interested in finding out whether the
             // input changed *again*.
-            MemoInputs::Tracked { inputs } => {
+            QueryInputs::Tracked { inputs } => {
                 let changed_input = inputs
                     .iter()
-                    .find(|&&input| db.maybe_changed_since(input, verified_at));
+                    .find(|&&input| db.maybe_changed_after(input, verified_at));
                 if let Some(input) = changed_input {
                     debug!("validate_memoized_value: `{:?}` may have changed", input);
 
@@ -905,7 +800,7 @@ impl MemoRevisions {
 
     /// True if this memo is known not to have changed based on its durability.
     fn check_durability(&self, runtime: &Runtime) -> bool {
-        let last_changed = runtime.last_changed_revision(self.durability);
+        let last_changed = runtime.last_changed_revision(self.revisions.durability);
         debug!(
             "check_durability(last_changed={:?} <= verified_at={:?}) = {:?}",
             last_changed,
@@ -921,7 +816,7 @@ impl MemoRevisions {
     }
 
     fn has_untracked_input(&self) -> bool {
-        matches!(self.inputs, MemoInputs::Untracked)
+        matches!(self.revisions.inputs, QueryInputs::Untracked)
     }
 }
 
@@ -932,59 +827,6 @@ where
 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(fmt, "{:?}({:?})", Q::default(), self.key)
-    }
-}
-
-impl MemoInputs {
-    fn debug<'a, D: ?Sized>(&'a self, db: &'a D) -> impl std::fmt::Debug + 'a
-    where
-        D: DatabaseOps,
-    {
-        enum DebugMemoInputs<'a, D: ?Sized> {
-            Tracked {
-                inputs: &'a [DatabaseKeyIndex],
-                db: &'a D,
-            },
-            NoInputs,
-            Untracked,
-        }
-
-        impl<D: ?Sized + DatabaseOps> std::fmt::Debug for DebugMemoInputs<'_, D> {
-            fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    DebugMemoInputs::Tracked { inputs, db } => fmt
-                        .debug_struct("Tracked")
-                        .field(
-                            "inputs",
-                            &inputs.iter().map(|key| key.debug(*db)).collect::<Vec<_>>(),
-                        )
-                        .finish(),
-                    DebugMemoInputs::NoInputs => fmt.debug_struct("NoInputs").finish(),
-                    DebugMemoInputs::Untracked => fmt.debug_struct("Untracked").finish(),
-                }
-            }
-        }
-
-        match self {
-            MemoInputs::Tracked { inputs } => DebugMemoInputs::Tracked {
-                inputs: &inputs,
-                db,
-            },
-            MemoInputs::NoInputs => DebugMemoInputs::NoInputs,
-            MemoInputs::Untracked => DebugMemoInputs::Untracked,
-        }
-    }
-}
-
-impl std::fmt::Debug for MemoInputs {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MemoInputs::Tracked { inputs } => {
-                fmt.debug_struct("Tracked").field("inputs", inputs).finish()
-            }
-            MemoInputs::NoInputs => fmt.debug_struct("NoInputs").finish(),
-            MemoInputs::Untracked => fmt.debug_struct("Untracked").finish(),
-        }
     }
 }
 

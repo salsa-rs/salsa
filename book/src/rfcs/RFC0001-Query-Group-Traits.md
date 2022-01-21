@@ -268,9 +268,9 @@ impl of `QueryGroup`.  That involves generating the following things:
     but since we cannot, it is entitled `MyGroupGroupKey`
   - It is an enum which contains one variant per query with the value being the key:
     - `my_query(<MyQueryQuery as salsa::plumbing::Query<DB>>::Key)`
-  - The group key enum offers a public, inherent method `maybe_changed_since`:
-    - `fn maybe_changed_since<DB>(db: &DB, db_descriptor: &DB::DatabaseKey, revision: Revision)`
-    - it is invoked when implementing `maybe_changed_since` for the database key
+  - The group key enum offers a public, inherent method `maybe_changed_after`:
+    - `fn maybe_changed_after<DB>(db: &DB, db_descriptor: &DB::DatabaseKey, revision: Revision)`
+    - it is invoked when implementing `maybe_changed_after` for the database key
 
 ### Lowering database storage
 
@@ -298,7 +298,7 @@ It generates the following things:
   - This contains a `for_each_query` method, which is implemented by invoking, in turn,
     the inherent methods defined on each query group storage struct.
 - impl of `plumbing::DatabaseKey` for the database key enum
-  - This contains a method `maybe_changed_since`. We implement this by
+  - This contains a method `maybe_changed_after`. We implement this by
     matching to get a particular group key, and then invoking the
     inherent method on the group key struct.
 

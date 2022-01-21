@@ -1,21 +1,26 @@
-use crate::plumbing::CycleDetected;
+use crate::durability::Durability;
+use crate::plumbing::CycleRecoveryStrategy;
 use crate::revision::{AtomicRevision, Revision};
-use crate::{durability::Durability, Cancelled};
-use crate::{CycleError, Database, DatabaseKeyIndex, Event, EventKind};
+use crate::{Cancelled, Cycle, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
-use rustc_hash::{FxHashMap, FxHasher};
-use smallvec::SmallVec;
+use rustc_hash::FxHasher;
 use std::hash::{BuildHasherDefault, Hash};
+use std::panic::panic_any;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
 pub(crate) type FxIndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasherDefault<FxHasher>>;
 
-mod local_state;
+mod dependency_graph;
+use dependency_graph::DependencyGraph;
+
+pub(crate) mod local_state;
 use local_state::LocalState;
+
+use self::local_state::{ActiveQueryGuard, QueryInputs, QueryRevisions};
 
 /// The salsa runtime stores the storage for all queries as well as
 /// tracking the query stack and dependencies between cycles.
@@ -40,6 +45,13 @@ pub struct Runtime {
     shared_state: Arc<SharedState>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) enum WaitResult {
+    Completed,
+    Panicked,
+    Cycle(Cycle),
+}
+
 impl Default for Runtime {
     fn default() -> Self {
         Runtime {
@@ -59,6 +71,16 @@ impl std::fmt::Debug for Runtime {
             .field("shared_state", &self.shared_state)
             .finish()
     }
+}
+
+#[derive(Clone, Debug)]
+struct CycleDetected {
+    /// Common recovery strategy to all participants in the cycle,
+    /// or [`CycleRecoveryStrategy::Panic`] otherwise.
+    pub(crate) recovery_strategy: CycleRecoveryStrategy,
+
+    /// Cycle participants.
+    pub(crate) cycle: Cycle,
 }
 
 impl Runtime {
@@ -140,7 +162,7 @@ impl Runtime {
     #[cold]
     pub(crate) fn unwind_cancelled(&self) {
         self.report_untracked_read();
-        Cancelled::throw();
+        Cancelled::PendingWrite.throw();
     }
 
     /// Acquires the **global query write lock** (ensuring that no queries are
@@ -201,70 +223,31 @@ impl Runtime {
         self.revision_guard.is_none() && !self.local_state.query_in_progress()
     }
 
-    pub(crate) fn execute_query_implementation<DB, V>(
-        &self,
-        db: &DB,
-        database_key_index: DatabaseKeyIndex,
-        execute: impl FnOnce() -> V,
-    ) -> ComputedQueryResult<V>
-    where
-        DB: ?Sized + Database,
-    {
-        debug!(
-            "{:?}: execute_query_implementation invoked",
-            database_key_index
-        );
-
-        db.salsa_event(Event {
-            runtime_id: self.id(),
-            kind: EventKind::WillExecute {
-                database_key: database_key_index,
-            },
-        });
-
-        // Push the active query onto the stack.
-        let max_durability = Durability::MAX;
-        let active_query = self
-            .local_state
-            .push_query(database_key_index, max_durability);
-
-        // Execute user's code, accumulating inputs etc.
-        let value = execute();
-
-        // Extract accumulated inputs.
-        let ActiveQuery {
-            dependencies,
-            changed_at,
-            durability,
-            cycle,
-            ..
-        } = active_query.complete();
-
-        ComputedQueryResult {
-            value,
-            durability,
-            changed_at,
-            dependencies,
-            cycle,
-        }
+    #[inline]
+    pub(crate) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
+        self.local_state.push_query(database_key_index)
     }
 
     /// Reports that the currently active query read the result from
     /// another query.
+    ///
+    /// Also checks whether the "cycle participant" flag is set on
+    /// the current stack frame -- if so, panics with `CycleParticipant`
+    /// value, which should be caught by the code executing the query.
     ///
     /// # Parameters
     ///
     /// - `database_key`: the query whose result was read
     /// - `changed_revision`: the last revision in which the result of that
     ///   query had changed
-    pub(crate) fn report_query_read(
+    pub(crate) fn report_query_read_and_unwind_if_cycle_resulted(
         &self,
         input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
     ) {
         self.local_state
-            .report_query_read(input, durability, changed_at);
+            .report_query_read_and_unwind_if_cycle_resulted(input, durability, changed_at);
     }
 
     /// Reports that the query depends on some state unknown to salsa.
@@ -280,113 +263,205 @@ impl Runtime {
     ///
     /// This is mostly useful to control the durability level for [on-demand inputs](https://salsa-rs.github.io/salsa/common_patterns/on_demand_inputs.html).
     pub fn report_synthetic_read(&self, durability: Durability) {
+        let changed_at = self.last_changed_revision(durability);
         self.local_state
-            .report_synthetic_read(durability, self.current_revision());
+            .report_synthetic_read(durability, changed_at);
     }
 
-    /// Obviously, this should be user configurable at some point.
-    pub(crate) fn report_unexpected_cycle(
+    /// Handles a cycle in the dependency graph that was detected when the
+    /// current thread tried to block on `database_key_index` which is being
+    /// executed by `to_id`. If this function returns, then `to_id` no longer
+    /// depends on the current thread, and so we should continue executing
+    /// as normal. Otherwise, the function will throw a `Cycle` which is expected
+    /// to be caught by some frame on our stack. This occurs either if there is
+    /// a frame on our stack with cycle recovery (possibly the top one!) or if there
+    /// is no cycle recovery at all.
+    fn unblock_cycle_and_maybe_throw(
         &self,
+        db: &dyn Database,
+        dg: &mut DependencyGraph,
         database_key_index: DatabaseKeyIndex,
-        error: CycleDetected,
-        changed_at: Revision,
-    ) -> crate::CycleError<DatabaseKeyIndex> {
+        to_id: RuntimeId,
+    ) {
         debug!(
-            "report_unexpected_cycle(database_key={:?})",
+            "unblock_cycle_and_maybe_throw(database_key={:?})",
             database_key_index
         );
 
-        let mut query_stack = self.local_state.borrow_query_stack_mut();
+        let mut from_stack = self.local_state.take_query_stack();
+        let from_id = self.id();
 
-        if error.from == error.to {
-            // All queries in the cycle is local
-            let start_index = query_stack
-                .iter()
-                .rposition(|active_query| active_query.database_key_index == database_key_index)
-                .unwrap();
-            let mut cycle = Vec::new();
-            let cycle_participants = &mut query_stack[start_index..];
-            for active_query in &mut *cycle_participants {
-                cycle.push(active_query.database_key_index);
-            }
+        // Make a "dummy stack frame". As we iterate through the cycle, we will collect the
+        // inputs from each participant. Then, if we are participating in cycle recovery, we
+        // will propagate those results to all participants.
+        let mut cycle_query = ActiveQuery::new(database_key_index);
 
-            assert!(!cycle.is_empty());
-
-            for active_query in cycle_participants {
-                active_query.cycle = cycle.clone();
-            }
-
-            crate::CycleError {
-                cycle,
-                changed_at,
-                durability: Durability::MAX,
-            }
-        } else {
-            // Part of the cycle is on another thread so we need to lock and inspect the shared
-            // state
-            let dependency_graph = self.shared_state.dependency_graph.lock();
-
-            let mut cycle = Vec::new();
-            dependency_graph.push_cycle_path(
+        // Identify the cycle participants:
+        let cycle = {
+            let mut v = vec![];
+            dg.for_each_cycle_participant(
+                from_id,
+                &mut from_stack,
                 database_key_index,
-                error.to,
-                query_stack.iter().map(|query| query.database_key_index),
-                &mut cycle,
+                to_id,
+                |aqs| {
+                    aqs.iter_mut().for_each(|aq| {
+                        cycle_query.add_from(aq);
+                        v.push(aq.database_key_index);
+                    });
+                },
             );
-            cycle.push(database_key_index);
 
-            assert!(!cycle.is_empty());
+            // We want to give the participants in a deterministic order
+            // (at least for this execution, not necessarily across executions),
+            // no matter where it started on the stack. Find the minimum
+            // key and rotate it to the front.
+            let min = v.iter().min().unwrap();
+            let index = v.iter().position(|p| p == min).unwrap();
+            v.rotate_left(index);
 
-            for active_query in query_stack
-                .iter_mut()
-                .filter(|query| cycle.iter().any(|key| *key == query.database_key_index))
-            {
-                active_query.cycle = cycle.clone();
-            }
+            // No need to store extra memory.
+            v.shrink_to_fit();
 
-            crate::CycleError {
-                cycle,
-                changed_at,
-                durability: Durability::MAX,
-            }
+            Cycle::new(Arc::new(v))
+        };
+        debug!(
+            "cycle {:?}, cycle_query {:#?}",
+            cycle.debug(db),
+            cycle_query,
+        );
+
+        // We can remove the cycle participants from the list of dependencies;
+        // they are a strongly connected component (SCC) and we only care about
+        // dependencies to things outside the SCC that control whether it will
+        // form again.
+        cycle_query.remove_cycle_participants(&cycle);
+
+        // Mark each cycle participant that has recovery set, along with
+        // any frames that come after them on the same thread. Those frames
+        // are going to be unwound so that fallback can occur.
+        dg.for_each_cycle_participant(from_id, &mut from_stack, database_key_index, to_id, |aqs| {
+            aqs.iter_mut()
+                .skip_while(
+                    |aq| match db.cycle_recovery_strategy(aq.database_key_index) {
+                        CycleRecoveryStrategy::Panic => true,
+                        CycleRecoveryStrategy::Fallback => false,
+                    },
+                )
+                .for_each(|aq| {
+                    debug!("marking {:?} for fallback", aq.database_key_index.debug(db));
+                    aq.take_inputs_from(&cycle_query);
+                    assert!(aq.cycle.is_none());
+                    aq.cycle = Some(cycle.clone());
+                });
+        });
+
+        // Unblock every thread that has cycle recovery with a `WaitResult::Cycle`.
+        // They will throw the cycle, which will be caught by the frame that has
+        // cycle recovery so that it can execute that recovery.
+        let (me_recovered, others_recovered) =
+            dg.maybe_unblock_runtimes_in_cycle(from_id, &from_stack, database_key_index, to_id);
+
+        self.local_state.restore_query_stack(from_stack);
+
+        if me_recovered {
+            // If the current thread has recovery, we want to throw
+            // so that it can begin.
+            cycle.throw()
+        } else if others_recovered {
+            // If other threads have recovery but we didn't: return and we will block on them.
+        } else {
+            // if nobody has recover, then we panic
+            panic_any(cycle);
         }
     }
 
-    pub(crate) fn mark_cycle_participants(&self, err: &CycleError<DatabaseKeyIndex>) {
-        for active_query in self
-            .local_state
-            .borrow_query_stack_mut()
-            .iter_mut()
-            .rev()
-            .take_while(|active_query| {
-                err.cycle
-                    .iter()
-                    .any(|e| *e == active_query.database_key_index)
-            })
-        {
-            active_query.cycle = err.cycle.clone();
-        }
-    }
+    /// Block until `other_id` completes executing `database_key`;
+    /// panic or unwind in the case of a cycle.
+    ///
+    /// `query_mutex_guard` is the guard for the current query's state;
+    /// it will be dropped after we have successfully registered the
+    /// dependency.
+    ///
+    /// # Propagating panics
+    ///
+    /// If the thread `other_id` panics, then our thread is considered
+    /// cancelled, so this function will panic with a `Cancelled` value.
+    ///
+    /// # Cycle handling
+    ///
+    /// If the thread `other_id` already depends on the current thread,
+    /// and hence there is a cycle in the query graph, then this function
+    /// will unwind instead of returning normally. The method of unwinding
+    /// depends on the [`Self::mutual_cycle_recovery_strategy`]
+    /// of the cycle participants:
+    ///
+    /// * [`CycleRecoveryStrategy::Panic`]: panic with the [`Cycle`] as the value.
+    /// * [`CycleRecoveryStrategy::Fallback`]: initiate unwinding with [`CycleParticipant::unwind`].
+    pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
+        &self,
+        db: &dyn Database,
+        database_key: DatabaseKeyIndex,
+        other_id: RuntimeId,
+        query_mutex_guard: QueryMutexGuard,
+    ) {
+        let mut dg = self.shared_state.dependency_graph.lock();
 
-    /// Try to make this runtime blocked on `other_id`. Returns true
-    /// upon success or false if `other_id` is already blocked on us.
-    pub(crate) fn try_block_on(&self, database_key: DatabaseKeyIndex, other_id: RuntimeId) -> bool {
-        self.shared_state.dependency_graph.lock().add_edge(
+        if dg.depends_on(other_id, self.id()) {
+            self.unblock_cycle_and_maybe_throw(db, &mut dg, database_key, other_id);
+
+            // If the above fn returns, then (via cycle recovery) it has unblocked the
+            // cycle, so we can continue.
+            assert!(!dg.depends_on(other_id, self.id()));
+        }
+
+        db.salsa_event(Event {
+            runtime_id: self.id(),
+            kind: EventKind::WillBlockOn {
+                other_runtime_id: other_id,
+                database_key,
+            },
+        });
+
+        let stack = self.local_state.take_query_stack();
+
+        let (stack, result) = DependencyGraph::block_on(
+            dg,
             self.id(),
             database_key,
             other_id,
-            self.local_state
-                .borrow_query_stack()
-                .iter()
-                .map(|query| query.database_key_index),
-        )
+            stack,
+            query_mutex_guard,
+        );
+
+        self.local_state.restore_query_stack(stack);
+
+        match result {
+            WaitResult::Completed => (),
+
+            // If the other thread panicked, then we consider this thread
+            // cancelled. The assumption is that the panic will be detected
+            // by the other thread and responded to appropriately.
+            WaitResult::Panicked => Cancelled::PropagatedPanic.throw(),
+
+            WaitResult::Cycle(c) => c.throw(),
+        }
     }
 
-    pub(crate) fn unblock_queries_blocked_on_self(&self, database_key_index: DatabaseKeyIndex) {
+    /// Invoked when this runtime completed computing `database_key` with
+    /// the given result `wait_result` (`wait_result` should be `None` if
+    /// computing `database_key` panicked and could not complete).
+    /// This function unblocks any dependent queries and allows them
+    /// to continue executing.
+    pub(crate) fn unblock_queries_blocked_on(
+        &self,
+        database_key: DatabaseKeyIndex,
+        wait_result: WaitResult,
+    ) {
         self.shared_state
             .dependency_graph
             .lock()
-            .remove_edge(database_key_index, self.id())
+            .unblock_runtimes_blocked_on(database_key, wait_result);
     }
 }
 
@@ -423,7 +498,7 @@ struct SharedState {
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
-    dependency_graph: Mutex<DependencyGraph<DatabaseKeyIndex>>,
+    dependency_graph: Mutex<DependencyGraph>,
 }
 
 impl SharedState {
@@ -463,6 +538,7 @@ impl std::fmt::Debug for SharedState {
     }
 }
 
+#[derive(Debug)]
 struct ActiveQuery {
     /// What query is executing
     database_key_index: DatabaseKeyIndex,
@@ -479,36 +555,17 @@ struct ActiveQuery {
     dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
 
     /// Stores the entire cycle, if one is found and this query is part of it.
-    cycle: Vec<DatabaseKeyIndex>,
-}
-
-pub(crate) struct ComputedQueryResult<V> {
-    /// Final value produced
-    pub(crate) value: V,
-
-    /// Minimum durability of inputs observed so far.
-    pub(crate) durability: Durability,
-
-    /// Maximum revision of all inputs observed. If we observe an
-    /// untracked read, this will be set to the most recent revision.
-    pub(crate) changed_at: Revision,
-
-    /// Complete set of subqueries that were accessed, or `None` if
-    /// there was an untracked read.
-    pub(crate) dependencies: Option<FxIndexSet<DatabaseKeyIndex>>,
-
-    /// The cycle if one occured while computing this value
-    pub(crate) cycle: Vec<DatabaseKeyIndex>,
+    cycle: Option<Cycle>,
 }
 
 impl ActiveQuery {
-    fn new(database_key_index: DatabaseKeyIndex, max_durability: Durability) -> Self {
+    fn new(database_key_index: DatabaseKeyIndex) -> Self {
         ActiveQuery {
             database_key_index,
-            durability: max_durability,
+            durability: Durability::MAX,
             changed_at: Revision::start(),
             dependencies: Some(FxIndexSet::default()),
-            cycle: Vec::new(),
+            cycle: None,
         }
     }
 
@@ -527,9 +584,64 @@ impl ActiveQuery {
         self.changed_at = changed_at;
     }
 
-    fn add_synthetic_read(&mut self, durability: Durability, current_revision: Revision) {
+    fn add_synthetic_read(&mut self, durability: Durability, revision: Revision) {
+        self.dependencies = None;
         self.durability = self.durability.min(durability);
-        self.changed_at = current_revision;
+        self.changed_at = self.changed_at.max(revision);
+    }
+
+    pub(crate) fn revisions(&self) -> QueryRevisions {
+        let inputs = match &self.dependencies {
+            None => QueryInputs::Untracked,
+
+            Some(dependencies) => {
+                if dependencies.is_empty() {
+                    QueryInputs::NoInputs
+                } else {
+                    QueryInputs::Tracked {
+                        inputs: dependencies.iter().copied().collect(),
+                    }
+                }
+            }
+        };
+
+        QueryRevisions {
+            changed_at: self.changed_at,
+            inputs,
+            durability: self.durability,
+        }
+    }
+
+    /// Adds any dependencies from `other` into `self`.
+    /// Used during cycle recovery, see [`Runtime::create_cycle_error`].
+    fn add_from(&mut self, other: &ActiveQuery) {
+        self.changed_at = self.changed_at.max(other.changed_at);
+        self.durability = self.durability.min(other.durability);
+        if let Some(other_dependencies) = &other.dependencies {
+            if let Some(my_dependencies) = &mut self.dependencies {
+                my_dependencies.extend(other_dependencies.iter().copied());
+            }
+        } else {
+            self.dependencies = None;
+        }
+    }
+
+    /// Removes the participants in `cycle` from my dependencies.
+    /// Used during cycle recovery, see [`Runtime::create_cycle_error`].
+    fn remove_cycle_participants(&mut self, cycle: &Cycle) {
+        if let Some(my_dependencies) = &mut self.dependencies {
+            for p in cycle.participant_keys() {
+                my_dependencies.remove(&p);
+            }
+        }
+    }
+
+    /// Copy the changed-at, durability, and dependencies from `cycle_query`.
+    /// Used during cycle recovery, see [`Runtime::create_cycle_error`].
+    pub(crate) fn take_inputs_from(&mut self, cycle_query: &ActiveQuery) {
+        self.changed_at = cycle_query.changed_at;
+        self.durability = cycle_query.durability;
+        self.dependencies = cycle_query.dependencies.clone();
     }
 }
 
@@ -546,118 +658,6 @@ pub(crate) struct StampedValue<V> {
     pub(crate) value: V,
     pub(crate) durability: Durability,
     pub(crate) changed_at: Revision,
-}
-
-#[derive(Debug)]
-struct Edge<K> {
-    id: RuntimeId,
-    path: Vec<K>,
-}
-
-#[derive(Debug)]
-struct DependencyGraph<K: Hash + Eq> {
-    /// A `(K -> V)` pair in this map indicates that the the runtime
-    /// `K` is blocked on some query executing in the runtime `V`.
-    /// This encodes a graph that must be acyclic (or else deadlock
-    /// will result).
-    edges: FxHashMap<RuntimeId, Edge<K>>,
-    labels: FxHashMap<K, SmallVec<[RuntimeId; 4]>>,
-}
-
-impl<K> Default for DependencyGraph<K>
-where
-    K: Hash + Eq,
-{
-    fn default() -> Self {
-        DependencyGraph {
-            edges: Default::default(),
-            labels: Default::default(),
-        }
-    }
-}
-
-impl<K> DependencyGraph<K>
-where
-    K: Hash + Eq + Clone,
-{
-    /// Attempt to add an edge `from_id -> to_id` into the result graph.
-    fn add_edge(
-        &mut self,
-        from_id: RuntimeId,
-        database_key: K,
-        to_id: RuntimeId,
-        path: impl IntoIterator<Item = K>,
-    ) -> bool {
-        assert_ne!(from_id, to_id);
-        debug_assert!(!self.edges.contains_key(&from_id));
-
-        // First: walk the chain of things that `to_id` depends on,
-        // looking for us.
-        let mut p = to_id;
-        while let Some(q) = self.edges.get(&p).map(|edge| edge.id) {
-            if q == from_id {
-                return false;
-            }
-
-            p = q;
-        }
-
-        self.edges.insert(
-            from_id,
-            Edge {
-                id: to_id,
-                path: path.into_iter().chain(Some(database_key.clone())).collect(),
-            },
-        );
-        self.labels.entry(database_key).or_default().push(from_id);
-        true
-    }
-
-    fn remove_edge(&mut self, database_key: K, to_id: RuntimeId) {
-        let vec = self.labels.remove(&database_key).unwrap_or_default();
-
-        for from_id in &vec {
-            let to_id1 = self.edges.remove(from_id).map(|edge| edge.id);
-            assert_eq!(Some(to_id), to_id1);
-        }
-    }
-
-    fn push_cycle_path(
-        &self,
-        database_key: K,
-        to: RuntimeId,
-        local_path: impl IntoIterator<Item = K>,
-        output: &mut Vec<K>,
-    ) where
-        K: std::fmt::Debug,
-    {
-        let mut current = Some((to, std::slice::from_ref(&database_key)));
-        let mut last = None;
-        let mut local_path = Some(local_path);
-
-        while let Some((id, path)) = current.take() {
-            let link_key = path.last().unwrap();
-            output.extend(path.iter().cloned());
-
-            current = self.edges.get(&id).map(|edge| {
-                let i = edge.path.iter().rposition(|p| p == link_key).unwrap();
-                (edge.id, &edge.path[i + 1..])
-            });
-
-            if current.is_none() {
-                last = local_path.take().map(|local_path| {
-                    local_path
-                        .into_iter()
-                        .skip_while(move |p| *p != *link_key)
-                        .skip(1)
-                });
-            }
-        }
-
-        if let Some(iter) = &mut last {
-            output.extend(iter);
-        }
-    }
 }
 
 struct RevisionGuard {
@@ -699,36 +699,5 @@ impl Drop for RevisionGuard {
         unsafe {
             self.shared_state.query_lock.raw().unlock_shared();
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dependency_graph_path1() {
-        let mut graph = DependencyGraph::default();
-        let a = RuntimeId { counter: 0 };
-        let b = RuntimeId { counter: 1 };
-        assert!(graph.add_edge(a, 2, b, vec![1]));
-        // assert!(graph.add_edge(b, &1, a, vec![3, 2]));
-        let mut v = vec![];
-        graph.push_cycle_path(1, a, vec![3, 2], &mut v);
-        assert_eq!(v, vec![1, 2]);
-    }
-
-    #[test]
-    fn dependency_graph_path2() {
-        let mut graph = DependencyGraph::default();
-        let a = RuntimeId { counter: 0 };
-        let b = RuntimeId { counter: 1 };
-        let c = RuntimeId { counter: 2 };
-        assert!(graph.add_edge(a, 3, b, vec![1]));
-        assert!(graph.add_edge(b, 4, c, vec![2, 3]));
-        // assert!(graph.add_edge(c, &1, a, vec![5, 6, 4, 7]));
-        let mut v = vec![];
-        graph.push_cycle_path(1, a, vec![5, 6, 4, 7], &mut v);
-        assert_eq!(v, vec![1, 3, 4, 7]);
     }
 }
