@@ -401,7 +401,7 @@ output to stdout. I recommend piping the output through rustfmt.</p>
 <p>The main parts of the source that we are focused on are as follows.</p>
 <h3 id="query-group"><a class="header" href="#query-group">Query group</a></h3>
 <pre><code class="language-rust ignore">#[salsa::query_group(HelloWorldStorage)]
-trait HelloWorld: salsa::Database {
+trait HelloWorld {
     // For each query, we give the name, some input keys (here, we
     // have one key, `()`) and the output type `Arc&lt;String&gt;`. We can
     // use attributes to give other configuration:
@@ -477,7 +477,7 @@ impl salsa::Database for DatabaseStruct {}
 <div style="break-before: page; page-break-before: always;"></div><h1 id="query-groups-and-query-group-structs"><a class="header" href="#query-groups-and-query-group-structs">Query groups and query group structs</a></h1>
 <p>When you define a query group trait:</p>
 <pre><code class="language-rust ignore">#[salsa::query_group(HelloWorldStorage)]
-trait HelloWorld: salsa::Database {
+trait HelloWorld {
     // For each query, we give the name, some input keys (here, we
     // have one key, `()`) and the output type `Arc&lt;String&gt;`. We can
     // use attributes to give other configuration:
