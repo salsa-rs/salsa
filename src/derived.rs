@@ -232,7 +232,7 @@ where
         Q::Key: Borrow<S>,
     {
         db.salsa_runtime_mut()
-            .with_incremented_revision(&mut |new_revision| {
+            .with_incremented_revision(|new_revision| {
                 let map_read = self.slot_map.read();
 
                 if let Some(slot) = map_read.get(key) {

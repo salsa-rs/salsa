@@ -119,7 +119,7 @@ impl Runtime {
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
     pub fn synthetic_write(&mut self, durability: Durability) {
-        self.with_incremented_revision(&mut |_next_revision| Some(durability));
+        self.with_incremented_revision(|_next_revision| Some(durability));
     }
 
     /// The unique identifier attached to this `SalsaRuntime`. Each
@@ -187,10 +187,10 @@ impl Runtime {
     ///
     /// Note that, given our writer model, we can assume that only one thread is
     /// attempting to increment the global revision at a time.
-    pub(crate) fn with_incremented_revision(
-        &mut self,
-        op: &mut dyn FnMut(Revision) -> Option<Durability>,
-    ) {
+    pub(crate) fn with_incremented_revision<F>(&mut self, op: F)
+    where
+        F: FnOnce(Revision) -> Option<Durability>,
+    {
         log::debug!("increment_revision()");
 
         if !self.permits_increment() {

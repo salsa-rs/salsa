@@ -22,7 +22,7 @@ use std::sync::Arc;
 // trait for that query group as a supertrait.
 // ANCHOR:trait
 #[salsa::query_group(HelloWorldStorage)]
-trait HelloWorld: salsa::Database {
+trait HelloWorld {
     // For each query, we give the name, some input keys (here, we
     // have one key, `()`) and the output type `Arc<String>`. We can
     // use attributes to give other configuration:

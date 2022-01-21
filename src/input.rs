@@ -205,9 +205,8 @@ where
         // keys, we only need a new revision if the key used to
         // exist. But we may add such methods in the future and this
         // case doesn't generally seem worth optimizing for.
-        let mut value = Some(value);
         db.salsa_runtime_mut()
-            .with_incremented_revision(&mut |next_revision| {
+            .with_incremented_revision(|next_revision| {
                 let mut slots = self.slots.write();
 
                 // Do this *after* we acquire the lock, so that we are not
@@ -215,7 +214,7 @@ where
                 // (Otherwise, someone else might write a *newer* revision
                 // into the same cell while we block on the lock.)
                 let stamped_value = StampedValue {
-                    value: value.take().unwrap(),
+                    value,
                     durability,
                     changed_at: next_revision,
                 };
