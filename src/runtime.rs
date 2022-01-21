@@ -70,16 +70,6 @@ impl std::fmt::Debug for Runtime {
     }
 }
 
-#[derive(Clone, Debug)]
-struct CycleDetected {
-    /// Common recovery strategy to all participants in the cycle,
-    /// or [`CycleRecoveryStrategy::Panic`] otherwise.
-    pub(crate) recovery_strategy: CycleRecoveryStrategy,
-
-    /// Cycle participants.
-    pub(crate) cycle: Cycle,
-}
-
 impl Runtime {
     /// Create a new runtime; equivalent to `Self::default`. This is
     /// used when creating a new database.
