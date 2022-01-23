@@ -310,10 +310,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
         }
 
         // A field for the storage struct
-        //
-        // FIXME(#120): the pub should not be necessary once we complete the transition
         storage_fields.extend(quote! {
-            pub #fn_name: std::sync::Arc<<#qt as salsa::Query>::Storage>,
+            #fn_name: std::sync::Arc<<#qt as salsa::Query>::Storage>,
         });
     }
 
