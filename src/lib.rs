@@ -12,10 +12,10 @@
 mod derived;
 mod doctest;
 mod durability;
+mod hash;
 mod input;
 mod intern_id;
 mod interned;
-mod lru;
 mod revision;
 mod runtime;
 mod storage;
@@ -467,6 +467,11 @@ pub trait Query: Debug + Default + Sized + for<'d> QueryDb<'d> {
     fn query_storage<'a>(
         group_storage: &'a <Self as QueryDb<'_>>::GroupStorage,
     ) -> &'a Arc<Self::Storage>;
+
+    /// Extact storage for this query from the storage for its group.
+    fn query_storage_mut<'a>(
+        group_storage: &'a <Self as QueryDb<'_>>::GroupStorage,
+    ) -> &'a Arc<Self::Storage>;
 }
 
 /// Return value from [the `query` method] on `Database`.
@@ -522,8 +527,8 @@ pub struct QueryTableMut<'me, Q>
 where
     Q: Query + 'me,
 {
-    db: &'me mut <Q as QueryDb<'me>>::DynDb,
-    storage: Arc<Q::Storage>,
+    runtime: &'me mut Runtime,
+    storage: &'me Q::Storage,
 }
 
 impl<'me, Q> QueryTableMut<'me, Q>
@@ -531,8 +536,8 @@ where
     Q: Query,
 {
     /// Constructs a new `QueryTableMut`.
-    pub fn new(db: &'me mut <Q as QueryDb<'me>>::DynDb, storage: Arc<Q::Storage>) -> Self {
-        Self { db, storage }
+    pub fn new(runtime: &'me mut Runtime, storage: &'me Q::Storage) -> Self {
+        Self { runtime, storage }
     }
 
     /// Assign a value to an "input query". Must be used outside of
@@ -561,7 +566,7 @@ where
     where
         Q::Storage: plumbing::InputQueryStorageOps<Q>,
     {
-        self.storage.set(self.db, &key, value, durability);
+        self.storage.set(self.runtime, &key, value, durability);
     }
 
     /// Sets the size of LRU cache of values for this query table.
@@ -589,7 +594,7 @@ where
     where
         Q::Storage: plumbing::DerivedQueryStorageOps<Q>,
     {
-        self.storage.invalidate(self.db, key)
+        self.storage.invalidate(self.runtime, key)
     }
 }
 

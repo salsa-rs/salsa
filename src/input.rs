@@ -1,13 +1,15 @@
 use crate::debug::TableEntry;
 use crate::durability::Durability;
+use crate::hash::FxIndexMap;
 use crate::plumbing::CycleRecoveryStrategy;
 use crate::plumbing::InputQueryStorageOps;
 use crate::plumbing::QueryStorageMassOps;
 use crate::plumbing::QueryStorageOps;
 use crate::revision::Revision;
-use crate::runtime::{FxIndexMap, StampedValue};
+use crate::runtime::StampedValue;
 use crate::Database;
 use crate::Query;
+use crate::Runtime;
 use crate::{DatabaseKeyIndex, QueryDb};
 use indexmap::map::Entry;
 use log::debug;
@@ -175,13 +177,7 @@ impl<Q> InputQueryStorageOps<Q> for InputStorage<Q>
 where
     Q: Query,
 {
-    fn set(
-        &self,
-        db: &mut <Q as QueryDb<'_>>::DynDb,
-        key: &Q::Key,
-        value: Q::Value,
-        durability: Durability,
-    ) {
+    fn set(&self, runtime: &mut Runtime, key: &Q::Key, value: Q::Value, durability: Durability) {
         log::debug!(
             "{:?}({:?}) = {:?} ({:?})",
             Q::default(),
@@ -205,44 +201,43 @@ where
         // keys, we only need a new revision if the key used to
         // exist. But we may add such methods in the future and this
         // case doesn't generally seem worth optimizing for.
-        db.salsa_runtime_mut()
-            .with_incremented_revision(|next_revision| {
-                let mut slots = self.slots.write();
+        runtime.with_incremented_revision(|next_revision| {
+            let mut slots = self.slots.write();
 
-                // Do this *after* we acquire the lock, so that we are not
-                // racing with somebody else to modify this same cell.
-                // (Otherwise, someone else might write a *newer* revision
-                // into the same cell while we block on the lock.)
-                let stamped_value = StampedValue {
-                    value,
-                    durability,
-                    changed_at: next_revision,
-                };
+            // Do this *after* we acquire the lock, so that we are not
+            // racing with somebody else to modify this same cell.
+            // (Otherwise, someone else might write a *newer* revision
+            // into the same cell while we block on the lock.)
+            let stamped_value = StampedValue {
+                value: value,
+                durability,
+                changed_at: next_revision,
+            };
 
-                match slots.entry(key.clone()) {
-                    Entry::Occupied(entry) => {
-                        let mut slot_stamped_value = entry.get().stamped_value.write();
-                        let old_durability = slot_stamped_value.durability;
-                        *slot_stamped_value = stamped_value;
-                        Some(old_durability)
-                    }
-
-                    Entry::Vacant(entry) => {
-                        let key_index = u32::try_from(entry.index()).unwrap();
-                        let database_key_index = DatabaseKeyIndex {
-                            group_index: self.group_index,
-                            query_index: Q::QUERY_INDEX,
-                            key_index,
-                        };
-                        entry.insert(Arc::new(Slot {
-                            key: key.clone(),
-                            database_key_index,
-                            stamped_value: RwLock::new(stamped_value),
-                        }));
-                        None
-                    }
+            match slots.entry(key.clone()) {
+                Entry::Occupied(entry) => {
+                    let mut slot_stamped_value = entry.get().stamped_value.write();
+                    let old_durability = slot_stamped_value.durability;
+                    *slot_stamped_value = stamped_value;
+                    Some(old_durability)
                 }
-            });
+
+                Entry::Vacant(entry) => {
+                    let key_index = u32::try_from(entry.index()).unwrap();
+                    let database_key_index = DatabaseKeyIndex {
+                        group_index: self.group_index,
+                        query_index: Q::QUERY_INDEX,
+                        key_index,
+                    };
+                    entry.insert(Arc::new(Slot {
+                        key: key.clone(),
+                        database_key_index,
+                        stamped_value: RwLock::new(stamped_value),
+                    }));
+                    None
+                }
+            }
+        });
     }
 }
 

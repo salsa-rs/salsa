@@ -8,6 +8,8 @@ use crate::DatabaseKeyIndex;
 use std::cell::RefCell;
 use std::sync::Arc;
 
+use super::StampedValue;
+
 /// State that is specific to a single execution thread.
 ///
 /// Internally, this type uses ref-cells.
@@ -36,6 +38,16 @@ pub(crate) struct QueryRevisions {
 
     /// The inputs that went into our query, if we are tracking them.
     pub(crate) inputs: QueryInputs,
+}
+
+impl QueryRevisions {
+    pub(crate) fn stamped_value<V>(&self, value: V) -> StampedValue<V> {
+        StampedValue {
+            value,
+            durability: self.durability,
+            changed_at: self.changed_at,
+        }
+    }
 }
 
 /// Every input.
@@ -180,7 +192,7 @@ impl std::panic::RefUnwindSafe for LocalState {}
 pub(crate) struct ActiveQueryGuard<'me> {
     local_state: &'me LocalState,
     push_len: usize,
-    database_key_index: DatabaseKeyIndex,
+    pub(crate) database_key_index: DatabaseKeyIndex,
 }
 
 impl ActiveQueryGuard<'_> {

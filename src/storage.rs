@@ -36,6 +36,12 @@ impl<DB: DatabaseStorageTypes> Storage<DB> {
         &self.query_store
     }
 
+    /// Access the query storage tables. Not meant to be used directly by end
+    /// users.
+    pub fn query_store_mut(&mut self) -> (&DB::DatabaseStorage, &mut Runtime) {
+        (&self.query_store, &mut self.runtime)
+    }
+
     /// Returns a "snapshotted" storage, suitable for use in a forked database.
     /// This snapshot hold a read-lock on the global state, which means that any
     /// attempt to `set` an input will block until the forked runtime is

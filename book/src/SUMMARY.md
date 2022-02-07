@@ -54,6 +54,7 @@
   - [RFC 0007: Opinionated cancelation](./rfcs/RFC0007-Opinionated-Cancelation.md)
   - [RFC 0008: Remove garbage collection](./rfcs/RFC0008-Remove-Garbage-Collection.md)
   - [RFC 0009: Cycle recovery](./rfcs/RFC0009-Cycle-recovery.md)
+  - [RFC 0010: Slot no more](./rfcs/RFC0010-Slot-no-more.md)
 
 # Appendices
 

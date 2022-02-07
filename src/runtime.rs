@@ -1,18 +1,15 @@
 use crate::durability::Durability;
+use crate::hash::*;
 use crate::plumbing::CycleRecoveryStrategy;
 use crate::revision::{AtomicRevision, Revision};
 use crate::{Cancelled, Cycle, Database, DatabaseKeyIndex, Event, EventKind};
 use log::debug;
 use parking_lot::lock_api::{RawRwLock, RawRwLockRecursive};
 use parking_lot::{Mutex, RwLock};
-use rustc_hash::FxHasher;
-use std::hash::{BuildHasherDefault, Hash};
+use std::hash::Hash;
 use std::panic::panic_any;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-
-pub(crate) type FxIndexSet<K> = indexmap::IndexSet<K, BuildHasherDefault<FxHasher>>;
-pub(crate) type FxIndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasherDefault<FxHasher>>;
 
 mod dependency_graph;
 use dependency_graph::DependencyGraph;
@@ -71,16 +68,6 @@ impl std::fmt::Debug for Runtime {
             .field("shared_state", &self.shared_state)
             .finish()
     }
-}
-
-#[derive(Clone, Debug)]
-struct CycleDetected {
-    /// Common recovery strategy to all participants in the cycle,
-    /// or [`CycleRecoveryStrategy::Panic`] otherwise.
-    pub(crate) recovery_strategy: CycleRecoveryStrategy,
-
-    /// Cycle participants.
-    pub(crate) cycle: Cycle,
 }
 
 impl Runtime {

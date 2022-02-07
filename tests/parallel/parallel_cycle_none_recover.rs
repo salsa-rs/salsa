@@ -40,7 +40,7 @@ fn parallel_cycle_none_recover() {
     assert!(thread_a
         .join()
         .unwrap_err()
-        .downcast_ref::<salsa::Cycle>()
+        .downcast_ref::<salsa::Cancelled>()
         .is_some());
 }
 

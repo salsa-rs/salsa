@@ -124,9 +124,9 @@ pub fn get_query_table_mut<'me, Q>(db: &'me mut <Q as QueryDb<'me>>::DynDb) -> Q
 where
     Q: Query,
 {
-    let group_storage: &Q::GroupStorage = HasQueryGroup::group_storage(db);
-    let query_storage = Q::query_storage(group_storage).clone();
-    QueryTableMut::new(db, query_storage)
+    let (group_storage, runtime) = HasQueryGroup::group_storage_mut(db);
+    let query_storage = Q::query_storage_mut(group_storage);
+    QueryTableMut::new(runtime, &**query_storage)
 }
 
 pub trait QueryGroup: Sized {
@@ -144,6 +144,11 @@ where
 {
     /// Access the group storage struct from the database.
     fn group_storage(&self) -> &G::GroupStorage;
+
+    /// Access the group storage struct from the database.
+    /// Also returns a ref to the `Runtime`, since otherwise
+    /// the database is borrowed and one cannot get access to it.
+    fn group_storage_mut(&mut self) -> (&G::GroupStorage, &mut Runtime);
 }
 
 // ANCHOR:QueryStorageOps
@@ -212,13 +217,7 @@ pub trait InputQueryStorageOps<Q>
 where
     Q: Query,
 {
-    fn set(
-        &self,
-        db: &mut <Q as QueryDb<'_>>::DynDb,
-        key: &Q::Key,
-        new_value: Q::Value,
-        durability: Durability,
-    );
+    fn set(&self, runtime: &mut Runtime, key: &Q::Key, new_value: Q::Value, durability: Durability);
 }
 
 /// An optional trait that is implemented for "user mutable" storage:
@@ -232,7 +231,7 @@ pub trait DerivedQueryStorageOps<Q>
 where
     Q: Query,
 {
-    fn invalidate<S>(&self, db: &mut <Q as QueryDb<'_>>::DynDb, key: &S)
+    fn invalidate<S>(&self, runtime: &mut Runtime, key: &S)
     where
         S: Eq + Hash,
         Q::Key: Borrow<S>;
