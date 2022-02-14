@@ -8,6 +8,7 @@
 - [Common patterns](./common_patterns.md)
   - [Selection](./common_patterns/selection.md)
   - [On-demand (Lazy) inputs](./common_patterns/on_demand_inputs.md)
+- [Tuning](./tuning.md)
 - [Cycle handling](./cycles.md)
   - [Recovering via fallback](./cycles/fallback.md)
 
