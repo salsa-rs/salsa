@@ -30,11 +30,6 @@ impl<V> MemoMap<V> {
         self.map.insert(key, ArcSwap::from(Arc::new(memo)));
     }
 
-    /// Removes any existing memo for the given key.
-    pub(super) fn remove(&self, key: DerivedKeyIndex) {
-        self.map.remove(&key);
-    }
-
     /// Evicts the existing memo for the given key, replacing it
     /// with an equivalent memo that has no value. If the memo
     /// has untracked inputs, this has no effect.
