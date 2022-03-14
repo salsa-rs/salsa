@@ -104,14 +104,6 @@ where
     }
 
     fn evict(&self, key_index: DerivedKeyIndex) {
-        if let Some(memo) = self.memo_map.get(key_index) {
-            // Careful: we can't evict memos with untracked inputs
-            // as their values cannot be reconstructed.
-            if let QueryInputs::Untracked = memo.revisions.inputs {
-                return;
-            }
-
-            self.memo_map.remove(key_index);
-        }
+        self.memo_map.evict(key_index);
     }
 }
