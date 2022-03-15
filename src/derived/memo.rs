@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use arc_swap::{ArcSwap, Guard};
 use crossbeam_utils::atomic::AtomicCell;
+use dashmap::mapref::entry::Entry;
 
 use crate::{
-    hash::FxDashMap, runtime::local_state::QueryRevisions, DatabaseKeyIndex, Event, EventKind,
-    Revision, Runtime,
+    hash::FxDashMap,
+    runtime::local_state::{QueryInputs, QueryRevisions},
+    DatabaseKeyIndex, Event, EventKind, Revision, Runtime,
 };
 
 use super::DerivedKeyIndex;
@@ -28,9 +30,34 @@ impl<V> MemoMap<V> {
         self.map.insert(key, ArcSwap::from(Arc::new(memo)));
     }
 
-    /// Removes any existing memo for the given key.
-    pub(super) fn remove(&self, key: DerivedKeyIndex) {
-        self.map.remove(&key);
+    /// Evicts the existing memo for the given key, replacing it
+    /// with an equivalent memo that has no value. If the memo
+    /// has untracked inputs, this has no effect.
+    pub(super) fn evict(&self, key: DerivedKeyIndex) {
+        // Nit: this function embodies a touch more "business logic"
+        // than I would like (specifically the check about "query-input::untracked"),
+        // but I can't see a clean way to encapsulate it otherwise. I suppose
+        // it could take a closure, but it seems silly.
+        match self.map.entry(key) {
+            Entry::Vacant(_) => return,
+            Entry::Occupied(entry) => {
+                let memo = entry.get().load();
+
+                // Careful: we can't evict memos with untracked inputs
+                // as their values cannot be reconstructed.
+                if let QueryInputs::Untracked = memo.revisions.inputs {
+                    return;
+                }
+
+                let memo_evicted = Arc::new(Memo::new(
+                    None::<V>,
+                    memo.verified_at.load(),
+                    memo.revisions.clone(),
+                ));
+
+                entry.get().store(memo_evicted);
+            }
+        }
     }
 
     /// Loads the current memo for `key_index`. This does not hold any sort of
