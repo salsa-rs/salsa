@@ -7,6 +7,8 @@
 
 *A generic framework for on-demand, incrementalized computation.*
 
+<img alt="Salsa Logo" src="https://raw.githubusercontent.com/salsa-rs/logo/main/FerrisSalsa4-01.svg" width="200" />
+
 ## Obligatory warning
 
 Very much a WORK IN PROGRESS at this point. Ready for experimental use
