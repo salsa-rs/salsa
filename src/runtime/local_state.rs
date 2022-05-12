@@ -5,7 +5,7 @@ use crate::runtime::ActiveQuery;
 use crate::runtime::Revision;
 use crate::Cycle;
 use crate::DatabaseKeyIndex;
-use std::cell::RefCell;
+use parking_lot::RwLock;
 use std::sync::Arc;
 
 use super::StampedValue;
@@ -24,7 +24,7 @@ pub(super) struct LocalState {
     ///
     /// Unwinding note: pushes onto this vector must be popped -- even
     /// during unwinding.
-    query_stack: RefCell<Option<Vec<ActiveQuery>>>,
+    query_stack: RwLock<Option<Vec<ActiveQuery>>>,
 }
 
 /// Summarizes "all the inputs that a query used"
@@ -66,7 +66,7 @@ pub(crate) enum QueryInputs {
 impl Default for LocalState {
     fn default() -> Self {
         LocalState {
-            query_stack: RefCell::new(Some(Vec::new())),
+            query_stack: RwLock::new(Some(Vec::new())),
         }
     }
 }
@@ -74,7 +74,7 @@ impl Default for LocalState {
 impl LocalState {
     #[inline]
     pub(super) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
-        let mut query_stack = self.query_stack.borrow_mut();
+        let mut query_stack = self.query_stack.write();
         let query_stack = query_stack.as_mut().expect("local stack taken");
         query_stack.push(ActiveQuery::new(database_key_index));
         ActiveQueryGuard {
@@ -87,7 +87,7 @@ impl LocalState {
     fn with_query_stack<R>(&self, c: impl FnOnce(&mut Vec<ActiveQuery>) -> R) -> R {
         c(self
             .query_stack
-            .borrow_mut()
+            .write()
             .as_mut()
             .expect("query stack taken"))
     }
@@ -169,17 +169,17 @@ impl LocalState {
     /// with [`Self::restore_query_stack`] when the thread unblocks.
     pub(super) fn take_query_stack(&self) -> Vec<ActiveQuery> {
         assert!(
-            self.query_stack.borrow().is_some(),
+            self.query_stack.read().is_some(),
             "query stack already taken"
         );
-        self.query_stack.take().unwrap()
+        self.query_stack.write().take().unwrap()
     }
 
     /// Restores a query stack taken with [`Self::take_query_stack`] once
     /// the thread unblocks.
     pub(super) fn restore_query_stack(&self, stack: Vec<ActiveQuery>) {
-        assert!(self.query_stack.borrow().is_none(), "query stack not taken");
-        self.query_stack.replace(Some(stack));
+        assert!(self.query_stack.read().is_none(), "query stack not taken");
+        self.query_stack.write().replace(stack);
     }
 }
 
