@@ -2,7 +2,7 @@ use arc_swap::Guard;
 
 use crate::{
     plumbing::{DatabaseOps, QueryFunction},
-    runtime::{StampedValue},
+    runtime::StampedValue,
     Database, QueryDb,
 };
 
