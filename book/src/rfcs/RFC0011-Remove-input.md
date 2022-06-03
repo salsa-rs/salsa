@@ -33,17 +33,27 @@ db.set_some_input(123, value);
 The `some_input` function works by fetching the value from the input storage and returning a clone.
 Cloning this value can be expensive.
 
-This proposal exposes a third function, which can be used to update the value on an input query in
-place, through a mutable reference to the underlying storage:
+This proposal exposes a third function, which can be used to take ownership of the value on an input query.
 
-- `fn update_some_input<F>(&self, key: u32, value_fn: F) where F: FnOnce(&mut String)`
+- `fn remove_some_input<F>(&self, key: u32) -> String`
 
-Under this proposal, the update pattern becomes:
+### Panics on subsequent access
+
+Once a value is removed, attempts to read it will panic (unless the value is set again).
 
 ```rust
-db.update_some_input(|value: &mut String| {
-    value.push_str("hello");
-});
+let mut value = db.remove_some_input(123);
+db.some_input(123); // panics
+```
+
+### Updating in place
+
+This can also be used to do updates in place:
+
+```rust
+let mut value = db.remove_some_input(123);
+value.push_str("hello");
+db.set_some_input(123, value);
 ```
 
 ## Reference guide
@@ -52,7 +62,7 @@ We expose a `fn remove` on the `InputQueryStorageOps` trait. The implementation 
 `InputStorage` requests a new revision, acquires a write lock (like `InputStorage::write`), and
 then removes and returns the key. Any subsequent attempt to read that key will panic.
 
-Note that the slot id remains untouched.
+`InputQueryStorageOps` now stores an `StampedValue<Option<Q::Value>>` instead of a stamped value.
 
 ## Frequently asked questions
 
