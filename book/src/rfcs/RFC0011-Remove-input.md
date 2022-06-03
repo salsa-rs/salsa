@@ -62,7 +62,7 @@ We expose a `fn remove` on the `InputQueryStorageOps` trait. The implementation 
 `InputStorage` requests a new revision, acquires a write lock (like `InputStorage::write`), and
 then removes and returns the key. Any subsequent attempt to read that key will panic.
 
-`InputQueryStorageOps` now stores an `StampedValue<Option<Q::Value>>` instead of a stamped value.
+`InputQueryStorageOps` now stores an `Option<StampedValue<Q::Value>>` instead of a stamped value. This has the same size thanks to niche optimizations.
 
 ## Frequently asked questions
 

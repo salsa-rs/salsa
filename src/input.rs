@@ -41,7 +41,22 @@ where
     ///
     /// Note that the slot is *never* removed, so as to preserve
     /// the `DatabaseKeyIndex` values.
-    stamped_value: RwLock<StampedValue<Option<Q::Value>>>,
+    ///
+    /// Impl note: We store an `Option<StampedValue<V>>`
+    /// instead of a `StampedValue<Option<V>>` for two reasons.
+    /// One, it corresponds to "data never existed in the first place",
+    /// and two, it's more efficient, since the compiler can make
+    /// use of the revisions in the `StampedValue` as a niche to avoid
+    /// an extra word. (See the `assert_size_of` test below.)
+    stamped_value: RwLock<Option<StampedValue<Q::Value>>>,
+}
+
+#[test]
+fn assert_size_of() {
+    assert_eq!(
+        std::mem::size_of::<RwLock<Option<StampedValue<u32>>>>(),
+        std::mem::size_of::<RwLock<StampedValue<u32>>>(),
+    );
 }
 
 impl<Q> std::panic::RefUnwindSafe for InputStorage<Q>
@@ -100,14 +115,13 @@ where
             .get(key)
             .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
 
-        let StampedValue {
-            value,
-            durability,
-            changed_at,
-        } = slot.stamped_value.read().clone();
-
+        let value = slot.stamped_value.read().clone();
         match value {
-            Some(value) => {
+            Some(StampedValue {
+                value,
+                durability,
+                changed_at,
+            }) => {
                 db.salsa_runtime()
                     .report_query_read_and_unwind_if_cycle_resulted(
                         slot.database_key_index,
@@ -127,7 +141,10 @@ where
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
         let slots = self.slots.read();
         match slots.get(key) {
-            Some(slot) => slot.stamped_value.read().durability,
+            Some(slot) => match &*slot.stamped_value.read() {
+                Some(v) => v.durability,
+                None => Durability::LOW, // removed
+            },
             None => panic!("no value set for {:?}({:?})", Q::default(), key),
         }
     }
@@ -139,7 +156,13 @@ where
         let slots = self.slots.read();
         slots
             .values()
-            .map(|slot| TableEntry::new(slot.key.clone(), slot.stamped_value.read().value.clone()))
+            .map(|slot| {
+                let value = match &*slot.stamped_value.read() {
+                    Some(stamped_value) => Some(stamped_value.value.clone()),
+                    None => None,
+                };
+                TableEntry::new(slot.key.clone(), value)
+            })
             .collect()
     }
 }
@@ -154,11 +177,20 @@ where
             self, revision,
         );
 
-        let changed_at = self.stamped_value.read().changed_at;
+        match &*self.stamped_value.read() {
+            Some(stamped_value) => {
+                let changed_at = stamped_value.changed_at;
 
-        debug!("maybe_changed_after: changed_at = {:?}", changed_at);
+                debug!("maybe_changed_after: changed_at = {:?}", changed_at);
 
-        changed_at > revision
+                changed_at > revision
+            }
+
+            None => {
+                // treat a removed input as always having changed
+                true
+            }
+        }
     }
 }
 
@@ -207,7 +239,7 @@ where
             // (Otherwise, someone else might write a *newer* revision
             // into the same cell while we block on the lock.)
             let stamped_value = StampedValue {
-                value: Some(value),
+                value: value,
                 durability,
                 changed_at: next_revision,
             };
@@ -215,9 +247,21 @@ where
             match slots.entry(key.clone()) {
                 Entry::Occupied(entry) => {
                     let mut slot_stamped_value = entry.get().stamped_value.write();
-                    let old_durability = slot_stamped_value.durability;
-                    *slot_stamped_value = stamped_value;
-                    Some(old_durability)
+                    match &mut *slot_stamped_value {
+                        Some(slot_stamped_value) => {
+                            // Modifying an existing value that has not been removed.
+                            let old_durability = slot_stamped_value.durability;
+                            *slot_stamped_value = stamped_value;
+                            Some(old_durability)
+                        }
+
+                        None => {
+                            // Overwriting a removed value: this is the same as inserting a new value,
+                            // it doesn't modify any existing data (the remove did that).
+                            *slot_stamped_value = Some(stamped_value);
+                            None
+                        }
+                    }
                 }
 
                 Entry::Vacant(entry) => {
@@ -230,7 +274,7 @@ where
                     entry.insert(Slot {
                         key: key.clone(),
                         database_key_index,
-                        stamped_value: RwLock::new(stamped_value),
+                        stamped_value: RwLock::new(Some(stamped_value)),
                     });
                     None
                 }
@@ -240,13 +284,16 @@ where
 
     fn remove(&self, runtime: &mut Runtime, key: &<Q as Query>::Key) -> <Q as Query>::Value {
         let mut value = None;
-        runtime.with_incremented_revision(&mut |r| {
-            let slots = self.slots.write();
-            let slot = slots.get(key)?;
-            let mut slot_stamped_value = slot.stamped_value.write();
-            value = slot_stamped_value.value.take();
-            slot_stamped_value.changed_at = r;
-            Some(slot_stamped_value.durability)
+        runtime.with_incremented_revision(&mut |_| {
+            let mut slots = self.slots.write();
+            let slot = slots.get_mut(key)?;
+
+            if let Some(slot_stamped_value) = slot.stamped_value.get_mut().take() {
+                value = Some(slot_stamped_value.value);
+                Some(slot_stamped_value.durability)
+            } else {
+                None
+            }
         });
 
         value.unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key))
