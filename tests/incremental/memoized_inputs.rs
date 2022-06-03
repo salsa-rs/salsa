@@ -47,12 +47,22 @@ fn revalidate() {
     db.set_input1(64);
     db.assert_log(&[]);
 
+    let value = db.remove_input1() + 1;
+    db.set_input1(value);
+    db.assert_log(&[]);
+    let value = db.remove_input2() + 1;
+    db.set_input2(value);
+    db.assert_log(&[]);
+    let value = db.remove_input1() + 1;
+    db.set_input1(value);
+    db.assert_log(&[]);
+
     let v = db.max();
-    assert_eq!(v, 66);
+    assert_eq!(v, 67);
     db.assert_log(&["Max invoked"]);
 
     let v = db.max();
-    assert_eq!(v, 66);
+    assert_eq!(v, 67);
     db.assert_log(&[]);
 }
 

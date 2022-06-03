@@ -218,6 +218,8 @@ where
     Q: Query,
 {
     fn set(&self, runtime: &mut Runtime, key: &Q::Key, new_value: Q::Value, durability: Durability);
+
+    fn remove(&self, runtime: &mut Runtime, key: &Q::Key) -> Q::Value;
 }
 
 /// An optional trait that is implemented for "user mutable" storage:
