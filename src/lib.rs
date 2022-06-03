@@ -569,6 +569,24 @@ where
         self.storage.set(self.runtime, &key, value, durability);
     }
 
+    /// Removes a value from an "input query". Must be used outside of
+    /// an active query computation.
+    ///
+    /// If you are using `snapshot`, see the notes on blocking
+    /// and cancellation on [the `query_mut` method].
+    ///
+    /// # Panics
+    /// Panics if the value was not previously set by `set` or
+    /// `set_with_durability`.
+    ///
+    /// [the `query_mut` method]: trait.Database.html#method.query_mut
+    pub fn remove(&mut self, key: Q::Key) -> Q::Value
+    where
+        Q::Storage: plumbing::InputQueryStorageOps<Q>,
+    {
+        self.storage.remove(self.runtime, &key)
+    }
+
     /// Sets the size of LRU cache of values for this query table.
     ///
     /// That is, at most `cap` values will be preset in the table at the same
