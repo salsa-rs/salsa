@@ -33,7 +33,15 @@ where
 {
     key: Q::Key,
     database_key_index: DatabaseKeyIndex,
-    stamped_value: RwLock<StampedValue<Q::Value>>,
+
+    /// Value for this input: initially, it is `Some`.
+    ///
+    /// If it is `None`, then the value was removed
+    /// using `remove_input`.
+    ///
+    /// Note that the slot is *never* removed, so as to preserve
+    /// the `DatabaseKeyIndex` values.
+    stamped_value: RwLock<StampedValue<Option<Q::Value>>>,
 }
 
 impl<Q> std::panic::RefUnwindSafe for InputStorage<Q>
@@ -98,14 +106,22 @@ where
             changed_at,
         } = slot.stamped_value.read().clone();
 
-        db.salsa_runtime()
-            .report_query_read_and_unwind_if_cycle_resulted(
-                slot.database_key_index,
-                durability,
-                changed_at,
-            );
+        match value {
+            Some(value) => {
+                db.salsa_runtime()
+                    .report_query_read_and_unwind_if_cycle_resulted(
+                        slot.database_key_index,
+                        durability,
+                        changed_at,
+                    );
 
-        value
+                value
+            }
+
+            None => {
+                panic!("value removed for {:?}({:?})", Q::default(), key)
+            }
+        }
     }
 
     fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
@@ -123,12 +139,7 @@ where
         let slots = self.slots.read();
         slots
             .values()
-            .map(|slot| {
-                TableEntry::new(
-                    slot.key.clone(),
-                    Some(slot.stamped_value.read().value.clone()),
-                )
-            })
+            .map(|slot| TableEntry::new(slot.key.clone(), slot.stamped_value.read().value.clone()))
             .collect()
     }
 }
@@ -196,7 +207,7 @@ where
             // (Otherwise, someone else might write a *newer* revision
             // into the same cell while we block on the lock.)
             let stamped_value = StampedValue {
-                value: value,
+                value: Some(value),
                 durability,
                 changed_at: next_revision,
             };
@@ -229,11 +240,12 @@ where
 
     fn remove(&self, runtime: &mut Runtime, key: &<Q as Query>::Key) -> <Q as Query>::Value {
         let mut value = None;
-        runtime.with_incremented_revision(&mut |_| {
-            let mut slots = self.slots.write();
-            let slot = slots.remove(key)?;
-            let slot_stamped_value = slot.stamped_value.into_inner();
-            value = Some(slot_stamped_value.value);
+        runtime.with_incremented_revision(&mut |r| {
+            let slots = self.slots.write();
+            let slot = slots.get(key)?;
+            let mut slot_stamped_value = slot.stamped_value.write();
+            value = slot_stamped_value.value.take();
+            slot_stamped_value.changed_at = r;
             Some(slot_stamped_value.durability)
         });
 
