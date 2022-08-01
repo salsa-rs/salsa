@@ -32,3 +32,9 @@ test-env-log = "0.2.7"
 insta = "1.8.0"
 
 [workspace]
+members = [
+    "components/salsa-macros",
+    "components/salsa-entity-mock",
+    "components/salsa-entity-macros",
+    "calc-example/calc",
+]

@@ -1,6 +1,6 @@
 # Videos
 
-There are currently two videos about Salsa available:
+There are currently two videos about Salsa available, but they describe an older version of Salsa and so they are rather outdated:
 
 - [How Salsa Works](https://youtu.be/_muY4HjSqVw), which gives a
   high-level introduction to the key concepts involved and shows how
