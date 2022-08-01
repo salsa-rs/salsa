@@ -14,9 +14,7 @@ pub(crate) fn entity(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    match EntityLike::new(args, input)
-        .and_then(|el| el.generate_entity())
-    {
+    match EntityLike::new(args, input).and_then(|el| el.generate_entity()) {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
@@ -180,7 +178,7 @@ impl EntityLike {
         let value_field_indices: Vec<Literal> = self.value_field_indices();
         let entity_index: Literal = self.entity_index();
         let config_struct_names = config_structs.iter().map(|s| &s.ident);
-        
+
         parse_quote! {
             impl salsa::storage::IngredientsFor for #ident {
                 type Jar = #jar_ty;
@@ -261,20 +259,20 @@ impl EntityLike {
         .zip(value_field_backdates)
         .map(|((value_field_ty, config_struct_name), value_field_backdate)| {
             let should_backdate_value_fn = configuration::should_backdate_value_fn(value_field_backdate);
-    
+
             parse_quote! {
                 impl salsa::function::Configuration for #config_struct_name {
                     type Jar = #jar_ty;
                     type Key = #ident;
                     type Value = #value_field_ty;
                     const CYCLE_STRATEGY: salsa::cycle::CycleRecoveryStrategy = salsa::cycle::CycleRecoveryStrategy::Panic;
-    
+
                     #should_backdate_value_fn
-    
+
                     fn execute(db: &salsa::function::DynDb<Self>, key: Self::Key) -> Self::Value {
                         unreachable!()
                     }
-                
+
                     fn recover_from_cycle(db: &salsa::function::DynDb<Self>, cycle: &salsa::Cycle, key: Self::Key) -> Self::Value {
                         unreachable!()
                     }
@@ -283,19 +281,21 @@ impl EntityLike {
         })
         .collect()
     }
-    
+
     /// List of id fields (fields that are part of the entity's identity across revisions).
     ///
     /// If this is an enum, empty iterator.
     fn id_fields(&self) -> impl Iterator<Item = &EntityField> {
-        self.all_entity_fields().filter(|ef| ef.is_entity_id_field())
+        self.all_entity_fields()
+            .filter(|ef| ef.is_entity_id_field())
     }
 
     /// List of value fields (fields that are not part of the entity's identity across revisions).
     ///
     /// If this is an enum, empty iterator.
     fn value_fields(&self) -> impl Iterator<Item = &EntityField> {
-        self.all_entity_fields().filter(|ef| !ef.is_entity_id_field())
+        self.all_entity_fields()
+            .filter(|ef| !ef.is_entity_id_field())
     }
 
     /// For the entity, we create a tuple that contains the function ingredients
