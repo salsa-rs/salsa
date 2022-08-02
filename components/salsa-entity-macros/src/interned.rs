@@ -41,20 +41,7 @@ impl EntityLike {
     }
 
     fn validate_interned(&self) -> syn::Result<()> {
-        // Disallow `#[value]` attributes on interned things.
-        //
-        // They don't really make sense -- we intern all the fields of something
-        // to create its id. If multiple queries were to intern the same thing with
-        // distinct values for the value field, what would happen?
-        for ef in self.all_entity_fields() {
-            if ef.has_id_attr {
-                return Err(syn::Error::new(
-                    ef.name().span(),
-                    "`#[id]` not required in interned structs",
-                ));
-            }
-        }
-
+        self.disallow_id_fields("interned")?;
         Ok(())
     }
 

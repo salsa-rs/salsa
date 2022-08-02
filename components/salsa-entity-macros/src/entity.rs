@@ -45,13 +45,7 @@ impl EntityLike {
     }
 
     fn validate_entity(&self) -> syn::Result<()> {
-        // Require that entities are structs for now.
-        if !self.has_named_fields() {
-            return Err(syn::Error::new(
-                self.id_ident().span(),
-                "entities must be structs with named fields",
-            ));
-        }
+        self.require_named_fields("entity")?;
 
         Ok(())
     }

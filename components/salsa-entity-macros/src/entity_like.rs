@@ -201,6 +201,42 @@ impl EntityLike {
 
         }
     }
+
+    /// Return an error unless this is a struct with named fields.
+    ///
+    /// # Parameters
+    ///
+    /// * `kind`, the attribute name (e.g., `input` or `interned`)
+    pub(crate) fn require_named_fields(&self, kind: &str) -> syn::Result<()> {
+        if !self.has_named_fields() {
+            return Err(syn::Error::new(
+                self.id_ident().span(),
+                "`#[salsa::{kind}]` can only be applied to a struct with named fields",
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Disallow `#[id]` attributes on the fields of this struct.
+    ///
+    /// If an `#[id]` field is found, return an error.
+    ///
+    /// # Parameters
+    ///
+    /// * `kind`, the attribute name (e.g., `input` or `interned`)
+    pub(crate) fn disallow_id_fields(&self, kind: &str) -> syn::Result<()> {
+        for ef in self.all_entity_fields() {
+            if ef.has_id_attr {
+                return Err(syn::Error::new(
+                    ef.name().span(),
+                    "`#[id]` cannot be used with `#[salsa::{kind}]`",
+                ));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(&str, fn(&syn::Attribute, &mut EntityField))] = &[
