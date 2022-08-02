@@ -111,7 +111,7 @@ fn fn_configuration(args: &Args, item_fn: &syn::ItemFn) -> syn::Result<Configura
 }
 
 fn ingredients_for_impl(args: &Args, struct_ty: &syn::Type) -> syn::ItemImpl {
-    let jar_ty = &args.jar_ty;
+    let jar_ty = args.jar_ty();
     parse_quote! {
         impl salsa::storage::IngredientsFor for #struct_ty {
             type Ingredients = Self;
@@ -202,7 +202,7 @@ fn ref_getter_fn(
     item_fn: &syn::ItemFn,
     struct_ty: &syn::Type,
 ) -> syn::Result<syn::ItemFn> {
-    let jar_ty = &args.jar_ty;
+    let jar_ty = args.jar_ty();
     let mut ref_getter_fn = item_fn.clone();
     ref_getter_fn.sig.ident = syn::Ident::new("get", item_fn.sig.ident.span());
     ref_getter_fn = make_fn_return_ref(ref_getter_fn)?;
@@ -226,7 +226,7 @@ fn setter_fn(
 ) -> syn::Result<syn::ImplItemMethod> {
     // The setter has *always* the same signature as the original:
     // but it takes a value arg and has no return type.
-    let jar_ty = &args.jar_ty;
+    let jar_ty = args.jar_ty();
     let (db_var, arg_names) = fn_args(item_fn)?;
     let mut setter_sig = item_fn.sig.clone();
     let value_ty = configuration::value_ty(&item_fn.sig);
@@ -321,7 +321,7 @@ fn accumulated_fn(
     item_fn: &syn::ItemFn,
     struct_ty: &syn::Type,
 ) -> syn::Result<syn::ItemFn> {
-    let jar_ty = &args.jar_ty;
+    let jar_ty = args.jar_ty();
 
     let mut accumulated_fn = item_fn.clone();
     accumulated_fn.sig.ident = syn::Ident::new("accumulated", item_fn.sig.ident.span());
