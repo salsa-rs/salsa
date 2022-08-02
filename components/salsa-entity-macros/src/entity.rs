@@ -1,15 +1,12 @@
-use heck::CamelCase;
 use proc_macro2::{Literal, TokenStream};
 
-use crate::configuration;
 use crate::entity_like::{EntityField, EntityLike};
 
-// #[salsa::Entity(#id_ident in Jar0)]
-// #[derive(Eq, PartialEq, Hash, Debug, Clone)]
-// struct EntityData0 {
-//    id: u32
-// }
-
+/// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
+///
+/// * the "id struct" `struct Foo(salsa::Id)`
+/// * the entity ingredient, which maps the id fields to the `Id`
+/// * for each value field, a function ingredient
 pub(crate) fn entity(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
@@ -24,14 +21,14 @@ impl EntityLike {
     fn generate_entity(&self) -> syn::Result<TokenStream> {
         self.validate_entity()?;
 
-        let config_structs = self.config_structs();
+        let (config_structs, config_impls) =
+            self.field_config_structs_and_impls(self.value_fields());
 
         let id_struct = self.id_struct();
-        let inherent_impl = self.id_inherent_impl();
-        let ingredients_for_impl = self.id_ingredients_for_impl(&config_structs);
+        let inherent_impl = self.entity_inherent_impl();
+        let ingredients_for_impl = self.entity_ingredients(&config_structs);
         let entity_in_db_impl = self.entity_in_db_impl();
         let as_id_impl = self.as_id_impl();
-        let config_impls = self.config_impls(&config_structs);
 
         Ok(quote! {
             #(#config_structs)*
@@ -50,32 +47,8 @@ impl EntityLike {
         Ok(())
     }
 
-    /// For each of the value fields in the entity,
-    /// we will generate a memoized function that stores its value.
-    /// Generate a struct for the "Configuration" of each of those functions.
-    fn config_structs(&self) -> Vec<syn::ItemStruct> {
-        let ident = &self.id_ident();
-        let visibility = self.visibility();
-        self.value_fields()
-            .map(EntityField::name)
-            .map(|value_field_name| {
-                let config_name = syn::Ident::new(
-                    &format!(
-                        "__{}",
-                        format!("{}_{}", ident, value_field_name).to_camel_case()
-                    ),
-                    value_field_name.span(),
-                );
-                parse_quote! {
-                    #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Debug)]
-                    #visibility struct #config_name(std::convert::Infallible);
-                }
-            })
-            .collect()
-    }
-
     /// Generate an inherent impl with methods on the entity type.
-    fn id_inherent_impl(&self) -> syn::ItemImpl {
+    fn entity_inherent_impl(&self) -> syn::ItemImpl {
         let ident = self.id_ident();
         let jar_ty = self.jar_ty();
         let db_dyn_ty = self.db_dyn_ty();
@@ -165,7 +138,7 @@ impl EntityLike {
     ///
     /// The entity's ingredients include both the main entity ingredient along with a
     /// function ingredient for each of the value fields.
-    fn id_ingredients_for_impl(&self, config_structs: &[syn::ItemStruct]) -> syn::ItemImpl {
+    fn entity_ingredients(&self, config_structs: &[syn::ItemStruct]) -> syn::ItemImpl {
         let ident = self.id_ident();
         let jar_ty = self.jar_ty();
         let id_field_tys: Vec<&syn::Type> = self.id_fields().map(EntityField::ty).collect();
@@ -240,40 +213,6 @@ impl EntityLike {
                 }
             }
         }
-    }
-
-    fn config_impls(&self, config_structs: &[syn::ItemStruct]) -> Vec<syn::ItemImpl> {
-        let ident = self.id_ident();
-        let jar_ty = self.jar_ty();
-        let value_field_tys = self.value_fields().map(EntityField::ty);
-        let value_field_backdates = self.value_fields().map(EntityField::is_backdate_field);
-        value_field_tys
-        .into_iter()
-        .zip(config_structs.iter().map(|s| &s.ident))
-        .zip(value_field_backdates)
-        .map(|((value_field_ty, config_struct_name), value_field_backdate)| {
-            let should_backdate_value_fn = configuration::should_backdate_value_fn(value_field_backdate);
-
-            parse_quote! {
-                impl salsa::function::Configuration for #config_struct_name {
-                    type Jar = #jar_ty;
-                    type Key = #ident;
-                    type Value = #value_field_ty;
-                    const CYCLE_STRATEGY: salsa::cycle::CycleRecoveryStrategy = salsa::cycle::CycleRecoveryStrategy::Panic;
-
-                    #should_backdate_value_fn
-
-                    fn execute(db: &salsa::function::DynDb<Self>, key: Self::Key) -> Self::Value {
-                        unreachable!()
-                    }
-
-                    fn recover_from_cycle(db: &salsa::function::DynDb<Self>, cycle: &salsa::Cycle, key: Self::Key) -> Self::Value {
-                        unreachable!()
-                    }
-                }
-            }
-        })
-        .collect()
     }
 
     /// List of id fields (fields that are part of the entity's identity across revisions).

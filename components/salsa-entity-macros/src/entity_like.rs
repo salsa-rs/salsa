@@ -25,7 +25,9 @@
 //! * data method `impl Foo { fn data(&self, db: &dyn crate::Db) -> FooData { FooData { f: self.f(db), ... } } }`
 //!     * this could be optimized, particularly for interned fields
 
-use crate::{data_item::DataItem, options::Options};
+use heck::CamelCase;
+
+use crate::{data_item::DataItem, options::Options, configuration};
 
 pub(crate) struct EntityLike {
     args: Options<Self>,
@@ -183,6 +185,58 @@ impl EntityLike {
     /// Returns the visibility of this item
     pub(crate) fn visibility(&self) -> &syn::Visibility {
         self.data_item.visibility()
+    }
+
+    /// For each of the fields passed as an argument,
+    /// generate a struct named `Ident_Field` and an impl
+    /// of `salsa::function::Configuration` for that struct.
+    pub(crate) fn field_config_structs_and_impls<'a>(
+        &self,
+        fields: impl Iterator<Item = &'a EntityField>,
+    ) -> (Vec<syn::ItemStruct>, Vec<syn::ItemImpl>) {
+        let ident = &self.id_ident();
+        let jar_ty = self.jar_ty();
+        let visibility = self.visibility();
+        fields
+            .map(|ef| {
+                let value_field_name = ef.name();
+                let value_field_ty = ef.ty();
+                let value_field_backdate = ef.is_backdate_field();
+                let config_name = syn::Ident::new(
+                    &format!(
+                        "__{}",
+                        format!("{}_{}", ident, value_field_name).to_camel_case()
+                    ),
+                    value_field_name.span(),
+                );
+                let item_struct: syn::ItemStruct = parse_quote! {
+                    #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Debug)]
+                    #visibility struct #config_name(std::convert::Infallible);
+                };
+
+                let should_backdate_value_fn = configuration::should_backdate_value_fn(value_field_backdate);
+                let item_impl: syn::ItemImpl = parse_quote! {
+                    impl salsa::function::Configuration for #config_name {
+                        type Jar = #jar_ty;
+                        type Key = #ident;
+                        type Value = #value_field_ty;
+                        const CYCLE_STRATEGY: salsa::cycle::CycleRecoveryStrategy = salsa::cycle::CycleRecoveryStrategy::Panic;
+    
+                        #should_backdate_value_fn
+    
+                        fn execute(db: &salsa::function::DynDb<Self>, key: Self::Key) -> Self::Value {
+                            unreachable!()
+                        }
+    
+                        fn recover_from_cycle(db: &salsa::function::DynDb<Self>, cycle: &salsa::Cycle, key: Self::Key) -> Self::Value {
+                            unreachable!()
+                        }
+                    }
+                };
+
+                (item_struct, item_impl)
+            })
+            .unzip()
     }
 
     /// Generate `impl salsa::AsId for Foo`
