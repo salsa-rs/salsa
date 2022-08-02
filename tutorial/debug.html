@@ -1,0 +1,347 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Defining the parser: debug impls and testing - Salsa</title>
+                
+
+        <!-- Custom HTML head -->
+        
+
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+                <link rel="icon" href="../favicon.svg">
+                        <link rel="shortcut icon" href="../favicon.png">
+                <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+                <link rel="stylesheet" href="../css/print.css" media="print">
+        
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+                <link rel="stylesheet" href="../fonts/fonts.css">
+        
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+                <link rel="stylesheet" href="../mermaid.css">
+        
+            </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded affix "><li class="part-title">How to use Salsa</li><li class="chapter-item expanded "><a href="../overview.html"><strong aria-hidden="true">2.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../tutorial.html"><strong aria-hidden="true">3.</strong> Tutorial: calc language</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../tutorial/structure.html"><strong aria-hidden="true">3.1.</strong> Basic structure</a></li><li class="chapter-item expanded "><a href="../tutorial/jar.html"><strong aria-hidden="true">3.2.</strong> Jars and databases</a></li><li class="chapter-item expanded "><a href="../tutorial/db.html"><strong aria-hidden="true">3.3.</strong> Defining the database struct</a></li><li class="chapter-item expanded "><a href="../tutorial/ir.html"><strong aria-hidden="true">3.4.</strong> Defining the IR: interned and entity structs</a></li><li class="chapter-item expanded "><a href="../tutorial/parser.html"><strong aria-hidden="true">3.5.</strong> Defining the parser: memoized functions and inputs</a></li><li class="chapter-item expanded "><a href="../tutorial/accumulators.html"><strong aria-hidden="true">3.6.</strong> Defining the parser: reporting errors</a></li><li class="chapter-item expanded "><a href="../tutorial/debug.html" class="active"><strong aria-hidden="true">3.7.</strong> Defining the parser: debug impls and testing</a></li><li class="chapter-item expanded "><a href="../tutorial/checker.html"><strong aria-hidden="true">3.8.</strong> Defining the checker</a></li><li class="chapter-item expanded "><a href="../tutorial/interpreter.html"><strong aria-hidden="true">3.9.</strong> Defining the interpreter</a></li></ol></li><li class="chapter-item expanded "><a href="../reference.html"><strong aria-hidden="true">4.</strong> Reference</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../reference/algorithm.html"><strong aria-hidden="true">4.1.</strong> Algorithm</a></li><li class="chapter-item expanded "><a href="../reference/interned.html"><strong aria-hidden="true">4.2.</strong> salsa::interned</a></li><li class="chapter-item expanded "><a href="../reference/entity.html"><strong aria-hidden="true">4.3.</strong> salsa::entity</a></li><li class="chapter-item expanded "><a href="../reference/memoized.html"><strong aria-hidden="true">4.4.</strong> salsa::memoized</a></li></ol></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">5.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">5.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">5.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../tuning.html"><strong aria-hidden="true">6.</strong> Tuning</a></li><li class="chapter-item expanded "><a href="../cycles.html"><strong aria-hidden="true">7.</strong> Cycle handling</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../cycles/fallback.html"><strong aria-hidden="true">7.1.</strong> Recovering via fallback</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">How Salsa works internally</li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">8.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">9.</strong> Videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">10.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/generated_code.html"><strong aria-hidden="true">10.1.</strong> Generated code</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/diagram.html"><strong aria-hidden="true">10.1.1.</strong> Diagram</a></li><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">10.1.2.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">10.1.3.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../plumbing/salsa_crate.html"><strong aria-hidden="true">10.2.</strong> The salsa crate</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_ops.html"><strong aria-hidden="true">10.2.1.</strong> Query operations</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/maybe_changed_after.html"><strong aria-hidden="true">10.2.1.1.</strong> maybe changed after</a></li><li class="chapter-item expanded "><a href="../plumbing/fetch.html"><strong aria-hidden="true">10.2.1.2.</strong> Fetch</a></li></ol></li><li class="chapter-item expanded "><a href="../plumbing/derived_flowchart.html"><strong aria-hidden="true">10.2.2.</strong> Derived queries flowchart</a></li><li class="chapter-item expanded "><a href="../plumbing/cycles.html"><strong aria-hidden="true">10.2.3.</strong> Cycle handling</a></li></ol></li><li class="chapter-item expanded "><a href="../plumbing/terminology.html"><strong aria-hidden="true">10.3.</strong> Terminology</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/terminology/backdate.html"><strong aria-hidden="true">10.3.1.</strong> Backdate</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/changed_at.html"><strong aria-hidden="true">10.3.2.</strong> Changed at</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/dependency.html"><strong aria-hidden="true">10.3.3.</strong> Dependency</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/derived_query.html"><strong aria-hidden="true">10.3.4.</strong> Derived query</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/durability.html"><strong aria-hidden="true">10.3.5.</strong> Durability</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/input_query.html"><strong aria-hidden="true">10.3.6.</strong> Input query</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/LRU.html"><strong aria-hidden="true">10.3.7.</strong> LRU</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/memo.html"><strong aria-hidden="true">10.3.8.</strong> Memo</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/query.html"><strong aria-hidden="true">10.3.9.</strong> Query</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/query_function.html"><strong aria-hidden="true">10.3.10.</strong> Query function</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/revision.html"><strong aria-hidden="true">10.3.11.</strong> Revision</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/untracked.html"><strong aria-hidden="true">10.3.12.</strong> Untracked dependency</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/verified.html"><strong aria-hidden="true">10.3.13.</strong> Verified</a></li></ol></li></ol></li><li class="chapter-item expanded "><li class="part-title">Salsa RFCs</li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">11.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">11.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">11.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">11.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">11.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">11.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">11.6.</strong> RFC 0005: Durability</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0006-Dynamic-Databases.html"><strong aria-hidden="true">11.7.</strong> RFC 0006: Dynamic database</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0007-Opinionated-Cancelation.html"><strong aria-hidden="true">11.8.</strong> RFC 0007: Opinionated cancelation</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0008-Remove-Garbage-Collection.html"><strong aria-hidden="true">11.9.</strong> RFC 0008: Remove garbage collection</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0009-Cycle-recovery.html"><strong aria-hidden="true">11.10.</strong> RFC 0009: Cycle recovery</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0010-Slot-no-more.html"><strong aria-hidden="true">11.11.</strong> RFC 0010: Slot no more</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">Appendices</li><li class="chapter-item expanded "><a href="../meta.html"><strong aria-hidden="true">12.</strong> Meta: about the book itself</a></li></ol>            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                                                <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                                            </div>
+
+                    <h1 class="menu-title">Salsa</h1>
+
+                    <div class="right-buttons">
+                                                <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                                                                        
+                    </div>
+                </div>
+
+                                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="defining-the-parser-debug-impls-and-testing"><a class="header" href="#defining-the-parser-debug-impls-and-testing">Defining the parser: debug impls and testing</a></h1>
+<p>As the final part of the parser, we need to write some tests.
+To do so, we will create a database, set the input source text, run the parser, and check the result.
+Before we can do that, though, we have to address one question: how do we inspect the value of an interned type like <code>Expression</code>?</p>
+<h2 id="the-debugwithdb-trait"><a class="header" href="#the-debugwithdb-trait">The <code>DebugWithDb</code> trait</a></h2>
+<p>Because an interned type like <code>Expression</code> just stores an integer, the traditional <code>Debug</code> trait is not very useful.
+To properly print a <code>Expression</code>, you need to access the salsa database to find out what its value is.
+To solve this, <code>salsa</code> provides a <code>DebugWithDb</code> trait that acts like the regular <code>Debug</code>, but takes a database as argument.
+For types that implement this trait, you can invoke the <code>debug</code> method.
+This returns a temporary that implements the ordinary <code>Debug</code> trait, allowing you to write something like</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>eprintln!(&quot;Expression = {:?}&quot;, expr.debug(db));
+<span class="boring">}
+</span></code></pre></pre>
+<p>and get back the output you expect.</p>
+<h2 id="implementing-the-debugwithdb-trait"><a class="header" href="#implementing-the-debugwithdb-trait">Implementing the <code>DebugWithDb</code> trait</a></h2>
+<p>For now, unfortunately, you have to implement the <code>DebugWithDb</code> trait manually, as we do not provide a derive.
+This is tedious but not difficult. Here is an example of implementing the trait for <code>Expression</code>:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl DebugWithDb&lt;dyn crate::Db + '_&gt; for Expression {
+    fn fmt(&amp;self, f: &amp;mut std::fmt::Formatter&lt;'_&gt;, db: &amp;dyn crate::Db) -&gt; std::fmt::Result {
+        match self.data(db) {
+            ExpressionData::Op(a, b, c) =&gt; f
+                .debug_tuple(&quot;ExpressionData::Op&quot;)
+                .field(&amp;a.debug(db)) // use `a.debug(db)` for interned things
+                .field(&amp;b.debug(db))
+                .field(&amp;c.debug(db))
+                .finish(),
+            ExpressionData::Number(a) =&gt; {
+                f.debug_tuple(&quot;Number&quot;)
+                    .field(a) // use just `a` otherwise
+                    .finish()
+            }
+            ExpressionData::Variable(a) =&gt; f.debug_tuple(&quot;Variable&quot;).field(&amp;a.debug(db)).finish(),
+            ExpressionData::Call(a, b) =&gt; f
+                .debug_tuple(&quot;Call&quot;)
+                .field(&amp;a.debug(db))
+                .field(&amp;b.debug(db))
+                .finish(),
+        }
+    }
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>Some things to note:</p>
+<ul>
+<li>The <code>data</code> method gives access to the full enum from the database.</li>
+<li>The <a href="https://doc.rust-lang.org/std/fmt/struct.Formatter.html#"><code>Formatter</code></a> methods (e.g., <a href="https://doc.rust-lang.org/std/fmt/struct.Formatter.html#method.debug_tuple"><code>debug_tuple</code></a>) can be used to provide consistent output.</li>
+<li>When printing the value of a field, use <code>.field(&amp;a.debug(db))</code> for fields that are themselves interned or entities, and use <code>.field(&amp;a)</code> for fields that just implement the ordinary <code>Debug</code> trait.</li>
+</ul>
+<h2 id="forwarding-to-the-ordinary-debug-trait"><a class="header" href="#forwarding-to-the-ordinary-debug-trait">Forwarding to the ordinary <code>Debug</code> trait</a></h2>
+<p>For consistency, it is sometimes useful to have a <code>DebugWithDb</code> implementation even for types, like <code>Op</code>, that are just ordinary enums. You can do that like so:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl DebugWithDb&lt;dyn crate::Db + '_&gt; for Op {
+    fn fmt(&amp;self, f: &amp;mut std::fmt::Formatter&lt;'_&gt;, _db: &amp;dyn crate::Db) -&gt; std::fmt::Result {
+        write!(f, &quot;{:?}&quot;, self)
+    }
+}
+
+impl DebugWithDb&lt;dyn crate::Db + '_&gt; for Diagnostic {
+    fn fmt(&amp;self, f: &amp;mut std::fmt::Formatter&lt;'_&gt;, _db: &amp;dyn crate::Db) -&gt; std::fmt::Result {
+        write!(f, &quot;{:?}&quot;, self)
+    }
+}
+
+#[salsa::entity]
+pub struct Function {
+    #[id]
+    name: FunctionId,
+    args: Vec&lt;VariableId&gt;,
+    body: Expression,
+}
+
+#[salsa::accumulator]
+pub struct Diagnostics(Diagnostic);
+
+#[derive(Clone, Debug)]
+pub struct Diagnostic {
+    pub position: usize,
+    pub message: String,
+}
+<span class="boring">}
+</span></code></pre></pre>
+<h2 id="writing-the-unit-test"><a class="header" href="#writing-the-unit-test">Writing the unit test</a></h2>
+<p>Now that we have our <code>DebugWithDb</code> impls in place, we can write a simple unit test harness.
+The <code>parse_string</code> function below creates a database, sets the source text, and then invokes the parser:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// Create a new database with the given source text and parse the result.
+/// Returns the statements and the diagnostics generated.
+#[cfg(test)]
+fn parse_string(source_text: &amp;str) -&gt; String {
+    use salsa::debug::DebugWithDb;
+
+    // Create the database
+    let mut db = crate::db::Database::default();
+
+    // Set the source_text value
+    source_text::set(&amp;mut db, source_text.to_string());
+
+    // Invoke the parser
+    let statements = parse_statements(&amp;db);
+
+    // Read out any diagnostics
+    let accumulated = parse_statements::accumulated::&lt;Diagnostics&gt;(&amp;db);
+
+    // Format the result as a string and return it
+    format!(&quot;{:#?}&quot;, (statements, accumulated).debug(&amp;db))
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>Combined with the <a href="https://crates.io/crates/expect-test"><code>expect-test</code></a> crate, we can then write unit tests like this one:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[test]
+fn parse_print() {
+    let actual = parse_string(&quot;print 1 + 2&quot;);
+    let expected = expect_test::expect![[r#&quot;
+        (
+            [
+                ExpressionData::Op(
+                    Number(
+                        OrderedFloat(
+                            1.0,
+                        ),
+                    ),
+                    Add,
+                    Number(
+                        OrderedFloat(
+                            2.0,
+                        ),
+                    ),
+                ),
+            ],
+            [],
+        )&quot;#]];
+    expected.assert_eq(&amp;actual);
+}
+<span class="boring">}
+</span></code></pre></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                                                    <a rel="prev" href="../tutorial/accumulators.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+                                                    <a rel="next" href="../tutorial/checker.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                                    <a rel="prev" href="../tutorial/accumulators.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+                                    <a rel="next" href="../tutorial/checker.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                            </nav>
+
+        </div>
+
+        
+        
+        
+                <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        
+        
+                <script src="../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+        <script src="../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+                <script type="text/javascript" src="../mermaid.min.js"></script>
+                <script type="text/javascript" src="../mermaid-init.js"></script>
+        
+        
+    </body>
+</html>
