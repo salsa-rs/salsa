@@ -4,7 +4,22 @@
 
 # How to use Salsa
 
-- [How to use Salsa](./how_to_use.md)
+- [Overview](./overview.md)
+- [Tutorial: calc language](./tutorial.md)
+  - [Basic structure](./tutorial/structure.md)
+  - [Jars and databases](./tutorial/jar.md)
+  - [Defining the database struct](./tutorial/db.md)
+  - [Defining the IR: interned and entity structs](./tutorial/ir.md)
+  - [Defining the parser: memoized functions and inputs](./tutorial/parser.md)
+  - [Defining the parser: reporting errors](./tutorial/accumulators.md)
+  - [Defining the parser: debug impls and testing](./tutorial/debug.md)
+  - [Defining the checker](./tutorial/checker.md)
+  - [Defining the interpreter](./tutorial/interpreter.md)
+- [Reference](./reference.md)
+  - [Algorithm](./reference/algorithm.md)
+  - [`salsa::interned`](./reference/interned.md)
+  - [`salsa::entity`](./reference/entity.md)
+  - [`salsa::memoized`](./reference/memoized.md)
 - [Common patterns](./common_patterns.md)
   - [Selection](./common_patterns/selection.md)
   - [On-demand (Lazy) inputs](./common_patterns/on_demand_inputs.md)
@@ -60,4 +75,3 @@
 # Appendices
 
 - [Meta: about the book itself](./meta.md)
-
