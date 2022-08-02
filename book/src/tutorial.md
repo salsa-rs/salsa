@@ -1,5 +1,7 @@
 # Tutorial: calc
 
+{{#include caveat.md}}
+
 This tutorial walks through an end-to-end example of using Salsa.
 It does not assume you know anything about salsa,
 but reading the [overview](./overview.md) first is probably a good idea to get familiar with the basic concepts.

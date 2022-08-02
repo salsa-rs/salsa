@@ -1,5 +1,7 @@
 # Salsa overview
 
+{{#include caveat.md}}
+
 This page contains a brief overview of the pieces of a salsa program. For a more detailed look, check out the [tutorial](./tutorial.md), which walks through the creation of an entire project end-to-end.
 
 ## Database
