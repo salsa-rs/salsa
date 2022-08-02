@@ -27,7 +27,7 @@
 
 use heck::CamelCase;
 
-use crate::{data_item::DataItem, options::Options, configuration};
+use crate::{configuration, data_item::DataItem, options::Options};
 
 pub(crate) struct EntityLike {
     args: Options<Self>,
@@ -221,13 +221,13 @@ impl EntityLike {
                         type Key = #ident;
                         type Value = #value_field_ty;
                         const CYCLE_STRATEGY: salsa::cycle::CycleRecoveryStrategy = salsa::cycle::CycleRecoveryStrategy::Panic;
-    
+
                         #should_backdate_value_fn
-    
+
                         fn execute(db: &salsa::function::DynDb<Self>, key: Self::Key) -> Self::Value {
                             unreachable!()
                         }
-    
+
                         fn recover_from_cycle(db: &salsa::function::DynDb<Self>, cycle: &salsa::Cycle, key: Self::Key) -> Self::Value {
                             unreachable!()
                         }
