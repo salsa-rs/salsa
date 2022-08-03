@@ -32,6 +32,7 @@ mod data_item;
 mod db;
 mod entity;
 mod entity_like;
+mod input;
 mod interned;
 mod jar;
 mod memoized;
