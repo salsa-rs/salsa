@@ -1,6 +1,6 @@
 use proc_macro2::{Literal, TokenStream};
 
-use crate::salsa_struct::{EntityField, SalsaStruct};
+use crate::salsa_struct::{SalsaField, SalsaStruct};
 
 /// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///
@@ -54,7 +54,7 @@ impl SalsaStruct {
         let field_indices = self.all_field_indices();
         let field_names: Vec<_> = self.all_field_names();
         let field_tys: Vec<_> = self.all_field_tys();
-        let field_clones: Vec<_> = self.all_fields().map(EntityField::is_clone_field).collect();
+        let field_clones: Vec<_> = self.all_fields().map(SalsaField::is_clone_field).collect();
         let field_getters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&field_names).zip(&field_tys).zip(&field_clones).map(|(((field_index, field_name), field_ty), is_clone_field)|
             if !*is_clone_field {
                 parse_quote! {

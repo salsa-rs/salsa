@@ -1,9 +1,9 @@
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    entity::EntityInDb,
     key::DependencyIndex,
     runtime::local_state::{QueryInputs, QueryRevisions},
+    tracked_struct::TrackedStructInDb,
     Database,
 };
 
@@ -15,7 +15,7 @@ where
 {
     pub fn set<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
     where
-        C::Key: EntityInDb<DynDb<'db, C>>,
+        C::Key: TrackedStructInDb<DynDb<'db, C>>,
     {
         let runtime = db.salsa_runtime();
 

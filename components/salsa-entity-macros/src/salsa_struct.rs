@@ -32,7 +32,7 @@ use crate::{configuration, options::Options};
 pub(crate) struct SalsaStruct {
     args: Options<Self>,
     struct_item: syn::ItemStruct,
-    fields: Vec<EntityField>,
+    fields: Vec<SalsaField>,
 }
 
 impl crate::options::AllowedOptions for SalsaStruct {
@@ -75,12 +75,12 @@ impl SalsaStruct {
     /// Extract out the fields and their options:
     /// If this is a struct, it must use named fields, so we can define field accessors.
     /// If it is an enum, then this is not necessary.
-    pub(crate) fn extract_options(struct_item: &syn::ItemStruct) -> syn::Result<Vec<EntityField>> {
+    pub(crate) fn extract_options(struct_item: &syn::ItemStruct) -> syn::Result<Vec<SalsaField>> {
         match &struct_item.fields {
             syn::Fields::Named(n) => Ok(n
                 .named
                 .iter()
-                .map(EntityField::new)
+                .map(SalsaField::new)
                 .collect::<syn::Result<Vec<_>>>()?),
             f => Err(syn::Error::new_spanned(
                 f,
@@ -92,7 +92,7 @@ impl SalsaStruct {
     /// Iterator over all named fields.
     ///
     /// If this is an enum, empty iterator.
-    pub(crate) fn all_fields(&self) -> impl Iterator<Item = &EntityField> {
+    pub(crate) fn all_fields(&self) -> impl Iterator<Item = &SalsaField> {
         self.fields.iter()
     }
 
@@ -191,7 +191,7 @@ impl SalsaStruct {
     /// of `salsa::function::Configuration` for that struct.
     pub(crate) fn field_config_structs_and_impls<'a>(
         &self,
-        fields: impl Iterator<Item = &'a EntityField>,
+        fields: impl Iterator<Item = &'a SalsaField>,
     ) -> (Vec<syn::ItemStruct>, Vec<syn::ItemImpl>) {
         let ident = &self.id_ident();
         let jar_ty = self.jar_ty();
@@ -276,13 +276,13 @@ impl SalsaStruct {
     }
 }
 
-pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(&str, fn(&syn::Attribute, &mut EntityField))] = &[
+pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(&str, fn(&syn::Attribute, &mut SalsaField))] = &[
     ("id", |_, ef| ef.has_id_attr = true),
     ("return_ref", |_, ef| ef.has_ref_attr = true),
     ("no_eq", |_, ef| ef.has_no_eq_attr = true),
 ];
 
-pub(crate) struct EntityField {
+pub(crate) struct SalsaField {
     field: syn::Field,
 
     pub(crate) has_id_attr: bool,
@@ -290,7 +290,7 @@ pub(crate) struct EntityField {
     pub(crate) has_no_eq_attr: bool,
 }
 
-impl EntityField {
+impl SalsaField {
     pub(crate) fn new(field: &syn::Field) -> syn::Result<Self> {
         let field_name = field.ident.as_ref().unwrap();
         let field_name_str = field_name.to_string();
@@ -304,7 +304,7 @@ impl EntityField {
             ));
         }
 
-        let mut result = EntityField {
+        let mut result = SalsaField {
             field: field.clone(),
             has_id_attr: false,
             has_ref_attr: false,

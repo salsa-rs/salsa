@@ -7,27 +7,27 @@ use crate::{
     Database, IngredientIndex, Revision,
 };
 
-pub trait EntityId: InternedId {}
-impl<T: InternedId> EntityId for T {}
+pub trait TrackedStructId: InternedId {}
+impl<T: InternedId> TrackedStructId for T {}
 
-pub trait EntityData: InternedData {}
-impl<T: InternedData> EntityData for T {}
+pub trait TrackedStructData: InternedData {}
+impl<T: InternedData> TrackedStructData for T {}
 
-pub trait EntityInDb<DB: ?Sized + Database> {
+pub trait TrackedStructInDb<DB: ?Sized + Database> {
     fn database_key_index(self, db: &DB) -> DatabaseKeyIndex;
 }
 
 #[allow(dead_code)]
-pub struct EntityIngredient<Id, Data>
+pub struct TrackedStructIngredient<Id, Data>
 where
-    Id: EntityId,
-    Data: EntityData,
+    Id: TrackedStructId,
+    Data: TrackedStructData,
 {
-    interned: InternedIngredient<Id, EntityKey<Data>>,
+    interned: InternedIngredient<Id, TrackedStructKey<Data>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
-struct EntityKey<Data> {
+struct TrackedStructKey<Data> {
     query_key: Option<DatabaseKeyIndex>,
     disambiguator: Disambiguator,
     data: Data,
@@ -36,10 +36,10 @@ struct EntityKey<Data> {
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
 pub struct Disambiguator(pub u32);
 
-impl<Id, Data> EntityIngredient<Id, Data>
+impl<Id, Data> TrackedStructIngredient<Id, Data>
 where
-    Id: EntityId,
-    Data: EntityData,
+    Id: TrackedStructId,
+    Data: TrackedStructData,
 {
     pub fn new(index: IngredientIndex) -> Self {
         Self {
@@ -54,14 +54,14 @@ where
         }
     }
 
-    pub fn new_entity(&self, runtime: &Runtime, data: Data) -> Id {
+    pub fn new_struct(&self, runtime: &Runtime, data: Data) -> Id {
         let data_hash = crate::hash::hash(&data);
         let (query_key, disambiguator) = runtime.disambiguate_entity(
             self.interned.ingredient_index(),
             self.interned.reset_at(),
             data_hash,
         );
-        let entity_key = EntityKey {
+        let entity_key = TrackedStructKey {
             query_key: Some(query_key),
             disambiguator,
             data,
@@ -71,7 +71,7 @@ where
         result
     }
 
-    pub fn entity_data<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db Data {
+    pub fn tracked_struct_data<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db Data {
         &self.interned.data(runtime, id).data
     }
 
@@ -92,10 +92,10 @@ where
     }
 }
 
-impl<DB: ?Sized, Id, Data> Ingredient<DB> for EntityIngredient<Id, Data>
+impl<DB: ?Sized, Id, Data> Ingredient<DB> for TrackedStructIngredient<Id, Data>
 where
-    Id: EntityId,
-    Data: EntityData,
+    Id: TrackedStructId,
+    Data: TrackedStructData,
 {
     fn maybe_changed_after(&self, db: &DB, input: DependencyIndex, revision: Revision) -> bool {
         self.interned.maybe_changed_after(db, input, revision)
@@ -110,10 +110,10 @@ where
     }
 }
 
-impl<DB: ?Sized, Id, Data> MutIngredient<DB> for EntityIngredient<Id, Data>
+impl<DB: ?Sized, Id, Data> MutIngredient<DB> for TrackedStructIngredient<Id, Data>
 where
-    Id: EntityId,
-    Data: EntityData,
+    Id: TrackedStructId,
+    Data: TrackedStructData,
 {
     fn reset_for_new_revision(&mut self) {
         self.interned.clear_deleted_indices();

@@ -1,6 +1,6 @@
 use proc_macro2::{Literal, TokenStream};
 
-use crate::salsa_struct::{EntityField, SalsaStruct};
+use crate::salsa_struct::{SalsaField, SalsaStruct};
 
 /// For an tracked struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///
@@ -27,14 +27,14 @@ impl SalsaStruct {
         let id_struct = self.id_struct();
         let inherent_impl = self.tracked_inherent_impl();
         let ingredients_for_impl = self.tracked_struct_ingredients(&config_structs);
-        let entity_in_db_impl = self.entity_in_db_impl();
+        let tracked_struct_in_db_impl = self.tracked_struct_in_db_impl();
         let as_id_impl = self.as_id_impl();
         Ok(quote! {
             #(#config_structs)*
             #id_struct
             #inherent_impl
             #ingredients_for_impl
-            #entity_in_db_impl
+            #tracked_struct_in_db_impl
             #as_id_impl
             #(#config_impls)*
         })
@@ -52,9 +52,9 @@ impl SalsaStruct {
         let struct_index = self.tracked_struct_index();
 
         let id_field_indices: Vec<_> = self.id_field_indices();
-        let id_field_names: Vec<_> = self.id_fields().map(EntityField::name).collect();
-        let id_field_tys: Vec<_> = self.id_fields().map(EntityField::ty).collect();
-        let id_field_clones: Vec<_> = self.id_fields().map(EntityField::is_clone_field).collect();
+        let id_field_names: Vec<_> = self.id_fields().map(SalsaField::name).collect();
+        let id_field_tys: Vec<_> = self.id_fields().map(SalsaField::ty).collect();
+        let id_field_clones: Vec<_> = self.id_fields().map(SalsaField::is_clone_field).collect();
         let id_field_getters: Vec<syn::ImplItemMethod> = id_field_indices.iter().zip(&id_field_names).zip(&id_field_tys).zip(&id_field_clones).map(|(((field_index, field_name), field_ty), is_clone_field)|
             if !*is_clone_field {
                 parse_quote! {
@@ -62,7 +62,7 @@ impl SalsaStruct {
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                        &__ingredients.#struct_index.entity_data(__runtime, self).#field_index
+                        &__ingredients.#struct_index.tracked_struct_data(__runtime, self).#field_index
                     }
                 }
             } else {
@@ -71,7 +71,7 @@ impl SalsaStruct {
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                        __ingredients.#struct_index.entity_data(__runtime, self).#field_index.clone()
+                        __ingredients.#struct_index.tracked_struct_data(__runtime, self).#field_index.clone()
                     }
                 }
             }
@@ -79,11 +79,11 @@ impl SalsaStruct {
         .collect();
 
         let value_field_indices = self.value_field_indices();
-        let value_field_names: Vec<_> = self.value_fields().map(EntityField::name).collect();
-        let value_field_tys: Vec<_> = self.value_fields().map(EntityField::ty).collect();
+        let value_field_names: Vec<_> = self.value_fields().map(SalsaField::name).collect();
+        let value_field_tys: Vec<_> = self.value_fields().map(SalsaField::ty).collect();
         let value_field_clones: Vec<_> = self
             .value_fields()
-            .map(EntityField::is_clone_field)
+            .map(SalsaField::is_clone_field)
             .collect();
         let value_field_getters: Vec<syn::ImplItemMethod> = value_field_indices.iter().zip(&value_field_names).zip(&value_field_tys).zip(&value_field_clones).map(|(((field_index, field_name), field_ty), is_clone_field)|
             if !*is_clone_field {
@@ -117,7 +117,7 @@ impl SalsaStruct {
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                    let __id = __ingredients.#struct_index.new_entity(__runtime, (#(#id_field_names,)*));
+                    let __id = __ingredients.#struct_index.new_struct(__runtime, (#(#id_field_names,)*));
                     #(
                         __ingredients.#value_field_indices.set(__db, __id, #value_field_names);
                     )*
@@ -138,7 +138,7 @@ impl SalsaStruct {
     fn tracked_struct_ingredients(&self, config_structs: &[syn::ItemStruct]) -> syn::ItemImpl {
         let ident = self.id_ident();
         let jar_ty = self.jar_ty();
-        let id_field_tys: Vec<&syn::Type> = self.id_fields().map(EntityField::ty).collect();
+        let id_field_tys: Vec<&syn::Type> = self.id_fields().map(SalsaField::ty).collect();
         let value_field_indices: Vec<Literal> = self.value_field_indices();
         let tracked_struct_index: Literal = self.tracked_struct_index();
         let config_struct_names = config_structs.iter().map(|s| &s.ident);
@@ -150,7 +150,7 @@ impl SalsaStruct {
                     #(
                         salsa::function::FunctionIngredient<#config_struct_names>,
                     )*
-                    salsa::entity::EntityIngredient<#ident, (#(#id_field_tys,)*)>,
+                    salsa::tracked_struct::TrackedStructIngredient<#ident, (#(#id_field_tys,)*)>,
                 );
 
                 fn create_ingredients<DB>(
@@ -185,7 +185,7 @@ impl SalsaStruct {
                                     &mut ingredients.#tracked_struct_index
                                 },
                             );
-                            salsa::entity::EntityIngredient::new(index)
+                            salsa::tracked_struct::TrackedStructIngredient::new(index)
                         },
                     )
                 }
@@ -193,48 +193,48 @@ impl SalsaStruct {
         }
     }
 
-    /// Implementation of `EntityInDb` for this entity.
-    fn entity_in_db_impl(&self) -> syn::ItemImpl {
+    /// Implementation of `TrackedStructInDb`.
+    fn tracked_struct_in_db_impl(&self) -> syn::ItemImpl {
         let ident = self.id_ident();
         let jar_ty = self.jar_ty();
-        let entity_index = self.tracked_struct_index();
+        let tracked_struct_index = self.tracked_struct_index();
         parse_quote! {
-            impl<DB> salsa::entity::EntityInDb<DB> for #ident
+            impl<DB> salsa::tracked_struct::TrackedStructInDb<DB> for #ident
             where
                 DB: ?Sized + salsa::DbWithJar<#jar_ty>,
             {
                 fn database_key_index(self, db: &DB) -> salsa::DatabaseKeyIndex {
                     let (jar, _) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                     let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident>>::ingredient(jar);
-                    ingredients.#entity_index.database_key_index(self)
+                    ingredients.#tracked_struct_index.database_key_index(self)
                 }
             }
         }
     }
 
-    /// List of id fields (fields that are part of the entity's identity across revisions).
+    /// List of id fields (fields that are part of the tracked struct's identity across revisions).
     ///
     /// If this is an enum, empty iterator.
-    fn id_fields(&self) -> impl Iterator<Item = &EntityField> {
-        self.all_fields().filter(|ef| ef.is_entity_id_field())
+    fn id_fields(&self) -> impl Iterator<Item = &SalsaField> {
+        self.all_fields().filter(|ef| ef.is_id_field())
     }
 
-    /// List of value fields (fields that are not part of the entity's identity across revisions).
+    /// List of value fields (fields that are not part of the tracked struct's identity across revisions).
     ///
     /// If this is an enum, empty iterator.
-    fn value_fields(&self) -> impl Iterator<Item = &EntityField> {
-        self.all_fields().filter(|ef| !ef.is_entity_id_field())
+    fn value_fields(&self) -> impl Iterator<Item = &SalsaField> {
+        self.all_fields().filter(|ef| !ef.is_id_field())
     }
 
-    /// For the entity, we create a tuple that contains the function ingredients
-    /// for each "other" field and the entity ingredient. This is the index of
+    /// For this struct, we create a tuple that contains the function ingredients
+    /// for each "other" field and the tracked-struct ingredient. This is the index of
     /// the entity ingredient within that tuple.
     fn tracked_struct_index(&self) -> Literal {
         Literal::usize_unsuffixed(self.value_fields().count())
     }
 
-    /// For the entity, we create a tuple that contains the function ingredients
-    /// for each "other" field and the entity ingredient. These are the indices
+    /// For this struct, we create a tuple that contains the function ingredients
+    /// for each "other" field and the tracked-struct ingredient. These are the indices
     /// of the function ingredients within that tuple.
     fn value_field_indices(&self) -> Vec<Literal> {
         (0..self.value_fields().count())
@@ -250,9 +250,9 @@ impl SalsaStruct {
     }
 }
 
-impl EntityField {
+impl SalsaField {
     /// true if this is an id field
-    fn is_entity_id_field(&self) -> bool {
+    fn is_id_field(&self) -> bool {
         self.has_id_attr
     }
 }

@@ -7,7 +7,7 @@ pub(crate) fn tracked(
     let item = syn::parse_macro_input!(input as Item);
     match item {
         syn::Item::Struct(item) => crate::tracked_struct::tracked(args, item),
-        syn::Item::Fn(item) => todo!(),
+        syn::Item::Fn(item) => crate::tracked_fn::tracked(args, item),
         _ => syn::Error::new(
             item.span(),
             &format!("tracked can be applied to structs and functions only"),

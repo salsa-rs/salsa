@@ -1,10 +1,10 @@
 use log::debug;
 
 use crate::durability::Durability;
-use crate::entity::Disambiguator;
 use crate::key::DatabaseKeyIndex;
 use crate::key::DependencyIndex;
 use crate::runtime::Revision;
+use crate::tracked_struct::Disambiguator;
 use crate::Cycle;
 use crate::Runtime;
 use std::cell::RefCell;

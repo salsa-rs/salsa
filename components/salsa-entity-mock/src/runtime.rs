@@ -13,7 +13,7 @@ use crate::{
 
 use self::{dependency_graph::DependencyGraph, local_state::ActiveQueryGuard};
 
-use super::{entity::Disambiguator, IngredientIndex};
+use super::{tracked_struct::Disambiguator, IngredientIndex};
 
 mod active_query;
 mod dependency_graph;
