@@ -9,7 +9,7 @@
   - [Basic structure](./tutorial/structure.md)
   - [Jars and databases](./tutorial/jar.md)
   - [Defining the database struct](./tutorial/db.md)
-  - [Defining the IR: interned and entity structs](./tutorial/ir.md)
+  - [Defining the IR: input, interned, and tracked structs](./tutorial/ir.md)
   - [Defining the parser: memoized functions and inputs](./tutorial/parser.md)
   - [Defining the parser: reporting errors](./tutorial/accumulators.md)
   - [Defining the parser: debug impls and testing](./tutorial/debug.md)

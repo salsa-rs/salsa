@@ -3,12 +3,53 @@
 Before we can define the [parser](./parser.md), we need to define the intermediate representation (IR) that we will use for `calc` programs.
 In the [basic structure](./structure.md), we defined some "pseudo-Rust" structures like `Statement`, `Expression`, and so forth, and now we are going to define them for real.
 
+## Input
+
+The first thing we will define is our **input**. 
+Every salsa program has some basic inputs that drive the rest of the computation.
+The rest of the program must be some deterministic function of those base inputs,
+such that when those inputs change, we can try to efficiently recompute the new result of that function.
+
+Inputs are defined as Rust structs with a `#[salsa::input]` annotation:
+
+```rust
+{{#include ../../../calc-example/calc/src/ir.rs:input}}
+```
+
+In our compiler, we have just one simple input, the `ProgramSource`, which has a `text` field (the string).
+(By the way, the `#[salsa::input]` annotation must be connected to a jar, but it defaults to `crate::Jar`.
+If you wanted to create the jar somewhere else, you would write `#[salsa::input(jar = path::to::Jar)]`.
+Wherever the jar is defined, you also have to list the input as one of its fields.)
+
+### The data lives in the database
+
+Although they are declared like other Rust structs, salsa structs are implemented quite differently.
+The values of their fields are stored in the salsa database, and the struct itself just contains a numeric identifier.
+This means that the struct instances are copy (no matter what fields they contain).
+Creating instances of the struct and accessing fields is done by invoking methods like `new` as well as getters and setters.
+
+More concretely, the `#[salsa::input]` annotation will generate a struct for `ProgramSource` like this:
+
+```rust
+#[define(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ProgramSource(salsa::Id);
+```
+
+It will also generate a method `new` that lets you create a `ProgramSource` in the database.
+For an input, a `&mut db` reference is required, along with the values for each field:
+
+```rust
+let source = ProgramSource::new(&mut db, "print 11 + 11".to_string());
+```
+
+You can read the value of the field with `source.text(db)`, 
+and you can set the value of the field with `source.set_text(&mut db, "print 11 * 2".to_string())`.
+
 ## Interning
 
-We'll start with `FunctionId` and `VariableId`.
-These were two different names for interned strings.
-Interning is a builtin feature to salsa where you take a complex data structure (in this case, a string) and replace it with a single integer.
-The integer you get back is arbitrary, but whenever you intern the same thing twice (within one revision -- more on this caveat later), you get back the same integer.
+Interning is a builtin feature to salsa where you take a struct and replace it with a single integer.
+The integer you get back is arbitrary, but whenever you intern the same struct twice, you get back the same integer.
+In our compiler, we'll use interning to define `FunctionId` and `VariableId`, which are effectively interned strings.
 
 Interned structs in Salsa are defined with the `#[salsa::interned]` attribute macro:
 
@@ -16,15 +57,8 @@ Interned structs in Salsa are defined with the `#[salsa::interned]` attribute ma
 {{#include ../../../calc-example/calc/src/ir.rs:interned_ids}}
 ```
 
-Note though that the structs that result from this declaration are _very different_ from what you wrote. When you intern a struct, the actual _data_ of the struct is stored in the salsa database, and the struct you get back is just a lightweight struct that wraps a `salsa::Id` struct. Since this struct just wraps a simple integer, it is `Copy`, `Eq`, `Hash`, and `Ord`:
-
-```rust
-#[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash)]
-pub struct VariableId(salsa::Id);
-
-#[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash)]
-pub struct FunctionId(salsa::Id);
-```
+As with `#[salsa::input]`, the data for an interned struct is stored in the database, and the struct itself is just an integer. 
+The interned structs have a few methods.
 
 These interned structs also have a few methods:
 

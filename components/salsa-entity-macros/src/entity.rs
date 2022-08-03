@@ -29,7 +29,6 @@ impl EntityLike {
         let ingredients_for_impl = self.entity_ingredients(&config_structs);
         let entity_in_db_impl = self.entity_in_db_impl();
         let as_id_impl = self.as_id_impl();
-
         Ok(quote! {
             #(#config_structs)*
             #id_struct

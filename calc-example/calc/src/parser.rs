@@ -114,13 +114,13 @@ impl Parser<'_> {
         let word = self.word()?;
         if word == "fn" {
             let func = self.parse_function()?;
-            Some(Statement::from(self.db, StatementData::Function(func)))
+            Some(Statement::new(self.db, StatementData::Function(func)))
             //   ^^^^^^^^^^^^^^^           ^^^^^^^^^^^^^^^^^^^^^^^
             //  Create a new interned enum...      |
             //                             using the "data" type.
         } else if word == "print" {
             let expr = self.parse_expression()?;
-            Some(Statement::from(self.db, StatementData::Print(expr)))
+            Some(Statement::new(self.db, StatementData::Print(expr)))
         } else {
             None
         }
@@ -184,7 +184,7 @@ impl Parser<'_> {
 
         while let Some(op) = op(self) {
             let expr2 = parse_expr(self)?;
-            expr1 = Expression::from(self.db, ExpressionData::Op(expr1, op, expr2));
+            expr1 = Expression::new(self.db, ExpressionData::Op(expr1, op, expr2));
         }
 
         Some(expr1)
@@ -199,13 +199,13 @@ impl Parser<'_> {
                 let f = FunctionId::new(self.db, w);
                 let args = self.parse_expressions()?;
                 self.ch(')')?;
-                return Some(Expression::from(self.db, ExpressionData::Call(f, args)));
+                return Some(Expression::new(self.db, ExpressionData::Call(f, args)));
             }
 
             let v = VariableId::new(self.db, w);
-            Some(Expression::from(self.db, ExpressionData::Variable(v)))
+            Some(Expression::new(self.db, ExpressionData::Variable(v)))
         } else if let Some(n) = self.number() {
-            Some(Expression::from(
+            Some(Expression::new(
                 self.db,
                 ExpressionData::Number(OrderedFloat::from(n)),
             ))

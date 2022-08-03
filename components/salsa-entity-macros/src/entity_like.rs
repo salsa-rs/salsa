@@ -47,7 +47,7 @@ impl crate::options::AllowedOptions for EntityLike {
     const DB: bool = false;
 }
 
-const BANNED_FIELD_NAMES: &[&str] = &["data", "from", "new"];
+const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 
 impl EntityLike {
     pub(crate) fn new(
@@ -136,7 +136,10 @@ impl EntityLike {
     pub(crate) fn data_ident(&self) -> syn::Ident {
         match &self.args.data {
             Some(d) => d.clone(),
-            None => syn::Ident::new(&format!("{}Data", self.id_ident()), self.id_ident().span()),
+            None => syn::Ident::new(
+                &format!("__{}Data", self.id_ident()),
+                self.id_ident().span(),
+            ),
         }
     }
 
@@ -164,22 +167,22 @@ impl EntityLike {
     /// This type inherits all the attributes written by the user.
     ///
     /// When using named fields, we synthesize the struct and field names.
-    /// This intentionally skips
     ///
     /// When no named fields are available, copy the existing type.
     pub(crate) fn data_struct(&self) -> DataItem {
-        let mut d = self.data_item.with_ident(self.data_ident());
-
-        // Remove salsa-specific attributes from the fields.
-        if let DataItem::Struct(s) = &mut d {
-            if let syn::Fields::Named(n) = &mut s.fields {
-                for f in &mut n.named {
-                    f.attrs.retain(|f| !is_entity_like_field_attribute(f));
-                }
+        let ident = self.data_ident();
+        let visibility = self.visibility();
+        let all_field_names = self.all_field_names();
+        let all_field_tys = self.all_field_tys();
+        parse_quote! {
+            /// Internal struct used for interned item
+            #[derive(Eq, PartialEq, Hash, Clone)]
+            #visibility struct #ident {
+                #(
+                    #all_field_names: #all_field_tys,
+                )*
             }
         }
-
-        d
     }
 
     /// Returns the visibility of this item
