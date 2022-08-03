@@ -27,12 +27,12 @@
 
 use heck::CamelCase;
 
-use crate::{configuration, data_item::DataItem, options::Options};
+use crate::{configuration, options::Options};
 
 pub(crate) struct EntityLike {
     args: Options<Self>,
-    data_item: DataItem,
-    fields: Option<Vec<EntityField>>,
+    struct_item: syn::ItemStruct,
+    fields: Vec<EntityField>,
 }
 
 impl crate::options::AllowedOptions for EntityLike {
@@ -60,7 +60,7 @@ impl EntityLike {
 
         Ok(Self {
             args,
-            data_item,
+            struct_item: data_item,
             fields,
         })
     }
@@ -68,36 +68,25 @@ impl EntityLike {
     /// Extract out the fields and their options:
     /// If this is a struct, it must use named fields, so we can define field accessors.
     /// If it is an enum, then this is not necessary.
-    pub(crate) fn extract_options(data_item: &DataItem) -> syn::Result<Option<Vec<EntityField>>> {
-        match data_item.fields() {
-            Some(f) => match f {
-                syn::Fields::Named(n) => Ok(Some(
-                    n.named
-                        .iter()
-                        .map(EntityField::new)
-                        .collect::<syn::Result<Vec<_>>>()?,
-                )),
-                _ => {
-                    return Err(syn::Error::new_spanned(
-                        f,
-                        "must have named fields for a struct",
-                    ));
-                }
-            },
-            None => Ok(None),
+    pub(crate) fn extract_options(struct_item: &syn::ItemStruct) -> syn::Result<Vec<EntityField>> {
+        match &struct_item.fields {
+            syn::Fields::Named(n) => Ok(n
+                .named
+                .iter()
+                .map(EntityField::new)
+                .collect::<syn::Result<Vec<_>>>()?),
+            f => Err(syn::Error::new_spanned(
+                f,
+                "must have named fields for a struct",
+            )),
         }
-    }
-
-    /// True if this is wrapped a struct with named fields.
-    pub(crate) fn has_named_fields(&self) -> bool {
-        self.fields.is_some()
     }
 
     /// Iterator over all named fields.
     ///
     /// If this is an enum, empty iterator.
     pub(crate) fn all_fields(&self) -> impl Iterator<Item = &EntityField> {
-        self.fields.iter().flat_map(|v| v.iter())
+        self.fields.iter()
     }
 
     /// Names of all fields (id and value).
@@ -116,7 +105,7 @@ impl EntityLike {
 
     /// The name of the "identity" struct (this is the name the user gave, e.g., `Foo`).
     pub(crate) fn id_ident(&self) -> &syn::Ident {
-        self.data_item.ident()
+        &self.struct_item.ident
     }
 
     /// Type of the jar for this struct
@@ -146,12 +135,12 @@ impl EntityLike {
     /// Generate `struct Foo(Id)`
     pub(crate) fn id_struct(&self) -> syn::ItemStruct {
         let ident = self.id_ident();
-        let visibility = self.data_item.visibility();
+        let visibility = &self.struct_item.vis;
 
         // Extract the attributes the user gave, but screen out derive, since we are adding our own.
         let attrs: Vec<_> = self
-            .data_item
-            .attrs()
+            .struct_item
+            .attrs
             .iter()
             .filter(|attr| !attr.path.is_ident("derive"))
             .collect();
@@ -169,7 +158,7 @@ impl EntityLike {
     /// When using named fields, we synthesize the struct and field names.
     ///
     /// When no named fields are available, copy the existing type.
-    pub(crate) fn data_struct(&self) -> DataItem {
+    pub(crate) fn data_struct(&self) -> syn::ItemStruct {
         let ident = self.data_ident();
         let visibility = self.visibility();
         let all_field_names = self.all_field_names();
@@ -187,7 +176,7 @@ impl EntityLike {
 
     /// Returns the visibility of this item
     pub(crate) fn visibility(&self) -> &syn::Visibility {
-        self.data_item.visibility()
+        &self.struct_item.vis
     }
 
     /// For each of the fields passed as an argument,
@@ -257,22 +246,6 @@ impl EntityLike {
             }
 
         }
-    }
-
-    /// Return an error unless this is a struct with named fields.
-    ///
-    /// # Parameters
-    ///
-    /// * `kind`, the attribute name (e.g., `input` or `interned`)
-    pub(crate) fn require_named_fields(&self, kind: &str) -> syn::Result<()> {
-        if !self.has_named_fields() {
-            return Err(syn::Error::new(
-                self.id_ident().span(),
-                format!("`#[salsa::{kind}]` can only be applied to a struct with named fields"),
-            ));
-        }
-
-        Ok(())
     }
 
     /// Disallow `#[id]` attributes on the fields of this struct.

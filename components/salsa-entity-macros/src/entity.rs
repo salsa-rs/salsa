@@ -41,8 +41,6 @@ impl EntityLike {
     }
 
     fn validate_entity(&self) -> syn::Result<()> {
-        self.require_named_fields("entity")?;
-
         Ok(())
     }
 

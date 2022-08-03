@@ -39,18 +39,13 @@ impl EntityLike {
     }
 
     fn validate_interned(&self) -> syn::Result<()> {
-        self.require_named_fields("interned")?;
         self.disallow_id_fields("interned")?;
         Ok(())
     }
 
     /// If this is an interned struct, then generate methods to access each field,
     /// as well as a `new` method.
-    fn inherent_impl_for_named_fields(&self) -> Option<syn::ItemImpl> {
-        if !self.has_named_fields() {
-            return None;
-        }
-
+    fn inherent_impl_for_named_fields(&self) -> syn::ItemImpl {
         let vis = self.visibility();
         let id_ident = self.id_ident();
         let db_dyn_ty = self.db_dyn_ty();
@@ -97,13 +92,13 @@ impl EntityLike {
             }
         };
 
-        Some(parse_quote! {
+        parse_quote! {
             impl #id_ident {
                 #(#field_getters)*
 
                 #new_method
             }
-        })
+        }
     }
 
     /// Generates an impl of `salsa::storage::IngredientsFor`.

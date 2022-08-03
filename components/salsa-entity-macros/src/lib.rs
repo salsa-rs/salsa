@@ -28,7 +28,6 @@ macro_rules! parse_quote_spanned {
 mod accumulator;
 mod component;
 mod configuration;
-mod data_item;
 mod db;
 mod entity;
 mod entity_like;

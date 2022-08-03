@@ -39,7 +39,6 @@ impl EntityLike {
     }
 
     fn validate_input(&self) -> syn::Result<()> {
-        self.require_named_fields("input")?;
         self.disallow_id_fields("input")?;
 
         Ok(())
