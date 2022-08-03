@@ -2,31 +2,31 @@ use proc_macro2::{Literal, TokenStream};
 
 use crate::salsa_struct::{EntityField, SalsaStruct};
 
-/// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
+/// For an tracked struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///
 /// * the "id struct" `struct Foo(salsa::Id)`
-/// * the entity ingredient, which maps the id fields to the `Id`
+/// * the tracked ingredient, which maps the id fields to the `Id`
 /// * for each value field, a function ingredient
-pub(crate) fn entity(
+pub(crate) fn tracked(
     args: proc_macro::TokenStream,
-    input: proc_macro::TokenStream,
+    struct_item: syn::ItemStruct,
 ) -> proc_macro::TokenStream {
-    match SalsaStruct::new(args, input).and_then(|el| el.generate_entity()) {
+    match SalsaStruct::with_struct(args, struct_item).and_then(|el| el.generate_tracked()) {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
 }
 
 impl SalsaStruct {
-    fn generate_entity(&self) -> syn::Result<TokenStream> {
-        self.validate_entity()?;
+    fn generate_tracked(&self) -> syn::Result<TokenStream> {
+        self.validate_tracked()?;
 
         let (config_structs, config_impls) =
             self.field_config_structs_and_impls(self.value_fields());
 
         let id_struct = self.id_struct();
-        let inherent_impl = self.entity_inherent_impl();
-        let ingredients_for_impl = self.entity_ingredients(&config_structs);
+        let inherent_impl = self.tracked_inherent_impl();
+        let ingredients_for_impl = self.tracked_struct_ingredients(&config_structs);
         let entity_in_db_impl = self.entity_in_db_impl();
         let as_id_impl = self.as_id_impl();
         Ok(quote! {
@@ -40,16 +40,16 @@ impl SalsaStruct {
         })
     }
 
-    fn validate_entity(&self) -> syn::Result<()> {
+    fn validate_tracked(&self) -> syn::Result<()> {
         Ok(())
     }
 
-    /// Generate an inherent impl with methods on the entity type.
-    fn entity_inherent_impl(&self) -> syn::ItemImpl {
+    /// Generate an inherent impl with methods on the tracked type.
+    fn tracked_inherent_impl(&self) -> syn::ItemImpl {
         let ident = self.id_ident();
         let jar_ty = self.jar_ty();
         let db_dyn_ty = self.db_dyn_ty();
-        let entity_index = self.entity_index();
+        let struct_index = self.tracked_struct_index();
 
         let id_field_indices: Vec<_> = self.id_field_indices();
         let id_field_names: Vec<_> = self.id_fields().map(EntityField::name).collect();
@@ -62,7 +62,7 @@ impl SalsaStruct {
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                        &__ingredients.#entity_index.entity_data(__runtime, self).#field_index
+                        &__ingredients.#struct_index.entity_data(__runtime, self).#field_index
                     }
                 }
             } else {
@@ -71,7 +71,7 @@ impl SalsaStruct {
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                        __ingredients.#entity_index.entity_data(__runtime, self).#field_index.clone()
+                        __ingredients.#struct_index.entity_data(__runtime, self).#field_index.clone()
                     }
                 }
             }
@@ -117,7 +117,7 @@ impl SalsaStruct {
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                    let __id = __ingredients.#entity_index.new_entity(__runtime, (#(#id_field_names,)*));
+                    let __id = __ingredients.#struct_index.new_entity(__runtime, (#(#id_field_names,)*));
                     #(
                         __ingredients.#value_field_indices.set(__db, __id, #value_field_names);
                     )*
@@ -131,16 +131,16 @@ impl SalsaStruct {
         }
     }
 
-    /// Generate the `IngredientsFor` impl for this entity.
+    /// Generate the `IngredientsFor` impl for this tracked struct.
     ///
-    /// The entity's ingredients include both the main entity ingredient along with a
+    /// The tracked struct's ingredients include both the main tracked struct ingredient along with a
     /// function ingredient for each of the value fields.
-    fn entity_ingredients(&self, config_structs: &[syn::ItemStruct]) -> syn::ItemImpl {
+    fn tracked_struct_ingredients(&self, config_structs: &[syn::ItemStruct]) -> syn::ItemImpl {
         let ident = self.id_ident();
         let jar_ty = self.jar_ty();
         let id_field_tys: Vec<&syn::Type> = self.id_fields().map(EntityField::ty).collect();
         let value_field_indices: Vec<Literal> = self.value_field_indices();
-        let entity_index: Literal = self.entity_index();
+        let tracked_struct_index: Literal = self.tracked_struct_index();
         let config_struct_names = config_structs.iter().map(|s| &s.ident);
 
         parse_quote! {
@@ -177,12 +177,12 @@ impl SalsaStruct {
                                 |jars| {
                                     let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                                     let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar);
-                                    &ingredients.#entity_index
+                                    &ingredients.#tracked_struct_index
                                 },
                                 |jars| {
                                     let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
                                     let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient_mut(jar);
-                                    &mut ingredients.#entity_index
+                                    &mut ingredients.#tracked_struct_index
                                 },
                             );
                             salsa::entity::EntityIngredient::new(index)
@@ -197,7 +197,7 @@ impl SalsaStruct {
     fn entity_in_db_impl(&self) -> syn::ItemImpl {
         let ident = self.id_ident();
         let jar_ty = self.jar_ty();
-        let entity_index = self.entity_index();
+        let entity_index = self.tracked_struct_index();
         parse_quote! {
             impl<DB> salsa::entity::EntityInDb<DB> for #ident
             where
@@ -229,7 +229,7 @@ impl SalsaStruct {
     /// For the entity, we create a tuple that contains the function ingredients
     /// for each "other" field and the entity ingredient. This is the index of
     /// the entity ingredient within that tuple.
-    fn entity_index(&self) -> Literal {
+    fn tracked_struct_index(&self) -> Literal {
         Literal::usize_unsuffixed(self.value_fields().count())
     }
 

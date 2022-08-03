@@ -132,7 +132,7 @@ impl DebugWithDb<dyn crate::Db + '_> for Diagnostic {
 }
 
 // ANCHOR: functions
-#[salsa::entity]
+#[salsa::tracked]
 pub struct Function {
     #[id]
     name: FunctionId,

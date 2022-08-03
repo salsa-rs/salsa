@@ -1,1 +1,0 @@
-# `salsa::interned`

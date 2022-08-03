@@ -1,5 +1,5 @@
-//! Common code for `#[salsa::interned]` and `#[salsa::entity]`
-//! decorators.
+//! Common code for `#[salsa::interned]`, `#[salsa::input]`, and
+//! `#[salsa::tracked]` decorators.
 //!
 //! Example of usage:
 //!
@@ -54,13 +54,20 @@ impl SalsaStruct {
         args: proc_macro::TokenStream,
         input: proc_macro::TokenStream,
     ) -> syn::Result<Self> {
+        let struct_item = syn::parse(input)?;
+        Self::with_struct(args, struct_item)
+    }
+
+    pub(crate) fn with_struct(
+        args: proc_macro::TokenStream,
+        struct_item: syn::ItemStruct,
+    ) -> syn::Result<Self> {
         let args = syn::parse(args)?;
-        let data_item = syn::parse(input)?;
-        let fields = Self::extract_options(&data_item)?;
+        let fields = Self::extract_options(&struct_item)?;
 
         Ok(Self {
             args,
-            struct_item: data_item,
+            struct_item,
             fields,
         })
     }

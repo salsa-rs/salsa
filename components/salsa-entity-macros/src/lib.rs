@@ -29,13 +29,15 @@ mod accumulator;
 mod component;
 mod configuration;
 mod db;
-mod entity;
 mod input;
 mod interned;
 mod jar;
 mod memoized;
 mod options;
 mod salsa_struct;
+mod tracked;
+mod tracked_fn;
+mod tracked_struct;
 
 #[proc_macro_attribute]
 pub fn accumulator(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -50,11 +52,6 @@ pub fn jar(args: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
     db::db(args, input)
-}
-
-#[proc_macro_attribute]
-pub fn entity(args: TokenStream, input: TokenStream) -> TokenStream {
-    entity::entity(args, input)
 }
 
 #[proc_macro_attribute]
@@ -75,4 +72,9 @@ pub fn component(args: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn memoized(args: TokenStream, input: TokenStream) -> TokenStream {
     memoized::memoized(args, input)
+}
+
+#[proc_macro_attribute]
+pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
+    tracked::tracked(args, input)
 }
