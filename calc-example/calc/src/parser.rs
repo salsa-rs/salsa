@@ -1,22 +1,15 @@
 use ordered_float::OrderedFloat;
 
 use crate::ir::{
-    Diagnostic, Diagnostics, Expression, ExpressionData, Function, FunctionId, Op, Statement,
-    StatementData, VariableId,
+    Diagnostic, Diagnostics, Expression, ExpressionData, Function, FunctionId, Op, SourceProgram,
+    Statement, StatementData, VariableId,
 };
-
-// ANCHOR: source_text
-#[salsa::memoized(return_ref)]
-pub fn source_text(_db: &dyn crate::Db) -> String {
-    panic!("input")
-}
-// ANCHOR_END: source_text
 
 // ANCHOR: parse_statements
 #[salsa::memoized(return_ref)]
-pub fn parse_statements(db: &dyn crate::Db) -> Vec<Statement> {
+pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Vec<Statement> {
     // Get the source text from the database
-    let source_text = source_text(db);
+    let source_text = source.text(db);
 
     // Create the parser
     let mut parser = Parser {
@@ -339,14 +332,14 @@ fn parse_string(source_text: &str) -> String {
     // Create the database
     let mut db = crate::db::Database::default();
 
-    // Set the source_text value
-    source_text::set(&mut db, source_text.to_string());
+    // Create the source program
+    let source_program = SourceProgram::new(&mut db, source_text.to_string());
 
     // Invoke the parser
-    let statements = parse_statements(&db);
+    let statements = parse_statements(&db, source_program);
 
     // Read out any diagnostics
-    let accumulated = parse_statements::accumulated::<Diagnostics>(&db);
+    let accumulated = parse_statements::accumulated::<Diagnostics>(&db, source_program);
 
     // Format the result as a string and return it
     format!("{:#?}", (statements, accumulated).debug(&db))

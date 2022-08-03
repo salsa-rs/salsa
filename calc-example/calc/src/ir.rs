@@ -1,6 +1,14 @@
 use ordered_float::OrderedFloat;
 use salsa::debug::DebugWithDb;
 
+// ANCHOR: input
+#[salsa::input]
+pub struct SourceProgram {
+    #[return_ref]
+    text: String,
+}
+// ANCHOR_END: input
+
 // ANCHOR: interned_ids
 #[salsa::interned]
 #[derive(Eq, PartialEq, Clone, Hash)]
