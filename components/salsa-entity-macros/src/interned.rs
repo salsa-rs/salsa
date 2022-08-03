@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 
-use crate::entity_like::EntityLike;
+use crate::salsa_struct::SalsaStruct;
 
 // #[salsa::interned(jar = Jar0, data = TyData0)]
 // #[derive(Eq, PartialEq, Hash, Debug, Clone)]
@@ -14,13 +14,13 @@ pub(crate) fn interned(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    match EntityLike::new(args, input).and_then(|el| el.generate_interned()) {
+    match SalsaStruct::new(args, input).and_then(|el| el.generate_interned()) {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
 }
 
-impl EntityLike {
+impl SalsaStruct {
     fn generate_interned(&self) -> syn::Result<TokenStream> {
         self.validate_interned()?;
         let id_struct = self.id_struct();

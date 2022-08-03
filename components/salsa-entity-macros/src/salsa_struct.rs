@@ -29,13 +29,13 @@ use heck::CamelCase;
 
 use crate::{configuration, options::Options};
 
-pub(crate) struct EntityLike {
+pub(crate) struct SalsaStruct {
     args: Options<Self>,
     struct_item: syn::ItemStruct,
     fields: Vec<EntityField>,
 }
 
-impl crate::options::AllowedOptions for EntityLike {
+impl crate::options::AllowedOptions for SalsaStruct {
     const RETURN_REF: bool = false;
 
     const NO_EQ: bool = false;
@@ -49,7 +49,7 @@ impl crate::options::AllowedOptions for EntityLike {
 
 const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 
-impl EntityLike {
+impl SalsaStruct {
     pub(crate) fn new(
         args: proc_macro::TokenStream,
         input: proc_macro::TokenStream,

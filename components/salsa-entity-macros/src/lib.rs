@@ -30,12 +30,12 @@ mod component;
 mod configuration;
 mod db;
 mod entity;
-mod entity_like;
 mod input;
 mod interned;
 mod jar;
 mod memoized;
 mod options;
+mod salsa_struct;
 
 #[proc_macro_attribute]
 pub fn accumulator(args: TokenStream, input: TokenStream) -> TokenStream {

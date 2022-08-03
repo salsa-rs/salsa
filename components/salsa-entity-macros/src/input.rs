@@ -1,6 +1,6 @@
 use proc_macro2::{Literal, TokenStream};
 
-use crate::entity_like::{EntityField, EntityLike};
+use crate::salsa_struct::{EntityField, SalsaStruct};
 
 /// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///
@@ -11,13 +11,13 @@ pub(crate) fn input(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    match EntityLike::new(args, input).and_then(|el| el.generate_input()) {
+    match SalsaStruct::new(args, input).and_then(|el| el.generate_input()) {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
 }
 
-impl EntityLike {
+impl SalsaStruct {
     fn generate_input(&self) -> syn::Result<TokenStream> {
         self.validate_input()?;
 
