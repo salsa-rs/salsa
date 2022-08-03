@@ -1,1 +1,64 @@
+use crate::{
+    cycle::CycleRecoveryStrategy,
+    ingredient::{Ingredient, MutIngredient},
+    key::{DatabaseKeyIndex, DependencyIndex},
+    runtime::{local_state::QueryInputs, Runtime},
+    AsId, IngredientIndex, Revision,
+};
 
+pub trait InputId: AsId {}
+impl<T: AsId> InputId for T {}
+
+pub struct InputIngredient<Id>
+where
+    Id: InputId,
+{
+    ingredient_index: IngredientIndex,
+    counter: u32,
+    _phantom: std::marker::PhantomData<Id>,
+}
+
+impl<Id> InputIngredient<Id>
+where
+    Id: InputId,
+{
+    pub fn new(index: IngredientIndex) -> Self {
+        Self {
+            ingredient_index: index,
+            counter: Default::default(),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
+        DatabaseKeyIndex {
+            ingredient_index: self.ingredient_index,
+            key_index: id.as_id(),
+        }
+    }
+
+    pub fn new_input(&mut self, runtime: &mut Runtime) -> Id {
+        let next_id = self.counter;
+        self.counter += 1;
+        Id::from_id(crate::Id::from(next_id))
+    }
+}
+
+impl<DB: ?Sized, Id> Ingredient<DB> for InputIngredient<Id>
+where
+    Id: InputId,
+{
+    fn maybe_changed_after(&self, db: &DB, input: DependencyIndex, revision: Revision) -> bool {
+        // Input ingredients are just a counter, they store no data, they are immortal.
+        // Their *fields* are stored in function ingredients elsewhere.
+        false
+    }
+
+    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
+        CycleRecoveryStrategy::Panic
+    }
+
+    fn inputs(&self, _key_index: crate::Id) -> Option<QueryInputs> {
+        None
+    }
+}
