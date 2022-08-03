@@ -78,14 +78,15 @@ impl EntityLike {
             }
         )
         .collect();
+
         let field_setters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&field_names).zip(&field_tys).map(|((field_index, field_name), field_ty)| {
             let set_field_name = syn::Ident::new(&format!("set_{}", field_name), field_name.span());
             parse_quote! {
-                pub fn #set_field_name<'db>(self, __db: &'db #db_dyn_ty, __value: #field_ty)
+                pub fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty, __value: #field_ty)
                 {
-                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
-                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                    __ingredients.#field_index.set(__db, self).clone()
+                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
+                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient_mut(__jar);
+                    __ingredients.#field_index.store(__runtime, self, __value, salsa::Durability::LOW);
                 }
             }
         })
@@ -99,7 +100,7 @@ impl EntityLike {
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient_mut(__jar);
                     let __id = __ingredients.#input_index.new_input(__runtime);
                     #(
-                        __ingredients.#field_indices.store(__db, __id, #field_names, salsa::Durability::LOW);
+                        __ingredients.#field_indices.store(__runtime, __id, #field_names, salsa::Durability::LOW);
                     )*
                     __id
                 }
@@ -152,19 +153,14 @@ impl EntityLike {
                             },
                         )*
                         {
-                            let index = ingredients.push_mut(
+                            let index = ingredients.push(
                                 |jars| {
                                     let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                                     let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar);
                                     &ingredients.#input_index
                                 },
-                                |jars| {
-                                    let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
-                                    let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient_mut(jar);
-                                    &mut ingredients.#input_index
-                                },
                             );
-                            salsa::entity::EntityIngredient::new(index)
+                            salsa::input::InputIngredient::new(index)
                         },
                     )
                 }

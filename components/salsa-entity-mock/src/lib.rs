@@ -45,6 +45,7 @@ pub use salsa_entity_macros::accumulator;
 pub use salsa_entity_macros::component;
 pub use salsa_entity_macros::db;
 pub use salsa_entity_macros::entity;
+pub use salsa_entity_macros::input;
 pub use salsa_entity_macros::interned;
 pub use salsa_entity_macros::jar;
 pub use salsa_entity_macros::memoized;

@@ -64,6 +64,11 @@ pub fn interned(args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
+    input::input(args, input)
+}
+
+#[proc_macro_attribute]
 pub fn component(args: TokenStream, input: TokenStream) -> TokenStream {
     component::component(args, input)
 }
