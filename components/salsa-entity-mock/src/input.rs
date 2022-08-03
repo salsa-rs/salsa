@@ -1,6 +1,6 @@
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::{Ingredient, MutIngredient},
+    ingredient::Ingredient,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryInputs, Runtime},
     AsId, IngredientIndex, Revision,
@@ -37,7 +37,7 @@ where
         }
     }
 
-    pub fn new_input(&mut self, runtime: &mut Runtime) -> Id {
+    pub fn new_input(&mut self, _runtime: &mut Runtime) -> Id {
         let next_id = self.counter;
         self.counter += 1;
         Id::from_id(crate::Id::from(next_id))
@@ -48,7 +48,7 @@ impl<DB: ?Sized, Id> Ingredient<DB> for InputIngredient<Id>
 where
     Id: InputId,
 {
-    fn maybe_changed_after(&self, db: &DB, input: DependencyIndex, revision: Revision) -> bool {
+    fn maybe_changed_after(&self, _db: &DB, _input: DependencyIndex, _revision: Revision) -> bool {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
         false
