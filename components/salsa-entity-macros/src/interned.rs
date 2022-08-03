@@ -97,7 +97,7 @@ impl EntityLike {
         let db_dyn_ty = self.db_dyn_ty();
 
         let field_getters: Vec<syn::ImplItemMethod> = self
-            .all_entity_fields()
+            .all_fields()
             .map(|field| {
                 let field_name = field.name();
                 let field_ty = field.ty();

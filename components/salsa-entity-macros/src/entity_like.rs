@@ -96,7 +96,7 @@ impl EntityLike {
     /// Iterator over all named fields.
     ///
     /// If this is an enum, empty iterator.
-    pub(crate) fn all_entity_fields(&self) -> impl Iterator<Item = &EntityField> {
+    pub(crate) fn all_fields(&self) -> impl Iterator<Item = &EntityField> {
         self.fields.iter().flat_map(|v| v.iter())
     }
 
@@ -104,14 +104,14 @@ impl EntityLike {
     ///
     /// If this is an enum, empty vec.
     pub(crate) fn all_field_names(&self) -> Vec<&syn::Ident> {
-        self.all_entity_fields().map(|ef| ef.name()).collect()
+        self.all_fields().map(|ef| ef.name()).collect()
     }
 
     /// Types of all fields (id and value).
     ///
     /// If this is an enum, empty vec.
     pub(crate) fn all_field_tys(&self) -> Vec<&syn::Type> {
-        self.all_entity_fields().map(|ef| ef.ty()).collect()
+        self.all_fields().map(|ef| ef.ty()).collect()
     }
 
     /// The name of the "identity" struct (this is the name the user gave, e.g., `Foo`).
@@ -280,7 +280,7 @@ impl EntityLike {
     ///
     /// * `kind`, the attribute name (e.g., `input` or `interned`)
     pub(crate) fn disallow_id_fields(&self, kind: &str) -> syn::Result<()> {
-        for ef in self.all_entity_fields() {
+        for ef in self.all_fields() {
             if ef.has_id_attr {
                 return Err(syn::Error::new(
                     ef.name().span(),

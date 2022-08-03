@@ -21,8 +21,7 @@ impl EntityLike {
     fn generate_input(&self) -> syn::Result<TokenStream> {
         self.validate_input()?;
 
-        let (config_structs, config_impls) =
-            self.field_config_structs_and_impls(self.all_entity_fields());
+        let (config_structs, config_impls) = self.field_config_structs_and_impls(self.all_fields());
 
         let id_struct = self.id_struct();
         let inherent_impl = self.input_inherent_impl();
@@ -56,10 +55,7 @@ impl EntityLike {
         let field_indices = self.all_field_indices();
         let field_names: Vec<_> = self.all_field_names();
         let field_tys: Vec<_> = self.all_field_tys();
-        let field_clones: Vec<_> = self
-            .all_entity_fields()
-            .map(EntityField::is_clone_field)
-            .collect();
+        let field_clones: Vec<_> = self.all_fields().map(EntityField::is_clone_field).collect();
         let field_getters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&field_names).zip(&field_tys).zip(&field_clones).map(|(((field_index, field_name), field_ty), is_clone_field)|
             if !*is_clone_field {
                 parse_quote! {
@@ -180,14 +176,14 @@ impl EntityLike {
     /// for each "other" field and the entity ingredient. This is the index of
     /// the entity ingredient within that tuple.
     fn input_index(&self) -> Literal {
-        Literal::usize_unsuffixed(self.all_entity_fields().count())
+        Literal::usize_unsuffixed(self.all_fields().count())
     }
 
     /// For the entity, we create a tuple that contains the function ingredients
     /// for each field and an entity ingredient. These are the indices
     /// of the function ingredients within that tuple.
     fn all_field_indices(&self) -> Vec<Literal> {
-        self.all_entity_fields()
+        self.all_fields()
             .zip(0..)
             .map(|(_, i)| Literal::usize_unsuffixed(i))
             .collect()

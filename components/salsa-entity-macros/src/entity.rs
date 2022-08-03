@@ -219,16 +219,14 @@ impl EntityLike {
     ///
     /// If this is an enum, empty iterator.
     fn id_fields(&self) -> impl Iterator<Item = &EntityField> {
-        self.all_entity_fields()
-            .filter(|ef| ef.is_entity_id_field())
+        self.all_fields().filter(|ef| ef.is_entity_id_field())
     }
 
     /// List of value fields (fields that are not part of the entity's identity across revisions).
     ///
     /// If this is an enum, empty iterator.
     fn value_fields(&self) -> impl Iterator<Item = &EntityField> {
-        self.all_entity_fields()
-            .filter(|ef| !ef.is_entity_id_field())
+        self.all_fields().filter(|ef| !ef.is_entity_id_field())
     }
 
     /// For the entity, we create a tuple that contains the function ingredients
