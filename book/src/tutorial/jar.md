@@ -1,40 +1,36 @@
 # Jars and databases
 
-Salsa programs are composed in **jars**[^jar].
-A jar is just a fancy name for a struct whose fields contain the hashmaps and other state required to implement salsa concepts like [memoized function](../overview.md#memoized-functions) or [entity](../overview.md#entity-values)/[interned](../overview.md#interned-values) structs.
-Typically you have one jar per crate, but that is not required.
-When you declare the salsa database, you will give it a list of all the jar structs in your program, and it will allocate one of each so as to have all the storage it needs.
+Before we can define the interesting parts of our salsa program, we have to setup a bit of structure that defines the salsa **database**.
+The database is a struct that ultimately stores all of salsa's intermediate state, such as the memoized return values from [tracked functions].
 
-Each time you declare something like a [memoized function], it is associated with some jar.
-By default, that jar is expected to be `crate::Jar`.
-You can give the jar struct another name, or put it somewhere else, but then you will have to write `jar = path::to::your::Jar` everywhere, so it's not recommended.
+[tracked functions]: ../overview.md#tracked-functions
 
-Our `calc` example has only a single crate. We follow the salsa convention and declare the `Jar` struct at the root of the crate:
+The database itself is defined in terms of intermediate structures, called called **jars**[^jar], which themselves contain the data for each function.
+This setup allows salsa programs to be divided amongst many crates.
+Typically, you define one jar struct per crate, and then when you construct the final database, you simply list the jar structs.
+This permits the crates to define private functions and other things that are members of the jar struct, but not known directly to the database.
+
+[^jar]: Jars of salsa -- get it? Get it??[^java]
+
+[^java]: OK, maybe it also brings to mind Java `.jar` files, but there's no real relationship. A jar is just a Rust struct, not a packaging format.
+
+## Defining a jar struct
+
+To define a jar struct, you create a tuple struct with the `#[salsa::jar]` annotation:
 
 ```rust
 {{#include ../../../calc-example/calc/src/main.rs:jar_struct}}
 ```
 
-You can see that a jar is just a tuple struct, but annotated with `#[salsa::Jar]`.
-The fields of the struct correspond to the various things that need state in the database.
-We're going to be introducing each of those fields through the tutorial.
+Although it's not required, it's highly recommended to put the `jar` struct at the root of your crate, so that it can be referred to as `crate::Jar`.
+All of the other salsa annotations reference a jar struct, and they all default to the path `crate::Jar`. 
+If you put the jar somewhere else, you will have to override that default.
 
-[memoized functions]: ../reference/memoized.md
-[entities]: ../reference/entity.md
+## Defining the database trait
 
-The `salsa::jar` annotation also has a parameter, `db = Db`.
-In general, salsa annotations take arguments of this form.
-This particular argument is mandatory, so you'll get an error if you leave it out.
-It identifies the **database trait** for this jar.
-
-[^jar]: Jars of salsa -- get it? Get it??
-
-## Database trait for the jar
-
-Whereas a salsa jar contains all the storage needed for a particular crate,
-the salsa **database** is a struct that contains all the storage needed for an entire program.
-Typical salsa functions, however, don't refer directly to this database struct.
-Instead, they refer to a trait, typically called `crate::Db`, that the final database must implement.
+The `#[salsa::jar]` annotation also includes a `db = Db` field. 
+The value of this field (normally `Db`) is the name of a trait that represents the database.
+Salsa programs never refer *directly* to the database; instead, they take a `&dyn Db` argument.
 This allows for separate compilation, where you have a database that contains the data for two jars, but those jars don't depend on one another.
 
 The database trait for our `calc` crate is very simple:
