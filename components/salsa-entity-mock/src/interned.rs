@@ -21,15 +21,33 @@ impl<T: Eq + Hash + Clone> InternedData for T {}
 
 #[allow(dead_code)]
 pub struct InternedIngredient<Id: InternedId, Data: InternedData> {
+    /// Index of this ingredient in the database (used to construct database-ids, etc).
     ingredient_index: IngredientIndex,
 
-    // Deadlock requirement:
-    //
-    // We access `key_map` while holding lock on `value_map`, but not vice versa.
+    /// Maps from data to the existing interned id for that data.
+    ///
+    /// Deadlock requirement: We access `key_map` while holding lock on `value_map`, but not vice versa.
     key_map: FxDashMap<Data, Id>,
+
+    /// Maps from an interned id to its data.
+    ///
+    /// Deadlock requirement: We access `key_map` while holding lock on `value_map`, but not vice versa.
     value_map: FxDashMap<Id, Box<Data>>,
+
+    /// counter for the next id.
     counter: AtomicCell<u32>,
+
+    /// Stores the revision when this interned ingredient was last cleared.
+    /// You can clear an interned table at any point, deleting all its entries,
+    /// but that will make anything dependent on those entries dirty and in need
+    /// of being recomputed.
     reset_at: Revision,
+
+    /// When specific entries are deleted from the interned table, their data is added
+    /// to this vector rather than being immediately freed. This is because we may` have
+    /// references to that data floating about that are tied to the lifetime of some
+    /// `&db` reference. This queue itself is not freed until we have an `&mut db` reference,
+    /// guaranteeing that there are no more references to it.
     deleted_entries: SegQueue<Box<Data>>,
 }
 
