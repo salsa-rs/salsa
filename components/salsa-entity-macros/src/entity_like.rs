@@ -265,7 +265,7 @@ impl EntityLike {
         if !self.has_named_fields() {
             return Err(syn::Error::new(
                 self.id_ident().span(),
-                "`#[salsa::{kind}]` can only be applied to a struct with named fields",
+                format!("`#[salsa::{kind}]` can only be applied to a struct with named fields"),
             ));
         }
 
@@ -284,7 +284,7 @@ impl EntityLike {
             if ef.has_id_attr {
                 return Err(syn::Error::new(
                     ef.name().span(),
-                    "`#[id]` cannot be used with `#[salsa::{kind}]`",
+                    format!("`#[id]` cannot be used with `#[salsa::{kind}]`"),
                 ));
             }
         }
