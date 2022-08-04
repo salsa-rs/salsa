@@ -1,9 +1,27 @@
 # Defining the IR
 
 Before we can define the [parser](./parser.md), we need to define the intermediate representation (IR) that we will use for `calc` programs.
-In the [basic structure](./structure.md), we defined some "pseudo-Rust" structures like `Statement`, `Expression`, and so forth, and now we are going to define them for real.
+In the [basic structure](./structure.md), we defined some "pseudo-Rust" structures like `Statement` and `Expression`;
+now we are going to define them for real.
 
-## Input
+## "Salsa structs"
+
+In addition to regular Rust types, we will make use of various **salsa structs**.
+A salsa struct is a struct that has been annotated with one of the salsa annotations:
+
+* [`#[salsa::input]`](#input-structs), which designates the "base inputs" to your computation;
+* [`#[salsa::tracked]`](#tracked-structs), which designate intermediate values created during your computation;
+* [`#[salsa::interned]`](#interned-structs), which designate small values that are easy to compare for equality.
+
+All salsa structs store the actual values of their fields in the salsa database.
+This permits us to track when the values of those fields change to figure out what work will need to be re-executed.
+
+When you annotate a struct with one of the above salsa attributes, salsa actually generates a bunch of code to link that struct into the database.
+This code must be connected to some [jar](./jar.md).
+By default, this is `crate::Jar`, but you can specify a different jar with the `jar=` attribute (e.g., `#[salsa::input(jar = MyJar)]`).
+You must also list the struct in the jar definition itself, or you will get errors.
+
+## Input structs
 
 The first thing we will define is our **input**. 
 Every salsa program has some basic inputs that drive the rest of the computation.
@@ -17,9 +35,6 @@ Inputs are defined as Rust structs with a `#[salsa::input]` annotation:
 ```
 
 In our compiler, we have just one simple input, the `ProgramSource`, which has a `text` field (the string).
-(By the way, the `#[salsa::input]` annotation must be connected to a jar, but it defaults to `crate::Jar`.
-If you wanted to create the jar somewhere else, you would write `#[salsa::input(jar = path::to::Jar)]`.
-Wherever the jar is defined, you also have to list the input as one of its fields.)
 
 ### The data lives in the database
 
@@ -42,74 +57,32 @@ For an input, a `&mut db` reference is required, along with the values for each 
 let source = ProgramSource::new(&mut db, "print 11 + 11".to_string());
 ```
 
-You can read the value of the field with `source.text(db)`, 
+You can read the value of the field with `source.text(&db)`, 
 and you can set the value of the field with `source.set_text(&mut db, "print 11 * 2".to_string())`.
 
-## Interning
+### Database revisions
 
-Interning is a builtin feature to salsa where you take a struct and replace it with a single integer.
-The integer you get back is arbitrary, but whenever you intern the same struct twice, you get back the same integer.
-In our compiler, we'll use interning to define `FunctionId` and `VariableId`, which are effectively interned strings.
+Whenever a function takes an `&mut` reference to the database, 
+that means that it can only be invoked from outside the incrementalized part of your program,
+as explained in [the overview](../overview.md#goal-of-salsa).
+When you change the value of an input field, that increments a 'revision counter' in the database,
+indicating that some inputs are different now.
+When we talk about a "revision" of the database, we are referring to the state of the database in between changes to the input values.
 
-Interned structs in Salsa are defined with the `#[salsa::interned]` attribute macro:
+## Tracked structs
 
-```rust
-{{#include ../../../calc-example/calc/src/ir.rs:interned_ids}}
-```
-
-As with `#[salsa::input]`, the data for an interned struct is stored in the database, and the struct itself is just an integer. 
-The interned structs have a few methods.
-
-These interned structs also have a few methods:
-
-- The `new` method creates an interned struct given a database `db` and a value for each field (e.g., `let v = VariableId::new(db, "foo".to_string())`).
-- For each field of the interned struct, there is an accessor method with the same name (e.g., `v.name(db)`).
-  - If the field is marked with `#[id(ref)]`, as it is here, than this accessor returns a reference! In this case, it returns an `&String` tied to the database `db`. This is useful when the values of the fields are not `Copy`.
-  - The `id` here refers to the fact that the value of this field is part of the _identity_, i.e., it affects the `salsa::Id` integer. For interned structs, all fields are `id` fields, but later on we'll see entity structs, which also have `value` fields.
-
-### The data struct
-
-In addition to the main `VariableId` and `FunctionId` structs, the `salsa::interned` macro also creates a "data struct".
-This is normally named the same as the original struct, but with `Data` appended to the end (i.e., `VariableIdData` and `FunctionIdData`).
-You can override the name by using the `data` option (`#[salsa::interned(data = MyName)]`).
-The data struct also inherits all the `derive` and other attributes from the original source.
-In the case of our examples, the generated data struct would be something like:
-
-```rust
-// Generated by `salsa::interned`
-
-#[derive(Eq, PartialEq, Clone, Hash)]
-pub struct VariableIdData {
-    pub text: String,
-}
-
-#[derive(Eq, PartialEq, Clone, Hash)]
-pub struct FunctionIdData {
-    pub text: String,
-}
-```
-
-## Expressions and statements
-
-We'll also intern expressions and statements. This is convenient primarily because it allows us to have recursive structures very easily. Since we don't really need the "cheap equality comparison" aspect of interning, this isn't the most efficient choice, and many compilers would opt to represent expressions/statements in some other way.
-
-```rust
-{{#include ../../../calc-example/calc/src/ir.rs:statements_and_expressions}}
-```
-
-## Function entities
-
-The final piece of our IR is the representation of _functions_. Here, we use an _entity struct_:
+Next we will define a **tracked struct** to represent the functions in our input.
+Whereas inputs represent the *start* of a computation, tracked structs represent intermediate values created during your computation.
+In this case, we are going to parse the raw input program, and create a `Function` for each of the functions defined by the user.
 
 ```rust
 {{#include ../../../calc-example/calc/src/ir.rs:functions}}
 ```
 
-An **entity** is very similar to an interned struct, except that it has own identity. That is, each time you invoke `Function::new`, you will get back a new `Function, even if all the values of the fields are equal.
+Unlike with inputs, the fields of tracked structs are immutable once created. Otherwise, working with a tracked struct is quite similar to an input:
 
-### Interning vs entities
-
-Unless you want a cheap way to compare for equality across functions, you should prefer entities to interning. They correspond most closely to creating a "new" struct.
+* You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Function::new(&db, some_name, some_args, some_body)`)
+* You use a getter to read the value of a field, just like with an input (e.g., `my_func.args(db)` to read the `args` field).
 
 ### id fields
 
@@ -118,3 +91,46 @@ Normally, you would do this on fields that represent the "name" of an entity.
 This indicates that, across two revisions R1 and R2, if two functions are created with the same name, they refer to the same entity, so we can compare their other fields for equality to determine what needs to be re-executed.
 Adding `#[id]` attributes is an optimization and never affects correctness.
 For more details, see the [algorithm](../reference/algorithm.md) page of the reference.
+
+## Interned structs
+
+The final kind of salsa struct are *interned structs*.
+As with input and tracked structs, the data for an interned struct is stored in the database, and you just pass around a single integer.
+Unlike those structs, if you intern the same data twice, you get back the **same integer**.
+
+A classic use of interning is for small strings like function names and variables.
+It's annoying and inefficient to pass around those names with `String` values which must be cloned;
+it's also inefficient to have to compare them for equality via string comparison.
+Therefore, we define two interned structs, `FunctionId` and `VariableId`, each with a single field that stores the string:
+
+```rust
+{{#include ../../../calc-example/calc/src/ir.rs:interned_ids}}
+```
+
+When you invoke e.g. `FunctionId::new(&db, "my_string".to_string())`, you will get back a `FunctionId` that is just a newtype'd integer.
+But if you invoke the same call to `new` again, you get back the same integer:
+
+```rust
+let f1 = FunctionId::new(&db, "my_string".to_string());
+let f2 = FunctionId::new(&db, "my_string".to_string());
+assert_eq!(f1, f2);
+```
+
+### Expressions and statements
+
+We'll also intern expressions and statements. This is convenient primarily because it allows us to have recursive structures very easily. Since we don't really need the "cheap equality comparison" aspect of interning, this isn't the most efficient choice, and many compilers would opt to represent expressions/statements in some other way.
+
+```rust
+{{#include ../../../calc-example/calc/src/ir.rs:statements_and_expressions}}
+```
+
+### Interned ids are guaranteed to be consistent within a revision, but not across revisions (but you don't have to care)
+
+Interned ids are guaranteed not to change within a single revision, so you can intern things from all over your program and get back consistent results.
+When you change the inputs, however, salsa may opt to clear some of the interned values and choose different integers.
+However, if this happens, it will also be sure to re-execute every function that interned that value, so all of them still see a consistent value,
+just a different one than they saw in a previous revision.
+
+In other words, within a salsa computation, you can assume that interning produces a single consistent integer, and you don't have to think about it.
+If however you export interned identifiers outside the computation, and then change the inputs, they may not longer be valid or may refer to different values.
+
