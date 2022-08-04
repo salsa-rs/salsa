@@ -34,11 +34,11 @@ pub(crate) fn tracked(
     })
 }
 
-type Args = Options<Memoized>;
+type Args = Options<TrackedFn>;
 
-struct Memoized;
+struct TrackedFn;
 
-impl crate::options::AllowedOptions for Memoized {
+impl crate::options::AllowedOptions for TrackedFn {
     const RETURN_REF: bool = true;
 
     const NO_EQ: bool = true;
