@@ -6,7 +6,7 @@ use crate::ir::{
 };
 
 // ANCHOR: parse_statements
-#[salsa::memoized(return_ref)]
+#[salsa::tracked(return_ref)]
 pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Vec<Statement> {
     // Get the source text from the database
     let source_text = source.text(db);

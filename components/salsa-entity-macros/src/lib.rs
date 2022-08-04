@@ -32,7 +32,6 @@ mod db;
 mod input;
 mod interned;
 mod jar;
-mod memoized;
 mod options;
 mod salsa_struct;
 mod tracked;
@@ -67,11 +66,6 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn component(args: TokenStream, input: TokenStream) -> TokenStream {
     component::component(args, input)
-}
-
-#[proc_macro_attribute]
-pub fn memoized(args: TokenStream, input: TokenStream) -> TokenStream {
-    memoized::memoized(args, input)
 }
 
 #[proc_macro_attribute]

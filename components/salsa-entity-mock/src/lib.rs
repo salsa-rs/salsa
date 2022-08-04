@@ -47,5 +47,4 @@ pub use salsa_entity_macros::db;
 pub use salsa_entity_macros::input;
 pub use salsa_entity_macros::interned;
 pub use salsa_entity_macros::jar;
-pub use salsa_entity_macros::memoized;
 pub use salsa_entity_macros::tracked;
