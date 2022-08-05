@@ -2,5 +2,6 @@
 //! code.
 
 mod tracked_fn_on_input;
+mod tracked_fn_on_tracked;
 
 fn main() {}
