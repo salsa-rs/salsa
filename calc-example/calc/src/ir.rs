@@ -1,16 +1,22 @@
 use ordered_float::OrderedFloat;
 use salsa::debug::DebugWithDb;
 
+// ANCHOR: input
+#[salsa::input]
+pub struct SourceProgram {
+    #[return_ref]
+    text: String,
+}
+// ANCHOR_END: input
+
 // ANCHOR: interned_ids
 #[salsa::interned]
-#[derive(Eq, PartialEq, Clone, Hash)]
 pub struct VariableId {
     #[return_ref]
     pub text: String,
 }
 
 #[salsa::interned]
-#[derive(Eq, PartialEq, Clone, Hash)]
 pub struct FunctionId {
     #[return_ref]
     pub text: String,
@@ -19,8 +25,12 @@ pub struct FunctionId {
 
 // ANCHOR: statements_and_expressions
 #[salsa::interned]
+pub struct Statement {
+    data: StatementData,
+}
+
 #[derive(Eq, PartialEq, Clone, Hash)]
-pub enum Statement {
+pub enum StatementData {
     /// Defines `fn <name>(<args>) = <body>`
     Function(Function),
     /// Defines `print <expr>`
@@ -28,8 +38,13 @@ pub enum Statement {
 }
 
 #[salsa::interned]
+pub struct Expression {
+    #[return_ref]
+    data: ExpressionData,
+}
+
 #[derive(Eq, PartialEq, Clone, Hash)]
-pub enum Expression {
+pub enum ExpressionData {
     Op(Expression, Op, Expression),
     Number(OrderedFloat<f64>),
     Variable(VariableId),
@@ -58,8 +73,8 @@ impl DebugWithDb<dyn crate::Db + '_> for Function {
 impl DebugWithDb<dyn crate::Db + '_> for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &dyn crate::Db) -> std::fmt::Result {
         match self.data(db) {
-            StatementData::Function(a) => DebugWithDb::fmt(a, f, db),
-            StatementData::Print(a) => DebugWithDb::fmt(a, f, db),
+            StatementData::Function(a) => DebugWithDb::fmt(&a, f, db),
+            StatementData::Print(a) => DebugWithDb::fmt(&a, f, db),
         }
     }
 }
@@ -117,7 +132,7 @@ impl DebugWithDb<dyn crate::Db + '_> for Diagnostic {
 }
 
 // ANCHOR: functions
-#[salsa::entity]
+#[salsa::tracked]
 pub struct Function {
     #[id]
     name: FunctionId,

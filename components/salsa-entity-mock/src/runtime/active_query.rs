@@ -1,8 +1,8 @@
 use crate::{
     durability::Durability,
-    entity::Disambiguator,
     hash::{FxHashSet, FxIndexMap, FxIndexSet},
     key::{DatabaseKeyIndex, DependencyIndex},
+    tracked_struct::Disambiguator,
     Cycle, Revision, Runtime,
 };
 

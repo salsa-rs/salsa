@@ -16,10 +16,15 @@ print z
 
 ## Parser
 
-The calc compiler begins with a parser.
-Because calc is so simple, we don't have to bother separating out the lexer.
-The parser will take the raw bytes and produce a series of statements that are something like this
-(this is pseudo-Rust):
+The calc compiler takes as input a program, represented by a string:
+
+```rust
+struct ProgramSource {
+    text: String
+}
+```
+
+The first thing it does it to parse that string into a series of statements that look something like the following pseudo-Rust:[^lexer]
 
 ```rust
 enum Statement {
@@ -61,6 +66,8 @@ Finally, for function/variable names, the `FunctionId` and `VariableId` types wi
 type FunctionId = /* interned string */;
 type VariableId = /* interned string */;
 ```
+
+[^lexer]: Because calc is so simple, we don't have to bother separating out the lexer from the parser.
 
 ## Checker
 

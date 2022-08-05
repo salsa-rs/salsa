@@ -1,6 +1,7 @@
 // ANCHOR: jar_struct
 #[salsa::jar(db = Db)]
 pub struct Jar(
+    crate::ir::SourceProgram,
     crate::ir::VariableId,
     crate::ir::FunctionId,
     crate::ir::Expression,
@@ -8,7 +9,6 @@ pub struct Jar(
     crate::ir::Function,
     crate::ir::Diagnostics,
     crate::parser::parse_statements,
-    crate::parser::source_text,
 );
 // ANCHOR_END: jar_struct
 

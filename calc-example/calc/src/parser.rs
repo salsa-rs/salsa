@@ -1,22 +1,15 @@
 use ordered_float::OrderedFloat;
 
 use crate::ir::{
-    Diagnostic, Diagnostics, Expression, ExpressionData, Function, FunctionId, Op, Statement,
-    StatementData, VariableId,
+    Diagnostic, Diagnostics, Expression, ExpressionData, Function, FunctionId, Op, SourceProgram,
+    Statement, StatementData, VariableId,
 };
 
-// ANCHOR: source_text
-#[salsa::memoized(return_ref)]
-pub fn source_text(_db: &dyn crate::Db) -> String {
-    panic!("input")
-}
-// ANCHOR_END: source_text
-
 // ANCHOR: parse_statements
-#[salsa::memoized(return_ref)]
-pub fn parse_statements(db: &dyn crate::Db) -> Vec<Statement> {
+#[salsa::tracked(return_ref)]
+pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Vec<Statement> {
     // Get the source text from the database
-    let source_text = source_text(db);
+    let source_text = source.text(db);
 
     // Create the parser
     let mut parser = Parser {
@@ -121,13 +114,13 @@ impl Parser<'_> {
         let word = self.word()?;
         if word == "fn" {
             let func = self.parse_function()?;
-            Some(Statement::from(self.db, StatementData::Function(func)))
+            Some(Statement::new(self.db, StatementData::Function(func)))
             //   ^^^^^^^^^^^^^^^           ^^^^^^^^^^^^^^^^^^^^^^^
             //  Create a new interned enum...      |
             //                             using the "data" type.
         } else if word == "print" {
             let expr = self.parse_expression()?;
-            Some(Statement::from(self.db, StatementData::Print(expr)))
+            Some(Statement::new(self.db, StatementData::Print(expr)))
         } else {
             None
         }
@@ -191,7 +184,7 @@ impl Parser<'_> {
 
         while let Some(op) = op(self) {
             let expr2 = parse_expr(self)?;
-            expr1 = Expression::from(self.db, ExpressionData::Op(expr1, op, expr2));
+            expr1 = Expression::new(self.db, ExpressionData::Op(expr1, op, expr2));
         }
 
         Some(expr1)
@@ -206,13 +199,13 @@ impl Parser<'_> {
                 let f = FunctionId::new(self.db, w);
                 let args = self.parse_expressions()?;
                 self.ch(')')?;
-                return Some(Expression::from(self.db, ExpressionData::Call(f, args)));
+                return Some(Expression::new(self.db, ExpressionData::Call(f, args)));
             }
 
             let v = VariableId::new(self.db, w);
-            Some(Expression::from(self.db, ExpressionData::Variable(v)))
+            Some(Expression::new(self.db, ExpressionData::Variable(v)))
         } else if let Some(n) = self.number() {
-            Some(Expression::from(
+            Some(Expression::new(
                 self.db,
                 ExpressionData::Number(OrderedFloat::from(n)),
             ))
@@ -339,14 +332,14 @@ fn parse_string(source_text: &str) -> String {
     // Create the database
     let mut db = crate::db::Database::default();
 
-    // Set the source_text value
-    source_text::set(&mut db, source_text.to_string());
+    // Create the source program
+    let source_program = SourceProgram::new(&mut db, source_text.to_string());
 
     // Invoke the parser
-    let statements = parse_statements(&db);
+    let statements = parse_statements(&db, source_program);
 
     // Read out any diagnostics
-    let accumulated = parse_statements::accumulated::<Diagnostics>(&db);
+    let accumulated = parse_statements::accumulated::<Diagnostics>(&db, source_program);
 
     // Format the result as a string and return it
     format!("{:#?}", (statements, accumulated).debug(&db))

@@ -26,16 +26,16 @@ macro_rules! parse_quote_spanned {
 }
 
 mod accumulator;
-mod component;
 mod configuration;
-mod data_item;
 mod db;
-mod entity;
-mod entity_like;
+mod input;
 mod interned;
 mod jar;
-mod memoized;
 mod options;
+mod salsa_struct;
+mod tracked;
+mod tracked_fn;
+mod tracked_struct;
 
 #[proc_macro_attribute]
 pub fn accumulator(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -53,21 +53,16 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn entity(args: TokenStream, input: TokenStream) -> TokenStream {
-    entity::entity(args, input)
-}
-
-#[proc_macro_attribute]
 pub fn interned(args: TokenStream, input: TokenStream) -> TokenStream {
     interned::interned(args, input)
 }
 
 #[proc_macro_attribute]
-pub fn component(args: TokenStream, input: TokenStream) -> TokenStream {
-    component::component(args, input)
+pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
+    input::input(args, input)
 }
 
 #[proc_macro_attribute]
-pub fn memoized(args: TokenStream, input: TokenStream) -> TokenStream {
-    memoized::memoized(args, input)
+pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
+    tracked::tracked(args, input)
 }
