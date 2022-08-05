@@ -53,7 +53,6 @@ fn execute_when_specified() {
     assert_eq!(tracked_fn_extra(&db, tracked), 2222);
 }
 
-
 #[test]
 fn execute_when_not_specified() {
     let mut db = Database::default();
