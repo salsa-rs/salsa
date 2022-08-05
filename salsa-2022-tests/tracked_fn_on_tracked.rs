@@ -2,7 +2,7 @@
 //! compiles and executes successfully.
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, tracked_fn);
+struct Jar(MyInput, MyTracked, tracked_fn);
 
 trait Db: salsa::DbWithJar<Jar> {}
 

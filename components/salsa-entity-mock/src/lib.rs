@@ -42,7 +42,6 @@ pub use self::storage::Storage;
 pub use self::tracked_struct::TrackedStructData;
 pub use self::tracked_struct::TrackedStructId;
 pub use salsa_entity_macros::accumulator;
-pub use salsa_entity_macros::component;
 pub use salsa_entity_macros::db;
 pub use salsa_entity_macros::input;
 pub use salsa_entity_macros::interned;

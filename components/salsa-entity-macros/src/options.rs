@@ -19,6 +19,12 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `no_eq` identifier.
     pub no_eq: Option<syn::Ident>,
 
+    /// The `specify` option is used to signal that a tracked function can
+    /// have its value externally specified (at least some of the time).
+    ///
+    /// If this is `Some`, the value is the `specify` identifier.
+    pub specify: Option<syn::Ident>,
+
     /// The `jar = <type>` option is used to indicate the jar; it defaults to `crate::jar`.
     ///
     /// If this is `Some`, the value is the `<path>`.
@@ -43,6 +49,7 @@ impl<A: AllowedOptions> Default for Options<A> {
     fn default() -> Self {
         Self {
             return_ref: Default::default(),
+            specify: Default::default(),
             no_eq: Default::default(),
             jar_ty: Default::default(),
             db_path: Default::default(),
@@ -55,6 +62,7 @@ impl<A: AllowedOptions> Default for Options<A> {
 /// These flags determine which options are allowed in a given context
 pub(crate) trait AllowedOptions {
     const RETURN_REF: bool;
+    const SPECIFY: bool;
     const NO_EQ: bool;
     const JAR: bool;
     const DATA: bool;
@@ -109,6 +117,20 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`no_eq` option not allowed here",
+                    ));
+                }
+            } else if ident == "specify" {
+                if A::SPECIFY {
+                    if let Some(old) = std::mem::replace(&mut options.specify, Some(ident)) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `specify` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`specify` option not allowed here",
                     ));
                 }
             } else if ident == "jar" {

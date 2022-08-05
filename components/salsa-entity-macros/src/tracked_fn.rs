@@ -1,4 +1,4 @@
-use proc_macro2::Literal;
+use proc_macro2::{Literal, TokenStream};
 use syn::spanned::Spanned;
 use syn::{ReturnType, Token};
 
@@ -24,13 +24,22 @@ fn tracked_fn(args: Args, item_fn: syn::ItemFn) -> syn::Result<TokenStream> {
         ));
     }
 
+    if let Some(s) = &args.specify {
+        if requires_interning(&item_fn) {
+            return Err(syn::Error::new(
+                s.span(),
+                "tracked functon takes too many argments to have its value set with `specify`",
+            ));
+        }
+    }
+
     let struct_item = configuration_struct(&item_fn);
     let configuration = fn_configuration(&args, &item_fn);
     let struct_item_ident = &struct_item.ident;
-    let struct_ty: syn::Type = parse_quote!(#struct_item_ident);
-    let configuration_impl = configuration.to_impl(&struct_ty);
-    let ingredients_for_impl = ingredients_for_impl(&args, &item_fn, &struct_ty);
-    let (getter, setter) = wrapper_fns(&args, &item_fn, &struct_ty)?;
+    let config_ty: syn::Type = parse_quote!(#struct_item_ident);
+    let configuration_impl = configuration.to_impl(&config_ty);
+    let ingredients_for_impl = ingredients_for_impl(&args, &item_fn, &config_ty);
+    let (getter, item_impl) = wrapper_fns(&args, &item_fn, &config_ty)?;
 
     Ok(quote! {
         #struct_item
@@ -41,7 +50,7 @@ fn tracked_fn(args: Args, item_fn: syn::ItemFn) -> syn::Result<TokenStream> {
         // sometimes doesn't like
         #[allow(clippy::needless_lifetimes)]
         #getter
-        #setter
+        #item_impl
     })
 }
 
@@ -52,6 +61,8 @@ struct TrackedFn;
 impl crate::options::AllowedOptions for TrackedFn {
     const RETURN_REF: bool = true;
 
+    const SPECIFY: bool = true;
+
     const NO_EQ: bool = true;
 
     const JAR: bool = true;
@@ -61,9 +72,9 @@ impl crate::options::AllowedOptions for TrackedFn {
     const DB: bool = false;
 }
 
-/// Returns the key type for this tracked function. The result is
-/// a tuple of the fn argments, ignoring the database.
-fn key_ty(item_fn: &syn::ItemFn) -> syn::Type {
+/// Returns the key type for this tracked function.
+/// This is a tuple of all the argument types (apart from the database).
+fn key_tuple_ty(item_fn: &syn::ItemFn) -> syn::Type {
     let arg_tys = item_fn.sig.inputs.iter().skip(1).map(|arg| match arg {
         syn::FnArg::Receiver(_) => unreachable!(),
         syn::FnArg::Typed(pat_ty) => pat_ty.ty.clone(),
@@ -76,20 +87,49 @@ fn key_ty(item_fn: &syn::ItemFn) -> syn::Type {
 
 fn configuration_struct(item_fn: &syn::ItemFn) -> syn::ItemStruct {
     let fn_name = item_fn.sig.ident.clone();
-    let key_tuple_ty = key_ty(item_fn);
     let visibility = &item_fn.vis;
+
+    let salsa_struct_ty = salsa_struct_ty(item_fn);
+    let intern_map: syn::Type = if requires_interning(item_fn) {
+        let key_ty = key_tuple_ty(item_fn);
+        parse_quote! { salsa::interned::InternedIngredient<salsa::Id, #key_ty> }
+    } else {
+        parse_quote! { salsa::interned::IdentityInterner<#salsa_struct_ty> }
+    };
+
     parse_quote! {
         #[allow(non_camel_case_types)]
-        #visibility struct #fn_name {
-            intern_map: salsa::interned::InternedIngredient<salsa::Id, #key_tuple_ty>,
+        #visibility struct #fn_name
+        where
+            #salsa_struct_ty: salsa::AsId, // require that the salsa struct is, well, a salsa struct!
+        {
+            intern_map: #intern_map,
             function: salsa::function::FunctionIngredient<Self>,
         }
     }
 }
 
+/// True if this fn takes more arguments.
+fn requires_interning(item_fn: &syn::ItemFn) -> bool {
+    item_fn.sig.inputs.len() > 2
+}
+
+/// Every tracked fn takes a salsa struct as its second argument.
+/// This fn returns the type of that second argument.
+fn salsa_struct_ty(item_fn: &syn::ItemFn) -> &syn::Type {
+    match &item_fn.sig.inputs[1] {
+        syn::FnArg::Receiver(_) => panic!("receiver not expected"),
+        syn::FnArg::Typed(pat_ty) => &pat_ty.ty,
+    }
+}
+
 fn fn_configuration(args: &Args, item_fn: &syn::ItemFn) -> Configuration {
     let jar_ty = args.jar_ty();
-    let key_ty = parse_quote!(salsa::id::Id);
+    let key_ty = if requires_interning(item_fn) {
+        parse_quote!(salsa::id::Id)
+    } else {
+        salsa_struct_ty(item_fn).clone()
+    };
     let value_ty = configuration::value_ty(&item_fn.sig);
 
     // FIXME: these are hardcoded for now
@@ -134,10 +174,33 @@ fn fn_configuration(args: &Args, item_fn: &syn::ItemFn) -> Configuration {
     }
 }
 
-fn ingredients_for_impl(args: &Args, struct_ty: &syn::Type) -> syn::ItemImpl {
+fn ingredients_for_impl(
+    args: &Args,
+    item_fn: &syn::ItemFn,
+    config_ty: &syn::Type,
+) -> syn::ItemImpl {
     let jar_ty = args.jar_ty();
+
+    let intern_map: syn::Expr = if requires_interning(item_fn) {
+        parse_quote! {
+            {
+                let index = ingredients.push(|jars| {
+                    let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
+                    let ingredients =
+                        <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
+                    &ingredients.intern_map
+                });
+                salsa::interned::InternedIngredient::new(index)
+            }
+        }
+    } else {
+        parse_quote! {
+            salsa::interned::IdentityInterner::new()
+        }
+    };
+
     parse_quote! {
-        impl salsa::storage::IngredientsFor for #struct_ty {
+        impl salsa::storage::IngredientsFor for #config_ty {
             type Ingredients = Self;
             type Jar = #jar_ty;
 
@@ -146,15 +209,7 @@ fn ingredients_for_impl(args: &Args, struct_ty: &syn::Type) -> syn::ItemImpl {
                 DB: salsa::DbWithJar<Self::Jar> + salsa::storage::JarFromJars<Self::Jar>,
             {
                 Self {
-                    intern_map: {
-                        let index = ingredients.push(|jars| {
-                            let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
-                            let ingredients =
-                                <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
-                            &ingredients.intern_map
-                        });
-                        salsa::interned::InternedIngredient::new(index)
-                    },
+                    intern_map: #intern_map,
 
                     function: {
                         let index = ingredients.push(|jars| {
@@ -174,17 +229,18 @@ fn ingredients_for_impl(args: &Args, struct_ty: &syn::Type) -> syn::ItemImpl {
 fn wrapper_fns(
     args: &Args,
     item_fn: &syn::ItemFn,
-    struct_ty: &syn::Type,
+    config_ty: &syn::Type,
 ) -> syn::Result<(syn::ItemFn, syn::ItemImpl)> {
     // The "getter" has same signature as the original:
-    let getter_fn = getter_fn(args, item_fn, struct_ty)?;
+    let getter_fn = getter_fn(args, item_fn, config_ty)?;
 
-    let ref_getter_fn = ref_getter_fn(args, item_fn, struct_ty)?;
-    let accumulated_fn = accumulated_fn(args, item_fn, struct_ty)?;
-    let setter_fn = setter_fn(args, item_fn, struct_ty)?;
+    let ref_getter_fn = ref_getter_fn(args, item_fn, config_ty)?;
+    let accumulated_fn = accumulated_fn(args, item_fn, config_ty)?;
+    let setter_fn = setter_fn(args, item_fn, config_ty)?;
+    let specify_fn = specify_fn(args, item_fn, config_ty)?.map(|f| quote! { #f });
 
     let setter_impl: syn::ItemImpl = parse_quote! {
-        impl #struct_ty {
+        impl #config_ty {
             #[allow(dead_code, clippy::needless_lifetimes)]
             #ref_getter_fn
 
@@ -193,6 +249,8 @@ fn wrapper_fns(
 
             #[allow(dead_code, clippy::needless_lifetimes)]
             #accumulated_fn
+
+            #specify_fn
         }
     };
 
@@ -203,7 +261,7 @@ fn wrapper_fns(
 fn getter_fn(
     args: &Args,
     item_fn: &syn::ItemFn,
-    struct_ty: &syn::Type,
+    config_ty: &syn::Type,
 ) -> syn::Result<syn::ItemFn> {
     let mut getter_fn = item_fn.clone();
     let arg_idents: Vec<_> = item_fn
@@ -224,13 +282,13 @@ fn getter_fn(
         getter_fn = make_fn_return_ref(getter_fn)?;
         getter_fn.block = Box::new(parse_quote_spanned! {
             item_fn.block.span() => {
-                #struct_ty::get(#(#arg_idents,)*)
+                #config_ty::get(#(#arg_idents,)*)
             }
         });
     } else {
         getter_fn.block = Box::new(parse_quote_spanned! {
             item_fn.block.span() => {
-                Clone::clone(#struct_ty::get(#(#arg_idents,)*))
+                Clone::clone(#config_ty::get(#(#arg_idents,)*))
             }
         });
     }
@@ -244,7 +302,7 @@ fn getter_fn(
 fn ref_getter_fn(
     args: &Args,
     item_fn: &syn::ItemFn,
-    struct_ty: &syn::Type,
+    config_ty: &syn::Type,
 ) -> syn::Result<syn::ItemFn> {
     let jar_ty = args.jar_ty();
     let mut ref_getter_fn = item_fn.clone();
@@ -255,8 +313,8 @@ fn ref_getter_fn(
     ref_getter_fn.block = parse_quote! {
         {
             let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(#db_var);
-            let __ingredients = <_ as salsa::storage::HasIngredientsFor<#struct_ty>>::ingredient(__jar);
-            let __key = __ingredients.intern_map.intern(__runtime, (#(#arg_names,)*));
+            let __ingredients = <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient(__jar);
+            let __key = __ingredients.intern_map.intern(__runtime, (#(#arg_names),*));
             __ingredients.function.fetch(#db_var, __key)
         }
     };
@@ -269,7 +327,7 @@ fn ref_getter_fn(
 fn setter_fn(
     args: &Args,
     item_fn: &syn::ItemFn,
-    struct_ty: &syn::Type,
+    config_ty: &syn::Type,
 ) -> syn::Result<syn::ImplItemMethod> {
     // The setter has *always* the same signature as the original:
     // but it takes a value arg and has no return type.
@@ -299,14 +357,49 @@ fn setter_fn(
         block: parse_quote! {
             {
                 let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(#db_var);
-                let __ingredients = <_ as salsa::storage::HasIngredientsFor<#struct_ty>>::ingredient_mut(__jar);
-                let __key = __ingredients.intern_map.intern(__runtime, (#(#arg_names,)*));
+                let __ingredients = <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient_mut(__jar);
+                let __key = __ingredients.intern_map.intern(__runtime, (#(#arg_names),*));
                 __ingredients.function.store(__runtime, __key, #value_arg, salsa::Durability::LOW)
             }
         },
     })
 }
 
+fn specify_fn(
+    args: &Args,
+    item_fn: &syn::ItemFn,
+    config_ty: &syn::Type,
+) -> syn::Result<Option<syn::ImplItemMethod>> {
+    let specify = match &args.specify {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+
+    // `specify` has the same signature as the original,
+    // but it takes a value arg and has no return type.
+    let jar_ty = args.jar_ty();
+    let (db_var, arg_names) = fn_args(item_fn)?;
+    let mut setter_sig = item_fn.sig.clone();
+    let value_ty = configuration::value_ty(&item_fn.sig);
+    setter_sig.ident = syn::Ident::new("specify", item_fn.sig.ident.span());
+    let value_arg = syn::Ident::new("__value", item_fn.sig.output.span());
+    setter_sig.inputs.push(parse_quote!(#value_arg: #value_ty));
+    setter_sig.output = ReturnType::Default;
+    Ok(Some(syn::ImplItemMethod {
+        attrs: vec![],
+        vis: item_fn.vis.clone(),
+        defaultness: None,
+        sig: setter_sig,
+        block: parse_quote! {
+            {
+
+                let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(#db_var);
+                let __ingredients = <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient(__jar);
+                __ingredients.function.set(#db_var, #(#arg_names,)* #value_arg)
+            }
+        },
+    }))
+}
 /// Given a function def tagged with `#[return_ref]`, modifies `ref_getter_fn`
 /// so that it returns an `&Value` instead of `Value`. May introduce a name for the
 /// database lifetime if required.
@@ -386,7 +479,7 @@ fn db_lifetime_and_ty(func: &mut syn::ItemFn) -> syn::Result<(syn::Lifetime, &sy
 fn accumulated_fn(
     args: &Args,
     item_fn: &syn::ItemFn,
-    struct_ty: &syn::Type,
+    config_ty: &syn::Type,
 ) -> syn::Result<syn::ItemFn> {
     let jar_ty = args.jar_ty();
 
@@ -412,8 +505,8 @@ fn accumulated_fn(
     accumulated_fn.block = parse_quote! {
         {
             let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(#db_var);
-            let __ingredients = <_ as salsa::storage::HasIngredientsFor<#struct_ty>>::ingredient(__jar);
-            let __key = __ingredients.intern_map.intern(__runtime, (#(#arg_names,)*));
+            let __ingredients = <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient(__jar);
+            let __key = __ingredients.intern_map.intern(__runtime, (#(#arg_names),*));
             __ingredients.function.accumulated::<__A>(#db_var, __key)
         }
     };

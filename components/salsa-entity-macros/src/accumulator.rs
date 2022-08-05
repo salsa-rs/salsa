@@ -21,6 +21,8 @@ struct Accumulator;
 impl crate::options::AllowedOptions for Accumulator {
     const RETURN_REF: bool = false;
 
+    const SPECIFY: bool = false;
+
     const NO_EQ: bool = false;
 
     const JAR: bool = true;

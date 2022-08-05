@@ -30,6 +30,8 @@ struct Jar;
 impl crate::options::AllowedOptions for Jar {
     const RETURN_REF: bool = false;
 
+    const SPECIFY: bool = false;
+
     const NO_EQ: bool = false;
 
     const JAR: bool = false;

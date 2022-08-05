@@ -3,5 +3,6 @@
 
 mod tracked_fn_on_input;
 mod tracked_fn_on_tracked;
+mod tracked_fn_on_tracked_specify;
 
 fn main() {}

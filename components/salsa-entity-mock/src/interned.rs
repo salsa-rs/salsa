@@ -1,6 +1,7 @@
 use crossbeam::atomic::AtomicCell;
 use crossbeam::queue::SegQueue;
 use std::hash::Hash;
+use std::marker::PhantomData;
 
 use crate::durability::Durability;
 use crate::id::AsId;
@@ -196,5 +197,23 @@ where
 
     fn inputs(&self, _key_index: crate::Id) -> Option<QueryInputs> {
         None
+    }
+}
+
+pub struct IdentityInterner<Id: AsId> {
+    data: PhantomData<Id>,
+}
+
+impl<Id: AsId> IdentityInterner<Id> {
+    pub fn new() -> Self {
+        IdentityInterner { data: PhantomData }
+    }
+
+    pub fn intern(&self, _runtime: &Runtime, id: Id) -> Id {
+        id
+    }
+
+    pub fn data(&self, _runtime: &Runtime, id: Id) -> (Id,) {
+        (id,)
     }
 }
