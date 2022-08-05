@@ -33,8 +33,8 @@ insta = "1.8.0"
 [workspace]
 members = [
     "components/salsa-macros",
-    "components/salsa-entity-mock",
-    "components/salsa-entity-macros",
+    "components/salsa-2022",
+    "components/salsa-2022-macros",
     "calc-example/calc",
     "salsa-2022-tests"
 ]

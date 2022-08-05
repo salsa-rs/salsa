@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-salsa = { path = "../components/salsa-entity-mock", package = "salsa-entity-mock" }
+salsa = { path = "../components/salsa-2022", package = "salsa-2022" }
 
 [dev-dependencies]
 expect-test = "1.4.0"
