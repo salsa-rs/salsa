@@ -19,7 +19,6 @@ parking_lot = "0.12.1"
 rustc-hash = "1.0"
 smallvec = "1.0.0"
 oorandom = "11"
-
 salsa-macros = { version = "0.17.0-pre.2", path = "components/salsa-macros" }
 
 [dev-dependencies]
@@ -37,4 +36,5 @@ members = [
     "components/salsa-entity-mock",
     "components/salsa-entity-macros",
     "calc-example/calc",
+    "salsa-2022-tests"
 ]

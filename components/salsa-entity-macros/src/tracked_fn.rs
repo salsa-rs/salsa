@@ -66,9 +66,10 @@ fn key_ty(item_fn: &syn::ItemFn) -> syn::Type {
 fn configuration_struct(item_fn: &syn::ItemFn) -> syn::ItemStruct {
     let fn_name = item_fn.sig.ident.clone();
     let key_tuple_ty = key_ty(item_fn);
+    let visibility = &item_fn.vis;
     parse_quote! {
         #[allow(non_camel_case_types)]
-        pub struct #fn_name {
+        #visibility struct #fn_name {
             intern_map: salsa::interned::InternedIngredient<salsa::Id, #key_tuple_ty>,
             function: salsa::function::FunctionIngredient<Self>,
         }
@@ -187,6 +188,7 @@ fn wrapper_fns(
     Ok((getter_fn, setter_impl))
 }
 
+/// Creates the `get` associated function.
 fn getter_fn(
     args: &Args,
     item_fn: &syn::ItemFn,
@@ -224,6 +226,10 @@ fn getter_fn(
     Ok(getter_fn)
 }
 
+/// Creates a `get` associated function that returns `&Value`
+/// (to be used when `return_ref` is specified).
+///
+/// (Helper for `getter_fn`)
 fn ref_getter_fn(
     args: &Args,
     item_fn: &syn::ItemFn,
@@ -247,6 +253,8 @@ fn ref_getter_fn(
     Ok(ref_getter_fn)
 }
 
+/// Creates a `set` associated function that can be used to set (given an `&mut db`)
+/// the value for this function for some inputs.
 fn setter_fn(
     args: &Args,
     item_fn: &syn::ItemFn,
@@ -288,6 +296,9 @@ fn setter_fn(
     })
 }
 
+/// Given a function def tagged with `#[return_ref]`, modifies `ref_getter_fn`
+/// so that it returns an `&Value` instead of `Value`. May introduce a name for the
+/// database lifetime if required.
 fn make_fn_return_ref(mut ref_getter_fn: syn::ItemFn) -> syn::Result<syn::ItemFn> {
     // The 0th input should be a `&dyn Foo`. We need to ensure
     // it has a named lifetime parameter.
@@ -313,6 +324,9 @@ fn make_fn_return_ref(mut ref_getter_fn: syn::ItemFn) -> syn::Result<syn::ItemFn
     Ok(ref_getter_fn)
 }
 
+/// Given an item function, identifies the name given to the `&dyn Db` reference and returns it,
+/// along with the type of the database. If the database lifetime did not have a name,
+/// then modifies the item function so that it is called `'__db` and returns that.
 fn db_lifetime_and_ty(func: &mut syn::ItemFn) -> syn::Result<(syn::Lifetime, &syn::Type)> {
     match &mut func.sig.inputs[0] {
         syn::FnArg::Receiver(r) => {
@@ -355,6 +369,9 @@ fn db_lifetime_and_ty(func: &mut syn::ItemFn) -> syn::Result<(syn::Lifetime, &sy
     }
 }
 
+/// Generates the `accumulated` function, which invokes `accumulated`
+/// on the function ingredient to extract the values pushed (transitively)
+/// into an accumulator.
 fn accumulated_fn(
     args: &Args,
     item_fn: &syn::ItemFn,
@@ -393,6 +410,10 @@ fn accumulated_fn(
     Ok(accumulated_fn)
 }
 
+/// Examines the function arguments and returns a tuple of:
+///
+/// * the name of the database argument
+/// * the name(s) of the key arguments
 fn fn_args(item_fn: &syn::ItemFn) -> syn::Result<(proc_macro2::Ident, Vec<proc_macro2::Ident>)> {
     // Check that we have no receiver and that all argments have names
     if item_fn.sig.inputs.len() == 0 {
