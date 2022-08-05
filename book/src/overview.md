@@ -111,7 +111,7 @@ file.data(&db)
 ### Writing input fields
 
 Finally, you can also modify the value of an input field by using the setter method.
-Since this is modifyingg the input, the setter takes an `&mut`-reference to the database:
+Since this is modifying the input, the setter takes an `&mut`-reference to the database:
 
 ```rust
 file.set_contents(String::from("fn foo() { /* add a comment */ }"));

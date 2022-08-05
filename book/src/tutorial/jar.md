@@ -5,7 +5,7 @@ The database is a struct that ultimately stores all of salsa's intermediate stat
 
 [tracked functions]: ../overview.md#tracked-functions
 
-The database itself is defined in terms of intermediate structures, called called **jars**[^jar], which themselves contain the data for each function.
+The database itself is defined in terms of intermediate structures, called **jars**[^jar], which themselves contain the data for each function.
 This setup allows salsa programs to be divided amongst many crates.
 Typically, you define one jar struct per crate, and then when you construct the final database, you simply list the jar structs.
 This permits the crates to define private functions and other things that are members of the jar struct, but not known directly to the database.

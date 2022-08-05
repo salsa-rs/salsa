@@ -3,7 +3,7 @@
 Now that we have defined a [jar](./jar.md), we need to create the **database struct**.
 The database struct is where all the jars come together.
 Typically it is only used by the "driver" of your application;
-the one which starts up the program, supplies the inputs, and relay the outputs.
+the one which starts up the program, supplies the inputs, and relays the outputs.
 
 In `calc`, the database struct is in the [`db`] module, and it looks like this:
 
