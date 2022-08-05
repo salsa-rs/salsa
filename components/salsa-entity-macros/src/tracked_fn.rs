@@ -10,18 +10,29 @@ pub(crate) fn tracked(
     item_fn: syn::ItemFn,
 ) -> proc_macro::TokenStream {
     let args = syn::parse_macro_input!(args as Args);
+    match tracked_fn(args, item_fn) {
+        Ok(p) => p.into(),
+        Err(e) => return e.into_compile_error().into(),
+    }
+}
+
+fn tracked_fn(args: Args, item_fn: syn::ItemFn) -> syn::Result<TokenStream> {
+    if item_fn.sig.inputs.len() <= 1 {
+        return Err(syn::Error::new(
+            item_fn.sig.ident.span(),
+            "tracked functions must have at least a database and salsa struct argument",
+        ));
+    }
+
     let struct_item = configuration_struct(&item_fn);
     let configuration = fn_configuration(&args, &item_fn);
     let struct_item_ident = &struct_item.ident;
     let struct_ty: syn::Type = parse_quote!(#struct_item_ident);
     let configuration_impl = configuration.to_impl(&struct_ty);
-    let ingredients_for_impl = ingredients_for_impl(&args, &struct_ty);
-    let (getter, setter) = match wrapper_fns(&args, &item_fn, &struct_ty) {
-        Ok(p) => p,
-        Err(e) => return e.into_compile_error().into(),
-    };
+    let ingredients_for_impl = ingredients_for_impl(&args, &item_fn, &struct_ty);
+    let (getter, setter) = wrapper_fns(&args, &item_fn, &struct_ty)?;
 
-    proc_macro::TokenStream::from(quote! {
+    Ok(quote! {
         #struct_item
         #configuration_impl
         #ingredients_for_impl
