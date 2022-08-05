@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Defining the IR: interned and entity structs - Salsa</title>
+        <title>Defining the IR: the various &quot;salsa structs&quot; - Salsa</title>
                 
 
         <!-- Custom HTML head -->
@@ -83,7 +83,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded affix "><li class="part-title">How to use Salsa</li><li class="chapter-item expanded "><a href="../overview.html"><strong aria-hidden="true">2.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../tutorial.html"><strong aria-hidden="true">3.</strong> Tutorial: calc language</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../tutorial/structure.html"><strong aria-hidden="true">3.1.</strong> Basic structure</a></li><li class="chapter-item expanded "><a href="../tutorial/jar.html"><strong aria-hidden="true">3.2.</strong> Jars and databases</a></li><li class="chapter-item expanded "><a href="../tutorial/db.html"><strong aria-hidden="true">3.3.</strong> Defining the database struct</a></li><li class="chapter-item expanded "><a href="../tutorial/ir.html" class="active"><strong aria-hidden="true">3.4.</strong> Defining the IR: interned and entity structs</a></li><li class="chapter-item expanded "><a href="../tutorial/parser.html"><strong aria-hidden="true">3.5.</strong> Defining the parser: memoized functions and inputs</a></li><li class="chapter-item expanded "><a href="../tutorial/accumulators.html"><strong aria-hidden="true">3.6.</strong> Defining the parser: reporting errors</a></li><li class="chapter-item expanded "><a href="../tutorial/debug.html"><strong aria-hidden="true">3.7.</strong> Defining the parser: debug impls and testing</a></li><li class="chapter-item expanded "><a href="../tutorial/checker.html"><strong aria-hidden="true">3.8.</strong> Defining the checker</a></li><li class="chapter-item expanded "><a href="../tutorial/interpreter.html"><strong aria-hidden="true">3.9.</strong> Defining the interpreter</a></li></ol></li><li class="chapter-item expanded "><a href="../reference.html"><strong aria-hidden="true">4.</strong> Reference</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../reference/algorithm.html"><strong aria-hidden="true">4.1.</strong> Algorithm</a></li><li class="chapter-item expanded "><a href="../reference/interned.html"><strong aria-hidden="true">4.2.</strong> salsa::interned</a></li><li class="chapter-item expanded "><a href="../reference/entity.html"><strong aria-hidden="true">4.3.</strong> salsa::entity</a></li><li class="chapter-item expanded "><a href="../reference/memoized.html"><strong aria-hidden="true">4.4.</strong> salsa::memoized</a></li></ol></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">5.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">5.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">5.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../tuning.html"><strong aria-hidden="true">6.</strong> Tuning</a></li><li class="chapter-item expanded "><a href="../cycles.html"><strong aria-hidden="true">7.</strong> Cycle handling</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../cycles/fallback.html"><strong aria-hidden="true">7.1.</strong> Recovering via fallback</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">How Salsa works internally</li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">8.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">9.</strong> Videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">10.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/generated_code.html"><strong aria-hidden="true">10.1.</strong> Generated code</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/diagram.html"><strong aria-hidden="true">10.1.1.</strong> Diagram</a></li><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">10.1.2.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">10.1.3.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../plumbing/salsa_crate.html"><strong aria-hidden="true">10.2.</strong> The salsa crate</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_ops.html"><strong aria-hidden="true">10.2.1.</strong> Query operations</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/maybe_changed_after.html"><strong aria-hidden="true">10.2.1.1.</strong> maybe changed after</a></li><li class="chapter-item expanded "><a href="../plumbing/fetch.html"><strong aria-hidden="true">10.2.1.2.</strong> Fetch</a></li></ol></li><li class="chapter-item expanded "><a href="../plumbing/derived_flowchart.html"><strong aria-hidden="true">10.2.2.</strong> Derived queries flowchart</a></li><li class="chapter-item expanded "><a href="../plumbing/cycles.html"><strong aria-hidden="true">10.2.3.</strong> Cycle handling</a></li></ol></li><li class="chapter-item expanded "><a href="../plumbing/terminology.html"><strong aria-hidden="true">10.3.</strong> Terminology</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/terminology/backdate.html"><strong aria-hidden="true">10.3.1.</strong> Backdate</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/changed_at.html"><strong aria-hidden="true">10.3.2.</strong> Changed at</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/dependency.html"><strong aria-hidden="true">10.3.3.</strong> Dependency</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/derived_query.html"><strong aria-hidden="true">10.3.4.</strong> Derived query</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/durability.html"><strong aria-hidden="true">10.3.5.</strong> Durability</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/input_query.html"><strong aria-hidden="true">10.3.6.</strong> Input query</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/LRU.html"><strong aria-hidden="true">10.3.7.</strong> LRU</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/memo.html"><strong aria-hidden="true">10.3.8.</strong> Memo</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/query.html"><strong aria-hidden="true">10.3.9.</strong> Query</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/query_function.html"><strong aria-hidden="true">10.3.10.</strong> Query function</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/revision.html"><strong aria-hidden="true">10.3.11.</strong> Revision</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/untracked.html"><strong aria-hidden="true">10.3.12.</strong> Untracked dependency</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/verified.html"><strong aria-hidden="true">10.3.13.</strong> Verified</a></li></ol></li></ol></li><li class="chapter-item expanded "><li class="part-title">Salsa RFCs</li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">11.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">11.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">11.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">11.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">11.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">11.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">11.6.</strong> RFC 0005: Durability</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0006-Dynamic-Databases.html"><strong aria-hidden="true">11.7.</strong> RFC 0006: Dynamic database</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0007-Opinionated-Cancelation.html"><strong aria-hidden="true">11.8.</strong> RFC 0007: Opinionated cancelation</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0008-Remove-Garbage-Collection.html"><strong aria-hidden="true">11.9.</strong> RFC 0008: Remove garbage collection</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0009-Cycle-recovery.html"><strong aria-hidden="true">11.10.</strong> RFC 0009: Cycle recovery</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0010-Slot-no-more.html"><strong aria-hidden="true">11.11.</strong> RFC 0010: Slot no more</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">Appendices</li><li class="chapter-item expanded "><a href="../meta.html"><strong aria-hidden="true">12.</strong> Meta: about the book itself</a></li></ol>            </div>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded affix "><li class="part-title">How to use Salsa</li><li class="chapter-item expanded "><a href="../overview.html"><strong aria-hidden="true">2.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../tutorial.html"><strong aria-hidden="true">3.</strong> Tutorial: calc language</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../tutorial/structure.html"><strong aria-hidden="true">3.1.</strong> Basic structure</a></li><li class="chapter-item expanded "><a href="../tutorial/jar.html"><strong aria-hidden="true">3.2.</strong> Jars and databases</a></li><li class="chapter-item expanded "><a href="../tutorial/db.html"><strong aria-hidden="true">3.3.</strong> Defining the database struct</a></li><li class="chapter-item expanded "><a href="../tutorial/ir.html" class="active"><strong aria-hidden="true">3.4.</strong> Defining the IR: the various &quot;salsa structs&quot;</a></li><li class="chapter-item expanded "><a href="../tutorial/parser.html"><strong aria-hidden="true">3.5.</strong> Defining the parser: memoized functions and inputs</a></li><li class="chapter-item expanded "><a href="../tutorial/accumulators.html"><strong aria-hidden="true">3.6.</strong> Defining the parser: reporting errors</a></li><li class="chapter-item expanded "><a href="../tutorial/debug.html"><strong aria-hidden="true">3.7.</strong> Defining the parser: debug impls and testing</a></li><li class="chapter-item expanded "><a href="../tutorial/checker.html"><strong aria-hidden="true">3.8.</strong> Defining the checker</a></li><li class="chapter-item expanded "><a href="../tutorial/interpreter.html"><strong aria-hidden="true">3.9.</strong> Defining the interpreter</a></li></ol></li><li class="chapter-item expanded "><a href="../reference.html"><strong aria-hidden="true">4.</strong> Reference</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../reference/algorithm.html"><strong aria-hidden="true">4.1.</strong> Algorithm</a></li></ol></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">5.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">5.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">5.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../tuning.html"><strong aria-hidden="true">6.</strong> Tuning</a></li><li class="chapter-item expanded "><a href="../cycles.html"><strong aria-hidden="true">7.</strong> Cycle handling</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../cycles/fallback.html"><strong aria-hidden="true">7.1.</strong> Recovering via fallback</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">How Salsa works internally</li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">8.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">9.</strong> Videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">10.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/generated_code.html"><strong aria-hidden="true">10.1.</strong> Generated code</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/diagram.html"><strong aria-hidden="true">10.1.1.</strong> Diagram</a></li><li class="chapter-item expanded "><a href="../plumbing/query_groups.html"><strong aria-hidden="true">10.1.2.</strong> Query groups</a></li><li class="chapter-item expanded "><a href="../plumbing/database.html"><strong aria-hidden="true">10.1.3.</strong> Database</a></li></ol></li><li class="chapter-item expanded "><a href="../plumbing/salsa_crate.html"><strong aria-hidden="true">10.2.</strong> The salsa crate</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/query_ops.html"><strong aria-hidden="true">10.2.1.</strong> Query operations</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/maybe_changed_after.html"><strong aria-hidden="true">10.2.1.1.</strong> maybe changed after</a></li><li class="chapter-item expanded "><a href="../plumbing/fetch.html"><strong aria-hidden="true">10.2.1.2.</strong> Fetch</a></li></ol></li><li class="chapter-item expanded "><a href="../plumbing/derived_flowchart.html"><strong aria-hidden="true">10.2.2.</strong> Derived queries flowchart</a></li><li class="chapter-item expanded "><a href="../plumbing/cycles.html"><strong aria-hidden="true">10.2.3.</strong> Cycle handling</a></li></ol></li><li class="chapter-item expanded "><a href="../plumbing/terminology.html"><strong aria-hidden="true">10.3.</strong> Terminology</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/terminology/backdate.html"><strong aria-hidden="true">10.3.1.</strong> Backdate</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/changed_at.html"><strong aria-hidden="true">10.3.2.</strong> Changed at</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/dependency.html"><strong aria-hidden="true">10.3.3.</strong> Dependency</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/derived_query.html"><strong aria-hidden="true">10.3.4.</strong> Derived query</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/durability.html"><strong aria-hidden="true">10.3.5.</strong> Durability</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/input_query.html"><strong aria-hidden="true">10.3.6.</strong> Input query</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/LRU.html"><strong aria-hidden="true">10.3.7.</strong> LRU</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/memo.html"><strong aria-hidden="true">10.3.8.</strong> Memo</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/query.html"><strong aria-hidden="true">10.3.9.</strong> Query</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/query_function.html"><strong aria-hidden="true">10.3.10.</strong> Query function</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/revision.html"><strong aria-hidden="true">10.3.11.</strong> Revision</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/untracked.html"><strong aria-hidden="true">10.3.12.</strong> Untracked dependency</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/verified.html"><strong aria-hidden="true">10.3.13.</strong> Verified</a></li></ol></li></ol></li><li class="chapter-item expanded "><li class="part-title">Salsa RFCs</li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">11.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">11.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">11.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">11.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">11.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">11.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">11.6.</strong> RFC 0005: Durability</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0006-Dynamic-Databases.html"><strong aria-hidden="true">11.7.</strong> RFC 0006: Dynamic database</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0007-Opinionated-Cancelation.html"><strong aria-hidden="true">11.8.</strong> RFC 0007: Opinionated cancelation</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0008-Remove-Garbage-Collection.html"><strong aria-hidden="true">11.9.</strong> RFC 0008: Remove garbage collection</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0009-Cycle-recovery.html"><strong aria-hidden="true">11.10.</strong> RFC 0009: Cycle recovery</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0010-Slot-no-more.html"><strong aria-hidden="true">11.11.</strong> RFC 0010: Slot no more</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">Appendices</li><li class="chapter-item expanded "><a href="../meta.html"><strong aria-hidden="true">12.</strong> Meta: about the book itself</a></li></ol>            </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
 
@@ -146,82 +146,142 @@
                     <main>
                         <h1 id="defining-the-ir"><a class="header" href="#defining-the-ir">Defining the IR</a></h1>
 <p>Before we can define the <a href="./parser.html">parser</a>, we need to define the intermediate representation (IR) that we will use for <code>calc</code> programs.
-In the <a href="./structure.html">basic structure</a>, we defined some &quot;pseudo-Rust&quot; structures like <code>Statement</code>, <code>Expression</code>, and so forth, and now we are going to define them for real.</p>
-<h2 id="interning"><a class="header" href="#interning">Interning</a></h2>
-<p>We'll start with <code>FunctionId</code> and <code>VariableId</code>.
-These were two different names for interned strings.
-Interning is a builtin feature to salsa where you take a complex data structure (in this case, a string) and replace it with a single integer.
-The integer you get back is arbitrary, but whenever you intern the same thing twice (within one revision -- more on this caveat later), you get back the same integer.</p>
-<p>Interned structs in Salsa are defined with the <code>#[salsa::interned]</code> attribute macro:</p>
+In the <a href="./structure.html">basic structure</a>, we defined some &quot;pseudo-Rust&quot; structures like <code>Statement</code> and <code>Expression</code>;
+now we are going to define them for real.</p>
+<h2 id="salsa-structs"><a class="header" href="#salsa-structs">&quot;Salsa structs&quot;</a></h2>
+<p>In addition to regular Rust types, we will make use of various <strong>salsa structs</strong>.
+A salsa struct is a struct that has been annotated with one of the salsa annotations:</p>
+<ul>
+<li><a href="#input-structs"><code>#[salsa::input]</code></a>, which designates the &quot;base inputs&quot; to your computation;</li>
+<li><a href="#tracked-structs"><code>#[salsa::tracked]</code></a>, which designate intermediate values created during your computation;</li>
+<li><a href="#interned-structs"><code>#[salsa::interned]</code></a>, which designate small values that are easy to compare for equality.</li>
+</ul>
+<p>All salsa structs store the actual values of their fields in the salsa database.
+This permits us to track when the values of those fields change to figure out what work will need to be re-executed.</p>
+<p>When you annotate a struct with one of the above salsa attributes, salsa actually generates a bunch of code to link that struct into the database.
+This code must be connected to some <a href="./jar.html">jar</a>.
+By default, this is <code>crate::Jar</code>, but you can specify a different jar with the <code>jar=</code> attribute (e.g., <code>#[salsa::input(jar = MyJar)]</code>).
+You must also list the struct in the jar definition itself, or you will get errors.</p>
+<h2 id="input-structs"><a class="header" href="#input-structs">Input structs</a></h2>
+<p>The first thing we will define is our <strong>input</strong>. 
+Every salsa program has some basic inputs that drive the rest of the computation.
+The rest of the program must be some deterministic function of those base inputs,
+such that when those inputs change, we can try to efficiently recompute the new result of that function.</p>
+<p>Inputs are defined as Rust structs with a <code>#[salsa::input]</code> annotation:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[salsa::input]
+pub struct SourceProgram {
+    #[return_ref]
+    text: String,
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>In our compiler, we have just one simple input, the <code>ProgramSource</code>, which has a <code>text</code> field (the string).</p>
+<h3 id="the-data-lives-in-the-database"><a class="header" href="#the-data-lives-in-the-database">The data lives in the database</a></h3>
+<p>Although they are declared like other Rust structs, salsa structs are implemented quite differently.
+The values of their fields are stored in the salsa database, and the struct itself just contains a numeric identifier.
+This means that the struct instances are copy (no matter what fields they contain).
+Creating instances of the struct and accessing fields is done by invoking methods like <code>new</code> as well as getters and setters.</p>
+<p>More concretely, the <code>#[salsa::input]</code> annotation will generate a struct for <code>ProgramSource</code> like this:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[define(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ProgramSource(salsa::Id);
+<span class="boring">}
+</span></code></pre></pre>
+<p>It will also generate a method <code>new</code> that lets you create a <code>ProgramSource</code> in the database.
+For an input, a <code>&amp;mut db</code> reference is required, along with the values for each field:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let source = ProgramSource::new(&amp;mut db, &quot;print 11 + 11&quot;.to_string());
+<span class="boring">}
+</span></code></pre></pre>
+<p>You can read the value of the field with <code>source.text(&amp;db)</code>, 
+and you can set the value of the field with <code>source.set_text(&amp;mut db, &quot;print 11 * 2&quot;.to_string())</code>.</p>
+<h3 id="database-revisions"><a class="header" href="#database-revisions">Database revisions</a></h3>
+<p>Whenever a function takes an <code>&amp;mut</code> reference to the database, 
+that means that it can only be invoked from outside the incrementalized part of your program,
+as explained in <a href="../overview.html#goal-of-salsa">the overview</a>.
+When you change the value of an input field, that increments a 'revision counter' in the database,
+indicating that some inputs are different now.
+When we talk about a &quot;revision&quot; of the database, we are referring to the state of the database in between changes to the input values.</p>
+<h2 id="tracked-structs"><a class="header" href="#tracked-structs">Tracked structs</a></h2>
+<p>Next we will define a <strong>tracked struct</strong> to represent the functions in our input.
+Whereas inputs represent the <em>start</em> of a computation, tracked structs represent intermediate values created during your computation.
+In this case, we are going to parse the raw input program, and create a <code>Function</code> for each of the functions defined by the user.</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[salsa::tracked]
+pub struct Function {
+    #[id]
+    name: FunctionId,
+    args: Vec&lt;VariableId&gt;,
+    body: Expression,
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>Unlike with inputs, the fields of tracked structs are immutable once created. Otherwise, working with a tracked struct is quite similar to an input:</p>
+<ul>
+<li>You can create a new value by using <code>new</code>, but with a tracked struct, you only need an <code>&amp;dyn</code> database, not <code>&amp;mut</code> (e.g., <code>Function::new(&amp;db, some_name, some_args, some_body)</code>)</li>
+<li>You use a getter to read the value of a field, just like with an input (e.g., <code>my_func.args(db)</code> to read the <code>args</code> field).</li>
+</ul>
+<h3 id="id-fields"><a class="header" href="#id-fields">id fields</a></h3>
+<p>To get better reuse across revisions, particularly when things are reordered, you can mark some entity fields with <code>#[id]</code>.
+Normally, you would do this on fields that represent the &quot;name&quot; of an entity.
+This indicates that, across two revisions R1 and R2, if two functions are created with the same name, they refer to the same entity, so we can compare their other fields for equality to determine what needs to be re-executed.
+Adding <code>#[id]</code> attributes is an optimization and never affects correctness.
+For more details, see the <a href="../reference/algorithm.html">algorithm</a> page of the reference.</p>
+<h2 id="interned-structs"><a class="header" href="#interned-structs">Interned structs</a></h2>
+<p>The final kind of salsa struct are <em>interned structs</em>.
+As with input and tracked structs, the data for an interned struct is stored in the database, and you just pass around a single integer.
+Unlike those structs, if you intern the same data twice, you get back the <strong>same integer</strong>.</p>
+<p>A classic use of interning is for small strings like function names and variables.
+It's annoying and inefficient to pass around those names with <code>String</code> values which must be cloned;
+it's also inefficient to have to compare them for equality via string comparison.
+Therefore, we define two interned structs, <code>FunctionId</code> and <code>VariableId</code>, each with a single field that stores the string:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>#[salsa::interned]
-#[derive(Eq, PartialEq, Clone, Hash)]
 pub struct VariableId {
     #[return_ref]
     pub text: String,
 }
 
 #[salsa::interned]
-#[derive(Eq, PartialEq, Clone, Hash)]
 pub struct FunctionId {
     #[return_ref]
     pub text: String,
 }
 <span class="boring">}
 </span></code></pre></pre>
-<p>Note though that the structs that result from this declaration are <em>very different</em> from what you wrote. When you intern a struct, the actual <em>data</em> of the struct is stored in the salsa database, and the struct you get back is just a lightweight struct that wraps a <code>salsa::Id</code> struct. Since this struct just wraps a simple integer, it is <code>Copy</code>, <code>Eq</code>, <code>Hash</code>, and <code>Ord</code>:</p>
+<p>When you invoke e.g. <code>FunctionId::new(&amp;db, &quot;my_string&quot;.to_string())</code>, you will get back a <code>FunctionId</code> that is just a newtype'd integer.
+But if you invoke the same call to <code>new</code> again, you get back the same integer:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>#[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash)]
-pub struct VariableId(salsa::Id);
-
-#[derive(Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash)]
-pub struct FunctionId(salsa::Id);
+</span>let f1 = FunctionId::new(&amp;db, &quot;my_string&quot;.to_string());
+let f2 = FunctionId::new(&amp;db, &quot;my_string&quot;.to_string());
+assert_eq!(f1, f2);
 <span class="boring">}
 </span></code></pre></pre>
-<p>These interned structs also have a few methods:</p>
-<ul>
-<li>The <code>new</code> method creates an interned struct given a database <code>db</code> and a value for each field (e.g., <code>let v = VariableId::new(db, &quot;foo&quot;.to_string())</code>).</li>
-<li>For each field of the interned struct, there is an accessor method with the same name (e.g., <code>v.name(db)</code>).
-<ul>
-<li>If the field is marked with <code>#[id(ref)]</code>, as it is here, than this accessor returns a reference! In this case, it returns an <code>&amp;String</code> tied to the database <code>db</code>. This is useful when the values of the fields are not <code>Copy</code>.</li>
-<li>The <code>id</code> here refers to the fact that the value of this field is part of the <em>identity</em>, i.e., it affects the <code>salsa::Id</code> integer. For interned structs, all fields are <code>id</code> fields, but later on we'll see entity structs, which also have <code>value</code> fields.</li>
-</ul>
-</li>
-</ul>
-<h3 id="the-data-struct"><a class="header" href="#the-data-struct">The data struct</a></h3>
-<p>In addition to the main <code>VariableId</code> and <code>FunctionId</code> structs, the <code>salsa::interned</code> macro also creates a &quot;data struct&quot;.
-This is normally named the same as the original struct, but with <code>Data</code> appended to the end (i.e., <code>VariableIdData</code> and <code>FunctionIdData</code>).
-You can override the name by using the <code>data</code> option (<code>#[salsa::interned(data = MyName)]</code>).
-The data struct also inherits all the <code>derive</code> and other attributes from the original source.
-In the case of our examples, the generated data struct would be something like:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>// Generated by `salsa::interned`
-
-#[derive(Eq, PartialEq, Clone, Hash)]
-pub struct VariableIdData {
-    pub text: String,
-}
-
-#[derive(Eq, PartialEq, Clone, Hash)]
-pub struct FunctionIdData {
-    pub text: String,
-}
-<span class="boring">}
-</span></code></pre></pre>
-<h2 id="expressions-and-statements"><a class="header" href="#expressions-and-statements">Expressions and statements</a></h2>
+<h3 id="expressions-and-statements"><a class="header" href="#expressions-and-statements">Expressions and statements</a></h3>
 <p>We'll also intern expressions and statements. This is convenient primarily because it allows us to have recursive structures very easily. Since we don't really need the &quot;cheap equality comparison&quot; aspect of interning, this isn't the most efficient choice, and many compilers would opt to represent expressions/statements in some other way.</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>#[salsa::interned]
+pub struct Statement {
+    data: StatementData,
+}
+
 #[derive(Eq, PartialEq, Clone, Hash)]
-pub enum Statement {
+pub enum StatementData {
     /// Defines `fn &lt;name&gt;(&lt;args&gt;) = &lt;body&gt;`
     Function(Function),
     /// Defines `print &lt;expr&gt;`
@@ -229,8 +289,13 @@ pub enum Statement {
 }
 
 #[salsa::interned]
+pub struct Expression {
+    #[return_ref]
+    data: ExpressionData,
+}
+
 #[derive(Eq, PartialEq, Clone, Hash)]
-pub enum Expression {
+pub enum ExpressionData {
     Op(Expression, Op, Expression),
     Number(OrderedFloat&lt;f64&gt;),
     Variable(VariableId),
@@ -246,29 +311,13 @@ pub enum Op {
 }
 <span class="boring">}
 </span></code></pre></pre>
-<h2 id="function-entities"><a class="header" href="#function-entities">Function entities</a></h2>
-<p>The final piece of our IR is the representation of <em>functions</em>. Here, we use an <em>entity struct</em>:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>#[salsa::entity]
-pub struct Function {
-    #[id]
-    name: FunctionId,
-    args: Vec&lt;VariableId&gt;,
-    body: Expression,
-}
-<span class="boring">}
-</span></code></pre></pre>
-<p>An <strong>entity</strong> is very similar to an interned struct, except that it has own identity. That is, each time you invoke <code>Function::new</code>, you will get back a new `Function, even if all the values of the fields are equal.</p>
-<h3 id="interning-vs-entities"><a class="header" href="#interning-vs-entities">Interning vs entities</a></h3>
-<p>Unless you want a cheap way to compare for equality across functions, you should prefer entities to interning. They correspond most closely to creating a &quot;new&quot; struct.</p>
-<h3 id="id-fields"><a class="header" href="#id-fields">id fields</a></h3>
-<p>To get better reuse across revisions, particularly when things are reordered, you can mark some entity fields with <code>#[id]</code>.
-Normally, you would do this on fields that represent the &quot;name&quot; of an entity.
-This indicates that, across two revisions R1 and R2, if two functions are created with the same name, they refer to the same entity, so we can compare their other fields for equality to determine what needs to be re-executed.
-Adding <code>#[id]</code> attributes is an optimization and never affects correctness.
-For more details, see the <a href="../reference/algorithm.html">algorithm</a> page of the reference.</p>
+<h3 id="interned-ids-are-guaranteed-to-be-consistent-within-a-revision-but-not-across-revisions-but-you-dont-have-to-care"><a class="header" href="#interned-ids-are-guaranteed-to-be-consistent-within-a-revision-but-not-across-revisions-but-you-dont-have-to-care">Interned ids are guaranteed to be consistent within a revision, but not across revisions (but you don't have to care)</a></h3>
+<p>Interned ids are guaranteed not to change within a single revision, so you can intern things from all over your program and get back consistent results.
+When you change the inputs, however, salsa may opt to clear some of the interned values and choose different integers.
+However, if this happens, it will also be sure to re-execute every function that interned that value, so all of them still see a consistent value,
+just a different one than they saw in a previous revision.</p>
+<p>In other words, within a salsa computation, you can assume that interning produces a single consistent integer, and you don't have to think about it.
+If however you export interned identifiers outside the computation, and then change the inputs, they may not longer be valid or may refer to different values.</p>
 
                     </main>
 
