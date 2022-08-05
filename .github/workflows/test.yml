@@ -35,6 +35,10 @@ jobs:
         default: true
     - uses: actions-rs/cargo@v1
       with:
+        command: check
+        args: --all
+    - uses: actions-rs/cargo@v1
+      with:
         command: test
         args: --all-features --all-targets
     - uses: actions-rs/cargo@v1

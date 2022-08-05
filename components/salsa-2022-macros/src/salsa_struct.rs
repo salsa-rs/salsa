@@ -345,11 +345,3 @@ impl SalsaField {
         !self.has_no_eq_attr
     }
 }
-
-/// True if this an attribute that salsa permits users to attach to
-/// entity/interned fields.
-fn is_entity_like_field_attribute(a: &syn::Attribute) -> bool {
-    FIELD_OPTION_ATTRIBUTES
-        .iter()
-        .any(|(fa, _)| a.path.is_ident(fa))
-}
