@@ -1,5 +1,5 @@
 [package]
-name = "salsa-entity-macros"
+name = "salsa-2022-macros"
 version = "0.1.0"
 edition = "2021"
 

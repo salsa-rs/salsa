@@ -1,5 +1,5 @@
 [package]
-name = "salsa-entity-mock"
+name = "salsa-2022"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,4 +16,4 @@ crossbeam-utils = { version = "0.8", default-features = false }
 log = "0.4.5"
 parking_lot = "0.11.0"
 smallvec = "1.0.0"
-salsa-entity-macros = { path = "../salsa-entity-macros" }
+salsa-2022-macros = { path = "../salsa-2022-macros" }
