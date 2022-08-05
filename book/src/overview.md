@@ -148,7 +148,7 @@ Tracked functions can return any clone-able type. A clone is required since, whe
 **Tracked structs** are intermediate structs created during your computation.
 Like inputs, their fields are stored inside the database, and the struct itself just wraps an id.
 Unlike inputs, they can only be created inside a tracked function, and their fields can never change once they are created.
-Getter methods are provided to read the fields, but there are no setter methods[^override]. Example:
+Getter methods are provided to read the fields, but there are no setter methods[^specify]. Example:
 
 ```rust
 #[salsa::tracked]
@@ -210,16 +210,17 @@ struct Item {
 }
 ```
 
-### Overriding tracked functions for particular structs
+### Specified the result of tracked functions for particular structs
 
-Sometimes it is useful to define a tracked function but _override_ its value for some particular struct.
+Sometimes it is useful to define a tracked function but specify its value for some particular struct specially.
 For example, maybe the default way to compute the representation for a function is to read the AST, but you also have some built-in functions in your language and you want to hard-code their results.
 This can also be used to simulate a field that is initialized after the tracked struct is created.
 
-To support this use case, you can use the `override` method associated with tracked functions:
+To support this use case, you can use the `specify` method associated with tracked functions. 
+To enable this method, you need to add the `specify` flag to the function to alert users that its value may sometimes be specified externally.
 
 ```rust
-#[salsa::tracked]
+#[salsa::tracked(specify)] // <-- specify flag required
 fn representation(db: &dyn crate::Db, item: Item) -> Representation {
     // read the user's input AST by default
     let ast = ast(db, item);
@@ -229,12 +230,12 @@ fn representation(db: &dyn crate::Db, item: Item) -> Representation {
 fn create_builtin_item(db: &dyn crate::Db) -> Item {
     let i = Item::new(db, ...);
     let r = hardcoded_representation();
-    representation::override(db, i, r); // <-- override method!
+    representation::specify(db, i, r); // <-- use the method!
     i
 }
 ```
 
-Overriding can also be really useful for unit testing, since you don't can force the values that you want to be returned.
+Specifying is only possible for tracked functions that take a single tracked struct as argument (besides the database).
 
 ## Interned structs
 
