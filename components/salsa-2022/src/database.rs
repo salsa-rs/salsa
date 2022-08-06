@@ -67,7 +67,7 @@ pub trait ParallelDatabase: Database + Send {
     ///     fn snapshot(&self) -> Snapshot<Self> {
     ///         Snapshot::new(
     ///             MyDatabaseType {
-    ///                 runtime: self.runtime.snapshot(self),
+    ///                 runtime: self.storage.snapshot(),
     ///                 other_field: self.other_field.clone(),
     ///             }
     ///         )
