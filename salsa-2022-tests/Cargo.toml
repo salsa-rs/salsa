@@ -7,10 +7,5 @@ edition = "2021"
 
 [dependencies]
 salsa = { path = "../components/salsa-2022", package = "salsa-2022" }
-
-[dev-dependencies]
 expect-test = "1.4.0"
 
-[[bin]]
-name = "salsa-2022-tests"
-path = "main.rs"
