@@ -33,7 +33,7 @@ In addition to the struct itself, we must add an impl of `salsa::Database`:
 If you want to permit accessing your database from multiple threads at once, then you also need to implement the `ParallelDatabase` trait:
 
 ```rust
-{{#include ../../../calc-example/calc/src/db.rs:db_impl}}
+{{#include ../../../calc-example/calc/src/db.rs:par_db_impl}}
 ```
 
 ## Implementing the `Default` trait

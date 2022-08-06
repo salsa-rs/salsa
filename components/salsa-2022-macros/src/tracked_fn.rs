@@ -370,10 +370,9 @@ fn specify_fn(
     item_fn: &syn::ItemFn,
     config_ty: &syn::Type,
 ) -> syn::Result<Option<syn::ImplItemMethod>> {
-    let specify = match &args.specify {
-        Some(s) => s,
-        None => return Ok(None),
-    };
+    if args.specify.is_none() {
+        return Ok(None);
+    }
 
     // `specify` has the same signature as the original,
     // but it takes a value arg and has no return type.
