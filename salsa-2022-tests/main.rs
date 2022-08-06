@@ -4,5 +4,6 @@
 mod tracked_fn_on_input;
 mod tracked_fn_on_tracked;
 mod tracked_fn_on_tracked_specify;
+mod tracked_fn_rev;
 
 fn main() {}
