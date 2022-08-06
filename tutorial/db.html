@@ -181,9 +181,11 @@ This means that</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>impl salsa::Database for Database {
-    fn salsa_runtime(&amp;self) -&gt; &amp;salsa::Runtime {
-        self.storage.runtime()
+</span>impl salsa::ParallelDatabase for Database {
+    fn snapshot(&amp;self) -&gt; salsa::Snapshot&lt;Self&gt; {
+        salsa::Snapshot::new(Database {
+            storage: self.storage.snapshot(),
+        })
     }
 }
 <span class="boring">}
