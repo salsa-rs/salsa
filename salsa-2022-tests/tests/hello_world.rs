@@ -2,15 +2,14 @@
 //! compiles and executes successfully.
 #![allow(dead_code)]
 
+use salsa_2022_tests::{HasLogger, Logger};
+
 use expect_test::expect;
-use std::cell::RefCell;
 
 #[salsa::jar(db = Db)]
 struct Jar(MyInput, MyTracked, final_result, intermediate_result);
 
-trait Db: salsa::DbWithJar<Jar> {
-    fn push_log(&self, message: String);
-}
+trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
 #[salsa::input(jar = Jar)]
 struct MyInput {
@@ -38,14 +37,7 @@ fn intermediate_result(db: &dyn Db, input: MyInput) -> MyTracked {
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
-    log: RefCell<Vec<String>>,
-}
-
-impl Database {
-    fn assert_logs(&mut self, expected: expect_test::Expect) {
-        let logs = std::mem::replace(&mut *self.log.borrow_mut(), vec![]);
-        expected.assert_eq(&format!("{:#?}", logs));
-    }
+    logger: Logger,
 }
 
 impl salsa::Database for Database {
@@ -54,9 +46,11 @@ impl salsa::Database for Database {
     }
 }
 
-impl Db for Database {
-    fn push_log(&self, message: String) {
-        self.log.borrow_mut().push(message);
+impl Db for Database {}
+
+impl HasLogger for Database {
+    fn logger(&self) -> &Logger {
+        &self.logger
     }
 }
 
