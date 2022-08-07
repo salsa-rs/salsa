@@ -5,6 +5,7 @@
 use salsa_2022_tests::{HasLogger, Logger};
 
 use expect_test::expect;
+use test_log::test;
 
 #[salsa::jar(db = Db)]
 struct Jar(MyInput, MyTracked, final_result, intermediate_result);

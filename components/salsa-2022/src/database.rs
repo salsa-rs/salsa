@@ -1,11 +1,14 @@
-use crate::{storage::HasJarsDyn, Event, Runtime};
+use crate::{storage::HasJarsDyn, DebugWithDb, Event, Runtime};
 
 pub trait Database: HasJarsDyn + AsSalsaDatabase {
     /// This function is invoked at key points in the salsa
     /// runtime. It permits the database to be customized and to
     /// inject logging or other custom behavior.
+    ///
+    /// By default, the event is logged at level debug using
+    /// the standard `log` facade.
     fn salsa_event(&self, event_fn: Event) {
-        #![allow(unused_variables)]
+        log::debug!("salsa_event: {:?}", event_fn.debug(self));
     }
 
     fn salsa_runtime(&self) -> &Runtime;
