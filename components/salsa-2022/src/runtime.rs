@@ -5,6 +5,7 @@ use std::{
 
 use crate::{
     cycle::CycleRecoveryStrategy,
+    debug::DebugWithDb,
     durability::Durability,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::active_query::ActiveQuery,

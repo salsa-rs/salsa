@@ -2,6 +2,7 @@ use arc_swap::Guard;
 
 use crate::{
     database::AsSalsaDatabase,
+    debug::DebugWithDb,
     key::DatabaseKeyIndex,
     runtime::{local_state::ActiveQueryGuard, StampedValue},
     storage::HasJarsDyn,
