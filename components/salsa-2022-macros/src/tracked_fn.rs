@@ -70,6 +70,8 @@ impl crate::options::AllowedOptions for TrackedFn {
     const DATA: bool = false;
 
     const DB: bool = false;
+
+    const RECOVERY_FN: bool = true;
 }
 
 /// Returns the key type for this tracked function.

@@ -25,10 +25,12 @@ struct MyInput {
 
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked(jar = Jar, recovery_fn = my_recover_fn)]
 fn memoized_a(db: &dyn Db, input: MyInput) -> () {
     memoized_b(db, input)
 }
+
+fn my_recover_fn(db: &dyn Db, cycle: &salsa::Cycle) -> () {}
 
 #[salsa::tracked(jar = Jar)]
 fn memoized_b(db: &dyn Db, input: MyInput) -> () {
