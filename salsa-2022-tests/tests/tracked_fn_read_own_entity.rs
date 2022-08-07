@@ -1,8 +1,9 @@
 //! Test that a `tracked` fn on a `salsa::input`
 //! compiles and executes successfully.
-use salsa_2022_tests::{HasLogger, Logger};
 
 use expect_test::expect;
+use salsa_2022_tests::{HasLogger, Logger};
+use test_log::test;
 
 #[salsa::jar(db = Db)]
 struct Jar(MyInput, MyTracked, final_result, intermediate_result);
