@@ -36,7 +36,6 @@ mod sync;
 /// * the `set` method, which can only be used when the key is an entity created by the active query.
 ///   It sets the value of the function imperatively, so that when later fetches occur, they'll return this value.
 /// * the `store` method, which can only be invoked with an `&mut` reference, and is to set input fields.
-#[allow(dead_code)]
 pub struct FunctionIngredient<C: Configuration> {
     /// The ingredient index we were assigned in the database.
     /// Used to construct `DatabaseKeyIndex` values.
