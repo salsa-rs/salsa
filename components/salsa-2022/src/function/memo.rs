@@ -8,6 +8,9 @@ use crate::{
     EventKind, Revision, Runtime,
 };
 
+/// The memo map maps from a key of type `K` to the memoized value for that `K`.
+/// The memoized value is a `Memo<V>` which contains, in addition to the value `V`,
+/// dependency information.
 pub(super) struct MemoMap<K: AsId, V> {
     map: FxDashMap<K, ArcSwap<Memo<V>>>,
 }

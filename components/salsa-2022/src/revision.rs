@@ -46,7 +46,6 @@ pub(crate) struct AtomicRevision {
     data: AtomicUsize,
 }
 
-#[allow(dead_code)]
 impl AtomicRevision {
     pub(crate) fn start() -> Self {
         Self {

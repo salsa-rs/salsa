@@ -13,15 +13,33 @@ use crate::{Database, DatabaseKeyIndex, IngredientIndex};
 use super::routes::Ingredients;
 use super::{ParallelDatabase, Revision};
 
-#[allow(dead_code)]
+/// The "storage" struct stores all the data for the jars.
+/// It is shared between the main database and any active snapshots.
 pub struct Storage<DB: HasJars> {
+    /// Data shared across all databases.
     shared: Arc<Shared<DB>>,
+
+    /// The "ingredients" structure stores the information about how to find each ingredient in the database.
+    /// It allows us to take the [`IngredientIndex`] assigned to a particular ingredient
+    /// and get back a [`dyn Ingredient`][`Ingredient`] for the struct that stores its data.
     ingredients: Arc<Ingredients<DB>>,
+
+    /// The runtime for this particular salsa database handle.
+    /// Each handle gets its own runtime, but the runtimes have shared state between them.s
     runtime: Runtime,
 }
 
+/// Data shared between all threads.
+/// This is where the actual data for tracked functions, structs, inputs, etc lives,
+/// along with some coordination variables between treads.
 struct Shared<DB: HasJars> {
+    /// Contains the data for each jar in the database.
+    /// Each jar stores its own structs in there that ultimately contain ingredients
+    /// (types that implement the [`Ingredient`] trait, like [`crate::function::FunctionIngredient`]).
     jars: DB::Jars,
+
+    /// Conditional variable that is used to coordinate cancellation.
+    /// When the main thread writes to the database, it blocks until each of the snapshots can be cancelled.
     cvar: Condvar,
 }
 

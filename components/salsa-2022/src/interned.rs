@@ -20,7 +20,9 @@ impl<T: AsId> InternedId for T {}
 pub trait InternedData: Sized + Eq + Hash + Clone {}
 impl<T: Eq + Hash + Clone> InternedData for T {}
 
-#[allow(dead_code)]
+/// The interned ingredient has the job of hashing values of type `Data` to produce an `Id`.
+/// It used to store interned structs but also to store the id fields of a tracked struct.
+/// Interned values endure until they are explicitly removed in some way.
 pub struct InternedIngredient<Id: InternedId, Data: InternedData> {
     /// Index of this ingredient in the database (used to construct database-ids, etc).
     ingredient_index: IngredientIndex,
@@ -68,7 +70,6 @@ where
         }
     }
 
-    #[allow(dead_code)]
     pub fn intern(&self, runtime: &Runtime, data: Data) -> Id {
         runtime.report_tracked_read(
             DependencyIndex::for_table(self.ingredient_index),
@@ -101,7 +102,6 @@ where
         self.reset_at
     }
 
-    #[allow(dead_code)]
     pub fn reset(&mut self, revision: Revision) {
         assert!(revision > self.reset_at);
         self.reset_at = revision;
@@ -109,7 +109,6 @@ where
         self.value_map.clear();
     }
 
-    #[allow(dead_code)]
     #[track_caller]
     pub fn data<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db Data {
         runtime.report_tracked_read(

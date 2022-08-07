@@ -1,7 +1,5 @@
 //! Test that a `tracked` fn on a `salsa::input`
 //! compiles and executes successfully.
-#![allow(dead_code)]
-
 use salsa_2022_tests::{HasLogger, Logger};
 
 use expect_test::expect;

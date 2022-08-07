@@ -21,7 +21,6 @@ mod dependency_graph;
 pub mod local_state;
 mod shared_state;
 
-#[allow(dead_code)]
 pub struct Runtime {
     /// Our unique runtime id.
     id: RuntimeId,
@@ -100,7 +99,6 @@ impl Runtime {
         self.shared_state.empty_dependencies.clone()
     }
 
-    #[allow(dead_code)]
     pub fn snapshot(&self) -> Self {
         if self.local_state.query_in_progress() {
             panic!("it is not legal to `snapshot` during a query (see salsa-rs/salsa#80)");

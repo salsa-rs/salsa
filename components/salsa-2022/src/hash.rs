@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::hash::{BuildHasher, Hash, Hasher};
 
 pub(crate) type FxHasher = std::hash::BuildHasherDefault<rustc_hash::FxHasher>;

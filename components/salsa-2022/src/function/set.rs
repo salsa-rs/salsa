@@ -1,7 +1,6 @@
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    key::DependencyIndex,
     runtime::local_state::{QueryInputs, QueryRevisions},
     tracked_struct::TrackedStructInDb,
     Database,

@@ -1,6 +1,5 @@
 //! Test that a `tracked` fn on a `salsa::input`
 //! compiles and executes successfully.
-#![allow(dead_code)]
 
 #[salsa::jar(db = Db)]
 struct Jar(MyInput, MyTracked, tracked_fn);
