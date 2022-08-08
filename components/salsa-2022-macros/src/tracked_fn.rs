@@ -206,7 +206,7 @@ fn ingredients_for_impl(
     let intern_map: syn::Expr = if requires_interning(item_fn) {
         parse_quote! {
             {
-                let index = ingredients.push(|jars| {
+                let index = routes.push(|jars| {
                     let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                     let ingredients =
                         <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
@@ -226,7 +226,7 @@ fn ingredients_for_impl(
             type Ingredients = Self;
             type Jar = #jar_ty;
 
-            fn create_ingredients<DB>(ingredients: &mut salsa::routes::Ingredients<DB>) -> Self::Ingredients
+            fn create_ingredients<DB>(routes: &mut salsa::routes::Routes<DB>) -> Self::Ingredients
             where
                 DB: salsa::DbWithJar<Self::Jar> + salsa::storage::JarFromJars<Self::Jar>,
             {
@@ -234,7 +234,7 @@ fn ingredients_for_impl(
                     intern_map: #intern_map,
 
                     function: {
-                        let index = ingredients.push(|jars| {
+                        let index = routes.push(|jars| {
                             let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                             let ingredients =
                                 <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);

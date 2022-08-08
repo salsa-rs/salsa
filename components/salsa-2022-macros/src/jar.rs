@@ -106,12 +106,12 @@ pub(crate) fn jar_impl(
         impl<'salsa_db> salsa::jar::Jar<'salsa_db> for #jar_struct {
             type DynDb = dyn #jar_trait + 'salsa_db;
 
-            fn create_jar<DB>(ingredients: &mut salsa::routes::Ingredients<DB>) -> Self
+            fn create_jar<DB>(routes: &mut salsa::routes::Routes<DB>) -> Self
             where
                 DB: salsa::storage::JarFromJars<Self> + salsa::storage::DbWithJar<Self>,
             {
                 #(
-                    let #field_var_names = <#field_tys as salsa::storage::IngredientsFor>::create_ingredients(ingredients);
+                    let #field_var_names = <#field_tys as salsa::storage::IngredientsFor>::create_ingredients(routes);
                 )*
                 Self(#(#field_var_names),*)
             }

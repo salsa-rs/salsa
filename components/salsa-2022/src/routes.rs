@@ -41,14 +41,14 @@ pub type DynRoute<DB: HasJars> = dyn Fn(&DB::Jars) -> (&dyn Ingredient<DB>) + Se
 pub type DynMutRoute<DB: HasJars> =
     dyn Fn(&mut DB::Jars) -> (&mut dyn MutIngredient<DB>) + Send + Sync;
 
-/// The "ingredients" structure is used to navigate the database.
+/// The "routes" structure is used to navigate the database.
 /// The database contains a number of jars, and each jar contains a number of ingredients.
 /// When the database is created, it creates each jar in turn.
 /// Each jar then creates its ingredients.
-/// Each ingredient is registered with the database by invoking the [`Ingredients::push`] method.
+/// Each ingredient is registered with the database by invoking the [`Routes::push`] method.
 /// This method assigns it a unique [`IngredientIndex`] and stores some callbacks indicating
 /// how to find the ingredient later based only on the index.
-pub struct Ingredients<DB: HasJars> {
+pub struct Routes<DB: HasJars> {
     /// Vector indexed by ingredient index. Yields the `DynRoute`,
     /// a function which can be applied to the `DB::Jars` to yield
     /// the `dyn Ingredient.
@@ -61,10 +61,10 @@ pub struct Ingredients<DB: HasJars> {
     mut_routes: Vec<Box<DynMutRoute<DB>>>,
 }
 
-impl<DB: HasJars> Ingredients<DB> {
+impl<DB: HasJars> Routes<DB> {
     /// Construct an empty ingredients listing.
     pub(super) fn new() -> Self {
-        Ingredients {
+        Routes {
             routes: vec![],
             mut_routes: vec![],
         }

@@ -112,11 +112,11 @@ fn ingredients_for_impl(args: &Args, struct_ty: &syn::Type, data_ty: &syn::Type)
             type Ingredients = salsa::accumulator::AccumulatorIngredient<#data_ty>;
             type Jar = #jar_ty;
 
-            fn create_ingredients<DB>(ingredients: &mut salsa::routes::Ingredients<DB>) -> Self::Ingredients
+            fn create_ingredients<DB>(routes: &mut salsa::routes::Routes<DB>) -> Self::Ingredients
             where
                 DB: salsa::DbWithJar<Self::Jar> + salsa::storage::JarFromJars<Self::Jar>,
             {
-                    let index = ingredients.push_mut(
+                    let index = routes.push_mut(
                         |jars| {
                             let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                             <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar)

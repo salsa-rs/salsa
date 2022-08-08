@@ -154,7 +154,7 @@ impl SalsaStruct {
                 );
 
                 fn create_ingredients<DB>(
-                    ingredients: &mut salsa::routes::Ingredients<DB>,
+                    routes: &mut salsa::routes::Routes<DB>,
                 ) -> Self::Ingredients
                 where
                     DB: salsa::DbWithJar<Self::Jar> + salsa::storage::JarFromJars<Self::Jar>,
@@ -162,7 +162,7 @@ impl SalsaStruct {
                     (
                         #(
                             {
-                                let index = ingredients.push(
+                                let index = routes.push(
                                     |jars| {
                                         let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                                         let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar);
@@ -173,7 +173,7 @@ impl SalsaStruct {
                             },
                         )*
                         {
-                            let index = ingredients.push_mut(
+                            let index = routes.push_mut(
                                 |jars| {
                                     let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                                     let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar);

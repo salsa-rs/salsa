@@ -97,10 +97,10 @@ fn has_jars_impl(args: &Args, input: &syn::ItemStruct, storage: &syn::Ident) -> 
                 self.#storage.jars_mut()
             }
 
-            fn create_jars(ingredients: &mut salsa::routes::Ingredients<Self>) -> Self::Jars {
+            fn create_jars(routes: &mut salsa::routes::Routes<Self>) -> Self::Jars {
                 (
                     #(
-                        <#jar_paths as salsa::jar::Jar>::create_jar(ingredients),
+                        <#jar_paths as salsa::jar::Jar>::create_jar(routes),
                     )*
                 )
             }

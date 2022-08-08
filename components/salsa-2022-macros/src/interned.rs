@@ -114,12 +114,12 @@ impl SalsaStruct {
                 type Ingredients = salsa::interned::InternedIngredient<#id_ident, #data_ident>;
 
                 fn create_ingredients<DB>(
-                    ingredients: &mut salsa::routes::Ingredients<DB>,
+                    routes: &mut salsa::routes::Routes<DB>,
                 ) -> Self::Ingredients
                 where
                     DB: salsa::storage::JarFromJars<Self::Jar>,
                 {
-                    let index = ingredients.push(
+                    let index = routes.push(
                         |jars| {
                             let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                             <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar)
