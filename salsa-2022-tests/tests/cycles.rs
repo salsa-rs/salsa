@@ -20,7 +20,7 @@ impl salsa::Database for Database {
 
 impl Db for Database {}
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::input(jar = Jar)]
 struct MyInput {
 
 }
@@ -30,7 +30,8 @@ fn memoized_a(db: &dyn Db, input: MyInput) -> () {
     memoized_b(db, input)
 }
 
-fn my_recover_fn(db: &dyn Db, cycle: &salsa::Cycle) -> () {}
+fn my_recover_fn(db: &dyn Db, cycle: &salsa::Cycle, input: MyInput) -> () {
+}
 
 #[salsa::tracked(jar = Jar)]
 fn memoized_b(db: &dyn Db, input: MyInput) -> () {

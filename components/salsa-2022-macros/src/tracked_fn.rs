@@ -134,14 +134,34 @@ fn fn_configuration(args: &Args, item_fn: &syn::ItemFn) -> Configuration {
     };
     let value_ty = configuration::value_ty(&item_fn.sig);
 
-    // FIXME: these are hardcoded for now
-    let cycle_strategy = CycleRecoveryStrategy::Panic;
+    let fn_ty = item_fn.sig.ident.clone();
 
+    // FIXME: these are hardcoded for now
+    let indices = (0..item_fn.sig.inputs.len() - 1).map(|i| Literal::usize_unsuffixed(i));
+    let (cycle_strategy, recover_fn) = if let Some(recovery_fn) = &args.recovery_fn {
+        let cycle_strategy = CycleRecoveryStrategy::Fallback;
+
+        let cycle_fullback = parse_quote! {
+            fn recover_from_cycle(__db: &salsa::function::DynDb<Self>, __cycle: &salsa::Cycle, __id: Self::Key) -> Self::Value {
+                let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
+                let __ingredients =
+                    <_ as salsa::storage::HasIngredientsFor<#fn_ty>>::ingredient(__jar);
+                let __key = __ingredients.intern_map.data(__runtime, __id).clone();
+                #recovery_fn(__db, __cycle, #(__key.#indices),*)
+            }
+        };
+        (cycle_strategy, cycle_fullback)
+    } else {
+        let cycle_strategy = CycleRecoveryStrategy::Panic;
+        let cycle_panic = configuration::panic_cycle_recovery_fn();
+        (cycle_strategy, cycle_panic)
+    };
+
+    // let cycle_strategy = CycleRecoveryStrategy::Panic;
+    // let recover_fn = configuration::panic_cycle_recovery_fn();
     let backdate_fn = configuration::should_backdate_value_fn(args.should_backdate());
-    let recover_fn = configuration::panic_cycle_recovery_fn();
 
     // The type of the configuration struct; this has the same name as the fn itself.
-    let fn_ty = item_fn.sig.ident.clone();
 
     // Make a copy of the fn with a different name; we will invoke this from `execute`.
     // We need to change the name because, otherwise, if the function invoked itself
