@@ -38,6 +38,7 @@ impl InternedStruct {
         let ingredients_for_impl = self.ingredients_for_impl();
         let as_id_impl = self.as_id_impl();
         let named_fields_impl = self.inherent_impl_for_named_fields();
+        let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
 
         Ok(quote! {
             #id_struct
@@ -45,6 +46,7 @@ impl InternedStruct {
             #ingredients_for_impl
             #as_id_impl
             #named_fields_impl
+            #salsa_struct_in_db_impl
         })
     }
 
@@ -137,6 +139,19 @@ impl InternedStruct {
                     );
                     salsa::interned::InternedIngredient::new(index)
                 }
+            }
+        }
+    }
+
+    /// Implementation of `SalsaStructInDb`.
+    fn salsa_struct_in_db_impl(&self) -> syn::ItemImpl {
+        let ident = self.id_ident();
+        let jar_ty = self.jar_ty();
+        parse_quote! {
+            impl<DB> salsa::salsa_struct::SalsaStructInDb<DB> for #ident
+            where
+                DB: ?Sized + salsa::DbWithJar<#jar_ty>,
+            {
             }
         }
     }

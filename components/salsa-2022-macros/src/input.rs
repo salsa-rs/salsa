@@ -37,6 +37,7 @@ impl InputStruct {
         let inherent_impl = self.input_inherent_impl();
         let ingredients_for_impl = self.input_ingredients(&config_structs);
         let as_id_impl = self.as_id_impl();
+        let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
 
         Ok(quote! {
             #(#config_structs)*
@@ -45,6 +46,7 @@ impl InputStruct {
             #ingredients_for_impl
             #as_id_impl
             #(#config_impls)*
+            #salsa_struct_in_db_impl
         })
     }
 
@@ -192,5 +194,18 @@ impl InputStruct {
             .zip(0..)
             .map(|(_, i)| Literal::usize_unsuffixed(i))
             .collect()
+    }
+
+    /// Implementation of `SalsaStructInDb`.
+    fn salsa_struct_in_db_impl(&self) -> syn::ItemImpl {
+        let ident = self.id_ident();
+        let jar_ty = self.jar_ty();
+        parse_quote! {
+            impl<DB> salsa::salsa_struct::SalsaStructInDb<DB> for #ident
+            where
+                DB: ?Sized + salsa::DbWithJar<#jar_ty>,
+            {
+            }
+        }
     }
 }
