@@ -22,7 +22,7 @@ mod inputs;
 mod lru;
 mod maybe_changed_after;
 mod memo;
-mod set;
+mod specify;
 mod store;
 mod sync;
 
@@ -33,7 +33,7 @@ mod sync;
 ///
 /// * the `fetch` method, which is invoked when the function is called by the user's code;
 ///   it will return a memoized value if one exists, or execute the function otherwise.
-/// * the `set` method, which can only be used when the key is an entity created by the active query.
+/// * the `specify` method, which can only be used when the key is an entity created by the active query.
 ///   It sets the value of the function imperatively, so that when later fetches occur, they'll return this value.
 /// * the `store` method, which can only be invoked with an `&mut` reference, and is to set input fields.
 pub struct FunctionIngredient<C: Configuration> {

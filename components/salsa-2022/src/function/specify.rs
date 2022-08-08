@@ -12,7 +12,10 @@ impl<C> FunctionIngredient<C>
 where
     C: Configuration,
 {
-    pub fn set<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
+    /// Specifies the value of the function for the given key.
+    /// This is a way to imperatively set the value of a function.
+    /// It only works if the key is a tracked struct created in the current query.
+    pub fn specify<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
     where
         C::Key: TrackedStructInDb<DynDb<'db, C>>,
     {
