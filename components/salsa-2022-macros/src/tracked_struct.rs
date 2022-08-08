@@ -39,6 +39,7 @@ impl TrackedStruct {
         let id_struct = self.id_struct();
         let inherent_impl = self.tracked_inherent_impl();
         let ingredients_for_impl = self.tracked_struct_ingredients(&config_structs);
+        let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
         let tracked_struct_in_db_impl = self.tracked_struct_in_db_impl();
         let as_id_impl = self.as_id_impl();
         Ok(quote! {
@@ -46,6 +47,7 @@ impl TrackedStruct {
             #id_struct
             #inherent_impl
             #ingredients_for_impl
+            #salsa_struct_in_db_impl
             #tracked_struct_in_db_impl
             #as_id_impl
             #(#config_impls)*
@@ -201,6 +203,19 @@ impl TrackedStruct {
                         },
                     )
                 }
+            }
+        }
+    }
+
+    /// Implementation of `SalsaStructInDb`.
+    fn salsa_struct_in_db_impl(&self) -> syn::ItemImpl {
+        let ident = self.id_ident();
+        let jar_ty = self.jar_ty();
+        parse_quote! {
+            impl<DB> salsa::salsa_struct::SalsaStructInDb<DB> for #ident
+            where
+                DB: ?Sized + salsa::DbWithJar<#jar_ty>,
+            {
             }
         }
     }

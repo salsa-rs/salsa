@@ -4,6 +4,7 @@ use crate::{
     interned::{InternedData, InternedId, InternedIngredient},
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryInputs, Runtime},
+    salsa_struct::SalsaStructInDb,
     Database, IngredientIndex, Revision,
 };
 
@@ -13,7 +14,7 @@ impl<T: InternedId> TrackedStructId for T {}
 pub trait TrackedStructData: InternedData {}
 impl<T: InternedData> TrackedStructData for T {}
 
-pub trait TrackedStructInDb<DB: ?Sized + Database> {
+pub trait TrackedStructInDb<DB: ?Sized + Database>: SalsaStructInDb<DB> {
     fn database_key_index(self, db: &DB) -> DatabaseKeyIndex;
 }
 
