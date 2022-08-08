@@ -101,10 +101,7 @@ fn configuration_struct(item_fn: &syn::ItemFn) -> syn::ItemStruct {
 
     parse_quote! {
         #[allow(non_camel_case_types)]
-        #visibility struct #fn_name
-        where
-            #salsa_struct_ty: salsa::AsId, // require that the salsa struct is, well, a salsa struct!
-        {
+        #visibility struct #fn_name {
             intern_map: #intern_map,
             function: salsa::function::FunctionIngredient<Self>,
         }
@@ -127,10 +124,11 @@ fn salsa_struct_ty(item_fn: &syn::ItemFn) -> &syn::Type {
 
 fn fn_configuration(args: &Args, item_fn: &syn::ItemFn) -> Configuration {
     let jar_ty = args.jar_ty();
+    let salsa_struct_ty = salsa_struct_ty(item_fn).clone();
     let key_ty = if requires_interning(item_fn) {
         parse_quote!(salsa::id::Id)
     } else {
-        salsa_struct_ty(item_fn).clone()
+        salsa_struct_ty.clone()
     };
     let value_ty = configuration::value_ty(&item_fn.sig);
 
@@ -187,6 +185,7 @@ fn fn_configuration(args: &Args, item_fn: &syn::ItemFn) -> Configuration {
 
     Configuration {
         jar_ty,
+        salsa_struct_ty,
         key_ty,
         value_ty,
         cycle_strategy,

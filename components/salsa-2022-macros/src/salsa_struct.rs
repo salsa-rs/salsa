@@ -221,6 +221,7 @@ impl SalsaStruct {
                 let item_impl: syn::ItemImpl = parse_quote! {
                     impl salsa::function::Configuration for #config_name {
                         type Jar = #jar_ty;
+                        type SalsaStruct = #ident;
                         type Key = #ident;
                         type Value = #value_field_ty;
                         const CYCLE_STRATEGY: salsa::cycle::CycleRecoveryStrategy = salsa::cycle::CycleRecoveryStrategy::Panic;
