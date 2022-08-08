@@ -14,13 +14,23 @@ pub(crate) fn interned(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    match SalsaStruct::new(args, input).and_then(|el| el.generate_interned()) {
+    match SalsaStruct::new(args, input).and_then(|el| InternedStruct(el).generate_interned()) {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
 }
 
-impl SalsaStruct {
+struct InternedStruct(SalsaStruct);
+
+impl std::ops::Deref for InternedStruct {
+    type Target = SalsaStruct;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl InternedStruct {
     fn generate_interned(&self) -> syn::Result<TokenStream> {
         self.validate_interned()?;
         let id_struct = self.id_struct();

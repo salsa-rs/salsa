@@ -11,13 +11,23 @@ pub(crate) fn input(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    match SalsaStruct::new(args, input).and_then(|el| el.generate_input()) {
+    match SalsaStruct::new(args, input).and_then(|el| InputStruct(el).generate_input()) {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
 }
 
-impl SalsaStruct {
+struct InputStruct(SalsaStruct);
+
+impl std::ops::Deref for InputStruct {
+    type Target = SalsaStruct;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl InputStruct {
     fn generate_input(&self) -> syn::Result<TokenStream> {
         self.validate_input()?;
 

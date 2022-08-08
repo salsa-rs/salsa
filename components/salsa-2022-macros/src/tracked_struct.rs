@@ -11,13 +11,25 @@ pub(crate) fn tracked(
     args: proc_macro::TokenStream,
     struct_item: syn::ItemStruct,
 ) -> proc_macro::TokenStream {
-    match SalsaStruct::with_struct(args, struct_item).and_then(|el| el.generate_tracked()) {
+    match SalsaStruct::with_struct(args, struct_item)
+        .and_then(|el| TrackedStruct(el).generate_tracked())
+    {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
 }
 
-impl SalsaStruct {
+struct TrackedStruct(SalsaStruct);
+
+impl std::ops::Deref for TrackedStruct {
+    type Target = SalsaStruct;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl TrackedStruct {
     fn generate_tracked(&self) -> syn::Result<TokenStream> {
         self.validate_tracked()?;
 
