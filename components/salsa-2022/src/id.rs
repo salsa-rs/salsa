@@ -20,7 +20,7 @@ impl Id {
     pub const MAX_USIZE: usize = Self::MAX_U32 as usize;
 
     #[track_caller]
-    pub fn from_u32(x: u32) -> Self {
+    pub(crate) fn from_u32(x: u32) -> Self {
         assert!(x < Self::MAX_U32);
         Id {
             value: NonZeroU32::new(x + 1).unwrap(),
@@ -29,19 +29,6 @@ impl Id {
 
     pub fn as_u32(self) -> u32 {
         self.value.get() - 1
-    }
-}
-
-impl From<u32> for Id {
-    fn from(n: u32) -> Self {
-        Id::from_u32(n)
-    }
-}
-
-impl From<usize> for Id {
-    fn from(n: usize) -> Self {
-        assert!(n < Id::MAX_USIZE);
-        Id::from_u32(n as u32)
     }
 }
 
