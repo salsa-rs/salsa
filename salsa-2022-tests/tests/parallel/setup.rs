@@ -1,4 +1,4 @@
-use std::{sync::Arc, cell::Cell};
+use std::{cell::Cell, sync::Arc};
 
 use crate::signal::Signal;
 
@@ -25,31 +25,16 @@ pub(crate) struct KnobsStruct {
     pub(crate) signal_on_will_block: Cell<usize>,
 }
 
-#[salsa::jar(db = Db)]
-pub(crate) struct Jar(
-    crate::parallel_cycle_none_recover::MyInput,
-    crate::parallel_cycle_none_recover::a,
-    crate::parallel_cycle_none_recover::b,
-    crate::parallel_cycle_one_recover::MyInput,
-    crate::parallel_cycle_one_recover::a1,
-    crate::parallel_cycle_one_recover::a2,
-    crate::parallel_cycle_one_recover::b1,
-    crate::parallel_cycle_one_recover::b2,
-    crate::parallel_cycle_mid_recover::MyInput,
-    crate::parallel_cycle_mid_recover::a1,
-    crate::parallel_cycle_mid_recover::a2,
-    crate::parallel_cycle_mid_recover::b1,
-    crate::parallel_cycle_mid_recover::b2,
-    crate::parallel_cycle_mid_recover::b3,
-);
-
-pub(crate) trait Db: salsa::DbWithJar<Jar> + Knobs {}
-
-#[salsa::db(Jar)]
+#[salsa::db(
+    crate::parallel_cycle_one_recover::Jar,
+    crate::parallel_cycle_none_recover::Jar,
+    crate::parallel_cycle_mid_recover::Jar,
+    crate::parallel_cycle_all_recover::Jar
+)]
 #[derive(Default)]
 pub(crate) struct Database {
     storage: salsa::Storage<Self>,
-    knobs: KnobsStruct
+    knobs: KnobsStruct,
 }
 
 impl salsa::Database for Database {
@@ -66,16 +51,12 @@ impl salsa::Database for Database {
 
 impl salsa::ParallelDatabase for Database {
     fn snapshot(&self) -> salsa::Snapshot<Self> {
-        salsa::Snapshot::new(
-            Database { 
-                storage: self.storage.snapshot(),
-                knobs: self.knobs.clone()
-            }
-        )
+        salsa::Snapshot::new(Database {
+            storage: self.storage.snapshot(),
+            knobs: self.knobs.clone(),
+        })
     }
 }
-
-impl Db for Database {}
 
 impl Knobs for Database {
     fn knobs(&self) -> &KnobsStruct {

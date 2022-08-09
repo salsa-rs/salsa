@@ -2,19 +2,25 @@
 //! See `../cycles.rs` for a complete listing of cycle tests,
 //! both intra and cross thread.
 
+use crate::setup::Database;
 use crate::setup::Knobs;
-use crate::setup::Database as DatabaseImpl;
 use salsa::ParallelDatabase;
-use crate::setup::Jar;
-use crate::setup::Db;
+
+pub(crate) trait Db: salsa::DbWithJar<Jar> + Knobs {}
+
+impl<T: salsa::DbWithJar<Jar> + Knobs> Db for T {}
+
+#[salsa::jar(db = Db)]
+pub(crate) struct Jar(MyInput, a1, a2, b1, b2);
 
 #[salsa::input(jar = Jar)]
 pub(crate) struct MyInput {
-    field: i32
+    field: i32,
 }
 
 #[salsa::tracked(jar = Jar)]
 pub(crate) fn a1(db: &dyn Db, input: MyInput) -> i32 {
+    // Wait to create the cycle until both threads have entered
     db.signal(1);
     db.wait_for(2);
 
@@ -32,9 +38,11 @@ fn recover(db: &dyn Db, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
 
 #[salsa::tracked(jar = Jar)]
 pub(crate) fn b1(db: &dyn Db, input: MyInput) -> i32 {
+    // Wait to create the cycle until both threads have entered
     db.wait_for(1);
     db.signal(2);
 
+    // Wait for thread A to block on this thread
     db.wait_for(3);
     b2(db, input)
 }
@@ -68,7 +76,7 @@ pub(crate) fn b2(db: &dyn Db, input: MyInput) -> i32 {
 
 #[test]
 fn execute() {
-    let mut db = DatabaseImpl::default();
+    let mut db = Database::default();
     db.knobs().signal_on_will_block.set(3);
 
     let input = MyInput::new(&mut db, 1);

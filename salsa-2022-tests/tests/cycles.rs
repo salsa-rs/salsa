@@ -42,11 +42,13 @@ use salsa::storage::HasJarsDyn;
 // | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears |
 // | Intra  | Mixed    | N/A      | Tracked   | direct   | cycle_mixed_1 |
 // | Intra  | Mixed    | N/A      | Tracked   | direct   | cycle_mixed_2 |
+// | Cross  | Panic    | N/A      | Tracked   | both     | parallel/parallel_cycle_none_recover.rs |
+// | Cross  | Fallback | N/A      | Tracked   | both     | parallel/parallel_cycle_one_recover.rs |
+// | Cross  | Fallback | N/A      | Tracked   | both     | parallel/parallel_cycle_mid_recover.rs |
+// | Cross  | Fallback | N/A      | Tracked   | both     | parallel/parallel_cycle_all_recover.rs |
 
-// TODO: The following tests are not yet ported.
+// TODO: The following test is not yet ported.
 // | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears_durability |
-// | Cross  | Fallback | N/A      | Tracked   | both     | parallel/cycles.rs: recover_parallel_cycle |
-// | Cross  | Panic    | N/A      | Tracked   | both     | parallel/cycles.rs: panic_parallel_cycle |
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 struct Error {
