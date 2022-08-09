@@ -147,7 +147,7 @@
                         <h1 id="jars-and-databases"><a class="header" href="#jars-and-databases">Jars and databases</a></h1>
 <p>Before we can define the interesting parts of our salsa program, we have to setup a bit of structure that defines the salsa <strong>database</strong>.
 The database is a struct that ultimately stores all of salsa's intermediate state, such as the memoized return values from <a href="../overview.html#tracked-functions">tracked functions</a>.</p>
-<p>The database itself is defined in terms of intermediate structures, called called <strong>jars</strong><sup class="footnote-reference"><a href="#jar">1</a></sup>, which themselves contain the data for each function.
+<p>The database itself is defined in terms of intermediate structures, called <strong>jars</strong><sup class="footnote-reference"><a href="#jar">1</a></sup>, which themselves contain the data for each function.
 This setup allows salsa programs to be divided amongst many crates.
 Typically, you define one jar struct per crate, and then when you construct the final database, you simply list the jar structs.
 This permits the crates to define private functions and other things that are members of the jar struct, but not known directly to the database.</p>

@@ -269,7 +269,7 @@ pub struct ProgramFile {
 </span></code></pre></pre>
 <h3 id="writing-input-fields"><a class="header" href="#writing-input-fields">Writing input fields</a></h3>
 <p>Finally, you can also modify the value of an input field by using the setter method.
-Since this is modifyingg the input, the setter takes an <code>&amp;mut</code>-reference to the database:</p>
+Since this is modifying the input, the setter takes an <code>&amp;mut</code>-reference to the database:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -558,7 +558,7 @@ though it's certainly possible.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="jars-and-databases"><a class="header" href="#jars-and-databases">Jars and databases</a></h1>
 <p>Before we can define the interesting parts of our salsa program, we have to setup a bit of structure that defines the salsa <strong>database</strong>.
 The database is a struct that ultimately stores all of salsa's intermediate state, such as the memoized return values from <a href="tutorial/../overview.html#tracked-functions">tracked functions</a>.</p>
-<p>The database itself is defined in terms of intermediate structures, called called <strong>jars</strong><sup class="footnote-reference"><a href="#jar">1</a></sup>, which themselves contain the data for each function.
+<p>The database itself is defined in terms of intermediate structures, called <strong>jars</strong><sup class="footnote-reference"><a href="#jar">1</a></sup>, which themselves contain the data for each function.
 This setup allows salsa programs to be divided amongst many crates.
 Typically, you define one jar struct per crate, and then when you construct the final database, you simply list the jar structs.
 This permits the crates to define private functions and other things that are members of the jar struct, but not known directly to the database.</p>
@@ -640,7 +640,7 @@ and that's what we do here:</p>
 <p>Now that we have defined a <a href="tutorial/./jar.html">jar</a>, we need to create the <strong>database struct</strong>.
 The database struct is where all the jars come together.
 Typically it is only used by the &quot;driver&quot; of your application;
-the one which starts up the program, supplies the inputs, and relay the outputs.</p>
+the one which starts up the program, supplies the inputs, and relays the outputs.</p>
 <p>In <code>calc</code>, the database struct is in the <a href="https://github.com/salsa-rs/salsa/blob/master/calc-example/calc/src/db.rs"><code>db</code></a> module, and it looks like this:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
