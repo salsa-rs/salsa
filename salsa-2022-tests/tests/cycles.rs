@@ -40,9 +40,11 @@ use salsa::storage::HasJarsDyn;
 // | Intra  | Fallback | Both     | Tracked   | direct   | cycle_revalidate |
 // | Intra  | Fallback | New      | Tracked   | direct   | cycle_appears |
 // | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears |
-// | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears_durability |
 // | Intra  | Mixed    | N/A      | Tracked   | direct   | cycle_mixed_1 |
 // | Intra  | Mixed    | N/A      | Tracked   | direct   | cycle_mixed_2 |
+
+// TODO: The following tests are not yet ported.
+// | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears_durability |
 // | Cross  | Fallback | N/A      | Tracked   | both     | parallel/cycles.rs: recover_parallel_cycle |
 // | Cross  | Panic    | N/A      | Tracked   | both     | parallel/cycles.rs: panic_parallel_cycle |
 
@@ -257,7 +259,7 @@ fn cycle_recovery_unchanged_twice() {
     let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
     assert!(cycle_a(&db, abc).is_err());
 
-    abc.set_c(&mut db, CycleQuery::A); // same value as default
+    abc.set_c(&mut db, CycleQuery::A); // force new revision
     assert!(cycle_a(&db, abc).is_err());
 }
 

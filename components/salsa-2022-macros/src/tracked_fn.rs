@@ -136,9 +136,10 @@ fn fn_configuration(args: &Args, item_fn: &syn::ItemFn) -> Configuration {
 
     let fn_ty = item_fn.sig.ident.clone();
 
-    // FIXME: these are hardcoded for now
     let indices = (0..item_fn.sig.inputs.len() - 1).map(|i| Literal::usize_unsuffixed(i));
     let (cycle_strategy, recover_fn) = if let Some(recovery_fn) = &args.recovery_fn {
+        // Create the `recover_from_cycle` function, which (a) maps from the interned id to the actual
+        // keys and then (b) invokes the recover function itself.
         let cycle_strategy = CycleRecoveryStrategy::Fallback;
 
         let cycle_fullback = parse_quote! {
@@ -152,13 +153,12 @@ fn fn_configuration(args: &Args, item_fn: &syn::ItemFn) -> Configuration {
         };
         (cycle_strategy, cycle_fullback)
     } else {
+        // When the `recovery_fn` attribute is not set, set `cycle_strategy` to `Panic`
         let cycle_strategy = CycleRecoveryStrategy::Panic;
         let cycle_panic = configuration::panic_cycle_recovery_fn();
         (cycle_strategy, cycle_panic)
     };
 
-    // let cycle_strategy = CycleRecoveryStrategy::Panic;
-    // let recover_fn = configuration::panic_cycle_recovery_fn();
     let backdate_fn = configuration::should_backdate_value_fn(args.should_backdate());
 
     // The type of the configuration struct; this has the same name as the fn itself.

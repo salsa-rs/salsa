@@ -27,21 +27,24 @@ pub(crate) struct Options<A: AllowedOptions> {
 
     /// The `jar = <type>` option is used to indicate the jar; it defaults to `crate::jar`.
     ///
-    /// If this is `Some`, the value is the `<path>`.
+    /// If this is `Some`, the value is the `<type>`.
     pub jar_ty: Option<syn::Type>,
 
-    /// The `db = <type>` option is used to indicate the db.
+    /// The `db = <path>` option is used to indicate the db.
     ///
-    /// If this is `Some`, the value is the `<type>`.
+    /// If this is `Some`, the value is the `<path>`.
     pub db_path: Option<syn::Path>,
+
+    /// The `recovery_fn = <path>` option is used to indicate the recovery function.
+    ///
+    /// If this is `Some`, the value is the `<path>`.
+    pub recovery_fn: Option<syn::Path>,
 
     /// The `data = <ident>` option is used to define the name of the data type for an interned
     /// struct.
     ///
     /// If this is `Some`, the value is the `<ident>`.
     pub data: Option<syn::Ident>,
-
-    pub recovery_fn: Option<syn::Path>,
 
     /// Remember the `A` parameter, which plays no role after parsing.
     phantom: PhantomData<A>,
