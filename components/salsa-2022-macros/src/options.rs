@@ -27,13 +27,18 @@ pub(crate) struct Options<A: AllowedOptions> {
 
     /// The `jar = <type>` option is used to indicate the jar; it defaults to `crate::jar`.
     ///
-    /// If this is `Some`, the value is the `<path>`.
+    /// If this is `Some`, the value is the `<type>`.
     pub jar_ty: Option<syn::Type>,
 
-    /// The `db = <type>` option is used to indicate the db.
+    /// The `db = <path>` option is used to indicate the db.
     ///
-    /// If this is `Some`, the value is the `<type>`.
+    /// If this is `Some`, the value is the `<path>`.
     pub db_path: Option<syn::Path>,
+
+    /// The `recovery_fn = <path>` option is used to indicate the recovery function.
+    ///
+    /// If this is `Some`, the value is the `<path>`.
+    pub recovery_fn: Option<syn::Path>,
 
     /// The `data = <ident>` option is used to define the name of the data type for an interned
     /// struct.
@@ -53,6 +58,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             no_eq: Default::default(),
             jar_ty: Default::default(),
             db_path: Default::default(),
+            recovery_fn: Default::default(),
             data: Default::default(),
             phantom: Default::default(),
         }
@@ -67,6 +73,7 @@ pub(crate) trait AllowedOptions {
     const JAR: bool;
     const DATA: bool;
     const DB: bool;
+    const RECOVERY_FN: bool;
 }
 
 type Equals = syn::Token![=];
@@ -157,6 +164,22 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`db` option not allowed here",
+                    ));
+                }
+            } else if ident == "recovery_fn" {
+                if A::RECOVERY_FN {
+                    let _eq = Equals::parse(input)?;
+                    let path = syn::Path::parse(input)?;
+                    if let Some(old) = std::mem::replace(&mut options.recovery_fn, Some(path)) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `recovery_fn` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`recovery_fn` option not allowed here",
                     ));
                 }
             } else if ident == "data" {

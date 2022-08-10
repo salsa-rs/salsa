@@ -30,6 +30,8 @@ impl crate::options::AllowedOptions for Accumulator {
     const DATA: bool = false;
 
     const DB: bool = false;
+
+    const RECOVERY_FN: bool = false;
 }
 
 fn accumulator_contents(

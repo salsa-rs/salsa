@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 salsa = { path = "../components/salsa-2022", package = "salsa-2022" }
 expect-test = "1.4.0"
+parking_lot = "0.12.1"
 
