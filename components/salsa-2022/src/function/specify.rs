@@ -27,7 +27,7 @@ where
         };
 
         let entity_index = key.database_key_index(db);
-        if !runtime.was_entity_created(entity_index) {
+        if !runtime.is_output_of_active_query(entity_index) {
             panic!("can only use `set` on entities created during current query");
         }
 

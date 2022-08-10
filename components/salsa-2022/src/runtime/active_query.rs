@@ -86,8 +86,7 @@ impl ActiveQuery {
 
     /// Adds a key to our list of outputs.
     pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) {
-        let is_new = self.outputs.insert(key);
-        assert!(is_new);
+        self.outputs.insert(key);
     }
 
     /// True if the given key was output by this query.
