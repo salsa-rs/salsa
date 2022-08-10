@@ -50,7 +50,7 @@ where
         // - a result that is verified in the current revision, because it was set, which will use the set value
         // - a result that is NOT verified and has untracked inputs, which will re-execute (and likely panic)
         let inputs = QueryInputs {
-            untracked: true,
+            untracked: false,
             tracked: runtime.empty_dependencies(),
         };
 
