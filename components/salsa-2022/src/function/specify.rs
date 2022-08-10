@@ -71,6 +71,20 @@ where
             revisions,
         };
 
+        log::debug!("specify: about to add memo {:#?} for key {:?}", memo, key);
         self.insert_memo(key, memo);
+    }
+
+    /// Specify the value for `key` *and* record that we did so.
+    /// Used for explicit calls to `specify`, but not needed for pre-declared tracked struct fields.
+    pub fn specify_and_record<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
+    where
+        C::Key: TrackedStructInDb<DynDb<'db, C>>,
+    {
+        self.specify(db, key, value);
+
+        // Record that the current query *specified* a value for this cell.
+        let database_key_index = self.database_key_index(key);
+        db.salsa_runtime().add_output(database_key_index);
     }
 }
