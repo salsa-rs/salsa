@@ -9,6 +9,7 @@ use crate::{
     jar::Jar,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::local_state::QueryInputs,
+    salsa_struct::SalsaStructInDb,
     Cycle, DbWithJar, Id, Revision,
 };
 
@@ -22,15 +23,33 @@ mod inputs;
 mod lru;
 mod maybe_changed_after;
 mod memo;
-mod set;
+mod specify;
 mod store;
 mod sync;
 
-#[allow(dead_code)]
+/// Function ingredients are the "workhorse" of salsa.
+/// They are used for tracked functions, for the "value" fields of tracked structs, and for the fields of input structs.
+/// The function ingredient is fairly complex and so its code is spread across multiple modules, typically one per method.
+/// The main entry points are:
+///
+/// * the `fetch` method, which is invoked when the function is called by the user's code;
+///   it will return a memoized value if one exists, or execute the function otherwise.
+/// * the `specify` method, which can only be used when the key is an entity created by the active query.
+///   It sets the value of the function imperatively, so that when later fetches occur, they'll return this value.
+/// * the `store` method, which can only be invoked with an `&mut` reference, and is to set input fields.
 pub struct FunctionIngredient<C: Configuration> {
+    /// The ingredient index we were assigned in the database.
+    /// Used to construct `DatabaseKeyIndex` values.
     index: IngredientIndex,
+
+    /// Tracks the keys for which we have memoized values.
     memo_map: memo::MemoMap<C::Key, C::Value>,
+
+    /// Tracks the keys that are currently being processed; used to coordinate between
+    /// worker threads.
     sync_map: sync::SyncMap,
+
+    /// Used to find memos to throw out when we have too many memoized values.
     lru: lru::Lru,
 
     /// When `fetch` and friends executes, they return a reference to the
@@ -50,17 +69,46 @@ pub struct FunctionIngredient<C: Configuration> {
 
 pub trait Configuration {
     type Jar: for<'db> Jar<'db>;
+
+    /// The "salsa struct type" that this function is associated with.
+    /// This can be just `salsa::Id` for functions that intern their arguments
+    /// and are not clearly associated with any one salsa struct.
+    type SalsaStruct: for<'db> SalsaStructInDb<DynDb<'db, Self>>;
+
+    /// What key is used to index the memo. Typically a salsa struct id,
+    /// but if this memoized function has multiple argments it will be a `salsa::Id`
+    /// that results from interning those arguments.
     type Key: AsId;
+
+    /// The value computed by the function.
     type Value: std::fmt::Debug;
 
+    /// Determines whether this function can recover from being a participant in a cycle
+    /// (and, if so, how).
     const CYCLE_STRATEGY: CycleRecoveryStrategy;
 
+    /// Invokes after a new result `new_value`` has been computed for which an older memoized
+    /// value existed `old_value`. Returns true if the new value is equal to the older one
+    /// and hence should be "backdated" (i.e., marked as having last changed in an older revision,
+    /// even though it was recomputed).
+    ///
+    /// This invokes user's code in form of the `Eq` impl.
     fn should_backdate_value(old_value: &Self::Value, new_value: &Self::Value) -> bool;
 
+    /// Invoked when we need to compute the value for the given key, either because we've never
+    /// computed it before or because the old one relied on inputs that have changed.
+    ///
+    /// This invokes the function the user wrote.
     fn execute(db: &DynDb<Self>, key: Self::Key) -> Self::Value;
 
+    /// If the cycle strategy is `Recover`, then invoked when `key` is a participant
+    /// in a cycle to find out what value it should have.
+    ///
+    /// This invokes the recovery function given by the user.
     fn recover_from_cycle(db: &DynDb<Self>, cycle: &Cycle, key: Self::Key) -> Self::Value;
 
+    /// Given a salsa Id, returns the key. Convenience function to avoid
+    /// having to type `<C::Key as AsId>::from_id`.
     fn key_from_id(id: Id) -> Self::Key {
         AsId::from_id(id)
     }

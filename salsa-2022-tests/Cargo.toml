@@ -9,4 +9,5 @@ edition = "2021"
 salsa = { path = "../components/salsa-2022", package = "salsa-2022" }
 expect-test = "1.4.0"
 parking_lot = "0.12.1"
-
+test-log = "0.2.11"
+env_logger = "*"

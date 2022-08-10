@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
+    debug::DebugWithDb,
     runtime::{local_state::ActiveQueryGuard, StampedValue},
     Cycle, Database, Event, EventKind,
 };

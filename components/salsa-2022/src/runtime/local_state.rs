@@ -56,7 +56,9 @@ impl QueryRevisions {
 /// Every input.
 #[derive(Debug, Clone)]
 pub struct QueryInputs {
-    /// Inputs that are fully known
+    /// Inputs that are fully known.
+    /// We track these even if there are unknown inputs so that the accumulator code
+    /// can walk all the inputs even for tracked functions that read untracked values.
     pub(crate) tracked: Arc<[DependencyIndex]>,
 
     /// Where there any *unknown* inputs?

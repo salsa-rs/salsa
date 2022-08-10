@@ -1,5 +1,6 @@
 pub(crate) struct Configuration {
     pub(crate) jar_ty: syn::Type,
+    pub(crate) salsa_struct_ty: syn::Type,
     pub(crate) key_ty: syn::Type,
     pub(crate) value_ty: syn::Type,
     pub(crate) cycle_strategy: CycleRecoveryStrategy,
@@ -12,6 +13,7 @@ impl Configuration {
     pub(crate) fn to_impl(&self, self_ty: &syn::Type) -> syn::ItemImpl {
         let Configuration {
             jar_ty,
+            salsa_struct_ty,
             key_ty,
             value_ty,
             cycle_strategy,
@@ -22,6 +24,7 @@ impl Configuration {
         parse_quote! {
             impl salsa::function::Configuration for #self_ty {
                 type Jar = #jar_ty;
+                type SalsaStruct = #salsa_struct_ty;
                 type Key = #key_ty;
                 type Value = #value_ty;
                 const CYCLE_STRATEGY: salsa::cycle::CycleRecoveryStrategy = #cycle_strategy;

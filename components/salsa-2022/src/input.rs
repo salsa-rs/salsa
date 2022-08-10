@@ -40,7 +40,7 @@ where
     pub fn new_input(&mut self, _runtime: &mut Runtime) -> Id {
         let next_id = self.counter;
         self.counter += 1;
-        Id::from_id(crate::Id::from(next_id))
+        Id::from_id(crate::Id::from_u32(next_id))
     }
 }
 

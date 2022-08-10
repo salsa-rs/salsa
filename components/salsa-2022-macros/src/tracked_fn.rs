@@ -101,10 +101,7 @@ fn configuration_struct(item_fn: &syn::ItemFn) -> syn::ItemStruct {
 
     parse_quote! {
         #[allow(non_camel_case_types)]
-        #visibility struct #fn_name
-        where
-            #salsa_struct_ty: salsa::AsId, // require that the salsa struct is, well, a salsa struct!
-        {
+        #visibility struct #fn_name {
             intern_map: #intern_map,
             function: salsa::function::FunctionIngredient<Self>,
         }
@@ -127,10 +124,11 @@ fn salsa_struct_ty(item_fn: &syn::ItemFn) -> &syn::Type {
 
 fn fn_configuration(args: &Args, item_fn: &syn::ItemFn) -> Configuration {
     let jar_ty = args.jar_ty();
+    let salsa_struct_ty = salsa_struct_ty(item_fn).clone();
     let key_ty = if requires_interning(item_fn) {
         parse_quote!(salsa::id::Id)
     } else {
-        salsa_struct_ty(item_fn).clone()
+        salsa_struct_ty.clone()
     };
     let value_ty = configuration::value_ty(&item_fn.sig);
 
@@ -187,6 +185,7 @@ fn fn_configuration(args: &Args, item_fn: &syn::ItemFn) -> Configuration {
 
     Configuration {
         jar_ty,
+        salsa_struct_ty,
         key_ty,
         value_ty,
         cycle_strategy,
@@ -206,7 +205,7 @@ fn ingredients_for_impl(
     let intern_map: syn::Expr = if requires_interning(item_fn) {
         parse_quote! {
             {
-                let index = ingredients.push(|jars| {
+                let index = routes.push(|jars| {
                     let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                     let ingredients =
                         <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
@@ -226,7 +225,7 @@ fn ingredients_for_impl(
             type Ingredients = Self;
             type Jar = #jar_ty;
 
-            fn create_ingredients<DB>(ingredients: &mut salsa::routes::Ingredients<DB>) -> Self::Ingredients
+            fn create_ingredients<DB>(routes: &mut salsa::routes::Routes<DB>) -> Self::Ingredients
             where
                 DB: salsa::DbWithJar<Self::Jar> + salsa::storage::JarFromJars<Self::Jar>,
             {
@@ -234,7 +233,7 @@ fn ingredients_for_impl(
                     intern_map: #intern_map,
 
                     function: {
-                        let index = ingredients.push(|jars| {
+                        let index = routes.push(|jars| {
                             let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                             let ingredients =
                                 <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
@@ -416,7 +415,7 @@ fn specify_fn(
 
                 let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(#db_var);
                 let __ingredients = <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient(__jar);
-                __ingredients.function.set(#db_var, #(#arg_names,)* #value_arg)
+                __ingredients.function.specify(#db_var, #(#arg_names,)* #value_arg)
             }
         },
     }))

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::{Database, Id, IngredientIndex};
+use crate::{Database, DebugWithDb, Id, IngredientIndex};
 
 /// An integer that uniquely identifies a particular query instance within the
 /// database. Used to track dependencies between queries. Fully ordered and
@@ -32,9 +32,14 @@ impl DependencyIndex {
     pub fn key_index(self) -> Option<Id> {
         self.key_index
     }
+}
 
-    pub fn debug<DB: ?Sized + Database>(self, _db: &DB) -> impl Debug + '_ {
-        self // FIXME
+impl<Db> crate::debug::DebugWithDb<Db> for DependencyIndex
+where
+    Db: ?Sized + Database,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
+        write!(f, "{:?}", *self) // FIXME
     }
 }
 
@@ -55,10 +60,15 @@ impl DatabaseKeyIndex {
     pub fn key_index(self) -> Id {
         self.key_index
     }
+}
 
-    pub fn debug<DB: ?Sized + Database>(self, db: &DB) -> impl Debug + '_ {
-        let i: DependencyIndex = self.into();
-        i.debug(db)
+impl<Db> crate::debug::DebugWithDb<Db> for DatabaseKeyIndex
+where
+    Db: ?Sized + Database,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
+        let i: DependencyIndex = (*self).into();
+        DebugWithDb::fmt(&i, f, db)
     }
 }
 

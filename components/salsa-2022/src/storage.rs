@@ -10,18 +10,36 @@ use crate::runtime::local_state::QueryInputs;
 use crate::runtime::Runtime;
 use crate::{Database, DatabaseKeyIndex, IngredientIndex};
 
-use super::routes::Ingredients;
+use super::routes::Routes;
 use super::{ParallelDatabase, Revision};
 
-#[allow(dead_code)]
+/// The "storage" struct stores all the data for the jars.
+/// It is shared between the main database and any active snapshots.
 pub struct Storage<DB: HasJars> {
+    /// Data shared across all databases.
     shared: Arc<Shared<DB>>,
-    ingredients: Arc<Ingredients<DB>>,
+
+    /// The "ingredients" structure stores the information about how to find each ingredient in the database.
+    /// It allows us to take the [`IngredientIndex`] assigned to a particular ingredient
+    /// and get back a [`dyn Ingredient`][`Ingredient`] for the struct that stores its data.
+    routes: Arc<Routes<DB>>,
+
+    /// The runtime for this particular salsa database handle.
+    /// Each handle gets its own runtime, but the runtimes have shared state between them.s
     runtime: Runtime,
 }
 
+/// Data shared between all threads.
+/// This is where the actual data for tracked functions, structs, inputs, etc lives,
+/// along with some coordination variables between treads.
 struct Shared<DB: HasJars> {
+    /// Contains the data for each jar in the database.
+    /// Each jar stores its own structs in there that ultimately contain ingredients
+    /// (types that implement the [`Ingredient`] trait, like [`crate::function::FunctionIngredient`]).
     jars: DB::Jars,
+
+    /// Conditional variable that is used to coordinate cancellation.
+    /// When the main thread writes to the database, it blocks until each of the snapshots can be cancelled.
     cvar: Condvar,
 }
 
@@ -30,14 +48,14 @@ where
     DB: HasJars,
 {
     fn default() -> Self {
-        let mut ingredients = Ingredients::new();
-        let jars = DB::create_jars(&mut ingredients);
+        let mut routes = Routes::new();
+        let jars = DB::create_jars(&mut routes);
         Self {
             shared: Arc::new(Shared {
                 jars,
                 cvar: Default::default(),
             }),
-            ingredients: Arc::new(ingredients),
+            routes: Arc::new(routes),
             runtime: Runtime::default(),
         }
     }
@@ -53,7 +71,7 @@ where
     {
         Self {
             shared: self.shared.clone(),
-            ingredients: self.ingredients.clone(),
+            routes: self.routes.clone(),
             runtime: self.runtime.snapshot(),
         }
     }
@@ -74,9 +92,9 @@ where
         self.cancel_other_workers();
         self.runtime.new_revision();
 
-        let ingredients = self.ingredients.clone();
+        let routes = self.routes.clone();
         let shared = Arc::get_mut(&mut self.shared).unwrap();
-        for route in ingredients.mut_routes() {
+        for route in routes.mut_routes() {
             route(&mut shared.jars).reset_for_new_revision();
         }
 
@@ -108,7 +126,7 @@ where
     }
 
     pub fn ingredient(&self, ingredient_index: IngredientIndex) -> &dyn Ingredient<DB> {
-        let route = self.ingredients.route(ingredient_index);
+        let route = self.routes.route(ingredient_index);
         route(&self.shared.jars)
     }
 }
@@ -131,7 +149,7 @@ pub trait HasJars: HasJarsDyn + Sized {
     /// and it will also cancel any ongoing work in the current revision.
     fn jars_mut(&mut self) -> (&mut Self::Jars, &mut Runtime);
 
-    fn create_jars(ingredients: &mut Ingredients<Self>) -> Self::Jars;
+    fn create_jars(routes: &mut Routes<Self>) -> Self::Jars;
 }
 
 pub trait DbWithJar<J>: HasJar<J> + Database {
@@ -175,7 +193,7 @@ pub trait IngredientsFor {
     type Jar;
     type Ingredients;
 
-    fn create_ingredients<DB>(ingredients: &mut Ingredients<DB>) -> Self::Ingredients
+    fn create_ingredients<DB>(routes: &mut Routes<DB>) -> Self::Ingredients
     where
         DB: DbWithJar<Self::Jar> + JarFromJars<Self::Jar>;
 }

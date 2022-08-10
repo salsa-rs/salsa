@@ -17,6 +17,7 @@ pub mod plumbing;
 pub mod revision;
 pub mod routes;
 pub mod runtime;
+pub mod salsa_struct;
 pub mod storage;
 #[doc(hidden)]
 pub mod tracked_struct;

@@ -11,13 +11,23 @@ pub(crate) fn input(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    match SalsaStruct::new(args, input).and_then(|el| el.generate_input()) {
+    match SalsaStruct::new(args, input).and_then(|el| InputStruct(el).generate_input()) {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
 }
 
-impl SalsaStruct {
+struct InputStruct(SalsaStruct);
+
+impl std::ops::Deref for InputStruct {
+    type Target = SalsaStruct;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl InputStruct {
     fn generate_input(&self) -> syn::Result<TokenStream> {
         self.validate_input()?;
 
@@ -27,6 +37,7 @@ impl SalsaStruct {
         let inherent_impl = self.input_inherent_impl();
         let ingredients_for_impl = self.input_ingredients(&config_structs);
         let as_id_impl = self.as_id_impl();
+        let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
 
         Ok(quote! {
             #(#config_structs)*
@@ -35,6 +46,7 @@ impl SalsaStruct {
             #ingredients_for_impl
             #as_id_impl
             #(#config_impls)*
+            #salsa_struct_in_db_impl
         })
     }
 
@@ -133,7 +145,7 @@ impl SalsaStruct {
                 );
 
                 fn create_ingredients<DB>(
-                    ingredients: &mut salsa::routes::Ingredients<DB>,
+                    routes: &mut salsa::routes::Routes<DB>,
                 ) -> Self::Ingredients
                 where
                     DB: salsa::DbWithJar<Self::Jar> + salsa::storage::JarFromJars<Self::Jar>,
@@ -141,7 +153,7 @@ impl SalsaStruct {
                     (
                         #(
                             {
-                                let index = ingredients.push(
+                                let index = routes.push(
                                     |jars| {
                                         let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                                         let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar);
@@ -152,7 +164,7 @@ impl SalsaStruct {
                             },
                         )*
                         {
-                            let index = ingredients.push(
+                            let index = routes.push(
                                 |jars| {
                                     let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                                     let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar);
@@ -182,5 +194,18 @@ impl SalsaStruct {
             .zip(0..)
             .map(|(_, i)| Literal::usize_unsuffixed(i))
             .collect()
+    }
+
+    /// Implementation of `SalsaStructInDb`.
+    fn salsa_struct_in_db_impl(&self) -> syn::ItemImpl {
+        let ident = self.id_ident();
+        let jar_ty = self.jar_ty();
+        parse_quote! {
+            impl<DB> salsa::salsa_struct::SalsaStructInDb<DB> for #ident
+            where
+                DB: ?Sized + salsa::DbWithJar<#jar_ty>,
+            {
+            }
+        }
     }
 }
