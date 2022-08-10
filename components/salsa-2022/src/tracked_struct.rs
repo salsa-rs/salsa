@@ -76,7 +76,7 @@ where
             data,
         };
         let result = self.interned.intern(runtime, entity_key);
-        runtime.add_entity_created(self.database_key_index(result));
+        runtime.add_output(self.database_key_index(result));
         result
     }
 
