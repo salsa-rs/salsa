@@ -15,6 +15,7 @@ pub trait TrackedStructData: InternedData {}
 impl<T: InternedData> TrackedStructData for T {}
 
 pub trait TrackedStructInDb<DB: ?Sized + Database>: SalsaStructInDb<DB> {
+    /// Converts the identifier for this tracked struct into a `DatabaseKeyIndex`.
     fn database_key_index(self, db: &DB) -> DatabaseKeyIndex;
 }
 
