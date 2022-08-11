@@ -93,11 +93,11 @@ impl InputStruct {
         let field_setters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&field_names).zip(&field_tys).map(|((field_index, field_name), field_ty)| {
             let set_field_name = syn::Ident::new(&format!("set_{}", field_name), field_name.span());
             parse_quote! {
-                pub fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty, __value: #field_ty)
+                pub fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty, __value: #field_ty) -> #field_ty
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient_mut(__jar);
-                    __ingredients.#field_index.store(__runtime, self, __value, salsa::Durability::LOW);
+                    __ingredients.#field_index.store(__runtime, self, __value, salsa::Durability::LOW).unwrap()
                 }
             }
         })
