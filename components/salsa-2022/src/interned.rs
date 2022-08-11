@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use crate::durability::Durability;
 use crate::id::AsId;
 use crate::key::DependencyIndex;
-use crate::runtime::local_state::QueryInputs;
+use crate::runtime::local_state::QueryEdges;
 use crate::runtime::Runtime;
 
 use super::hash::FxDashMap;
@@ -194,7 +194,7 @@ where
         crate::cycle::CycleRecoveryStrategy::Panic
     }
 
-    fn inputs(&self, _key_index: crate::Id) -> Option<QueryInputs> {
+    fn inputs(&self, _key_index: crate::Id) -> Option<QueryEdges> {
         None
     }
 }

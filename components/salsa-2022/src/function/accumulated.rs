@@ -1,7 +1,7 @@
 use crate::{
     hash::FxHashSet,
     key::DependencyIndex,
-    runtime::local_state::QueryInputs,
+    runtime::local_state::QueryEdges,
     storage::{HasJar, HasJarsDyn},
     Database, DatabaseKeyIndex,
 };
@@ -55,7 +55,7 @@ impl Stack {
         self.v.pop()
     }
 
-    fn extend(&mut self, inputs: Option<QueryInputs>) {
+    fn extend(&mut self, inputs: Option<QueryEdges>) {
         let inputs = match inputs {
             None => return,
             Some(v) => v,
@@ -64,7 +64,7 @@ impl Stack {
         for DependencyIndex {
             ingredient_index,
             key_index,
-        } in inputs.tracked.iter().copied()
+        } in inputs.inputs().iter().copied()
         {
             if let Some(key_index) = key_index {
                 let i = DatabaseKeyIndex {
