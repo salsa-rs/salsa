@@ -1,5 +1,6 @@
 use crate::{
-    cycle::CycleRecoveryStrategy, key::DependencyIndex, runtime::local_state::QueryEdges, Id,
+    cycle::CycleRecoveryStrategy, key::DependencyIndex, runtime::local_state::QueryEdges,
+    DatabaseKeyIndex, Id,
 };
 
 use super::Revision;
@@ -22,6 +23,12 @@ pub trait Ingredient<DB: ?Sized> {
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
     fn inputs(&self, key_index: Id) -> Option<QueryEdges>;
+
+    /// Invoked when the value `stale_output` was output by `executor` in a previous
+    /// revision, but was NOT output in the current revision.
+    ///
+    /// This hook is used to clear out the stale value so others cannot read it.
+    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<Id>);
 }
 
 /// Optional trait for ingredients that wish to be notified when new revisions are

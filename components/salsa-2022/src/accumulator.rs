@@ -81,6 +81,11 @@ where
     fn inputs(&self, _key_index: crate::Id) -> Option<QueryEdges> {
         None
     }
+
+    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<crate::Id>) {
+        // FIXME
+        drop((executor, stale_output_key));
+    }
 }
 
 impl<DB: ?Sized, Data> MutIngredient<DB> for AccumulatorIngredient<Data>
