@@ -61,4 +61,8 @@ where
     fn inputs(&self, _key_index: crate::Id) -> Option<QueryEdges> {
         None
     }
+
+    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<crate::Id>) {
+        unreachable!("input cannot be the output of a tracked function");
+    }
 }
