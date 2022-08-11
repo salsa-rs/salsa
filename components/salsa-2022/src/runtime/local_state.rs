@@ -40,7 +40,7 @@ pub(crate) struct QueryRevisions {
     pub(crate) durability: Durability,
 
     /// The inputs that went into our query, if we are tracking them.
-    pub(crate) inputs: QueryInputs,
+    pub(crate) edges: QueryEdges,
 }
 
 impl QueryRevisions {
@@ -53,16 +53,51 @@ impl QueryRevisions {
     }
 }
 
-/// Every input.
+/// The edges between a memoized value and other queries in the dependency graph.
+/// These edges include both dependency edges
+/// e.g., when creating the memoized value for Q0 executed another function Q1)
+/// and output edges
+/// (e.g., when Q0 specified the value for another query Q2).
 #[derive(Debug, Clone)]
-pub struct QueryInputs {
-    /// Inputs that are fully known.
-    /// We track these even if there are unknown inputs so that the accumulator code
-    /// can walk all the inputs even for tracked functions that read untracked values.
-    pub(crate) tracked: Arc<[DependencyIndex]>,
+pub struct QueryEdges {
+    /// The list of outgoing edges from this node.
+    /// This list combines *both* inputs and outputs.
+    /// The inputs are defined from the indices `0..S` where
+    /// `S` is the value of the `separator` field.
+    ///
+    /// Note that we always track input dependencies even when there are untracked reads.
+    /// Untracked reads mean that we can't verify values, so we don't use the list of inputs for that,
+    /// but we still use it for finding the transitive inputs to an accumulator.
+    ///
+    /// You can access the input/output list via the methods [`inputs`] and [`outputs`] respectively.
+    ///
+    /// Important:
+    ///
+    /// * The inputs must be in **execution order** for the red-green algorithm to work.
+    /// * The outputs must be in **sorted order** so that we can easily "diff" them between revisions.
+    pub(crate) input_outputs: Arc<[DependencyIndex]>,
+
+    /// The index that separates inputs from outputs in the `tracked` field.
+    pub(crate) separator: u32,
 
     /// Where there any *unknown* inputs?
     pub(crate) untracked: bool,
+}
+
+impl QueryEdges {
+    /// Returns the (tracked) inputs that were executed in computing this memoized value.
+    ///
+    /// These will always be in execution order.
+    pub(crate) fn inputs(&self) -> &[DependencyIndex] {
+        &self.input_outputs[0..self.separator as usize]
+    }
+
+    /// Returns the queries whose values were assigned while computing this memoized value.
+    ///
+    /// These will always be in sorted order.
+    pub(crate) fn outputs(&self) -> &[DependencyIndex] {
+        &self.input_outputs[self.separator as usize..]
+    }
 }
 
 impl Default for LocalState {

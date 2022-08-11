@@ -93,7 +93,7 @@ where
         if let Some(memo) = self.memo_map.get(key) {
             // Careful: we can't evict memos with untracked inputs
             // as their values cannot be reconstructed.
-            if memo.revisions.inputs.untracked {
+            if memo.revisions.edges.untracked {
                 return;
             }
 

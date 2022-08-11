@@ -136,7 +136,7 @@ fn has_jars_dyn_impl(input: &syn::ItemStruct, storage: &syn::Ident) -> syn::Item
             fn inputs(
                 &self,
                 index: salsa::DatabaseKeyIndex,
-            ) -> Option<salsa::runtime::local_state::QueryInputs> {
+            ) -> Option<salsa::runtime::local_state::QueryEdges> {
                 let ingredient = self.#storage.ingredient(index.ingredient_index());
                 ingredient.inputs(index.key_index())
             }

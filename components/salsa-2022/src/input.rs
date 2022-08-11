@@ -2,7 +2,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::Ingredient,
     key::{DatabaseKeyIndex, DependencyIndex},
-    runtime::{local_state::QueryInputs, Runtime},
+    runtime::{local_state::QueryEdges, Runtime},
     AsId, IngredientIndex, Revision,
 };
 
@@ -58,7 +58,7 @@ where
         CycleRecoveryStrategy::Panic
     }
 
-    fn inputs(&self, _key_index: crate::Id) -> Option<QueryInputs> {
+    fn inputs(&self, _key_index: crate::Id) -> Option<QueryEdges> {
         None
     }
 }
