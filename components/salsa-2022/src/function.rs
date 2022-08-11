@@ -17,6 +17,7 @@ use super::{ingredient::Ingredient, routes::IngredientIndex, AsId};
 
 mod accumulated;
 mod backdate;
+mod diff_outputs;
 mod execute;
 mod fetch;
 mod inputs;
