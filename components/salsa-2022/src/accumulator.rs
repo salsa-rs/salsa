@@ -82,7 +82,12 @@ where
         None
     }
 
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<crate::Id>) {
+    fn remove_stale_output(
+        &self,
+        _db: &DB,
+        executor: DatabaseKeyIndex,
+        stale_output_key: Option<crate::Id>,
+    ) {
         // FIXME
         drop((executor, stale_output_key));
     }

@@ -17,6 +17,8 @@ use super::{ingredient::Ingredient, routes::IngredientIndex, AsId};
 
 mod accumulated;
 mod backdate;
+mod clean;
+mod delete;
 mod diff_outputs;
 mod execute;
 mod fetch;
@@ -204,10 +206,14 @@ where
         self.origin(key)
     }
 
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<crate::Id>) {
-        // FIXME
+    fn remove_stale_output(
+        &self,
+        db: &DB,
+        executor: DatabaseKeyIndex,
+        stale_output_key: Option<crate::Id>,
+    ) {
         let stale_output_key = C::key_from_id(stale_output_key.unwrap());
-        drop((executor, stale_output_key));
+        self.clean(db.as_jar_db(), executor, stale_output_key);
     }
 }
 

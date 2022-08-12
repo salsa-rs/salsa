@@ -199,7 +199,12 @@ where
         None
     }
 
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<crate::Id>) {
+    fn remove_stale_output(
+        &self,
+        _db: &DB,
+        executor: DatabaseKeyIndex,
+        stale_output_key: Option<crate::Id>,
+    ) {
         unreachable!(
             "remove_stale_output({:?}, {:?}): interned ids are not outputs",
             executor, stale_output_key

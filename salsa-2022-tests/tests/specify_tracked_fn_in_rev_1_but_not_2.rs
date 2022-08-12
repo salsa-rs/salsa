@@ -189,6 +189,10 @@ fn test_run_20() {
 fn test_run_0_then_5_then_20() {
     let mut db = Database::default();
 
+    // Set input to 0:
+    //
+    // * `create_tracked` specifies `10` for `maybe_specified`
+    // * final resuilt of `100` is derived by executing `read_maybe_specified`
     let input = MyInput::new(&mut db, 0);
     assert_eq!(final_result(&db, input), 100);
     db.assert_logs(expect![[r#"
@@ -206,65 +210,10 @@ fn test_run_0_then_5_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);
 
-    // FIXME: read_maybe_specified should not re-execute
-    let input = MyInput::new(&mut db, 5);
-    assert_eq!(final_result(&db, input), 100);
-    db.assert_logs(expect![[r#"
-        [
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(7), key_index: Some(Id { value: 2 }) } } }",
-            "final_result(MyInput(Id { value: 2 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(6), key_index: Some(Id { value: 2 }) } } }",
-            "create_tracked(MyInput(Id { value: 2 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 2 }) } } }",
-            "read_maybe_specified(MyTracked(Id { value: 2 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-        ]"#]]);
-
-    input.set_field(&mut db, 20);
-    assert_eq!(final_result(&db, input), 100); // FIXME: Should be 20.
-    db.assert_logs(expect![[r#"
-        [
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(6), key_index: Some(Id { value: 2 }) } } }",
-            "create_tracked(MyInput(Id { value: 2 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillDiscardStaleOutput { execute_key: DependencyIndex { ingredient_index: IngredientIndex(6), key_index: Some(Id { value: 2 }) }, output_key: DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 2 }) } } }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 2 }) } } }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 2 }) } } }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(7), key_index: Some(Id { value: 2 }) } } }",
-        ]"#]]); // FIXME: should invoke maybe_specified
-}
-
-#[test]
-fn test_run_0_then_5_then_10_then_20() {
-    let mut db = Database::default();
-
-    let input = MyInput::new(&mut db, 0);
-    assert_eq!(final_result(&db, input), 100);
-    db.assert_logs(expect![[r#"
-        [
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(7), key_index: Some(Id { value: 1 }) } } }",
-            "final_result(MyInput(Id { value: 1 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(6), key_index: Some(Id { value: 1 }) } } }",
-            "create_tracked(MyInput(Id { value: 1 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 1 }) } } }",
-            "read_maybe_specified(MyTracked(Id { value: 1 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-        ]"#]]);
-
-    // FIXME: `read_maybe_specified` should not re-execute
+    // Set input to 5:
+    //
+    // * `create_tracked` does re-execute, but specifies same value for `maybe_specified` as before
+    // * `read_maybe_specified` does not re-execute (its input has not changed)
     input.set_field(&mut db, 5);
     assert_eq!(final_result(&db, input), 100);
     db.assert_logs(expect![[r#"
@@ -281,7 +230,89 @@ fn test_run_0_then_5_then_10_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(7), key_index: Some(Id { value: 1 }) } } }",
         ]"#]]);
 
-    // FIXME: should execute `maybe_specified` but not `read_maybe_specified`
+    // Set input to 20:
+    //
+    // * `create_tracked` re-executes but does not specify any value
+    // * `read_maybe_specified` is invoked and it calls `maybe_specified`, which now executes
+    //   (its value has not been specified)
+    input.set_field(&mut db, 20);
+    assert_eq!(final_result(&db, input), 200);
+    db.assert_logs(expect![[r#"
+        [
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(6), key_index: Some(Id { value: 1 }) } } }",
+            "create_tracked(MyInput(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillDiscardStaleOutput { execute_key: DependencyIndex { ingredient_index: IngredientIndex(6), key_index: Some(Id { value: 1 }) }, output_key: DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 1 }) } } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 1 }) } } }",
+            "read_maybe_specified(MyTracked(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 1 }) } } }",
+            "maybe_specified(MyTracked(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(7), key_index: Some(Id { value: 1 }) } } }",
+            "final_result(MyInput(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+        ]"#]]);
+}
+
+#[test]
+fn test_run_0_then_5_then_10_then_20() {
+    let mut db = Database::default();
+
+    // Set input to 0:
+    //
+    // * `create_tracked` specifies `10` for `maybe_specified`
+    // * final resuilt of `100` is derived by executing `read_maybe_specified`
+    let input = MyInput::new(&mut db, 0);
+    assert_eq!(final_result(&db, input), 100);
+    db.assert_logs(expect![[r#"
+        [
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(7), key_index: Some(Id { value: 1 }) } } }",
+            "final_result(MyInput(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(6), key_index: Some(Id { value: 1 }) } } }",
+            "create_tracked(MyInput(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 1 }) } } }",
+            "read_maybe_specified(MyTracked(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+        ]"#]]);
+
+    // Set input to 5:
+    //
+    // * `create_tracked` does re-execute, but specifies same value for `maybe_specified` as before
+    // * `read_maybe_specified` does not re-execute (its input has not changed)
+    input.set_field(&mut db, 5);
+    assert_eq!(final_result(&db, input), 100);
+    db.assert_logs(expect![[r#"
+        [
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(6), key_index: Some(Id { value: 1 }) } } }",
+            "create_tracked(MyInput(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 1 }) } } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(7), key_index: Some(Id { value: 1 }) } } }",
+        ]"#]]);
+
+    // Set input to 10:
+    //
+    // * `create_tracked` does re-execute and specifies no value for `maybe_specified`
+    // * `maybe_specified_value` returns 10.
+    //   This is the same value that was specified, but we are not smart enough to take advantage of that.
+    // * `read_maybe_specified` therefore executes anyway
     input.set_field(&mut db, 10);
     assert_eq!(final_result(&db, input), 100);
     db.assert_logs(expect![[r#"
@@ -295,14 +326,21 @@ fn test_run_0_then_5_then_10_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillDiscardStaleOutput { execute_key: DependencyIndex { ingredient_index: IngredientIndex(6), key_index: Some(Id { value: 1 }) }, output_key: DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 1 }) } } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 1 }) } } }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 1 }) } } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 1 }) } } }",
+            "read_maybe_specified(MyTracked(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 1 }) } } }",
+            "maybe_specified(MyTracked(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(7), key_index: Some(Id { value: 1 }) } } }",
         ]"#]]);
 
-    // FIXME: should execute `maybe_specified` but not `read_maybe_specified`
+    // Set input to 20:
+    //
+    // * Everything re-executes to get new result (200).
     input.set_field(&mut db, 20);
-    assert_eq!(final_result(&db, input), 100);
+    assert_eq!(final_result(&db, input), 200);
     db.assert_logs(expect![[r#"
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
@@ -313,9 +351,19 @@ fn test_run_0_then_5_then_10_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 1 }) } } }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 1 }) } } }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(7), key_index: Some(Id { value: 1 }) } } }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 1 }) } } }",
+            "maybe_specified(MyTracked(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 1 }) } } }",
+            "read_maybe_specified(MyTracked(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(7), key_index: Some(Id { value: 1 }) } } }",
+            "final_result(MyInput(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);
 }
 
@@ -341,7 +389,7 @@ fn test_run_5_then_20() {
         ]"#]]);
 
     input.set_field(&mut db, 20);
-    assert_eq!(final_result(&db, input), 100); // FIXME: Should be 20.
+    assert_eq!(final_result(&db, input), 200);
     db.assert_logs(expect![[r#"
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
@@ -353,8 +401,16 @@ fn test_run_5_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillDiscardStaleOutput { execute_key: DependencyIndex { ingredient_index: IngredientIndex(6), key_index: Some(Id { value: 1 }) }, output_key: DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 1 }) } } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 1 }) } } }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 1 }) } } }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: DependencyIndex { ingredient_index: IngredientIndex(7), key_index: Some(Id { value: 1 }) } } }",
-        ]"#]]); // FIXME: should invoke maybe_specified
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 1 }) } } }",
+            "read_maybe_specified(MyTracked(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 1 }) } } }",
+            "maybe_specified(MyTracked(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(7), key_index: Some(Id { value: 1 }) } } }",
+            "final_result(MyInput(Id { value: 1 }))",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
+        ]"#]]);
 }

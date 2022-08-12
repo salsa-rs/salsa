@@ -118,7 +118,12 @@ where
         None
     }
 
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<crate::Id>) {
+    fn remove_stale_output(
+        &self,
+        _db: &DB,
+        executor: DatabaseKeyIndex,
+        stale_output_key: Option<crate::Id>,
+    ) {
         let key: Id = Id::from_id(stale_output_key.unwrap());
         // FIXME -- we can delete this entity
         drop((executor, key));

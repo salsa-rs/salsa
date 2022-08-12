@@ -105,9 +105,7 @@ where
                 }
 
                 QueryOrigin::Derived(_) => {
-                    if let Some(memo) = self.memo_map.remove(key) {
-                        self.deleted_entries.push(memo);
-                    }
+                    self.delete_memo(key);
                 }
             }
         }

@@ -28,7 +28,12 @@ pub trait Ingredient<DB: ?Sized> {
     /// revision, but was NOT output in the current revision.
     ///
     /// This hook is used to clear out the stale value so others cannot read it.
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<Id>);
+    fn remove_stale_output(
+        &self,
+        db: &DB,
+        executor: DatabaseKeyIndex,
+        stale_output_key: Option<Id>,
+    );
 }
 
 /// Optional trait for ingredients that wish to be notified when new revisions are
