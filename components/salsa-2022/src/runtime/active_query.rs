@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::{
     durability::Durability,
-    hash::{FxHashSet, FxIndexMap, FxIndexSet},
+    hash::{FxIndexMap, FxIndexSet},
     key::{DatabaseKeyIndex, DependencyIndex},
     tracked_struct::Disambiguator,
     Cycle, Revision, Runtime,
