@@ -7,6 +7,11 @@ use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryInputs;
 use crate::runtime::StampedValue;
 
+/// Ingredient used to represent the fields of a `#[salsa::input]`.
+/// These fields can only be mutated by an explicit call to a setter
+/// with an `&mut` reference to the database,
+/// and therefore cannot be mutated during a tracked function or in parallel.
+/// This makes the implementation considerably simpler.
 pub struct InputFieldIngredient<K, F> {
     index: IngredientIndex,
     map: FxHashMap<K, StampedValue<F>>
