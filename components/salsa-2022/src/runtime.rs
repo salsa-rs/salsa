@@ -144,15 +144,15 @@ impl Runtime {
         }
     }
 
-    /// Adds `key` to the list of output created by the current query
-    /// (if not already present).
-    pub(crate) fn add_output(&self, key: DatabaseKeyIndex) {
-        self.local_state.add_output(key);
+    /// Adds `entity` to the lits of entities created by the current query.
+    /// Panics if `entity` was already added.
+    pub(crate) fn add_entity_created(&self, entity: DatabaseKeyIndex) {
+        self.local_state.add_entity_created(entity);
     }
 
-    /// Check whether `entity` is contained the list of outputs written by the current query.
-    pub(super) fn is_output_of_active_query(&self, entity: DatabaseKeyIndex) -> bool {
-        self.local_state.is_output(entity)
+    /// Check whether `entity` is contained the list of entities created by the current query.
+    pub(super) fn was_entity_created(&self, entity: DatabaseKeyIndex) -> bool {
+        self.local_state.was_entity_created(entity)
     }
 
     /// Called when the active queries creates an index from the
