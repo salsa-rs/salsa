@@ -118,7 +118,7 @@ impl LocalState {
     pub(super) fn add_entity_created(&self, entity: DatabaseKeyIndex) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.add_output(entity)
+                top_query.add_entity_created(entity)
             }
         })
     }
@@ -126,7 +126,7 @@ impl LocalState {
     pub(super) fn was_entity_created(&self, entity: DatabaseKeyIndex) -> bool {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.is_output(entity)
+                top_query.was_entity_created(entity)
             } else {
                 false
             }
