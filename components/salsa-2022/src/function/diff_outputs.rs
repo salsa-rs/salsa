@@ -1,6 +1,6 @@
 use crate::{
-    key::DependencyIndex, runtime::local_state::QueryRevisions, storage::HasJarsDyn, Database,
-    DatabaseKeyIndex, Event, EventKind,
+    key::DependencyIndex, runtime::local_state::QueryRevisions, Database, DatabaseKeyIndex, Event,
+    EventKind,
 };
 
 use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
@@ -59,7 +59,5 @@ where
                 output_key: output,
             },
         });
-
-        db.remove_stale_output(key, output);
     }
 }

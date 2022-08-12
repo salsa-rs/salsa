@@ -140,12 +140,6 @@ fn has_jars_dyn_impl(input: &syn::ItemStruct, storage: &syn::Ident) -> syn::Item
                 let ingredient = self.#storage.ingredient(index.ingredient_index());
                 ingredient.inputs(index.key_index())
             }
-
-            fn remove_stale_output(&self, executor: salsa::DatabaseKeyIndex, stale_output: salsa::key::DependencyIndex) {
-                let ingredient = self.#storage.ingredient(stale_output.ingredient_index());
-                ingredient.remove_stale_output(executor, stale_output.key_index());
-            }
-
         }
     }
 }

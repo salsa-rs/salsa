@@ -179,8 +179,6 @@ pub trait HasJarsDyn {
     fn cycle_recovery_strategy(&self, input: IngredientIndex) -> CycleRecoveryStrategy;
 
     fn inputs(&self, input: DatabaseKeyIndex) -> Option<QueryEdges>;
-
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output: DependencyIndex);
 }
 
 pub trait HasIngredientsFor<I>

@@ -117,11 +117,6 @@ where
     fn inputs(&self, _key_index: crate::Id) -> Option<QueryEdges> {
         None
     }
-
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<crate::Id>) {
-        let key: Id = Id::from_id(stale_output_key.unwrap());
-        // FIXME -- we can delete this entity
-    }
 }
 
 impl<DB: ?Sized, Id, Data> MutIngredient<DB> for TrackedStructIngredient<Id, Data>

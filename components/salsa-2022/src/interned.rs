@@ -8,7 +8,6 @@ use crate::id::AsId;
 use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryEdges;
 use crate::runtime::Runtime;
-use crate::DatabaseKeyIndex;
 
 use super::hash::FxDashMap;
 use super::ingredient::Ingredient;
@@ -197,10 +196,6 @@ where
 
     fn inputs(&self, _key_index: crate::Id) -> Option<QueryEdges> {
         None
-    }
-
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<crate::Id>) {
-        unreachable!("interned ids are not outputs");
     }
 }
 

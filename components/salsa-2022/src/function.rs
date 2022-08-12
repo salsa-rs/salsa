@@ -203,11 +203,6 @@ where
         let key = C::key_from_id(key_index);
         self.inputs(key)
     }
-
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<crate::Id>) {
-        let stale_output_key = C::key_from_id(stale_output_key.unwrap());
-        // FIXME
-    }
 }
 
 impl<DB, C> MutIngredient<DB> for FunctionIngredient<C>
