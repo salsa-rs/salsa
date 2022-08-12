@@ -87,7 +87,6 @@ where
         // old value.
         if let Some(old_memo) = &opt_old_memo {
             self.backdate_if_appropriate(old_memo, &mut revisions, &value);
-            self.diff_outputs(db, database_key_index, &old_memo, &revisions);
         }
 
         let value = self

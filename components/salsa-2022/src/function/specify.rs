@@ -1,7 +1,7 @@
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    runtime::local_state::{QueryEdges, QueryRevisions},
+    runtime::local_state::{QueryInputs, QueryRevisions},
     tracked_struct::TrackedStructInDb,
     Database,
 };
@@ -26,8 +26,8 @@ where
             None => panic!("can only use `set` with an active query"),
         };
 
-        let database_key_index = key.database_key_index(db);
-        if !runtime.is_output_of_active_query(database_key_index) {
+        let entity_index = key.database_key_index(db);
+        if !runtime.was_entity_created(entity_index) {
             panic!("can only use `set` on entities created during current query");
         }
 
@@ -49,22 +49,20 @@ where
         //
         // - a result that is verified in the current revision, because it was set, which will use the set value
         // - a result that is NOT verified and has untracked inputs, which will re-execute (and likely panic)
-        let edges = QueryEdges {
+        let inputs = QueryInputs {
             untracked: false,
-            separator: 0,
-            input_outputs: runtime.empty_dependencies(),
+            tracked: runtime.empty_dependencies(),
         };
 
         let revision = runtime.current_revision();
         let mut revisions = QueryRevisions {
             changed_at: current_deps.changed_at,
             durability: current_deps.durability,
-            edges,
+            inputs,
         };
 
         if let Some(old_memo) = self.memo_map.get(key) {
             self.backdate_if_appropriate(&old_memo, &mut revisions, &value);
-            self.diff_outputs(db, database_key_index, &old_memo, &revisions);
         }
 
         let memo = Memo {
@@ -73,20 +71,6 @@ where
             revisions,
         };
 
-        log::debug!("specify: about to add memo {:#?} for key {:?}", memo, key);
         self.insert_memo(key, memo);
-    }
-
-    /// Specify the value for `key` *and* record that we did so.
-    /// Used for explicit calls to `specify`, but not needed for pre-declared tracked struct fields.
-    pub fn specify_and_record<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
-    where
-        C::Key: TrackedStructInDb<DynDb<'db, C>>,
-    {
-        self.specify(db, key, value);
-
-        // Record that the current query *specified* a value for this cell.
-        let database_key_index = self.database_key_index(key);
-        db.salsa_runtime().add_output(database_key_index);
     }
 }

@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use crate::{
     durability::Durability,
     hash::{FxHashSet, FxIndexMap, FxIndexSet},
@@ -8,7 +6,7 @@ use crate::{
     Cycle, Revision, Runtime,
 };
 
-use super::local_state::{QueryEdges, QueryRevisions};
+use super::local_state::{QueryInputs, QueryRevisions};
 
 #[derive(Debug)]
 pub(super) struct ActiveQuery {
@@ -36,15 +34,8 @@ pub(super) struct ActiveQuery {
     /// Otherwise it is 1 more than the current value (which is incremented).
     pub(super) disambiguator_map: FxIndexMap<u64, Disambiguator>,
 
-    /// Tracks values written by this query. Could be...
-    ///
-    /// * tracked structs created
-    /// * invocations of `specify`
-    /// * accumulators pushed to
-    ///
-    /// We use a btree-set because we want to be able to
-    /// extract the keys in sorted order.
-    pub(super) outputs: BTreeSet<DatabaseKeyIndex>,
+    /// Tracks entities created by this query.
+    pub(super) entities_created: FxHashSet<DatabaseKeyIndex>,
 }
 
 impl ActiveQuery {
@@ -57,7 +48,7 @@ impl ActiveQuery {
             untracked_read: false,
             cycle: None,
             disambiguator_map: Default::default(),
-            outputs: Default::default(),
+            entities_created: Default::default(),
         }
     }
 
@@ -84,38 +75,28 @@ impl ActiveQuery {
         self.changed_at = self.changed_at.max(revision);
     }
 
-    /// Adds a key to our list of outputs.
-    pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) {
-        self.outputs.insert(key);
+    pub(super) fn add_entity_created(&mut self, entity: DatabaseKeyIndex) {
+        let is_new = self.entities_created.insert(entity);
+        assert!(is_new);
     }
 
-    /// True if the given key was output by this query.
-    pub(super) fn is_output(&self, key: DatabaseKeyIndex) -> bool {
-        self.outputs.contains(&key)
+    pub(super) fn was_entity_created(&self, entity: DatabaseKeyIndex) -> bool {
+        self.entities_created.contains(&entity)
     }
 
     pub(crate) fn revisions(&self, runtime: &Runtime) -> QueryRevisions {
-        let separator = u32::try_from(self.dependencies.len()).unwrap();
-
-        let input_outputs = if self.dependencies.is_empty() && self.outputs.is_empty() {
-            runtime.empty_dependencies()
-        } else {
-            self.dependencies
-                .iter()
-                .copied()
-                .chain(self.outputs.iter().map(|&o| o.into()))
-                .collect()
-        };
-
-        let edges = QueryEdges {
+        let inputs = QueryInputs {
             untracked: self.untracked_read,
-            separator,
-            input_outputs,
+            tracked: if self.dependencies.is_empty() {
+                runtime.empty_dependencies()
+            } else {
+                self.dependencies.iter().copied().collect()
+            },
         };
 
         QueryRevisions {
             changed_at: self.changed_at,
-            edges,
+            inputs,
             durability: self.durability,
         }
     }

@@ -6,9 +6,8 @@ use std::marker::PhantomData;
 use crate::durability::Durability;
 use crate::id::AsId;
 use crate::key::DependencyIndex;
-use crate::runtime::local_state::QueryEdges;
+use crate::runtime::local_state::QueryInputs;
 use crate::runtime::Runtime;
-use crate::DatabaseKeyIndex;
 
 use super::hash::FxDashMap;
 use super::ingredient::Ingredient;
@@ -195,12 +194,8 @@ where
         crate::cycle::CycleRecoveryStrategy::Panic
     }
 
-    fn inputs(&self, _key_index: crate::Id) -> Option<QueryEdges> {
+    fn inputs(&self, _key_index: crate::Id) -> Option<QueryInputs> {
         None
-    }
-
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<crate::Id>) {
-        unreachable!("interned ids are not outputs");
     }
 }
 

@@ -415,7 +415,7 @@ fn specify_fn(
 
                 let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(#db_var);
                 let __ingredients = <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient(__jar);
-                __ingredients.function.specify_and_record(#db_var, #(#arg_names,)* #value_arg)
+                __ingredients.function.specify(#db_var, #(#arg_names,)* #value_arg)
             }
         },
     }))

@@ -7,8 +7,8 @@ pub trait Database: HasJarsDyn + AsSalsaDatabase {
     ///
     /// By default, the event is logged at level debug using
     /// the standard `log` facade.
-    fn salsa_event(&self, event: Event) {
-        log::debug!("salsa_event: {:?}", event.debug(self));
+    fn salsa_event(&self, event_fn: Event) {
+        log::debug!("salsa_event: {:?}", event_fn.debug(self));
     }
 
     fn salsa_runtime(&self) -> &Runtime;

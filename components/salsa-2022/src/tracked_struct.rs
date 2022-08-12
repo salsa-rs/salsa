@@ -3,7 +3,7 @@ use crate::{
     ingredient::{Ingredient, MutIngredient},
     interned::{InternedData, InternedId, InternedIngredient},
     key::{DatabaseKeyIndex, DependencyIndex},
-    runtime::{local_state::QueryEdges, Runtime},
+    runtime::{local_state::QueryInputs, Runtime},
     salsa_struct::SalsaStructInDb,
     Database, IngredientIndex, Revision,
 };
@@ -76,7 +76,7 @@ where
             data,
         };
         let result = self.interned.intern(runtime, entity_key);
-        runtime.add_output(self.database_key_index(result));
+        runtime.add_entity_created(self.database_key_index(result));
         result
     }
 
@@ -114,13 +114,8 @@ where
         <_ as Ingredient<DB>>::cycle_recovery_strategy(&self.interned)
     }
 
-    fn inputs(&self, _key_index: crate::Id) -> Option<QueryEdges> {
+    fn inputs(&self, _key_index: crate::Id) -> Option<QueryInputs> {
         None
-    }
-
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<crate::Id>) {
-        let key: Id = Id::from_id(stale_output_key.unwrap());
-        // FIXME -- we can delete this entity
     }
 }
 
