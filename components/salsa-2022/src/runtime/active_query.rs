@@ -8,7 +8,7 @@ use crate::{
     Cycle, Revision, Runtime,
 };
 
-use super::local_state::{QueryEdges, QueryRevisions};
+use super::local_state::{QueryOrigin, QueryRevisions, QueryEdges};
 
 #[derive(Debug)]
 pub(super) struct ActiveQuery {
@@ -115,7 +115,7 @@ impl ActiveQuery {
 
         QueryRevisions {
             changed_at: self.changed_at,
-            edges,
+            origin: QueryOrigin::Derived(edges),
             durability: self.durability,
         }
     }

@@ -20,12 +20,12 @@ where
     ) {
         let mut old_outputs = old_memo
             .revisions
-            .edges
+            .origin
             .outputs()
             .iter()
             .copied()
             .peekable();
-        let mut new_outputs = revisions.edges.outputs().iter().copied().peekable();
+        let mut new_outputs = revisions.origin.outputs().iter().copied().peekable();
 
         // two list are in sorted order, we can merge them in linear time.
         while let (Some(&old_output), Some(&new_output)) = (old_outputs.peek(), new_outputs.peek())

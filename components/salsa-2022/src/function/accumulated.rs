@@ -1,7 +1,7 @@
 use crate::{
     hash::FxHashSet,
     key::DependencyIndex,
-    runtime::local_state::QueryEdges,
+    runtime::local_state::{QueryEdges, QueryOrigin},
     storage::{HasJar, HasJarsDyn},
     Database, DatabaseKeyIndex,
 };
@@ -32,14 +32,21 @@ where
         let mut stack = Stack::new(self.database_key_index(key));
         while let Some(input) = stack.pop() {
             accumulator_ingredient.produced_by(runtime, input, &mut result);
-            stack.extend(db.inputs(input));
+            stack.extend(db.origin(input));
         }
         result
     }
 }
 
+/// The stack is used to execute a DFS across all the queries
+/// that were transitively executed by some given start query.
+/// When we visit a query Q0, we look at its dependencies Q1...Qn,
+/// and if they have not already been visited, we push them on the stack.
 struct Stack {
+    /// Stack of queries left to visit.
     v: Vec<DatabaseKeyIndex>,
+
+    /// Set of all queries we've seen.
     s: FxHashSet<DatabaseKeyIndex>,
 }
 
@@ -55,24 +62,25 @@ impl Stack {
         self.v.pop()
     }
 
-    fn extend(&mut self, inputs: Option<QueryEdges>) {
-        let inputs = match inputs {
-            None => return,
-            Some(v) => v,
-        };
-
-        for DependencyIndex {
-            ingredient_index,
-            key_index,
-        } in inputs.inputs().iter().copied()
-        {
-            if let Some(key_index) = key_index {
-                let i = DatabaseKeyIndex {
+    /// Extend the stack of queries with the dependencies from `origin`.
+    fn extend(&mut self, origin: Option<QueryOrigin>) {
+        match origin {
+            None | Some(QueryOrigin::Assigned) => {}
+            Some(QueryOrigin::Derived(inputs)) => {
+                for DependencyIndex {
                     ingredient_index,
                     key_index,
-                };
-                if self.s.insert(i) {
-                    self.v.push(i);
+                } in inputs.inputs().iter().copied()
+                {
+                    if let Some(key_index) = key_index {
+                        let i = DatabaseKeyIndex {
+                            ingredient_index,
+                            key_index,
+                        };
+                        if self.s.insert(i) {
+                            self.v.push(i);
+                        }
+                    }
                 }
             }
         }

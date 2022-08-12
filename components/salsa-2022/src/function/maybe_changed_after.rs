@@ -4,7 +4,10 @@ use crate::{
     database::AsSalsaDatabase,
     debug::DebugWithDb,
     key::DatabaseKeyIndex,
-    runtime::{local_state::ActiveQueryGuard, StampedValue},
+    runtime::{
+        local_state::{ActiveQueryGuard, QueryOrigin},
+        StampedValue,
+    },
     storage::HasJarsDyn,
     Database, Revision, Runtime,
 };
@@ -158,15 +161,24 @@ where
             return true;
         }
 
-        if old_memo.revisions.edges.untracked {
-            // Untracked inputs? Have to assume that it changed.
-            return false;
-        }
-
-        let last_verified_at = old_memo.verified_at.load();
-        for &input in old_memo.revisions.edges.inputs().iter() {
-            if db.maybe_changed_after(input, last_verified_at) {
-                return false;
+        match &old_memo.revisions.origin {
+            QueryOrigin::Assigned => {
+                // If the value was assigneed by another query,
+                // then we can assume it is up-to-date, as that implies
+                // that we must have re-executed that other query in this revision,
+                // or else decided that the other query was up-to-date.
+            }
+            QueryOrigin::Derived(edges) => {
+                if edges.untracked {
+                    // Untracked inputs? Have to assume that it changed.
+                    return false;
+                }
+                let last_verified_at = old_memo.verified_at.load();
+                for &input in edges.inputs().iter() {
+                    if db.maybe_changed_after(input, last_verified_at) {
+                        return false;
+                    }
+                }
             }
         }
 

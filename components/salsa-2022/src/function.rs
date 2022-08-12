@@ -8,7 +8,7 @@ use crate::{
     ingredient::MutIngredient,
     jar::Jar,
     key::{DatabaseKeyIndex, DependencyIndex},
-    runtime::local_state::QueryEdges,
+    runtime::local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
     Cycle, DbWithJar, Id, Revision,
 };
@@ -199,9 +199,9 @@ where
         C::CYCLE_STRATEGY
     }
 
-    fn inputs(&self, key_index: Id) -> Option<QueryEdges> {
+    fn origin(&self, key_index: Id) -> Option<QueryOrigin> {
         let key = C::key_from_id(key_index);
-        self.inputs(key)
+        self.origin(key)
     }
 
     fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output_key: Option<crate::Id>) {

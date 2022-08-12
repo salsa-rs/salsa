@@ -3,7 +3,7 @@ use crate::{
     hash::FxDashMap,
     ingredient::{Ingredient, MutIngredient},
     key::DependencyIndex,
-    runtime::{local_state::QueryEdges, StampedValue},
+    runtime::{local_state::QueryOrigin, StampedValue},
     storage::HasJar,
     DatabaseKeyIndex, Durability, IngredientIndex, Revision, Runtime,
 };
@@ -78,7 +78,7 @@ where
         CycleRecoveryStrategy::Panic
     }
 
-    fn inputs(&self, _key_index: crate::Id) -> Option<QueryEdges> {
+    fn origin(&self, _key_index: crate::Id) -> Option<QueryOrigin> {
         None
     }
 

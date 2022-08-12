@@ -39,8 +39,8 @@ pub(crate) struct QueryRevisions {
     /// Minimum durability of the inputs to this query.
     pub(crate) durability: Durability,
 
-    /// The inputs that went into our query, if we are tracking them.
-    pub(crate) edges: QueryEdges,
+    /// How was this query computed?
+    pub(crate) origin: QueryOrigin,
 }
 
 impl QueryRevisions {
@@ -49,6 +49,36 @@ impl QueryRevisions {
             value,
             durability: self.durability,
             changed_at: self.changed_at,
+        }
+    }
+}
+
+/// Tracks the way that a memoized value for a query was created.
+#[derive(Debug, Clone)]
+pub enum QueryOrigin {
+    /// The value was assigned as the output of another query (e.g., using `specify`).
+    Assigned,
+
+    /// The value was derived by executing a function.
+    /// The [`QueryInputs`] captures the other queries
+    /// that were invoked in the process.
+    Derived(QueryEdges),
+}
+
+impl QueryOrigin {
+    /// Indices for queries *read* by this query (or `&[]` if its value was assigned).
+    pub(crate) fn inputs(&self) -> &[DependencyIndex] {
+        match self {
+            QueryOrigin::Assigned => &[],
+            QueryOrigin::Derived(edges) => edges.inputs(),
+        }
+    }
+
+    /// Indices for queries *written* by this query (or `&[]` if its value was assigned).
+    pub(crate) fn outputs(&self) -> &[DependencyIndex] {
+        match self {
+            QueryOrigin::Assigned => &[],
+            QueryOrigin::Derived(edges) => edges.outputs(),
         }
     }
 }

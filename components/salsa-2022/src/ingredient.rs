@@ -1,5 +1,5 @@
 use crate::{
-    cycle::CycleRecoveryStrategy, key::DependencyIndex, runtime::local_state::QueryEdges,
+    cycle::CycleRecoveryStrategy, key::DependencyIndex, runtime::local_state::QueryOrigin,
     DatabaseKeyIndex, Id,
 };
 
@@ -22,7 +22,7 @@ pub trait Ingredient<DB: ?Sized> {
     fn maybe_changed_after(&self, db: &DB, input: DependencyIndex, revision: Revision) -> bool;
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
-    fn inputs(&self, key_index: Id) -> Option<QueryEdges>;
+    fn origin(&self, key_index: Id) -> Option<QueryOrigin>;
 
     /// Invoked when the value `stale_output` was output by `executor` in a previous
     /// revision, but was NOT output in the current revision.
