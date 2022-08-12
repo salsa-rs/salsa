@@ -1,9 +1,10 @@
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
+    database::AsSalsaDatabase,
     runtime::local_state::{QueryOrigin, QueryRevisions},
     tracked_struct::TrackedStructInDb,
-    Database,
+    Database, DatabaseKeyIndex, DebugWithDb,
 };
 
 use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
@@ -83,5 +84,38 @@ where
         // Record that the current query *specified* a value for this cell.
         let database_key_index = self.database_key_index(key);
         db.salsa_runtime().add_output(database_key_index);
+    }
+
+    /// Invoked when the query `executor` has been validated as having green inputs
+    /// and `key` is a value that was specified by `executor`.
+    /// Marks `key` as valid in the current revision since if `executor` had re-executed,
+    /// it would have specified `key` again.
+    pub(super) fn validate_specified_value(
+        &self,
+        db: &DynDb<'_, C>,
+        executor: DatabaseKeyIndex,
+        key: C::Key,
+    ) {
+        let runtime = db.salsa_runtime();
+        let current_revision = runtime.current_revision();
+
+        let memo = match self.memo_map.get(key) {
+            Some(m) => m,
+            None => return,
+        };
+
+        // If we are marking this as validated, it must be a value that was
+        // assigneed by `executor`.
+        match memo.revisions.origin {
+            QueryOrigin::Assigned(Some(by_query)) => assert_eq!(by_query, executor),
+            _ => panic!(
+                "expected a query assigned by `{:?}`, not `{:?}`",
+                executor.debug(db),
+                memo.revisions.origin,
+            ),
+        }
+
+        let database_key_index = self.database_key_index(key);
+        memo.mark_as_verified(db.as_salsa_database(), runtime, database_key_index);
     }
 }

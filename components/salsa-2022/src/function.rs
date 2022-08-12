@@ -17,7 +17,6 @@ use super::{ingredient::Ingredient, routes::IngredientIndex, AsId};
 
 mod accumulated;
 mod backdate;
-mod clean;
 mod delete;
 mod diff_outputs;
 mod execute;
@@ -206,19 +205,20 @@ where
         self.origin(key)
     }
 
-    fn mark_validated_output(&self, _db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
-        // FIXME
-        drop((executor, output_key));
+    fn mark_validated_output(&self, db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
+        let output_key = C::key_from_id(output_key);
+        self.validate_specified_value(db.as_jar_db(), executor, output_key);
     }
 
     fn remove_stale_output(
         &self,
-        db: &DB,
-        executor: DatabaseKeyIndex,
-        stale_output_key: crate::Id,
+        _db: &DB,
+        _executor: DatabaseKeyIndex,
+        _stale_output_key: crate::Id,
     ) {
-        let stale_output_key = C::key_from_id(stale_output_key);
-        self.clean(db.as_jar_db(), executor, stale_output_key);
+        // This function is invoked when a query Q specifies the value for `stale_output_key` in rev 1,
+        // but not in rev 2. We don't do anything in this case, we just leave the (now stale) memo.
+        // Since its `verified_at` field has not changed, it will be considered dirty if it is invoked.
     }
 }
 

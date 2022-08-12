@@ -162,11 +162,17 @@ where
         }
 
         match &old_memo.revisions.origin {
-            QueryOrigin::Assigned(_) => {
+            QueryOrigin::Assigned(Some(_)) => {
                 // If the value was assigneed by another query,
-                // then we can assume it is up-to-date, as that implies
-                // that we must have re-executed that other query in this revision,
-                // or else decided that the other query was up-to-date.
+                // and that query were up-to-date,
+                // then we would have updated the `verified_at` field already.
+                // So the fact that we are here means that it was not specified
+                // during this revision or is otherwise stale.
+                return false;
+            }
+            QueryOrigin::Assigned(None) => {
+                // This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
+                return true;
             }
             QueryOrigin::DerivedUntracked(_) => {
                 // Untracked inputs? Have to assume that it changed.
