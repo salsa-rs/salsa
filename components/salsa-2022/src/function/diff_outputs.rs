@@ -18,14 +18,8 @@ where
         old_memo: &Memo<C::Value>,
         revisions: &QueryRevisions,
     ) {
-        let mut old_outputs = old_memo
-            .revisions
-            .origin
-            .outputs()
-            .iter()
-            .copied()
-            .peekable();
-        let mut new_outputs = revisions.origin.outputs().iter().copied().peekable();
+        let mut old_outputs = old_memo.revisions.origin.outputs().peekable();
+        let mut new_outputs = revisions.origin.outputs().peekable();
 
         // two list are in sorted order, we can merge them in linear time.
         while let (Some(&old_output), Some(&new_output)) = (old_outputs.peek(), new_outputs.peek())
@@ -50,7 +44,7 @@ where
         }
     }
 
-    fn report_stale_output(db: &DynDb<'_, C>, key: DatabaseKeyIndex, output: DependencyIndex) {
+    fn report_stale_output(db: &DynDb<'_, C>, key: DatabaseKeyIndex, output: DatabaseKeyIndex) {
         let runtime_id = db.salsa_runtime().id();
         db.salsa_event(Event {
             runtime_id,

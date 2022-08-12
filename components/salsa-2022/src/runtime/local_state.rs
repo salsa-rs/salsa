@@ -76,12 +76,19 @@ pub enum QueryOrigin {
 
 impl QueryOrigin {
     /// Indices for queries *written* by this query (or `&[]` if its value was assigned).
-    pub(crate) fn outputs(&self) -> &[DependencyIndex] {
-        match self {
+    pub(crate) fn outputs(&self) -> impl Iterator<Item = DatabaseKeyIndex> + '_ {
+        let slice = match self {
             QueryOrigin::Assigned(_) => &[],
-            QueryOrigin::Derived(edges) => edges.outputs(),
-            QueryOrigin::DerivedUntracked(edges) => edges.outputs(),
-        }
+            QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => {
+                &edges.input_outputs[edges.separator as usize..]
+            }
+        };
+
+        // the `QueryEdges` repr. invariant guarantees all tracked outputs are full  'dependency index' values,
+        // so we can safely unwrap result of `try_from` here
+        slice
+            .iter()
+            .map(|&dep_index| DatabaseKeyIndex::try_from(dep_index).unwrap())
     }
 }
 
@@ -107,10 +114,11 @@ pub struct QueryEdges {
     ///
     /// * The inputs must be in **execution order** for the red-green algorithm to work.
     /// * The outputs must be in **sorted order** so that we can easily "diff" them between revisions.
-    pub(crate) input_outputs: Arc<[DependencyIndex]>,
+    /// * All outputs must have a `Some` value for `key_index`.
+    input_outputs: Arc<[DependencyIndex]>,
 
     /// The index that separates inputs from outputs in the `tracked` field.
-    pub(crate) separator: u32,
+    separator: u32,
 }
 
 impl QueryEdges {
@@ -121,11 +129,16 @@ impl QueryEdges {
         &self.input_outputs[0..self.separator as usize]
     }
 
-    /// Returns the queries whose values were assigned while computing this memoized value.
-    ///
-    /// These will always be in sorted order.
-    pub(crate) fn outputs(&self) -> &[DependencyIndex] {
-        &self.input_outputs[self.separator as usize..]
+    /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.
+    pub(crate) fn new(separator: usize, input_outputs: Arc<[DependencyIndex]>) -> Self {
+        debug_assert!(separator <= input_outputs.len());
+        debug_assert!(input_outputs[separator..]
+            .iter()
+            .all(|&dep_index| DatabaseKeyIndex::try_from(dep_index).is_ok()));
+        Self {
+            separator: u32::try_from(separator).unwrap(),
+            input_outputs,
+        }
     }
 }
 

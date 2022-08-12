@@ -1,6 +1,4 @@
-use crate::{
-    debug::DebugWithDb, key::DependencyIndex, runtime::RuntimeId, Database, DatabaseKeyIndex,
-};
+use crate::{debug::DebugWithDb, runtime::RuntimeId, Database, DatabaseKeyIndex};
 use std::fmt;
 
 /// The `Event` struct identifies various notable things that can
@@ -83,7 +81,7 @@ pub enum EventKind {
         execute_key: DatabaseKeyIndex,
 
         /// Key for the query that is no longer output
-        output_key: DependencyIndex,
+        output_key: DatabaseKeyIndex,
     },
 }
 

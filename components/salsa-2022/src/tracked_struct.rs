@@ -118,13 +118,18 @@ where
         None
     }
 
+    fn mark_validated_output(&self, _db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
+        // FIXME
+        drop((executor, output_key));
+    }
+
     fn remove_stale_output(
         &self,
         _db: &DB,
         executor: DatabaseKeyIndex,
-        stale_output_key: Option<crate::Id>,
+        stale_output_key: crate::Id,
     ) {
-        let key: Id = Id::from_id(stale_output_key.unwrap());
+        let key: Id = Id::from_id(stale_output_key);
         // FIXME -- we can delete this entity
         drop((executor, key));
     }

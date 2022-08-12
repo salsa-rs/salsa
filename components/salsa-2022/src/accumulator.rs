@@ -82,11 +82,16 @@ where
         None
     }
 
+    fn mark_validated_output(&self, _db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
+        // FIXME
+        drop((executor, output_key));
+    }
+
     fn remove_stale_output(
         &self,
         _db: &DB,
         executor: DatabaseKeyIndex,
-        stale_output_key: Option<crate::Id>,
+        stale_output_key: crate::Id,
     ) {
         // FIXME
         drop((executor, stale_output_key));

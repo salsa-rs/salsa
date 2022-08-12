@@ -206,13 +206,18 @@ where
         self.origin(key)
     }
 
+    fn mark_validated_output(&self, _db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
+        // FIXME
+        drop((executor, output_key));
+    }
+
     fn remove_stale_output(
         &self,
         db: &DB,
         executor: DatabaseKeyIndex,
-        stale_output_key: Option<crate::Id>,
+        stale_output_key: crate::Id,
     ) {
-        let stale_output_key = C::key_from_id(stale_output_key.unwrap());
+        let stale_output_key = C::key_from_id(stale_output_key);
         self.clean(db.as_jar_db(), executor, stale_output_key);
     }
 }

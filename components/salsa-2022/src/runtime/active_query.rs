@@ -95,7 +95,7 @@ impl ActiveQuery {
     }
 
     pub(crate) fn revisions(&self, runtime: &Runtime) -> QueryRevisions {
-        let separator = u32::try_from(self.dependencies.len()).unwrap();
+        let separator = self.dependencies.len();
 
         let input_outputs = if self.dependencies.is_empty() && self.outputs.is_empty() {
             runtime.empty_dependencies()
@@ -107,10 +107,7 @@ impl ActiveQuery {
                 .collect()
         };
 
-        let edges = QueryEdges {
-            separator,
-            input_outputs,
-        };
+        let edges = QueryEdges::new(separator, input_outputs);
 
         let origin = if self.untracked_read {
             QueryOrigin::DerivedUntracked(edges)

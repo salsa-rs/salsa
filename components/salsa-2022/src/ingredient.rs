@@ -24,16 +24,15 @@ pub trait Ingredient<DB: ?Sized> {
     /// What were the inputs (if any) that were used to create the value at `key_index`.
     fn origin(&self, key_index: Id) -> Option<QueryOrigin>;
 
+    /// Invoked when the value `output_key` should be marked as valid in the current revision.
+    /// This occurs because the value for `executor`, which generated it, was marked as valid in the current revision.
+    fn mark_validated_output(&self, db: &DB, executor: DatabaseKeyIndex, output_key: Id);
+
     /// Invoked when the value `stale_output` was output by `executor` in a previous
     /// revision, but was NOT output in the current revision.
     ///
     /// This hook is used to clear out the stale value so others cannot read it.
-    fn remove_stale_output(
-        &self,
-        db: &DB,
-        executor: DatabaseKeyIndex,
-        stale_output_key: Option<Id>,
-    );
+    fn remove_stale_output(&self, db: &DB, executor: DatabaseKeyIndex, stale_output_key: Id);
 }
 
 /// Optional trait for ingredients that wish to be notified when new revisions are

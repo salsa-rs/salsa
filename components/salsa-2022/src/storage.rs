@@ -180,7 +180,9 @@ pub trait HasJarsDyn {
 
     fn origin(&self, input: DatabaseKeyIndex) -> Option<QueryOrigin>;
 
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output: DependencyIndex);
+    fn mark_validated_output(&self, executor: DatabaseKeyIndex, output: DatabaseKeyIndex);
+
+    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output: DatabaseKeyIndex);
 }
 
 pub trait HasIngredientsFor<I>
