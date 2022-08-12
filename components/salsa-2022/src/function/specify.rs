@@ -26,8 +26,8 @@ where
             None => panic!("can only use `set` with an active query"),
         };
 
-        let database_key_index = key.database_key_index(db);
-        if !runtime.is_output_of_active_query(database_key_index) {
+        let entity_index = key.database_key_index(db);
+        if !runtime.is_output_of_active_query(entity_index) {
             panic!("can only use `set` on entities created during current query");
         }
 
@@ -64,7 +64,6 @@ where
 
         if let Some(old_memo) = self.memo_map.get(key) {
             self.backdate_if_appropriate(&old_memo, &mut revisions, &value);
-            self.diff_outputs(db, database_key_index, &old_memo, &revisions);
         }
 
         let memo = Memo {
