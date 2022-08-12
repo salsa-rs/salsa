@@ -1,6 +1,6 @@
 use std::hash::Hash;
 use rustc_hash::FxHashMap;
-use crate::{Durability, IngredientIndex, Revision, Runtime};
+use crate::{AsId, DatabaseKeyIndex, Durability, Id, IngredientIndex, Revision, Runtime};
 use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::Ingredient;
 use crate::key::DependencyIndex;
@@ -18,7 +18,7 @@ pub struct InputFieldIngredient<K, F> {
 }
 
 impl<K, F> InputFieldIngredient<K, F>
-where K: Eq + Hash
+where K: Eq + Hash + AsId
 {
     pub fn new(index: IngredientIndex) -> Self {
         Self {
@@ -50,9 +50,29 @@ where K: Eq + Hash
 
     pub fn fetch(
         &self,
+        runtime: &Runtime,
         key: K,
     ) -> &F {
-        &self.map.get(&key).unwrap().value
+        let StampedValue {
+            value,
+            durability,
+            changed_at
+        } = self.map.get(&key).unwrap();
+
+        runtime.report_tracked_read(
+            self.database_key_index(key).into(),
+            *durability,
+            *changed_at,
+        );
+
+        value
+    }
+
+    fn database_key_index(&self, key: K) -> DatabaseKeyIndex {
+        DatabaseKeyIndex {
+            ingredient_index: self.index,
+            key_index: key.as_id(),
+        }
     }
 }
 
@@ -68,5 +88,9 @@ impl<DB: ?Sized, K, F> Ingredient<DB> for InputFieldIngredient<K, F>
 
     fn inputs(&self, _key_index: crate::Id) -> Option<QueryInputs> {
         None
+    }
+
+    fn remove_stale_output(&self, _executor: DatabaseKeyIndex, _stale_output_key: Option<Id>) {
+        todo!()
     }
 }
