@@ -74,7 +74,7 @@ impl InputStruct {
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                        __ingredients.#field_index.fetch(self)
+                        __ingredients.#field_index.fetch(__runtime, self)
                     }
                 }
             } else {
@@ -83,7 +83,7 @@ impl InputStruct {
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                        __ingredients.#field_index.fetch(self).clone()
+                        __ingredients.#field_index.fetch(__runtime, self).clone()
                     }
                 }
             }
