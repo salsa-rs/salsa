@@ -4,7 +4,7 @@ use crate::{AsId, DatabaseKeyIndex, Durability, Id, IngredientIndex, Revision, R
 use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::Ingredient;
 use crate::key::DependencyIndex;
-use crate::runtime::local_state::QueryInputs;
+use crate::runtime::local_state::QueryEdges;
 use crate::runtime::StampedValue;
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
@@ -86,7 +86,7 @@ impl<DB: ?Sized, K, F> Ingredient<DB> for InputFieldIngredient<K, F>
         false
     }
 
-    fn inputs(&self, _key_index: crate::Id) -> Option<QueryInputs> {
+    fn inputs(&self, _key_index: Id) -> Option<QueryEdges> {
         None
     }
 
