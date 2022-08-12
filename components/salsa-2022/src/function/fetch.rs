@@ -96,7 +96,7 @@ where
     fn evict(&self, key: C::Key) {
         if let Some(memo) = self.memo_map.get(key) {
             match memo.revisions.origin {
-                QueryOrigin::Assigned | QueryOrigin::DerivedUntracked(_) => {
+                QueryOrigin::Assigned(_) | QueryOrigin::DerivedUntracked(_) => {
                     // Careful: Cannot evict memos whose values were
                     // assigned as output of another query
                     // or those with untracked inputs

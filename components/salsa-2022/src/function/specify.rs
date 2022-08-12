@@ -21,7 +21,7 @@ where
     {
         let runtime = db.salsa_runtime();
 
-        let (_, current_deps) = match runtime.active_query() {
+        let (active_query_key, current_deps) = match runtime.active_query() {
             Some(v) => v,
             None => panic!("can only use `set` with an active query"),
         };
@@ -54,7 +54,7 @@ where
         let mut revisions = QueryRevisions {
             changed_at: current_deps.changed_at,
             durability: current_deps.durability,
-            origin: QueryOrigin::Assigned,
+            origin: QueryOrigin::Assigned(Some(active_query_key)),
         };
 
         if let Some(old_memo) = self.memo_map.get(key) {

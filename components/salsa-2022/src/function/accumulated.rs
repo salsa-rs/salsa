@@ -65,7 +65,7 @@ impl Stack {
     /// Extend the stack of queries with the dependencies from `origin`.
     fn extend(&mut self, origin: Option<QueryOrigin>) {
         match origin {
-            None | Some(QueryOrigin::Assigned) => {}
+            None | Some(QueryOrigin::Assigned(_)) => {}
             Some(QueryOrigin::Derived(edges)) | Some(QueryOrigin::DerivedUntracked(edges)) => {
                 for DependencyIndex {
                     ingredient_index,

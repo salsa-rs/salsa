@@ -56,8 +56,11 @@ impl QueryRevisions {
 /// Tracks the way that a memoized value for a query was created.
 #[derive(Debug, Clone)]
 pub enum QueryOrigin {
-    /// The value was assigned as the output of another query (e.g., using `specify`).
-    Assigned,
+    /// The value was assigned as the output of another query (e.g., using `specify`)
+    /// or is an input set by the mutator thread (e.g., using `set`).
+    /// The `DatabaseKeyIndex` is the identity of the assigning query
+    /// or `None` if this is an input set by the mutator thread.
+    Assigned(Option<DatabaseKeyIndex>),
 
     /// The value was derived by executing a function
     /// and we were able to track ALL of that function's inputs.
@@ -75,7 +78,7 @@ impl QueryOrigin {
     /// Indices for queries *written* by this query (or `&[]` if its value was assigned).
     pub(crate) fn outputs(&self) -> &[DependencyIndex] {
         match self {
-            QueryOrigin::Assigned => &[],
+            QueryOrigin::Assigned(_) => &[],
             QueryOrigin::Derived(edges) => edges.outputs(),
             QueryOrigin::DerivedUntracked(edges) => edges.outputs(),
         }

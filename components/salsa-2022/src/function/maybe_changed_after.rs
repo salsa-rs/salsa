@@ -162,7 +162,7 @@ where
         }
 
         match &old_memo.revisions.origin {
-            QueryOrigin::Assigned => {
+            QueryOrigin::Assigned(_) => {
                 // If the value was assigneed by another query,
                 // then we can assume it is up-to-date, as that implies
                 // that we must have re-executed that other query in this revision,
