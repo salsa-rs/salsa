@@ -168,11 +168,17 @@ where
                 // that we must have re-executed that other query in this revision,
                 // or else decided that the other query was up-to-date.
             }
+            QueryOrigin::DerivedUntracked(_) => {
+                // Untracked inputs? Have to assume that it changed.
+                return false;
+            }
             QueryOrigin::Derived(edges) => {
-                if edges.untracked {
-                    // Untracked inputs? Have to assume that it changed.
-                    return false;
-                }
+                // Fully tracked inputs? Iterate over the inputs and check them, one by one.
+                //
+                // NB: It's important here that we are iterating the inputs in the order that
+                // they executed. It's possible that if the value of some input I0 is no longer
+                // valid, then some later input I1 might never have executed at all, so verifying
+                // it is still up to date is meaningless.
                 let last_verified_at = old_memo.verified_at.load();
                 for &input in edges.inputs().iter() {
                     if db.maybe_changed_after(input, last_verified_at) {

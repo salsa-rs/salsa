@@ -8,7 +8,7 @@ use crate::{
     Cycle, Revision, Runtime,
 };
 
-use super::local_state::{QueryOrigin, QueryRevisions, QueryEdges};
+use super::local_state::{QueryEdges, QueryOrigin, QueryRevisions};
 
 #[derive(Debug)]
 pub(super) struct ActiveQuery {
@@ -108,14 +108,19 @@ impl ActiveQuery {
         };
 
         let edges = QueryEdges {
-            untracked: self.untracked_read,
             separator,
             input_outputs,
         };
 
+        let origin = if self.untracked_read {
+            QueryOrigin::DerivedUntracked(edges)
+        } else {
+            QueryOrigin::Derived(edges)
+        };
+
         QueryRevisions {
             changed_at: self.changed_at,
-            origin: QueryOrigin::Derived(edges),
+            origin,
             durability: self.durability,
         }
     }

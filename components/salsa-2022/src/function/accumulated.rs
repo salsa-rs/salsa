@@ -1,7 +1,7 @@
 use crate::{
     hash::FxHashSet,
     key::DependencyIndex,
-    runtime::local_state::{QueryEdges, QueryOrigin},
+    runtime::local_state::QueryOrigin,
     storage::{HasJar, HasJarsDyn},
     Database, DatabaseKeyIndex,
 };
@@ -66,11 +66,11 @@ impl Stack {
     fn extend(&mut self, origin: Option<QueryOrigin>) {
         match origin {
             None | Some(QueryOrigin::Assigned) => {}
-            Some(QueryOrigin::Derived(inputs)) => {
+            Some(QueryOrigin::Derived(edges)) | Some(QueryOrigin::DerivedUntracked(edges)) => {
                 for DependencyIndex {
                     ingredient_index,
                     key_index,
-                } in inputs.inputs().iter().copied()
+                } in edges.inputs().iter().copied()
                 {
                     if let Some(key_index) = key_index {
                         let i = DatabaseKeyIndex {

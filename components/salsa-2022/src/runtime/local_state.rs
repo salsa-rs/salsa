@@ -59,26 +59,25 @@ pub enum QueryOrigin {
     /// The value was assigned as the output of another query (e.g., using `specify`).
     Assigned,
 
-    /// The value was derived by executing a function.
-    /// The [`QueryInputs`] captures the other queries
-    /// that were invoked in the process.
+    /// The value was derived by executing a function
+    /// and we were able to track ALL of that function's inputs.
+    /// Those inputs are described in [`QueryEdges`].
     Derived(QueryEdges),
+
+    /// The value was derived by executing a function
+    /// but that function also reported that it read untracked inputs.
+    /// The [`QueryEdges`] argument contains a listing of all the inputs we saw
+    /// (but we know there were more).
+    DerivedUntracked(QueryEdges),
 }
 
 impl QueryOrigin {
-    /// Indices for queries *read* by this query (or `&[]` if its value was assigned).
-    pub(crate) fn inputs(&self) -> &[DependencyIndex] {
-        match self {
-            QueryOrigin::Assigned => &[],
-            QueryOrigin::Derived(edges) => edges.inputs(),
-        }
-    }
-
     /// Indices for queries *written* by this query (or `&[]` if its value was assigned).
     pub(crate) fn outputs(&self) -> &[DependencyIndex] {
         match self {
             QueryOrigin::Assigned => &[],
             QueryOrigin::Derived(edges) => edges.outputs(),
+            QueryOrigin::DerivedUntracked(edges) => edges.outputs(),
         }
     }
 }
@@ -109,9 +108,6 @@ pub struct QueryEdges {
 
     /// The index that separates inputs from outputs in the `tracked` field.
     pub(crate) separator: u32,
-
-    /// Where there any *unknown* inputs?
-    pub(crate) untracked: bool,
 }
 
 impl QueryEdges {

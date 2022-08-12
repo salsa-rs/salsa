@@ -2,10 +2,7 @@ use arc_swap::Guard;
 
 use crate::{
     database::AsSalsaDatabase,
-    runtime::{
-        local_state::{QueryEdges, QueryOrigin},
-        StampedValue,
-    },
+    runtime::{local_state::QueryOrigin, StampedValue},
     AsId, Database,
 };
 
@@ -99,20 +96,15 @@ where
     fn evict(&self, key: C::Key) {
         if let Some(memo) = self.memo_map.get(key) {
             match memo.revisions.origin {
-                QueryOrigin::Assigned
-                | QueryOrigin::Derived(QueryEdges {
-                    untracked: true, ..
-                }) => {
-                    // Careul: Cannot evict memos whose values were
+                QueryOrigin::Assigned | QueryOrigin::DerivedUntracked(_) => {
+                    // Careful: Cannot evict memos whose values were
                     // assigned as output of another query
                     // or those with untracked inputs
                     // as their values cannot be reconstructed.
                     return;
                 }
 
-                QueryOrigin::Derived(QueryEdges {
-                    untracked: false, ..
-                }) => {
+                QueryOrigin::Derived(_) => {
                     if let Some(memo) = self.memo_map.remove(key) {
                         self.deleted_entries.push(memo);
                     }
