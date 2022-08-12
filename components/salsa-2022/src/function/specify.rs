@@ -1,7 +1,7 @@
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    runtime::local_state::{QueryEdges, QueryRevisions},
+    runtime::local_state::{QueryInputs, QueryRevisions},
     tracked_struct::TrackedStructInDb,
     Database,
 };
@@ -49,17 +49,16 @@ where
         //
         // - a result that is verified in the current revision, because it was set, which will use the set value
         // - a result that is NOT verified and has untracked inputs, which will re-execute (and likely panic)
-        let edges = QueryEdges {
+        let inputs = QueryInputs {
             untracked: false,
-            separator: 0,
-            input_outputs: runtime.empty_dependencies(),
+            tracked: runtime.empty_dependencies(),
         };
 
         let revision = runtime.current_revision();
         let mut revisions = QueryRevisions {
             changed_at: current_deps.changed_at,
             durability: current_deps.durability,
-            edges,
+            inputs,
         };
 
         if let Some(old_memo) = self.memo_map.get(key) {

@@ -1,5 +1,5 @@
 use crate::{
-    cycle::CycleRecoveryStrategy, key::DependencyIndex, runtime::local_state::QueryEdges, Id,
+    cycle::CycleRecoveryStrategy, key::DependencyIndex, runtime::local_state::QueryInputs, Id,
 };
 
 use super::Revision;
@@ -21,7 +21,7 @@ pub trait Ingredient<DB: ?Sized> {
     fn maybe_changed_after(&self, db: &DB, input: DependencyIndex, revision: Revision) -> bool;
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
-    fn inputs(&self, key_index: Id) -> Option<QueryEdges>;
+    fn inputs(&self, key_index: Id) -> Option<QueryInputs>;
 }
 
 /// Optional trait for ingredients that wish to be notified when new revisions are

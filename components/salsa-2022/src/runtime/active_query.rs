@@ -8,7 +8,7 @@ use crate::{
     Cycle, Revision, Runtime,
 };
 
-use super::local_state::{QueryEdges, QueryRevisions};
+use super::local_state::{QueryInputs, QueryRevisions};
 
 #[derive(Debug)]
 pub(super) struct ActiveQuery {
@@ -95,27 +95,18 @@ impl ActiveQuery {
     }
 
     pub(crate) fn revisions(&self, runtime: &Runtime) -> QueryRevisions {
-        let separator = u32::try_from(self.dependencies.len()).unwrap();
-
-        let input_outputs = if self.dependencies.is_empty() && self.outputs.is_empty() {
-            runtime.empty_dependencies()
-        } else {
-            self.dependencies
-                .iter()
-                .copied()
-                .chain(self.outputs.iter().map(|&o| o.into()))
-                .collect()
-        };
-
-        let edges = QueryEdges {
+        let inputs = QueryInputs {
             untracked: self.untracked_read,
-            separator,
-            input_outputs,
+            tracked: if self.dependencies.is_empty() {
+                runtime.empty_dependencies()
+            } else {
+                self.dependencies.iter().copied().collect()
+            },
         };
 
         QueryRevisions {
             changed_at: self.changed_at,
-            edges,
+            inputs,
             durability: self.durability,
         }
     }

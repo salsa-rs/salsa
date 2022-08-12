@@ -4,7 +4,7 @@ use crossbeam::atomic::AtomicCell;
 
 use crate::{
     durability::Durability,
-    runtime::local_state::{QueryEdges, QueryRevisions},
+    runtime::local_state::{QueryInputs, QueryRevisions},
     Runtime,
 };
 
@@ -28,10 +28,9 @@ where
             revisions: QueryRevisions {
                 changed_at: revision,
                 durability,
-                edges: QueryEdges {
+                inputs: QueryInputs {
                     untracked: false,
-                    separator: 0,
-                    input_outputs: runtime.empty_dependencies(),
+                    tracked: runtime.empty_dependencies(),
                 },
             },
         };

@@ -8,7 +8,7 @@ use crate::{
     ingredient::MutIngredient,
     jar::Jar,
     key::{DatabaseKeyIndex, DependencyIndex},
-    runtime::local_state::QueryEdges,
+    runtime::local_state::QueryInputs,
     salsa_struct::SalsaStructInDb,
     Cycle, DbWithJar, Id, Revision,
 };
@@ -198,7 +198,7 @@ where
         C::CYCLE_STRATEGY
     }
 
-    fn inputs(&self, key_index: Id) -> Option<QueryEdges> {
+    fn inputs(&self, key_index: Id) -> Option<QueryInputs> {
         let key = C::key_from_id(key_index);
         self.inputs(key)
     }
