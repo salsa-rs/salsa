@@ -205,6 +205,10 @@ impl InputStruct {
             where
                 DB: ?Sized + salsa::DbWithJar<#jar_ty>,
             {
+                fn register_dependent_fn(_db: &DB, _index: salsa::routes::IngredientIndex) {
+                    // Do nothing here, at least for now.
+                    // If/when we add ability to delete inputs, this would become relevant.
+                }
             }
         }
     }

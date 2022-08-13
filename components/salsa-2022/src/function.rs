@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use crossbeam::queue::SegQueue;
+use crossbeam::{atomic::AtomicCell, epoch::Atomic, queue::SegQueue};
 
 use crate::{
     cycle::CycleRecoveryStrategy,
@@ -67,6 +67,10 @@ pub struct FunctionIngredient<C: Configuration> {
     /// we don't know that we can trust the database to give us the same runtime
     /// everytime and so forth.
     deleted_entries: SegQueue<ArcSwap<memo::Memo<C::Value>>>,
+
+    /// Set to true once we invoke `register_dependent_fn` for `C::SalsaStruct`.
+    /// Prevents us from registering more than once.
+    registered: AtomicCell<bool>,
 }
 
 pub trait Configuration {
@@ -140,6 +144,7 @@ where
             lru: Default::default(),
             sync_map: Default::default(),
             deleted_entries: Default::default(),
+            registered: Default::default(),
         }
     }
 
@@ -169,7 +174,13 @@ where
         std::mem::transmute(memo_value)
     }
 
-    fn insert_memo(&self, key: C::Key, memo: memo::Memo<C::Value>) -> Option<&C::Value> {
+    fn insert_memo(
+        &self,
+        db: &DynDb<'_, C>,
+        key: C::Key,
+        memo: memo::Memo<C::Value>,
+    ) -> Option<&C::Value> {
+        self.register(db);
         let memo = Arc::new(memo);
         let value = unsafe {
             // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
@@ -182,6 +193,15 @@ where
             self.deleted_entries.push(old_value);
         }
         value
+    }
+
+    /// Register this function as a dependent fn of the given salsa struct.
+    /// When instances of that salsa struct are deleted, we'll get a callback
+    /// so we can remove any data keyed by them.
+    fn register(&self, db: &DynDb<'_, C>) {
+        if !self.registered.fetch_or(true) {
+            <C::SalsaStruct as SalsaStructInDb<_>>::register_dependent_fn(db, self.index)
+        }
     }
 }
 

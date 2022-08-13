@@ -1,6 +1,12 @@
+use std::sync::Arc;
+
+use arc_swap::{ArcSwap, ArcSwapOption, AsRaw};
+
 use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{Ingredient, MutIngredient},
+    ingredient_list::IngredientList,
+    input,
     interned::{InternedData, InternedId, InternedIngredient},
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryOrigin, Runtime},
@@ -33,6 +39,14 @@ where
     Data: TrackedStructData,
 {
     interned: InternedIngredient<Id, TrackedStructKey<Data>>,
+
+    /// A list of each tracked function `f` whose key is this
+    /// tracked struct.
+    ///
+    /// Whenever an instance `i` of this struct is deleted,
+    /// each of these functions will be notified
+    /// so they can remove any data tied to that instance.
+    dependent_fns: IngredientList,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
@@ -53,6 +67,7 @@ where
     pub fn new(index: IngredientIndex) -> Self {
         Self {
             interned: InternedIngredient::new(index),
+            dependent_fns: IngredientList::new(),
         }
     }
 
@@ -98,6 +113,13 @@ where
         for id in ids {
             self.interned.delete_index(id);
         }
+    }
+
+    /// Adds a dependent function (one keyed by this tracked struct) to our list.
+    /// When instances of this struct are deleted, these dependent functions
+    /// will be notified.
+    pub fn register_dependent_fn(&self, index: IngredientIndex) {
+        self.dependent_fns.push(index);
     }
 }
 

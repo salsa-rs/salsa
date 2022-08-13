@@ -211,11 +211,17 @@ impl TrackedStruct {
     fn salsa_struct_in_db_impl(&self) -> syn::ItemImpl {
         let ident = self.id_ident();
         let jar_ty = self.jar_ty();
+        let tracked_struct_index: Literal = self.tracked_struct_index();
         parse_quote! {
             impl<DB> salsa::salsa_struct::SalsaStructInDb<DB> for #ident
             where
                 DB: ?Sized + salsa::DbWithJar<#jar_ty>,
             {
+                fn register_dependent_fn(db: &DB, index: salsa::routes::IngredientIndex) {
+                    let (jar, _) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
+                    let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident>>::ingredient(jar);
+                    ingredients.#tracked_struct_index.register_dependent_fn(index)
+                }
             }
         }
     }
