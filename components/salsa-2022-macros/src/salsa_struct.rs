@@ -222,7 +222,7 @@ impl SalsaStruct {
                     ident,
                     ef.name(),
                 ));
-                
+
                 let recover_from_cycle_string = Literal::string(&format!("`execute` method for field `{}::{}` invoked",
                     ident,
                     ef.name(),
