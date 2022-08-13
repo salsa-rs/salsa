@@ -56,11 +56,16 @@ impl QueryRevisions {
 /// Tracks the way that a memoized value for a query was created.
 #[derive(Debug, Clone)]
 pub enum QueryOrigin {
-    /// The value was assigned as the output of another query (e.g., using `specify`)
-    /// or is an input set by the mutator thread (e.g., using `set`).
-    /// The `DatabaseKeyIndex` is the identity of the assigning query
-    /// or `None` if this is an input set by the mutator thread.
-    Assigned(Option<DatabaseKeyIndex>),
+    /// The value was assigned as the output of another query (e.g., using `specify`).
+    /// The `DatabaseKeyIndex` is the identity of the assigning query.
+    Assigned(DatabaseKeyIndex),
+
+    /// This is the value field of a tracked struct.
+    /// These are different from `Assigned` because we know they will always be assigned a value and hence are never "out of date".
+    Field,
+
+    /// This value was set as a base input to the computation.
+    BaseInput,
 
     /// The value was derived by executing a function
     /// and we were able to track ALL of that function's inputs.
@@ -78,10 +83,10 @@ impl QueryOrigin {
     /// Indices for queries *written* by this query (or `&[]` if its value was assigned).
     pub(crate) fn outputs(&self) -> impl Iterator<Item = DatabaseKeyIndex> + '_ {
         let slice = match self {
-            QueryOrigin::Assigned(_) => &[],
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => {
                 &edges.input_outputs[edges.separator as usize..]
             }
+            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput | QueryOrigin::Field => &[],
         };
 
         // the `QueryEdges` repr. invariant guarantees all tracked outputs are full  'dependency index' values,

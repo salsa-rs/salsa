@@ -133,7 +133,7 @@ impl TrackedStruct {
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
                     let __id = __ingredients.#struct_index.new_struct(__runtime, (#(#id_field_names,)*));
                     #(
-                        __ingredients.#value_field_indices.specify(__db, __id, #value_field_names);
+                        __ingredients.#value_field_indices.specify_field(__db, __id, #value_field_names);
                     )*
                     __id
                 }

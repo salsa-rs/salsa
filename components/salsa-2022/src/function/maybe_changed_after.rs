@@ -162,7 +162,7 @@ where
         }
 
         match &old_memo.revisions.origin {
-            QueryOrigin::Assigned(Some(_)) => {
+            QueryOrigin::Assigned(_) => {
                 // If the value was assigneed by another query,
                 // and that query were up-to-date,
                 // then we would have updated the `verified_at` field already.
@@ -170,8 +170,10 @@ where
                 // during this revision or is otherwise stale.
                 return false;
             }
-            QueryOrigin::Assigned(None) => {
-                // This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
+            QueryOrigin::BaseInput | QueryOrigin::Field => {
+                // BaseInput: This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
+                // Field: This value is the value of a field of some tracked struct S. It is always updated whenever S is created.
+                // So if a query has access to S, then they will have an up-to-date value.
                 return true;
             }
             QueryOrigin::DerivedUntracked(_) => {

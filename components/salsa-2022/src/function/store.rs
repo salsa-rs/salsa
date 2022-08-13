@@ -28,7 +28,7 @@ where
             revisions: QueryRevisions {
                 changed_at: revision,
                 durability,
-                origin: QueryOrigin::Assigned(None),
+                origin: QueryOrigin::BaseInput,
             },
         };
 

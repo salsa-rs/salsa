@@ -16,8 +16,13 @@ where
     /// Specifies the value of the function for the given key.
     /// This is a way to imperatively set the value of a function.
     /// It only works if the key is a tracked struct created in the current query.
-    pub fn specify<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
-    where
+    pub(crate) fn specify<'db>(
+        &self,
+        db: &'db DynDb<'db, C>,
+        key: C::Key,
+        value: C::Value,
+        origin: impl Fn(DatabaseKeyIndex) -> QueryOrigin,
+    ) where
         C::Key: TrackedStructInDb<DynDb<'db, C>>,
     {
         let runtime = db.salsa_runtime();
@@ -55,7 +60,7 @@ where
         let mut revisions = QueryRevisions {
             changed_at: current_deps.changed_at,
             durability: current_deps.durability,
-            origin: QueryOrigin::Assigned(Some(active_query_key)),
+            origin: origin(active_query_key),
         };
 
         if let Some(old_memo) = self.memo_map.get(key) {
@@ -73,13 +78,26 @@ where
         self.insert_memo(key, memo);
     }
 
+    /// Specify the value for `key` but do not record it is an output.
+    /// This is used for the value fields declared on a tracked struct.
+    /// They are different from other calls to specify beacuse we KNOW they will be given a value by construction,
+    /// so recording them as an explicit output (and checking them for validity, etc) is pure overhead.
+    pub fn specify_field<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
+    where
+        C::Key: TrackedStructInDb<DynDb<'db, C>>,
+    {
+        self.specify(db, key, value, |_| QueryOrigin::Field);
+    }
+
     /// Specify the value for `key` *and* record that we did so.
     /// Used for explicit calls to `specify`, but not needed for pre-declared tracked struct fields.
     pub fn specify_and_record<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
     where
         C::Key: TrackedStructInDb<DynDb<'db, C>>,
     {
-        self.specify(db, key, value);
+        self.specify(db, key, value, |database_key_index| {
+            QueryOrigin::Assigned(database_key_index)
+        });
 
         // Record that the current query *specified* a value for this cell.
         let database_key_index = self.database_key_index(key);
@@ -97,7 +115,6 @@ where
         key: C::Key,
     ) {
         let runtime = db.salsa_runtime();
-        let current_revision = runtime.current_revision();
 
         let memo = match self.memo_map.get(key) {
             Some(m) => m,
@@ -107,7 +124,7 @@ where
         // If we are marking this as validated, it must be a value that was
         // assigneed by `executor`.
         match memo.revisions.origin {
-            QueryOrigin::Assigned(Some(by_query)) => assert_eq!(by_query, executor),
+            QueryOrigin::Assigned(by_query) => assert_eq!(by_query, executor),
             _ => panic!(
                 "expected a query assigned by `{:?}`, not `{:?}`",
                 executor.debug(db),
