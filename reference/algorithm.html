@@ -144,8 +144,9 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="algorithm"><a class="header" href="#algorithm">Algorithm</a></h1>
-<p>This page explains the basic salsa incremental algorithm.</p>
+                        <h1 id="the-red-green-algorithm"><a class="header" href="#the-red-green-algorithm">The &quot;red-green&quot; algorithm</a></h1>
+<p>This page explains the basic salsa incremental algorithm.
+The algorithm is called the &quot;red-green&quot; algorithm, which is where the name salsa comes from.</p>
 <h3 id="database-revisions"><a class="header" href="#database-revisions">Database revisions</a></h3>
 <p>The salsa database always tracks a single <strong>revision</strong>. Each time you set an input, the revision is incremented. So we start in revision <code>R1</code>, but when a <code>set</code> method is called, we will go to <code>R2</code>, then <code>R3</code>, and so on. For each input, we also track the revision in which it was last changed.</p>
 <h3 id="basic-rule-when-inputs-change-re-execute"><a class="header" href="#basic-rule-when-inputs-change-re-execute">Basic rule: when inputs change, re-execute!</a></h3>
