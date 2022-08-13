@@ -1,7 +1,7 @@
 use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::Ingredient;
 use crate::key::DependencyIndex;
-use crate::runtime::local_state::QueryEdges;
+use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::StampedValue;
 use crate::{AsId, DatabaseKeyIndex, Durability, Id, IngredientIndex, Revision, Runtime};
 use rustc_hash::FxHashMap;
@@ -86,11 +86,11 @@ where
         self.map.get(&key).unwrap().changed_at > revision
     }
 
-    fn inputs(&self, _key_index: Id) -> Option<QueryEdges> {
+    fn origin(&self, _key_index: Id) -> Option<QueryOrigin> {
         None
     }
 
-    fn remove_stale_output(&self, _executor: DatabaseKeyIndex, _stale_output_key: Option<Id>) {
-        todo!()
-    }
+    fn mark_validated_output(&self, _db: &DB, _executor: DatabaseKeyIndex, _output_key: Id) {}
+
+    fn remove_stale_output(&self, _db: &DB, _executor: DatabaseKeyIndex, _stale_output_key: Id) {}
 }
