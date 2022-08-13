@@ -6,8 +6,9 @@ use std::marker::PhantomData;
 use crate::durability::Durability;
 use crate::id::AsId;
 use crate::key::DependencyIndex;
-use crate::runtime::local_state::QueryInputs;
+use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
+use crate::DatabaseKeyIndex;
 
 use super::hash::FxDashMap;
 use super::ingredient::Ingredient;
@@ -194,8 +195,27 @@ where
         crate::cycle::CycleRecoveryStrategy::Panic
     }
 
-    fn inputs(&self, _key_index: crate::Id) -> Option<QueryInputs> {
+    fn origin(&self, _key_index: crate::Id) -> Option<QueryOrigin> {
         None
+    }
+
+    fn mark_validated_output(&self, _db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
+        unreachable!(
+            "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
+            executor, output_key
+        );
+    }
+
+    fn remove_stale_output(
+        &self,
+        _db: &DB,
+        executor: DatabaseKeyIndex,
+        stale_output_key: crate::Id,
+    ) {
+        unreachable!(
+            "remove_stale_output({:?}, {:?}): interned ids are not outputs",
+            executor, stale_output_key
+        );
     }
 }
 

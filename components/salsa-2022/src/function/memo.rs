@@ -42,18 +42,6 @@ impl<K: AsId, V> MemoMap<K, V> {
     pub(super) fn get(&self, key: K) -> Option<Guard<Arc<Memo<V>>>> {
         self.map.get(&key).map(|v| v.load())
     }
-
-    /// Iterates over the entries in the map. This holds a read lock while iteration continues.
-    pub(super) fn iter(&self) -> impl Iterator<Item = (K, Arc<Memo<V>>)> + '_ {
-        self.map
-            .iter()
-            .map(move |r| (*r.key(), r.value().load_full()))
-    }
-
-    /// Clears the memo of all entries.
-    pub(super) fn clear(&self) {
-        self.map.clear()
-    }
 }
 
 #[derive(Debug)]
@@ -106,5 +94,10 @@ impl<V> Memo<V> {
         });
 
         self.verified_at.store(runtime.current_revision());
+
+        // Also mark the outputs as verified
+        for output in self.revisions.origin.outputs() {
+            db.mark_validated_output(database_key_index, output);
+        }
     }
 }

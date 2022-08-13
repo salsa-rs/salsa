@@ -1,9 +1,10 @@
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    runtime::local_state::{QueryInputs, QueryRevisions},
+    database::AsSalsaDatabase,
+    runtime::local_state::{QueryOrigin, QueryRevisions},
     tracked_struct::TrackedStructInDb,
-    Database,
+    Database, DatabaseKeyIndex, DebugWithDb,
 };
 
 use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
@@ -15,19 +16,24 @@ where
     /// Specifies the value of the function for the given key.
     /// This is a way to imperatively set the value of a function.
     /// It only works if the key is a tracked struct created in the current query.
-    pub fn specify<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
-    where
+    pub(crate) fn specify<'db>(
+        &self,
+        db: &'db DynDb<'db, C>,
+        key: C::Key,
+        value: C::Value,
+        origin: impl Fn(DatabaseKeyIndex) -> QueryOrigin,
+    ) where
         C::Key: TrackedStructInDb<DynDb<'db, C>>,
     {
         let runtime = db.salsa_runtime();
 
-        let (_, current_deps) = match runtime.active_query() {
+        let (active_query_key, current_deps) = match runtime.active_query() {
             Some(v) => v,
             None => panic!("can only use `set` with an active query"),
         };
 
-        let entity_index = key.database_key_index(db);
-        if !runtime.was_entity_created(entity_index) {
+        let database_key_index = key.database_key_index(db);
+        if !runtime.is_output_of_active_query(database_key_index) {
             panic!("can only use `set` on entities created during current query");
         }
 
@@ -49,20 +55,17 @@ where
         //
         // - a result that is verified in the current revision, because it was set, which will use the set value
         // - a result that is NOT verified and has untracked inputs, which will re-execute (and likely panic)
-        let inputs = QueryInputs {
-            untracked: false,
-            tracked: runtime.empty_dependencies(),
-        };
 
         let revision = runtime.current_revision();
         let mut revisions = QueryRevisions {
             changed_at: current_deps.changed_at,
             durability: current_deps.durability,
-            inputs,
+            origin: origin(active_query_key),
         };
 
         if let Some(old_memo) = self.memo_map.get(key) {
             self.backdate_if_appropriate(&old_memo, &mut revisions, &value);
+            self.diff_outputs(db, database_key_index, &old_memo, &revisions);
         }
 
         let memo = Memo {
@@ -71,6 +74,65 @@ where
             revisions,
         };
 
+        log::debug!("specify: about to add memo {:#?} for key {:?}", memo, key);
         self.insert_memo(key, memo);
+    }
+
+    /// Specify the value for `key` but do not record it is an output.
+    /// This is used for the value fields declared on a tracked struct.
+    /// They are different from other calls to specify beacuse we KNOW they will be given a value by construction,
+    /// so recording them as an explicit output (and checking them for validity, etc) is pure overhead.
+    pub fn specify_field<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
+    where
+        C::Key: TrackedStructInDb<DynDb<'db, C>>,
+    {
+        self.specify(db, key, value, |_| QueryOrigin::Field);
+    }
+
+    /// Specify the value for `key` *and* record that we did so.
+    /// Used for explicit calls to `specify`, but not needed for pre-declared tracked struct fields.
+    pub fn specify_and_record<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
+    where
+        C::Key: TrackedStructInDb<DynDb<'db, C>>,
+    {
+        self.specify(db, key, value, |database_key_index| {
+            QueryOrigin::Assigned(database_key_index)
+        });
+
+        // Record that the current query *specified* a value for this cell.
+        let database_key_index = self.database_key_index(key);
+        db.salsa_runtime().add_output(database_key_index);
+    }
+
+    /// Invoked when the query `executor` has been validated as having green inputs
+    /// and `key` is a value that was specified by `executor`.
+    /// Marks `key` as valid in the current revision since if `executor` had re-executed,
+    /// it would have specified `key` again.
+    pub(super) fn validate_specified_value(
+        &self,
+        db: &DynDb<'_, C>,
+        executor: DatabaseKeyIndex,
+        key: C::Key,
+    ) {
+        let runtime = db.salsa_runtime();
+
+        let memo = match self.memo_map.get(key) {
+            Some(m) => m,
+            None => return,
+        };
+
+        // If we are marking this as validated, it must be a value that was
+        // assigneed by `executor`.
+        match memo.revisions.origin {
+            QueryOrigin::Assigned(by_query) => assert_eq!(by_query, executor),
+            _ => panic!(
+                "expected a query assigned by `{:?}`, not `{:?}`",
+                executor.debug(db),
+                memo.revisions.origin,
+            ),
+        }
+
+        let database_key_index = self.database_key_index(key);
+        memo.mark_as_verified(db.as_salsa_database(), runtime, database_key_index);
     }
 }

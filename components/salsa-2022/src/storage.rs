@@ -6,7 +6,7 @@ use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::Ingredient;
 use crate::jar::Jar;
 use crate::key::DependencyIndex;
-use crate::runtime::local_state::QueryInputs;
+use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
 use crate::{Database, DatabaseKeyIndex, IngredientIndex};
 
@@ -178,7 +178,11 @@ pub trait HasJarsDyn {
 
     fn cycle_recovery_strategy(&self, input: IngredientIndex) -> CycleRecoveryStrategy;
 
-    fn inputs(&self, input: DatabaseKeyIndex) -> Option<QueryInputs>;
+    fn origin(&self, input: DatabaseKeyIndex) -> Option<QueryOrigin>;
+
+    fn mark_validated_output(&self, executor: DatabaseKeyIndex, output: DatabaseKeyIndex);
+
+    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output: DatabaseKeyIndex);
 }
 
 pub trait HasIngredientsFor<I>

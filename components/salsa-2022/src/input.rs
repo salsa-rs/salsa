@@ -2,7 +2,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::Ingredient,
     key::{DatabaseKeyIndex, DependencyIndex},
-    runtime::{local_state::QueryInputs, Runtime},
+    runtime::{local_state::QueryOrigin, Runtime},
     AsId, IngredientIndex, Revision,
 };
 
@@ -58,7 +58,26 @@ where
         CycleRecoveryStrategy::Panic
     }
 
-    fn inputs(&self, _key_index: crate::Id) -> Option<QueryInputs> {
+    fn origin(&self, _key_index: crate::Id) -> Option<QueryOrigin> {
         None
+    }
+
+    fn mark_validated_output(&self, _db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
+        unreachable!(
+            "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
+            executor, output_key
+        );
+    }
+
+    fn remove_stale_output(
+        &self,
+        _db: &DB,
+        executor: DatabaseKeyIndex,
+        stale_output_key: crate::Id,
+    ) {
+        unreachable!(
+            "remove_stale_output({:?}, {:?}): input cannot be the output of a tracked function",
+            executor, stale_output_key
+        );
     }
 }

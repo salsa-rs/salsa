@@ -38,7 +38,7 @@ impl<Db> crate::debug::DebugWithDb<Db> for DependencyIndex
 where
     Db: ?Sized + Database,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, _db: &Db) -> std::fmt::Result {
         write!(f, "{:?}", *self) // FIXME
     }
 }

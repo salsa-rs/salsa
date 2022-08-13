@@ -39,8 +39,8 @@ pub(crate) struct QueryRevisions {
     /// Minimum durability of the inputs to this query.
     pub(crate) durability: Durability,
 
-    /// The inputs that went into our query, if we are tracking them.
-    pub(crate) inputs: QueryInputs,
+    /// How was this query computed?
+    pub(crate) origin: QueryOrigin,
 }
 
 impl QueryRevisions {
@@ -53,16 +53,98 @@ impl QueryRevisions {
     }
 }
 
-/// Every input.
+/// Tracks the way that a memoized value for a query was created.
 #[derive(Debug, Clone)]
-pub struct QueryInputs {
-    /// Inputs that are fully known.
-    /// We track these even if there are unknown inputs so that the accumulator code
-    /// can walk all the inputs even for tracked functions that read untracked values.
-    pub(crate) tracked: Arc<[DependencyIndex]>,
+pub enum QueryOrigin {
+    /// The value was assigned as the output of another query (e.g., using `specify`).
+    /// The `DatabaseKeyIndex` is the identity of the assigning query.
+    Assigned(DatabaseKeyIndex),
 
-    /// Where there any *unknown* inputs?
-    pub(crate) untracked: bool,
+    /// This is the value field of a tracked struct.
+    /// These are different from `Assigned` because we know they will always be assigned a value and hence are never "out of date".
+    Field,
+
+    /// This value was set as a base input to the computation.
+    BaseInput,
+
+    /// The value was derived by executing a function
+    /// and we were able to track ALL of that function's inputs.
+    /// Those inputs are described in [`QueryEdges`].
+    Derived(QueryEdges),
+
+    /// The value was derived by executing a function
+    /// but that function also reported that it read untracked inputs.
+    /// The [`QueryEdges`] argument contains a listing of all the inputs we saw
+    /// (but we know there were more).
+    DerivedUntracked(QueryEdges),
+}
+
+impl QueryOrigin {
+    /// Indices for queries *written* by this query (or `&[]` if its value was assigned).
+    pub(crate) fn outputs(&self) -> impl Iterator<Item = DatabaseKeyIndex> + '_ {
+        let slice = match self {
+            QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => {
+                &edges.input_outputs[edges.separator as usize..]
+            }
+            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput | QueryOrigin::Field => &[],
+        };
+
+        // the `QueryEdges` repr. invariant guarantees all tracked outputs are full  'dependency index' values,
+        // so we can safely unwrap result of `try_from` here
+        slice
+            .iter()
+            .map(|&dep_index| DatabaseKeyIndex::try_from(dep_index).unwrap())
+    }
+}
+
+/// The edges between a memoized value and other queries in the dependency graph.
+/// These edges include both dependency edges
+/// e.g., when creating the memoized value for Q0 executed another function Q1)
+/// and output edges
+/// (e.g., when Q0 specified the value for another query Q2).
+#[derive(Debug, Clone)]
+pub struct QueryEdges {
+    /// The list of outgoing edges from this node.
+    /// This list combines *both* inputs and outputs.
+    /// The inputs are defined from the indices `0..S` where
+    /// `S` is the value of the `separator` field.
+    ///
+    /// Note that we always track input dependencies even when there are untracked reads.
+    /// Untracked reads mean that we can't verify values, so we don't use the list of inputs for that,
+    /// but we still use it for finding the transitive inputs to an accumulator.
+    ///
+    /// You can access the input/output list via the methods [`inputs`] and [`outputs`] respectively.
+    ///
+    /// Important:
+    ///
+    /// * The inputs must be in **execution order** for the red-green algorithm to work.
+    /// * The outputs must be in **sorted order** so that we can easily "diff" them between revisions.
+    /// * All outputs must have a `Some` value for `key_index`.
+    input_outputs: Arc<[DependencyIndex]>,
+
+    /// The index that separates inputs from outputs in the `tracked` field.
+    separator: u32,
+}
+
+impl QueryEdges {
+    /// Returns the (tracked) inputs that were executed in computing this memoized value.
+    ///
+    /// These will always be in execution order.
+    pub(crate) fn inputs(&self) -> &[DependencyIndex] {
+        &self.input_outputs[0..self.separator as usize]
+    }
+
+    /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.
+    pub(crate) fn new(separator: usize, input_outputs: Arc<[DependencyIndex]>) -> Self {
+        debug_assert!(separator <= input_outputs.len());
+        debug_assert!(input_outputs[separator..]
+            .iter()
+            .all(|&dep_index| DatabaseKeyIndex::try_from(dep_index).is_ok()));
+        Self {
+            separator: u32::try_from(separator).unwrap(),
+            input_outputs,
+        }
+    }
 }
 
 impl Default for LocalState {
@@ -115,18 +197,18 @@ impl LocalState {
         })
     }
 
-    pub(super) fn add_entity_created(&self, entity: DatabaseKeyIndex) {
+    pub(super) fn add_output(&self, entity: DatabaseKeyIndex) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.add_entity_created(entity)
+                top_query.add_output(entity)
             }
         })
     }
 
-    pub(super) fn was_entity_created(&self, entity: DatabaseKeyIndex) -> bool {
+    pub(super) fn is_output(&self, entity: DatabaseKeyIndex) -> bool {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.was_entity_created(entity)
+                top_query.is_output(entity)
             } else {
                 false
             }

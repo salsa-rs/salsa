@@ -133,12 +133,22 @@ fn has_jars_dyn_impl(input: &syn::ItemStruct, storage: &syn::Ident) -> syn::Item
                 ingredient.cycle_recovery_strategy()
             }
 
-            fn inputs(
+            fn origin(
                 &self,
                 index: salsa::DatabaseKeyIndex,
-            ) -> Option<salsa::runtime::local_state::QueryInputs> {
+            ) -> Option<salsa::runtime::local_state::QueryOrigin> {
                 let ingredient = self.#storage.ingredient(index.ingredient_index());
-                ingredient.inputs(index.key_index())
+                ingredient.origin(index.key_index())
+            }
+
+            fn mark_validated_output(&self, executor: salsa::DatabaseKeyIndex, output: salsa::key::DatabaseKeyIndex) {
+                let ingredient = self.#storage.ingredient(output.ingredient_index());
+                ingredient.mark_validated_output(self, executor, output.key_index());
+            }
+
+            fn remove_stale_output(&self, executor: salsa::DatabaseKeyIndex, stale_output: salsa::key::DatabaseKeyIndex) {
+                let ingredient = self.#storage.ingredient(stale_output.ingredient_index());
+                ingredient.remove_stale_output(self, executor, stale_output.key_index());
             }
         }
     }

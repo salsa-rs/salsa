@@ -3,7 +3,7 @@ use crate::{
     hash::FxDashMap,
     ingredient::{Ingredient, MutIngredient},
     key::DependencyIndex,
-    runtime::{local_state::QueryInputs, StampedValue},
+    runtime::{local_state::QueryOrigin, StampedValue},
     storage::HasJar,
     DatabaseKeyIndex, Durability, IngredientIndex, Revision, Runtime,
 };
@@ -78,8 +78,23 @@ where
         CycleRecoveryStrategy::Panic
     }
 
-    fn inputs(&self, _key_index: crate::Id) -> Option<QueryInputs> {
+    fn origin(&self, _key_index: crate::Id) -> Option<QueryOrigin> {
         None
+    }
+
+    fn mark_validated_output(&self, _db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
+        // FIXME
+        drop((executor, output_key));
+    }
+
+    fn remove_stale_output(
+        &self,
+        _db: &DB,
+        executor: DatabaseKeyIndex,
+        stale_output_key: crate::Id,
+    ) {
+        // FIXME
+        drop((executor, stale_output_key));
     }
 }
 

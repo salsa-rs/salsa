@@ -60,11 +60,4 @@ impl AtomicRevision {
     pub(crate) fn store(&self, r: Revision) {
         self.data.store(r.as_usize(), Ordering::SeqCst);
     }
-
-    /// Increment by 1, returning previous value.
-    pub(crate) fn fetch_then_increment(&self) -> Revision {
-        let v = self.data.fetch_add(1, Ordering::SeqCst);
-        assert!(v != usize::max_value(), "revision overflow");
-        Revision::from(v)
-    }
 }

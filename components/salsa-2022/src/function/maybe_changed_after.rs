@@ -4,7 +4,10 @@ use crate::{
     database::AsSalsaDatabase,
     debug::DebugWithDb,
     key::DatabaseKeyIndex,
-    runtime::{local_state::ActiveQueryGuard, StampedValue},
+    runtime::{
+        local_state::{ActiveQueryGuard, QueryOrigin},
+        StampedValue,
+    },
     storage::HasJarsDyn,
     Database, Revision, Runtime,
 };
@@ -158,15 +161,38 @@ where
             return true;
         }
 
-        if old_memo.revisions.inputs.untracked {
-            // Untracked inputs? Have to assume that it changed.
-            return false;
-        }
-
-        let last_verified_at = old_memo.verified_at.load();
-        for &input in old_memo.revisions.inputs.tracked.iter() {
-            if db.maybe_changed_after(input, last_verified_at) {
+        match &old_memo.revisions.origin {
+            QueryOrigin::Assigned(_) => {
+                // If the value was assigneed by another query,
+                // and that query were up-to-date,
+                // then we would have updated the `verified_at` field already.
+                // So the fact that we are here means that it was not specified
+                // during this revision or is otherwise stale.
                 return false;
+            }
+            QueryOrigin::BaseInput | QueryOrigin::Field => {
+                // BaseInput: This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
+                // Field: This value is the value of a field of some tracked struct S. It is always updated whenever S is created.
+                // So if a query has access to S, then they will have an up-to-date value.
+                return true;
+            }
+            QueryOrigin::DerivedUntracked(_) => {
+                // Untracked inputs? Have to assume that it changed.
+                return false;
+            }
+            QueryOrigin::Derived(edges) => {
+                // Fully tracked inputs? Iterate over the inputs and check them, one by one.
+                //
+                // NB: It's important here that we are iterating the inputs in the order that
+                // they executed. It's possible that if the value of some input I0 is no longer
+                // valid, then some later input I1 might never have executed at all, so verifying
+                // it is still up to date is meaningless.
+                let last_verified_at = old_memo.verified_at.load();
+                for &input in edges.inputs().iter() {
+                    if db.maybe_changed_after(input, last_verified_at) {
+                        return false;
+                    }
+                }
             }
         }
 

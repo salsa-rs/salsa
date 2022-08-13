@@ -1,6 +1,10 @@
 use arc_swap::Guard;
 
-use crate::{database::AsSalsaDatabase, runtime::StampedValue, AsId, Database};
+use crate::{
+    database::AsSalsaDatabase,
+    runtime::{local_state::QueryOrigin, StampedValue},
+    AsId, Database,
+};
 
 use super::{Configuration, DynDb, FunctionIngredient};
 
@@ -91,14 +95,21 @@ where
 
     fn evict(&self, key: C::Key) {
         if let Some(memo) = self.memo_map.get(key) {
-            // Careful: we can't evict memos with untracked inputs
-            // as their values cannot be reconstructed.
-            if memo.revisions.inputs.untracked {
-                return;
-            }
+            match memo.revisions.origin {
+                QueryOrigin::Assigned(_)
+                | QueryOrigin::DerivedUntracked(_)
+                | QueryOrigin::BaseInput
+                | QueryOrigin::Field => {
+                    // Careful: Cannot evict memos whose values were
+                    // assigned as output of another query
+                    // or those with untracked inputs
+                    // as their values cannot be reconstructed.
+                    return;
+                }
 
-            if let Some(memo) = self.memo_map.remove(key) {
-                self.deleted_entries.push(memo);
+                QueryOrigin::Derived(_) => {
+                    self.delete_memo(key);
+                }
             }
         }
     }

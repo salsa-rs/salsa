@@ -8,7 +8,7 @@ use crate::{
     ingredient::MutIngredient,
     jar::Jar,
     key::{DatabaseKeyIndex, DependencyIndex},
-    runtime::local_state::QueryInputs,
+    runtime::local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
     Cycle, DbWithJar, Id, Revision,
 };
@@ -17,6 +17,8 @@ use super::{ingredient::Ingredient, routes::IngredientIndex, AsId};
 
 mod accumulated;
 mod backdate;
+mod delete;
+mod diff_outputs;
 mod execute;
 mod fetch;
 mod inputs;
@@ -198,9 +200,25 @@ where
         C::CYCLE_STRATEGY
     }
 
-    fn inputs(&self, key_index: Id) -> Option<QueryInputs> {
+    fn origin(&self, key_index: Id) -> Option<QueryOrigin> {
         let key = C::key_from_id(key_index);
-        self.inputs(key)
+        self.origin(key)
+    }
+
+    fn mark_validated_output(&self, db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
+        let output_key = C::key_from_id(output_key);
+        self.validate_specified_value(db.as_jar_db(), executor, output_key);
+    }
+
+    fn remove_stale_output(
+        &self,
+        _db: &DB,
+        _executor: DatabaseKeyIndex,
+        _stale_output_key: crate::Id,
+    ) {
+        // This function is invoked when a query Q specifies the value for `stale_output_key` in rev 1,
+        // but not in rev 2. We don't do anything in this case, we just leave the (now stale) memo.
+        // Since its `verified_at` field has not changed, it will be considered dirty if it is invoked.
     }
 }
 

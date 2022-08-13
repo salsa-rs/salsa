@@ -26,6 +26,7 @@
 //!     * this could be optimized, particularly for interned fields
 
 use heck::CamelCase;
+use proc_macro2::Literal;
 
 use crate::{configuration, options::Options};
 
@@ -217,6 +218,16 @@ impl SalsaStruct {
                     #visibility struct #config_name(std::convert::Infallible);
                 };
 
+                let execute_string = Literal::string(&format!("`execute` method for field `{}::{}` invoked",
+                    ident,
+                    ef.name(),
+                ));
+
+                let recover_from_cycle_string = Literal::string(&format!("`execute` method for field `{}::{}` invoked",
+                    ident,
+                    ef.name(),
+                ));
+
                 let should_backdate_value_fn = configuration::should_backdate_value_fn(value_field_backdate);
                 let item_impl: syn::ItemImpl = parse_quote! {
                     impl salsa::function::Configuration for #config_name {
@@ -229,11 +240,11 @@ impl SalsaStruct {
                         #should_backdate_value_fn
 
                         fn execute(db: &salsa::function::DynDb<Self>, key: Self::Key) -> Self::Value {
-                            unreachable!()
+                            panic!(#execute_string)
                         }
 
                         fn recover_from_cycle(db: &salsa::function::DynDb<Self>, cycle: &salsa::Cycle, key: Self::Key) -> Self::Value {
-                            unreachable!()
+                            panic!(#recover_from_cycle_string)
                         }
                     }
                 };
