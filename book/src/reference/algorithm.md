@@ -1,6 +1,7 @@
-# Algorithm
+# The "red-green" algorithm
 
 This page explains the basic salsa incremental algorithm.
+The algorithm is called the "red-green" algorithm, which is where the name salsa comes from.
 
 ### Database revisions
 
