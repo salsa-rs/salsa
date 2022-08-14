@@ -82,7 +82,7 @@ where
     }
 
     fn maybe_changed_after(&self, _db: &DB, input: DependencyIndex, revision: Revision) -> bool {
-        let key: K = AsId::from_id(input.key_index.unwrap());
+        let key = K::from_id(input.key_index.unwrap());
         self.map.get(&key).unwrap().changed_at > revision
     }
 
