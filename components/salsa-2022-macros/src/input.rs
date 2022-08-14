@@ -159,6 +159,11 @@ impl InputStruct {
                                         let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar);
                                         &ingredients.#all_field_indices
                                     },
+                                    |jars| {
+                                        let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
+                                        let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient_mut(jar);
+                                        &mut ingredients.#all_field_indices
+                                    },
                                 );
                                 salsa::input_field::InputFieldIngredient::new(index)
                             },
@@ -169,6 +174,11 @@ impl InputStruct {
                                     let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                                     let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar);
                                     &ingredients.#input_index
+                                },
+                                |jars| {
+                                    let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
+                                    let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient_mut(jar);
+                                    &mut ingredients.#input_index
                                 },
                             );
                             salsa::input::InputIngredient::new(index)

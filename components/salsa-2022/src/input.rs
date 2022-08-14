@@ -1,6 +1,6 @@
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::Ingredient,
+    ingredient::{Ingredient, IngredientRequiresReset},
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryOrigin, Runtime},
     AsId, IngredientIndex, Revision,
@@ -80,4 +80,15 @@ where
             executor, stale_output_key
         );
     }
+
+    fn reset_for_new_revision(&mut self) {
+        panic!("unexpected call to `reset_for_new_revision`")
+    }
+}
+
+impl<Id> IngredientRequiresReset for InputIngredient<Id>
+where
+    Id: InputId,
+{
+    const RESET_ON_NEW_REVISION: bool = false;
 }

@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 
 use crate::durability::Durability;
 use crate::id::AsId;
+use crate::ingredient::IngredientRequiresReset;
 use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
@@ -217,6 +218,21 @@ where
             executor, stale_output_key
         );
     }
+
+    fn reset_for_new_revision(&mut self) {
+        // Interned ingredients do not, normally, get deleted except when they are "reset" en masse.
+        // There ARE methods (e.g., `clear_deleted_entries` and `remove`) for deleting individual
+        // items, but those are only used for tracked struct ingredients.
+        panic!("unexpected call to `reset_for_new_revision`")
+    }
+}
+
+impl<Id, Data> IngredientRequiresReset for InternedIngredient<Id, Data>
+where
+    Id: InternedId,
+    Data: InternedData,
+{
+    const RESET_ON_NEW_REVISION: bool = false;
 }
 
 pub struct IdentityInterner<Id: AsId> {

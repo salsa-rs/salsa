@@ -182,12 +182,17 @@ impl TrackedStruct {
                                         let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar);
                                         &ingredients.#value_field_indices
                                     },
+                                    |jars| {
+                                        let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
+                                        let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient_mut(jar);
+                                        &mut ingredients.#value_field_indices
+                                    },
                                 );
                                 salsa::function::FunctionIngredient::new(index)
                             },
                         )*
                         {
-                            let index = routes.push_mut(
+                            let index = routes.push(
                                 |jars| {
                                     let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                                     let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar);

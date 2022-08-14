@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use crossbeam::{atomic::AtomicCell, epoch::Atomic, queue::SegQueue};
+use crossbeam::{atomic::AtomicCell, queue::SegQueue};
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::MutIngredient,
+    ingredient::IngredientRequiresReset,
     jar::Jar,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::local_state::QueryOrigin,
@@ -240,14 +240,15 @@ where
         // but not in rev 2. We don't do anything in this case, we just leave the (now stale) memo.
         // Since its `verified_at` field has not changed, it will be considered dirty if it is invoked.
     }
-}
 
-impl<DB, C> MutIngredient<DB> for FunctionIngredient<C>
-where
-    DB: ?Sized + DbWithJar<C::Jar>,
-    C: Configuration,
-{
     fn reset_for_new_revision(&mut self) {
         std::mem::take(&mut self.deleted_entries);
     }
+}
+
+impl<C> IngredientRequiresReset for FunctionIngredient<C>
+where
+    C: Configuration,
+{
+    const RESET_ON_NEW_REVISION: bool = true;
 }

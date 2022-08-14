@@ -1,7 +1,6 @@
-use super::{
-    ingredient::{Ingredient, MutIngredient},
-    storage::HasJars,
-};
+use crate::ingredient::IngredientRequiresReset;
+
+use super::{ingredient::Ingredient, storage::HasJars};
 
 /// An ingredient index identifies a particular [`Ingredient`] in the database.
 /// The database contains a number of jars, and each jar contains a number of ingredients.
@@ -39,7 +38,7 @@ pub type DynRoute<DB: HasJars> = dyn Fn(&DB::Jars) -> (&dyn Ingredient<DB>) + Se
 #[allow(type_alias_bounds)]
 #[allow(unused_parens)]
 pub type DynMutRoute<DB: HasJars> =
-    dyn Fn(&mut DB::Jars) -> (&mut dyn MutIngredient<DB>) + Send + Sync;
+    dyn Fn(&mut DB::Jars) -> (&mut dyn Ingredient<DB>) + Send + Sync;
 
 /// The "routes" structure is used to navigate the database.
 /// The database contains a number of jars, and each jar contains a number of ingredients.
@@ -52,13 +51,10 @@ pub struct Routes<DB: HasJars> {
     /// Vector indexed by ingredient index. Yields the `DynRoute`,
     /// a function which can be applied to the `DB::Jars` to yield
     /// the `dyn Ingredient.
-    routes: Vec<Box<DynRoute<DB>>>,
+    routes: Vec<(Box<DynRoute<DB>>, Box<DynMutRoute<DB>>)>,
 
-    /// Vector if "mut routes". This vector is used to give callbacks
-    /// when new revisions are trigged. It is not indexed by ingredient
-    /// index as not every ingredient needs a callback; instead, you
-    /// just iterate over it and invoke each fn to get a `MutIngredient`.
-    mut_routes: Vec<Box<DynMutRoute<DB>>>,
+    /// Indices of routes which need a 'reset' call.
+    needs_reset: Vec<IngredientIndex>,
 }
 
 impl<DB: HasJars> Routes<DB> {
@@ -66,7 +62,7 @@ impl<DB: HasJars> Routes<DB> {
     pub(super) fn new() -> Self {
         Routes {
             routes: vec![],
-            mut_routes: vec![],
+            needs_reset: vec![],
         }
     }
 
@@ -77,52 +73,53 @@ impl<DB: HasJars> Routes<DB> {
     ///
     /// # Parameters
     ///
+    /// * `requires_reset` -- if true, the [`Ingredient::reset_for_new_revision`] method will be called on this ingredient
+    ///   at each new revision. See that method for more information.
     /// * `route` -- a closure which, given a database, will identify the ingredient.
     ///   This closure will be invoked to dispatch calls to `maybe_changed_after`.
-    /// * `mut_route` -- an optional closure which identifies the ingredient in a mut
+    /// * `mut_route` -- a closure which identifies the ingredient in a mut
     ///   database.
-    pub fn push(
+    pub fn push<I>(
         &mut self,
-        route: impl (Fn(&DB::Jars) -> &dyn Ingredient<DB>) + Send + Sync + 'static,
-    ) -> IngredientIndex {
+        route: impl (Fn(&DB::Jars) -> &I) + Send + Sync + 'static,
+        mut_route: impl (Fn(&mut DB::Jars) -> &mut I) + Send + Sync + 'static,
+    ) -> IngredientIndex
+    where
+        I: Ingredient<DB> + IngredientRequiresReset + 'static,
+    {
         let len = self.routes.len();
-        self.routes.push(Box::new(route));
+        self.routes.push((
+            Box::new(move |jars| route(jars)),
+            Box::new(move |jars| mut_route(jars)),
+        ));
         let index = IngredientIndex::from(len);
-        index
-    }
 
-    /// As [`Self::push`] but for an ingredient that wants a callback whenever
-    /// a new revision is published.
-    /// Many ingredients will, given an `&'db dyn Db` reference,
-    /// return a `&'db V` reference to one of their values.
-    /// This forces those values to live as long as the `&dyn Db` is valid.
-    /// This callback is invoked when a new revision begins.
-    /// It allows those values that were accessed to be freed.
-    /// We know it is safe to free them because, when a new revision starts,
-    /// we have an `&mut dyn Db`, and hence the `&dyn Db` lifetime must have ended.
-    pub fn push_mut(
-        &mut self,
-        route: impl (Fn(&DB::Jars) -> &dyn Ingredient<DB>) + Send + Sync + 'static,
-        mut_route: impl (Fn(&mut DB::Jars) -> &mut dyn MutIngredient<DB>) + Send + Sync + 'static,
-    ) -> IngredientIndex {
-        let index = self.push(route);
-        self.mut_routes.push(Box::new(mut_route));
+        if I::RESET_ON_NEW_REVISION {
+            self.needs_reset.push(index);
+        }
+
         index
     }
 
     /// Given an ingredient index, return the "route"
-    /// (a function that, given a `Jars`, returns the ingredient).
+    /// (a function that, given a `&Jars`, returns the ingredient).
     pub fn route(&self, index: IngredientIndex) -> &dyn Fn(&DB::Jars) -> &dyn Ingredient<DB> {
-        &self.routes[index.as_usize()]
+        &self.routes[index.as_usize()].0
     }
 
-    /// Returns the "mutable routes" for the purposes of giving callbacks when a new revision is published.
-    /// Not all ingredients need callbacks, so this returns an iterator of just those that do.
-    pub fn mut_routes(
+    /// Given an ingredient index, return the "mut route"
+    /// (a function that, given an `&mut Jars`, returns the ingredient).
+    pub fn route_mut(
         &self,
-    ) -> impl Iterator<Item = &dyn Fn(&mut DB::Jars) -> &mut dyn MutIngredient<DB>> + '_ {
-        self.mut_routes
-            .iter()
-            .map(|b| &**b as &dyn Fn(&mut DB::Jars) -> &mut dyn MutIngredient<DB>)
+        index: IngredientIndex,
+    ) -> &dyn Fn(&mut DB::Jars) -> &mut dyn Ingredient<DB> {
+        &self.routes[index.as_usize()].1
+    }
+
+    /// Returns the mut routes for ingredients that need to be reset at the start of each revision.
+    pub fn reset_routes(
+        &self,
+    ) -> impl Iterator<Item = &dyn Fn(&mut DB::Jars) -> &mut dyn Ingredient<DB>> + '_ {
+        self.needs_reset.iter().map(|&index| self.route_mut(index))
     }
 }

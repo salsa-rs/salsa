@@ -94,7 +94,7 @@ where
 
         let routes = self.routes.clone();
         let shared = Arc::get_mut(&mut self.shared).unwrap();
-        for route in routes.mut_routes() {
+        for route in routes.reset_routes() {
             route(&mut shared.jars).reset_for_new_revision();
         }
 

@@ -1,12 +1,7 @@
-use std::sync::Arc;
-
-use arc_swap::{ArcSwap, ArcSwapOption, AsRaw};
-
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::{Ingredient, MutIngredient},
+    ingredient::{Ingredient, IngredientRequiresReset},
     ingredient_list::IngredientList,
-    input,
     interned::{InternedData, InternedId, InternedIngredient},
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryOrigin, Runtime},
@@ -155,14 +150,16 @@ where
         // FIXME -- we can delete this entity
         drop((executor, key));
     }
+
+    fn reset_for_new_revision(&mut self) {
+        self.interned.clear_deleted_indices();
+    }
 }
 
-impl<DB: ?Sized, Id, Data> MutIngredient<DB> for TrackedStructIngredient<Id, Data>
+impl<Id, Data> IngredientRequiresReset for TrackedStructIngredient<Id, Data>
 where
     Id: TrackedStructId,
     Data: TrackedStructData,
 {
-    fn reset_for_new_revision(&mut self) {
-        self.interned.clear_deleted_indices();
-    }
+    const RESET_ON_NEW_REVISION: bool = true;
 }

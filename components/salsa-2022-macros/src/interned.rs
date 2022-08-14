@@ -136,6 +136,10 @@ impl InternedStruct {
                             let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                             <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar)
                         },
+                        |jars| {
+                            let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
+                            <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient_mut(jar)
+                        },
                     );
                     salsa::interned::InternedIngredient::new(index)
                 }
