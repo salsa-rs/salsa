@@ -144,7 +144,12 @@ where
         None
     }
 
-    fn mark_validated_output(&self, _db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
+    fn mark_validated_output(
+        &self,
+        _db: &DB,
+        executor: DatabaseKeyIndex,
+        output_key: Option<crate::Id>,
+    ) {
         // FIXME
         drop((executor, output_key));
     }
@@ -153,13 +158,13 @@ where
         &self,
         db: &DB,
         _executor: DatabaseKeyIndex,
-        stale_output_key: crate::Id,
+        stale_output_key: Option<crate::Id>,
     ) {
         // This method is called when, in prior revisions,
         // `executor` creates a tracked struct `salsa_output_key`,
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
-        let stale_output_key: Id = Id::from_id(stale_output_key);
+        let stale_output_key: Id = Id::from_id(stale_output_key.unwrap());
         self.delete_entity(db.as_salsa_database(), stale_output_key);
     }
 

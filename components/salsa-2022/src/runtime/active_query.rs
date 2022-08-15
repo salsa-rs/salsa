@@ -44,7 +44,7 @@ pub(super) struct ActiveQuery {
     ///
     /// We use a btree-set because we want to be able to
     /// extract the keys in sorted order.
-    pub(super) outputs: BTreeSet<DatabaseKeyIndex>,
+    pub(super) outputs: BTreeSet<DependencyIndex>,
 }
 
 impl ActiveQuery {
@@ -85,12 +85,13 @@ impl ActiveQuery {
     }
 
     /// Adds a key to our list of outputs.
-    pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) {
+    pub(super) fn add_output(&mut self, key: DependencyIndex) {
         self.outputs.insert(key);
     }
 
     /// True if the given key was output by this query.
     pub(super) fn is_output(&self, key: DatabaseKeyIndex) -> bool {
+        let key: DependencyIndex = key.into();
         self.outputs.contains(&key)
     }
 

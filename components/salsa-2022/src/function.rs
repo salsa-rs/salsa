@@ -225,8 +225,13 @@ where
         self.origin(key)
     }
 
-    fn mark_validated_output(&self, db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
-        let output_key = C::key_from_id(output_key);
+    fn mark_validated_output(
+        &self,
+        db: &DB,
+        executor: DatabaseKeyIndex,
+        output_key: Option<crate::Id>,
+    ) {
+        let output_key = C::key_from_id(output_key.unwrap());
         self.validate_specified_value(db.as_jar_db(), executor, output_key);
     }
 
@@ -234,7 +239,7 @@ where
         &self,
         _db: &DB,
         _executor: DatabaseKeyIndex,
-        _stale_output_key: crate::Id,
+        _stale_output_key: Option<crate::Id>,
     ) {
         // This function is invoked when a query Q specifies the value for `stale_output_key` in rev 1,
         // but not in rev 2. We don't do anything in this case, we just leave the (now stale) memo.

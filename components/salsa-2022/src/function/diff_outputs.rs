@@ -1,6 +1,6 @@
 use crate::{
-    runtime::local_state::QueryRevisions, storage::HasJarsDyn, Database, DatabaseKeyIndex, Event,
-    EventKind,
+    key::DependencyIndex, runtime::local_state::QueryRevisions, storage::HasJarsDyn, Database,
+    DatabaseKeyIndex, Event, EventKind,
 };
 
 use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
@@ -44,7 +44,7 @@ where
         }
     }
 
-    fn report_stale_output(db: &DynDb<'_, C>, key: DatabaseKeyIndex, output: DatabaseKeyIndex) {
+    fn report_stale_output(db: &DynDb<'_, C>, key: DatabaseKeyIndex, output: DependencyIndex) {
         let runtime_id = db.salsa_runtime().id();
         db.salsa_event(Event {
             runtime_id,

@@ -1,4 +1,6 @@
-use crate::{debug::DebugWithDb, runtime::RuntimeId, Database, DatabaseKeyIndex};
+use crate::{
+    debug::DebugWithDb, key::DatabaseKeyIndex, key::DependencyIndex, runtime::RuntimeId, Database,
+};
 use std::fmt;
 
 /// The `Event` struct identifies various notable things that can
@@ -81,7 +83,7 @@ pub enum EventKind {
         execute_key: DatabaseKeyIndex,
 
         /// Key for the query that is no longer output
-        output_key: DatabaseKeyIndex,
+        output_key: DependencyIndex,
     },
 
     /// Tracked structs or memoized data were discarded (freed).

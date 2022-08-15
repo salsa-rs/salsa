@@ -200,7 +200,12 @@ where
         None
     }
 
-    fn mark_validated_output(&self, _db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
+    fn mark_validated_output(
+        &self,
+        _db: &DB,
+        executor: DatabaseKeyIndex,
+        output_key: Option<crate::Id>,
+    ) {
         unreachable!(
             "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
             executor, output_key
@@ -211,7 +216,7 @@ where
         &self,
         _db: &DB,
         executor: DatabaseKeyIndex,
-        stale_output_key: crate::Id,
+        stale_output_key: Option<crate::Id>,
     ) {
         unreachable!(
             "remove_stale_output({:?}, {:?}): interned ids are not outputs",
