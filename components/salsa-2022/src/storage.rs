@@ -8,7 +8,7 @@ use crate::jar::Jar;
 use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
-use crate::{Database, DatabaseKeyIndex, IngredientIndex};
+use crate::{Database, DatabaseKeyIndex, Id, IngredientIndex};
 
 use super::routes::Routes;
 use super::{ParallelDatabase, Revision};
@@ -182,7 +182,19 @@ pub trait HasJarsDyn {
 
     fn mark_validated_output(&self, executor: DatabaseKeyIndex, output: DatabaseKeyIndex);
 
+    /// Invoked when `executor` used to output `stale_output` but no longer does.
+    /// This method routes that into a call to the [`remove_stale_output`](`crate::ingredient::Ingredient::remove_stale_output`)
+    /// method on the ingredient for `stale_output`.
     fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output: DatabaseKeyIndex);
+
+    /// Informs `ingredient` that the salsa struct with id `id` has been deleted.
+    /// This means that `id` will not be used in this revision and hence
+    /// any memoized values keyed by that struct can be discarded.
+    ///
+    /// In order to receive this callback, `ingredient` must have registered itself
+    /// as a dependent function using
+    /// [`SalsaStructInDb::register_dependent_fn`](`crate::salsa_struct::SalsaStructInDb::register_dependent_fn`).
+    fn salsa_struct_deleted(&self, ingredient: IngredientIndex, id: Id);
 }
 
 pub trait HasIngredientsFor<I>

@@ -10,7 +10,7 @@ use crate::{
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
-    Cycle, DbWithJar, Id, Revision,
+    Cycle, DbWithJar, Event, EventKind, Id, Revision,
 };
 
 use super::{ingredient::Ingredient, routes::IngredientIndex, AsId};
@@ -243,6 +243,26 @@ where
 
     fn reset_for_new_revision(&mut self) {
         std::mem::take(&mut self.deleted_entries);
+    }
+
+    fn salsa_struct_deleted(&self, db: &DB, id: crate::Id) {
+        // Remove any data keyed by `id`, since `id` no longer
+        // exists in this revision.
+
+        let id: C::Key = C::key_from_id(id);
+        if let Some(origin) = self.delete_memo(id) {
+            let key = self.database_key_index(id);
+            db.salsa_event(Event {
+                runtime_id: db.salsa_runtime().id(),
+                kind: EventKind::DidDiscard { key },
+            });
+
+            // Anything that was output by this memoized execution
+            // is now itself stale.
+            for stale_output in origin.outputs() {
+                db.remove_stale_output(key, stale_output)
+            }
+        }
     }
 }
 

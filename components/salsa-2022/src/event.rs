@@ -83,6 +83,12 @@ pub enum EventKind {
         /// Key for the query that is no longer output
         output_key: DatabaseKeyIndex,
     },
+
+    /// Tracked structs or memoized data were discarded (freed).
+    DidDiscard {
+        /// Value being discarded.
+        key: DatabaseKeyIndex,
+    },
 }
 
 impl fmt::Debug for EventKind {
@@ -113,6 +119,9 @@ impl fmt::Debug for EventKind {
                 .field("execute_key", &execute_key)
                 .field("output_key", &output_key)
                 .finish(),
+            EventKind::DidDiscard { key } => {
+                fmt.debug_struct("DidDiscard").field("key", &key).finish()
+            }
         }
     }
 }
@@ -147,6 +156,10 @@ where
                 .debug_struct("WillDiscardStaleOutput")
                 .field("execute_key", &execute_key.debug(db))
                 .field("output_key", &output_key.debug(db))
+                .finish(),
+            EventKind::DidDiscard { key } => fmt
+                .debug_struct("DidDiscard")
+                .field("key", &key.debug(db))
                 .finish(),
         }
     }

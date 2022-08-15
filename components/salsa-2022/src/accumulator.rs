@@ -100,6 +100,10 @@ where
     fn reset_for_new_revision(&mut self) {
         panic!("unexpected reset on accumulator")
     }
+
+    fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
+        panic!("unexpected call: accumulator is not registered as a dependent fn");
+    }
 }
 
 impl<Data> IngredientRequiresReset for AccumulatorIngredient<Data>

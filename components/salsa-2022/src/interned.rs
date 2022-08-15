@@ -225,6 +225,10 @@ where
         // items, but those are only used for tracked struct ingredients.
         panic!("unexpected call to `reset_for_new_revision`")
     }
+
+    fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
+        panic!("unexpected call: interned ingredients do not register for salsa struct deletion events");
+    }
 }
 
 impl<Id, Data> IngredientRequiresReset for InternedIngredient<Id, Data>

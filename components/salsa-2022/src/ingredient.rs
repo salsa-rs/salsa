@@ -34,6 +34,12 @@ pub trait Ingredient<DB: ?Sized> {
     /// This hook is used to clear out the stale value so others cannot read it.
     fn remove_stale_output(&self, db: &DB, executor: DatabaseKeyIndex, stale_output_key: Id);
 
+    /// Informs the ingredient `self` that the salsa struct with id `id` has been deleted.
+    /// This gives `self` a chance to remove any memoized data dependent on `id`.
+    /// To receive this callback, `self` must register itself as a dependent function using
+    /// [`SalsaStructInDb::register_dependent_fn`](`crate::salsa_struct::SalsaStructInDb::register_dependent_fn`).
+    fn salsa_struct_deleted(&self, db: &DB, id: Id);
+
     /// Invoked when a new revision is about to start.
     /// This moment is important because it means that we have an `&mut`-reference to the database,
     /// and hence any pre-existing `&`-references must have expired.

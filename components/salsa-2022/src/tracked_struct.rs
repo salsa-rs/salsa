@@ -6,7 +6,7 @@ use crate::{
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryOrigin, Runtime},
     salsa_struct::SalsaStructInDb,
-    Database, IngredientIndex, Revision,
+    Database, Event, IngredientIndex, Revision,
 };
 
 pub trait TrackedStructId: InternedId {}
@@ -104,9 +104,17 @@ where
     /// Using this method on an entity id that MAY be used in the current revision will lead to
     /// unspecified results (but not UB). See [`InternedIngredient::delete_index`] for more
     /// discussion and important considerations.
-    pub(crate) fn delete_entities(&self, _runtime: &Runtime, ids: impl Iterator<Item = Id>) {
-        for id in ids {
-            self.interned.delete_index(id);
+    pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id) {
+        db.salsa_event(Event {
+            runtime_id: db.salsa_runtime().id(),
+            kind: crate::EventKind::DidDiscard {
+                key: self.database_key_index(id),
+            },
+        });
+
+        self.interned.delete_index(id);
+        for dependent_fn in self.dependent_fns.iter() {
+            db.salsa_struct_deleted(dependent_fn, id.as_id());
         }
     }
 
@@ -122,6 +130,7 @@ impl<DB: ?Sized, Id, Data> Ingredient<DB> for TrackedStructIngredient<Id, Data>
 where
     Id: TrackedStructId,
     Data: TrackedStructData,
+    DB: crate::Database,
 {
     fn maybe_changed_after(&self, db: &DB, input: DependencyIndex, revision: Revision) -> bool {
         self.interned.maybe_changed_after(db, input, revision)
@@ -142,17 +151,24 @@ where
 
     fn remove_stale_output(
         &self,
-        _db: &DB,
-        executor: DatabaseKeyIndex,
+        db: &DB,
+        _executor: DatabaseKeyIndex,
         stale_output_key: crate::Id,
     ) {
-        let key: Id = Id::from_id(stale_output_key);
-        // FIXME -- we can delete this entity
-        drop((executor, key));
+        // This method is called when, in prior revisions,
+        // `executor` creates a tracked struct `salsa_output_key`,
+        // but it did not in the current revision.
+        // In that case, we can delete `stale_output_key` and any data associated with it.
+        let stale_output_key: Id = Id::from_id(stale_output_key);
+        self.delete_entity(db.as_salsa_database(), stale_output_key);
     }
 
     fn reset_for_new_revision(&mut self) {
         self.interned.clear_deleted_indices();
+    }
+
+    fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
+        panic!("unexpected call: interned ingredients do not register for salsa struct deletion events");
     }
 }
 
