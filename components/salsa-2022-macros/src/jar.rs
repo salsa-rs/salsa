@@ -41,6 +41,8 @@ impl crate::options::AllowedOptions for Jar {
     const DB: bool = true;
 
     const RECOVERY_FN: bool = false;
+
+    const LRU: bool = false;
 }
 
 pub(crate) fn jar_struct_and_friends(

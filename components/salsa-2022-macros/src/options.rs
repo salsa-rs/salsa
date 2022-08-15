@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use syn::{ext::IdentExt, spanned::Spanned};
+use syn::{ext::IdentExt, spanned::Spanned, LitInt};
 
 /// "Options" are flags that can be supplied to the various salsa related
 /// macros. They are listed like `(ref, no_eq, foo=bar)` etc. The commas
@@ -46,6 +46,8 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<ident>`.
     pub data: Option<syn::Ident>,
 
+    pub lru: Option<syn::LitInt>,
+
     /// Remember the `A` parameter, which plays no role after parsing.
     phantom: PhantomData<A>,
 }
@@ -61,6 +63,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             recovery_fn: Default::default(),
             data: Default::default(),
             phantom: Default::default(),
+            lru: Default::default(),
         }
     }
 }
@@ -74,6 +77,7 @@ pub(crate) trait AllowedOptions {
     const DATA: bool;
     const DB: bool;
     const RECOVERY_FN: bool;
+    const LRU: bool;
 }
 
 type Equals = syn::Token![=];
@@ -193,6 +197,19 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`data` option not allowed here",
+                    ));
+                }
+            } else if ident == "lru" {
+                if A::LRU {
+                    let _eq = Equals::parse(input)?;
+                    let lit: LitInt = input.parse()?;
+                    if let Some(old) = std::mem::replace(&mut options.lru, Some(lit)) {
+                        return Err(syn::Error::new(old.span(), "option `lru` provided twice"));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`lru` option not allowed here",
                     ));
                 }
             } else {
