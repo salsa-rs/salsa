@@ -1,5 +1,5 @@
 use crate::cycle::CycleRecoveryStrategy;
-use crate::ingredient::Ingredient;
+use crate::ingredient::{Ingredient, IngredientRequiresReset};
 use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::StampedValue;
@@ -98,4 +98,14 @@ where
         panic!("unexpected call: input fields are never deleted");
     }
 
+    fn reset_for_new_revision(&mut self) {
+        panic!("unexpected call: input fields don't register for resets");
+    }
+}
+
+impl<K, F> IngredientRequiresReset for InputFieldIngredient<K, F>
+where
+    K: AsId,
+{
+    const RESET_ON_NEW_REVISION: bool = false;
 }
