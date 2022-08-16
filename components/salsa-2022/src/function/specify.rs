@@ -101,7 +101,7 @@ where
 
         // Record that the current query *specified* a value for this cell.
         let database_key_index = self.database_key_index(key);
-        db.salsa_runtime().add_output(database_key_index);
+        db.salsa_runtime().add_output(database_key_index.into());
     }
 
     /// Invoked when the query `executor` has been validated as having green inputs

@@ -91,6 +91,15 @@ pub enum EventKind {
         /// Value being discarded.
         key: DatabaseKeyIndex,
     },
+
+    /// Discarded accumulated data from a given fn
+    DidDiscardAccumulated {
+        /// The key of the fn that accumulated results
+        executor_key: DatabaseKeyIndex,
+
+        /// Accumulator that was accumulated into
+        accumulator: DependencyIndex,
+    },
 }
 
 impl fmt::Debug for EventKind {
@@ -124,6 +133,14 @@ impl fmt::Debug for EventKind {
             EventKind::DidDiscard { key } => {
                 fmt.debug_struct("DidDiscard").field("key", &key).finish()
             }
+            EventKind::DidDiscardAccumulated {
+                executor_key,
+                accumulator,
+            } => fmt
+                .debug_struct("DidDiscardAccumulated")
+                .field("executor_key", executor_key)
+                .field("accumulator", accumulator)
+                .finish(),
         }
     }
 }
@@ -162,6 +179,14 @@ where
             EventKind::DidDiscard { key } => fmt
                 .debug_struct("DidDiscard")
                 .field("key", &key.debug(db))
+                .finish(),
+            EventKind::DidDiscardAccumulated {
+                executor_key,
+                accumulator,
+            } => fmt
+                .debug_struct("DidDiscardAccumulated")
+                .field("executor_key", &executor_key.debug(db))
+                .field("accumulator", &accumulator.debug(db))
                 .finish(),
         }
     }

@@ -132,9 +132,6 @@ impl QueryEdges {
     /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.
     pub(crate) fn new(separator: usize, input_outputs: Arc<[DependencyIndex]>) -> Self {
         debug_assert!(separator <= input_outputs.len());
-        debug_assert!(input_outputs[separator..]
-            .iter()
-            .all(|&dep_index| DatabaseKeyIndex::try_from(dep_index).is_ok()));
         Self {
             separator: u32::try_from(separator).unwrap(),
             input_outputs,
@@ -192,10 +189,10 @@ impl LocalState {
         })
     }
 
-    pub(super) fn add_output(&self, entity: DatabaseKeyIndex) {
+    pub(super) fn add_output(&self, entity: DependencyIndex) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.add_output(entity.into())
+                top_query.add_output(entity)
             }
         })
     }

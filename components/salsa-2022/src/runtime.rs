@@ -146,7 +146,7 @@ impl Runtime {
 
     /// Adds `key` to the list of output created by the current query
     /// (if not already present).
-    pub(crate) fn add_output(&self, key: DatabaseKeyIndex) {
+    pub(crate) fn add_output(&self, key: DependencyIndex) {
         self.local_state.add_output(key);
     }
 
