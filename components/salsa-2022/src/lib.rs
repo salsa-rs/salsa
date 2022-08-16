@@ -10,6 +10,7 @@ pub mod hash;
 pub mod id;
 pub mod ingredient;
 pub mod input;
+pub mod input_field;
 pub mod interned;
 pub mod jar;
 pub mod key;

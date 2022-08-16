@@ -35,7 +35,7 @@ impl InputStruct {
 
         let id_struct = self.id_struct();
         let inherent_impl = self.input_inherent_impl();
-        let ingredients_for_impl = self.input_ingredients(&config_structs);
+        let ingredients_for_impl = self.input_ingredients();
         let as_id_impl = self.as_id_impl();
         let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
 
@@ -74,7 +74,7 @@ impl InputStruct {
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                        __ingredients.#field_index.fetch(__db, self)
+                        __ingredients.#field_index.fetch(__runtime, self)
                     }
                 }
             } else {
@@ -83,7 +83,7 @@ impl InputStruct {
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                        __ingredients.#field_index.fetch(__db, self).clone()
+                        __ingredients.#field_index.fetch(__runtime, self).clone()
                     }
                 }
             }
@@ -93,11 +93,11 @@ impl InputStruct {
         let field_setters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&field_names).zip(&field_tys).map(|((field_index, field_name), field_ty)| {
             let set_field_name = syn::Ident::new(&format!("set_{}", field_name), field_name.span());
             parse_quote! {
-                pub fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty, __value: #field_ty)
+                pub fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty, __value: #field_ty) -> #field_ty
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient_mut(__jar);
-                    __ingredients.#field_index.store(__runtime, self, __value, salsa::Durability::LOW);
+                    __ingredients.#field_index.store(__runtime, self, __value, salsa::Durability::LOW).unwrap()
                 }
             }
         })
@@ -127,19 +127,19 @@ impl InputStruct {
     ///
     /// The entity's ingredients include both the main entity ingredient along with a
     /// function ingredient for each of the value fields.
-    fn input_ingredients(&self, config_structs: &[syn::ItemStruct]) -> syn::ItemImpl {
+    fn input_ingredients(&self) -> syn::ItemImpl {
         let ident = self.id_ident();
+        let field_ty = self.all_field_tys();
         let jar_ty = self.jar_ty();
         let all_field_indices: Vec<Literal> = self.all_field_indices();
         let input_index: Literal = self.input_index();
-        let config_struct_names = config_structs.iter().map(|s| &s.ident);
 
         parse_quote! {
             impl salsa::storage::IngredientsFor for #ident {
                 type Jar = #jar_ty;
                 type Ingredients = (
                     #(
-                        salsa::function::FunctionIngredient<#config_struct_names>,
+                        salsa::input_field::InputFieldIngredient<#ident, #field_ty>,
                     )*
                     salsa::input::InputIngredient<#ident>,
                 );
@@ -160,7 +160,7 @@ impl InputStruct {
                                         &ingredients.#all_field_indices
                                     },
                                 );
-                                salsa::function::FunctionIngredient::new(index)
+                                salsa::input_field::InputFieldIngredient::new(index)
                             },
                         )*
                         {
