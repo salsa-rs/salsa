@@ -93,4 +93,9 @@ where
     fn mark_validated_output(&self, _db: &DB, _executor: DatabaseKeyIndex, _output_key: Id) {}
 
     fn remove_stale_output(&self, _db: &DB, _executor: DatabaseKeyIndex, _stale_output_key: Id) {}
+
+    fn salsa_struct_deleted(&self, _db: &DB, _id: Id) {
+        panic!("unexpected call: input fields are never deleted");
+    }
+
 }
