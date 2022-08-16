@@ -91,7 +91,11 @@ where
         }
 
         let value = self
-            .insert_memo(key, Memo::new(Some(value), revision_now, revisions.clone()))
+            .insert_memo(
+                db,
+                key,
+                Memo::new(Some(value), revision_now, revisions.clone()),
+            )
             .unwrap();
 
         let stamped_value = revisions.stamped_value(value);

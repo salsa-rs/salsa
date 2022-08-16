@@ -136,6 +136,10 @@ impl InternedStruct {
                             let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                             <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar)
                         },
+                        |jars| {
+                            let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
+                            <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient_mut(jar)
+                        },
                     );
                     salsa::interned::InternedIngredient::new(index)
                 }
@@ -152,6 +156,10 @@ impl InternedStruct {
             where
                 DB: ?Sized + salsa::DbWithJar<#jar_ty>,
             {
+                fn register_dependent_fn(_db: &DB, _index: salsa::routes::IngredientIndex) {
+                    // Do nothing here, at least for now.
+                    // If/when we add ability to delete inputs, this would become relevant.
+                }
             }
         }
     }

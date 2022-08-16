@@ -116,7 +116,7 @@ fn ingredients_for_impl(args: &Args, struct_ty: &syn::Type, data_ty: &syn::Type)
             where
                 DB: salsa::DbWithJar<Self::Jar> + salsa::storage::JarFromJars<Self::Jar>,
             {
-                    let index = routes.push_mut(
+                    let index = routes.push(
                         |jars| {
                             let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
                             <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar)

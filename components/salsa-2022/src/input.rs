@@ -1,6 +1,6 @@
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::Ingredient,
+    ingredient::{Ingredient, IngredientRequiresReset},
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryOrigin, Runtime},
     AsId, IngredientIndex, Revision,
@@ -80,4 +80,21 @@ where
             executor, stale_output_key
         );
     }
+
+    fn reset_for_new_revision(&mut self) {
+        panic!("unexpected call to `reset_for_new_revision`")
+    }
+
+    fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
+        panic!(
+            "unexpected call: input ingredients do not register for salsa struct deletion events"
+        );
+    }
+}
+
+impl<Id> IngredientRequiresReset for InputIngredient<Id>
+where
+    Id: InputId,
+{
+    const RESET_ON_NEW_REVISION: bool = false;
 }

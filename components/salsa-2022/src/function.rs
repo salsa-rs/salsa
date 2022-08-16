@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use crossbeam::queue::SegQueue;
+use crossbeam::{atomic::AtomicCell, queue::SegQueue};
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::MutIngredient,
+    ingredient::IngredientRequiresReset,
     jar::Jar,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
-    Cycle, DbWithJar, Id, Revision,
+    Cycle, DbWithJar, Event, EventKind, Id, Revision,
 };
 
 use super::{ingredient::Ingredient, routes::IngredientIndex, AsId};
@@ -67,6 +67,10 @@ pub struct FunctionIngredient<C: Configuration> {
     /// we don't know that we can trust the database to give us the same runtime
     /// everytime and so forth.
     deleted_entries: SegQueue<ArcSwap<memo::Memo<C::Value>>>,
+
+    /// Set to true once we invoke `register_dependent_fn` for `C::SalsaStruct`.
+    /// Prevents us from registering more than once.
+    registered: AtomicCell<bool>,
 }
 
 pub trait Configuration {
@@ -140,6 +144,7 @@ where
             lru: Default::default(),
             sync_map: Default::default(),
             deleted_entries: Default::default(),
+            registered: Default::default(),
         }
     }
 
@@ -169,7 +174,13 @@ where
         std::mem::transmute(memo_value)
     }
 
-    fn insert_memo(&self, key: C::Key, memo: memo::Memo<C::Value>) -> Option<&C::Value> {
+    fn insert_memo(
+        &self,
+        db: &DynDb<'_, C>,
+        key: C::Key,
+        memo: memo::Memo<C::Value>,
+    ) -> Option<&C::Value> {
+        self.register(db);
         let memo = Arc::new(memo);
         let value = unsafe {
             // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
@@ -182,6 +193,15 @@ where
             self.deleted_entries.push(old_value);
         }
         value
+    }
+
+    /// Register this function as a dependent fn of the given salsa struct.
+    /// When instances of that salsa struct are deleted, we'll get a callback
+    /// so we can remove any data keyed by them.
+    fn register(&self, db: &DynDb<'_, C>) {
+        if !self.registered.fetch_or(true) {
+            <C::SalsaStruct as SalsaStructInDb<_>>::register_dependent_fn(db, self.index)
+        }
     }
 }
 
@@ -220,14 +240,35 @@ where
         // but not in rev 2. We don't do anything in this case, we just leave the (now stale) memo.
         // Since its `verified_at` field has not changed, it will be considered dirty if it is invoked.
     }
-}
 
-impl<DB, C> MutIngredient<DB> for FunctionIngredient<C>
-where
-    DB: ?Sized + DbWithJar<C::Jar>,
-    C: Configuration,
-{
     fn reset_for_new_revision(&mut self) {
         std::mem::take(&mut self.deleted_entries);
     }
+
+    fn salsa_struct_deleted(&self, db: &DB, id: crate::Id) {
+        // Remove any data keyed by `id`, since `id` no longer
+        // exists in this revision.
+
+        let id: C::Key = C::key_from_id(id);
+        if let Some(origin) = self.delete_memo(id) {
+            let key = self.database_key_index(id);
+            db.salsa_event(Event {
+                runtime_id: db.salsa_runtime().id(),
+                kind: EventKind::DidDiscard { key },
+            });
+
+            // Anything that was output by this memoized execution
+            // is now itself stale.
+            for stale_output in origin.outputs() {
+                db.remove_stale_output(key, stale_output)
+            }
+        }
+    }
+}
+
+impl<C> IngredientRequiresReset for FunctionIngredient<C>
+where
+    C: Configuration,
+{
+    const RESET_ON_NEW_REVISION: bool = true;
 }

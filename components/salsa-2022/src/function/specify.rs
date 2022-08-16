@@ -75,7 +75,7 @@ where
         };
 
         log::debug!("specify: about to add memo {:#?} for key {:?}", memo, key);
-        self.insert_memo(key, memo);
+        self.insert_memo(db, key, memo);
     }
 
     /// Specify the value for `key` but do not record it is an output.

@@ -1,6 +1,6 @@
 use crate::{
-    key::DependencyIndex, runtime::local_state::QueryRevisions, storage::HasJarsDyn, Database,
-    DatabaseKeyIndex, Event, EventKind,
+    runtime::local_state::QueryRevisions, storage::HasJarsDyn, Database, DatabaseKeyIndex, Event,
+    EventKind,
 };
 
 use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};

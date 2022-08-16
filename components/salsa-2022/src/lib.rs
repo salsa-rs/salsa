@@ -9,6 +9,7 @@ pub mod function;
 pub mod hash;
 pub mod id;
 pub mod ingredient;
+pub mod ingredient_list;
 pub mod input;
 pub mod input_field;
 pub mod interned;

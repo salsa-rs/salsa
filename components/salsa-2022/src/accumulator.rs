@@ -1,7 +1,7 @@
 use crate::{
     cycle::CycleRecoveryStrategy,
     hash::FxDashMap,
-    ingredient::{Ingredient, MutIngredient},
+    ingredient::{Ingredient, IngredientRequiresReset},
     key::DependencyIndex,
     runtime::{local_state::QueryOrigin, StampedValue},
     storage::HasJar,
@@ -96,14 +96,19 @@ where
         // FIXME
         drop((executor, stale_output_key));
     }
+
+    fn reset_for_new_revision(&mut self) {
+        panic!("unexpected reset on accumulator")
+    }
+
+    fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
+        panic!("unexpected call: accumulator is not registered as a dependent fn");
+    }
 }
 
-impl<DB: ?Sized, Data> MutIngredient<DB> for AccumulatorIngredient<Data>
+impl<Data> IngredientRequiresReset for AccumulatorIngredient<Data>
 where
     Data: Clone,
 {
-    fn reset_for_new_revision(&mut self) {
-        // FIXME: We could certainly drop things here if we knew which ones
-        // to drop. There's a fixed point algorithm we could be doing.
-    }
+    const RESET_ON_NEW_REVISION: bool = false;
 }

@@ -205,12 +205,20 @@ fn ingredients_for_impl(
     let intern_map: syn::Expr = if requires_interning(item_fn) {
         parse_quote! {
             {
-                let index = routes.push(|jars| {
-                    let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
-                    let ingredients =
-                        <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
-                    &ingredients.intern_map
-                });
+                let index = routes.push(
+                    |jars| {
+                        let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
+                        let ingredients =
+                            <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
+                        &ingredients.intern_map
+                    },
+                    |jars| {
+                        let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
+                        let ingredients =
+                            <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient_mut(jar);
+                        &mut ingredients.intern_map
+                    }
+                );
                 salsa::interned::InternedIngredient::new(index)
             }
         }
@@ -233,12 +241,19 @@ fn ingredients_for_impl(
                     intern_map: #intern_map,
 
                     function: {
-                        let index = routes.push(|jars| {
-                            let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
-                            let ingredients =
-                                <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
-                            &ingredients.function
-                        });
+                        let index = routes.push(
+                            |jars| {
+                                let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
+                                let ingredients =
+                                    <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
+                                &ingredients.function
+                            },
+                            |jars| {
+                                let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
+                                let ingredients =
+                                    <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient_mut(jar);
+                                &mut ingredients.function
+                            });
                         salsa::function::FunctionIngredient::new(index)
                     },
                 }
