@@ -9,7 +9,7 @@ use expect_test::expect;
 use test_log::test;
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, get_hot_potato);
+struct Jar(MyInput, get_hot_potato, EmptyInput);
 
 trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
@@ -42,6 +42,9 @@ struct MyInput {
 fn get_hot_potato(db: &dyn Db, input: MyInput) -> Arc<HotPotato> {
     Arc::new(HotPotato::new(input.field(db)))
 }
+
+#[salsa::input(jar = Jar)]
+struct EmptyInput {}
 
 #[salsa::db(Jar)]
 #[derive(Default)]
@@ -78,7 +81,6 @@ fn execute() {
         let p = get_hot_potato(&db, input);
         assert_eq!(p.0, i)
     }
+    EmptyInput::new(&mut db);
     assert_eq!(load_n_potatoes(), 32);
-
-
 }
