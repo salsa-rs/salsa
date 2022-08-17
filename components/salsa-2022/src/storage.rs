@@ -180,12 +180,12 @@ pub trait HasJarsDyn {
 
     fn origin(&self, input: DatabaseKeyIndex) -> Option<QueryOrigin>;
 
-    fn mark_validated_output(&self, executor: DatabaseKeyIndex, output: DatabaseKeyIndex);
+    fn mark_validated_output(&self, executor: DatabaseKeyIndex, output: DependencyIndex);
 
     /// Invoked when `executor` used to output `stale_output` but no longer does.
     /// This method routes that into a call to the [`remove_stale_output`](`crate::ingredient::Ingredient::remove_stale_output`)
     /// method on the ingredient for `stale_output`.
-    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output: DatabaseKeyIndex);
+    fn remove_stale_output(&self, executor: DatabaseKeyIndex, stale_output: DependencyIndex);
 
     /// Informs `ingredient` that the salsa struct with id `id` has been deleted.
     /// This means that `id` will not be used in this revision and hence

@@ -1,11 +1,13 @@
+//! Basic test of accumulator functionality.
+
 use crate::{
     cycle::CycleRecoveryStrategy,
     hash::FxDashMap,
     ingredient::{Ingredient, IngredientRequiresReset},
     key::DependencyIndex,
-    runtime::{local_state::QueryOrigin, StampedValue},
+    runtime::local_state::QueryOrigin,
     storage::HasJar,
-    DatabaseKeyIndex, Durability, IngredientIndex, Revision, Runtime,
+    DatabaseKeyIndex, Event, EventKind, IngredientIndex, Revision, Runtime,
 };
 
 pub trait Accumulator {
@@ -16,36 +18,53 @@ pub trait Accumulator {
     where
         Db: ?Sized + HasJar<Self::Jar>;
 }
-
 pub struct AccumulatorIngredient<Data: Clone> {
-    map: FxDashMap<DatabaseKeyIndex, StampedValue<Vec<Data>>>,
+    index: IngredientIndex,
+    map: FxDashMap<DatabaseKeyIndex, AccumulatedValues<Data>>,
+}
+
+struct AccumulatedValues<Data> {
+    produced_at: Revision,
+    values: Vec<Data>,
 }
 
 impl<Data: Clone> AccumulatorIngredient<Data> {
-    pub fn new(_index: IngredientIndex) -> Self {
+    pub fn new(index: IngredientIndex) -> Self {
         Self {
             map: FxDashMap::default(),
+            index,
+        }
+    }
+
+    fn dependency_index(&self) -> DependencyIndex {
+        DependencyIndex {
+            ingredient_index: self.index,
+            key_index: None,
         }
     }
 
     pub fn push(&self, runtime: &Runtime, value: Data) {
-        let (active_query, active_inputs) = match runtime.active_query() {
+        let current_revision = runtime.current_revision();
+        let (active_query, _) = match runtime.active_query() {
             Some(pair) => pair,
             None => {
                 panic!("cannot accumulate values outside of an active query")
             }
         };
 
-        let mut stamped_value = self.map.entry(active_query).or_insert(StampedValue {
-            value: vec![],
-            durability: Durability::MAX,
-            changed_at: Revision::start(),
+        let mut accumulated_values = self.map.entry(active_query).or_insert(AccumulatedValues {
+            values: vec![],
+            produced_at: current_revision,
         });
 
-        stamped_value.value.push(value);
-        stamped_value
-            .value_mut()
-            .merge_revision_info(&active_inputs);
+        // This is the first push in a new revision. Reset.
+        if accumulated_values.produced_at != current_revision {
+            accumulated_values.values.truncate(0);
+            accumulated_values.produced_at = current_revision;
+        }
+
+        runtime.add_output(self.dependency_index());
+        accumulated_values.values.push(value);
     }
 
     pub(crate) fn produced_by(
@@ -54,20 +73,28 @@ impl<Data: Clone> AccumulatorIngredient<Data> {
         query: DatabaseKeyIndex,
         output: &mut Vec<Data>,
     ) {
+        let current_revision = runtime.current_revision();
         if let Some(v) = self.map.get(&query) {
-            let StampedValue {
-                value,
-                durability,
-                changed_at,
+            // FIXME: We don't currently have a good way to identify the value that was read.
+            // You can't report is as a tracked read of `query`, because the return value of query is not being read here --
+            // instead it is the set of values accumuated by `query`.
+            runtime.report_untracked_read();
+
+            let AccumulatedValues {
+                values,
+                produced_at,
             } = v.value();
-            runtime.report_tracked_read(query.into(), *durability, *changed_at);
-            output.extend(value.iter().cloned());
+
+            if *produced_at == current_revision {
+                output.extend(values.iter().cloned());
+            }
         }
     }
 }
 
 impl<DB: ?Sized, Data> Ingredient<DB> for AccumulatorIngredient<Data>
 where
+    DB: crate::Database,
     Data: Clone,
 {
     fn maybe_changed_after(&self, _db: &DB, _input: DependencyIndex, _revision: Revision) -> bool {
@@ -82,19 +109,36 @@ where
         None
     }
 
-    fn mark_validated_output(&self, _db: &DB, executor: DatabaseKeyIndex, output_key: crate::Id) {
-        // FIXME
-        drop((executor, output_key));
+    fn mark_validated_output(
+        &self,
+        db: &DB,
+        executor: DatabaseKeyIndex,
+        output_key: Option<crate::Id>,
+    ) {
+        assert!(output_key.is_none());
+        let current_revision = db.salsa_runtime().current_revision();
+        if let Some(mut v) = self.map.get_mut(&executor) {
+            // The value is still valid in the new revision.
+            v.produced_at = current_revision;
+        }
     }
 
     fn remove_stale_output(
         &self,
-        _db: &DB,
+        db: &DB,
         executor: DatabaseKeyIndex,
-        stale_output_key: crate::Id,
+        stale_output_key: Option<crate::Id>,
     ) {
-        // FIXME
-        drop((executor, stale_output_key));
+        assert!(stale_output_key.is_none());
+        if self.map.remove(&executor).is_some() {
+            db.salsa_event(Event {
+                runtime_id: db.salsa_runtime().id(),
+                kind: EventKind::DidDiscardAccumulated {
+                    executor_key: executor,
+                    accumulator: self.dependency_index(),
+                },
+            })
+        }
     }
 
     fn reset_for_new_revision(&mut self) {

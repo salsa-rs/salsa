@@ -141,12 +141,12 @@ fn has_jars_dyn_impl(input: &syn::ItemStruct, storage: &syn::Ident) -> syn::Item
                 ingredient.origin(index.key_index())
             }
 
-            fn mark_validated_output(&self, executor: salsa::DatabaseKeyIndex, output: salsa::key::DatabaseKeyIndex) {
+            fn mark_validated_output(&self, executor: salsa::DatabaseKeyIndex, output: salsa::key::DependencyIndex) {
                 let ingredient = self.#storage.ingredient(output.ingredient_index());
                 ingredient.mark_validated_output(self, executor, output.key_index());
             }
 
-            fn remove_stale_output(&self, executor: salsa::DatabaseKeyIndex, stale_output: salsa::key::DatabaseKeyIndex) {
+            fn remove_stale_output(&self, executor: salsa::DatabaseKeyIndex, stale_output: salsa::key::DependencyIndex) {
                 let ingredient = self.#storage.ingredient(stale_output.ingredient_index());
                 ingredient.remove_stale_output(self, executor, stale_output.key_index());
             }

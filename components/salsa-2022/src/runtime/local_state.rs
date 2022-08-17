@@ -81,7 +81,7 @@ pub enum QueryOrigin {
 
 impl QueryOrigin {
     /// Indices for queries *written* by this query (or `&[]` if its value was assigned).
-    pub(crate) fn outputs(&self) -> impl Iterator<Item = DatabaseKeyIndex> + '_ {
+    pub(crate) fn outputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
         let slice = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => {
                 &edges.input_outputs[edges.separator as usize..]
@@ -89,11 +89,7 @@ impl QueryOrigin {
             QueryOrigin::Assigned(_) | QueryOrigin::BaseInput | QueryOrigin::Field => &[],
         };
 
-        // the `QueryEdges` repr. invariant guarantees all tracked outputs are full  'dependency index' values,
-        // so we can safely unwrap result of `try_from` here
-        slice
-            .iter()
-            .map(|&dep_index| DatabaseKeyIndex::try_from(dep_index).unwrap())
+        slice.iter().copied()
     }
 }
 
@@ -119,7 +115,6 @@ pub struct QueryEdges {
     ///
     /// * The inputs must be in **execution order** for the red-green algorithm to work.
     /// * The outputs must be in **sorted order** so that we can easily "diff" them between revisions.
-    /// * All outputs must have a `Some` value for `key_index`.
     input_outputs: Arc<[DependencyIndex]>,
 
     /// The index that separates inputs from outputs in the `tracked` field.
@@ -137,9 +132,6 @@ impl QueryEdges {
     /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.
     pub(crate) fn new(separator: usize, input_outputs: Arc<[DependencyIndex]>) -> Self {
         debug_assert!(separator <= input_outputs.len());
-        debug_assert!(input_outputs[separator..]
-            .iter()
-            .all(|&dep_index| DatabaseKeyIndex::try_from(dep_index).is_ok()));
         Self {
             separator: u32::try_from(separator).unwrap(),
             input_outputs,
@@ -197,7 +189,7 @@ impl LocalState {
         })
     }
 
-    pub(super) fn add_output(&self, entity: DatabaseKeyIndex) {
+    pub(super) fn add_output(&self, entity: DependencyIndex) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_output(entity)
@@ -208,7 +200,7 @@ impl LocalState {
     pub(super) fn is_output(&self, entity: DatabaseKeyIndex) -> bool {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.is_output(entity)
+                top_query.is_output(entity.into())
             } else {
                 false
             }

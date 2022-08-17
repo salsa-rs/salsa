@@ -26,13 +26,18 @@ pub trait Ingredient<DB: ?Sized> {
 
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
     /// This occurs because the value for `executor`, which generated it, was marked as valid in the current revision.
-    fn mark_validated_output(&self, db: &DB, executor: DatabaseKeyIndex, output_key: Id);
+    fn mark_validated_output(&self, db: &DB, executor: DatabaseKeyIndex, output_key: Option<Id>);
 
     /// Invoked when the value `stale_output` was output by `executor` in a previous
     /// revision, but was NOT output in the current revision.
     ///
     /// This hook is used to clear out the stale value so others cannot read it.
-    fn remove_stale_output(&self, db: &DB, executor: DatabaseKeyIndex, stale_output_key: Id);
+    fn remove_stale_output(
+        &self,
+        db: &DB,
+        executor: DatabaseKeyIndex,
+        stale_output_key: Option<Id>,
+    );
 
     /// Informs the ingredient `self` that the salsa struct with id `id` has been deleted.
     /// This gives `self` a chance to remove any memoized data dependent on `id`.
