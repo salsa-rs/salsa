@@ -8,7 +8,7 @@ use salsa_2022_tests::{HasLogger, Logger};
 use test_log::test;
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, get_hot_potato, EmptyInput, get_volatile);
+struct Jar(MyInput, get_hot_potato, get_volatile);
 
 trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
@@ -48,9 +48,6 @@ fn get_volatile(db: &dyn Db, _input: MyInput) -> usize {
     db.salsa_runtime().report_untracked_read();
     COUNTER.fetch_add(1, Ordering::SeqCst)
 }
-
-#[salsa::input(jar = Jar)]
-struct EmptyInput {}
 
 #[salsa::db(Jar)]
 #[derive(Default)]

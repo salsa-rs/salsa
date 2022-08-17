@@ -31,6 +31,13 @@ fn tracked_fn(args: Args, item_fn: syn::ItemFn) -> syn::Result<TokenStream> {
                 "tracked functon takes too many argments to have its value set with `specify`",
             ));
         }
+
+        if args.lru.is_some() {
+            return Err(syn::Error::new(
+                s.span(),
+                "`specify` and `lru` cannot be used together",
+            ));
+        }
     }
 
     let struct_item = configuration_struct(&item_fn);
