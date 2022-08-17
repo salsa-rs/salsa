@@ -18,7 +18,6 @@ impl Lru {
             return None;
         }
 
-
         let mut set = self.set.lock();
         set.insert(index);
         if set.len() > capacity {

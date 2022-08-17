@@ -237,47 +237,8 @@ fn ingredients_for_impl(
         }
     };
 
-    let function: syn::Expr = if let Some(lru) = args.lru.clone() {
-        parse_quote! {
-            {
-                let index = routes.push(
-                    |jars| {
-                        let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
-                        let ingredients =
-                            <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
-                        &ingredients.function
-                    },
-                    |jars| {
-                        let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
-                        let ingredients =
-                            <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient_mut(jar);
-                        &mut ingredients.function
-                    });
-                let ingredient = salsa::function::FunctionIngredient::new(index);
-                ingredient.set_capacity(#lru);
-                ingredient
-            }
-        }
-    } else {
-        parse_quote! {
-            {
-                let index = routes.push(
-                    |jars| {
-                        let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
-                        let ingredients =
-                            <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
-                        &ingredients.function
-                    },
-                    |jars| {
-                        let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
-                        let ingredients =
-                            <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient_mut(jar);
-                        &mut ingredients.function
-                    });
-                salsa::function::FunctionIngredient::new(index)
-            }
-        }
-    };
+    // set 0 as default to disable LRU
+    let lru = args.lru.unwrap_or(0);
 
     parse_quote! {
         impl salsa::storage::IngredientsFor for #config_ty {
@@ -291,7 +252,24 @@ fn ingredients_for_impl(
                 Self {
                     intern_map: #intern_map,
 
-                    function: #function
+                    function: {
+                        let index = routes.push(
+                            |jars| {
+                                let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
+                                let ingredients =
+                                    <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
+                                &ingredients.function
+                            },
+                            |jars| {
+                                let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
+                                let ingredients =
+                                    <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient_mut(jar);
+                                &mut ingredients.function
+                            });
+                        let ingredient = salsa::function::FunctionIngredient::new(index);
+                        ingredient.set_capacity(#lru);
+                        ingredient
+                    }
                 }
             }
         }

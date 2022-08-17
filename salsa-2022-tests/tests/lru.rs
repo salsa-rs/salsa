@@ -1,16 +1,17 @@
 //! Test that a `tracked` fn with lru options
 //! compiles and executes successfully.
 
-use std::sync::{atomic::{AtomicUsize, Ordering}, Arc};
-
-use salsa_2022_tests::{HasLogger, Logger};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 use test_log::test;
 
 #[salsa::jar(db = Db)]
 struct Jar(MyInput, get_hot_potato, get_volatile);
 
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
+trait Db: salsa::DbWithJar<Jar> {}
 
 #[derive(Debug, PartialEq, Eq)]
 struct HotPotato(u32);
@@ -53,7 +54,6 @@ fn get_volatile(db: &dyn Db, _input: MyInput) -> usize {
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
-    logger: Logger,
 }
 
 impl salsa::Database for Database {
@@ -63,12 +63,6 @@ impl salsa::Database for Database {
 }
 
 impl Db for Database {}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-}
 
 fn load_n_potatoes() -> usize {
     N_POTATOES.with(|n| n.load(Ordering::SeqCst))
@@ -95,7 +89,9 @@ fn lru_doesnt_break_volatile_queries() {
     let mut db = Database::default();
 
     // Create all inputs first, so that there are no revision changes among calls to `get_volatile`
-    let inputs: Vec<MyInput> = (0..128usize).map(|i| MyInput::new(&mut db, i as u32)).collect();
+    let inputs: Vec<MyInput> = (0..128usize)
+        .map(|i| MyInput::new(&mut db, i as u32))
+        .collect();
 
     // Here, we check that we execute each volatile query at most once, despite
     // LRU. That does mean that we have more values in DB than the LRU capacity,

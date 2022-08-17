@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use syn::{ext::IdentExt, spanned::Spanned, LitInt};
+use syn::{ext::IdentExt, spanned::Spanned};
 
 /// "Options" are flags that can be supplied to the various salsa related
 /// macros. They are listed like `(ref, no_eq, foo=bar)` etc. The commas
@@ -47,9 +47,9 @@ pub(crate) struct Options<A: AllowedOptions> {
     pub data: Option<syn::Ident>,
 
     /// The `lru = <usize>` option is used to set the lru capacity for a tracked function.
-    /// 
+    ///
     /// If this is `Some`, the value is the `<usize>`.
-    pub lru: Option<syn::LitInt>,
+    pub lru: Option<usize>,
 
     /// Remember the `A` parameter, which plays no role after parsing.
     phantom: PhantomData<A>,
@@ -205,8 +205,9 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
             } else if ident == "lru" {
                 if A::LRU {
                     let _eq = Equals::parse(input)?;
-                    let lit: LitInt = input.parse()?;
-                    if let Some(old) = std::mem::replace(&mut options.lru, Some(lit)) {
+                    let lit = syn::LitInt::parse(input)?;
+                    let value = lit.base10_parse::<usize>()?;
+                    if let Some(old) = std::mem::replace(&mut options.lru, Some(value)) {
                         return Err(syn::Error::new(old.span(), "option `lru` provided twice"));
                     }
                 } else {
