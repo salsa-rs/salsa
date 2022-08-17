@@ -46,6 +46,9 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<ident>`.
     pub data: Option<syn::Ident>,
 
+    /// The `lru = <usize>` option is used to set the lru capacity for a tracked function.
+    /// 
+    /// If this is `Some`, the value is the `<usize>`.
     pub lru: Option<syn::LitInt>,
 
     /// Remember the `A` parameter, which plays no role after parsing.
