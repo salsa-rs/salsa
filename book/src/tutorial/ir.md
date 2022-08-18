@@ -34,7 +34,7 @@ Inputs are defined as Rust structs with a `#[salsa::input]` annotation:
 {{#include ../../../calc-example/calc/src/ir.rs:input}}
 ```
 
-In our compiler, we have just one simple input, the `ProgramSource`, which has a `text` field (the string).
+In our compiler, we have just one simple input, the `SourceProgram`, which has a `text` field (the string).
 
 ### The data lives in the database
 
@@ -43,18 +43,18 @@ The values of their fields are stored in the salsa database, and the struct itse
 This means that the struct instances are copy (no matter what fields they contain).
 Creating instances of the struct and accessing fields is done by invoking methods like `new` as well as getters and setters.
 
-More concretely, the `#[salsa::input]` annotation will generate a struct for `ProgramSource` like this:
+More concretely, the `#[salsa::input]` annotation will generate a struct for `SourceProgram` like this:
 
 ```rust
-#[define(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ProgramSource(salsa::Id);
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SourceProgram(salsa::Id);
 ```
 
-It will also generate a method `new` that lets you create a `ProgramSource` in the database.
+It will also generate a method `new` that lets you create a `SourceProgram` in the database.
 For an input, a `&mut db` reference is required, along with the values for each field:
 
 ```rust
-let source = ProgramSource::new(&mut db, "print 11 + 11".to_string());
+let source = SourceProgram::new(&mut db, "print 11 + 11".to_string());
 ```
 
 You can read the value of the field with `source.text(&db)`, 

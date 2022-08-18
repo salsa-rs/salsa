@@ -1,0 +1,11 @@
+error: `specify` and `lru` cannot be used together
+  --> tests/compile-fail/lru_can_not_be_used_with_specify.rs:11:38
+   |
+11 | #[salsa::tracked(jar = Jar, lru = 3, specify)]
+   |                                      ^^^^^^^
+
+error[E0412]: cannot find type `lru_can_not_be_used_with_specify` in this scope
+ --> tests/compile-fail/lru_can_not_be_used_with_specify.rs:2:21
+  |
+2 | struct Jar(MyInput, lru_can_not_be_used_with_specify);
+  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
