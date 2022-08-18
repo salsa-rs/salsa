@@ -16,16 +16,23 @@ use super::{ParallelDatabase, Revision};
 /// The "storage" struct stores all the data for the jars.
 /// It is shared between the main database and any active snapshots.
 pub struct Storage<DB: HasJars> {
-    /// Data shared across all databases.
+    /// Data shared across all databases. This contains the ingredients needed by each jar.
+    /// See the ["jars and ingredients" chapter](https://salsa-rs.github.io/salsa/plumbing/jars_and_ingredients.html)
+    /// for more detailed description.
+    ///
+    /// Even though this struct is stored in an `Arc`, we sometimes get mutable access to it
+    /// by using `Arc::get_mut`. This is only possible when all parallel snapshots have been dropped.
     shared: Arc<Shared<DB>>,
 
     /// The "ingredients" structure stores the information about how to find each ingredient in the database.
     /// It allows us to take the [`IngredientIndex`] assigned to a particular ingredient
     /// and get back a [`dyn Ingredient`][`Ingredient`] for the struct that stores its data.
+    ///
+    /// This is kept separate from `shared` so that we can clone it and retain `&`-access even when we have `&mut` access to `shared`.
     routes: Arc<Routes<DB>>,
 
     /// The runtime for this particular salsa database handle.
-    /// Each handle gets its own runtime, but the runtimes have shared state between them.s
+    /// Each handle gets its own runtime, but the runtimes have shared state between them.
     runtime: Runtime,
 }
 
@@ -43,6 +50,7 @@ struct Shared<DB: HasJars> {
     cvar: Condvar,
 }
 
+// ANCHOR: default
 impl<DB> Default for Storage<DB>
 where
     DB: HasJars,
@@ -60,6 +68,7 @@ where
         }
     }
 }
+// ANCHOR_END: default
 
 impl<DB> Storage<DB>
 where
@@ -84,23 +93,35 @@ where
         &self.runtime
     }
 
+    // ANCHOR: jars_mut
     /// Gets mutable access to the jars. This will trigger a new revision
     /// and it will also cancel any ongoing work in the current revision.
     /// Any actual writes that occur to data in a jar should use
     /// [`Runtime::report_tracked_write`].
     pub fn jars_mut(&mut self) -> (&mut DB::Jars, &mut Runtime) {
+        // Wait for all snapshots to be dropped.
         self.cancel_other_workers();
+
+        // Increment revision counter.
         self.runtime.new_revision();
 
-        let routes = self.routes.clone();
+        // Acquire `&mut` access to `self.shared` -- this is only possible because
+        // the snapshots have all been dropped, so we hold the only handle to the `Arc`.
         let shared = Arc::get_mut(&mut self.shared).unwrap();
+
+        // Inform other ingredients that a new revision has begun.
+        // This gives them a chance to free resources that were being held until the next revision.
+        let routes = self.routes.clone();
         for route in routes.reset_routes() {
             route(&mut shared.jars).reset_for_new_revision();
         }
 
+        // Return mut ref to jars + runtime.
         (&mut shared.jars, &mut self.runtime)
     }
+    // ANCHOR_END: jars_mut
 
+    // ANCHOR: cancel_other_workers
     /// Sets cancellation flag and blocks until all other workers with access
     /// to this storage have completed.
     ///
@@ -119,11 +140,14 @@ where
             // We create a mutex here because the cvar api requires it, but we
             // don't really need one as the data being protected is actually
             // the jars above.
+            //
+            // The cvar `self.shared.cvar` is notified by the `Drop` impl.
             let mutex = parking_lot::Mutex::new(());
             let mut guard = mutex.lock();
             self.shared.cvar.wait(&mut guard);
         }
     }
+    // ANCHOR_END: cancel_other_workers
 
     pub fn ingredient(&self, ingredient_index: IngredientIndex) -> &dyn Ingredient<DB> {
         let route = self.routes.route(ingredient_index);
@@ -170,7 +194,8 @@ pub trait HasJar<J> {
     fn jar_mut(&mut self) -> (&mut J, &mut Runtime);
 }
 
-// Dyn friendly subset of HasJars
+// ANCHOR: HasJarsDyn
+/// Dyn friendly subset of HasJars
 pub trait HasJarsDyn {
     fn runtime(&self) -> &Runtime;
 
@@ -196,6 +221,7 @@ pub trait HasJarsDyn {
     /// [`SalsaStructInDb::register_dependent_fn`](`crate::salsa_struct::SalsaStructInDb::register_dependent_fn`).
     fn salsa_struct_deleted(&self, ingredient: IngredientIndex, id: Id);
 }
+// ANCHOR_END: HasJarsDyn
 
 pub trait HasIngredientsFor<I>
 where

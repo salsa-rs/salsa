@@ -86,8 +86,10 @@ fn has_jars_impl(args: &Args, input: &syn::ItemStruct, storage: &syn::Ident) -> 
     let jar_paths: Vec<&syn::Path> = args.jar_paths.iter().collect();
     let db = &input.ident;
     parse_quote! {
+        // ANCHOR: HasJars
         impl salsa::storage::HasJars for #db {
             type Jars = (#(#jar_paths,)*);
+            // ANCHOR_END: HasJars
 
             fn jars(&self) -> (&Self::Jars, &salsa::Runtime) {
                 self.#storage.jars()
@@ -97,6 +99,7 @@ fn has_jars_impl(args: &Args, input: &syn::ItemStruct, storage: &syn::Ident) -> 
                 self.#storage.jars_mut()
             }
 
+            // ANCHOR: create_jars
             fn create_jars(routes: &mut salsa::routes::Routes<Self>) -> Self::Jars {
                 (
                     #(
@@ -104,6 +107,7 @@ fn has_jars_impl(args: &Args, input: &syn::ItemStruct, storage: &syn::Ident) -> 
                     )*
                 )
             }
+            // ANCHOR_END: create_jars
         }
     }
 }
