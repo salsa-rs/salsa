@@ -16,16 +16,23 @@ use super::{ParallelDatabase, Revision};
 /// The "storage" struct stores all the data for the jars.
 /// It is shared between the main database and any active snapshots.
 pub struct Storage<DB: HasJars> {
-    /// Data shared across all databases.
+    /// Data shared across all databases. This contains the ingredients needed by each jar.
+    /// See the ["jars and ingredients" chapter](https://salsa-rs.github.io/salsa/plumbing/jars_and_ingredients.html)
+    /// for more detailed description.
+    ///
+    /// Even though this struct is stored in an `Arc`, we sometimes get mutable access to it
+    /// by using `Arc::get_mut`. This is only possible when all parallel snapshots have been dropped.
     shared: Arc<Shared<DB>>,
 
     /// The "ingredients" structure stores the information about how to find each ingredient in the database.
     /// It allows us to take the [`IngredientIndex`] assigned to a particular ingredient
     /// and get back a [`dyn Ingredient`][`Ingredient`] for the struct that stores its data.
+    ///
+    /// This is kept separate from `shared` so that we can clone it and retain `&`-access even when we have `&mut` access to `shared`.
     routes: Arc<Routes<DB>>,
 
     /// The runtime for this particular salsa database handle.
-    /// Each handle gets its own runtime, but the runtimes have shared state between them.s
+    /// Each handle gets its own runtime, but the runtimes have shared state between them.
     runtime: Runtime,
 }
 
