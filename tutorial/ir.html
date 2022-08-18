@@ -178,26 +178,26 @@ pub struct SourceProgram {
 }
 <span class="boring">}
 </span></code></pre></pre>
-<p>In our compiler, we have just one simple input, the <code>ProgramSource</code>, which has a <code>text</code> field (the string).</p>
+<p>In our compiler, we have just one simple input, the <code>SourceProgram</code>, which has a <code>text</code> field (the string).</p>
 <h3 id="the-data-lives-in-the-database"><a class="header" href="#the-data-lives-in-the-database">The data lives in the database</a></h3>
 <p>Although they are declared like other Rust structs, salsa structs are implemented quite differently.
 The values of their fields are stored in the salsa database, and the struct itself just contains a numeric identifier.
 This means that the struct instances are copy (no matter what fields they contain).
 Creating instances of the struct and accessing fields is done by invoking methods like <code>new</code> as well as getters and setters.</p>
-<p>More concretely, the <code>#[salsa::input]</code> annotation will generate a struct for <code>ProgramSource</code> like this:</p>
+<p>More concretely, the <code>#[salsa::input]</code> annotation will generate a struct for <code>SourceProgram</code> like this:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>#[define(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ProgramSource(salsa::Id);
+</span>#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SourceProgram(salsa::Id);
 <span class="boring">}
 </span></code></pre></pre>
-<p>It will also generate a method <code>new</code> that lets you create a <code>ProgramSource</code> in the database.
+<p>It will also generate a method <code>new</code> that lets you create a <code>SourceProgram</code> in the database.
 For an input, a <code>&amp;mut db</code> reference is required, along with the values for each field:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>let source = ProgramSource::new(&amp;mut db, &quot;print 11 + 11&quot;.to_string());
+</span>let source = SourceProgram::new(&amp;mut db, &quot;print 11 + 11&quot;.to_string());
 <span class="boring">}
 </span></code></pre></pre>
 <p>You can read the value of the field with <code>source.text(&amp;db)</code>, 
