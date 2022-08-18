@@ -38,6 +38,19 @@ impl Id {
     }
 }
 
+impl From<u32> for Id {
+    fn from(n: u32) -> Self {
+        Id::from_u32(n)
+    }
+}
+
+impl From<usize> for Id {
+    fn from(n: usize) -> Self {
+        assert!(n < Id::MAX_USIZE);
+        Id::from_u32(n as u32)
+    }
+}
+
 impl From<Id> for u32 {
     fn from(n: Id) -> Self {
         n.as_u32()
