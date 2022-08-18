@@ -256,7 +256,7 @@ Since this is modifying the input, the setter takes an <code>&amp;mut</code>-ref
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>file.set_contents(String::from(&quot;fn foo() { /* add a comment */ }&quot;));
+</span>file.set_contents(&amp;mut db, String::from(&quot;fn foo() { /* add a comment */ }&quot;));
 <span class="boring">}
 </span></code></pre></pre>
 <h2 id="tracked-functions"><a class="header" href="#tracked-functions">Tracked functions</a></h2>
@@ -357,7 +357,7 @@ struct Item {
 <p>Sometimes it is useful to define a tracked function but specify its value for some particular struct specially.
 For example, maybe the default way to compute the representation for a function is to read the AST, but you also have some built-in functions in your language and you want to hard-code their results.
 This can also be used to simulate a field that is initialized after the tracked struct is created.</p>
-<p>To support this use case, you can use the <code>specify</code> method associated with tracked functions. 
+<p>To support this use case, you can use the <code>specify</code> method associated with tracked functions.
 To enable this method, you need to add the <code>specify</code> flag to the function to alert users that its value may sometimes be specified externally.</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
