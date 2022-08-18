@@ -2,7 +2,7 @@
 
 {{#include caveat.md}}
 
-Tbis page covers how data is organized in salsa and how links between salsa items (e.g., dependency tracking) works.
+This page covers how data is organized in salsa and how links between salsa items (e.g., dependency tracking) works.
 
 ## Salsa items and ingredients 
 
