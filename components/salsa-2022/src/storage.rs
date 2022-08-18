@@ -43,6 +43,7 @@ struct Shared<DB: HasJars> {
     cvar: Condvar,
 }
 
+// ANCHOR: default
 impl<DB> Default for Storage<DB>
 where
     DB: HasJars,
@@ -60,6 +61,7 @@ where
         }
     }
 }
+// ANCHOR_END: default
 
 impl<DB> Storage<DB>
 where

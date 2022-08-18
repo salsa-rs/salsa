@@ -102,6 +102,7 @@ pub(crate) fn jar_impl(
         .zip(0..)
         .map(|(f, i)| Ident::new(&format!("i{}", i), f.ty.span()))
         .collect();
+    // ANCHOR: create_jar
     quote! {
         impl<'salsa_db> salsa::jar::Jar<'salsa_db> for #jar_struct {
             type DynDb = dyn #jar_trait + 'salsa_db;
@@ -117,6 +118,7 @@ pub(crate) fn jar_impl(
             }
         }
     }
+    // ANCHOR_END: create_jar
 }
 
 pub(crate) fn jar_struct(input: &ItemStruct) -> ItemStruct {

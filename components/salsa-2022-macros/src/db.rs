@@ -97,6 +97,7 @@ fn has_jars_impl(args: &Args, input: &syn::ItemStruct, storage: &syn::Ident) -> 
                 self.#storage.jars_mut()
             }
 
+            // ANCHOR: create_jars
             fn create_jars(routes: &mut salsa::routes::Routes<Self>) -> Self::Jars {
                 (
                     #(
@@ -104,6 +105,7 @@ fn has_jars_impl(args: &Args, input: &syn::ItemStruct, storage: &syn::Ident) -> 
                     )*
                 )
             }
+            // ANCHOR_END: create_jars
         }
     }
 }
