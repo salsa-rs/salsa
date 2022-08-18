@@ -114,7 +114,7 @@ Finally, you can also modify the value of an input field by using the setter met
 Since this is modifying the input, the setter takes an `&mut`-reference to the database:
 
 ```rust
-file.set_contents(String::from("fn foo() { /* add a comment */ }"));
+file.set_contents(&mut db, String::from("fn foo() { /* add a comment */ }"));
 ```
 
 ## Tracked functions
@@ -216,7 +216,7 @@ Sometimes it is useful to define a tracked function but specify its value for so
 For example, maybe the default way to compute the representation for a function is to read the AST, but you also have some built-in functions in your language and you want to hard-code their results.
 This can also be used to simulate a field that is initialized after the tracked struct is created.
 
-To support this use case, you can use the `specify` method associated with tracked functions. 
+To support this use case, you can use the `specify` method associated with tracked functions.
 To enable this method, you need to add the `specify` flag to the function to alert users that its value may sometimes be specified externally.
 
 ```rust
