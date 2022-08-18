@@ -43,6 +43,7 @@ where
     }
 }
 
+// ANCHOR: DatabaseKeyIndex
 /// An "active" database key index represents a database key index
 /// that is actively executing. In that case, the `key_index` cannot be
 /// None.
@@ -51,6 +52,7 @@ pub struct DatabaseKeyIndex {
     pub(crate) ingredient_index: IngredientIndex,
     pub(crate) key_index: Id,
 }
+// ANCHOR_END: DatabaseKeyIndex
 
 impl DatabaseKeyIndex {
     pub fn ingredient_index(self) -> IngredientIndex {

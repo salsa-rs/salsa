@@ -72,7 +72,7 @@ This allows the database to perform generic operations on a numbered ingredient 
 
 When you declare a salsa jar, you list out each of the salsa items that are included in that jar:
 
-```rust
+```rust,ignore
 #[salsa::jar]
 struct Jar(
     foo,
@@ -115,21 +115,17 @@ The `HarJars` trait, among other things, defines a `Jars` associated type that m
 
 For example, given a database like this...
 
-```rust
+```rust,ignore
 #[salsa::db(Jar1, ..., JarN)]
 struct MyDatabase {
     storage: salsa::Storage<Self>
 }
 ```
 
-...the `salsa::db` macro would generate a `HasJars` impl that (among other things) contains...
+...the `salsa::db` macro would generate a `HasJars` impl that (among other things) contains `type Jars = (Jar1, ..., JarN)`:
 
-```rust
-impl HarJars for MyDatabase {
-    type Jars = (Jar1, ..., JarN);
-    
-    /* other stuff elided */
-}
+```rust,ignore
+{{#include ../../../components/salsa-2022-macros/src/db.rs:HasJars}}
 ```
 
 In turn, the `salsa::Storage<DB>` type ultimately contains a struct `Shared` that embeds `DB::Jars`, thus embedding all the data for each jar.
@@ -156,11 +152,8 @@ as described shortly.
 A `DatabaseKeyIndex` identifies a specific value stored in some specific ingredient.
 It combines an [`IngredientIndex`] with a `key_index`, which is a `salsa::Id`:
 
-```rust
-pub struct DatabaseKeyIndex {
-    pub(crate) ingredient_index: IngredientIndex,
-    pub(crate) key_index: Id,
-}
+```rust,ignore
+{{#include ../../../components/salsa-2022/src/key.rs:DatabaseKeyIndex}}
 ```
 
 A `DependencyIndex` is similar, but the `key_index` is optional.
@@ -183,15 +176,8 @@ If we had one function ingredient directly invoke a method on `Ingredient<DB>`, 
 
 We solve this via the `HasJarsDyn` trait. The `HasJarsDyn` trait exports method that combine the "find ingredient, invoking method" steps into one method:
 
-```rust
-// Dyn friendly subset of HasJars
-pub trait HasJarsDyn {
-    fn runtime(&self) -> &Runtime;
-
-    fn maybe_changed_after(&self, input: DependencyIndex, revision: Revision) -> bool;
-
-    ...
-}
+```rust,ignore
+{{#include ../../../components/salsa-2022/src/storage.rs:HasJarsDyn}}
 ```
 
 So, technically, to check if an input has changed, an ingredient:
