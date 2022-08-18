@@ -29,6 +29,7 @@
 - [How Salsa works](./how_salsa_works.md)
 - [Videos](./videos.md)
 - [Plumbing](./plumbing.md)
+  - [Jars and ingredients](./plumbing/jars_and_ingredients.md)
   - [Generated code](./plumbing/generated_code.md)
     - [Diagram](./plumbing/diagram.md)
     - [Query groups](./plumbing/query_groups.md)
