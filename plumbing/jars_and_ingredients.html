@@ -1,0 +1,431 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Jars and ingredients - Salsa</title>
+                
+
+        <!-- Custom HTML head -->
+        
+
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+                <link rel="icon" href="../favicon.svg">
+                        <link rel="shortcut icon" href="../favicon.png">
+                <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+                <link rel="stylesheet" href="../css/print.css" media="print">
+        
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+                <link rel="stylesheet" href="../fonts/fonts.css">
+        
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+                <link rel="stylesheet" href="../mermaid.css">
+        
+            </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="../about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded affix "><li class="part-title">How to use Salsa</li><li class="chapter-item expanded "><a href="../overview.html"><strong aria-hidden="true">2.</strong> Overview</a></li><li class="chapter-item expanded "><a href="../tutorial.html"><strong aria-hidden="true">3.</strong> Tutorial: calc language</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../tutorial/structure.html"><strong aria-hidden="true">3.1.</strong> Basic structure</a></li><li class="chapter-item expanded "><a href="../tutorial/jar.html"><strong aria-hidden="true">3.2.</strong> Jars and databases</a></li><li class="chapter-item expanded "><a href="../tutorial/db.html"><strong aria-hidden="true">3.3.</strong> Defining the database struct</a></li><li class="chapter-item expanded "><a href="../tutorial/ir.html"><strong aria-hidden="true">3.4.</strong> Defining the IR: the various &quot;salsa structs&quot;</a></li><li class="chapter-item expanded "><a href="../tutorial/parser.html"><strong aria-hidden="true">3.5.</strong> Defining the parser: memoized functions and inputs</a></li><li class="chapter-item expanded "><a href="../tutorial/accumulators.html"><strong aria-hidden="true">3.6.</strong> Defining the parser: reporting errors</a></li><li class="chapter-item expanded "><a href="../tutorial/debug.html"><strong aria-hidden="true">3.7.</strong> Defining the parser: debug impls and testing</a></li><li class="chapter-item expanded "><a href="../tutorial/checker.html"><strong aria-hidden="true">3.8.</strong> Defining the checker</a></li><li class="chapter-item expanded "><a href="../tutorial/interpreter.html"><strong aria-hidden="true">3.9.</strong> Defining the interpreter</a></li></ol></li><li class="chapter-item expanded "><a href="../reference.html"><strong aria-hidden="true">4.</strong> Reference</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../reference/algorithm.html"><strong aria-hidden="true">4.1.</strong> Algorithm</a></li></ol></li><li class="chapter-item expanded "><a href="../common_patterns.html"><strong aria-hidden="true">5.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../common_patterns/selection.html"><strong aria-hidden="true">5.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="../common_patterns/on_demand_inputs.html"><strong aria-hidden="true">5.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="../tuning.html"><strong aria-hidden="true">6.</strong> Tuning</a></li><li class="chapter-item expanded "><a href="../cycles.html"><strong aria-hidden="true">7.</strong> Cycle handling</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../cycles/fallback.html"><strong aria-hidden="true">7.1.</strong> Recovering via fallback</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">How Salsa works internally</li><li class="chapter-item expanded "><a href="../how_salsa_works.html"><strong aria-hidden="true">8.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="../videos.html"><strong aria-hidden="true">9.</strong> Videos</a></li><li class="chapter-item expanded "><a href="../plumbing.html"><strong aria-hidden="true">10.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/jars_and_ingredients.html" class="active"><strong aria-hidden="true">10.1.</strong> Jars and ingredients</a></li><li class="chapter-item expanded "><a href="../plumbing/database_and_runtime.html"><strong aria-hidden="true">10.2.</strong> Databases and runtime</a></li><li class="chapter-item expanded "><a href="../plumbing/query_ops.html"><strong aria-hidden="true">10.3.</strong> Query operations</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/maybe_changed_after.html"><strong aria-hidden="true">10.3.1.</strong> maybe changed after</a></li><li class="chapter-item expanded "><a href="../plumbing/fetch.html"><strong aria-hidden="true">10.3.2.</strong> Fetch</a></li><li class="chapter-item expanded "><a href="../plumbing/derived_flowchart.html"><strong aria-hidden="true">10.3.3.</strong> Derived queries flowchart</a></li><li class="chapter-item expanded "><a href="../plumbing/cycles.html"><strong aria-hidden="true">10.3.4.</strong> Cycle handling</a></li></ol></li><li class="chapter-item expanded "><a href="../plumbing/terminology.html"><strong aria-hidden="true">10.4.</strong> Terminology</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../plumbing/terminology/backdate.html"><strong aria-hidden="true">10.4.1.</strong> Backdate</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/changed_at.html"><strong aria-hidden="true">10.4.2.</strong> Changed at</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/dependency.html"><strong aria-hidden="true">10.4.3.</strong> Dependency</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/derived_query.html"><strong aria-hidden="true">10.4.4.</strong> Derived query</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/durability.html"><strong aria-hidden="true">10.4.5.</strong> Durability</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/input_query.html"><strong aria-hidden="true">10.4.6.</strong> Input query</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/ingredient.html"><strong aria-hidden="true">10.4.7.</strong> Ingredient</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/LRU.html"><strong aria-hidden="true">10.4.8.</strong> LRU</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/memo.html"><strong aria-hidden="true">10.4.9.</strong> Memo</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/query.html"><strong aria-hidden="true">10.4.10.</strong> Query</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/query_function.html"><strong aria-hidden="true">10.4.11.</strong> Query function</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/revision.html"><strong aria-hidden="true">10.4.12.</strong> Revision</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/salsa_item.html"><strong aria-hidden="true">10.4.13.</strong> Salsa item</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/salsa_struct.html"><strong aria-hidden="true">10.4.14.</strong> Salsa struct</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/untracked.html"><strong aria-hidden="true">10.4.15.</strong> Untracked dependency</a></li><li class="chapter-item expanded "><a href="../plumbing/terminology/verified.html"><strong aria-hidden="true">10.4.16.</strong> Verified</a></li></ol></li></ol></li><li class="chapter-item expanded "><li class="part-title">Salsa RFCs</li><li class="chapter-item expanded "><a href="../rfcs.html"><strong aria-hidden="true">11.</strong> RFCs</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../rfcs/template.html"><strong aria-hidden="true">11.1.</strong> Template</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0001-Query-Group-Traits.html"><strong aria-hidden="true">11.2.</strong> RFC 0001: Query group traits</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0002-Intern-Queries.html"><strong aria-hidden="true">11.3.</strong> RFC 0002: Intern queries</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0003-Query-Dependencies.html"><strong aria-hidden="true">11.4.</strong> RFC 0003: Query dependencies</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0004-LRU.html"><strong aria-hidden="true">11.5.</strong> RFC 0004: LRU</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0005-Durability.html"><strong aria-hidden="true">11.6.</strong> RFC 0005: Durability</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0006-Dynamic-Databases.html"><strong aria-hidden="true">11.7.</strong> RFC 0006: Dynamic database</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0007-Opinionated-Cancelation.html"><strong aria-hidden="true">11.8.</strong> RFC 0007: Opinionated cancelation</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0008-Remove-Garbage-Collection.html"><strong aria-hidden="true">11.9.</strong> RFC 0008: Remove garbage collection</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0009-Cycle-recovery.html"><strong aria-hidden="true">11.10.</strong> RFC 0009: Cycle recovery</a></li><li class="chapter-item expanded "><a href="../rfcs/RFC0010-Slot-no-more.html"><strong aria-hidden="true">11.11.</strong> RFC 0010: Slot no more</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">Appendices</li><li class="chapter-item expanded "><a href="../meta.html"><strong aria-hidden="true">12.</strong> Meta: about the book itself</a></li></ol>            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                                                <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                                            </div>
+
+                    <h1 class="menu-title">Salsa</h1>
+
+                    <div class="right-buttons">
+                                                <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                                                                        
+                    </div>
+                </div>
+
+                                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="jars-and-ingredients"><a class="header" href="#jars-and-ingredients">Jars and ingredients</a></h1>
+<blockquote>
+<p>⚠️ <strong>IN-PROGRESS VERSION OF SALSA.</strong> ⚠️</p>
+<p>This page describes the unreleased &quot;Salsa 2022&quot; version, which is a major departure from older versions of salsa. The code here works but is only available on github and from the <code>salsa-2022</code> crate.</p>
+</blockquote>
+<p>This page covers how data is organized in salsa and how links between salsa items (e.g., dependency tracking) works.</p>
+<h2 id="salsa-items-and-ingredients"><a class="header" href="#salsa-items-and-ingredients">Salsa items and ingredients</a></h2>
+<p>A <strong>salsa item</strong> is some item annotated with a salsa annotation that can be included in a jar.
+For example, a tracked function is a salsa item:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[salsa::tracked]
+fn foo(db: &amp;dyn Db, input: MyInput) { }
+<span class="boring">}
+</span></code></pre></pre>
+<p>...and so is a salsa input...</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[salsa::input]
+struct MyInput { }
+<span class="boring">}
+</span></code></pre></pre>
+<p>...or a tracked struct:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[salsa::tracked]
+struct MyStruct { }
+<span class="boring">}
+</span></code></pre></pre>
+<p>Each salsa item needs certain bits of data at runtime to operate.
+These bits of data are called <strong>ingredients</strong>.
+Most salsa items generate a single ingredient, but sometimes they make more than one.
+For example, a tracked function generates a <a href="https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/function.rs#L42"><code>FunctionIngredient</code></a>.
+A tracked struct however generates several ingredients, one for the struct itself (a <a href="https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/tracked_struct.rs#L18"><code>TrackedStructIngredient</code></a>,
+and one <a href="https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/function.rs#L42"><code>FunctionIngredient</code></a> for each value field.</p>
+<h3 id="ingredients-define-the-core-logic-of-salsa"><a class="header" href="#ingredients-define-the-core-logic-of-salsa">Ingredients define the core logic of salsa</a></h3>
+<p>Most of the interesting salsa code lives in these ingredients.
+For example, when you create a new tracked struct, the method <a href="https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/tracked_struct.rs#L76"><code>TrackedStruct::new_struct</code></a> is invoked;
+it is responsible for determining the tracked struct's id.
+Similarly, when you call a tracked function, that is translated into a call to <a href="https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/function/fetch.rs#L15"><code>TrackedFunction::fetch</code></a>,
+which decides whether there is a valid memoized value to return,
+or whether the function must be executed.</p>
+<h3 id="ingredient-interfaces-are-not-stable-or-subject-to-semver"><a class="header" href="#ingredient-interfaces-are-not-stable-or-subject-to-semver">Ingredient interfaces are not stable or subject to semver</a></h3>
+<p>Interfaces are not meant to be directly used by salsa users.
+The salsa macros generate code that invokes the ingredients.
+The APIs may change in arbitrary ways across salsa versions,
+as the macros are kept in sync.</p>
+<h3 id="the-ingredient-trait"><a class="header" href="#the-ingredient-trait">The <code>Ingredient</code> trait</a></h3>
+<p>Each ingredient implements the <a href="https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/ingredient.rs#L15"><code>Ingredient&lt;DB&gt;</code></a> trait, which defines generic operations supported by any kind of ingredient.
+For example, the method <code>maybe_changed_after</code> can be used to check whether some particular piece of data stored in the ingredient may have changed since a given revision:</p>
+<p>We'll see below that each database <code>DB</code> is able to take an <code>IngredientIndex</code> and use that to get a <code>&amp;dyn Ingredient&lt;DB&gt;</code> for the corresponding ingredient.
+This allows the database to perform generic operations on a numbered ingredient without knowing exactly what the type of that ingredient is.</p>
+<h3 id="jars-are-a-collection-of-ingredients"><a class="header" href="#jars-are-a-collection-of-ingredients">Jars are a collection of ingredients</a></h3>
+<p>When you declare a salsa jar, you list out each of the salsa items that are included in that jar:</p>
+<pre><code class="language-rust ignore">#[salsa::jar]
+struct Jar(
+    foo,
+    MyInput,
+    MyStruct
+);
+</code></pre>
+<p>This expands to a struct like so:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>struct Jar(
+    &lt;foo as IngredientsFor&gt;::Ingredient,
+    &lt;MyInput as IngredientsFor&gt;::Ingredient,
+    &lt;MyStruct as IngredientsFor&gt;::Ingredient,
+)
+<span class="boring">}
+</span></code></pre></pre>
+<p>The <code>IngredientsFor</code> trait is used to define the ingredients needed by some salsa item, such as the tracked function <code>foo</code>
+or the tracked struct <code>MyInput</code>.
+Each salsa item defines a type <code>I</code>, so that <code>&lt;I as IngredientsFor&gt;::Ingredient</code> gives the ingredients needed by <code>I</code>.</p>
+<h3 id="database-is-a-tuple-of-jars"><a class="header" href="#database-is-a-tuple-of-jars">Database is a tuple of jars</a></h3>
+<p>Salsa's database storage ultimately boils down to a tuple of jar structs,
+where each jar struct (as we just saw) itself contains the ingredients
+for the salsa items within that jar.
+The database can thus be thought of as a list of ingredients,
+although that list is organized into a 2-level hierarchy.</p>
+<p>The reason for this 2-level hierarchy is that it permits separate compilation and privacy.
+The crate that lists the jars doens't have to know the contents of the jar to embed the jar struct in the database.
+And some of the types that appear in the jar may be private to another struct.</p>
+<h3 id="the-hasjars-trait-and-the-jars-type"><a class="header" href="#the-hasjars-trait-and-the-jars-type">The HasJars trait and the Jars type</a></h3>
+<p>Each salsa database implements the <code>HasJars</code> trait,
+generated by the <code>salsa::db</code> procedural macro.
+The <code>HarJars</code> trait, among other things, defines a <code>Jars</code> associated type that maps to a tuple of the jars in the trait.</p>
+<p>For example, given a database like this...</p>
+<pre><code class="language-rust ignore">#[salsa::db(Jar1, ..., JarN)]
+struct MyDatabase {
+    storage: salsa::Storage&lt;Self&gt;
+}
+</code></pre>
+<p>...the <code>salsa::db</code> macro would generate a <code>HasJars</code> impl that (among other things) contains <code>type Jars = (Jar1, ..., JarN)</code>:</p>
+<pre><code class="language-rust ignore">        impl salsa::storage::HasJars for #db {
+            type Jars = (#(#jar_paths,)*);
+</code></pre>
+<p>In turn, the <code>salsa::Storage&lt;DB&gt;</code> type ultimately contains a struct <code>Shared</code> that embeds <code>DB::Jars</code>, thus embedding all the data for each jar.</p>
+<h3 id="ingredient-indices"><a class="header" href="#ingredient-indices">Ingredient indices</a></h3>
+<p>During initialization, each ingredient in the database is assigned a unique index called the <a href="https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/routes.rs#L5-L9"><code>IngredientIndex</code></a>.
+This is a 32-bit number that identifies a particular ingredient from a particular jar.</p>
+<h3 id="routes"><a class="header" href="#routes">Routes</a></h3>
+<p>In addition to an index, each ingredient in the database also has a corresponding <em>route</em>.
+A route is a closure that, given a reference to the <code>DB::Jars</code> tuple,
+returns a <code>&amp;dyn Ingredient&lt;DB&gt;</code> reference.
+The route table allows us to go from the <code>IngredientIndex</code> for a particular ingredient
+to its <code>&amp;dyn Ingredient&lt;DB&gt;</code> trait object.
+The route table is created while the database is being initialized,
+as described shortly.</p>
+<h3 id="database-keys-and-dependency-keys"><a class="header" href="#database-keys-and-dependency-keys">Database keys and dependency keys</a></h3>
+<p>A <code>DatabaseKeyIndex</code> identifies a specific value stored in some specific ingredient.
+It combines an <a href="https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/routes.rs#L5-L9"><code>IngredientIndex</code></a> with a <code>key_index</code>, which is a <code>salsa::Id</code>:</p>
+<pre><code class="language-rust ignore">/// An &quot;active&quot; database key index represents a database key index
+/// that is actively executing. In that case, the `key_index` cannot be
+/// None.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct DatabaseKeyIndex {
+    pub(crate) ingredient_index: IngredientIndex,
+    pub(crate) key_index: Id,
+}
+</code></pre>
+<p>A <code>DependencyIndex</code> is similar, but the <code>key_index</code> is optional.
+This is used when we sometimes wish to refer to the ingredient as a whole, and not any specific value within the ingredient.</p>
+<p>These kinds of indices are used to store connetions between ingredients.
+For example, each memoized value has to track its inputs.
+Those inputs are stored as dependency indices. 
+We can then do things like ask, &quot;did this input change since revision R?&quot; by</p>
+<ul>
+<li>using the ingredient index to find the route and get a <code>&amp;dyn Ingredient&lt;DB&gt;</code></li>
+<li>and then invoking the <code>maybe_changed_since</code> method on that trait object.</li>
+</ul>
+<h3 id="hasjarsdyn"><a class="header" href="#hasjarsdyn">HasJarsDyn</a></h3>
+<p>There is one catch in the above setup.
+We need the database to be dyn-safe, and we also need to be able to define the database trait and so forth without knowing the final database type to enable separate compilation.
+Traits like <code>Ingredient&lt;DB&gt;</code> require knowing the full <code>DB</code> type.
+If we had one function ingredient directly invoke a method on <code>Ingredient&lt;DB&gt;</code>, that would imply that it has to be fully generic and only instantiated at the final crate, when the full database type is available.</p>
+<p>We solve this via the <code>HasJarsDyn</code> trait. The <code>HasJarsDyn</code> trait exports method that combine the &quot;find ingredient, invoking method&quot; steps into one method:</p>
+<pre><code class="language-rust ignore">/// Dyn friendly subset of HasJars
+pub trait HasJarsDyn {
+    fn runtime(&amp;self) -&gt; &amp;Runtime;
+
+    fn maybe_changed_after(&amp;self, input: DependencyIndex, revision: Revision) -&gt; bool;
+
+    fn cycle_recovery_strategy(&amp;self, input: IngredientIndex) -&gt; CycleRecoveryStrategy;
+
+    fn origin(&amp;self, input: DatabaseKeyIndex) -&gt; Option&lt;QueryOrigin&gt;;
+
+    fn mark_validated_output(&amp;self, executor: DatabaseKeyIndex, output: DependencyIndex);
+
+    /// Invoked when `executor` used to output `stale_output` but no longer does.
+    /// This method routes that into a call to the [`remove_stale_output`](`crate::ingredient::Ingredient::remove_stale_output`)
+    /// method on the ingredient for `stale_output`.
+    fn remove_stale_output(&amp;self, executor: DatabaseKeyIndex, stale_output: DependencyIndex);
+
+    /// Informs `ingredient` that the salsa struct with id `id` has been deleted.
+    /// This means that `id` will not be used in this revision and hence
+    /// any memoized values keyed by that struct can be discarded.
+    ///
+    /// In order to receive this callback, `ingredient` must have registered itself
+    /// as a dependent function using
+    /// [`SalsaStructInDb::register_dependent_fn`](`crate::salsa_struct::SalsaStructInDb::register_dependent_fn`).
+    fn salsa_struct_deleted(&amp;self, ingredient: IngredientIndex, id: Id);
+}
+</code></pre>
+<p>So, technically, to check if an input has changed, an ingredient:</p>
+<ul>
+<li>Invokes <code>HasJarsDyn::maybe_changed_after</code> on the <code>dyn Database</code></li>
+<li>The impl for this method (generated by <code>#[salsa::db]</code>):
+<ul>
+<li>gets the route for the ingredient from the ingredient index</li>
+<li>uses the route to get a <code>&amp;dyn Ingredient</code></li>
+<li>invokes <code>maybe_changed_after</code> on that ingredient</li>
+</ul>
+</li>
+</ul>
+<h3 id="initializing-the-database"><a class="header" href="#initializing-the-database">Initializing the database</a></h3>
+<p>The last thing to dicsuss is how the database is initialized.
+The <code>Default</code> implementation for <code>Storage&lt;DB&gt;</code> does the work:</p>
+<pre><code class="language-rust ignore">impl&lt;DB&gt; Default for Storage&lt;DB&gt;
+where
+    DB: HasJars,
+{
+    fn default() -&gt; Self {
+        let mut routes = Routes::new();
+        let jars = DB::create_jars(&amp;mut routes);
+        Self {
+            shared: Arc::new(Shared {
+                jars,
+                cvar: Default::default(),
+            }),
+            routes: Arc::new(routes),
+            runtime: Runtime::default(),
+        }
+    }
+}
+</code></pre>
+<p>First, it creates an empty <code>Routes</code> instance.
+Then it invokes the <code>DB::create_jars</code> method.
+The implementation of this method is defined by the <code>#[salsa::db]</code> macro; it simply invokes the <code>Jar::create_jar</code> method on each of the jars:</p>
+<pre><code class="language-rust ignore">            fn create_jars(routes: &amp;mut salsa::routes::Routes&lt;Self&gt;) -&gt; Self::Jars {
+                (
+<span class="boring">                    (
+</span>                        &lt;#jar_paths as salsa::jar::Jar&gt;::create_jar(routes),
+                    )*
+                )
+            }
+</code></pre>
+<p>This implementation for <code>create_jar</code> is geneated by the <code>#[salsa::jar]</code> macro, and simply walks over the representative type for each salsa item and ask <em>it</em> to create its ingredients</p>
+<pre><code class="language-rust ignore">    quote! {
+        impl&lt;'salsa_db&gt; salsa::jar::Jar&lt;'salsa_db&gt; for #jar_struct {
+            type DynDb = dyn #jar_trait + 'salsa_db;
+
+            fn create_jar&lt;DB&gt;(routes: &amp;mut salsa::routes::Routes&lt;DB&gt;) -&gt; Self
+            where
+                DB: salsa::storage::JarFromJars&lt;Self&gt; + salsa::storage::DbWithJar&lt;Self&gt;,
+            {
+<span class="boring">                (
+</span>                    let #field_var_names = &lt;#field_tys as salsa::storage::IngredientsFor&gt;::create_ingredients(routes);
+                )*
+                Self(#(#field_var_names),*)
+            }
+        }
+    }
+</code></pre>
+<p>The code to create the ingredients for any particular item is generated by their associated macros (e.g., <code>#[salsa::tracked]</code>, <code>#[salsa::input]</code>), but it always follows a particular structure.
+To create an ingredient, we first invoke <code>Routes::push</code> which creates the routes to that ingredient and assigns it an <code>IngredientIndex</code>.
+We can then invoke (e.g.) <code>FunctionIngredient::new</code> to create the structure.
+The <em>routes</em> to an ingredient are defined as closures that, given the <code>DB::Jars</code>, can find the data for a particular ingredient.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                                                    <a rel="prev" href="../plumbing.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+                                                    <a rel="next" href="../plumbing/database_and_runtime.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                                    <a rel="prev" href="../plumbing.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+                                    <a rel="next" href="../plumbing/database_and_runtime.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                            </nav>
+
+        </div>
+
+        
+        
+        
+                <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        
+        
+                <script src="../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+        <script src="../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+                <script type="text/javascript" src="../mermaid.min.js"></script>
+                <script type="text/javascript" src="../mermaid-init.js"></script>
+        
+        
+    </body>
+</html>
