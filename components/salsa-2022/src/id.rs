@@ -19,8 +19,14 @@ impl Id {
     pub const MAX_U32: u32 = std::u32::MAX - 0xFF;
     pub const MAX_USIZE: usize = Self::MAX_U32 as usize;
 
+    /// Create a `salsa::Id` from a u32 value. This value should
+    /// be less than [`Self::MAX_U32`].
+    ///
+    /// In general, you should not need to create salsa ids yourself,
+    /// but it can be useful if you are using the type as a general
+    /// purpose "identifier" internally.
     #[track_caller]
-    pub(crate) fn from_u32(x: u32) -> Self {
+    pub fn from_u32(x: u32) -> Self {
         assert!(x < Self::MAX_U32);
         Id {
             value: NonZeroU32::new(x + 1).unwrap(),
