@@ -31,6 +31,13 @@ fn tracked_fn(args: Args, item_fn: syn::ItemFn) -> syn::Result<TokenStream> {
                 "tracked functon takes too many argments to have its value set with `specify`",
             ));
         }
+
+        if args.lru.is_some() {
+            return Err(syn::Error::new(
+                s.span(),
+                "`specify` and `lru` cannot be used together",
+            ));
+        }
     }
 
     let struct_item = configuration_struct(&item_fn);
@@ -72,6 +79,8 @@ impl crate::options::AllowedOptions for TrackedFn {
     const DB: bool = false;
 
     const RECOVERY_FN: bool = true;
+
+    const LRU: bool = true;
 }
 
 /// Returns the key type for this tracked function.
@@ -228,6 +237,9 @@ fn ingredients_for_impl(
         }
     };
 
+    // set 0 as default to disable LRU
+    let lru = args.lru.unwrap_or(0);
+
     parse_quote! {
         impl salsa::storage::IngredientsFor for #config_ty {
             type Ingredients = Self;
@@ -254,8 +266,10 @@ fn ingredients_for_impl(
                                     <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient_mut(jar);
                                 &mut ingredients.function
                             });
-                        salsa::function::FunctionIngredient::new(index)
-                    },
+                        let ingredient = salsa::function::FunctionIngredient::new(index);
+                        ingredient.set_capacity(#lru);
+                        ingredient
+                    }
                 }
             }
         }

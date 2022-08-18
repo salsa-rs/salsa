@@ -46,6 +46,11 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<ident>`.
     pub data: Option<syn::Ident>,
 
+    /// The `lru = <usize>` option is used to set the lru capacity for a tracked function.
+    ///
+    /// If this is `Some`, the value is the `<usize>`.
+    pub lru: Option<usize>,
+
     /// Remember the `A` parameter, which plays no role after parsing.
     phantom: PhantomData<A>,
 }
@@ -61,6 +66,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             recovery_fn: Default::default(),
             data: Default::default(),
             phantom: Default::default(),
+            lru: Default::default(),
         }
     }
 }
@@ -74,6 +80,7 @@ pub(crate) trait AllowedOptions {
     const DATA: bool;
     const DB: bool;
     const RECOVERY_FN: bool;
+    const LRU: bool;
 }
 
 type Equals = syn::Token![=];
@@ -193,6 +200,20 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`data` option not allowed here",
+                    ));
+                }
+            } else if ident == "lru" {
+                if A::LRU {
+                    let _eq = Equals::parse(input)?;
+                    let lit = syn::LitInt::parse(input)?;
+                    let value = lit.base10_parse::<usize>()?;
+                    if let Some(old) = std::mem::replace(&mut options.lru, Some(value)) {
+                        return Err(syn::Error::new(old.span(), "option `lru` provided twice"));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`lru` option not allowed here",
                     ));
                 }
             } else {
