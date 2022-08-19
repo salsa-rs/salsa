@@ -24,6 +24,11 @@ pub struct FunctionId {
 // ANCHOR_END: interned_ids
 
 // ANCHOR: statements_and_expressions
+#[salsa::tracked]
+pub struct Program {
+    statements: Vec<Statement>,
+}
+
 #[salsa::interned]
 pub struct Statement {
     data: StatementData,
@@ -104,6 +109,14 @@ impl DebugWithDb<dyn crate::Db + '_> for Expression {
     }
 }
 // ANCHOR_END: expression_debug_impl
+
+impl DebugWithDb<dyn crate::Db + '_> for Program {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &dyn crate::Db) -> std::fmt::Result {
+        f.debug_struct("Program")
+            .field("statements", &self.statements(db))
+            .finish()
+    }
+}
 
 impl DebugWithDb<dyn crate::Db + '_> for FunctionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &dyn crate::Db) -> std::fmt::Result {

@@ -2,6 +2,7 @@
 #[salsa::jar(db = Db)]
 pub struct Jar(
     crate::ir::SourceProgram,
+    crate::ir::Program,
     crate::ir::VariableId,
     crate::ir::FunctionId,
     crate::ir::Expression,

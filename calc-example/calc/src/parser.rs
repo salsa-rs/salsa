@@ -1,13 +1,13 @@
 use ordered_float::OrderedFloat;
 
 use crate::ir::{
-    Diagnostic, Diagnostics, Expression, ExpressionData, Function, FunctionId, Op, SourceProgram,
-    Statement, StatementData, VariableId,
+    Diagnostic, Diagnostics, Expression, ExpressionData, Function, FunctionId, Op, Program,
+    SourceProgram, Statement, StatementData, VariableId,
 };
 
 // ANCHOR: parse_statements
 #[salsa::tracked(return_ref)]
-pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Vec<Statement> {
+pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program {
     // Get the source text from the database
     let source_text = source.text(db);
 
@@ -41,7 +41,7 @@ pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Vec<Statem
         }
     }
 
-    result
+    Program::new(db, result)
 }
 // ANCHOR_END: parse_statements
 
@@ -352,21 +352,15 @@ fn parse_print() {
     let actual = parse_string("print 1 + 2");
     let expected = expect_test::expect![[r#"
         (
-            [
-                ExpressionData::Op(
-                    Number(
-                        OrderedFloat(
-                            1.0,
-                        ),
+            Program {
+                statements: [
+                    Statement(
+                        Id {
+                            value: 1,
+                        },
                     ),
-                    Add,
-                    Number(
-                        OrderedFloat(
-                            2.0,
-                        ),
-                    ),
-                ),
-            ],
+                ],
+            },
             [],
         )"#]];
     expected.assert_eq(&actual);
@@ -386,85 +380,35 @@ fn parse_example() {
     );
     let expected = expect_test::expect![[r#"
         (
-            [
-                Function {
-                    name: "area_rectangle",
-                    args: [
-                        "w",
-                        "h",
-                    ],
-                    body: ExpressionData::Op(
-                        Variable(
-                            "w",
-                        ),
-                        Multiply,
-                        Variable(
-                            "h",
-                        ),
+            Program {
+                statements: [
+                    Statement(
+                        Id {
+                            value: 1,
+                        },
                     ),
-                },
-                Function {
-                    name: "area_circle",
-                    args: [
-                        "r",
-                    ],
-                    body: ExpressionData::Op(
-                        ExpressionData::Op(
-                            Number(
-                                OrderedFloat(
-                                    3.14,
-                                ),
-                            ),
-                            Multiply,
-                            Variable(
-                                "r",
-                            ),
-                        ),
-                        Multiply,
-                        Variable(
-                            "r",
-                        ),
+                    Statement(
+                        Id {
+                            value: 2,
+                        },
                     ),
-                },
-                Call(
-                    "area_rectangle",
-                    [
-                        Number(
-                            OrderedFloat(
-                                3.0,
-                            ),
-                        ),
-                        Number(
-                            OrderedFloat(
-                                4.0,
-                            ),
-                        ),
-                    ],
-                ),
-                Call(
-                    "area_circle",
-                    [
-                        Number(
-                            OrderedFloat(
-                                1.0,
-                            ),
-                        ),
-                    ],
-                ),
-                ExpressionData::Op(
-                    Number(
-                        OrderedFloat(
-                            11.0,
-                        ),
+                    Statement(
+                        Id {
+                            value: 3,
+                        },
                     ),
-                    Multiply,
-                    Number(
-                        OrderedFloat(
-                            2.0,
-                        ),
+                    Statement(
+                        Id {
+                            value: 4,
+                        },
                     ),
-                ),
-            ],
+                    Statement(
+                        Id {
+                            value: 5,
+                        },
+                    ),
+                ],
+            },
             [],
         )"#]];
     expected.assert_eq(&actual);
@@ -477,7 +421,9 @@ fn parse_error() {
     let actual = parse_string(source_text);
     let expected = expect_test::expect![[r#"
         (
-            [],
+            Program {
+                statements: [],
+            },
             [
                 Diagnostic { position: 10, message: "unexpected character" },
             ],
@@ -492,37 +438,15 @@ fn parse_precedence() {
     let actual = parse_string(source_text);
     let expected = expect_test::expect![[r#"
         (
-            [
-                ExpressionData::Op(
-                    ExpressionData::Op(
-                        Number(
-                            OrderedFloat(
-                                1.0,
-                            ),
-                        ),
-                        Add,
-                        ExpressionData::Op(
-                            Number(
-                                OrderedFloat(
-                                    2.0,
-                                ),
-                            ),
-                            Multiply,
-                            Number(
-                                OrderedFloat(
-                                    3.0,
-                                ),
-                            ),
-                        ),
+            Program {
+                statements: [
+                    Statement(
+                        Id {
+                            value: 1,
+                        },
                     ),
-                    Add,
-                    Number(
-                        OrderedFloat(
-                            4.0,
-                        ),
-                    ),
-                ),
-            ],
+                ],
+            },
             [],
         )"#]];
     expected.assert_eq(&actual);
