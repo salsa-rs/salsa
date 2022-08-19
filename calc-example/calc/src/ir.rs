@@ -35,9 +35,9 @@ pub struct Program {
 // ANCHOR: statements_and_expressions
 #[derive(Eq, PartialEq, Debug, Hash, new)]
 pub struct Statement {
-    span: Span,
+    pub span: Span,
 
-    data: StatementData,
+    pub data: StatementData,
 }
 
 #[derive(Eq, PartialEq, Debug, Hash)]
@@ -50,9 +50,9 @@ pub enum StatementData {
 
 #[derive(Eq, PartialEq, Debug, Hash, new)]
 pub struct Expression {
-    span: Span,
+    pub span: Span,
 
-    data: ExpressionData,
+    pub data: ExpressionData,
 }
 
 #[derive(Eq, PartialEq, Debug, Hash)]
@@ -159,6 +159,7 @@ pub struct Function {
 
     name_span: Span,
 
+    #[return_ref]
     args: Vec<VariableId>,
 
     #[return_ref]
@@ -176,9 +177,10 @@ pub struct Span {
 #[salsa::accumulator]
 pub struct Diagnostics(Diagnostic);
 
-#[derive(Clone, Debug)]
+#[derive(new, Clone, Debug)]
 pub struct Diagnostic {
-    pub position: usize,
+    pub start: usize,
+    pub end: usize,
     pub message: String,
 }
 // ANCHOR_END: diagnostic

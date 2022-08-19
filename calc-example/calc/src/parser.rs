@@ -79,10 +79,15 @@ impl Parser<'_> {
     // ANCHOR: report_error
     /// Report an error diagnostic at the current position.
     fn report_error(&self) {
+        let next_position = match self.peek() {
+            Some(ch) => self.position + ch.len_utf8(),
+            None => self.position,
+        };
         Diagnostics::push(
             self.db,
             Diagnostic {
-                position: self.position,
+                start: self.position,
+                end: next_position,
                 message: "unexpected character".to_string(),
             },
         );
