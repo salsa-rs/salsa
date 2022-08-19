@@ -5,11 +5,11 @@ pub struct Jar(
     crate::ir::Program,
     crate::ir::VariableId,
     crate::ir::FunctionId,
-    crate::ir::Expression,
-    crate::ir::Statement,
     crate::ir::Function,
     crate::ir::Diagnostics,
+    crate::ir::Span,
     crate::parser::parse_statements,
+    crate::type_check::type_check_program,
 );
 // ANCHOR_END: jar_struct
 

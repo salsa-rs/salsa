@@ -69,17 +69,49 @@ When you change the value of an input field, that increments a 'revision counter
 indicating that some inputs are different now.
 When we talk about a "revision" of the database, we are referring to the state of the database in between changes to the input values.
 
-## Tracked structs
+### Representing the parsed program
 
-Next we will define a **tracked struct** to represent the functions in our input.
+Next we will define a **tracked struct**.
 Whereas inputs represent the *start* of a computation, tracked structs represent intermediate values created during your computation.
-In this case, we are going to parse the raw input program, and create a `Function` for each of the functions defined by the user.
+
+In this case, the parser is going to take in the `SourceProgram` struct that we saw and return a `Program` that represents the fully parsed program:
+
+```rust
+{{#include ../../../calc-example/calc/src/ir.rs:program}}
+```
+
+Like with an input, the fields of a tracked struct are also stored in the database.
+Unlike an input, those fields are immutable (they cannot be "set"), and salsa compares them across revisions to know when they have changed.
+In this case, if parsing the input produced the same `Program` result (e.g., because the only change to the input was some trailing whitespace, perhaps),
+then subsequent parts of the computation won't need to re-execute.
+(We'll revisit the role of tracked structs in reuse more in future parts of the IR.)
+
+Apart from the fields being immutable, the API for working with a tracked struct is quite similar to an input:
+
+* You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Program::new(&db, some_staements)`)
+* You use a getter to read the value of a field, just like with an input (e.g., `my_func.statements(db)` to read the `statements` field).
+    * In this case, the field is tagged as `#[return_ref]`, which means that the getter will return a `&Vec<Statement>`, instead of cloning the vector.
+
+## Representing functions
+
+We will also use a tracked struct to represent each function:
+Next we will define a **tracked struct**.
+Whereas inputs represent the *start* of a computation, tracked structs represent intermediate values created during your computation.
+
+The `Function` struct is going to be created by the parser to represent each of the functions defined by the user:
 
 ```rust
 {{#include ../../../calc-example/calc/src/ir.rs:functions}}
 ```
 
-Unlike with inputs, the fields of tracked structs are immutable once created. Otherwise, working with a tracked struct is quite similar to an input:
+Like with an input, the fields of a tracked struct are also stored in the database.
+Unlike an input, those fields are immutable (they cannot be "set"), and salsa compares them across revisions to know when they have changed.
+If we had created some `Function` instance `f`, for example, we might find that `the f.body` field changes
+because the user changed the definition of `f`.
+This would mean that we have to re-execute those parts of the code that depended on `f.body`
+(but not those parts of the code that depended on the body of *other* functions).
+
+Apart from the fields being immutable, the API for working with a tracked struct is quite similar to an input:
 
 * You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Function::new(&db, some_name, some_args, some_body)`)
 * You use a getter to read the value of a field, just like with an input (e.g., `my_func.args(db)` to read the `args` field).
@@ -116,14 +148,6 @@ let f2 = FunctionId::new(&db, "my_string".to_string());
 assert_eq!(f1, f2);
 ```
 
-### Expressions and statements
-
-We'll also intern expressions and statements. This is convenient primarily because it allows us to have recursive structures very easily. Since we don't really need the "cheap equality comparison" aspect of interning, this isn't the most efficient choice, and many compilers would opt to represent expressions/statements in some other way.
-
-```rust
-{{#include ../../../calc-example/calc/src/ir.rs:statements_and_expressions}}
-```
-
 ### Interned ids are guaranteed to be consistent within a revision, but not across revisions (but you don't have to care)
 
 Interned ids are guaranteed not to change within a single revision, so you can intern things from all over your program and get back consistent results.
@@ -134,3 +158,16 @@ just a different one than they saw in a previous revision.
 In other words, within a salsa computation, you can assume that interning produces a single consistent integer, and you don't have to think about it.
 If however you export interned identifiers outside the computation, and then change the inputs, they may not longer be valid or may refer to different values.
 
+### Expressions and statements
+
+We'll won't use any special "salsa structs" for expressions and statements:
+
+```rust
+{{#include ../../../calc-example/calc/src/ir.rs:statements_and_expressions}}
+```
+
+Since statements and expressions are not tracked, this implies that we are only attempting to get incremental re-use at the granularity of functions --
+whenever anything in a function body changes, we consider the entire function body dirty and re-execute anything that depended on it.
+It usually makes sense to draw some kind of "reasonably coarse" boundary like this.
+
+One downside of the way we have set things up: we inlined the position into each of the structs.

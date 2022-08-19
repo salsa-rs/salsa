@@ -2,11 +2,11 @@ use ordered_float::OrderedFloat;
 
 use crate::ir::{
     Diagnostic, Diagnostics, Expression, ExpressionData, Function, FunctionId, Op, Program,
-    SourceProgram, Statement, StatementData, VariableId,
+    SourceProgram, Span, Statement, StatementData, VariableId,
 };
 
 // ANCHOR: parse_statements
-#[salsa::tracked(return_ref)]
+#[salsa::tracked]
 pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program {
     // Get the source text from the database
     let source_text = source.text(db);
@@ -93,34 +93,44 @@ impl Parser<'_> {
         self.source_text[self.position..].chars().next()
     }
 
+    // Returns a span ranging from `start_position` until the current position (exclusive)
+    fn span_from(&self, start_position: usize) -> Span {
+        Span::new(self.db, start_position, self.position)
+    }
+
     fn consume(&mut self, ch: char) {
         debug_assert!(self.peek() == Some(ch));
         self.position += ch.len_utf8();
     }
 
-    fn skip_whitespace(&mut self) {
+    /// Skips whitespace and returns the new position.
+    fn skip_whitespace(&mut self) -> usize {
         while let Some(ch) = self.peek() {
             if ch.is_whitespace() {
                 self.consume(ch);
             } else {
-                return;
+                break;
             }
         }
+        self.position
     }
 
     // ANCHOR: parse_statement
     fn parse_statement(&mut self) -> Option<Statement> {
-        self.skip_whitespace();
+        let start_position = self.skip_whitespace();
         let word = self.word()?;
         if word == "fn" {
             let func = self.parse_function()?;
-            Some(Statement::new(self.db, StatementData::Function(func)))
-            //   ^^^^^^^^^^^^^^^           ^^^^^^^^^^^^^^^^^^^^^^^
-            //  Create a new interned enum...      |
-            //                             using the "data" type.
+            Some(Statement::new(
+                self.span_from(start_position),
+                StatementData::Function(func),
+            ))
         } else if word == "print" {
             let expr = self.parse_expression()?;
-            Some(Statement::new(self.db, StatementData::Print(expr)))
+            Some(Statement::new(
+                self.span_from(start_position),
+                StatementData::Print(expr),
+            ))
         } else {
             None
         }
@@ -129,7 +139,9 @@ impl Parser<'_> {
 
     // ANCHOR: parse_function
     fn parse_function(&mut self) -> Option<Function> {
+        let start_position = self.skip_whitespace();
         let name = self.word()?;
+        let name_span = self.span_from(start_position);
         let name: FunctionId = FunctionId::new(self.db, name);
         //                     ^^^^^^^^^^^^^^^
         //                Create a new interned struct.
@@ -138,7 +150,7 @@ impl Parser<'_> {
         self.ch(')')?;
         self.ch('=')?;
         let body = self.parse_expression()?;
-        Some(Function::new(self.db, name, args, body))
+        Some(Function::new(self.db, name, name_span, args, body))
         //   ^^^^^^^^^^^^^
         // Create a new entity struct.
     }
@@ -149,9 +161,9 @@ impl Parser<'_> {
     }
 
     fn low_op(&mut self) -> Option<Op> {
-        if self.ch('+').is_some() {
+        if let Some(_) = self.ch('+') {
             Some(Op::Add)
-        } else if self.ch('-').is_some() {
+        } else if let Some(_) = self.ch('-') {
             Some(Op::Subtract)
         } else {
             None
@@ -166,9 +178,9 @@ impl Parser<'_> {
     }
 
     fn high_op(&mut self) -> Option<Op> {
-        if self.ch('*').is_some() {
+        if let Some(_) = self.ch('*') {
             Some(Op::Multiply)
-        } else if self.ch('/').is_some() {
+        } else if let Some(_) = self.ch('/') {
             Some(Op::Divide)
         } else {
             None
@@ -180,11 +192,15 @@ impl Parser<'_> {
         mut parse_expr: impl FnMut(&mut Self) -> Option<Expression>,
         mut op: impl FnMut(&mut Self) -> Option<Op>,
     ) -> Option<Expression> {
+        let start_position = self.skip_whitespace();
         let mut expr1 = parse_expr(self)?;
 
         while let Some(op) = op(self) {
             let expr2 = parse_expr(self)?;
-            expr1 = Expression::new(self.db, ExpressionData::Op(expr1, op, expr2));
+            expr1 = Expression::new(
+                self.span_from(start_position),
+                ExpressionData::Op(Box::new(expr1), op, Box::new(expr2)),
+            );
         }
 
         Some(expr1)
@@ -194,22 +210,29 @@ impl Parser<'_> {
     ///
     /// On failure, skips arbitrary tokens.
     fn parse_expression2(&mut self) -> Option<Expression> {
+        let start_position = self.skip_whitespace();
         if let Some(w) = self.word() {
-            if let Some(()) = self.ch('(') {
+            if let Some(_) = self.ch('(') {
                 let f = FunctionId::new(self.db, w);
                 let args = self.parse_expressions()?;
                 self.ch(')')?;
-                return Some(Expression::new(self.db, ExpressionData::Call(f, args)));
+                return Some(Expression::new(
+                    self.span_from(start_position),
+                    ExpressionData::Call(f, args),
+                ));
             }
 
             let v = VariableId::new(self.db, w);
-            Some(Expression::new(self.db, ExpressionData::Variable(v)))
+            Some(Expression::new(
+                self.span_from(start_position),
+                ExpressionData::Variable(v),
+            ))
         } else if let Some(n) = self.number() {
             Some(Expression::new(
-                self.db,
+                self.span_from(start_position),
                 ExpressionData::Number(OrderedFloat::from(n)),
             ))
-        } else if let Some(()) = self.ch('(') {
+        } else if let Some(_) = self.ch('(') {
             let expr = self.parse_expression()?;
             self.ch(')')?;
             Some(expr)
@@ -249,12 +272,12 @@ impl Parser<'_> {
     /// Parses a single character.
     ///
     /// Even on failure, only skips whitespace.
-    fn ch(&mut self, c: char) -> Option<()> {
-        self.skip_whitespace();
+    fn ch(&mut self, c: char) -> Option<Span> {
+        let start_position = self.skip_whitespace();
         match self.peek() {
             Some(p) if c == p => {
                 self.consume(c);
-                Some(())
+                Some(self.span_from(start_position))
             }
             _ => None,
         }
@@ -269,6 +292,7 @@ impl Parser<'_> {
         // In this loop, if we consume any characters, we always
         // return `Some`.
         let mut s = String::new();
+        let position = self.position;
         while let Some(ch) = self.peek() {
             if ch.is_alphabetic() || ch == '_' {
                 s.push(ch);
@@ -292,7 +316,7 @@ impl Parser<'_> {
     ///
     /// Even on failure, only skips whitespace.
     fn number(&mut self) -> Option<f64> {
-        self.skip_whitespace();
+        let start_position = self.skip_whitespace();
 
         self.probe(|this| {
             // 👆 We need the call to `probe` here because we could consume
@@ -354,11 +378,49 @@ fn parse_print() {
         (
             Program {
                 statements: [
-                    Statement(
-                        Id {
-                            value: 1,
-                        },
-                    ),
+                    Statement {
+                        span: Span(
+                            Id {
+                                value: 5,
+                            },
+                        ),
+                        data: Print(
+                            Expression {
+                                span: Span(
+                                    Id {
+                                        value: 4,
+                                    },
+                                ),
+                                data: Op(
+                                    Expression {
+                                        span: Span(
+                                            Id {
+                                                value: 1,
+                                            },
+                                        ),
+                                        data: Number(
+                                            OrderedFloat(
+                                                1.0,
+                                            ),
+                                        ),
+                                    },
+                                    Add,
+                                    Expression {
+                                        span: Span(
+                                            Id {
+                                                value: 3,
+                                            },
+                                        ),
+                                        data: Number(
+                                            OrderedFloat(
+                                                2.0,
+                                            ),
+                                        ),
+                                    },
+                                ),
+                            },
+                        ),
+                    },
                 ],
             },
             [],
@@ -382,31 +444,163 @@ fn parse_example() {
         (
             Program {
                 statements: [
-                    Statement(
-                        Id {
-                            value: 1,
-                        },
-                    ),
-                    Statement(
-                        Id {
-                            value: 2,
-                        },
-                    ),
-                    Statement(
-                        Id {
-                            value: 3,
-                        },
-                    ),
-                    Statement(
-                        Id {
-                            value: 4,
-                        },
-                    ),
-                    Statement(
-                        Id {
-                            value: 5,
-                        },
-                    ),
+                    Statement {
+                        span: Span(
+                            Id {
+                                value: 10,
+                            },
+                        ),
+                        data: Function(
+                            Function(
+                                Id {
+                                    value: 1,
+                                },
+                            ),
+                        ),
+                    },
+                    Statement {
+                        span: Span(
+                            Id {
+                                value: 22,
+                            },
+                        ),
+                        data: Function(
+                            Function(
+                                Id {
+                                    value: 2,
+                                },
+                            ),
+                        ),
+                    },
+                    Statement {
+                        span: Span(
+                            Id {
+                                value: 29,
+                            },
+                        ),
+                        data: Print(
+                            Expression {
+                                span: Span(
+                                    Id {
+                                        value: 28,
+                                    },
+                                ),
+                                data: Call(
+                                    FunctionId(
+                                        Id {
+                                            value: 1,
+                                        },
+                                    ),
+                                    [
+                                        Expression {
+                                            span: Span(
+                                                Id {
+                                                    value: 24,
+                                                },
+                                            ),
+                                            data: Number(
+                                                OrderedFloat(
+                                                    3.0,
+                                                ),
+                                            ),
+                                        },
+                                        Expression {
+                                            span: Span(
+                                                Id {
+                                                    value: 26,
+                                                },
+                                            ),
+                                            data: Number(
+                                                OrderedFloat(
+                                                    4.0,
+                                                ),
+                                            ),
+                                        },
+                                    ],
+                                ),
+                            },
+                        ),
+                    },
+                    Statement {
+                        span: Span(
+                            Id {
+                                value: 34,
+                            },
+                        ),
+                        data: Print(
+                            Expression {
+                                span: Span(
+                                    Id {
+                                        value: 33,
+                                    },
+                                ),
+                                data: Call(
+                                    FunctionId(
+                                        Id {
+                                            value: 2,
+                                        },
+                                    ),
+                                    [
+                                        Expression {
+                                            span: Span(
+                                                Id {
+                                                    value: 31,
+                                                },
+                                            ),
+                                            data: Number(
+                                                OrderedFloat(
+                                                    1.0,
+                                                ),
+                                            ),
+                                        },
+                                    ],
+                                ),
+                            },
+                        ),
+                    },
+                    Statement {
+                        span: Span(
+                            Id {
+                                value: 39,
+                            },
+                        ),
+                        data: Print(
+                            Expression {
+                                span: Span(
+                                    Id {
+                                        value: 38,
+                                    },
+                                ),
+                                data: Op(
+                                    Expression {
+                                        span: Span(
+                                            Id {
+                                                value: 35,
+                                            },
+                                        ),
+                                        data: Number(
+                                            OrderedFloat(
+                                                11.0,
+                                            ),
+                                        ),
+                                    },
+                                    Multiply,
+                                    Expression {
+                                        span: Span(
+                                            Id {
+                                                value: 37,
+                                            },
+                                        ),
+                                        data: Number(
+                                            OrderedFloat(
+                                                2.0,
+                                            ),
+                                        ),
+                                    },
+                                ),
+                            },
+                        ),
+                    },
                 ],
             },
             [],
@@ -440,11 +634,93 @@ fn parse_precedence() {
         (
             Program {
                 statements: [
-                    Statement(
-                        Id {
-                            value: 1,
-                        },
-                    ),
+                    Statement {
+                        span: Span(
+                            Id {
+                                value: 11,
+                            },
+                        ),
+                        data: Print(
+                            Expression {
+                                span: Span(
+                                    Id {
+                                        value: 10,
+                                    },
+                                ),
+                                data: Op(
+                                    Expression {
+                                        span: Span(
+                                            Id {
+                                                value: 7,
+                                            },
+                                        ),
+                                        data: Op(
+                                            Expression {
+                                                span: Span(
+                                                    Id {
+                                                        value: 1,
+                                                    },
+                                                ),
+                                                data: Number(
+                                                    OrderedFloat(
+                                                        1.0,
+                                                    ),
+                                                ),
+                                            },
+                                            Add,
+                                            Expression {
+                                                span: Span(
+                                                    Id {
+                                                        value: 6,
+                                                    },
+                                                ),
+                                                data: Op(
+                                                    Expression {
+                                                        span: Span(
+                                                            Id {
+                                                                value: 3,
+                                                            },
+                                                        ),
+                                                        data: Number(
+                                                            OrderedFloat(
+                                                                2.0,
+                                                            ),
+                                                        ),
+                                                    },
+                                                    Multiply,
+                                                    Expression {
+                                                        span: Span(
+                                                            Id {
+                                                                value: 5,
+                                                            },
+                                                        ),
+                                                        data: Number(
+                                                            OrderedFloat(
+                                                                3.0,
+                                                            ),
+                                                        ),
+                                                    },
+                                                ),
+                                            },
+                                        ),
+                                    },
+                                    Add,
+                                    Expression {
+                                        span: Span(
+                                            Id {
+                                                value: 9,
+                                            },
+                                        ),
+                                        data: Number(
+                                            OrderedFloat(
+                                                4.0,
+                                            ),
+                                        ),
+                                    },
+                                ),
+                            },
+                        ),
+                    },
                 ],
             },
             [],

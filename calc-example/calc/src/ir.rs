@@ -1,3 +1,4 @@
+use derive_new::new;
 use ordered_float::OrderedFloat;
 use salsa::debug::DebugWithDb;
 
@@ -23,18 +24,23 @@ pub struct FunctionId {
 }
 // ANCHOR_END: interned_ids
 
-// ANCHOR: statements_and_expressions
+// ANCHOR: program
 #[salsa::tracked]
 pub struct Program {
+    #[return_ref]
     statements: Vec<Statement>,
 }
+// ANCHOR_END: program
 
-#[salsa::interned]
+// ANCHOR: statements_and_expressions
+#[derive(Eq, PartialEq, Debug, Hash, new)]
 pub struct Statement {
+    span: Span,
+
     data: StatementData,
 }
 
-#[derive(Eq, PartialEq, Clone, Hash)]
+#[derive(Eq, PartialEq, Debug, Hash)]
 pub enum StatementData {
     /// Defines `fn <name>(<args>) = <body>`
     Function(Function),
@@ -42,15 +48,16 @@ pub enum StatementData {
     Print(Expression),
 }
 
-#[salsa::interned]
+#[derive(Eq, PartialEq, Debug, Hash, new)]
 pub struct Expression {
-    #[return_ref]
+    span: Span,
+
     data: ExpressionData,
 }
 
-#[derive(Eq, PartialEq, Clone, Hash)]
+#[derive(Eq, PartialEq, Debug, Hash)]
 pub enum ExpressionData {
-    Op(Expression, Op, Expression),
+    Op(Box<Expression>, Op, Box<Expression>),
     Number(OrderedFloat<f64>),
     Variable(VariableId),
     Call(FunctionId, Vec<Expression>),
@@ -77,7 +84,7 @@ impl DebugWithDb<dyn crate::Db + '_> for Function {
 
 impl DebugWithDb<dyn crate::Db + '_> for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &dyn crate::Db) -> std::fmt::Result {
-        match self.data(db) {
+        match &self.data {
             StatementData::Function(a) => DebugWithDb::fmt(&a, f, db),
             StatementData::Print(a) => DebugWithDb::fmt(&a, f, db),
         }
@@ -87,7 +94,7 @@ impl DebugWithDb<dyn crate::Db + '_> for Statement {
 // ANCHOR: expression_debug_impl
 impl DebugWithDb<dyn crate::Db + '_> for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &dyn crate::Db) -> std::fmt::Result {
-        match self.data(db) {
+        match &self.data {
             ExpressionData::Op(a, b, c) => f
                 .debug_tuple("ExpressionData::Op")
                 .field(&a.debug(db)) // use `a.debug(db)` for interned things
@@ -149,10 +156,21 @@ impl DebugWithDb<dyn crate::Db + '_> for Diagnostic {
 pub struct Function {
     #[id]
     name: FunctionId,
+
+    name_span: Span,
+
     args: Vec<VariableId>,
+
+    #[return_ref]
     body: Expression,
 }
 // ANCHOR_END: functions
+
+#[salsa::tracked]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
 
 // ANCHOR: diagnostic
 #[salsa::accumulator]
