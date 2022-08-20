@@ -1,4 +1,4 @@
-use heck::SnakeCase;
+use heck::ToSnakeCase;
 use proc_macro::TokenStream;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
