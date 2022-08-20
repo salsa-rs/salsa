@@ -81,6 +81,8 @@ impl crate::options::AllowedOptions for TrackedFn {
     const RECOVERY_FN: bool = true;
 
     const LRU: bool = true;
+
+    const CONSTRUCTOR_NAME: bool = false;
 }
 
 /// Returns the key type for this tracked function.

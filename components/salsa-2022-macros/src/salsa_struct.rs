@@ -52,6 +52,8 @@ impl crate::options::AllowedOptions for SalsaStruct {
     const RECOVERY_FN: bool = false;
 
     const LRU: bool = false;
+
+    const CONSTRUCTOR_NAME: bool = true;
 }
 
 const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
