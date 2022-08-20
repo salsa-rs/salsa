@@ -112,6 +112,16 @@ impl SalsaStruct {
         self.all_fields().map(|ef| ef.name()).collect()
     }
 
+    /// Names of getters of all fields
+    pub(crate) fn all_get_field_names(&self) -> Vec<&syn::Ident> {
+        self.all_fields().map(|ef| ef.get_name()).collect()
+    }
+
+    /// Names of setters of all fields
+    pub(crate) fn all_set_field_names(&self) -> Vec<&syn::Ident> {
+        self.all_fields().map(|ef| ef.set_name()).collect()
+    }
+
     /// Types of all fields (id and value).
     ///
     /// If this is an enum, empty vec.
@@ -308,6 +318,12 @@ pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(&str, fn(&syn::Attribute, &mut Sals
     ("id", |_, ef| ef.has_id_attr = true),
     ("return_ref", |_, ef| ef.has_ref_attr = true),
     ("no_eq", |_, ef| ef.has_no_eq_attr = true),
+    ("get", |attr, ef| {
+        ef.get_name = attr.parse_args().unwrap();
+    }),
+    ("set", |attr, ef| {
+        ef.set_name = attr.parse_args().unwrap();
+    }),
 ];
 
 pub(crate) struct SalsaField {
@@ -316,6 +332,8 @@ pub(crate) struct SalsaField {
     pub(crate) has_id_attr: bool,
     pub(crate) has_ref_attr: bool,
     pub(crate) has_no_eq_attr: bool,
+    get_name: syn::Ident,
+    set_name: syn::Ident,
 }
 
 impl SalsaField {
@@ -332,11 +350,15 @@ impl SalsaField {
             ));
         }
 
+        let get_name = Ident::new(&field_name_str, Span::call_site());
+        let set_name = Ident::new(&format!("set_{}", field_name_str), Span::call_site());
         let mut result = SalsaField {
             field: field.clone(),
             has_id_attr: false,
             has_ref_attr: false,
             has_no_eq_attr: false,
+            get_name,
+            set_name,
         };
 
         // Scan the attributes and look for the salsa attributes:
@@ -359,6 +381,16 @@ impl SalsaField {
     /// The type of this field (all `SalsaField` instances are named).
     pub(crate) fn ty(&self) -> &syn::Type {
         &self.field.ty
+    }
+
+    /// The name of this field's get method
+    pub(crate) fn get_name(&self) -> &syn::Ident {
+        &self.get_name
+    }
+
+    /// The name of this field's get method
+    pub(crate) fn set_name(&self) -> &syn::Ident {
+        &self.set_name
     }
 
     /// Do you clone the value of this field? (True if it is not a ref field)
