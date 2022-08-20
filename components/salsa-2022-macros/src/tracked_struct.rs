@@ -67,12 +67,13 @@ impl TrackedStruct {
 
         let id_field_indices: Vec<_> = self.id_field_indices();
         let id_field_names: Vec<_> = self.id_fields().map(SalsaField::name).collect();
+        let id_field_get_names: Vec<_> = self.id_fields().map(SalsaField::get_name).collect();
         let id_field_tys: Vec<_> = self.id_fields().map(SalsaField::ty).collect();
         let id_field_clones: Vec<_> = self.id_fields().map(SalsaField::is_clone_field).collect();
-        let id_field_getters: Vec<syn::ImplItemMethod> = id_field_indices.iter().zip(&id_field_names).zip(&id_field_tys).zip(&id_field_clones).map(|(((field_index, field_name), field_ty), is_clone_field)|
+        let id_field_getters: Vec<syn::ImplItemMethod> = id_field_indices.iter().zip(&id_field_get_names).zip(&id_field_tys).zip(&id_field_clones).map(|(((field_index, field_get_name), field_ty), is_clone_field)|
             if !*is_clone_field {
                 parse_quote! {
-                    pub fn #field_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty
+                    pub fn #field_get_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
@@ -81,7 +82,7 @@ impl TrackedStruct {
                 }
             } else {
                 parse_quote! {
-                    pub fn #field_name<'db>(self, __db: &'db #db_dyn_ty) -> #field_ty
+                    pub fn #field_get_name<'db>(self, __db: &'db #db_dyn_ty) -> #field_ty
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
@@ -95,14 +96,15 @@ impl TrackedStruct {
         let value_field_indices = self.value_field_indices();
         let value_field_names: Vec<_> = self.value_fields().map(SalsaField::name).collect();
         let value_field_tys: Vec<_> = self.value_fields().map(SalsaField::ty).collect();
+        let value_field_get_names: Vec<_> = self.value_fields().map(SalsaField::get_name).collect();
         let value_field_clones: Vec<_> = self
             .value_fields()
             .map(SalsaField::is_clone_field)
             .collect();
-        let value_field_getters: Vec<syn::ImplItemMethod> = value_field_indices.iter().zip(&value_field_names).zip(&value_field_tys).zip(&value_field_clones).map(|(((field_index, field_name), field_ty), is_clone_field)|
+        let value_field_getters: Vec<syn::ImplItemMethod> = value_field_indices.iter().zip(&value_field_get_names).zip(&value_field_tys).zip(&value_field_clones).map(|(((field_index, field_get_name), field_ty), is_clone_field)|
             if !*is_clone_field {
                 parse_quote! {
-                    pub fn #field_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty
+                    pub fn #field_get_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
@@ -111,7 +113,7 @@ impl TrackedStruct {
                 }
             } else {
                 parse_quote! {
-                    pub fn #field_name<'db>(self, __db: &'db #db_dyn_ty) -> #field_ty
+                    pub fn #field_get_name<'db>(self, __db: &'db #db_dyn_ty) -> #field_ty
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
