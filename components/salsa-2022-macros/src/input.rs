@@ -103,9 +103,10 @@ impl InputStruct {
         })
         .collect();
 
+        let constructor_name = self.constructor_name();
         parse_quote! {
             impl #ident {
-                pub fn new(__db: &mut #db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
+                pub fn #constructor_name(__db: &mut #db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient_mut(__jar);

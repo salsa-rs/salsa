@@ -91,8 +91,9 @@ impl InternedStruct {
         let field_names = self.all_field_names();
         let field_tys = self.all_field_tys();
         let data_ident = self.data_ident();
+        let constructor_name = self.constructor_name();
         let new_method: syn::ImplItemMethod = parse_quote! {
-            #vis fn new(
+            #vis fn #constructor_name(
                 db: &#db_dyn_ty,
                 #(#field_names: #field_tys,)*
             ) -> Self {

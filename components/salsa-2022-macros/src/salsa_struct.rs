@@ -26,7 +26,7 @@
 //!     * this could be optimized, particularly for interned fields
 
 use heck::CamelCase;
-use proc_macro2::Literal;
+use proc_macro2::{Ident, Literal, Span};
 
 use crate::{configuration, options::Options};
 
@@ -195,6 +195,14 @@ impl SalsaStruct {
         &self.struct_item.vis
     }
 
+    /// Returns the `constructor_name` in `Options` if it is `Some`, else `new`
+    pub(crate) fn constructor_name(&self) -> syn::Ident {
+        match self.args.constructor_name.clone() {
+            Some(name) => name,
+            None => Ident::new("new", Span::call_site()),
+        }
+    }
+
     /// For each of the fields passed as an argument,
     /// generate a struct named `Ident_Field` and an impl
     /// of `salsa::function::Configuration` for that struct.
@@ -343,12 +351,12 @@ impl SalsaField {
         Ok(result)
     }
 
-    /// The name of this field (all `EntityField` instances are named).
+    /// The name of this field (all `SalsaField` instances are named).
     pub(crate) fn name(&self) -> &syn::Ident {
         self.field.ident.as_ref().unwrap()
     }
 
-    /// The type of this field (all `EntityField` instances are named).
+    /// The type of this field (all `SalsaField` instances are named).
     pub(crate) fn ty(&self) -> &syn::Type {
         &self.field.ty
     }
