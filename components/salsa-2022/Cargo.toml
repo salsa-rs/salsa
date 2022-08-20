@@ -7,10 +7,10 @@ edition = "2021"
 
 [dependencies]
 crossbeam = "0.8.1"
-dashmap = "4.0.2"
+dashmap = "5.3.4"
 rustc-hash = "1.1.0"
 indexmap = "1.7.0"
-hashlink = "0.7.0"
+hashlink = "0.8.0"
 arc-swap = "1.4.0"
 crossbeam-utils = { version = "0.8", default-features = false }
 log = "0.4.5"
