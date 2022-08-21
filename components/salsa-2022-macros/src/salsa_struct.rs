@@ -25,8 +25,10 @@
 //! * data method `impl Foo { fn data(&self, db: &dyn crate::Db) -> FooData { FooData { f: self.f(db), ... } } }`
 //!     * this could be optimized, particularly for interned fields
 
+use syn::spanned::Spanned;
 use heck::ToUpperCamelCase;
-use proc_macro2::{Ident, Literal, Span};
+use proc_macro2::{Ident, Literal, Span, TokenStream};
+use quote::ToTokens;
 
 use crate::{configuration, options::Options};
 
@@ -290,6 +292,55 @@ impl SalsaStruct {
                 }
             }
 
+        }
+    }
+
+    /// Generate `impl salsa::DebugWithDb for Foo`
+    pub(crate) fn as_debug_with_db_impl(&self) -> syn::ItemImpl {
+        let ident = self.id_ident();
+
+        let db_type = self.db_dyn_ty();
+        let ident_string = ident.to_string();
+
+        let fields = self.all_fields().map(|field| {
+            let field_name_string = field.name().to_string();
+            let field_getter = field.get_name();
+            let field_ty = field.ty();
+            // If the field type implements DebugWithDb, use that.
+            // Otherwise, use Debug.
+            // That's the "has impl" trick (https://github.com/nvzqz/impls#how-it-works)
+            parse_quote_spanned! {field.field.span()=>
+                .field(#field_name_string, {
+                    struct Test<T, Db: ?Sized>(::core::marker::PhantomData<T>, ::core::marker::PhantomData<Db>);
+
+                    impl<T: ::salsa::debug::DebugWithDb<Db>, Db: ?Sized> Test<T, Db> {
+                        fn salsa_debug<'a, 'b: 'a>(a: &'a T, db: &'b Db) -> ::salsa::debug::DebugWith<'a, Db> {
+                            a.debug(db)
+                        }
+                    }
+
+                    trait Fallback<T: ::core::fmt::Debug, Db: ?Sized> {
+                        fn salsa_debug<'a, 'b>(a: &'a T, _db: &'b Db) -> &'a dyn ::core::fmt::Debug {
+                            a
+                        }
+                    }
+
+                    impl<Everything, Db: ?Sized, T: ::core::fmt::Debug> Fallback<T, Db> for Everything {}
+
+                    &Test::<#field_ty, #db_type>::salsa_debug(&self.#field_getter(db), db)
+                })
+            }
+        }).collect::<Vec<TokenStream>>();
+
+        parse_quote_spanned! {ident.span()=>
+            impl ::salsa::DebugWithDb<#db_type> for #ident {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, db: &#db_type) -> ::std::fmt::Result {
+                    f.debug_struct(#ident_string)
+                        .field("[salsa id]", &self.0.as_u32())
+                        #(#fields)*
+                        .finish()
+                }
+            }
         }
     }
 
