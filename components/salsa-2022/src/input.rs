@@ -15,6 +15,7 @@ where
 {
     ingredient_index: IngredientIndex,
     counter: u32,
+    debug_name: &'static str,
     _phantom: std::marker::PhantomData<Id>,
 }
 
@@ -22,10 +23,11 @@ impl<Id> InputIngredient<Id>
 where
     Id: InputId,
 {
-    pub fn new(index: IngredientIndex) -> Self {
+    pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
             ingredient_index: index,
             counter: Default::default(),
+            debug_name,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -94,6 +96,14 @@ where
         panic!(
             "unexpected call: input ingredients do not register for salsa struct deletion events"
         );
+    }
+
+    fn fmt_index(
+        &self,
+        _index: Option<crate::Id>,
+        _fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        todo!()
     }
 }
 

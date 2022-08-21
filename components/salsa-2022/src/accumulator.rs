@@ -148,6 +148,14 @@ where
     fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
         panic!("unexpected call: accumulator is not registered as a dependent fn");
     }
+
+    fn fmt_index(
+        &self,
+        _index: Option<crate::Id>,
+        _fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        todo!()
+    }
 }
 
 impl<Data> IngredientRequiresReset for AccumulatorIngredient<Data>

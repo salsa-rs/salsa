@@ -242,6 +242,9 @@ fn ingredients_for_impl(
     // set 0 as default to disable LRU
     let lru = args.lru.unwrap_or(0);
 
+    // get the name of the function as a string literal
+    let debug_name = Literal::string(&format!("{}", item_fn.sig.ident));
+
     parse_quote! {
         impl salsa::storage::IngredientsFor for #config_ty {
             type Ingredients = Self;
@@ -268,7 +271,7 @@ fn ingredients_for_impl(
                                     <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient_mut(jar);
                                 &mut ingredients.function
                             });
-                        let ingredient = salsa::function::FunctionIngredient::new(index);
+                        let ingredient = salsa::function::FunctionIngredient::new(index, #debug_name);
                         ingredient.set_capacity(#lru);
                         ingredient
                     }

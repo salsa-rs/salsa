@@ -135,6 +135,7 @@ impl InputStruct {
         let jar_ty = self.jar_ty();
         let all_field_indices: Vec<Literal> = self.all_field_indices();
         let input_index: Literal = self.input_index();
+        let debug_name = Literal::string(&format!("{}", self.id_ident()));
 
         parse_quote! {
             impl salsa::storage::IngredientsFor for #ident {
@@ -183,7 +184,7 @@ impl InputStruct {
                                     &mut ingredients.#input_index
                                 },
                             );
-                            salsa::input::InputIngredient::new(index)
+                            salsa::input::InputIngredient::new(index, #debug_name)
                         },
                     )
                 }

@@ -159,6 +159,10 @@ fn has_jars_dyn_impl(input: &syn::ItemStruct, storage: &syn::Ident) -> syn::Item
                 let ingredient = self.#storage.ingredient(ingredient);
                 ingredient.salsa_struct_deleted(self, id);
             }
+            fn fmt_index(&self, index: salsa::DependencyIndex, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                let ingredient = self.#storage.ingredient(ingredient);
+                ingredient.fmt_index(self, index, fmt)
+            }
         }
     }
 }

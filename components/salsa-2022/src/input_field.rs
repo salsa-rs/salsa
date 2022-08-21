@@ -113,6 +113,14 @@ where
     fn reset_for_new_revision(&mut self) {
         panic!("unexpected call: input fields don't register for resets");
     }
+
+    fn fmt_index(
+        &self,
+        _index: Option<crate::Id>,
+        _fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        todo!()
+    }
 }
 
 impl<K, F> IngredientRequiresReset for InputFieldIngredient<K, F>

@@ -59,6 +59,12 @@ pub trait Ingredient<DB: ?Sized> {
     /// **Important:** to actually receive resets, the ingredient must set
     /// [`IngredientRequiresReset::RESET_ON_NEW_REVISION`] to true.
     fn reset_for_new_revision(&mut self);
+
+    fn fmt_index(
+        &self,
+        index: Option<crate::Id>,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result;
 }
 
 /// Defines a const indicating if an ingredient needs to be reset each round.

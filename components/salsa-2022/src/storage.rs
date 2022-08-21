@@ -220,6 +220,12 @@ pub trait HasJarsDyn {
     /// as a dependent function using
     /// [`SalsaStructInDb::register_dependent_fn`](`crate::salsa_struct::SalsaStructInDb::register_dependent_fn`).
     fn salsa_struct_deleted(&self, ingredient: IngredientIndex, id: Id);
+
+    fn fmt_index(
+        &self,
+        index: DependencyIndex,
+        fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result;
 }
 // ANCHOR_END: HasJarsDyn
 

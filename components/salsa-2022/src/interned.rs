@@ -234,6 +234,14 @@ where
     fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
         panic!("unexpected call: interned ingredients do not register for salsa struct deletion events");
     }
+
+    fn fmt_index(
+        &self,
+        _index: Option<crate::Id>,
+        _fmt: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        todo!()
+    }
 }
 
 impl<Id, Data> IngredientRequiresReset for InternedIngredient<Id, Data>
