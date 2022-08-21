@@ -55,10 +55,10 @@ impl syn::parse::Parse for Args {
 }
 
 fn find_storage_field(input: &syn::ItemStruct) -> Result<syn::Ident, &'static str> {
-    let storage = format!("storage");
+    let storage = "storage";
     for field in input.fields.iter() {
         if let Some(i) = &field.ident {
-            if i.to_string() == storage {
+            if i == storage {
                 return Ok(i.clone());
             }
         } else {

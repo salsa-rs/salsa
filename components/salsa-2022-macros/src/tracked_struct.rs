@@ -279,14 +279,14 @@ impl TrackedStruct {
     /// of the function ingredients within that tuple.
     fn value_field_indices(&self) -> Vec<Literal> {
         (0..self.value_fields().count())
-            .map(|i| Literal::usize_unsuffixed(i))
+            .map(Literal::usize_unsuffixed)
             .collect()
     }
 
     /// Indices of each of the id fields
     fn id_field_indices(&self) -> Vec<Literal> {
         (0..self.id_fields().count())
-            .map(|i| Literal::usize_unsuffixed(i))
+            .map(Literal::usize_unsuffixed)
             .collect()
     }
 }
