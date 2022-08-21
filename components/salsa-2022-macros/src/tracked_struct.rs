@@ -159,6 +159,7 @@ impl TrackedStruct {
         let value_field_indices: Vec<Literal> = self.value_field_indices();
         let tracked_struct_index: Literal = self.tracked_struct_index();
         let config_struct_names = config_structs.iter().map(|s| &s.ident);
+        let debug_name = Literal::string(&self.id_ident().to_string());
 
         parse_quote! {
             impl salsa::storage::IngredientsFor for #ident {
@@ -191,7 +192,7 @@ impl TrackedStruct {
                                         &mut ingredients.#value_field_indices
                                     },
                                 );
-                                salsa::function::FunctionIngredient::new(index)
+                                salsa::function::FunctionIngredient::new(index, #debug_name)
                             },
                         )*
                         {

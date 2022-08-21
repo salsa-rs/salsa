@@ -243,7 +243,7 @@ fn ingredients_for_impl(
     let lru = args.lru.unwrap_or(0);
 
     // get the name of the function as a string literal
-    let debug_name = Literal::string(&format!("{}", item_fn.sig.ident));
+    let debug_name = Literal::string(&item_fn.sig.ident.to_string());
 
     parse_quote! {
         impl salsa::storage::IngredientsFor for #config_ty {
