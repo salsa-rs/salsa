@@ -34,6 +34,8 @@ impl crate::options::AllowedOptions for Accumulator {
     const RECOVERY_FN: bool = false;
 
     const LRU: bool = false;
+
+    const CONSTRUCTOR_NAME: bool = false;
 }
 
 fn accumulator_contents(

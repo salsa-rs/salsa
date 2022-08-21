@@ -64,13 +64,14 @@ impl InputStruct {
         let input_index = self.input_index();
 
         let field_indices = self.all_field_indices();
-        let field_names: Vec<_> = self.all_field_names();
+        let field_names = self.all_field_names();
         let field_tys: Vec<_> = self.all_field_tys();
         let field_clones: Vec<_> = self.all_fields().map(SalsaField::is_clone_field).collect();
-        let field_getters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&field_names).zip(&field_tys).zip(&field_clones).map(|(((field_index, field_name), field_ty), is_clone_field)|
+        let get_field_names: Vec<_> = self.all_get_field_names();
+        let field_getters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&get_field_names).zip(&field_tys).zip(&field_clones).map(|(((field_index, get_field_name), field_ty), is_clone_field)|
             if !*is_clone_field {
                 parse_quote! {
-                    pub fn #field_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty
+                    pub fn #get_field_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
@@ -79,7 +80,7 @@ impl InputStruct {
                 }
             } else {
                 parse_quote! {
-                    pub fn #field_name<'db>(self, __db: &'db #db_dyn_ty) -> #field_ty
+                    pub fn #get_field_name<'db>(self, __db: &'db #db_dyn_ty) -> #field_ty
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
@@ -90,8 +91,8 @@ impl InputStruct {
         )
         .collect();
 
-        let field_setters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&field_names).zip(&field_tys).map(|((field_index, field_name), field_ty)| {
-            let set_field_name = syn::Ident::new(&format!("set_{}", field_name), field_name.span());
+        let set_field_names = self.all_set_field_names();
+        let field_setters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&set_field_names).zip(&field_tys).map(|((field_index, set_field_name), field_ty)| {
             parse_quote! {
                 pub fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty, __value: #field_ty) -> #field_ty
                 {
@@ -103,9 +104,10 @@ impl InputStruct {
         })
         .collect();
 
+        let constructor_name = self.constructor_name();
         parse_quote! {
             impl #ident {
-                pub fn new(__db: &mut #db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
+                pub fn #constructor_name(__db: &mut #db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient_mut(__jar);
