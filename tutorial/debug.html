@@ -169,7 +169,7 @@ This is tedious but not difficult. Here is an example of implementing the trait 
 </span><span class="boring">fn main() {
 </span>impl DebugWithDb&lt;dyn crate::Db + '_&gt; for Expression {
     fn fmt(&amp;self, f: &amp;mut std::fmt::Formatter&lt;'_&gt;, db: &amp;dyn crate::Db) -&gt; std::fmt::Result {
-        match self.data(db) {
+        match &amp;self.data {
             ExpressionData::Op(a, b, c) =&gt; f
                 .debug_tuple(&quot;ExpressionData::Op&quot;)
                 .field(&amp;a.debug(db)) // use `a.debug(db)` for interned things
@@ -219,16 +219,29 @@ impl DebugWithDb&lt;dyn crate::Db + '_&gt; for Diagnostic {
 pub struct Function {
     #[id]
     name: FunctionId,
+
+    name_span: Span,
+
+    #[return_ref]
     args: Vec&lt;VariableId&gt;,
+
+    #[return_ref]
     body: Expression,
+}
+
+#[salsa::tracked]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
 }
 
 #[salsa::accumulator]
 pub struct Diagnostics(Diagnostic);
 
-#[derive(Clone, Debug)]
+#[derive(new, Clone, Debug)]
 pub struct Diagnostic {
-    pub position: usize,
+    pub start: usize,
+    pub end: usize,
     pub message: String,
 }
 <span class="boring">}
@@ -271,21 +284,53 @@ fn parse_print() {
     let actual = parse_string(&quot;print 1 + 2&quot;);
     let expected = expect_test::expect![[r#&quot;
         (
-            [
-                ExpressionData::Op(
-                    Number(
-                        OrderedFloat(
-                            1.0,
+            Program {
+                statements: [
+                    Statement {
+                        span: Span(
+                            Id {
+                                value: 5,
+                            },
                         ),
-                    ),
-                    Add,
-                    Number(
-                        OrderedFloat(
-                            2.0,
+                        data: Print(
+                            Expression {
+                                span: Span(
+                                    Id {
+                                        value: 4,
+                                    },
+                                ),
+                                data: Op(
+                                    Expression {
+                                        span: Span(
+                                            Id {
+                                                value: 1,
+                                            },
+                                        ),
+                                        data: Number(
+                                            OrderedFloat(
+                                                1.0,
+                                            ),
+                                        ),
+                                    },
+                                    Add,
+                                    Expression {
+                                        span: Span(
+                                            Id {
+                                                value: 3,
+                                            },
+                                        ),
+                                        data: Number(
+                                            OrderedFloat(
+                                                2.0,
+                                            ),
+                                        ),
+                                    },
+                                ),
+                            },
                         ),
-                    ),
-                ),
-            ],
+                    },
+                ],
+            },
             [],
         )&quot;#]];
     expected.assert_eq(&amp;actual);

@@ -164,14 +164,18 @@ This permits the crates to define private functions and other things that are me
 </span><span class="boring">fn main() {
 </span>#[salsa::jar(db = Db)]
 pub struct Jar(
+    crate::compile::compile,
     crate::ir::SourceProgram,
+    crate::ir::Program,
     crate::ir::VariableId,
     crate::ir::FunctionId,
-    crate::ir::Expression,
-    crate::ir::Statement,
     crate::ir::Function,
     crate::ir::Diagnostics,
+    crate::ir::Span,
     crate::parser::parse_statements,
+    crate::type_check::type_check_program,
+    crate::type_check::type_check_function,
+    crate::type_check::find_function,
 );
 <span class="boring">}
 </span></code></pre></pre>

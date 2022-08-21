@@ -157,9 +157,10 @@ In our case, we define an accumulator struct called <code>Diagnostics</code> in 
 </span>#[salsa::accumulator]
 pub struct Diagnostics(Diagnostic);
 
-#[derive(Clone, Debug)]
+#[derive(new, Clone, Debug)]
 pub struct Diagnostic {
-    pub position: usize,
+    pub start: usize,
+    pub end: usize,
     pub message: String,
 }
 <span class="boring">}
@@ -175,10 +176,15 @@ or any function that it called
 </span><span class="boring">fn main() {
 </span>    /// Report an error diagnostic at the current position.
     fn report_error(&amp;self) {
+        let next_position = match self.peek() {
+            Some(ch) =&gt; self.position + ch.len_utf8(),
+            None =&gt; self.position,
+        };
         Diagnostics::push(
             self.db,
             Diagnostic {
-                position: self.position,
+                start: self.position,
+                end: next_position,
                 message: &quot;unexpected character&quot;.to_string(),
             },
         );

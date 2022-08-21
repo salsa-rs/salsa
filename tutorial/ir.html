@@ -209,10 +209,39 @@ as explained in <a href="../overview.html#goal-of-salsa">the overview</a>.
 When you change the value of an input field, that increments a 'revision counter' in the database,
 indicating that some inputs are different now.
 When we talk about a &quot;revision&quot; of the database, we are referring to the state of the database in between changes to the input values.</p>
-<h2 id="tracked-structs"><a class="header" href="#tracked-structs">Tracked structs</a></h2>
-<p>Next we will define a <strong>tracked struct</strong> to represent the functions in our input.
-Whereas inputs represent the <em>start</em> of a computation, tracked structs represent intermediate values created during your computation.
-In this case, we are going to parse the raw input program, and create a <code>Function</code> for each of the functions defined by the user.</p>
+<h3 id="representing-the-parsed-program"><a class="header" href="#representing-the-parsed-program">Representing the parsed program</a></h3>
+<p>Next we will define a <strong>tracked struct</strong>.
+Whereas inputs represent the <em>start</em> of a computation, tracked structs represent intermediate values created during your computation.</p>
+<p>In this case, the parser is going to take in the <code>SourceProgram</code> struct that we saw and return a <code>Program</code> that represents the fully parsed program:</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[salsa::tracked]
+pub struct Program {
+    #[return_ref]
+    statements: Vec&lt;Statement&gt;,
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>Like with an input, the fields of a tracked struct are also stored in the database.
+Unlike an input, those fields are immutable (they cannot be &quot;set&quot;), and salsa compares them across revisions to know when they have changed.
+In this case, if parsing the input produced the same <code>Program</code> result (e.g., because the only change to the input was some trailing whitespace, perhaps),
+then subsequent parts of the computation won't need to re-execute.
+(We'll revisit the role of tracked structs in reuse more in future parts of the IR.)</p>
+<p>Apart from the fields being immutable, the API for working with a tracked struct is quite similar to an input:</p>
+<ul>
+<li>You can create a new value by using <code>new</code>, but with a tracked struct, you only need an <code>&amp;dyn</code> database, not <code>&amp;mut</code> (e.g., <code>Program::new(&amp;db, some_staements)</code>)</li>
+<li>You use a getter to read the value of a field, just like with an input (e.g., <code>my_func.statements(db)</code> to read the <code>statements</code> field).
+<ul>
+<li>In this case, the field is tagged as <code>#[return_ref]</code>, which means that the getter will return a <code>&amp;Vec&lt;Statement&gt;</code>, instead of cloning the vector.</li>
+</ul>
+</li>
+</ul>
+<h2 id="representing-functions"><a class="header" href="#representing-functions">Representing functions</a></h2>
+<p>We will also use a tracked struct to represent each function:
+Next we will define a <strong>tracked struct</strong>.
+Whereas inputs represent the <em>start</em> of a computation, tracked structs represent intermediate values created during your computation.</p>
+<p>The <code>Function</code> struct is going to be created by the parser to represent each of the functions defined by the user:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -220,12 +249,24 @@ In this case, we are going to parse the raw input program, and create a <code>Fu
 pub struct Function {
     #[id]
     name: FunctionId,
+
+    name_span: Span,
+
+    #[return_ref]
     args: Vec&lt;VariableId&gt;,
+
+    #[return_ref]
     body: Expression,
 }
 <span class="boring">}
 </span></code></pre></pre>
-<p>Unlike with inputs, the fields of tracked structs are immutable once created. Otherwise, working with a tracked struct is quite similar to an input:</p>
+<p>Like with an input, the fields of a tracked struct are also stored in the database.
+Unlike an input, those fields are immutable (they cannot be &quot;set&quot;), and salsa compares them across revisions to know when they have changed.
+If we had created some <code>Function</code> instance <code>f</code>, for example, we might find that <code>the f.body</code> field changes
+because the user changed the definition of <code>f</code>.
+This would mean that we have to re-execute those parts of the code that depended on <code>f.body</code>
+(but not those parts of the code that depended on the body of <em>other</em> functions).</p>
+<p>Apart from the fields being immutable, the API for working with a tracked struct is quite similar to an input:</p>
 <ul>
 <li>You can create a new value by using <code>new</code>, but with a tracked struct, you only need an <code>&amp;dyn</code> database, not <code>&amp;mut</code> (e.g., <code>Function::new(&amp;db, some_name, some_args, some_body)</code>)</li>
 <li>You use a getter to read the value of a field, just like with an input (e.g., <code>my_func.args(db)</code> to read the <code>args</code> field).</li>
@@ -270,17 +311,26 @@ let f2 = FunctionId::new(&amp;db, &quot;my_string&quot;.to_string());
 assert_eq!(f1, f2);
 <span class="boring">}
 </span></code></pre></pre>
+<h3 id="interned-ids-are-guaranteed-to-be-consistent-within-a-revision-but-not-across-revisions-but-you-dont-have-to-care"><a class="header" href="#interned-ids-are-guaranteed-to-be-consistent-within-a-revision-but-not-across-revisions-but-you-dont-have-to-care">Interned ids are guaranteed to be consistent within a revision, but not across revisions (but you don't have to care)</a></h3>
+<p>Interned ids are guaranteed not to change within a single revision, so you can intern things from all over your program and get back consistent results.
+When you change the inputs, however, salsa may opt to clear some of the interned values and choose different integers.
+However, if this happens, it will also be sure to re-execute every function that interned that value, so all of them still see a consistent value,
+just a different one than they saw in a previous revision.</p>
+<p>In other words, within a salsa computation, you can assume that interning produces a single consistent integer, and you don't have to think about it.
+If however you export interned identifiers outside the computation, and then change the inputs, they may not longer be valid or may refer to different values.</p>
 <h3 id="expressions-and-statements"><a class="header" href="#expressions-and-statements">Expressions and statements</a></h3>
-<p>We'll also intern expressions and statements. This is convenient primarily because it allows us to have recursive structures very easily. Since we don't really need the &quot;cheap equality comparison&quot; aspect of interning, this isn't the most efficient choice, and many compilers would opt to represent expressions/statements in some other way.</p>
+<p>We'll won't use any special &quot;salsa structs&quot; for expressions and statements:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>#[salsa::interned]
+</span>#[derive(Eq, PartialEq, Debug, Hash, new)]
 pub struct Statement {
-    data: StatementData,
+    pub span: Span,
+
+    pub data: StatementData,
 }
 
-#[derive(Eq, PartialEq, Clone, Hash)]
+#[derive(Eq, PartialEq, Debug, Hash)]
 pub enum StatementData {
     /// Defines `fn &lt;name&gt;(&lt;args&gt;) = &lt;body&gt;`
     Function(Function),
@@ -288,15 +338,16 @@ pub enum StatementData {
     Print(Expression),
 }
 
-#[salsa::interned]
+#[derive(Eq, PartialEq, Debug, Hash, new)]
 pub struct Expression {
-    #[return_ref]
-    data: ExpressionData,
+    pub span: Span,
+
+    pub data: ExpressionData,
 }
 
-#[derive(Eq, PartialEq, Clone, Hash)]
+#[derive(Eq, PartialEq, Debug, Hash)]
 pub enum ExpressionData {
-    Op(Expression, Op, Expression),
+    Op(Box&lt;Expression&gt;, Op, Box&lt;Expression&gt;),
     Number(OrderedFloat&lt;f64&gt;),
     Variable(VariableId),
     Call(FunctionId, Vec&lt;Expression&gt;),
@@ -311,13 +362,10 @@ pub enum Op {
 }
 <span class="boring">}
 </span></code></pre></pre>
-<h3 id="interned-ids-are-guaranteed-to-be-consistent-within-a-revision-but-not-across-revisions-but-you-dont-have-to-care"><a class="header" href="#interned-ids-are-guaranteed-to-be-consistent-within-a-revision-but-not-across-revisions-but-you-dont-have-to-care">Interned ids are guaranteed to be consistent within a revision, but not across revisions (but you don't have to care)</a></h3>
-<p>Interned ids are guaranteed not to change within a single revision, so you can intern things from all over your program and get back consistent results.
-When you change the inputs, however, salsa may opt to clear some of the interned values and choose different integers.
-However, if this happens, it will also be sure to re-execute every function that interned that value, so all of them still see a consistent value,
-just a different one than they saw in a previous revision.</p>
-<p>In other words, within a salsa computation, you can assume that interning produces a single consistent integer, and you don't have to think about it.
-If however you export interned identifiers outside the computation, and then change the inputs, they may not longer be valid or may refer to different values.</p>
+<p>Since statements and expressions are not tracked, this implies that we are only attempting to get incremental re-use at the granularity of functions --
+whenever anything in a function body changes, we consider the entire function body dirty and re-execute anything that depended on it.
+It usually makes sense to draw some kind of &quot;reasonably coarse&quot; boundary like this.</p>
+<p>One downside of the way we have set things up: we inlined the position into each of the structs.</p>
 
                     </main>
 

@@ -156,6 +156,10 @@ the one which starts up the program, supplies the inputs, and relays the outputs
 </span>#[salsa::db(crate::Jar)]
 pub(crate) struct Database {
     storage: salsa::Storage&lt;Self&gt;,
+
+    // The logs are only used for testing and demonstrating reuse:
+    //
+    logs: Option&lt;Arc&lt;Mutex&lt;Vec&lt;String&gt;&gt;&gt;&gt;,
 }
 <span class="boring">}
 </span></code></pre></pre>
@@ -173,6 +177,22 @@ This means that</p>
     fn salsa_runtime(&amp;self) -&gt; &amp;salsa::Runtime {
         self.storage.runtime()
     }
+
+    fn salsa_event(&amp;self, event: salsa::Event) {
+        // Log interesting events, if logging is enabled
+        if let Some(logs) = &amp;self.logs {
+            match event.kind {
+                salsa::EventKind::WillExecute { .. } =&gt; {
+                    logs.lock()
+                        .unwrap()
+                        .push(format!(&quot;Event: {:?}&quot;, event.debug(self)));
+                }
+                _ =&gt; {
+                    // don't log boring events
+                }
+            }
+        }
+    }
 }
 <span class="boring">}
 </span></code></pre></pre>
@@ -185,6 +205,7 @@ This means that</p>
     fn snapshot(&amp;self) -&gt; salsa::Snapshot&lt;Self&gt; {
         salsa::Snapshot::new(Database {
             storage: self.storage.snapshot(),
+            logs: self.logs.clone(),
         })
     }
 }
@@ -199,6 +220,7 @@ This means that</p>
     fn default() -&gt; Self {
         Self {
             storage: Default::default(),
+            logs: None,
         }
     }
 }

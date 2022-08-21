@@ -158,8 +158,8 @@ We're going to focus only on the salsa-related aspects.</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>#[salsa::tracked(return_ref)]
-pub fn parse_statements(db: &amp;dyn crate::Db, source: SourceProgram) -&gt; Vec&lt;Statement&gt; {
+</span>#[salsa::tracked]
+pub fn parse_statements(db: &amp;dyn crate::Db, source: SourceProgram) -&gt; Program {
     // Get the source text from the database
     let source_text = source.text(db);
 
@@ -193,7 +193,7 @@ pub fn parse_statements(db: &amp;dyn crate::Db, source: SourceProgram) -&gt; Vec
         }
     }
 
-    result
+    Program::new(db, result)
 }
 <span class="boring">}
 </span></code></pre></pre>
