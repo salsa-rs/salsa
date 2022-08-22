@@ -290,6 +290,7 @@ fn wrapper_fns(
     let accumulated_fn = accumulated_fn(args, item_fn, config_ty)?;
     let setter_fn = setter_fn(args, item_fn, config_ty)?;
     let specify_fn = specify_fn(args, item_fn, config_ty)?.map(|f| quote! { #f });
+    let set_lru_fn = set_lru_capacity_fn(args, config_ty)?.map(|f| quote! { #f });
 
     let setter_impl: syn::ItemImpl = parse_quote! {
         impl #config_ty {
@@ -301,6 +302,8 @@ fn wrapper_fns(
 
             #[allow(dead_code, clippy::needless_lifetimes)]
             #accumulated_fn
+
+            #set_lru_fn
 
             #specify_fn
         }
@@ -415,6 +418,39 @@ fn setter_fn(
             }
         },
     })
+}
+
+/// Create a `set_lru_capacity` associated function that can be used to change LRU
+/// capacity at runtime.
+/// Note that this function is only generated if the tracked function has the lru option set.
+///
+/// # Examples
+///
+/// ```rust
+/// #[salsa::tracked(lru=32)]
+/// fn my_tracked_fn(db: &dyn crate::Db, ...) { }
+///
+/// my_tracked_fn::set_lru_capacity(16)
+/// ```
+fn set_lru_capacity_fn(
+    args: &Args,
+    config_ty: &syn::Type,
+) -> syn::Result<Option<syn::ImplItemMethod>> {
+    if args.lru.is_none() {
+        return Ok(None);
+    }
+
+    let jar_ty = args.jar_ty();
+    let lru_fn = parse_quote! {
+        #[allow(dead_code, clippy::needless_lifetimes)]
+        fn set_lru_capacity(__db: &salsa::function::DynDb<Self>, __value: usize) {
+            let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
+            let __ingredients =
+                <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient(__jar);
+            __ingredients.function.set_capacity(__value);
+        }
+    };
+    Ok(Some(lru_fn))
 }
 
 fn specify_fn(
