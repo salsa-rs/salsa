@@ -103,15 +103,15 @@ fn basic() {
     // * the struct itself
     // * the struct's field
     // * the `contribution_from_struct` result
-    input.set_field(&mut db, 2);
+    input.set_field(&mut db).to(2);
     assert_eq!(final_result(&db, input), 1 * 2 + 0 * 2);
     db.assert_logs(expect![[r#"
         [
             "intermediate_result(MyInput(Id { value: 1 }))",
-            "salsa_event(WillDiscardStaleOutput { execute_key: DependencyIndex { ingredient_index: IngredientIndex(5), key_index: Some(Id { value: 1 }) }, output_key: DependencyIndex { ingredient_index: IngredientIndex(3), key_index: Some(Id { value: 3 }) } })",
-            "salsa_event(DidDiscard { key: DependencyIndex { ingredient_index: IngredientIndex(3), key_index: Some(Id { value: 3 }) } })",
-            "salsa_event(DidDiscard { key: DependencyIndex { ingredient_index: IngredientIndex(2), key_index: Some(Id { value: 3 }) } })",
-            "salsa_event(DidDiscard { key: DependencyIndex { ingredient_index: IngredientIndex(6), key_index: Some(Id { value: 3 }) } })",
+            "salsa_event(WillDiscardStaleOutput { execute_key: create_tracked_structs(0), output_key: MyTracked(2) })",
+            "salsa_event(DidDiscard { key: MyTracked(2) })",
+            "salsa_event(DidDiscard { key: field(2) })",
+            "salsa_event(DidDiscard { key: contribution_from_struct(2) })",
             "final_result(MyInput(Id { value: 1 }))",
         ]"#]]);
 }

@@ -1,7 +1,7 @@
 use std::panic::UnwindSafe;
 
 use salsa::{Durability, ParallelDatabase, Snapshot};
-use test_env_log::test;
+use test_log::test;
 
 // Axes:
 //

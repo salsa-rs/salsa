@@ -11,7 +11,7 @@ description = "Procedural macros for the salsa crate"
 proc-macro = true
 
 [dependencies]
-heck = "0.3"
+heck = "0.4"
 proc-macro2 = "1.0"
 quote = "1.0"
 syn = { version = "1.0", features = ["full", "extra-traits"] }

@@ -81,7 +81,7 @@ fn test1() {
     "#]]
     .assert_debug_eq(&compute::accumulated::<Integers>(&db, l1));
 
-    l0.set_value(&mut db, 2);
+    l0.set_value(&mut db).to(2);
     compute(&db, l1);
     expect![[r#"
         [

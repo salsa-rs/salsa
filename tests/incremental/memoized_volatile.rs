@@ -1,6 +1,6 @@
 use crate::implementation::{TestContext, TestContextImpl};
 use salsa::{Database, Durability};
-use test_env_log::test;
+use test_log::test;
 
 #[salsa::query_group(MemoizedVolatile)]
 pub(crate) trait MemoizedVolatileContext: TestContext {

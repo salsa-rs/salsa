@@ -11,8 +11,8 @@ use expect_test::expect;
 struct Jar(
     MyInput,
     MyTracked,
-    final_result_deponds_on_x,
-    final_result_deponds_on_y,
+    final_result_depends_on_x,
+    final_result_depends_on_y,
     intermediate_result,
 );
 
@@ -24,14 +24,14 @@ struct MyInput {
 }
 
 #[salsa::tracked(jar = Jar)]
-fn final_result_deponds_on_x(db: &dyn Db, input: MyInput) -> u32 {
-    db.push_log(format!("final_result_deponds_on_x({:?})", input));
+fn final_result_depends_on_x(db: &dyn Db, input: MyInput) -> u32 {
+    db.push_log(format!("final_result_depends_on_x({:?})", input));
     intermediate_result(db, input).x(db) * 2
 }
 
 #[salsa::tracked(jar = Jar)]
-fn final_result_deponds_on_y(db: &dyn Db, input: MyInput) -> u32 {
-    db.push_log(format!("final_result_deponds_on_y({:?})", input));
+fn final_result_depends_on_y(db: &dyn Db, input: MyInput) -> u32 {
+    db.push_log(format!("final_result_depends_on_y({:?})", input));
     intermediate_result(db, input).y(db) * 2
 }
 
@@ -71,39 +71,39 @@ impl HasLogger for Database {
 fn execute() {
     // x = (input.field + 1) / 2
     // y = input.field / 2
-    // final_result_deponds_on_x = x * 2 = (input.field + 1) / 2 * 2
-    // final_result_deponds_on_y = y * 2 = input.field / 2 * 2
+    // final_result_depends_on_x = x * 2 = (input.field + 1) / 2 * 2
+    // final_result_depends_on_y = y * 2 = input.field / 2 * 2
     let mut db = Database::default();
 
     // intermediate results:
     // x = (22 + 1) / 2 = 11
     // y = 22 / 2 = 11
     let input = MyInput::new(&mut db, 22);
-    assert_eq!(final_result_deponds_on_x(&db, input), 22);
+    assert_eq!(final_result_depends_on_x(&db, input), 22);
     db.assert_logs(expect![[r#"
         [
-            "final_result_deponds_on_x(MyInput(Id { value: 1 }))",
+            "final_result_depends_on_x(MyInput(Id { value: 1 }))",
         ]"#]]);
 
-    assert_eq!(final_result_deponds_on_y(&db, input), 22);
+    assert_eq!(final_result_depends_on_y(&db, input), 22);
     db.assert_logs(expect![[r#"
         [
-            "final_result_deponds_on_y(MyInput(Id { value: 1 }))",
+            "final_result_depends_on_y(MyInput(Id { value: 1 }))",
         ]"#]]);
 
-    input.set_field(&mut db, 23);
+    input.set_field(&mut db).to(23);
     // x = (23 + 1) / 2 = 12
     // Intermediate result x changes, so final result depends on x
     // needs to be recomputed;
-    assert_eq!(final_result_deponds_on_x(&db, input), 24);
+    assert_eq!(final_result_depends_on_x(&db, input), 24);
     db.assert_logs(expect![[r#"
         [
-            "final_result_deponds_on_x(MyInput(Id { value: 1 }))",
+            "final_result_depends_on_x(MyInput(Id { value: 1 }))",
         ]"#]]);
 
     // y = 23 / 2 = 11
     // Intermediate result y is the same, so final result depends on y
     // does not need to be recomputed;
-    assert_eq!(final_result_deponds_on_y(&db, input), 22);
+    assert_eq!(final_result_depends_on_y(&db, input), 22);
     db.assert_logs(expect!["[]"]);
 }

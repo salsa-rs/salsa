@@ -8,7 +8,7 @@ use salsa_2022_tests::{HasLogger, Logger};
 use expect_test::expect;
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, result_deponds_on_x, result_deponds_on_y);
+struct Jar(MyInput, result_depends_on_x, result_depends_on_y);
 
 trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
@@ -19,14 +19,14 @@ struct MyInput {
 }
 
 #[salsa::tracked(jar = Jar)]
-fn result_deponds_on_x(db: &dyn Db, input: MyInput) -> u32 {
-    db.push_log(format!("result_deponds_on_x({:?})", input));
+fn result_depends_on_x(db: &dyn Db, input: MyInput) -> u32 {
+    db.push_log(format!("result_depends_on_x({:?})", input));
     input.x(db) + 1
 }
 
 #[salsa::tracked(jar = Jar)]
-fn result_deponds_on_y(db: &dyn Db, input: MyInput) -> u32 {
-    db.push_log(format!("result_deponds_on_y({:?})", input));
+fn result_depends_on_y(db: &dyn Db, input: MyInput) -> u32 {
+    db.push_log(format!("result_depends_on_y({:?})", input));
     input.y(db) - 1
 }
 
@@ -53,33 +53,33 @@ impl HasLogger for Database {
 
 #[test]
 fn execute() {
-    // result_deponds_on_x = x + 1
-    // result_deponds_on_y = y - 1
+    // result_depends_on_x = x + 1
+    // result_depends_on_y = y - 1
     let mut db = Database::default();
 
     let input = MyInput::new(&mut db, 22, 33);
-    assert_eq!(result_deponds_on_x(&db, input), 23);
+    assert_eq!(result_depends_on_x(&db, input), 23);
     db.assert_logs(expect![[r#"
         [
-            "result_deponds_on_x(MyInput(Id { value: 1 }))",
+            "result_depends_on_x(MyInput(Id { value: 1 }))",
         ]"#]]);
 
-    assert_eq!(result_deponds_on_y(&db, input), 32);
+    assert_eq!(result_depends_on_y(&db, input), 32);
     db.assert_logs(expect![[r#"
         [
-            "result_deponds_on_y(MyInput(Id { value: 1 }))",
+            "result_depends_on_y(MyInput(Id { value: 1 }))",
         ]"#]]);
 
-    input.set_x(&mut db, 23);
+    input.set_x(&mut db).to(23);
     // input x changes, so result depends on x needs to be recomputed;
-    assert_eq!(result_deponds_on_x(&db, input), 24);
+    assert_eq!(result_depends_on_x(&db, input), 24);
     db.assert_logs(expect![[r#"
         [
-            "result_deponds_on_x(MyInput(Id { value: 1 }))",
+            "result_depends_on_x(MyInput(Id { value: 1 }))",
         ]"#]]);
 
     // input y is the same, so result depends on y
     // does not need to be recomputed;
-    assert_eq!(result_deponds_on_y(&db, input), 32);
+    assert_eq!(result_depends_on_y(&db, input), 32);
     db.assert_logs(expect!["[]"]);
 }

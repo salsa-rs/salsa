@@ -10,8 +10,8 @@ description = "A generic framework for on-demand, incrementalized computation (e
 [dependencies]
 arc-swap = "1.4.0"
 crossbeam-utils = { version = "0.8", default-features = false }
-dashmap = "4.0.2"
-hashlink = "0.7.0"
+dashmap = "5.3.4"
+hashlink = "0.8.0"
 indexmap = "1.0.1"
 lock_api = "0.4.7"
 log = "0.4.5"
@@ -23,11 +23,11 @@ salsa-macros = { version = "0.17.0-pre.2", path = "components/salsa-macros" }
 
 [dev-dependencies]
 diff = "0.1.0"
-env_logger = "0.7"
+env_logger = "0.9"
 linked-hash-map = "0.5.2"
-rand = "0.7"
-rand_distr = "0.2.1"
-test-env-log = "0.2.7"
+rand = "0.8"
+rand_distr = "0.4.3"
+test-log = "0.2.11"
 insta = "1.8.0"
 
 [workspace]
@@ -36,5 +36,5 @@ members = [
     "components/salsa-2022",
     "components/salsa-2022-macros",
     "calc-example/calc",
-    "salsa-2022-tests"
+    "salsa-2022-tests",
 ]

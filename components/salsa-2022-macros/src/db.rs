@@ -55,10 +55,10 @@ impl syn::parse::Parse for Args {
 }
 
 fn find_storage_field(input: &syn::ItemStruct) -> Result<syn::Ident, &'static str> {
-    let storage = format!("storage");
+    let storage = "storage";
     for field in input.fields.iter() {
         if let Some(i) = &field.ident {
-            if i.to_string() == storage {
+            if i == storage {
                 return Ok(i.clone());
             }
         } else {
@@ -158,6 +158,10 @@ fn has_jars_dyn_impl(input: &syn::ItemStruct, storage: &syn::Ident) -> syn::Item
             fn salsa_struct_deleted(&self, ingredient: salsa::IngredientIndex, id: salsa::Id) {
                 let ingredient = self.#storage.ingredient(ingredient);
                 ingredient.salsa_struct_deleted(self, id);
+            }
+            fn fmt_index(&self, index: salsa::key::DependencyIndex, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                let ingredient = self.#storage.ingredient(index.ingredient_index());
+                ingredient.fmt_index(index.key_index(), fmt)
             }
         }
     }

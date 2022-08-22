@@ -12,7 +12,7 @@ pub(crate) fn tracked(
     let args = syn::parse_macro_input!(args as Args);
     match tracked_fn(args, item_fn) {
         Ok(p) => p.into(),
-        Err(e) => return e.into_compile_error().into(),
+        Err(e) => e.into_compile_error().into(),
     }
 }
 
@@ -145,7 +145,7 @@ fn fn_configuration(args: &Args, item_fn: &syn::ItemFn) -> Configuration {
 
     let fn_ty = item_fn.sig.ident.clone();
 
-    let indices = (0..item_fn.sig.inputs.len() - 1).map(|i| Literal::usize_unsuffixed(i));
+    let indices = (0..item_fn.sig.inputs.len() - 1).map(Literal::usize_unsuffixed);
     let (cycle_strategy, recover_fn) = if let Some(recovery_fn) = &args.recovery_fn {
         // Create the `recover_from_cycle` function, which (a) maps from the interned id to the actual
         // keys and then (b) invokes the recover function itself.
@@ -181,7 +181,7 @@ fn fn_configuration(args: &Args, item_fn: &syn::ItemFn) -> Configuration {
 
     // Create the `execute` function, which (a) maps from the interned id to the actual
     // keys and then (b) invokes the function itself (which we embed within).
-    let indices = (0..item_fn.sig.inputs.len() - 1).map(|i| Literal::usize_unsuffixed(i));
+    let indices = (0..item_fn.sig.inputs.len() - 1).map(Literal::usize_unsuffixed);
     let execute_fn = parse_quote! {
         fn execute(__db: &salsa::function::DynDb<Self>, __id: Self::Key) -> Self::Value {
             #inner_fn
@@ -212,6 +212,7 @@ fn ingredients_for_impl(
     config_ty: &syn::Type,
 ) -> syn::ItemImpl {
     let jar_ty = args.jar_ty();
+    let debug_name = crate::literal(&item_fn.sig.ident);
 
     let intern_map: syn::Expr = if requires_interning(item_fn) {
         parse_quote! {
@@ -230,7 +231,7 @@ fn ingredients_for_impl(
                         &mut ingredients.intern_map
                     }
                 );
-                salsa::interned::InternedIngredient::new(index)
+                salsa::interned::InternedIngredient::new(index, #debug_name)
             }
         }
     } else {
@@ -241,6 +242,9 @@ fn ingredients_for_impl(
 
     // set 0 as default to disable LRU
     let lru = args.lru.unwrap_or(0);
+
+    // get the name of the function as a string literal
+    let debug_name = crate::literal(&item_fn.sig.ident);
 
     parse_quote! {
         impl salsa::storage::IngredientsFor for #config_ty {
@@ -268,7 +272,7 @@ fn ingredients_for_impl(
                                     <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient_mut(jar);
                                 &mut ingredients.function
                             });
-                        let ingredient = salsa::function::FunctionIngredient::new(index);
+                        let ingredient = salsa::function::FunctionIngredient::new(index, #debug_name);
                         ingredient.set_capacity(#lru);
                         ingredient
                     }
@@ -290,6 +294,7 @@ fn wrapper_fns(
     let accumulated_fn = accumulated_fn(args, item_fn, config_ty)?;
     let setter_fn = setter_fn(args, item_fn, config_ty)?;
     let specify_fn = specify_fn(args, item_fn, config_ty)?.map(|f| quote! { #f });
+    let set_lru_fn = set_lru_capacity_fn(args, config_ty)?.map(|f| quote! { #f });
 
     let setter_impl: syn::ItemImpl = parse_quote! {
         impl #config_ty {
@@ -301,6 +306,8 @@ fn wrapper_fns(
 
             #[allow(dead_code, clippy::needless_lifetimes)]
             #accumulated_fn
+
+            #set_lru_fn
 
             #specify_fn
         }
@@ -417,6 +424,39 @@ fn setter_fn(
     })
 }
 
+/// Create a `set_lru_capacity` associated function that can be used to change LRU
+/// capacity at runtime.
+/// Note that this function is only generated if the tracked function has the lru option set.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// #[salsa::tracked(lru=32)]
+/// fn my_tracked_fn(db: &dyn crate::Db, ...) { }
+///
+/// my_tracked_fn::set_lru_capacity(16)
+/// ```
+fn set_lru_capacity_fn(
+    args: &Args,
+    config_ty: &syn::Type,
+) -> syn::Result<Option<syn::ImplItemMethod>> {
+    if args.lru.is_none() {
+        return Ok(None);
+    }
+
+    let jar_ty = args.jar_ty();
+    let lru_fn = parse_quote! {
+        #[allow(dead_code, clippy::needless_lifetimes)]
+        fn set_lru_capacity(__db: &salsa::function::DynDb<Self>, __value: usize) {
+            let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
+            let __ingredients =
+                <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient(__jar);
+            __ingredients.function.set_capacity(__value);
+        }
+    };
+    Ok(Some(lru_fn))
+}
+
 fn specify_fn(
     args: &Args,
     item_fn: &syn::ItemFn,
@@ -484,9 +524,7 @@ fn make_fn_return_ref(mut ref_getter_fn: syn::ItemFn) -> syn::Result<syn::ItemFn
 /// then modifies the item function so that it is called `'__db` and returns that.
 fn db_lifetime_and_ty(func: &mut syn::ItemFn) -> syn::Result<(syn::Lifetime, &syn::Type)> {
     match &mut func.sig.inputs[0] {
-        syn::FnArg::Receiver(r) => {
-            return Err(syn::Error::new(r.span(), "expected database, not self"))
-        }
+        syn::FnArg::Receiver(r) => Err(syn::Error::new(r.span(), "expected database, not self")),
         syn::FnArg::Typed(pat_ty) => match &mut *pat_ty.ty {
             syn::Type::Reference(ty) => match &ty.lifetime {
                 Some(lt) => Ok((lt.clone(), &pat_ty.ty)),
@@ -514,12 +552,10 @@ fn db_lifetime_and_ty(func: &mut syn::ItemFn) -> syn::Result<(syn::Lifetime, &sy
                     Ok((db_lifetime, &pat_ty.ty))
                 }
             },
-            _ => {
-                return Err(syn::Error::new(
-                    pat_ty.span(),
-                    "expected database to be a `&` type",
-                ))
-            }
+            _ => Err(syn::Error::new(
+                pat_ty.span(),
+                "expected database to be a `&` type",
+            )),
         },
     }
 }
@@ -571,7 +607,7 @@ fn accumulated_fn(
 /// * the name(s) of the key arguments
 fn fn_args(item_fn: &syn::ItemFn) -> syn::Result<(proc_macro2::Ident, Vec<proc_macro2::Ident>)> {
     // Check that we have no receiver and that all argments have names
-    if item_fn.sig.inputs.len() == 0 {
+    if item_fn.sig.inputs.is_empty() {
         return Err(syn::Error::new(
             item_fn.sig.span(),
             "method needs a database argument",

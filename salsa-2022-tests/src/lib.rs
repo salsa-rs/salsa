@@ -21,4 +21,12 @@ pub trait HasLogger {
         let logs = std::mem::replace(&mut *self.logger().logs.lock().unwrap(), vec![]);
         expected.assert_eq(&format!("{:#?}", logs));
     }
+
+    /// Asserts the length of the logs,
+    /// clearing the logged events. This takes `&mut self` because
+    /// it is meant to be run from outside any tracked functions.
+    fn assert_logs_len(&mut self, expected: usize) {
+        let logs = std::mem::replace(&mut *self.logger().logs.lock().unwrap(), vec![]);
+        assert_eq!(logs.len(), expected);
+    }
 }
