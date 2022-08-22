@@ -135,7 +135,12 @@ impl InputStruct {
         let jar_ty = self.jar_ty();
         let all_field_indices: Vec<Literal> = self.all_field_indices();
         let input_index: Literal = self.input_index();
-        let debug_name = Literal::string(&format!("{}", self.id_ident()));
+        let debug_name_struct = Literal::string(&self.id_ident().to_string());
+        let debug_name_fields: Vec<_> = self
+            .all_field_names()
+            .into_iter()
+            .map(|ident| Literal::string(&ident.to_string()))
+            .collect();
 
         parse_quote! {
             impl salsa::storage::IngredientsFor for #ident {
@@ -168,7 +173,7 @@ impl InputStruct {
                                         &mut ingredients.#all_field_indices
                                     },
                                 );
-                                salsa::input_field::InputFieldIngredient::new(index)
+                                salsa::input_field::InputFieldIngredient::new(index, #debug_name_fields)
                             },
                         )*
                         {
@@ -184,7 +189,7 @@ impl InputStruct {
                                     &mut ingredients.#input_index
                                 },
                             );
-                            salsa::input::InputIngredient::new(index, #debug_name)
+                            salsa::input::InputIngredient::new(index, #debug_name_struct)
                         },
                     )
                 }
