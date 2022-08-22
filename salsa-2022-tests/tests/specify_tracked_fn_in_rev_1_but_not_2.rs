@@ -207,7 +207,7 @@ fn test_run_0_then_5_then_20() {
     //
     // * `create_tracked` does re-execute, but specifies same value for `maybe_specified` as before
     // * `read_maybe_specified` does not re-execute (its input has not changed)
-    input.set_field(&mut db, 5);
+    input.set_field(&mut db).to(5);
     assert_eq!(final_result(&db, input), 100);
     db.assert_logs(expect![[r#"
         [
@@ -226,7 +226,7 @@ fn test_run_0_then_5_then_20() {
     // * `create_tracked` re-executes but does not specify any value
     // * `read_maybe_specified` is invoked and it calls `maybe_specified`, which now executes
     //   (its value has not been specified)
-    input.set_field(&mut db, 20);
+    input.set_field(&mut db).to(20);
     assert_eq!(final_result(&db, input), 200);
     db.assert_logs(expect![[r#"
         [
@@ -278,7 +278,7 @@ fn test_run_0_then_5_then_10_then_20() {
     //
     // * `create_tracked` does re-execute, but specifies same value for `maybe_specified` as before
     // * `read_maybe_specified` does not re-execute (its input has not changed)
-    input.set_field(&mut db, 5);
+    input.set_field(&mut db).to(5);
     assert_eq!(final_result(&db, input), 100);
     db.assert_logs(expect![[r#"
         [
@@ -297,7 +297,7 @@ fn test_run_0_then_5_then_10_then_20() {
     // * `create_tracked` does re-execute and specifies no value for `maybe_specified`
     // * `maybe_specified_value` returns 10; this is the same value as was specified.
     // * `read_maybe_specified` therefore does NOT need to execute.
-    input.set_field(&mut db, 10);
+    input.set_field(&mut db).to(10);
     assert_eq!(final_result(&db, input), 100);
     db.assert_logs(expect![[r#"
         [
@@ -318,7 +318,7 @@ fn test_run_0_then_5_then_10_then_20() {
     // Set input to 20:
     //
     // * Everything re-executes to get new result (200).
-    input.set_field(&mut db, 20);
+    input.set_field(&mut db).to(20);
     assert_eq!(final_result(&db, input), 200);
     db.assert_logs(expect![[r#"
         [
@@ -362,7 +362,7 @@ fn test_run_5_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);
 
-    input.set_field(&mut db, 20);
+    input.set_field(&mut db).to(20);
     assert_eq!(final_result(&db, input), 200);
     db.assert_logs(expect![[r#"
         [

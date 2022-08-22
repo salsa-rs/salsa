@@ -426,7 +426,7 @@ fn setter_fn(
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```rust,ignore
 /// #[salsa::tracked(lru=32)]
 /// fn my_tracked_fn(db: &dyn crate::Db, ...) { }
 ///

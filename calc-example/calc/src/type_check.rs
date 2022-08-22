@@ -114,7 +114,9 @@ fn check_string(
 
     // Apply edits and check diagnostics/logs after each one
     for (new_source_text, expected_diagnostics, expected_logs) in edits {
-        source_program.set_text(&mut db, new_source_text.to_string());
+        source_program
+            .set_text(&mut db)
+            .to(new_source_text.to_string());
         let program = parse_statements(&db, source_program);
         expected_diagnostics.assert_debug_eq(&type_check_program::accumulated::<Diagnostics>(
             &db, program,

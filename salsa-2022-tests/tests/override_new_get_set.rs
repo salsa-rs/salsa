@@ -27,7 +27,7 @@ impl MyInput {
     }
 
     pub fn set_field(self, db: &mut dyn Db, id: String) {
-        self.set_text(db, id);
+        self.set_text(db).to(id);
     }
 }
 

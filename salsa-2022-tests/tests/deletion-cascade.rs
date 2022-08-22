@@ -117,7 +117,7 @@ fn basic() {
     // * the struct's field
     // * the `copy_field` result
 
-    input.set_field(&mut db, 2);
+    input.set_field(&mut db).to(2);
     assert_eq!(final_result(&db, input), 1 * 2 + 0 * 2);
     db.assert_logs(expect![[r#"
         [
