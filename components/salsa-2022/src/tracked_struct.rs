@@ -1,6 +1,8 @@
+use std::fmt;
+
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::{Ingredient, IngredientRequiresReset},
+    ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
     ingredient_list::IngredientList,
     interned::{InternedData, InternedId, InternedIngredient},
     key::{DatabaseKeyIndex, DependencyIndex},
@@ -42,6 +44,8 @@ where
     /// each of these functions will be notified
     /// so they can remove any data tied to that instance.
     dependent_fns: IngredientList,
+
+    debug_name: &'static str,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
@@ -59,10 +63,11 @@ where
     Id: TrackedStructId,
     Data: TrackedStructData,
 {
-    pub fn new(index: IngredientIndex) -> Self {
+    pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
-            interned: InternedIngredient::new(index),
+            interned: InternedIngredient::new(index, debug_name),
             dependent_fns: IngredientList::new(),
+            debug_name,
         }
     }
 
@@ -174,6 +179,10 @@ where
 
     fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
         panic!("unexpected call: interned ingredients do not register for salsa struct deletion events");
+    }
+
+    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_index(self.debug_name, index, fmt)
     }
 }
 

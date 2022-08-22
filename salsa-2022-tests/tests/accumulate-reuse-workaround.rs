@@ -87,7 +87,7 @@ fn test1() {
     // When we mutate `l1`, we should re-execute `compute` for `l1`,
     // and we re-execute accumulated for `l1`, but we do NOT re-execute
     // `compute` for `l2`.
-    l1.set_value(&mut db, 2);
+    l1.set_value(&mut db).to(2);
     assert_eq!(compute(&db, l2), 2);
     db.assert_logs(expect![[r#"
         [

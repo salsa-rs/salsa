@@ -132,7 +132,7 @@ fn change_a_and_reaccumulate() {
         ]"#]]);
 
     // Change to `a = 1`, which means `push_logs` does not call `push_a_logs` at all
-    input.set_field_a(&mut db, 1);
+    input.set_field_a(&mut db).to(1);
     let logs = push_logs::accumulated::<Logs>(&db, input);
     expect![[r#"
         [
@@ -167,7 +167,7 @@ fn get_a_logs_after_changing_b() {
 
     // Changing `b` does not cause `push_a_logs` to re-execute
     // and we still get the same result
-    input.set_field_b(&mut db, 5);
+    input.set_field_b(&mut db).to(5);
     let logs = push_a_logs::accumulated::<Logs>(&db, input);
     expect![[r#"
         [

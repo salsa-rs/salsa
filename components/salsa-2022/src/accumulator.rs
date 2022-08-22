@@ -1,9 +1,11 @@
 //! Basic test of accumulator functionality.
 
+use std::fmt;
+
 use crate::{
     cycle::CycleRecoveryStrategy,
     hash::FxDashMap,
-    ingredient::{Ingredient, IngredientRequiresReset},
+    ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
     key::DependencyIndex,
     runtime::local_state::QueryOrigin,
     storage::HasJar,
@@ -21,6 +23,7 @@ pub trait Accumulator {
 pub struct AccumulatorIngredient<Data: Clone> {
     index: IngredientIndex,
     map: FxDashMap<DatabaseKeyIndex, AccumulatedValues<Data>>,
+    debug_name: &'static str,
 }
 
 struct AccumulatedValues<Data> {
@@ -29,10 +32,11 @@ struct AccumulatedValues<Data> {
 }
 
 impl<Data: Clone> AccumulatorIngredient<Data> {
-    pub fn new(index: IngredientIndex) -> Self {
+    pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
             map: FxDashMap::default(),
             index,
+            debug_name,
         }
     }
 
@@ -147,6 +151,10 @@ where
 
     fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
         panic!("unexpected call: accumulator is not registered as a dependent fn");
+    }
+
+    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_index(self.debug_name, index, fmt)
     }
 }
 

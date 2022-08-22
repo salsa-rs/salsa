@@ -94,11 +94,11 @@ impl InputStruct {
         let set_field_names = self.all_set_field_names();
         let field_setters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&set_field_names).zip(&field_tys).map(|((field_index, set_field_name), field_ty)| {
             parse_quote! {
-                pub fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty, __value: #field_ty) -> #field_ty
+                pub fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty) -> salsa::setter::Setter<'db, #ident, #field_ty>
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient_mut(__jar);
-                    __ingredients.#field_index.store(__runtime, self, __value, salsa::Durability::LOW).unwrap()
+                    salsa::setter::Setter::new(__runtime, self, &mut __ingredients.#field_index)
                 }
             }
         })
@@ -130,11 +130,14 @@ impl InputStruct {
     /// The entity's ingredients include both the main entity ingredient along with a
     /// function ingredient for each of the value fields.
     fn input_ingredients(&self) -> syn::ItemImpl {
+        use crate::literal;
         let ident = self.id_ident();
         let field_ty = self.all_field_tys();
         let jar_ty = self.jar_ty();
         let all_field_indices: Vec<Literal> = self.all_field_indices();
         let input_index: Literal = self.input_index();
+        let debug_name_struct = literal(self.id_ident());
+        let debug_name_fields: Vec<_> = self.all_field_names().into_iter().map(literal).collect();
 
         parse_quote! {
             impl salsa::storage::IngredientsFor for #ident {
@@ -167,7 +170,7 @@ impl InputStruct {
                                         &mut ingredients.#all_field_indices
                                     },
                                 );
-                                salsa::input_field::InputFieldIngredient::new(index)
+                                salsa::input_field::InputFieldIngredient::new(index, #debug_name_fields)
                             },
                         )*
                         {
@@ -183,7 +186,7 @@ impl InputStruct {
                                     &mut ingredients.#input_index
                                 },
                             );
-                            salsa::input::InputIngredient::new(index)
+                            salsa::input::InputIngredient::new(index, #debug_name_struct)
                         },
                     )
                 }
