@@ -36,6 +36,13 @@ jobs:
         default: true
     - uses: actions-rs/cargo@v1
       with:
+        command: fmt
+        args: -- --check
+    - uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+    - uses: actions-rs/cargo@v1
+      with:
         command: check
         args: --all
     - uses: actions-rs/cargo@v1
@@ -54,10 +61,3 @@ jobs:
       with:
         command: check
         args: --no-default-features
-    - uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: -- --check
-    - uses: actions-rs/cargo@v1
-      with:
-        command: clippy
