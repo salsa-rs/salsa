@@ -1826,6 +1826,8 @@ pub trait HasJarsDyn {
     /// as a dependent function using
     /// [`SalsaStructInDb::register_dependent_fn`](`crate::salsa_struct::SalsaStructInDb::register_dependent_fn`).
     fn salsa_struct_deleted(&amp;self, ingredient: IngredientIndex, id: Id);
+
+    fn fmt_index(&amp;self, index: DependencyIndex, fmt: &amp;mut fmt::Formatter&lt;'_&gt;) -&gt; fmt::Result;
 }
 </code></pre>
 <p>So, technically, to check if an input has changed, an ingredient:</p>
