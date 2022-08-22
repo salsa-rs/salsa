@@ -1,11 +1,12 @@
 use crossbeam::atomic::AtomicCell;
 use crossbeam::queue::SegQueue;
+use std::fmt;
 use std::hash::Hash;
 use std::marker::PhantomData;
 
 use crate::durability::Durability;
 use crate::id::AsId;
-use crate::ingredient::IngredientRequiresReset;
+use crate::ingredient::{fmt_index, IngredientRequiresReset};
 use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
@@ -54,6 +55,8 @@ pub struct InternedIngredient<Id: InternedId, Data: InternedData> {
     /// `&db` reference. This queue itself is not freed until we have an `&mut db` reference,
     /// guaranteeing that there are no more references to it.
     deleted_entries: SegQueue<Box<Data>>,
+
+    debug_name: &'static str,
 }
 
 impl<Id, Data> InternedIngredient<Id, Data>
@@ -61,7 +64,7 @@ where
     Id: InternedId,
     Data: InternedData,
 {
-    pub fn new(ingredient_index: IngredientIndex) -> Self {
+    pub fn new(ingredient_index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
             ingredient_index,
             key_map: Default::default(),
@@ -69,6 +72,7 @@ where
             counter: AtomicCell::default(),
             reset_at: Revision::start(),
             deleted_entries: Default::default(),
+            debug_name,
         }
     }
 
@@ -233,6 +237,10 @@ where
 
     fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
         panic!("unexpected call: interned ingredients do not register for salsa struct deletion events");
+    }
+
+    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_index(self.debug_name, index, fmt)
     }
 }
 

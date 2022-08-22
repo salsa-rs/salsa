@@ -130,11 +130,14 @@ impl InputStruct {
     /// The entity's ingredients include both the main entity ingredient along with a
     /// function ingredient for each of the value fields.
     fn input_ingredients(&self) -> syn::ItemImpl {
+        use crate::literal;
         let ident = self.id_ident();
         let field_ty = self.all_field_tys();
         let jar_ty = self.jar_ty();
         let all_field_indices: Vec<Literal> = self.all_field_indices();
         let input_index: Literal = self.input_index();
+        let debug_name_struct = literal(self.id_ident());
+        let debug_name_fields: Vec<_> = self.all_field_names().into_iter().map(literal).collect();
 
         parse_quote! {
             impl salsa::storage::IngredientsFor for #ident {
@@ -167,7 +170,7 @@ impl InputStruct {
                                         &mut ingredients.#all_field_indices
                                     },
                                 );
-                                salsa::input_field::InputFieldIngredient::new(index)
+                                salsa::input_field::InputFieldIngredient::new(index, #debug_name_fields)
                             },
                         )*
                         {
@@ -183,7 +186,7 @@ impl InputStruct {
                                     &mut ingredients.#input_index
                                 },
                             );
-                            salsa::input::InputIngredient::new(index)
+                            salsa::input::InputIngredient::new(index, #debug_name_struct)
                         },
                     )
                 }

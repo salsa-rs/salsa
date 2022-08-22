@@ -1,10 +1,11 @@
 use crate::cycle::CycleRecoveryStrategy;
-use crate::ingredient::{Ingredient, IngredientRequiresReset};
+use crate::ingredient::{fmt_index, Ingredient, IngredientRequiresReset};
 use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::StampedValue;
 use crate::{AsId, DatabaseKeyIndex, Durability, Id, IngredientIndex, Revision, Runtime};
 use rustc_hash::FxHashMap;
+use std::fmt;
 use std::hash::Hash;
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
@@ -15,16 +16,18 @@ use std::hash::Hash;
 pub struct InputFieldIngredient<K, F> {
     index: IngredientIndex,
     map: FxHashMap<K, StampedValue<F>>,
+    debug_name: &'static str,
 }
 
 impl<K, F> InputFieldIngredient<K, F>
 where
     K: Eq + Hash + AsId,
 {
-    pub fn new(index: IngredientIndex) -> Self {
+    pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
             index,
             map: Default::default(),
+            debug_name,
         }
     }
 
@@ -112,6 +115,10 @@ where
 
     fn reset_for_new_revision(&mut self) {
         panic!("unexpected call: input fields don't register for resets");
+    }
+
+    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_index(self.debug_name, index, fmt)
     }
 }
 

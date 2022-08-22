@@ -190,8 +190,8 @@ fn cycle_memoized() {
     let cycle = extract_cycle(|| memoized_a(&db, input));
     let expected = expect![[r#"
         [
-            "DependencyIndex { ingredient_index: IngredientIndex(1), key_index: Some(Id { value: 1 }) }",
-            "DependencyIndex { ingredient_index: IngredientIndex(2), key_index: Some(Id { value: 1 }) }",
+            "memoized_a(0)",
+            "memoized_b(0)",
         ]
     "#]];
     expected.assert_debug_eq(&cycle.all_participants(&db));
@@ -204,8 +204,8 @@ fn cycle_volatile() {
     let cycle = extract_cycle(|| volatile_a(&db, input));
     let expected = expect![[r#"
         [
-            "DependencyIndex { ingredient_index: IngredientIndex(3), key_index: Some(Id { value: 1 }) }",
-            "DependencyIndex { ingredient_index: IngredientIndex(4), key_index: Some(Id { value: 1 }) }",
+            "volatile_a(0)",
+            "volatile_b(0)",
         ]
     "#]];
     expected.assert_debug_eq(&cycle.all_participants(&db));
@@ -233,8 +233,8 @@ fn inner_cycle() {
     assert!(err.is_err());
     let expected = expect![[r#"
         [
-            "DependencyIndex { ingredient_index: IngredientIndex(9), key_index: Some(Id { value: 1 }) }",
-            "DependencyIndex { ingredient_index: IngredientIndex(10), key_index: Some(Id { value: 1 }) }",
+            "cycle_a(0)",
+            "cycle_b(0)",
         ]
     "#]];
     expected.assert_debug_eq(&err.unwrap_err().cycle);
@@ -306,8 +306,8 @@ fn cycle_mixed_1() {
 
     let expected = expect![[r#"
         [
-            "DependencyIndex { ingredient_index: IngredientIndex(10), key_index: Some(Id { value: 1 }) }",
-            "DependencyIndex { ingredient_index: IngredientIndex(11), key_index: Some(Id { value: 1 }) }",
+            "cycle_b(0)",
+            "cycle_c(0)",
         ]
     "#]];
     expected.assert_debug_eq(&cycle_c(&db, abc).unwrap_err().cycle);
@@ -325,9 +325,9 @@ fn cycle_mixed_2() {
     let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::C, CycleQuery::A);
     let expected = expect![[r#"
         [
-            "DependencyIndex { ingredient_index: IngredientIndex(9), key_index: Some(Id { value: 1 }) }",
-            "DependencyIndex { ingredient_index: IngredientIndex(10), key_index: Some(Id { value: 1 }) }",
-            "DependencyIndex { ingredient_index: IngredientIndex(11), key_index: Some(Id { value: 1 }) }",
+            "cycle_a(0)",
+            "cycle_b(0)",
+            "cycle_c(0)",
         ]
     "#]];
     expected.assert_debug_eq(&cycle_a(&db, abc).unwrap_err().cycle);
@@ -352,12 +352,12 @@ fn cycle_deterministic_order() {
     let expected = expect![[r#"
         (
             [
-                "DependencyIndex { ingredient_index: IngredientIndex(9), key_index: Some(Id { value: 1 }) }",
-                "DependencyIndex { ingredient_index: IngredientIndex(10), key_index: Some(Id { value: 1 }) }",
+                "cycle_a(0)",
+                "cycle_b(0)",
             ],
             [
-                "DependencyIndex { ingredient_index: IngredientIndex(9), key_index: Some(Id { value: 1 }) }",
-                "DependencyIndex { ingredient_index: IngredientIndex(10), key_index: Some(Id { value: 1 }) }",
+                "cycle_a(0)",
+                "cycle_b(0)",
             ],
         )
     "#]];
@@ -387,16 +387,16 @@ fn cycle_multiple() {
     let expected = expect![[r#"
         (
             [
-                "DependencyIndex { ingredient_index: IngredientIndex(9), key_index: Some(Id { value: 1 }) }",
-                "DependencyIndex { ingredient_index: IngredientIndex(10), key_index: Some(Id { value: 1 }) }",
+                "cycle_a(0)",
+                "cycle_b(0)",
             ],
             [
-                "DependencyIndex { ingredient_index: IngredientIndex(9), key_index: Some(Id { value: 1 }) }",
-                "DependencyIndex { ingredient_index: IngredientIndex(10), key_index: Some(Id { value: 1 }) }",
+                "cycle_a(0)",
+                "cycle_b(0)",
             ],
             [
-                "DependencyIndex { ingredient_index: IngredientIndex(9), key_index: Some(Id { value: 1 }) }",
-                "DependencyIndex { ingredient_index: IngredientIndex(10), key_index: Some(Id { value: 1 }) }",
+                "cycle_a(0)",
+                "cycle_b(0)",
             ],
         )
     "#]];
@@ -420,7 +420,7 @@ fn cycle_recovery_set_but_not_participating() {
     let r = extract_cycle(|| drop(cycle_a(&db, abc)));
     let expected = expect![[r#"
         [
-            "DependencyIndex { ingredient_index: IngredientIndex(11), key_index: Some(Id { value: 1 }) }",
+            "cycle_c(0)",
         ]
     "#]];
     expected.assert_debug_eq(&r.all_participants(&db));
