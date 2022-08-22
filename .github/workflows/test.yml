@@ -10,6 +10,7 @@ on:
     paths:
     - '**.rs'
     - '**/Cargo.*'
+    - '.github/workflows/**.yml'
 
 jobs:
   test:
