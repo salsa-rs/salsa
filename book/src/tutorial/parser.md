@@ -31,8 +31,8 @@ salsa will just clone the result rather than re-execute it.
 Tracked functions are the core part of how salsa enables incremental reuse.
 The goal of the framework is to avoid re-executing tracked functions and instead to clone their result.
 Salsa uses the [red-green algorithm](../reference/algorithm.md) to decide when to re-execute a function.
-The short version is that a tracked function is re-executed if either (a) it directly reads an input, and that input has changed
-or (b) it directly invokes another tracked function, and that function's return value has changed.
+The short version is that a tracked function is re-executed if either (a) it directly reads an input, and that input has changed,
+or (b) it directly invokes another tracked function and that function's return value has changed.
 In the case of `parse_statements`, it directly reads `ProgramSource::text`, so if the text changes, then the parser will re-execute.
 
 By choosing which functions to mark as `#[tracked]`, you control how much reuse you get.
@@ -45,7 +45,7 @@ and because (b) since strings are just a big blob-o-bytes without any structure,
 Some systems do choose to do more granular reparsing, often by doing a "first pass" over the string to give it a bit of structure, 
 e.g. to identify the functions,
 but deferring the parsing of the body of each function until later.
-Setting up a scheme like this is relatively easy in salsa, and uses the same principles that we will use later to avoid re-executing the type checker.
+Setting up a scheme like this is relatively easy in salsa and uses the same principles that we will use later to avoid re-executing the type checker.
 
 ### Parameters to a tracked function
 
@@ -63,7 +63,7 @@ It's generally better to structure tracked functions as functions of a single sa
 
 ### The `return_ref` annotation
 
-You may have noticed that `parse_statements` is tagged with `#[salsa::tracked(return_ref)]`.
+You may have noticed that `parse_statements` is tagged with `#[salsa::tracked(return_ref)]`. [The function isn't actually tagged with `return_ref`; is the text incorrect or the code example?]
 Ordinarily, when you call a tracked function, the result you get back is cloned out of the database.
 The `return_ref` attribute means that a reference into the database is returned instead.
 So, when called, `parse_statements` will return an `&Vec<Statement>` rather than cloning the `Vec`.

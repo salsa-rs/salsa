@@ -14,11 +14,11 @@ In `calc`, the database struct is in the [`db`] module, and it looks like this:
 ```
 
 The `#[salsa::db(...)]` attribute takes a list of all the jars to include.
-The struct must have a field named `storage` whose types is `salsa::Storage<Self>`, but it can also contain whatever other fields you want.
+The struct must have a field named `storage` whose type is `salsa::Storage<Self>`, but it can also contain whatever other fields you want.
 The `storage` struct owns all the data for the jars listed in the `db` attribute.
 
 The `salsa::db` attribute autogenerates a bunch of impls for things like the `salsa::HasJar<crate::Jar>` trait that we saw earlier.
-This means that
+This means that ... [what goes here?]
 
 ## Implementing the `salsa::Database` trait
 
@@ -44,7 +44,7 @@ It's not required, but implementing the `Default` trait is often a convenient wa
 {{#include ../../../calc-example/calc/src/db.rs:default_impl}}
 ```
 
-## Implementing the traits for each Jar
+## Implementing the traits for each jar
 
 The `Database` struct also needs to implement the [database traits for each jar](./jar.md#database-trait-for-the-jar).
 In our case, though, we already wrote that impl as a [blanket impl alongside the jar itself](./jar.md#implementing-the-database-trait-for-the-jar),

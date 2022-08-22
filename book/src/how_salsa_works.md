@@ -1,8 +1,8 @@
-# How Salsa works
+# How salsa works
 
 ## Video available
 
-To get the most complete introduction to Salsa's inner works, check
+To get the most complete introduction to salsa's inner works, check
 out [the "How Salsa Works" video](https://youtu.be/_muY4HjSqVw).  If
 you'd like a deeper dive, [the "Salsa in more depth"
 video](https://www.youtube.com/watch?v=i_IhACacPRY) digs into the
@@ -25,7 +25,7 @@ varieties:
   we'll figure out (fairly intelligently) when we can re-use these
   memoized values and when we have to recompute them.
 
-## How to use Salsa in three easy steps
+## How to use salsa in three easy steps
 
 Using salsa is as easy as 1, 2, 3...
 

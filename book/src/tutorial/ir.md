@@ -4,7 +4,7 @@ Before we can define the [parser](./parser.md), we need to define the intermedia
 In the [basic structure](./structure.md), we defined some "pseudo-Rust" structures like `Statement` and `Expression`;
 now we are going to define them for real.
 
-## "Salsa structs"
+## "salsa structs"
 
 In addition to regular Rust types, we will make use of various **salsa structs**.
 A salsa struct is a struct that has been annotated with one of the salsa annotations:
@@ -95,17 +95,12 @@ Apart from the fields being immutable, the API for working with a tracked struct
 ## Representing functions
 
 We will also use a tracked struct to represent each function:
-Next we will define a **tracked struct**.
-Whereas inputs represent the *start* of a computation, tracked structs represent intermediate values created during your computation.
-
 The `Function` struct is going to be created by the parser to represent each of the functions defined by the user:
 
 ```rust
 {{#include ../../../calc-example/calc/src/ir.rs:functions}}
 ```
 
-Like with an input, the fields of a tracked struct are also stored in the database.
-Unlike an input, those fields are immutable (they cannot be "set"), and salsa compares them across revisions to know when they have changed.
 If we had created some `Function` instance `f`, for example, we might find that `the f.body` field changes
 because the user changed the definition of `f`.
 This would mean that we have to re-execute those parts of the code that depended on `f.body`
@@ -156,11 +151,11 @@ However, if this happens, it will also be sure to re-execute every function that
 just a different one than they saw in a previous revision.
 
 In other words, within a salsa computation, you can assume that interning produces a single consistent integer, and you don't have to think about it.
-If however you export interned identifiers outside the computation, and then change the inputs, they may not longer be valid or may refer to different values.
+If, however, you export interned identifiers outside the computation, and then change the inputs, they may no longer be valid or may refer to different values.
 
 ### Expressions and statements
 
-We'll won't use any special "salsa structs" for expressions and statements:
+We won't use any special "salsa structs" for expressions and statements:
 
 ```rust
 {{#include ../../../calc-example/calc/src/ir.rs:statements_and_expressions}}
@@ -170,4 +165,4 @@ Since statements and expressions are not tracked, this implies that we are only 
 whenever anything in a function body changes, we consider the entire function body dirty and re-execute anything that depended on it.
 It usually makes sense to draw some kind of "reasonably coarse" boundary like this.
 
-One downside of the way we have set things up: we inlined the position into each of the structs.
+One downside of the way we have set things up: we inlined the position into each of the structs [what exactly does this mean?].

@@ -20,7 +20,7 @@ fn parse_module(db: &dyn Db, module: Module) -> Ast {
     Ast::parse_text(module_text)
 }
 
-#[salsa::tracked(ref)]
+#[salsa::tracked(return_ref)]
 fn module_text(db: &dyn Db, module: Module) -> String {
     panic!("text for module `{module:?}` not set")
 }
@@ -65,7 +65,11 @@ If the module text is changed, we saw that we have to re-execute `parse_module`,
 
 ## Durability: an optimization
 
-As an optimization, salsa includes the concept of **durability**. When you set the value of a tracked function, you can also set it with a given _durability_:
+As an optimization, salsa includes the concept of **durability**, which is the notion of how often some piece of tracked data changes. 
+
+For example, when compiling a Rust program, you might mark the inputs from crates.io as _high durability_ inputs, since they are unlikely to change. The current workspace could be marked as _low durability_, since changes to it are happening all the time.
+
+When you set the value of a tracked function, you can also set it with a given _durability_:
 
 ```rust
 module_text::set_with_durability(
@@ -78,4 +82,3 @@ module_text::set_with_durability(
 
 For each durability, we track the revision in which _some input_ with that durability changed. If a tracked function depends (transitively) only on high durability inputs, and you change a low durability input, then we can very easily determine that the tracked function result is still valid, avoiding the need to traverse the input edges one by one.
 
-An example: if compiling a Rust program, you might mark the inputs from crates.io as _high durability_ inputs, since they are unlikely to change. The current workspace could be marked as _low durability_.

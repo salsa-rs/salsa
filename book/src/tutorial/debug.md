@@ -21,6 +21,9 @@ and get back the output you expect.
 ## Implementing the `DebugWithDb` trait
 
 For now, unfortunately, you have to implement the `DebugWithDb` trait manually, as we do not provide a derive.
+
+> You can find the tracking issue for addressing this [here][debug_with_db_issue].
+
 This is tedious but not difficult. Here is an example of implementing the trait for `Expression`:
 
 ```rust
@@ -33,6 +36,7 @@ Some things to note:
 - The [`Formatter`] methods (e.g., [`debug_tuple`]) can be used to provide consistent output.
 - When printing the value of a field, use `.field(&a.debug(db))` for fields that are themselves interned or entities, and use `.field(&a)` for fields that just implement the ordinary `Debug` trait.
 
+[debug_with_db_issue]: https://github.com/salsa-rs/salsa/issues/317 
 [`debug_tuple`]: https://doc.rust-lang.org/std/fmt/struct.Formatter.html#method.debug_tuple
 [`formatter`]: https://doc.rust-lang.org/std/fmt/struct.Formatter.html#
 

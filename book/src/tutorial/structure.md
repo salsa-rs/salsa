@@ -34,7 +34,7 @@ enum Statement {
     Print(Expression),
 }
 
-    /// Defines `fn <name>(<args>) = <body>`
+/// Defines `fn <name>(<args>) = <body>`
 struct Function {
     name: FunctionId,
     args: Vec<VariableId>,
@@ -75,7 +75,7 @@ The "checker" has the job of ensuring that the user only references variables th
 We're going to write the checker in a "context-less" style,
 which is a bit less intuitive but allows for more incremental re-use.
 The idea is to compute, for a given expression, which variables it references.
-Then there is a function "check" which ensures that those variables are a subset of those that are already defined.
+Then there is a function `check` which ensures that those variables are a subset of those that are already defined.
 
 ## Interpreter
 

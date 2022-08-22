@@ -62,7 +62,7 @@ and that's what we do here:
 
 ## Summary
 
-If the concept of a jar seems a bit abstract to you, don't overthink it. The TL;DR is that when you create a salsa program, you need to do:
+If the concept of a jar seems a bit abstract to you, don't overthink it. The TL;DR is that when you create a salsa program, you need to perform the following steps:
 
 - In each of your crates:
   - Define a `#[salsa::jar(db = Db)]` struct, typically at `crate::Jar`, and list each of your various salsa-annotated things inside of it.
