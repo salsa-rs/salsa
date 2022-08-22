@@ -65,7 +65,7 @@ where
 {
     pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
-            interned: InternedIngredient::new(index),
+            interned: InternedIngredient::new(index, debug_name),
             dependent_fns: IngredientList::new(),
             debug_name,
         }

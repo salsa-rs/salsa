@@ -64,7 +64,7 @@ where
     Id: InternedId,
     Data: InternedData,
 {
-    pub fn new(ingredient_index: IngredientIndex) -> Self {
+    pub fn new(ingredient_index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
             ingredient_index,
             key_map: Default::default(),
@@ -72,7 +72,7 @@ where
             counter: AtomicCell::default(),
             reset_at: Revision::start(),
             deleted_entries: Default::default(),
-            debug_name: "InternedIngredient",
+            debug_name,
         }
     }
 

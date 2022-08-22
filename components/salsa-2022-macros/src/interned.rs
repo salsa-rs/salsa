@@ -120,6 +120,7 @@ impl InternedStruct {
     /// For a memoized type, the only ingredient is an `InternedIngredient`.
     fn ingredients_for_impl(&self) -> syn::ItemImpl {
         let id_ident = self.id_ident();
+        let debug_name = crate::literal(id_ident);
         let jar_ty = self.jar_ty();
         let data_ident = self.data_ident();
         parse_quote! {
@@ -143,7 +144,7 @@ impl InternedStruct {
                             <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient_mut(jar)
                         },
                     );
-                    salsa::interned::InternedIngredient::new(index)
+                    salsa::interned::InternedIngredient::new(index, #debug_name)
                 }
             }
         }

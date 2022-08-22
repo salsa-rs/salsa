@@ -212,6 +212,7 @@ fn ingredients_for_impl(
     config_ty: &syn::Type,
 ) -> syn::ItemImpl {
     let jar_ty = args.jar_ty();
+    let debug_name = crate::literal(&item_fn.sig.ident);
 
     let intern_map: syn::Expr = if requires_interning(item_fn) {
         parse_quote! {
@@ -230,7 +231,7 @@ fn ingredients_for_impl(
                         &mut ingredients.intern_map
                     }
                 );
-                salsa::interned::InternedIngredient::new(index)
+                salsa::interned::InternedIngredient::new(index, #debug_name)
             }
         }
     } else {
