@@ -2,7 +2,6 @@
 //!
 //! * entities not created in a revision are deleted, as is any memoized data keyed on them.
 
-use salsa::DebugWithDb;
 use salsa_2022_tests::{HasLogger, Logger};
 
 use expect_test::expect;
@@ -70,7 +69,7 @@ struct Database {
 }
 
 impl salsa::Database for Database {
-    fn salsa_event(&self, event: salsa::Event) {}
+    fn salsa_event(&self, _event: salsa::Event) {}
 
     fn salsa_runtime(&self) -> &salsa::Runtime {
         self.storage.runtime()
@@ -174,7 +173,8 @@ fn get_a_logs_after_changing_b() {
         [
             "log_a(0 of 2)",
             "log_a(1 of 2)",
-        ]"#]]
+        ]
+    "#]]
     .assert_debug_eq(&logs);
     db.assert_logs(expect!["[]"]);
 }
