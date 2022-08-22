@@ -246,8 +246,8 @@ fn fix_bad_variable_in_function() {
             "#]],
             expect![[r#"
                 [
-                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(15), key_index: Some(Id { value: 1 }) } } }",
-                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: DependencyIndex { ingredient_index: IngredientIndex(18), key_index: Some(Id { value: 1 }) } } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_statements(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_function(0) } }",
                 ]
             "#]],
         )],
