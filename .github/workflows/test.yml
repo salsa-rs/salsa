@@ -44,6 +44,10 @@ jobs:
     - uses: actions-rs/cargo@v1
       with:
         command: test
+        args: --all-features --all-targets --package salsa-2022-tests
+    - uses: actions-rs/cargo@v1
+      with:
+        command: test
         args: --all-features --doc
     - uses: actions-rs/cargo@v1
       with:
