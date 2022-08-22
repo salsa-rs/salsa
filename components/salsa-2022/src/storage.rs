@@ -93,6 +93,10 @@ where
         &self.runtime
     }
 
+    pub fn runtime_mut(&mut self) -> &mut Runtime {
+        &mut self.runtime
+    }
+
     // ANCHOR: jars_mut
     /// Gets mutable access to the jars. This will trigger a new revision
     /// and it will also cancel any ongoing work in the current revision.

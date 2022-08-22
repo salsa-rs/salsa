@@ -12,6 +12,8 @@ pub trait Database: HasJarsDyn + AsSalsaDatabase {
     }
 
     fn salsa_runtime(&self) -> &Runtime;
+
+    fn salsa_runtime_mut(&mut self) -> &mut Runtime;
 }
 
 /// Indicates a database that also supports parallel query

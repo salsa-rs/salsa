@@ -144,6 +144,19 @@ impl Runtime {
         }
     }
 
+    /// A "synthetic write" causes the system to act *as though* some
+    /// input of durability `durability` has changed. This is mostly
+    /// useful for profiling scenarios.
+    ///
+    /// **WARNING:** Just like an ordinary write, this method triggers
+    /// cancellation. If you invoke it while a snapshot exists, it
+    /// will block until that snapshot is dropped -- if that snapshot
+    /// is owned by the current thread, this could trigger deadlock.
+    pub fn synthetic_write(&mut self, durability: Durability) {
+        self.new_revision();
+        self.report_tracked_write(durability)
+    }
+
     /// Adds `key` to the list of output created by the current query
     /// (if not already present).
     pub(crate) fn add_output(&self, key: DependencyIndex) {
