@@ -5,7 +5,7 @@ use std::fmt;
 use crate::{
     cycle::CycleRecoveryStrategy,
     hash::FxDashMap,
-    ingredient::{Ingredient, IngredientRequiresReset, fmt_index},
+    ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
     key::DependencyIndex,
     runtime::local_state::QueryOrigin,
     storage::HasJar,
@@ -36,7 +36,7 @@ impl<Data: Clone> AccumulatorIngredient<Data> {
         Self {
             map: FxDashMap::default(),
             index,
-            debug_name
+            debug_name,
         }
     }
 
@@ -153,11 +153,7 @@ where
         panic!("unexpected call: accumulator is not registered as a dependent fn");
     }
 
-    fn fmt_index(
-        &self,
-        index: Option<crate::Id>,
-        fmt: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(self.debug_name, index, fmt)
     }
 }

@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::{Ingredient, IngredientRequiresReset, fmt_index},
+    ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryOrigin, Runtime},
     AsId, IngredientIndex, Revision,

@@ -1,11 +1,11 @@
-use std::{sync::Arc, fmt};
+use std::{fmt, sync::Arc};
 
 use arc_swap::ArcSwap;
 use crossbeam::{atomic::AtomicCell, queue::SegQueue};
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::{IngredientRequiresReset, fmt_index},
+    ingredient::{fmt_index, IngredientRequiresReset},
     jar::Jar,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::local_state::QueryOrigin,
@@ -273,11 +273,7 @@ where
         }
     }
 
-    fn fmt_index(
-        &self,
-        index: Option<crate::Id>,
-        fmt: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result {
+    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(self.debug_name, index, fmt)
     }
 }
