@@ -124,8 +124,9 @@ fn lru_can_be_changed_at_runtime() {
     let mut db = Database::default();
     assert_eq!(load_n_potatoes(), 0);
 
-    for i in 0..128u32 {
-        let input = MyInput::new(&mut db, i);
+    let inputs: Vec<(u32, MyInput)> = (0..128).map(|i| (i, MyInput::new(&mut db, i))).collect();
+
+    for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);
         assert_eq!(p.0, i)
     }
@@ -136,8 +137,7 @@ fn lru_can_be_changed_at_runtime() {
 
     get_hot_potato::set_lru_capacity(&db, 64);
     assert_eq!(load_n_potatoes(), 32);
-    for i in 0..128u32 {
-        let input = MyInput::new(&mut db, i);
+    for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);
         assert_eq!(p.0, i)
     }
@@ -149,15 +149,14 @@ fn lru_can_be_changed_at_runtime() {
     // Special case: setting capacity to zero disables LRU
     get_hot_potato::set_lru_capacity(&db, 0);
     assert_eq!(load_n_potatoes(), 64);
-    for i in 0..128u32 {
-        let input = MyInput::new(&mut db, i);
+    for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);
         assert_eq!(p.0, i)
     }
 
     // Create a new input to change the revision, and trigger the GC
     MyInput::new(&mut db, 0);
-    assert_eq!(load_n_potatoes(), 192);
+    assert_eq!(load_n_potatoes(), 128);
 
     drop(db);
     assert_eq!(load_n_potatoes(), 0);
