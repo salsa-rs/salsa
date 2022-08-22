@@ -1,11 +1,11 @@
-use std::sync::Arc;
+use std::{sync::Arc, fmt};
 
 use arc_swap::ArcSwap;
 use crossbeam::{atomic::AtomicCell, queue::SegQueue};
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::IngredientRequiresReset,
+    ingredient::{IngredientRequiresReset, fmt_index},
     jar::Jar,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::local_state::QueryOrigin,
@@ -89,7 +89,7 @@ pub trait Configuration {
     type Key: AsId;
 
     /// The value computed by the function.
-    type Value: std::fmt::Debug;
+    type Value: fmt::Debug;
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
@@ -275,10 +275,10 @@ where
 
     fn fmt_index(
         &self,
-        _index: Option<crate::Id>,
-        _fmt: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        todo!()
+        index: Option<crate::Id>,
+        fmt: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
+        fmt_index(self.debug_name, index, fmt)
     }
 }
 

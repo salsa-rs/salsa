@@ -1,6 +1,8 @@
+use std::fmt;
+
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::{Ingredient, IngredientRequiresReset},
+    ingredient::{Ingredient, IngredientRequiresReset, fmt_index},
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryOrigin, Runtime},
     AsId, IngredientIndex, Revision,
@@ -98,12 +100,8 @@ where
         );
     }
 
-    fn fmt_index(
-        &self,
-        _index: Option<crate::Id>,
-        _fmt: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        todo!()
+    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_index(self.debug_name, index, fmt)
     }
 }
 

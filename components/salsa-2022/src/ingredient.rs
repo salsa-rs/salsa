@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::{
     cycle::CycleRecoveryStrategy, key::DependencyIndex, runtime::local_state::QueryOrigin,
     DatabaseKeyIndex, Id,
@@ -60,11 +62,20 @@ pub trait Ingredient<DB: ?Sized> {
     /// [`IngredientRequiresReset::RESET_ON_NEW_REVISION`] to true.
     fn reset_for_new_revision(&mut self);
 
-    fn fmt_index(
-        &self,
-        index: Option<crate::Id>,
-        fmt: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result;
+    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
+}
+
+/// A helper function to show human readable fmt.
+pub(crate) fn fmt_index(
+    debug_name: &str,
+    id: Option<Id>,
+    fmt: &mut fmt::Formatter<'_>,
+) -> fmt::Result {
+    if let Some(i) = id {
+        write!(fmt, "{}({})", debug_name, u32::from(i))
+    } else {
+        write!(fmt, "{}()", debug_name)
+    }
 }
 
 /// Defines a const indicating if an ingredient needs to be reset each round.
