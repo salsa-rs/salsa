@@ -624,7 +624,7 @@ fn parse_error() {
                 statements: [],
             },
             [
-                Diagnostic { position: 10, message: "unexpected character" },
+                Diagnostic { start: 10, end: 11, message: "unexpected character" },
             ],
         )"#]];
     expected.assert_eq(&actual);
