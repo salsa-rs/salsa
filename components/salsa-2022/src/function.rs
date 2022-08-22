@@ -30,17 +30,15 @@ mod store;
 mod sync;
 
 /// Function ingredients are the "workhorse" of salsa.
-/// They are used for tracked functions, for the "value" fields of tracked structs, and for the
-/// fields of input structs. The function ingredient is fairly complex and so its code is
-/// spread across multiple modules, typically one per method. The main entry points are:
+/// They are used for tracked functions, for the "value" fields of tracked structs, and for the fields of input structs.
+/// The function ingredient is fairly complex and so its code is spread across multiple modules, typically one per method.
+/// The main entry points are:
 ///
-/// * the `fetch` method, which is invoked when the function is called by the user's code; it
-///   will return a memoized value if one exists, or execute the function otherwise.
-/// * the `specify` method, which can only be used when the key is an entity created by the
-///   active query. It sets the value of the function imperatively, so that when later fetches
-///   occur, they'll return this value.
-/// * the `store` method, which can only be invoked with an `&mut` reference, and is to set
-///   input fields.
+/// * the `fetch` method, which is invoked when the function is called by the user's code;
+///   it will return a memoized value if one exists, or execute the function otherwise.
+/// * the `specify` method, which can only be used when the key is an entity created by the active query.
+///   It sets the value of the function imperatively, so that when later fetches occur, they'll return this value.
+/// * the `store` method, which can only be invoked with an `&mut` reference, and is to set input fields.
 pub struct FunctionIngredient<C: Configuration> {
     /// The ingredient index we were assigned in the database.
     /// Used to construct `DatabaseKeyIndex` values.
@@ -99,8 +97,8 @@ pub trait Configuration {
 
     /// Invokes after a new result `new_value`` has been computed for which an older memoized
     /// value existed `old_value`. Returns true if the new value is equal to the older one
-    /// and hence should be "backdated" (i.e., marked as having last changed in an older
-    /// revision, even though it was recomputed).
+    /// and hence should be "backdated" (i.e., marked as having last changed in an older revision,
+    /// even though it was recomputed).
     ///
     /// This invokes user's code in form of the `Eq` impl.
     fn should_backdate_value(old_value: &Self::Value, new_value: &Self::Value) -> bool;
@@ -188,9 +186,8 @@ where
         self.register(db);
         let memo = Arc::new(memo);
         let value = unsafe {
-            // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the
-            // time this value is returned) and anything removed from map is added to
-            // deleted entries (ensured elsewhere).
+            // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
+            // value is returned) and anything removed from map is added to deleted entries (ensured elsewhere).
             self.extend_memo_lifetime(&memo)
         };
         if let Some(old_value) = self.memo_map.insert(key, memo) {
@@ -247,10 +244,9 @@ where
         _executor: DatabaseKeyIndex,
         _stale_output_key: Option<crate::Id>,
     ) {
-        // This function is invoked when a query Q specifies the value for `stale_output_key`
-        // in rev 1, but not in rev 2. We don't do anything in this case, we just leave
-        // the (now stale) memo. Since its `verified_at` field has not changed, it will
-        // be considered dirty if it is invoked.
+        // This function is invoked when a query Q specifies the value for `stale_output_key` in rev 1,
+        // but not in rev 2. We don't do anything in this case, we just leave the (now stale) memo.
+        // Since its `verified_at` field has not changed, it will be considered dirty if it is invoked.
     }
 
     fn reset_for_new_revision(&mut self) {
