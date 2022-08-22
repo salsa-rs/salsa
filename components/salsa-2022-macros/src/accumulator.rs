@@ -48,7 +48,7 @@ fn accumulator_contents(
     let struct_ty = &parse_quote! {#struct_name};
 
     let inherent_impl = inherent_impl(args, struct_ty, data_ty);
-    let ingredients_for_impl = ingredients_for_impl(args, struct_ty, data_ty);
+    let ingredients_for_impl = ingredients_for_impl(args, struct_name, data_ty);
     let struct_item_out = struct_item_out(args, struct_item, data_ty);
     let accumulator_impl = accumulator_impl(args, struct_ty, data_ty);
 
@@ -61,23 +61,20 @@ fn accumulator_contents(
 }
 
 fn data_ty(struct_item: &syn::ItemStruct) -> syn::Result<&syn::Type> {
-    match &struct_item.fields {
-        syn::Fields::Unnamed(fields) => {
-            if fields.unnamed.len() != 1 {
-                return Err(syn::Error::new(
-                    struct_item.ident.span(),
-                    "accumulator structs should have only one anonymous field",
-                ));
-            } else {
-                Ok(&fields.unnamed[0].ty)
-            }
-        }
-        _ => {
-            return Err(syn::Error::new(
+    if let syn::Fields::Unnamed(fields) = &struct_item.fields {
+        if fields.unnamed.len() != 1 {
+            Err(syn::Error::new(
                 struct_item.ident.span(),
                 "accumulator structs should have only one anonymous field",
-            ));
+            ))
+        } else {
+            Ok(&fields.unnamed[0].ty)
         }
+    } else {
+        Err(syn::Error::new(
+            struct_item.ident.span(),
+            "accumulator structs should have only one anonymous field",
+        ))
     }
 }
 
@@ -109,10 +106,15 @@ fn inherent_impl(args: &Args, struct_ty: &syn::Type, data_ty: &syn::Type) -> syn
     }
 }
 
-fn ingredients_for_impl(args: &Args, struct_ty: &syn::Type, data_ty: &syn::Type) -> syn::ItemImpl {
+fn ingredients_for_impl(
+    args: &Args,
+    struct_name: &syn::Ident,
+    data_ty: &syn::Type,
+) -> syn::ItemImpl {
     let jar_ty = args.jar_ty();
+    let debug_name = proc_macro2::Literal::string(&struct_name.to_string());
     parse_quote! {
-        impl salsa::storage::IngredientsFor for #struct_ty {
+        impl salsa::storage::IngredientsFor for #struct_name {
             type Ingredients = salsa::accumulator::AccumulatorIngredient<#data_ty>;
             type Jar = #jar_ty;
 
@@ -130,7 +132,7 @@ fn ingredients_for_impl(args: &Args, struct_ty: &syn::Type, data_ty: &syn::Type)
                             <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient_mut(jar)
                         },
                     );
-                    salsa::accumulator::AccumulatorIngredient::new(index)
+                    salsa::accumulator::AccumulatorIngredient::new(index, #debug_name)
             }
         }
     }
