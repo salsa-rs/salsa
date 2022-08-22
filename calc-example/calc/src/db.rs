@@ -51,6 +51,10 @@ impl salsa::Database for Database {
         self.storage.runtime()
     }
 
+    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime {
+        self.storage.runtime_mut()
+    }
+
     fn salsa_event(&self, event: salsa::Event) {
         // Log interesting events, if logging is enabled
         if let Some(logs) = &self.logs {

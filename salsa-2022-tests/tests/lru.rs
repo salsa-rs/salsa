@@ -74,7 +74,6 @@ impl salsa::Database for DatabaseImpl {
     fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime {
         self.storage.runtime_mut()
     }
-    
 }
 
 impl Db for DatabaseImpl {}
@@ -184,7 +183,8 @@ fn lru_keeps_dependency_info() {
         assert_eq!(x as usize, i);
     }
 
-    db.salsa_runtime_mut().synthetic_write(salsa::Durability::HIGH);
+    db.salsa_runtime_mut()
+        .synthetic_write(salsa::Durability::HIGH);
 
     // We want to test that calls to `get_hot_potato2` are still considered
     // clean. Check that no new executions occur as we go here.

@@ -47,6 +47,10 @@ impl salsa::Database for Database {
             self.signal(self.knobs().signal_on_will_block.get());
         }
     }
+
+    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime {
+        self.storage.runtime_mut()
+    }
 }
 
 impl salsa::ParallelDatabase for Database {
