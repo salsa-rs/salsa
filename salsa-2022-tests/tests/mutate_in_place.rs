@@ -44,12 +44,12 @@ fn execute() {
 
     // Overwrite field with an empty String
     // and store the old value in my_string
-    let mut my_string = input.set_field(&mut db, String::new());
+    let mut my_string = input.set_field(&mut db).to(String::new());
     my_string.push_str(" World!");
 
     // Set the field back to out initial String,
     // expecting to get the empty one back
-    assert_eq!(input.set_field(&mut db, my_string), "");
+    assert_eq!(input.set_field(&mut db).to(my_string), "");
 
     // Check if the stored String is the one we expected
     assert_eq!(input.field(&db), "Hello World!");

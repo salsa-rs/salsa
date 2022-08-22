@@ -248,7 +248,7 @@ fn cycle_revalidate() {
     let mut db = Database::default();
     let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
     assert!(cycle_a(&db, abc).is_err());
-    abc.set_b(&mut db, CycleQuery::A); // same value as default
+    abc.set_b(&mut db).to(CycleQuery::A); // same value as default
     assert!(cycle_a(&db, abc).is_err());
 }
 
@@ -261,7 +261,7 @@ fn cycle_recovery_unchanged_twice() {
     let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
     assert!(cycle_a(&db, abc).is_err());
 
-    abc.set_c(&mut db, CycleQuery::A); // force new revision
+    abc.set_c(&mut db).to(CycleQuery::A); // force new revision
     assert!(cycle_a(&db, abc).is_err());
 }
 
@@ -276,7 +276,7 @@ fn cycle_appears() {
     //     A --> B
     //     ^     |
     //     +-----+
-    abc.set_b(&mut db, CycleQuery::A);
+    abc.set_b(&mut db).to(CycleQuery::A);
     assert!(cycle_a(&db, abc).is_err());
 }
 
@@ -291,7 +291,7 @@ fn cycle_disappears() {
     assert!(cycle_a(&db, abc).is_err());
 
     //     A --> B
-    abc.set_b(&mut db, CycleQuery::None);
+    abc.set_b(&mut db).to(CycleQuery::None);
     assert!(cycle_a(&db, abc).is_ok());
 }
 

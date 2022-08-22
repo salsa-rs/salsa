@@ -82,7 +82,7 @@ fn test1() {
     // but we should not have to re-execute `compute` for `l2`.
     // The only inpout for `compute(l1)` is the accumulated values from `l1`,
     // which have not changed.
-    l1.set_value(&mut db, 2);
+    l1.set_value(&mut db).to(2);
     assert_eq!(compute(&db, l2), 2);
     db.assert_logs(expect![[r#"
         [
