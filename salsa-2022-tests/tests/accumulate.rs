@@ -174,7 +174,8 @@ fn get_a_logs_after_changing_b() {
         [
             "log_a(0 of 2)",
             "log_a(1 of 2)",
-        ]"#]]
+        ]
+    "#]]
     .assert_debug_eq(&logs);
     db.assert_logs(expect!["[]"]);
 }
