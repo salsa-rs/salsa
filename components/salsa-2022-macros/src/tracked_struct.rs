@@ -153,18 +153,15 @@ impl TrackedStruct {
     /// The tracked struct's ingredients include both the main tracked struct ingredient along with a
     /// function ingredient for each of the value fields.
     fn tracked_struct_ingredients(&self, config_structs: &[syn::ItemStruct]) -> syn::ItemImpl {
+        use crate::literal;
         let ident = self.id_ident();
         let jar_ty = self.jar_ty();
         let id_field_tys: Vec<&syn::Type> = self.id_fields().map(SalsaField::ty).collect();
         let value_field_indices: Vec<Literal> = self.value_field_indices();
         let tracked_struct_index: Literal = self.tracked_struct_index();
         let config_struct_names = config_structs.iter().map(|s| &s.ident);
-        let debug_name_struct = Literal::string(&self.id_ident().to_string());
-        let debug_name_fields: Vec<_> = self
-            .all_field_names()
-            .into_iter()
-            .map(|ident| Literal::string(&ident.to_string()))
-            .collect();
+        let debug_name_struct = literal(self.id_ident());
+        let debug_name_fields: Vec<_> = self.all_field_names().into_iter().map(literal).collect();
 
         parse_quote! {
             impl salsa::storage::IngredientsFor for #ident {

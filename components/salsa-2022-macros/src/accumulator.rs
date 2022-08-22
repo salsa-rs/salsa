@@ -112,7 +112,7 @@ fn ingredients_for_impl(
     data_ty: &syn::Type,
 ) -> syn::ItemImpl {
     let jar_ty = args.jar_ty();
-    let debug_name = proc_macro2::Literal::string(&struct_name.to_string());
+    let debug_name = crate::literal(struct_name);
     parse_quote! {
         impl salsa::storage::IngredientsFor for #struct_name {
             type Ingredients = salsa::accumulator::AccumulatorIngredient<#data_ty>;
