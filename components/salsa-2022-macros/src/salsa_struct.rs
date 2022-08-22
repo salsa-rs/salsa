@@ -25,7 +25,7 @@
 //! * data method `impl Foo { fn data(&self, db: &dyn crate::Db) -> FooData { FooData { f: self.f(db), ... } } }`
 //!     * this could be optimized, particularly for interned fields
 
-use heck::CamelCase;
+use heck::ToUpperCamelCase;
 use proc_macro2::{Ident, Literal, Span};
 
 use crate::{configuration, options::Options};
@@ -231,7 +231,7 @@ impl SalsaStruct {
                 let config_name = syn::Ident::new(
                     &format!(
                         "__{}",
-                        format!("{}_{}", ident, value_field_name).to_camel_case()
+                        format!("{}_{}", ident, value_field_name).to_upper_camel_case()
                     ),
                     value_field_name.span(),
                 );

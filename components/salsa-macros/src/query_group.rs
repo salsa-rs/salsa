@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use crate::parenthesized::Parenthesized;
-use heck::CamelCase;
+use heck::ToUpperCamelCase;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::ToTokens;
@@ -43,7 +43,8 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             let mut cycle = None;
             let mut invoke = None;
 
-            let mut query_type = format_ident!("{}Query", query_name.to_string().to_camel_case());
+            let mut query_type =
+                format_ident!("{}Query", query_name.to_string().to_upper_camel_case());
             let mut num_storages = 0;
 
             // Extract attributes.
@@ -163,8 +164,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             //
             //     fn lookup_foo(&self, x: u32) -> (Key1, Key2)
             let lookup_query = if let QueryStorage::Interned = storage {
-                let lookup_query_type =
-                    format_ident!("{}LookupQuery", query_name.to_string().to_camel_case());
+                let lookup_query_type = format_ident!(
+                    "{}LookupQuery",
+                    query_name.to_string().to_upper_camel_case()
+                );
                 let lookup_fn_name = format_ident!("lookup_{}", query_name);
                 let keys = keys.iter().map(|(_, ty)| ty);
                 let lookup_value: Type = parse_quote!((#(#keys),*));
