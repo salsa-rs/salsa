@@ -108,7 +108,7 @@ where
                 }
 
                 QueryOrigin::Derived(_) => {
-                    self.delete_memo(key);
+                    self.memo_map.evict(key);
                 }
             }
         }
