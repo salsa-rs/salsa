@@ -4,6 +4,7 @@ use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use expect_test::expect;
 use salsa::storage::HasJarsDyn;
+use salsa::Durability;
 
 // Axes:
 //
@@ -40,6 +41,7 @@ use salsa::storage::HasJarsDyn;
 // | Intra  | Fallback | Both     | Tracked   | direct   | cycle_revalidate |
 // | Intra  | Fallback | New      | Tracked   | direct   | cycle_appears |
 // | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears |
+// | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears_durability |
 // | Intra  | Mixed    | N/A      | Tracked   | direct   | cycle_mixed_1 |
 // | Intra  | Mixed    | N/A      | Tracked   | direct   | cycle_mixed_2 |
 // | Cross  | Panic    | N/A      | Tracked   | both     | parallel/parallel_cycle_none_recover.rs |
@@ -293,6 +295,41 @@ fn cycle_disappears() {
     //     A --> B
     abc.set_b(&mut db).to(CycleQuery::None);
     assert!(cycle_a(&db, abc).is_ok());
+}
+
+/// A variant on `cycle_disappears` in which the values of
+/// `a` and `b` are set with durability values.
+/// If we are not careful, this could cause us to overlook
+/// the fact that the cycle will no longer occur.
+#[test]
+fn cycle_disappears_durability() {
+    let mut db = Database::default();
+    let abc = ABC::new(
+        &mut db,
+        CycleQuery::None,
+        CycleQuery::None,
+        CycleQuery::None,
+    );
+    abc.set_a(&mut db)
+        .with_durability(Durability::LOW)
+        .to(CycleQuery::B);
+    abc.set_b(&mut db)
+        .with_durability(Durability::HIGH)
+        .to(CycleQuery::A);
+
+    assert!(cycle_a(&db, abc).is_err());
+
+    // At this point, `a` read `LOW` input, and `b` read `HIGH` input. However,
+    // because `b` participates in the same cycle as `a`, its final durability
+    // should be `LOW`.
+    //
+    // Check that setting a `LOW` input causes us to re-execute `b` query, and
+    // observe that the cycle goes away.
+    abc.set_a(&mut db)
+        .with_durability(Durability::LOW)
+        .to(CycleQuery::None);
+
+    assert!(cycle_b(&mut db, abc).is_ok());
 }
 
 #[test]
