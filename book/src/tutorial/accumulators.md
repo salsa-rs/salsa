@@ -1,12 +1,12 @@
 # Defining the parser: reporting errors
 
 The last interesting case in the parser is how to handle a parse error.
-Because salsa functions are memoized and may not execute, they should not have side-effects,
+Because Salsa functions are memoized and may not execute, they should not have side-effects,
 so we don't just want to call `eprintln!`.
 If we did so, the error would only be reported the first time the function was called, but not
 on subsequent calls in the situation where the simply returns its memoized value.
 
-salsa defines a mechanism for managing this called an **accumulator**.
+Salsa defines a mechanism for managing this called an **accumulator**.
 In our case, we define an accumulator struct called `Diagnostics` in the `ir` module:
 
 ```rust

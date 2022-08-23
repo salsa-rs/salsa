@@ -63,7 +63,7 @@ It's generally better to structure tracked functions as functions of a single Sa
 
 ### The `return_ref` annotation
 
-You may have noticed that `parse_statements` is tagged with `#[salsa::tracked(return_ref)]`. [The function isn't actually tagged with `return_ref`; is the text incorrect or the code example?]
+You may have noticed that `parse_statements` is tagged with `#[salsa::tracked(return_ref)]`. 
 Ordinarily, when you call a tracked function, the result you get back is cloned out of the database.
 The `return_ref` attribute means that a reference into the database is returned instead.
 So, when called, `parse_statements` will return an `&Vec<Statement>` rather than cloning the `Vec`.
