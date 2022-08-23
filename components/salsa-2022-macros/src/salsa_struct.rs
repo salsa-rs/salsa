@@ -28,7 +28,6 @@
 use syn::spanned::Spanned;
 use heck::ToUpperCamelCase;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
-use quote::ToTokens;
 
 use crate::{configuration, options::Options};
 
@@ -313,6 +312,7 @@ impl SalsaStruct {
                 .field(#field_name_string, {
                     struct Test<T, Db: ?Sized>(::core::marker::PhantomData<T>, ::core::marker::PhantomData<Db>);
 
+                    #[allow(dead_code)]
                     impl<T: ::salsa::debug::DebugWithDb<Db>, Db: ?Sized> Test<T, Db> {
                         fn salsa_debug<'a, 'b: 'a>(a: &'a T, db: &'b Db) -> ::salsa::debug::DebugWith<'a, Db> {
                             a.debug(db)
