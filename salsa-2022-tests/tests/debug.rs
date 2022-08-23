@@ -1,8 +1,6 @@
-//! Test that a `tracked` fn on a `salsa::input`
-//! compiles and executes successfully.
+//! Test that `DeriveWithDb` is correctly derived.
 
 use expect_test::expect;
-use test_log::test;
 use salsa::DebugWithDb;
 
 #[salsa::jar(db = Db)]
@@ -40,9 +38,8 @@ impl salsa::Database for Database {
 
 impl Db for Database {}
 
-
 #[test]
-fn execute() {
+fn input() {
     let mut db = Database::default();
 
     let input = MyInput::new(&mut db, 22);
@@ -52,6 +49,8 @@ fn execute() {
     let complex_struct = ComplexStruct::new(&mut db, input, not_salsa);
 
     let actual = format!("{:?}", complex_struct.debug(&db));
-    let expected = expect![[r#"ComplexStruct { [salsa id]: 0, my_input: MyInput { [salsa id]: 0, field: 22 }, not_salsa: NotSalsa { field: "it's salsa time" } }"#]];
+    let expected = expect![[
+        r#"ComplexStruct { [salsa id]: 0, my_input: MyInput { [salsa id]: 0, field: 22 }, not_salsa: NotSalsa { field: "it's salsa time" } }"#
+    ]];
     expected.assert_eq(&actual);
 }
