@@ -4,19 +4,19 @@ Before we can define the [parser](./parser.md), we need to define the intermedia
 In the [basic structure](./structure.md), we defined some "pseudo-Rust" structures like `Statement` and `Expression`;
 now we are going to define them for real.
 
-## "salsa structs"
+## "Salsa structs"
 
-In addition to regular Rust types, we will make use of various **salsa structs**.
-A salsa struct is a struct that has been annotated with one of the salsa annotations:
+In addition to regular Rust types, we will make use of various **Salsa structs**.
+A Salsa struct is a struct that has been annotated with one of the Salsa annotations:
 
 * [`#[salsa::input]`](#input-structs), which designates the "base inputs" to your computation;
 * [`#[salsa::tracked]`](#tracked-structs), which designate intermediate values created during your computation;
 * [`#[salsa::interned]`](#interned-structs), which designate small values that are easy to compare for equality.
 
-All salsa structs store the actual values of their fields in the salsa database.
+All Salsa structs store the actual values of their fields in the Salsa database.
 This permits us to track when the values of those fields change to figure out what work will need to be re-executed.
 
-When you annotate a struct with one of the above salsa attributes, salsa actually generates a bunch of code to link that struct into the database.
+When you annotate a struct with one of the above Salsa attributes, Salsa actually generates a bunch of code to link that struct into the database.
 This code must be connected to some [jar](./jar.md).
 By default, this is `crate::Jar`, but you can specify a different jar with the `jar=` attribute (e.g., `#[salsa::input(jar = MyJar)]`).
 You must also list the struct in the jar definition itself, or you will get errors.
@@ -24,7 +24,7 @@ You must also list the struct in the jar definition itself, or you will get erro
 ## Input structs
 
 The first thing we will define is our **input**. 
-Every salsa program has some basic inputs that drive the rest of the computation.
+Every Salsa program has some basic inputs that drive the rest of the computation.
 The rest of the program must be some deterministic function of those base inputs,
 such that when those inputs change, we can try to efficiently recompute the new result of that function.
 
@@ -38,8 +38,8 @@ In our compiler, we have just one simple input, the `SourceProgram`, which has a
 
 ### The data lives in the database
 
-Although they are declared like other Rust structs, salsa structs are implemented quite differently.
-The values of their fields are stored in the salsa database, and the struct itself just contains a numeric identifier.
+Although they are declared like other Rust structs, Salsa structs are implemented quite differently.
+The values of their fields are stored in the Salsa database, and the struct itself just contains a numeric identifier.
 This means that the struct instances are copy (no matter what fields they contain).
 Creating instances of the struct and accessing fields is done by invoking methods like `new` as well as getters and setters.
 
@@ -81,7 +81,7 @@ In this case, the parser is going to take in the `SourceProgram` struct that we 
 ```
 
 Like with an input, the fields of a tracked struct are also stored in the database.
-Unlike an input, those fields are immutable (they cannot be "set"), and salsa compares them across revisions to know when they have changed.
+Unlike an input, those fields are immutable (they cannot be "set"), and Salsa compares them across revisions to know when they have changed.
 In this case, if parsing the input produced the same `Program` result (e.g., because the only change to the input was some trailing whitespace, perhaps),
 then subsequent parts of the computation won't need to re-execute.
 (We'll revisit the role of tracked structs in reuse more in future parts of the IR.)
@@ -121,7 +121,7 @@ For more details, see the [algorithm](../reference/algorithm.md) page of the ref
 
 ## Interned structs
 
-The final kind of salsa struct are *interned structs*.
+The final kind of Salsa struct are *interned structs*.
 As with input and tracked structs, the data for an interned struct is stored in the database, and you just pass around a single integer.
 Unlike those structs, if you intern the same data twice, you get back the **same integer**.
 
@@ -146,16 +146,16 @@ assert_eq!(f1, f2);
 ### Interned ids are guaranteed to be consistent within a revision, but not across revisions (but you don't have to care)
 
 Interned ids are guaranteed not to change within a single revision, so you can intern things from all over your program and get back consistent results.
-When you change the inputs, however, salsa may opt to clear some of the interned values and choose different integers.
+When you change the inputs, however, Salsa may opt to clear some of the interned values and choose different integers.
 However, if this happens, it will also be sure to re-execute every function that interned that value, so all of them still see a consistent value,
 just a different one than they saw in a previous revision.
 
-In other words, within a salsa computation, you can assume that interning produces a single consistent integer, and you don't have to think about it.
+In other words, within a Salsa computation, you can assume that interning produces a single consistent integer, and you don't have to think about it.
 If, however, you export interned identifiers outside the computation, and then change the inputs, they may no longer be valid or may refer to different values.
 
 ### Expressions and statements
 
-We won't use any special "salsa structs" for expressions and statements:
+We won't use any special "Salsa structs" for expressions and statements:
 
 ```rust
 {{#include ../../../calc-example/calc/src/ir.rs:statements_and_expressions}}

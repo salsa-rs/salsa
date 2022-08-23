@@ -1,8 +1,8 @@
-# How salsa works
+# How Salsa works
 
 ## Video available
 
-To get the most complete introduction to salsa's inner workings, check
+To get the most complete introduction to Salsa's inner workings, check
 out [the "How Salsa Works" video](https://youtu.be/_muY4HjSqVw). If
 you'd like a deeper dive, [the "Salsa in more depth"
 video](https://www.youtube.com/watch?v=i_IhACacPRY) digs into the
@@ -25,9 +25,9 @@ varieties:
   we'll figure out (fairly intelligently) when we can re-use these
   memoized values and when we have to recompute them.
 
-## How to use salsa in three easy steps
+## How to use Salsa in three easy steps
 
-Using salsa is as easy as 1, 2, 3...
+Using Salsa is as easy as 1, 2, 3...
 
 1. Define one or more **query groups** that contain the inputs
    and queries you will need. We'll start with one such group, but
@@ -48,4 +48,4 @@ things work.
 ## Digging into the plumbing
 
 Check out the [plumbing](plumbing.md) chapter to see a deeper explanation of the
-code that salsa generates and how it connects to the salsa library.
+code that Salsa generates and how it connects to the Salsa library.

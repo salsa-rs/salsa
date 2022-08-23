@@ -1,11 +1,11 @@
 # The "red-green" algorithm
 
-This page explains the basic salsa incremental algorithm.
-The algorithm is called the "red-green" algorithm, which is where the name salsa comes from.
+This page explains the basic Salsa incremental algorithm.
+The algorithm is called the "red-green" algorithm, which is where the name Salsa comes from.
 
 ### Database revisions
 
-The salsa database always tracks a single **revision**. Each time you set an input, the revision is incremented. So we start in revision `R1`, but when a `set` method is called, we will go to `R2`, then `R3`, and so on. For each input, we also track the revision in which it was last changed.
+The Salsa database always tracks a single **revision**. Each time you set an input, the revision is incremented. So we start in revision `R1`, but when a `set` method is called, we will go to `R2`, then `R3`, and so on. For each input, we also track the revision in which it was last changed.
 
 ### Basic rule: when inputs change, re-execute!
 
@@ -65,7 +65,7 @@ If the module text is changed, we saw that we have to re-execute `parse_module`,
 
 ## Durability: an optimization
 
-As an optimization, salsa includes the concept of **durability**, which is the notion of how often some piece of tracked data changes. 
+As an optimization, Salsa includes the concept of **durability**, which is the notion of how often some piece of tracked data changes. 
 
 For example, when compiling a Rust program, you might mark the inputs from crates.io as _high durability_ inputs, since they are unlikely to change. The current workspace could be marked as _low durability_, since changes to it are happening all the time.
 

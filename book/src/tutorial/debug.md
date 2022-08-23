@@ -7,7 +7,7 @@ Before we can do that, though, we have to address one question: how do we inspec
 ## The `DebugWithDb` trait
 
 Because an interned type like `Expression` just stores an integer, the traditional `Debug` trait is not very useful.
-To properly print a `Expression`, you need to access the salsa database to find out what its value is.
+To properly print a `Expression`, you need to access the Salsa database to find out what its value is.
 To solve this, `salsa` provides a `DebugWithDb` trait that acts like the regular `Debug`, but takes a database as argument.
 For types that implement this trait, you can invoke the `debug` method.
 This returns a temporary that implements the ordinary `Debug` trait, allowing you to write something like

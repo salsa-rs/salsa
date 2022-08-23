@@ -1,7 +1,7 @@
 # Basic structure
 
-Before we do anything with salsa, let's talk about the basic structure of the calc compiler.
-Part of salsa's design is that you are able to write programs that feel 'pretty close' to what a natural Rust program looks like.
+Before we do anything with Salsa, let's talk about the basic structure of the calc compiler.
+Part of Salsa's design is that you are able to write programs that feel 'pretty close' to what a natural Rust program looks like.
 
 ## Example program
 
