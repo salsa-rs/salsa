@@ -25,9 +25,9 @@
 //! * data method `impl Foo { fn data(&self, db: &dyn crate::Db) -> FooData { FooData { f: self.f(db), ... } } }`
 //!     * this could be optimized, particularly for interned fields
 
-use syn::spanned::Spanned;
 use heck::ToUpperCamelCase;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
+use syn::spanned::Spanned;
 
 use crate::{configuration, options::Options};
 
