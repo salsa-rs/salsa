@@ -25,6 +25,11 @@ macro_rules! parse_quote_spanned {
     }
 }
 
+/// Convert a single Ident to Literal: useful when &'static str is needed.
+pub(crate) fn literal(ident: &proc_macro2::Ident) -> proc_macro2::Literal {
+    proc_macro2::Literal::string(&ident.to_string())
+}
+
 mod accumulator;
 mod configuration;
 mod db;

@@ -91,7 +91,7 @@ fn execute() {
             "final_result_depends_on_y(MyInput(Id { value: 1 }))",
         ]"#]]);
 
-    input.set_field(&mut db, 23);
+    input.set_field(&mut db).to(23);
     // x = (23 + 1) / 2 = 12
     // Intermediate result x changes, so final result depends on x
     // needs to be recomputed;

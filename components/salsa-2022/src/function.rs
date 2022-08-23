@@ -1,11 +1,11 @@
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use arc_swap::ArcSwap;
 use crossbeam::{atomic::AtomicCell, queue::SegQueue};
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::IngredientRequiresReset,
+    ingredient::{fmt_index, IngredientRequiresReset},
     jar::Jar,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::local_state::QueryOrigin,
@@ -71,6 +71,8 @@ pub struct FunctionIngredient<C: Configuration> {
     /// Set to true once we invoke `register_dependent_fn` for `C::SalsaStruct`.
     /// Prevents us from registering more than once.
     registered: AtomicCell<bool>,
+
+    debug_name: &'static str,
 }
 
 pub trait Configuration {
@@ -87,7 +89,7 @@ pub trait Configuration {
     type Key: AsId;
 
     /// The value computed by the function.
-    type Value: std::fmt::Debug;
+    type Value: fmt::Debug;
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
@@ -137,7 +139,7 @@ impl<C> FunctionIngredient<C>
 where
     C: Configuration,
 {
-    pub fn new(index: IngredientIndex) -> Self {
+    pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
             index,
             memo_map: memo::MemoMap::default(),
@@ -145,6 +147,7 @@ where
             sync_map: Default::default(),
             deleted_entries: Default::default(),
             registered: Default::default(),
+            debug_name,
         }
     }
 
@@ -268,6 +271,10 @@ where
                 db.remove_stale_output(key, stale_output)
             }
         }
+    }
+
+    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_index(self.debug_name, index, fmt)
     }
 }
 

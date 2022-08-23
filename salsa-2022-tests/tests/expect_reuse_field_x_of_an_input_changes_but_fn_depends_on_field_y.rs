@@ -70,7 +70,7 @@ fn execute() {
             "result_depends_on_y(MyInput(Id { value: 1 }))",
         ]"#]]);
 
-    input.set_x(&mut db, 23);
+    input.set_x(&mut db).to(23);
     // input x changes, so result depends on x needs to be recomputed;
     assert_eq!(result_depends_on_x(&db, input), 24);
     db.assert_logs(expect![[r#"

@@ -64,8 +64,8 @@ fn execute() {
     if let Some(c) = err_b.downcast_ref::<salsa::Cycle>() {
         let expected = expect![[r#"
             [
-                "DependencyIndex { ingredient_index: IngredientIndex(8), key_index: Some(Id { value: 1 }) }",
-                "DependencyIndex { ingredient_index: IngredientIndex(9), key_index: Some(Id { value: 1 }) }",
+                "a(0)",
+                "b(0)",
             ]
         "#]];
         expected.assert_debug_eq(&c.all_participants(&db));

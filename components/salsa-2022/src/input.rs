@@ -1,6 +1,8 @@
+use std::fmt;
+
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::{Ingredient, IngredientRequiresReset},
+    ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryOrigin, Runtime},
     AsId, IngredientIndex, Revision,
@@ -15,6 +17,7 @@ where
 {
     ingredient_index: IngredientIndex,
     counter: u32,
+    debug_name: &'static str,
     _phantom: std::marker::PhantomData<Id>,
 }
 
@@ -22,10 +25,11 @@ impl<Id> InputIngredient<Id>
 where
     Id: InputId,
 {
-    pub fn new(index: IngredientIndex) -> Self {
+    pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
             ingredient_index: index,
             counter: Default::default(),
+            debug_name,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -94,6 +98,10 @@ where
         panic!(
             "unexpected call: input ingredients do not register for salsa struct deletion events"
         );
+    }
+
+    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_index(self.debug_name, index, fmt)
     }
 }
 
