@@ -1,4 +1,4 @@
-# Salsa Overview
+# Salsa overview
 
 {{#include caveat.md}}
 
