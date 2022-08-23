@@ -1,5 +1,4 @@
 use ir::{Diagnostics, SourceProgram};
-use salsa::DebugWithDb;
 
 // ANCHOR: jar_struct
 #[salsa::jar(db = Db)]
@@ -33,17 +32,9 @@ mod ir;
 mod parser;
 mod type_check;
 
-const PROGRAM: &str = r"
-fn area_rectangle(w, h) = w * h
-fn area_circle(r) = 3.14 * r * r
-print area_rectangle(3, 4)
-print area_circle(1)
-print 11 * 2
-";
-
 pub fn main() {
     let mut db = db::Database::default();
-    let source_program = SourceProgram::new(&mut db, PROGRAM.to_string());
+    let source_program = SourceProgram::new(&mut db, String::new());
     compile::compile(&db, source_program);
     let diagnostics = compile::compile::accumulated::<Diagnostics>(&db, source_program);
     eprintln!("{diagnostics:?}");
