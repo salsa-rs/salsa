@@ -28,32 +28,36 @@ jobs:
     continue-on-error: ${{ matrix.experimental }}
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions-rs/toolchain@v1
+    - name: Checkout
+      uses: actions/checkout@v2
+    - name: Setup Rust toolchain
+      uses: actions-rs/toolchain@v1
       with:
         toolchain: ${{ matrix.rust }}
         components: rustfmt, clippy
         default: true
-    - uses: actions-rs/cargo@v1
+    - name: Format
+      uses: actions-rs/cargo@v1
       with:
         command: fmt
         args: -- --check
-    - uses: actions-rs/cargo@v1
+    - name: Clippy
+      uses: actions-rs/cargo@v1
       with:
         command: clippy
-    - uses: actions-rs/cargo@v1
-      with:
-        command: check
-        args: --all
-    - uses: actions-rs/cargo@v1
+        args: --all-features --all-targets --all
+    - name: Test
+      uses: actions-rs/cargo@v1
       with:
         command: test
         args: --all-features --all-targets --all
-    - uses: actions-rs/cargo@v1
+    - name: Test docs
+      uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --all-features --doc
-    - uses: actions-rs/cargo@v1
+        args: --doc
+    - name: Check (without default features)
+      uses: actions-rs/cargo@v1
       with:
         command: check
         args: --no-default-features
