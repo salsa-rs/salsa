@@ -18,7 +18,6 @@ The struct must have a field named `storage` whose type is `salsa::Storage<Self>
 The `storage` struct owns all the data for the jars listed in the `db` attribute.
 
 The `salsa::db` attribute autogenerates a bunch of impls for things like the `salsa::HasJar<crate::Jar>` trait that we saw earlier.
-This means that ... [what goes here?]
 
 ## Implementing the `salsa::Database` trait
 
