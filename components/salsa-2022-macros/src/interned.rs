@@ -39,6 +39,7 @@ impl InternedStruct {
         let as_id_impl = self.as_id_impl();
         let named_fields_impl = self.inherent_impl_for_named_fields();
         let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
+        let as_debug_with_db_impl = self.as_debug_with_db_impl();
 
         Ok(quote! {
             #id_struct
@@ -47,6 +48,7 @@ impl InternedStruct {
             #as_id_impl
             #named_fields_impl
             #salsa_struct_in_db_impl
+            #as_debug_with_db_impl
         })
     }
 

@@ -38,6 +38,7 @@ impl InputStruct {
         let ingredients_for_impl = self.input_ingredients();
         let as_id_impl = self.as_id_impl();
         let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
+        let as_debug_with_db_impl = self.as_debug_with_db_impl();
 
         Ok(quote! {
             #(#config_structs)*
@@ -45,6 +46,7 @@ impl InputStruct {
             #inherent_impl
             #ingredients_for_impl
             #as_id_impl
+            #as_debug_with_db_impl
             #(#config_impls)*
             #salsa_struct_in_db_impl
         })
