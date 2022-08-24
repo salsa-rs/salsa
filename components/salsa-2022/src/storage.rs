@@ -8,7 +8,7 @@ use crate::jar::Jar;
 use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
-use crate::{Database, DatabaseKeyIndex, Id, IngredientIndex, Durability};
+use crate::{Database, DatabaseKeyIndex, Durability, Id, IngredientIndex};
 
 use super::routes::Routes;
 use super::{ParallelDatabase, Revision};
@@ -94,7 +94,7 @@ where
     }
 
     pub fn runtime_mut(&mut self) -> &mut Runtime {
-        &mut self.runtime
+        self.jars_mut().1
     }
 
     // ANCHOR: jars_mut

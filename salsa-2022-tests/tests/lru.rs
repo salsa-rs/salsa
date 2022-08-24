@@ -6,9 +6,9 @@ use std::sync::{
     Arc,
 };
 
+use salsa::storage::HasJarsDyn;
 use salsa_2022_tests::{HasLogger, Logger};
 use test_log::test;
-use salsa::storage::HasJarsDyn;
 
 #[salsa::jar(db = Db)]
 struct Jar(MyInput, get_hot_potato, get_hot_potato2, get_volatile);
