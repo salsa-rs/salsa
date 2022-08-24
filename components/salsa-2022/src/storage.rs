@@ -8,7 +8,7 @@ use crate::jar::Jar;
 use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
-use crate::{Database, DatabaseKeyIndex, Id, IngredientIndex};
+use crate::{Database, DatabaseKeyIndex, Id, IngredientIndex, Durability};
 
 use super::routes::Routes;
 use super::{ParallelDatabase, Revision};
@@ -203,6 +203,8 @@ pub trait HasJar<J> {
 pub trait HasJarsDyn {
     fn runtime(&self) -> &Runtime;
 
+    fn runtime_mut(&mut self) -> &mut Runtime;
+
     fn maybe_changed_after(&self, input: DependencyIndex, revision: Revision) -> bool;
 
     fn cycle_recovery_strategy(&self, input: IngredientIndex) -> CycleRecoveryStrategy;
@@ -226,6 +228,8 @@ pub trait HasJarsDyn {
     fn salsa_struct_deleted(&self, ingredient: IngredientIndex, id: Id);
 
     fn fmt_index(&self, index: DependencyIndex, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
+
+    fn synthetic_write(&mut self, durability: Durability);
 }
 // ANCHOR_END: HasJarsDyn
 
