@@ -1120,90 +1120,14 @@ This returns a temporary that implements the ordinary <code>Debug</code> trait, 
 <span class="boring">}
 </span></code></pre></pre>
 <p>and get back the output you expect.</p>
-<h2 id="implementing-the-debugwithdb-trait"><a class="header" href="#implementing-the-debugwithdb-trait">Implementing the <code>DebugWithDb</code> trait</a></h2>
-<p>For now, unfortunately, you have to implement the <code>DebugWithDb</code> trait manually, as we do not provide a derive.
-This is tedious but not difficult. Here is an example of implementing the trait for <code>Expression</code>:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl DebugWithDb&lt;dyn crate::Db + '_&gt; for Expression {
-    fn fmt(&amp;self, f: &amp;mut std::fmt::Formatter&lt;'_&gt;, db: &amp;dyn crate::Db) -&gt; std::fmt::Result {
-        match &amp;self.data {
-            ExpressionData::Op(a, b, c) =&gt; f
-                .debug_tuple(&quot;ExpressionData::Op&quot;)
-                .field(&amp;a.debug(db)) // use `a.debug(db)` for interned things
-                .field(&amp;b.debug(db))
-                .field(&amp;c.debug(db))
-                .finish(),
-            ExpressionData::Number(a) =&gt; {
-                f.debug_tuple(&quot;Number&quot;)
-                    .field(a) // use just `a` otherwise
-                    .finish()
-            }
-            ExpressionData::Variable(a) =&gt; f.debug_tuple(&quot;Variable&quot;).field(&amp;a.debug(db)).finish(),
-            ExpressionData::Call(a, b) =&gt; f
-                .debug_tuple(&quot;Call&quot;)
-                .field(&amp;a.debug(db))
-                .field(&amp;b.debug(db))
-                .finish(),
-        }
-    }
-}
-<span class="boring">}
-</span></code></pre></pre>
-<p>Some things to note:</p>
-<ul>
-<li>The <code>data</code> method gives access to the full enum from the database.</li>
-<li>The <a href="https://doc.rust-lang.org/std/fmt/struct.Formatter.html#"><code>Formatter</code></a> methods (e.g., <a href="https://doc.rust-lang.org/std/fmt/struct.Formatter.html#method.debug_tuple"><code>debug_tuple</code></a>) can be used to provide consistent output.</li>
-<li>When printing the value of a field, use <code>.field(&amp;a.debug(db))</code> for fields that are themselves interned or entities, and use <code>.field(&amp;a)</code> for fields that just implement the ordinary <code>Debug</code> trait.</li>
-</ul>
+<p>The <code>DebugWithDb</code> trait is automatically derived for all <code>#[input]</code>, <code>#[interned]</code> and <code>#[tracked]</code> structs.</p>
 <h2 id="forwarding-to-the-ordinary-debug-trait"><a class="header" href="#forwarding-to-the-ordinary-debug-trait">Forwarding to the ordinary <code>Debug</code> trait</a></h2>
 <p>For consistency, it is sometimes useful to have a <code>DebugWithDb</code> implementation even for types, like <code>Op</code>, that are just ordinary enums. You can do that like so:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl DebugWithDb&lt;dyn crate::Db + '_&gt; for Op {
-    fn fmt(&amp;self, f: &amp;mut std::fmt::Formatter&lt;'_&gt;, _db: &amp;dyn crate::Db) -&gt; std::fmt::Result {
-        write!(f, &quot;{:?}&quot;, self)
-    }
-}
-
-impl DebugWithDb&lt;dyn crate::Db + '_&gt; for Diagnostic {
-    fn fmt(&amp;self, f: &amp;mut std::fmt::Formatter&lt;'_&gt;, _db: &amp;dyn crate::Db) -&gt; std::fmt::Result {
-        write!(f, &quot;{:?}&quot;, self)
-    }
-}
-
-#[salsa::tracked]
-pub struct Function {
-    #[id]
-    name: FunctionId,
-
-    name_span: Span,
-
-    #[return_ref]
-    args: Vec&lt;VariableId&gt;,
-
-    #[return_ref]
-    body: Expression,
-}
-
-#[salsa::tracked]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-}
-
-#[salsa::accumulator]
-pub struct Diagnostics(Diagnostic);
-
-#[derive(new, Clone, Debug)]
-pub struct Diagnostic {
-    pub start: usize,
-    pub end: usize,
-    pub message: String,
-}
-<span class="boring">}
+</span>
+<span class="boring">fn main() {
+</span><span class="boring">}
 </span></code></pre></pre>
 <h2 id="writing-the-unit-test"><a class="header" href="#writing-the-unit-test">Writing the unit test</a></h2>
 <p>Now that we have our <code>DebugWithDb</code> impls in place, we can write a simple unit test harness.
@@ -1230,7 +1154,7 @@ fn parse_string(source_text: &amp;str) -&gt; String {
     let accumulated = parse_statements::accumulated::&lt;Diagnostics&gt;(&amp;db, source_program);
 
     // Format the result as a string and return it
-    format!(&quot;{:#?}&quot;, (statements, accumulated).debug(&amp;db))
+    format!(&quot;{:#?}&quot;, (statements.debug(&amp;db), accumulated))
 }
 <span class="boring">}
 </span></code></pre></pre>
@@ -1244,6 +1168,7 @@ fn parse_print() {
     let expected = expect_test::expect![[r#&quot;
         (
             Program {
+                [salsa id]: 0,
                 statements: [
                     Statement {
                         span: Span(
