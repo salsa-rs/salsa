@@ -78,17 +78,9 @@ struct Database {
     storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for Database {
-    fn salsa_runtime(&self) -> &salsa::Runtime {
-        self.storage.runtime()
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime {
-        self.storage.runtime_mut()
-    }
-}
-
 impl Db for Database {}
+
+impl salsa::Database for Database {}
 
 impl RefUnwindSafe for Database {}
 

@@ -11,9 +11,9 @@ pub trait Database: HasJarsDyn + AsSalsaDatabase {
         log::debug!("salsa_event: {:?}", event.debug(self));
     }
 
-    fn salsa_runtime(&self) -> &Runtime;
-
-    fn salsa_runtime_mut(&mut self) -> &mut Runtime;
+    fn salsa_runtime(&self) -> &Runtime {
+        self.runtime()
+    }
 }
 
 /// Indicates a database that also supports parallel query

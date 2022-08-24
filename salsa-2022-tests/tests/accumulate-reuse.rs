@@ -50,14 +50,6 @@ struct Database {
 
 impl salsa::Database for Database {
     fn salsa_event(&self, _event: salsa::Event) {}
-
-    fn salsa_runtime(&self) -> &salsa::Runtime {
-        self.storage.runtime()
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime {
-        self.storage.runtime_mut()
-    }
 }
 
 impl Db for Database {}
