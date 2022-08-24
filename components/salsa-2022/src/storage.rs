@@ -8,7 +8,7 @@ use crate::jar::Jar;
 use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
-use crate::{Database, DatabaseKeyIndex, Durability, Id, IngredientIndex};
+use crate::{Database, DatabaseKeyIndex, Id, IngredientIndex};
 
 use super::routes::Routes;
 use super::{ParallelDatabase, Revision};
