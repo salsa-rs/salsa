@@ -371,7 +371,7 @@ fn parse_string(source_text: &str) -> String {
     let accumulated = parse_statements::accumulated::<Diagnostics>(&db, source_program);
 
     // Format the result as a string and return it
-    format!("{:#?}", (statements, accumulated).debug(&db))
+    format!("{:#?}", (statements.debug(&db), accumulated))
 }
 // ANCHOR_END: parse_string
 
@@ -382,6 +382,7 @@ fn parse_print() {
     let expected = expect_test::expect![[r#"
         (
             Program {
+                [salsa id]: 0,
                 statements: [
                     Statement {
                         span: Span(
@@ -448,6 +449,7 @@ fn parse_example() {
     let expected = expect_test::expect![[r#"
         (
             Program {
+                [salsa id]: 0,
                 statements: [
                     Statement {
                         span: Span(
@@ -621,10 +623,15 @@ fn parse_error() {
     let expected = expect_test::expect![[r#"
         (
             Program {
+                [salsa id]: 0,
                 statements: [],
             },
             [
-                Diagnostic { start: 10, end: 11, message: "unexpected character" },
+                Diagnostic {
+                    start: 10,
+                    end: 11,
+                    message: "unexpected character",
+                },
             ],
         )"#]];
     expected.assert_eq(&actual);
@@ -638,6 +645,7 @@ fn parse_precedence() {
     let expected = expect_test::expect![[r#"
         (
             Program {
+                [salsa id]: 0,
                 statements: [
                     Statement {
                         span: Span(

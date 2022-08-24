@@ -42,6 +42,40 @@ impl<K: AsId, V> MemoMap<K, V> {
     pub(super) fn get(&self, key: K) -> Option<Guard<Arc<Memo<V>>>> {
         self.map.get(&key).map(|v| v.load())
     }
+
+    /// Evicts the existing memo for the given key, replacing it
+    /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
+    /// or has values assigned as output of another query, this has no effect.
+    pub(super) fn evict(&self, key: K) {
+        use crate::runtime::local_state::QueryOrigin;
+        use dashmap::mapref::entry::Entry::*;
+
+        if let Occupied(entry) = self.map.entry(key) {
+            let memo = entry.get().load();
+            match memo.revisions.origin {
+                QueryOrigin::Assigned(_)
+                | QueryOrigin::DerivedUntracked(_)
+                | QueryOrigin::BaseInput
+                | QueryOrigin::Field => {
+                    // Careful: Cannot evict memos whose values were
+                    // assigned as output of another query
+                    // or those with untracked inputs
+                    // as their values cannot be reconstructed.
+                    return;
+                }
+
+                QueryOrigin::Derived(_) => {
+                    let memo_evicted = Arc::new(Memo::new(
+                        None::<V>,
+                        memo.verified_at.load(),
+                        memo.revisions.clone(),
+                    ));
+
+                    entry.get().store(memo_evicted);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
