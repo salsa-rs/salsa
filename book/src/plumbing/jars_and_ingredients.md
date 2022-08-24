@@ -162,7 +162,11 @@ We can then do things like ask, "did this input change since revision R?" by
 ### `HasJarsDyn`
 
 There is one catch in the above setup.
-We need the database to be dyn-safe [what does this mean?], and we also need to be able to define the database trait without knowing the final database type to enable separate compilation.
+The user's code always interacts with a `dyn crate::Db` value, where `crate::Db` is the trait defined by the jar; the `crate::Db` trait extends `salsa::HasJar` which in turn extends `salsa::Database`.
+Ideally, we would have `salsa::Database` extend `salsa::HasJars`, which is the main trait that gives access to the jars data.
+But we don't want to do that because `HasJars` defines an associated type `Jars`, and that would mean that every reference to `dyn crate::Db` would have to specify the jars type using something like `dyn crate::Db<Jars = J>`.
+This would be unergonomic, but what's worse, it would actually be impossible: the final Jars type combines the jars from multiple crates, and so it is not known to any individual jar crate.
+To workaround this, `salsa::Database` in fact extends *another* trait, `HasJarsDyn`, that doesn't reveal the `Jars` or ingredient types directly, but just has various method that can be performed on an ingredient, given its `IngredientIndex`.
 Traits like `Ingredient<DB>` require knowing the full `DB` type.
 If we had one function ingredient directly invoke a method on `Ingredient<DB>`, that would imply that it has to be fully generic and only instantiated at the final crate, when the full database type is available.
 
