@@ -206,7 +206,7 @@ pub(crate) fn database(args: TokenStream, input: TokenStream) -> TokenStream {
 
     if std::env::var("SALSA_DUMP").is_ok() {
         println!("~~~ database_storage");
-        println!("{}", output.to_string());
+        println!("{}", output);
         println!("~~~ database_storage");
     }
 

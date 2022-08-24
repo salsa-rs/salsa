@@ -24,6 +24,7 @@ where
         // two list are in sorted order, we can merge them in linear time.
         while let (Some(&old_output), Some(&new_output)) = (old_outputs.peek(), new_outputs.peek())
         {
+            #[allow(clippy::comparison_chain)]
             if old_output < new_output {
                 // Output that was generated but is no longer.
                 Self::report_stale_output(db, key, old_output);

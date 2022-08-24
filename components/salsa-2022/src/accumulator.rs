@@ -16,7 +16,7 @@ pub trait Accumulator {
     type Data: Clone;
     type Jar;
 
-    fn accumulator_ingredient<'db, Db>(db: &'db Db) -> &'db AccumulatorIngredient<Self::Data>
+    fn accumulator_ingredient<Db>(db: &Db) -> &AccumulatorIngredient<Self::Data>
     where
         Db: ?Sized + HasJar<Self::Jar>;
 }

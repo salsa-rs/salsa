@@ -183,9 +183,9 @@ pub trait DbWithJar<J>: HasJar<J> + Database {
 }
 
 pub trait JarFromJars<J>: HasJars {
-    fn jar_from_jars<'db>(jars: &Self::Jars) -> &J;
+    fn jar_from_jars(jars: &Self::Jars) -> &J;
 
-    fn jar_from_jars_mut<'db>(jars: &mut Self::Jars) -> &mut J;
+    fn jar_from_jars_mut(jars: &mut Self::Jars) -> &mut J;
 }
 
 pub trait HasJar<J> {

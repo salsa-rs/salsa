@@ -25,7 +25,7 @@ pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program {
         parser.skip_whitespace();
 
         // If there are no more tokens, break
-        if let None = parser.peek() {
+        if parser.peek().is_none() {
             break;
         }
 
@@ -166,9 +166,9 @@ impl Parser<'_> {
     }
 
     fn low_op(&mut self) -> Option<Op> {
-        if let Some(_) = self.ch('+') {
+        if self.ch('+').is_some() {
             Some(Op::Add)
-        } else if let Some(_) = self.ch('-') {
+        } else if self.ch('-').is_some() {
             Some(Op::Subtract)
         } else {
             None
@@ -183,9 +183,9 @@ impl Parser<'_> {
     }
 
     fn high_op(&mut self) -> Option<Op> {
-        if let Some(_) = self.ch('*') {
+        if self.ch('*').is_some() {
             Some(Op::Multiply)
-        } else if let Some(_) = self.ch('/') {
+        } else if self.ch('/').is_some() {
             Some(Op::Divide)
         } else {
             None
@@ -217,7 +217,7 @@ impl Parser<'_> {
     fn parse_expression2(&mut self) -> Option<Expression> {
         let start_position = self.skip_whitespace();
         if let Some(w) = self.word() {
-            if let Some(_) = self.ch('(') {
+            if self.ch('(').is_some() {
                 let f = FunctionId::new(self.db, w);
                 let args = self.parse_expressions()?;
                 self.ch(')')?;
@@ -237,7 +237,7 @@ impl Parser<'_> {
                 self.span_from(start_position),
                 ExpressionData::Number(OrderedFloat::from(n)),
             ))
-        } else if let Some(_) = self.ch('(') {
+        } else if self.ch('(').is_some() {
             let expr = self.parse_expression()?;
             self.ch(')')?;
             Some(expr)
@@ -297,11 +297,9 @@ impl Parser<'_> {
         // In this loop, if we consume any characters, we always
         // return `Some`.
         let mut s = String::new();
-        let position = self.position;
+        let _position = self.position;
         while let Some(ch) = self.peek() {
-            if ch.is_alphabetic() || ch == '_' {
-                s.push(ch);
-            } else if !s.is_empty() && ch.is_numeric() {
+            if ch.is_alphabetic() || ch == '_' || (!s.is_empty() && ch.is_numeric()) {
                 s.push(ch);
             } else {
                 break;
@@ -321,7 +319,7 @@ impl Parser<'_> {
     ///
     /// Even on failure, only skips whitespace.
     fn number(&mut self) -> Option<f64> {
-        let start_position = self.skip_whitespace();
+        let _start_position = self.skip_whitespace();
 
         self.probe(|this| {
             // 👆 We need the call to `probe` here because we could consume
@@ -329,9 +327,7 @@ impl Parser<'_> {
             //    still return `None`.
             let mut s = String::new();
             while let Some(ch) = this.peek() {
-                if ch.is_numeric() {
-                    s.push(ch);
-                } else if ch == '.' {
+                if ch.is_numeric() || ch == '.' {
                     s.push(ch);
                 } else {
                     break;

@@ -107,7 +107,7 @@ where
         DatabaseKeyIndex {
             group_index: self.group_index,
             query_index: Q::QUERY_INDEX,
-            key_index: key_index,
+            key_index,
         }
     }
 

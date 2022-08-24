@@ -152,11 +152,10 @@ where
     fn mark_validated_output(
         &self,
         _db: &DB,
-        executor: DatabaseKeyIndex,
-        output_key: Option<crate::Id>,
+        _executor: DatabaseKeyIndex,
+        _output_key: Option<crate::Id>,
     ) {
         // FIXME
-        drop((executor, output_key));
     }
 
     fn remove_stale_output(

@@ -365,6 +365,7 @@ impl SalsaStruct {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(&str, fn(&syn::Attribute, &mut SalsaField))] = &[
     ("id", |_, ef| ef.has_id_attr = true),
     ("return_ref", |_, ef| ef.has_ref_attr = true),

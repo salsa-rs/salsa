@@ -18,7 +18,7 @@ pub trait HasLogger {
     /// clearing the logged events. This takes `&mut self` because
     /// it is meant to be run from outside any tracked functions.
     fn assert_logs(&mut self, expected: expect_test::Expect) {
-        let logs = std::mem::replace(&mut *self.logger().logs.lock().unwrap(), vec![]);
+        let logs = std::mem::take(&mut *self.logger().logs.lock().unwrap());
         expected.assert_eq(&format!("{:#?}", logs));
     }
 
@@ -26,7 +26,7 @@ pub trait HasLogger {
     /// clearing the logged events. This takes `&mut self` because
     /// it is meant to be run from outside any tracked functions.
     fn assert_logs_len(&mut self, expected: usize) {
-        let logs = std::mem::replace(&mut *self.logger().logs.lock().unwrap(), vec![]);
+        let logs = std::mem::take(&mut *self.logger().logs.lock().unwrap());
         assert_eq!(logs.len(), expected);
     }
 }

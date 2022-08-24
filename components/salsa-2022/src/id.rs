@@ -88,6 +88,5 @@ impl AsId for () {
 
     fn from_id(id: Id) -> Self {
         assert_eq!(0, id.as_u32());
-        ()
     }
 }

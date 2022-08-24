@@ -49,6 +49,7 @@ struct Error {
     cycle: Vec<String>,
 }
 
+#[derive(Default)]
 #[salsa::database(GroupStruct)]
 struct DatabaseImpl {
     storage: salsa::Storage<Self>,
@@ -61,16 +62,6 @@ impl ParallelDatabase for DatabaseImpl {
         Snapshot::new(DatabaseImpl {
             storage: self.storage.snapshot(),
         })
-    }
-}
-
-impl Default for DatabaseImpl {
-    fn default() -> Self {
-        let res = DatabaseImpl {
-            storage: salsa::Storage::default(),
-        };
-
-        res
     }
 }
 

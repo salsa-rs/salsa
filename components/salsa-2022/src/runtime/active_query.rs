@@ -104,7 +104,7 @@ impl ActiveQuery {
             self.dependencies
                 .iter()
                 .copied()
-                .chain(self.outputs.iter().map(|&o| o.into()))
+                .chain(self.outputs.iter().copied())
                 .collect()
         };
 

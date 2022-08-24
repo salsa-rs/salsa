@@ -10,7 +10,7 @@ pub(crate) fn tracked(
         syn::Item::Fn(item) => crate::tracked_fn::tracked(args, item),
         _ => syn::Error::new(
             item.span(),
-            &format!("tracked can be applied to structs and functions only"),
+            &"tracked can be applied to structs and functions only".to_string(),
         )
         .into_compile_error()
         .into(),

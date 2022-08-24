@@ -257,6 +257,7 @@ pub struct IdentityInterner<Id: AsId> {
 }
 
 impl<Id: AsId> IdentityInterner<Id> {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         IdentityInterner { data: PhantomData }
     }

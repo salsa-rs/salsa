@@ -55,6 +55,8 @@ pub(crate) struct StampedValue<V> {
 }
 
 impl<V> StampedValue<V> {
+    // FIXME: Use or remove this.
+    #[allow(dead_code)]
     pub(crate) fn merge_revision_info<U>(&mut self, other: &StampedValue<U>) {
         self.durability = self.durability.min(other.durability);
         self.changed_at = self.changed_at.max(other.changed_at);
@@ -284,7 +286,7 @@ impl Runtime {
             runtime_id: self.id(),
             kind: EventKind::WillBlockOn {
                 other_runtime_id: other_id,
-                database_key: database_key.into(),
+                database_key,
             },
         });
 

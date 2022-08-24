@@ -75,14 +75,12 @@ where
         // This time we can do a *deep* verify. Because this can recurse, don't hold the arcswap guard.
         let opt_old_memo = self.memo_map.get(key).map(Guard::into_inner);
         if let Some(old_memo) = &opt_old_memo {
-            if old_memo.value.is_some() {
-                if self.deep_verify_memo(db, old_memo, &active_query) {
-                    let value = unsafe {
-                        // Unsafety invariant: memo is present in memo_map.
-                        self.extend_memo_lifetime(old_memo).unwrap()
-                    };
-                    return Some(old_memo.revisions.stamped_value(value));
-                }
+            if old_memo.value.is_some() && self.deep_verify_memo(db, old_memo, &active_query) {
+                let value = unsafe {
+                    // Unsafety invariant: memo is present in memo_map.
+                    self.extend_memo_lifetime(old_memo).unwrap()
+                };
+                return Some(old_memo.revisions.stamped_value(value));
             }
         }
 

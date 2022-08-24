@@ -200,7 +200,7 @@ impl LocalState {
     pub(super) fn is_output(&self, entity: DatabaseKeyIndex) -> bool {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.is_output(entity.into())
+                top_query.is_output(entity)
             } else {
                 false
             }
@@ -259,6 +259,8 @@ impl LocalState {
 
     /// Update the top query on the stack to act as though it read a value
     /// of durability `durability` which changed in `revision`.
+    // FIXME: Use or remove this.
+    #[allow(dead_code)]
     pub(super) fn report_synthetic_read(&self, durability: Durability, revision: Revision) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {

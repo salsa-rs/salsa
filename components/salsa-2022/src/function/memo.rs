@@ -61,7 +61,6 @@ impl<K: AsId, V> MemoMap<K, V> {
                     // assigned as output of another query
                     // or those with untracked inputs
                     // as their values cannot be reconstructed.
-                    return;
                 }
 
                 QueryOrigin::Derived(_) => {
@@ -123,7 +122,7 @@ impl<V> Memo<V> {
         db.salsa_event(Event {
             runtime_id: runtime.id(),
             kind: EventKind::DidValidateMemoizedValue {
-                database_key: database_key_index.into(),
+                database_key: database_key_index,
             },
         });
 

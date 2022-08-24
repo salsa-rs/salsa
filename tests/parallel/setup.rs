@@ -46,7 +46,7 @@ impl<T> WithValue<T> for Cell<T> {
     fn with_value<R>(&self, value: T, closure: impl FnOnce() -> R) -> R {
         let old_value = self.replace(value);
 
-        let result = catch_unwind(AssertUnwindSafe(|| closure()));
+        let result = catch_unwind(AssertUnwindSafe(closure));
 
         self.set(old_value);
 

@@ -51,6 +51,7 @@ pub struct Routes<DB: HasJars> {
     /// Vector indexed by ingredient index. Yields the `DynRoute`,
     /// a function which can be applied to the `DB::Jars` to yield
     /// the `dyn Ingredient.
+    #[allow(clippy::type_complexity)]
     routes: Vec<(Box<DynRoute<DB>>, Box<DynMutRoute<DB>>)>,
 
     /// Indices of routes which need a 'reset' call.

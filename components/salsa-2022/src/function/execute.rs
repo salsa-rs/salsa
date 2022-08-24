@@ -36,7 +36,7 @@ where
         db.salsa_event(Event {
             runtime_id: runtime.id(),
             kind: EventKind::WillExecute {
-                database_key: database_key_index.into(),
+                database_key: database_key_index,
             },
         });
 
@@ -87,7 +87,7 @@ where
         // old value.
         if let Some(old_memo) = &opt_old_memo {
             self.backdate_if_appropriate(old_memo, &mut revisions, &value);
-            self.diff_outputs(db, database_key_index, &old_memo, &revisions);
+            self.diff_outputs(db, database_key_index, old_memo, &revisions);
         }
 
         let value = self
