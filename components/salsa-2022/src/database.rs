@@ -1,4 +1,4 @@
-use crate::{storage::HasJarsDyn, DebugWithDb, Event};
+use crate::{storage::HasJarsDyn, DebugWithDb, Durability, Event};
 
 pub trait Database: HasJarsDyn + AsSalsaDatabase {
     /// This function is invoked at key points in the salsa
@@ -9,6 +9,18 @@ pub trait Database: HasJarsDyn + AsSalsaDatabase {
     /// the standard `log` facade.
     fn salsa_event(&self, event: Event) {
         log::debug!("salsa_event: {:?}", event.debug(self));
+    }
+
+    /// A "synthetic write" causes the system to act *as though* some
+    /// input of durability `durability` has changed. This is mostly
+    /// useful for profiling scenarios.
+    ///
+    /// **WARNING:** Just like an ordinary write, this method triggers
+    /// cancellation. If you invoke it while a snapshot exists, it
+    /// will block until that snapshot is dropped -- if that snapshot
+    /// is owned by the current thread, this could trigger deadlock.
+    fn synthetic_write(&mut self, durability: Durability) {
+        self.runtime_mut().synthetic_write(durability);
     }
 }
 

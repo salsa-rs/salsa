@@ -228,8 +228,6 @@ pub trait HasJarsDyn {
     fn salsa_struct_deleted(&self, ingredient: IngredientIndex, id: Id);
 
     fn fmt_index(&self, index: DependencyIndex, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
-
-    fn synthetic_write(&mut self, durability: Durability);
 }
 // ANCHOR_END: HasJarsDyn
 

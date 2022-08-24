@@ -6,7 +6,7 @@ use std::sync::{
     Arc,
 };
 
-use salsa::storage::HasJarsDyn;
+use salsa::Database;
 use salsa_2022_tests::{HasLogger, Logger};
 use test_log::test;
 
@@ -61,16 +61,16 @@ fn get_volatile(db: &dyn Db, _input: MyInput) -> usize {
 
 #[salsa::db(Jar)]
 #[derive(Default)]
-struct Database {
+struct DatabaseImpl {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
-impl salsa::Database for Database {}
+impl salsa::Database for DatabaseImpl {}
 
-impl Db for Database {}
+impl Db for DatabaseImpl {}
 
-impl HasLogger for Database {
+impl HasLogger for DatabaseImpl {
     fn logger(&self) -> &Logger {
         &self.logger
     }
@@ -82,7 +82,7 @@ fn load_n_potatoes() -> usize {
 
 #[test]
 fn lru_works() {
-    let mut db = Database::default();
+    let mut db = DatabaseImpl::default();
     assert_eq!(load_n_potatoes(), 0);
 
     for i in 0..128u32 {
@@ -98,7 +98,7 @@ fn lru_works() {
 
 #[test]
 fn lru_doesnt_break_volatile_queries() {
-    let mut db = Database::default();
+    let mut db = DatabaseImpl::default();
 
     // Create all inputs first, so that there are no revision changes among calls to `get_volatile`
     let inputs: Vec<MyInput> = (0..128usize)
@@ -118,7 +118,7 @@ fn lru_doesnt_break_volatile_queries() {
 
 #[test]
 fn lru_can_be_changed_at_runtime() {
-    let mut db = Database::default();
+    let mut db = DatabaseImpl::default();
     assert_eq!(load_n_potatoes(), 0);
 
     let inputs: Vec<(u32, MyInput)> = (0..128).map(|i| (i, MyInput::new(&mut db, i))).collect();
@@ -161,7 +161,7 @@ fn lru_can_be_changed_at_runtime() {
 
 #[test]
 fn lru_keeps_dependency_info() {
-    let mut db = Database::default();
+    let mut db = DatabaseImpl::default();
     let capacity = 32;
 
     // Invoke `get_hot_potato2` 33 times. This will (in turn) invoke

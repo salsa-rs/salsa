@@ -168,10 +168,6 @@ fn has_jars_dyn_impl(input: &syn::ItemStruct, storage: &syn::Ident) -> syn::Item
                 let ingredient = self.#storage.ingredient(index.ingredient_index());
                 ingredient.fmt_index(index.key_index(), fmt)
             }
-
-            fn synthetic_write(&mut self, durability: salsa::Durability) {
-                self.runtime_mut().synthetic_write(durability);
-            }
         }
     }
 }
