@@ -40,7 +40,7 @@ See:
 ## Cancellation
 
 Queries that are no longer needed due to concurrent writes or changes in dependencies are cancelled
-by Salsa. Each accesss of an intermediate query is a potential cancellation point. cancellation is
+by Salsa. Each access of an intermediate query is a potential cancellation point. Cancellation is
 implemented via panicking, and Salsa internals are intended to be panic-safe.
 
 If you have a query that contains a long loop which does not execute any intermediate queries,

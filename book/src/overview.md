@@ -263,7 +263,7 @@ let w2 = Word::new(db, "bar".to_string());
 let w3 = Word::new(db, "foo".to_string());
 ```
 
-When you create two interned structs with the same field values, you are guaranted to get back the same integer id. So here, we know that `assert_eq!(w1, w3)` is true and `assert_ne!(w1, w2)`.
+When you create two interned structs with the same field values, you are guaranteed to get back the same integer id. So here, we know that `assert_eq!(w1, w3)` is true and `assert_ne!(w1, w2)`.
 
 You can access the fields of an interned struct using a getter, like `word.text(db)`. These getters respect the `#[return_ref]` annotation. Like tracked structs, the fields of interned structs are immutable.
 

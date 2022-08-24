@@ -136,7 +136,7 @@ where
                 return;
             }
 
-            // Otherwise, wait until some other storage entites have dropped.
+            // Otherwise, wait until some other storage entities have dropped.
             // We create a mutex here because the cvar api requires it, but we
             // don't really need one as the data being protected is actually
             // the jars above.
