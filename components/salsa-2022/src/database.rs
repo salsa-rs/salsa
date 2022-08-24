@@ -1,4 +1,4 @@
-use crate::{storage::HasJarsDyn, DebugWithDb, Event, Runtime};
+use crate::{storage::HasJarsDyn, DebugWithDb, Event};
 
 pub trait Database: HasJarsDyn + AsSalsaDatabase {
     /// This function is invoked at key points in the salsa
@@ -9,10 +9,6 @@ pub trait Database: HasJarsDyn + AsSalsaDatabase {
     /// the standard `log` facade.
     fn salsa_event(&self, event: Event) {
         log::debug!("salsa_event: {:?}", event.debug(self));
-    }
-
-    fn salsa_runtime(&self) -> &Runtime {
-        self.runtime()
     }
 }
 

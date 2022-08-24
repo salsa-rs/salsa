@@ -261,7 +261,7 @@ where
         if let Some(origin) = self.delete_memo(id) {
             let key = self.database_key_index(id);
             db.salsa_event(Event {
-                runtime_id: db.salsa_runtime().id(),
+                runtime_id: db.runtime().id(),
                 kind: EventKind::DidDiscard { key },
             });
 

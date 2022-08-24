@@ -56,7 +56,7 @@ pub enum EventKind {
     /// before they have answered us.
     ///
     /// (NB: you can find the `id` of the current thread via the
-    /// `salsa_runtime`)
+    /// `runtime`)
     WillBlockOn {
         /// The id of the runtime we will block on.
         other_runtime_id: RuntimeId,

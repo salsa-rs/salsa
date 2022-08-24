@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::{
     debug::DebugWithDb,
     runtime::{local_state::ActiveQueryGuard, StampedValue},
+    storage::HasJarsDyn,
     Cycle, Database, Event, EventKind,
 };
 
@@ -27,7 +28,7 @@ where
         active_query: ActiveQueryGuard<'_>,
         opt_old_memo: Option<Arc<Memo<C::Value>>>,
     ) -> StampedValue<&C::Value> {
-        let runtime = db.salsa_runtime();
+        let runtime = db.runtime();
         let revision_now = runtime.current_revision();
         let database_key_index = active_query.database_key_index;
 

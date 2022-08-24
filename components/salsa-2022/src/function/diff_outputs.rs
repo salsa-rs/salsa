@@ -45,7 +45,7 @@ where
     }
 
     fn report_stale_output(db: &DynDb<'_, C>, key: DatabaseKeyIndex, output: DependencyIndex) {
-        let runtime_id = db.salsa_runtime().id();
+        let runtime_id = db.runtime().id();
         db.salsa_event(Event {
             runtime_id,
             kind: EventKind::WillDiscardStaleOutput {

@@ -55,7 +55,7 @@ fn get_hot_potato2(db: &dyn Db, input: MyInput) -> u32 {
 #[salsa::tracked(jar = Jar, lru = 32)]
 fn get_volatile(db: &dyn Db, _input: MyInput) -> usize {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
-    db.salsa_runtime().report_untracked_read();
+    db.runtime().report_untracked_read();
     COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 

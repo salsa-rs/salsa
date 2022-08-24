@@ -26,7 +26,7 @@ impl SyncMap {
         db: &'me dyn Database,
         database_key_index: DatabaseKeyIndex,
     ) -> Option<ClaimGuard<'me>> {
-        let runtime = db.salsa_runtime();
+        let runtime = db.runtime();
         match self.sync_map.entry(database_key_index.key_index) {
             dashmap::mapref::entry::Entry::Vacant(entry) => {
                 entry.insert(SyncState {

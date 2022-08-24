@@ -3,7 +3,7 @@ use crate::{
     key::DependencyIndex,
     runtime::local_state::QueryOrigin,
     storage::{HasJar, HasJarsDyn},
-    Database, DatabaseKeyIndex,
+    DatabaseKeyIndex,
 };
 
 use super::{Configuration, DynDb, FunctionIngredient};
@@ -26,7 +26,7 @@ where
         // Now walk over all the things that the value depended on
         // and find the values they accumulated into the given
         // accumulator:
-        let runtime = db.salsa_runtime();
+        let runtime = db.runtime();
         let mut result = vec![];
         let accumulator_ingredient = A::accumulator_ingredient(db);
         let mut stack = Stack::new(self.database_key_index(key));

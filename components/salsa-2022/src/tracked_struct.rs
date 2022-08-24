@@ -111,7 +111,7 @@ where
     /// discussion and important considerations.
     pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id) {
         db.salsa_event(Event {
-            runtime_id: db.salsa_runtime().id(),
+            runtime_id: db.runtime().id(),
             kind: crate::EventKind::DidDiscard {
                 key: self.database_key_index(id),
             },
