@@ -43,14 +43,14 @@ impl<K: AsId, V> MemoMap<K, V> {
         self.map.get(&key).map(|v| v.load())
     }
 
-        /// Evicts the existing memo for the given key, replacing it
-    /// with an equivalent memo that has no value. If the memo is untracked, BaseInput, 
+    /// Evicts the existing memo for the given key, replacing it
+    /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
     pub(super) fn evict(&self, key: K) {
-        use dashmap::mapref::entry::Entry::*;
         use crate::runtime::local_state::QueryOrigin;
+        use dashmap::mapref::entry::Entry::*;
 
-        if let Occupied(entry )=  self.map.entry(key) {
+        if let Occupied(entry) = self.map.entry(key) {
             let memo = entry.get().load();
             match memo.revisions.origin {
                 QueryOrigin::Assigned(_)
@@ -62,15 +62,15 @@ impl<K: AsId, V> MemoMap<K, V> {
                     // or those with untracked inputs
                     // as their values cannot be reconstructed.
                     return;
-                },
-                
+                }
+
                 QueryOrigin::Derived(_) => {
                     let memo_evicted = Arc::new(Memo::new(
                         None::<V>,
                         memo.verified_at.load(),
                         memo.revisions.clone(),
                     ));
-    
+
                     entry.get().store(memo_evicted);
                 }
             }

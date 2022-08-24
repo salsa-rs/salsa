@@ -1,10 +1,6 @@
 use arc_swap::Guard;
 
-use crate::{
-    database::AsSalsaDatabase,
-    runtime::StampedValue,
-    AsId, Database,
-};
+use crate::{database::AsSalsaDatabase, runtime::StampedValue, AsId, Database};
 
 use super::{Configuration, DynDb, FunctionIngredient};
 
