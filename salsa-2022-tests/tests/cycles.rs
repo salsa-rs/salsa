@@ -3,7 +3,6 @@
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use expect_test::expect;
-use salsa::storage::HasJarsDyn;
 use salsa::Durability;
 
 // Axes:
@@ -99,13 +98,13 @@ fn memoized_b(db: &dyn Db, input: MyInput) {
 
 #[salsa::tracked(jar = Jar)]
 fn volatile_a(db: &dyn Db, input: MyInput) {
-    db.runtime().report_untracked_read();
+    db.report_untracked_read();
     volatile_b(db, input)
 }
 
 #[salsa::tracked(jar = Jar)]
 fn volatile_b(db: &dyn Db, input: MyInput) {
-    db.runtime().report_untracked_read();
+    db.report_untracked_read();
     volatile_a(db, input)
 }
 

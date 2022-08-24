@@ -22,6 +22,14 @@ pub trait Database: HasJarsDyn + AsSalsaDatabase {
     fn synthetic_write(&mut self, durability: Durability) {
         self.runtime_mut().synthetic_write(durability);
     }
+
+    /// Reports that the query depends on some state unknown to salsa.
+    ///
+    /// Queries which report untracked reads will be re-executed in the next
+    /// revision.
+    fn report_untracked_read(&self) {
+        self.runtime().report_untracked_read();
+    }
 }
 
 /// Indicates a database that also supports parallel query
