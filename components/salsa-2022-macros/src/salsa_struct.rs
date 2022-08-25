@@ -29,7 +29,10 @@ use heck::ToUpperCamelCase;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use syn::spanned::Spanned;
 
-use crate::{configuration, options::{Options, AllowedOptions}};
+use crate::{
+    configuration,
+    options::{AllowedOptions, Options},
+};
 
 pub(crate) struct SalsaStruct<A: AllowedOptions> {
     args: Options<A>,
