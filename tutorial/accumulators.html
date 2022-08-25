@@ -146,9 +146,10 @@
                     <main>
                         <h1 id="defining-the-parser-reporting-errors"><a class="header" href="#defining-the-parser-reporting-errors">Defining the parser: reporting errors</a></h1>
 <p>The last interesting case in the parser is how to handle a parse error.
-Because salsa functions are memoized and may not execute, they should not have side-effects,
+Because Salsa functions are memoized and may not execute, they should not have side-effects,
 so we don't just want to call <code>eprintln!</code>.
-If we did so, the error would only be reported the first time the function was called.</p>
+If we did so, the error would only be reported the first time the function was called, but not
+on subsequent calls in the situation where the simply returns its memoized value.</p>
 <p>Salsa defines a mechanism for managing this called an <strong>accumulator</strong>.
 In our case, we define an accumulator struct called <code>Diagnostics</code> in the <code>ir</code> module:</p>
 <pre><pre class="playground"><code class="language-rust">
@@ -168,7 +169,7 @@ pub struct Diagnostic {
 <p>Accumulator structs are always newtype structs with a single field, in this case of type <code>Diagnostic</code>.
 Memoized functions can <em>push</em> <code>Diagnostic</code> values onto the accumulator.
 Later, you can invoke a method to find all the values that were pushed by the memoized functions
-or any function that it called
+or any functions that they called
 (e.g., we could get the set of <code>Diagnostic</code> values produced by the <code>parse_statements</code> function).</p>
 <p>The <code>Parser::report_error</code> method contains an example of pushing a diagnostic:</p>
 <pre><pre class="playground"><code class="language-rust">

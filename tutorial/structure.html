@@ -145,8 +145,8 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="basic-structure"><a class="header" href="#basic-structure">Basic structure</a></h1>
-<p>Before we do anything with salsa, let's talk about the basic structure of the calc compiler.
-Part of salsa's design is that you are able to write programs that feel 'pretty close' to what a natural Rust program looks like.</p>
+<p>Before we do anything with Salsa, let's talk about the basic structure of the calc compiler.
+Part of Salsa's design is that you are able to write programs that feel 'pretty close' to what a natural Rust program looks like.</p>
 <h2 id="example-program"><a class="header" href="#example-program">Example program</a></h2>
 <p>This is our example calc program:</p>
 <pre><code>x = 5
@@ -175,7 +175,7 @@ print z
     Print(Expression),
 }
 
-    /// Defines `fn &lt;name&gt;(&lt;args&gt;) = &lt;body&gt;`
+/// Defines `fn &lt;name&gt;(&lt;args&gt;) = &lt;body&gt;`
 struct Function {
     name: FunctionId,
     args: Vec&lt;VariableId&gt;,
@@ -218,7 +218,7 @@ type VariableId = /* interned string */;
 We're going to write the checker in a &quot;context-less&quot; style,
 which is a bit less intuitive but allows for more incremental re-use.
 The idea is to compute, for a given expression, which variables it references.
-Then there is a function &quot;check&quot; which ensures that those variables are a subset of those that are already defined.</p>
+Then there is a function <code>check</code> which ensures that those variables are a subset of those that are already defined.</p>
 <h2 id="interpreter"><a class="header" href="#interpreter">Interpreter</a></h2>
 <p>The interpreter will execute the program and print the result. We don't bother with much incremental re-use here,
 though it's certainly possible.</p>

@@ -149,22 +149,22 @@
 In the <a href="./structure.html">basic structure</a>, we defined some &quot;pseudo-Rust&quot; structures like <code>Statement</code> and <code>Expression</code>;
 now we are going to define them for real.</p>
 <h2 id="salsa-structs"><a class="header" href="#salsa-structs">&quot;Salsa structs&quot;</a></h2>
-<p>In addition to regular Rust types, we will make use of various <strong>salsa structs</strong>.
-A salsa struct is a struct that has been annotated with one of the salsa annotations:</p>
+<p>In addition to regular Rust types, we will make use of various <strong>Salsa structs</strong>.
+A Salsa struct is a struct that has been annotated with one of the Salsa annotations:</p>
 <ul>
 <li><a href="#input-structs"><code>#[salsa::input]</code></a>, which designates the &quot;base inputs&quot; to your computation;</li>
 <li><a href="#tracked-structs"><code>#[salsa::tracked]</code></a>, which designate intermediate values created during your computation;</li>
 <li><a href="#interned-structs"><code>#[salsa::interned]</code></a>, which designate small values that are easy to compare for equality.</li>
 </ul>
-<p>All salsa structs store the actual values of their fields in the salsa database.
+<p>All Salsa structs store the actual values of their fields in the Salsa database.
 This permits us to track when the values of those fields change to figure out what work will need to be re-executed.</p>
-<p>When you annotate a struct with one of the above salsa attributes, salsa actually generates a bunch of code to link that struct into the database.
+<p>When you annotate a struct with one of the above Salsa attributes, Salsa actually generates a bunch of code to link that struct into the database.
 This code must be connected to some <a href="./jar.html">jar</a>.
 By default, this is <code>crate::Jar</code>, but you can specify a different jar with the <code>jar=</code> attribute (e.g., <code>#[salsa::input(jar = MyJar)]</code>).
 You must also list the struct in the jar definition itself, or you will get errors.</p>
 <h2 id="input-structs"><a class="header" href="#input-structs">Input structs</a></h2>
 <p>The first thing we will define is our <strong>input</strong>. 
-Every salsa program has some basic inputs that drive the rest of the computation.
+Every Salsa program has some basic inputs that drive the rest of the computation.
 The rest of the program must be some deterministic function of those base inputs,
 such that when those inputs change, we can try to efficiently recompute the new result of that function.</p>
 <p>Inputs are defined as Rust structs with a <code>#[salsa::input]</code> annotation:</p>
@@ -180,8 +180,8 @@ pub struct SourceProgram {
 </span></code></pre></pre>
 <p>In our compiler, we have just one simple input, the <code>SourceProgram</code>, which has a <code>text</code> field (the string).</p>
 <h3 id="the-data-lives-in-the-database"><a class="header" href="#the-data-lives-in-the-database">The data lives in the database</a></h3>
-<p>Although they are declared like other Rust structs, salsa structs are implemented quite differently.
-The values of their fields are stored in the salsa database, and the struct itself just contains a numeric identifier.
+<p>Although they are declared like other Rust structs, Salsa structs are implemented quite differently.
+The values of their fields are stored in the Salsa database, and the struct itself just contains a numeric identifier.
 This means that the struct instances are copy (no matter what fields they contain).
 Creating instances of the struct and accessing fields is done by invoking methods like <code>new</code> as well as getters and setters.</p>
 <p>More concretely, the <code>#[salsa::input]</code> annotation will generate a struct for <code>SourceProgram</code> like this:</p>
@@ -224,7 +224,7 @@ pub struct Program {
 <span class="boring">}
 </span></code></pre></pre>
 <p>Like with an input, the fields of a tracked struct are also stored in the database.
-Unlike an input, those fields are immutable (they cannot be &quot;set&quot;), and salsa compares them across revisions to know when they have changed.
+Unlike an input, those fields are immutable (they cannot be &quot;set&quot;), and Salsa compares them across revisions to know when they have changed.
 In this case, if parsing the input produced the same <code>Program</code> result (e.g., because the only change to the input was some trailing whitespace, perhaps),
 then subsequent parts of the computation won't need to re-execute.
 (We'll revisit the role of tracked structs in reuse more in future parts of the IR.)</p>
@@ -239,9 +239,7 @@ then subsequent parts of the computation won't need to re-execute.
 </ul>
 <h2 id="representing-functions"><a class="header" href="#representing-functions">Representing functions</a></h2>
 <p>We will also use a tracked struct to represent each function:
-Next we will define a <strong>tracked struct</strong>.
-Whereas inputs represent the <em>start</em> of a computation, tracked structs represent intermediate values created during your computation.</p>
-<p>The <code>Function</code> struct is going to be created by the parser to represent each of the functions defined by the user:</p>
+The <code>Function</code> struct is going to be created by the parser to represent each of the functions defined by the user:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -260,9 +258,7 @@ pub struct Function {
 }
 <span class="boring">}
 </span></code></pre></pre>
-<p>Like with an input, the fields of a tracked struct are also stored in the database.
-Unlike an input, those fields are immutable (they cannot be &quot;set&quot;), and salsa compares them across revisions to know when they have changed.
-If we had created some <code>Function</code> instance <code>f</code>, for example, we might find that <code>the f.body</code> field changes
+<p>If we had created some <code>Function</code> instance <code>f</code>, for example, we might find that <code>the f.body</code> field changes
 because the user changed the definition of <code>f</code>.
 This would mean that we have to re-execute those parts of the code that depended on <code>f.body</code>
 (but not those parts of the code that depended on the body of <em>other</em> functions).</p>
@@ -278,7 +274,7 @@ This indicates that, across two revisions R1 and R2, if two functions are create
 Adding <code>#[id]</code> attributes is an optimization and never affects correctness.
 For more details, see the <a href="../reference/algorithm.html">algorithm</a> page of the reference.</p>
 <h2 id="interned-structs"><a class="header" href="#interned-structs">Interned structs</a></h2>
-<p>The final kind of salsa struct are <em>interned structs</em>.
+<p>The final kind of Salsa struct are <em>interned structs</em>.
 As with input and tracked structs, the data for an interned struct is stored in the database, and you just pass around a single integer.
 Unlike those structs, if you intern the same data twice, you get back the <strong>same integer</strong>.</p>
 <p>A classic use of interning is for small strings like function names and variables.
@@ -313,13 +309,13 @@ assert_eq!(f1, f2);
 </span></code></pre></pre>
 <h3 id="interned-ids-are-guaranteed-to-be-consistent-within-a-revision-but-not-across-revisions-but-you-dont-have-to-care"><a class="header" href="#interned-ids-are-guaranteed-to-be-consistent-within-a-revision-but-not-across-revisions-but-you-dont-have-to-care">Interned ids are guaranteed to be consistent within a revision, but not across revisions (but you don't have to care)</a></h3>
 <p>Interned ids are guaranteed not to change within a single revision, so you can intern things from all over your program and get back consistent results.
-When you change the inputs, however, salsa may opt to clear some of the interned values and choose different integers.
+When you change the inputs, however, Salsa may opt to clear some of the interned values and choose different integers.
 However, if this happens, it will also be sure to re-execute every function that interned that value, so all of them still see a consistent value,
 just a different one than they saw in a previous revision.</p>
-<p>In other words, within a salsa computation, you can assume that interning produces a single consistent integer, and you don't have to think about it.
-If however you export interned identifiers outside the computation, and then change the inputs, they may not longer be valid or may refer to different values.</p>
+<p>In other words, within a Salsa computation, you can assume that interning produces a single consistent integer, and you don't have to think about it.
+If, however, you export interned identifiers outside the computation, and then change the inputs, they may no longer be valid or may refer to different values.</p>
 <h3 id="expressions-and-statements"><a class="header" href="#expressions-and-statements">Expressions and statements</a></h3>
-<p>We'll won't use any special &quot;salsa structs&quot; for expressions and statements:</p>
+<p>We won't use any special &quot;Salsa structs&quot; for expressions and statements:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -365,7 +361,7 @@ pub enum Op {
 <p>Since statements and expressions are not tracked, this implies that we are only attempting to get incremental re-use at the granularity of functions --
 whenever anything in a function body changes, we consider the entire function body dirty and re-execute anything that depended on it.
 It usually makes sense to draw some kind of &quot;reasonably coarse&quot; boundary like this.</p>
-<p>One downside of the way we have set things up: we inlined the position into each of the structs.</p>
+<p>One downside of the way we have set things up: we inlined the position into each of the structs [what exactly does this mean?].</p>
 
                     </main>
 

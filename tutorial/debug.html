@@ -150,7 +150,7 @@ To do so, we will create a database, set the input source text, run the parser, 
 Before we can do that, though, we have to address one question: how do we inspect the value of an interned type like <code>Expression</code>?</p>
 <h2 id="the-debugwithdb-trait"><a class="header" href="#the-debugwithdb-trait">The <code>DebugWithDb</code> trait</a></h2>
 <p>Because an interned type like <code>Expression</code> just stores an integer, the traditional <code>Debug</code> trait is not very useful.
-To properly print a <code>Expression</code>, you need to access the salsa database to find out what its value is.
+To properly print a <code>Expression</code>, you need to access the Salsa database to find out what its value is.
 To solve this, <code>salsa</code> provides a <code>DebugWithDb</code> trait that acts like the regular <code>Debug</code>, but takes a database as argument.
 For types that implement this trait, you can invoke the <code>debug</code> method.
 This returns a temporary that implements the ordinary <code>Debug</code> trait, allowing you to write something like</p>
@@ -161,7 +161,7 @@ This returns a temporary that implements the ordinary <code>Debug</code> trait, 
 <span class="boring">}
 </span></code></pre></pre>
 <p>and get back the output you expect.</p>
-<p>The <code>DebugWithDb</code> trait is automatically derived for all <code>#[input]</code>, <code>#[interned]</code> and <code>#[tracked]</code> structs.</p>
+<p>The <code>DebugWithDb</code> trait is automatically derived for all <code>#[input]</code>, <code>#[interned]</code>, and <code>#[tracked]</code> structs.</p>
 <h2 id="forwarding-to-the-ordinary-debug-trait"><a class="header" href="#forwarding-to-the-ordinary-debug-trait">Forwarding to the ordinary <code>Debug</code> trait</a></h2>
 <p>For consistency, it is sometimes useful to have a <code>DebugWithDb</code> implementation even for types, like <code>Op</code>, that are just ordinary enums. You can do that like so:</p>
 <pre><pre class="playground"><code class="language-rust">

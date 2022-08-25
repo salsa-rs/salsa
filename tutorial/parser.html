@@ -152,7 +152,7 @@ and create the <code>Statement</code>, <code>Function</code>, and <code>Expressi
 <p>To minimize dependencies, we are going to write a <a href="https://en.wikipedia.org/wiki/Recursive_descent_parser">recursive descent parser</a>.
 Another option would be to use a <a href="https://rustrepo.com/catalog/rust-parsing_newest_1">Rust parsing framework</a>.
 We won't cover the parsing itself in this tutorial -- you can read the code if you want to see how it works.
-We're going to focus only on the salsa-related aspects.</p>
+We're going to focus only on the Salsa-related aspects.</p>
 <h2 id="the-parse_statements-function"><a class="header" href="#the-parse_statements-function">The <code>parse_statements</code> function</a></h2>
 <p>The starting point for the parser is the <code>parse_statements</code> function:</p>
 <pre><pre class="playground"><code class="language-rust">
@@ -198,16 +198,16 @@ pub fn parse_statements(db: &amp;dyn crate::Db, source: SourceProgram) -&gt; Pro
 <span class="boring">}
 </span></code></pre></pre>
 <p>This function is annotated as <code>#[salsa::tracked]</code>.
-That means that, when it is called, salsa will track what inputs it reads as well as what value it returns.
+That means that, when it is called, Salsa will track what inputs it reads as well as what value it returns.
 The return value is <em>memoized</em>,
 which means that if you call this function again without changing the inputs,
-salsa will just clone the result rather than re-execute it.</p>
+Salsa will just clone the result rather than re-execute it.</p>
 <h3 id="tracked-functions-are-the-unit-of-reuse"><a class="header" href="#tracked-functions-are-the-unit-of-reuse">Tracked functions are the unit of reuse</a></h3>
-<p>Tracked functions are the core part of how salsa enables incremental reuse.
+<p>Tracked functions are the core part of how Salsa enables incremental reuse.
 The goal of the framework is to avoid re-executing tracked functions and instead to clone their result.
 Salsa uses the <a href="../reference/algorithm.html">red-green algorithm</a> to decide when to re-execute a function.
-The short version is that a tracked function is re-executed if either (a) it directly reads an input, and that input has changed
-or (b) it directly invokes another tracked function, and that function's return value has changed.
+The short version is that a tracked function is re-executed if either (a) it directly reads an input, and that input has changed,
+or (b) it directly invokes another tracked function and that function's return value has changed.
 In the case of <code>parse_statements</code>, it directly reads <code>ProgramSource::text</code>, so if the text changes, then the parser will re-execute.</p>
 <p>By choosing which functions to mark as <code>#[tracked]</code>, you control how much reuse you get.
 In our case, we're opting to mark the outermost parsing function as tracked, but not the inner ones.
@@ -218,19 +218,19 @@ and because (b) since strings are just a big blob-o-bytes without any structure,
 Some systems do choose to do more granular reparsing, often by doing a &quot;first pass&quot; over the string to give it a bit of structure, 
 e.g. to identify the functions,
 but deferring the parsing of the body of each function until later.
-Setting up a scheme like this is relatively easy in salsa, and uses the same principles that we will use later to avoid re-executing the type checker.</p>
+Setting up a scheme like this is relatively easy in Salsa and uses the same principles that we will use later to avoid re-executing the type checker.</p>
 <h3 id="parameters-to-a-tracked-function"><a class="header" href="#parameters-to-a-tracked-function">Parameters to a tracked function</a></h3>
 <p>The <strong>first</strong> parameter to a tracked function is <strong>always</strong> the database, <code>db: &amp;dyn crate::Db</code>.
 It must be a <code>dyn</code> value of whatever database is associated with the jar.</p>
-<p>The <strong>second</strong> parameter to a tracked function is <strong>always</strong> some kind of salsa struct.
+<p>The <strong>second</strong> parameter to a tracked function is <strong>always</strong> some kind of Salsa struct.
 The first parameter to a memoized function is always the database,
 which should be a <code>dyn Trait</code> value for the database trait associated with the jar
 (the default jar is <code>crate::Jar</code>).</p>
 <p>Tracked functions may take other arguments as well, though our examples here do not.
 Functions that take additional arguments are less efficient and flexible.
-It's generally better to structure tracked functions as functions of a single salsa struct if possible.</p>
+It's generally better to structure tracked functions as functions of a single Salsa struct if possible.</p>
 <h3 id="the-return_ref-annotation"><a class="header" href="#the-return_ref-annotation">The <code>return_ref</code> annotation</a></h3>
-<p>You may have noticed that <code>parse_statements</code> is tagged with <code>#[salsa::tracked(return_ref)]</code>.
+<p>You may have noticed that <code>parse_statements</code> is tagged with <code>#[salsa::tracked(return_ref)]</code>. 
 Ordinarily, when you call a tracked function, the result you get back is cloned out of the database.
 The <code>return_ref</code> attribute means that a reference into the database is returned instead.
 So, when called, <code>parse_statements</code> will return an <code>&amp;Vec&lt;Statement&gt;</code> rather than cloning the <code>Vec</code>.

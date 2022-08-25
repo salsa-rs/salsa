@@ -146,8 +146,8 @@
                     <main>
                         <h1 id="how-salsa-works"><a class="header" href="#how-salsa-works">How Salsa works</a></h1>
 <h2 id="video-available"><a class="header" href="#video-available">Video available</a></h2>
-<p>To get the most complete introduction to Salsa's inner works, check
-out <a href="https://youtu.be/_muY4HjSqVw">the &quot;How Salsa Works&quot; video</a>.  If
+<p>To get the most complete introduction to Salsa's inner workings, check
+out <a href="https://youtu.be/_muY4HjSqVw">the &quot;How Salsa Works&quot; video</a>. If
 you'd like a deeper dive, <a href="https://www.youtube.com/watch?v=i_IhACacPRY">the &quot;Salsa in more depth&quot;
 video</a> digs into the
 details of the incremental algorithm.</p>
@@ -156,20 +156,20 @@ details of the incremental algorithm.</p>
 </blockquote>
 <h2 id="key-idea"><a class="header" href="#key-idea">Key idea</a></h2>
 <p>The key idea of <code>salsa</code> is that you define your program as a set of
-<strong>queries</strong>. Every query is used like function <code>K -&gt; V</code> that maps from
+<strong>queries</strong>. Every query is used like a function <code>K -&gt; V</code> that maps from
 some key of type <code>K</code> to a value of type <code>V</code>. Queries come in two basic
 varieties:</p>
 <ul>
 <li><strong>Inputs</strong>: the base inputs to your system. You can change these
 whenever you like.</li>
 <li><strong>Functions</strong>: pure functions (no side effects) that transform your
-inputs into other values. The results of queries is memoized to
+inputs into other values. The results of queries are memoized to
 avoid recomputing them a lot. When you make changes to the inputs,
 we'll figure out (fairly intelligently) when we can re-use these
 memoized values and when we have to recompute them.</li>
 </ul>
 <h2 id="how-to-use-salsa-in-three-easy-steps"><a class="header" href="#how-to-use-salsa-in-three-easy-steps">How to use Salsa in three easy steps</a></h2>
-<p>Using salsa is as easy as 1, 2, 3...</p>
+<p>Using Salsa is as easy as 1, 2, 3...</p>
 <ol>
 <li>Define one or more <strong>query groups</strong> that contain the inputs
 and queries you will need. We'll start with one such group, but
@@ -186,7 +186,7 @@ example</a>, which has a number of comments explaining how
 things work.</p>
 <h2 id="digging-into-the-plumbing"><a class="header" href="#digging-into-the-plumbing">Digging into the plumbing</a></h2>
 <p>Check out the <a href="plumbing.html">plumbing</a> chapter to see a deeper explanation of the
-code that salsa generates and how it connects to the salsa library.</p>
+code that Salsa generates and how it connects to the Salsa library.</p>
 
                     </main>
 

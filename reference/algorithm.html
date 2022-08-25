@@ -145,10 +145,10 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="the-red-green-algorithm"><a class="header" href="#the-red-green-algorithm">The &quot;red-green&quot; algorithm</a></h1>
-<p>This page explains the basic salsa incremental algorithm.
-The algorithm is called the &quot;red-green&quot; algorithm, which is where the name salsa comes from.</p>
+<p>This page explains the basic Salsa incremental algorithm.
+The algorithm is called the &quot;red-green&quot; algorithm, which is where the name Salsa comes from.</p>
 <h3 id="database-revisions"><a class="header" href="#database-revisions">Database revisions</a></h3>
-<p>The salsa database always tracks a single <strong>revision</strong>. Each time you set an input, the revision is incremented. So we start in revision <code>R1</code>, but when a <code>set</code> method is called, we will go to <code>R2</code>, then <code>R3</code>, and so on. For each input, we also track the revision in which it was last changed.</p>
+<p>The Salsa database always tracks a single <strong>revision</strong>. Each time you set an input, the revision is incremented. So we start in revision <code>R1</code>, but when a <code>set</code> method is called, we will go to <code>R2</code>, then <code>R3</code>, and so on. For each input, we also track the revision in which it was last changed.</p>
 <h3 id="basic-rule-when-inputs-change-re-execute"><a class="header" href="#basic-rule-when-inputs-change-re-execute">Basic rule: when inputs change, re-execute!</a></h3>
 <p>When you invoke a tracked function, in addition to storing the value that was returned, we also track what <em>other</em> tracked functions it depends on, and the revisions when their value last changed. When you invoke the function again, if the database is in a new revision, then we check whether any of the inputs to this function have changed in that new revision. If not, we can just return our cached value. But if the inputs <em>have</em> changed (or may have changed), we will re-execute the function to find the most up-to-date answer.</p>
 <p>Here is a simple example, where the <code>parse_module</code> function invokes the <code>module_text</code> function:</p>
@@ -161,7 +161,7 @@ fn parse_module(db: &amp;dyn Db, module: Module) -&gt; Ast {
     Ast::parse_text(module_text)
 }
 
-#[salsa::tracked(ref)]
+#[salsa::tracked(return_ref)]
 fn module_text(db: &amp;dyn Db, module: Module) -&gt; String {
     panic!(&quot;text for module `{module:?}` not set&quot;)
 }
@@ -206,7 +206,9 @@ fn type_check(db: &amp;dyn Db, module: Module) {
 <li>We will then compare the resulting AST. If it's the same as last time, we can <em>backdate</em> the result, meaning that we say that, even though the inputs changed, the output didn't.</li>
 </ul>
 <h2 id="durability-an-optimization"><a class="header" href="#durability-an-optimization">Durability: an optimization</a></h2>
-<p>As an optimization, salsa includes the concept of <strong>durability</strong>. When you set the value of a tracked function, you can also set it with a given <em>durability</em>:</p>
+<p>As an optimization, Salsa includes the concept of <strong>durability</strong>, which is the notion of how often some piece of tracked data changes. </p>
+<p>For example, when compiling a Rust program, you might mark the inputs from crates.io as <em>high durability</em> inputs, since they are unlikely to change. The current workspace could be marked as <em>low durability</em>, since changes to it are happening all the time.</p>
+<p>When you set the value of a tracked function, you can also set it with a given <em>durability</em>:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -219,7 +221,6 @@ fn type_check(db: &amp;dyn Db, module: Module) {
 <span class="boring">}
 </span></code></pre></pre>
 <p>For each durability, we track the revision in which <em>some input</em> with that durability changed. If a tracked function depends (transitively) only on high durability inputs, and you change a low durability input, then we can very easily determine that the tracked function result is still valid, avoiding the need to traverse the input edges one by one.</p>
-<p>An example: if compiling a Rust program, you might mark the inputs from crates.io as <em>high durability</em> inputs, since they are unlikely to change. The current workspace could be marked as <em>low durability</em>.</p>
 
                     </main>
 

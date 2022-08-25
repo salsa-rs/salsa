@@ -145,10 +145,10 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="jars-and-databases"><a class="header" href="#jars-and-databases">Jars and databases</a></h1>
-<p>Before we can define the interesting parts of our salsa program, we have to setup a bit of structure that defines the salsa <strong>database</strong>.
-The database is a struct that ultimately stores all of salsa's intermediate state, such as the memoized return values from <a href="../overview.html#tracked-functions">tracked functions</a>.</p>
+<p>Before we can define the interesting parts of our Salsa program, we have to setup a bit of structure that defines the Salsa <strong>database</strong>.
+The database is a struct that ultimately stores all of Salsa's intermediate state, such as the memoized return values from <a href="../overview.html#tracked-functions">tracked functions</a>.</p>
 <p>The database itself is defined in terms of intermediate structures, called <strong>jars</strong><sup class="footnote-reference"><a href="#jar">1</a></sup>, which themselves contain the data for each function.
-This setup allows salsa programs to be divided amongst many crates.
+This setup allows Salsa programs to be divided amongst many crates.
 Typically, you define one jar struct per crate, and then when you construct the final database, you simply list the jar structs.
 This permits the crates to define private functions and other things that are members of the jar struct, but not known directly to the database.</p>
 <div class="footnote-definition" id="jar"><sup class="footnote-definition-label">1</sup>
@@ -180,7 +180,7 @@ pub struct Jar(
 <span class="boring">}
 </span></code></pre></pre>
 <p>Although it's not required, it's highly recommended to put the <code>jar</code> struct at the root of your crate, so that it can be referred to as <code>crate::Jar</code>.
-All of the other salsa annotations reference a jar struct, and they all default to the path <code>crate::Jar</code>. 
+All of the other Salsa annotations reference a jar struct, and they all default to the path <code>crate::Jar</code>. 
 If you put the jar somewhere else, you will have to override that default.</p>
 <h2 id="defining-the-database-trait"><a class="header" href="#defining-the-database-trait">Defining the database trait</a></h2>
 <p>The <code>#[salsa::jar]</code> annotation also includes a <code>db = Db</code> field. 
@@ -198,7 +198,7 @@ This allows for separate compilation, where you have a database that contains th
 where <code>Jar</code> is the jar struct. If your jar depends on other jars, you can have multiple such supertraits (e.g., <code>salsa::DbWithJar&lt;other_crate::Jar&gt;</code>).</p>
 <p>Typically the <code>Db</code> trait has no other members or supertraits, but you are also free to add whatever other things you want in the trait.
 When you define your final database, it will implement the trait, and you can then define the implementation of those other things.
-This allows you to create a way for your jar to request context or other info from the database that is not moderated through salsa,
+This allows you to create a way for your jar to request context or other info from the database that is not moderated through Salsa,
 should you need that.</p>
 <h2 id="implementing-the-database-trait-for-the-jar"><a class="header" href="#implementing-the-database-trait-for-the-jar">Implementing the database trait for the jar</a></h2>
 <p>The <code>Db</code> trait must be implemented by the database struct.
@@ -214,11 +214,11 @@ and that's what we do here:</p>
 <span class="boring">}
 </span></code></pre></pre>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
-<p>If the concept of a jar seems a bit abstract to you, don't overthink it. The TL;DR is that when you create a salsa program, you need to do:</p>
+<p>If the concept of a jar seems a bit abstract to you, don't overthink it. The TL;DR is that when you create a Salsa program, you need to perform the following steps:</p>
 <ul>
 <li>In each of your crates:
 <ul>
-<li>Define a <code>#[salsa::jar(db = Db)]</code> struct, typically at <code>crate::Jar</code>, and list each of your various salsa-annotated things inside of it.</li>
+<li>Define a <code>#[salsa::jar(db = Db)]</code> struct, typically at <code>crate::Jar</code>, and list each of your various Salsa-annotated things inside of it.</li>
 <li>Define a <code>Db</code> trait, typically at <code>crate::Db</code>, that you will use in memoized functions and elsewhere to refer to the database struct.</li>
 </ul>
 </li>

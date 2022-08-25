@@ -164,10 +164,9 @@ pub(crate) struct Database {
 <span class="boring">}
 </span></code></pre></pre>
 <p>The <code>#[salsa::db(...)]</code> attribute takes a list of all the jars to include.
-The struct must have a field named <code>storage</code> whose types is <code>salsa::Storage&lt;Self&gt;</code>, but it can also contain whatever other fields you want.
+The struct must have a field named <code>storage</code> whose type is <code>salsa::Storage&lt;Self&gt;</code>, but it can also contain whatever other fields you want.
 The <code>storage</code> struct owns all the data for the jars listed in the <code>db</code> attribute.</p>
-<p>The <code>salsa::db</code> attribute autogenerates a bunch of impls for things like the <code>salsa::HasJar&lt;crate::Jar&gt;</code> trait that we saw earlier.
-This means that</p>
+<p>The <code>salsa::db</code> attribute autogenerates a bunch of impls for things like the <code>salsa::HasJar&lt;crate::Jar&gt;</code> trait that we saw earlier.</p>
 <h2 id="implementing-the-salsadatabase-trait"><a class="header" href="#implementing-the-salsadatabase-trait">Implementing the <code>salsa::Database</code> trait</a></h2>
 <p>In addition to the struct itself, we must add an impl of <code>salsa::Database</code>:</p>
 <pre><pre class="playground"><code class="language-rust">
@@ -226,7 +225,7 @@ This means that</p>
 }
 <span class="boring">}
 </span></code></pre></pre>
-<h2 id="implementing-the-traits-for-each-jar"><a class="header" href="#implementing-the-traits-for-each-jar">Implementing the traits for each Jar</a></h2>
+<h2 id="implementing-the-traits-for-each-jar"><a class="header" href="#implementing-the-traits-for-each-jar">Implementing the traits for each jar</a></h2>
 <p>The <code>Database</code> struct also needs to implement the <a href="./jar.html#database-trait-for-the-jar">database traits for each jar</a>.
 In our case, though, we already wrote that impl as a <a href="./jar.html#implementing-the-database-trait-for-the-jar">blanket impl alongside the jar itself</a>,
 so no action is needed.
