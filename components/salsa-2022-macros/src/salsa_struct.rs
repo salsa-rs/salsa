@@ -29,37 +29,17 @@ use heck::ToUpperCamelCase;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use syn::spanned::Spanned;
 
-use crate::{configuration, options::Options};
+use crate::{configuration, options::{Options, AllowedOptions}};
 
-pub(crate) struct SalsaStruct {
-    args: Options<Self>,
+pub(crate) struct SalsaStruct<A: AllowedOptions> {
+    args: Options<A>,
     struct_item: syn::ItemStruct,
     fields: Vec<SalsaField>,
 }
 
-impl crate::options::AllowedOptions for SalsaStruct {
-    const RETURN_REF: bool = false;
-
-    const SPECIFY: bool = false;
-
-    const NO_EQ: bool = false;
-
-    const JAR: bool = true;
-
-    const DATA: bool = true;
-
-    const DB: bool = false;
-
-    const RECOVERY_FN: bool = false;
-
-    const LRU: bool = false;
-
-    const CONSTRUCTOR_NAME: bool = true;
-}
-
 const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 
-impl SalsaStruct {
+impl<A: AllowedOptions> SalsaStruct<A> {
     pub(crate) fn new(
         args: proc_macro::TokenStream,
         input: proc_macro::TokenStream,

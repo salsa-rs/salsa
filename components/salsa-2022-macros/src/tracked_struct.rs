@@ -19,14 +19,34 @@ pub(crate) fn tracked(
     }
 }
 
-struct TrackedStruct(SalsaStruct);
+struct TrackedStruct(SalsaStruct<Self>);
 
 impl std::ops::Deref for TrackedStruct {
-    type Target = SalsaStruct;
+    type Target = SalsaStruct<Self>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
+}
+
+impl crate::options::AllowedOptions for TrackedStruct {
+    const RETURN_REF: bool = false;
+
+    const SPECIFY: bool = false;
+
+    const NO_EQ: bool = false;
+
+    const JAR: bool = true;
+
+    const DATA: bool = true;
+
+    const DB: bool = false;
+
+    const RECOVERY_FN: bool = false;
+
+    const LRU: bool = false;
+
+    const CONSTRUCTOR_NAME: bool = true;
 }
 
 impl TrackedStruct {
