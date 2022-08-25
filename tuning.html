@@ -175,7 +175,7 @@ which uses interning.</li>
 </ul>
 <h2 id="cancellation"><a class="header" href="#cancellation">Cancellation</a></h2>
 <p>Queries that are no longer needed due to concurrent writes or changes in dependencies are cancelled
-by Salsa. Each accesss of an intermediate query is a potential cancellation point. cancellation is
+by Salsa. Each access of an intermediate query is a potential cancellation point. Cancellation is
 implemented via panicking, and Salsa internals are intended to be panic-safe.</p>
 <p>If you have a query that contains a long loop which does not execute any intermediate queries,
 salsa won't be able to cancel it automatically. You may wish to check for cancellation yourself
