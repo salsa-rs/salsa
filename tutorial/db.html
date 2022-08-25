@@ -153,7 +153,8 @@ the one which starts up the program, supplies the inputs, and relays the outputs
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>#[salsa::db(crate::Jar)]
+</span>#[derive(Default)]
+#[salsa::db(crate::Jar)]
 pub(crate) struct Database {
     storage: salsa::Storage&lt;Self&gt;,
 
@@ -173,22 +174,14 @@ The <code>storage</code> struct owns all the data for the jars listed in the <co
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>impl salsa::Database for Database {
-    fn salsa_runtime(&amp;self) -&gt; &amp;salsa::Runtime {
-        self.storage.runtime()
-    }
-
     fn salsa_event(&amp;self, event: salsa::Event) {
         // Log interesting events, if logging is enabled
         if let Some(logs) = &amp;self.logs {
-            match event.kind {
-                salsa::EventKind::WillExecute { .. } =&gt; {
-                    logs.lock()
-                        .unwrap()
-                        .push(format!(&quot;Event: {:?}&quot;, event.debug(self)));
-                }
-                _ =&gt; {
-                    // don't log boring events
-                }
+            // don't log boring events
+            if let salsa::EventKind::WillExecute { .. } = event.kind {
+                logs.lock()
+                    .unwrap()
+                    .push(format!(&quot;Event: {:?}&quot;, event.debug(self)));
             }
         }
     }
@@ -214,16 +207,9 @@ The <code>storage</code> struct owns all the data for the jars listed in the <co
 <p>It's not required, but implementing the <code>Default</code> trait is often a convenient way to let users instantiate your database:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>impl Default for Database {
-    fn default() -&gt; Self {
-        Self {
-            storage: Default::default(),
-            logs: None,
-        }
-    }
-}
-<span class="boring">}
+</span>
+<span class="boring">fn main() {
+</span><span class="boring">}
 </span></code></pre></pre>
 <h2 id="implementing-the-traits-for-each-jar"><a class="header" href="#implementing-the-traits-for-each-jar">Implementing the traits for each jar</a></h2>
 <p>The <code>Database</code> struct also needs to implement the <a href="./jar.html#database-trait-for-the-jar">database traits for each jar</a>.

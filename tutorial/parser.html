@@ -177,7 +177,7 @@ pub fn parse_statements(db: &amp;dyn crate::Db, source: SourceProgram) -&gt; Pro
         parser.skip_whitespace();
 
         // If there are no more tokens, break
-        if let None = parser.peek() {
+        if parser.peek().is_none() {
             break;
         }
 

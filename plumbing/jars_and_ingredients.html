@@ -288,6 +288,8 @@ If we had one function ingredient directly invoke a method on <code>Ingredient&l
 pub trait HasJarsDyn {
     fn runtime(&amp;self) -&gt; &amp;Runtime;
 
+    fn runtime_mut(&amp;mut self) -&gt; &amp;mut Runtime;
+
     fn maybe_changed_after(&amp;self, input: DependencyIndex, revision: Revision) -&gt; bool;
 
     fn cycle_recovery_strategy(&amp;self, input: IngredientIndex) -&gt; CycleRecoveryStrategy;
