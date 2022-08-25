@@ -2,19 +2,19 @@
 
 {{#include ../caveat.md}}
 
-This page covers how data is organized in salsa and how links between salsa items (e.g., dependency tracking) works.
+This page covers how data is organized in Salsa and how links between Salsa items (e.g., dependency tracking) work.
 
 ## Salsa items and ingredients 
 
-A **salsa item** is some item annotated with a salsa annotation that can be included in a jar.
-For example, a tracked function is a salsa item:
+A **Salsa item** is some item annotated with a Salsa annotation that can be included in a jar.
+For example, a tracked function is a Salsa item:
 
 ```rust
 #[salsa::tracked]
 fn foo(db: &dyn Db, input: MyInput) { }
 ```
 
-...and so is a salsa input...
+...and so is a Salsa input...
 
 ```rust
 #[salsa::input]
@@ -28,19 +28,19 @@ struct MyInput { }
 struct MyStruct { }
 ```
 
-Each salsa item needs certain bits of data at runtime to operate.
+Each Salsa item needs certain bits of data at runtime to operate.
 These bits of data are called **ingredients**.
-Most salsa items generate a single ingredient, but sometimes they make more than one.
+Most Salsa items generate a single ingredient, but sometimes they make more than one.
 For example, a tracked function generates a [`FunctionIngredient`].
-A tracked struct however generates several ingredients, one for the struct itself (a [`TrackedStructIngredient`],
+A tracked struct, however, generates several ingredients, one for the struct itself (a [`TrackedStructIngredient`],
 and one [`FunctionIngredient`] for each value field.
 
 [`FunctionIngredient`]: https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/function.rs#L42
 [`TrackedStructIngredient`]: https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/tracked_struct.rs#L18
 
-### Ingredients define the core logic of salsa
+### Ingredients define the core logic of Salsa
 
-Most of the interesting salsa code lives in these ingredients.
+Most of the interesting Salsa code lives in these ingredients.
 For example, when you create a new tracked struct, the method [`TrackedStruct::new_struct`] is invoked;
 it is responsible for determining the tracked struct's id.
 Similarly, when you call a tracked function, that is translated into a call to [`TrackedFunction::fetch`],
@@ -50,13 +50,6 @@ or whether the function must be executed.
 [`TrackedStruct::new_struct`]: https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/tracked_struct.rs#L76
 [`TrackedFunction::fetch`]: https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/function/fetch.rs#L15
 
-### Ingredient interfaces are not stable or subject to semver
-
-Interfaces are not meant to be directly used by salsa users.
-The salsa macros generate code that invokes the ingredients.
-The APIs may change in arbitrary ways across salsa versions,
-as the macros are kept in sync.
-
 ### The `Ingredient` trait
 
 Each ingredient implements the [`Ingredient<DB>`] trait, which defines generic operations supported by any kind of ingredient.
@@ -65,12 +58,12 @@ For example, the method `maybe_changed_after` can be used to check whether some 
 [`Ingredient<DB>`]: https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/ingredient.rs#L15
 [`maybe_changed_after`]: https://github.com/salsa-rs/salsa/blob/becaade31e6ebc58cd0505fc1ee4b8df1f39f7de/components/salsa-2022/src/ingredient.rs#L21-L22
 
-We'll see below that each database `DB` is able to take an `IngredientIndex` and use that to get a `&dyn Ingredient<DB>` for the corresponding ingredient.
-This allows the database to perform generic operations on a numbered ingredient without knowing exactly what the type of that ingredient is.
+We'll see below that each database `DB` is able to take an `IngredientIndex` and use that to get an `&dyn Ingredient<DB>` for the corresponding ingredient.
+This allows the database to perform generic operations on an indexed ingredient without knowing exactly what the type of that ingredient is.
 
 ### Jars are a collection of ingredients
 
-When you declare a salsa jar, you list out each of the salsa items that are included in that jar:
+When you declare a Salsa jar, you list out each of the Salsa items that are included in that jar:
 
 ```rust,ignore
 #[salsa::jar]
@@ -91,15 +84,14 @@ struct Jar(
 )
 ```
 
-The `IngredientsFor` trait is used to define the ingredients needed by some salsa item, such as the tracked function `foo`
-or the tracked struct `MyInput`.
-Each salsa item defines a type `I`, so that `<I as IngredientsFor>::Ingredient` gives the ingredients needed by `I`.
+The `IngredientsFor` trait is used to define the ingredients needed by some Salsa item, such as the tracked function `foo` or the tracked struct `MyInput`.
+Each Salsa item defines a type `I` so that `<I as IngredientsFor>::Ingredient` gives the ingredients needed by `I`.
 
-### Database is a tuple of jars
+### A database is a tuple of jars
 
-Salsa's database storage ultimately boils down to a tuple of jar structs,
+Salsa's database storage ultimately boils down to a tuple of jar structs
 where each jar struct (as we just saw) itself contains the ingredients
-for the salsa items within that jar.
+for the Salsa items within that jar.
 The database can thus be thought of as a list of ingredients,
 although that list is organized into a 2-level hierarchy.
 
@@ -107,9 +99,9 @@ The reason for this 2-level hierarchy is that it permits separate compilation an
 The crate that lists the jars doens't have to know the contents of the jar to embed the jar struct in the database.
 And some of the types that appear in the jar may be private to another struct.
 
-### The HasJars trait and the Jars type
+### The `HasJars` trait and the `Jars` type
 
-Each salsa database implements the `HasJars` trait,
+Each Salsa database implements the `HasJars` trait,
 generated by the `salsa::db` procedural macro.
 The `HarJars` trait, among other things, defines a `Jars` associated type that maps to a tuple of the jars in the trait.
 
@@ -167,15 +159,20 @@ We can then do things like ask, "did this input change since revision R?" by
 * using the ingredient index to find the route and get a `&dyn Ingredient<DB>`
 * and then invoking the `maybe_changed_since` method on that trait object.
 
-### HasJarsDyn
+### `HasJarsDyn`
 
 There is one catch in the above setup.
-We need the database to be dyn-safe, and we also need to be able to define the database trait and so forth without knowing the final database type to enable separate compilation.
+The user's code always interacts with a `dyn crate::Db` value, where `crate::Db` is the trait defined by the jar; the `crate::Db` trait extends `salsa::HasJar` which in turn extends `salsa::Database`.
+Ideally, we would have `salsa::Database` extend `salsa::HasJars`, which is the main trait that gives access to the jars data.
+But we don't want to do that because `HasJars` defines an associated type `Jars`, and that would mean that every reference to `dyn crate::Db` would have to specify the jars type using something like `dyn crate::Db<Jars = J>`.
+This would be unergonomic, but what's worse, it would actually be impossible: the final Jars type combines the jars from multiple crates, and so it is not known to any individual jar crate.
+To workaround this, `salsa::Database` in fact extends *another* trait, `HasJarsDyn`, that doesn't reveal the `Jars` or ingredient types directly, but just has various method that can be performed on an ingredient, given its `IngredientIndex`.
 Traits like `Ingredient<DB>` require knowing the full `DB` type.
 If we had one function ingredient directly invoke a method on `Ingredient<DB>`, that would imply that it has to be fully generic and only instantiated at the final crate, when the full database type is available.
 
-We solve this via the `HasJarsDyn` trait. The `HasJarsDyn` trait exports method that combine the "find ingredient, invoking method" steps into one method:
+We solve this via the `HasJarsDyn` trait. The `HasJarsDyn` trait exports a method that combines the "find ingredient, invoking method" steps into one method:
 
+[Perhaps this code snippet should only preview the HasJarsDyn method that is being referred to]
 ```rust,ignore
 {{#include ../../../components/salsa-2022/src/storage.rs:HasJarsDyn}}
 ```
@@ -205,13 +202,13 @@ The implementation of this method is defined by the `#[salsa::db]` macro; it sim
 {{#include ../../../components/salsa-2022-macros/src/db.rs:create_jars}}
 ```
 
-This implementation for `create_jar` is geneated by the `#[salsa::jar]` macro, and simply walks over the representative type for each salsa item and ask *it* to create its ingredients
+This implementation for `create_jar` is geneated by the `#[salsa::jar]` macro, and simply walks over the representative type for each salsa item and asks *it* to create its ingredients
 
 ```rust,ignore
 {{#include ../../../components/salsa-2022-macros/src/jar.rs:create_jar}}
 ```
 
 The code to create the ingredients for any particular item is generated by their associated macros (e.g., `#[salsa::tracked]`, `#[salsa::input]`), but it always follows a particular structure.
-To create an ingredient, we first invoke `Routes::push` which creates the routes to that ingredient and assigns it an `IngredientIndex`.
-We can then invoke (e.g.) `FunctionIngredient::new` to create the structure.
+To create an ingredient, we first invoke `Routes::push`, which creates the routes to that ingredient and assigns it an `IngredientIndex`.
+We can then invoke a function such as `FunctionIngredient::new` to create the structure.
 The *routes* to an ingredient are defined as closures that, given the `DB::Jars`, can find the data for a particular ingredient.

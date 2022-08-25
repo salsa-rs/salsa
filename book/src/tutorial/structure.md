@@ -1,7 +1,7 @@
 # Basic structure
 
-Before we do anything with salsa, let's talk about the basic structure of the calc compiler.
-Part of salsa's design is that you are able to write programs that feel 'pretty close' to what a natural Rust program looks like.
+Before we do anything with Salsa, let's talk about the basic structure of the calc compiler.
+Part of Salsa's design is that you are able to write programs that feel 'pretty close' to what a natural Rust program looks like.
 
 ## Example program
 
@@ -34,7 +34,7 @@ enum Statement {
     Print(Expression),
 }
 
-    /// Defines `fn <name>(<args>) = <body>`
+/// Defines `fn <name>(<args>) = <body>`
 struct Function {
     name: FunctionId,
     args: Vec<VariableId>,
@@ -75,7 +75,7 @@ The "checker" has the job of ensuring that the user only references variables th
 We're going to write the checker in a "context-less" style,
 which is a bit less intuitive but allows for more incremental re-use.
 The idea is to compute, for a given expression, which variables it references.
-Then there is a function "check" which ensures that those variables are a subset of those that are already defined.
+Then there is a function `check` which ensures that those variables are a subset of those that are already defined.
 
 ## Interpreter
 

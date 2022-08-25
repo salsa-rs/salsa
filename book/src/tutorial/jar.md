@@ -1,12 +1,12 @@
 # Jars and databases
 
-Before we can define the interesting parts of our salsa program, we have to setup a bit of structure that defines the salsa **database**.
-The database is a struct that ultimately stores all of salsa's intermediate state, such as the memoized return values from [tracked functions].
+Before we can define the interesting parts of our Salsa program, we have to setup a bit of structure that defines the Salsa **database**.
+The database is a struct that ultimately stores all of Salsa's intermediate state, such as the memoized return values from [tracked functions].
 
 [tracked functions]: ../overview.md#tracked-functions
 
 The database itself is defined in terms of intermediate structures, called **jars**[^jar], which themselves contain the data for each function.
-This setup allows salsa programs to be divided amongst many crates.
+This setup allows Salsa programs to be divided amongst many crates.
 Typically, you define one jar struct per crate, and then when you construct the final database, you simply list the jar structs.
 This permits the crates to define private functions and other things that are members of the jar struct, but not known directly to the database.
 
@@ -23,7 +23,7 @@ To define a jar struct, you create a tuple struct with the `#[salsa::jar]` annot
 ```
 
 Although it's not required, it's highly recommended to put the `jar` struct at the root of your crate, so that it can be referred to as `crate::Jar`.
-All of the other salsa annotations reference a jar struct, and they all default to the path `crate::Jar`. 
+All of the other Salsa annotations reference a jar struct, and they all default to the path `crate::Jar`. 
 If you put the jar somewhere else, you will have to override that default.
 
 ## Defining the database trait
@@ -44,7 +44,7 @@ where `Jar` is the jar struct. If your jar depends on other jars, you can have m
 
 Typically the `Db` trait has no other members or supertraits, but you are also free to add whatever other things you want in the trait.
 When you define your final database, it will implement the trait, and you can then define the implementation of those other things.
-This allows you to create a way for your jar to request context or other info from the database that is not moderated through salsa,
+This allows you to create a way for your jar to request context or other info from the database that is not moderated through Salsa,
 should you need that.
 
 ## Implementing the database trait for the jar
@@ -62,10 +62,10 @@ and that's what we do here:
 
 ## Summary
 
-If the concept of a jar seems a bit abstract to you, don't overthink it. The TL;DR is that when you create a salsa program, you need to do:
+If the concept of a jar seems a bit abstract to you, don't overthink it. The TL;DR is that when you create a Salsa program, you need to perform the following steps:
 
 - In each of your crates:
-  - Define a `#[salsa::jar(db = Db)]` struct, typically at `crate::Jar`, and list each of your various salsa-annotated things inside of it.
+  - Define a `#[salsa::jar(db = Db)]` struct, typically at `crate::Jar`, and list each of your various Salsa-annotated things inside of it.
   - Define a `Db` trait, typically at `crate::Db`, that you will use in memoized functions and elsewhere to refer to the database struct.
 - Once, typically in your final crate:
   - Define a database `D`, as described in the [next section](./db.md), that will contain a list of each of the jars for each of your crates.
