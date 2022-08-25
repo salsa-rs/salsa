@@ -39,6 +39,7 @@ fn c(db: &dyn QueryGroup, x: u32) -> u32 {
 struct Database {
     storage: salsa::Storage<Self>,
     external_state: HashMap<u32, u32>,
+    #[allow(clippy::type_complexity)]
     on_event: Option<Box<dyn Fn(&Database, salsa::Event)>>,
 }
 

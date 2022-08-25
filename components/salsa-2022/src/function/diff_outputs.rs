@@ -24,6 +24,7 @@ where
         // two list are in sorted order, we can merge them in linear time.
         while let (Some(&old_output), Some(&new_output)) = (old_outputs.peek(), new_outputs.peek())
         {
+            #[allow(clippy::comparison_chain)]
             if old_output < new_output {
                 // Output that was generated but is no longer.
                 Self::report_stale_output(db, key, old_output);
@@ -45,7 +46,7 @@ where
     }
 
     fn report_stale_output(db: &DynDb<'_, C>, key: DatabaseKeyIndex, output: DependencyIndex) {
-        let runtime_id = db.salsa_runtime().id();
+        let runtime_id = db.runtime().id();
         db.salsa_event(Event {
             runtime_id,
             kind: EventKind::WillDiscardStaleOutput {

@@ -16,7 +16,7 @@ pub trait Accumulator {
     type Data: Clone;
     type Jar;
 
-    fn accumulator_ingredient<'db, Db>(db: &'db Db) -> &'db AccumulatorIngredient<Self::Data>
+    fn accumulator_ingredient<Db>(db: &Db) -> &AccumulatorIngredient<Self::Data>
     where
         Db: ?Sized + HasJar<Self::Jar>;
 }
@@ -120,7 +120,7 @@ where
         output_key: Option<crate::Id>,
     ) {
         assert!(output_key.is_none());
-        let current_revision = db.salsa_runtime().current_revision();
+        let current_revision = db.runtime().current_revision();
         if let Some(mut v) = self.map.get_mut(&executor) {
             // The value is still valid in the new revision.
             v.produced_at = current_revision;
@@ -136,7 +136,7 @@ where
         assert!(stale_output_key.is_none());
         if self.map.remove(&executor).is_some() {
             db.salsa_event(Event {
-                runtime_id: db.salsa_runtime().id(),
+                runtime_id: db.runtime().id(),
                 kind: EventKind::DidDiscardAccumulated {
                     executor_key: executor,
                     accumulator: self.dependency_index(),

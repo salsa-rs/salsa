@@ -111,7 +111,7 @@ where
     /// discussion and important considerations.
     pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id) {
         db.salsa_event(Event {
-            runtime_id: db.salsa_runtime().id(),
+            runtime_id: db.runtime().id(),
             kind: crate::EventKind::DidDiscard {
                 key: self.database_key_index(id),
             },
@@ -152,11 +152,10 @@ where
     fn mark_validated_output(
         &self,
         _db: &DB,
-        executor: DatabaseKeyIndex,
-        output_key: Option<crate::Id>,
+        _executor: DatabaseKeyIndex,
+        _output_key: Option<crate::Id>,
     ) {
         // FIXME
-        drop((executor, output_key));
     }
 
     fn remove_stale_output(

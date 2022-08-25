@@ -658,7 +658,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
 
     if std::env::var("SALSA_DUMP").is_ok() {
         println!("~~~ query_group");
-        println!("{}", output.to_string());
+        println!("{}", output);
         println!("~~~ query_group");
     }
 

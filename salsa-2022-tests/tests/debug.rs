@@ -30,11 +30,7 @@ struct Database {
     storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for Database {
-    fn salsa_runtime(&self) -> &salsa::Runtime {
-        self.storage.runtime()
-    }
-}
+impl salsa::Database for Database {}
 
 impl Db for Database {}
 

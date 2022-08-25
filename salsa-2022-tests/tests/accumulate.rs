@@ -70,10 +70,6 @@ struct Database {
 
 impl salsa::Database for Database {
     fn salsa_event(&self, _event: salsa::Event) {}
-
-    fn salsa_runtime(&self) -> &salsa::Runtime {
-        self.storage.runtime()
-    }
 }
 
 impl Db for Database {}

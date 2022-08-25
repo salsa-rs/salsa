@@ -127,7 +127,7 @@ pub(crate) fn jar_impl(
 
 pub(crate) fn jar_struct(input: &ItemStruct) -> ItemStruct {
     let mut output_struct = input.clone();
-    output_struct.fields = generate_fields(&input).into();
+    output_struct.fields = generate_fields(input).into();
     if output_struct.semi_token.is_none() {
         output_struct.semi_token = Some(Token![;](input.struct_token.span));
     }

@@ -102,7 +102,7 @@ impl<A: AllowedOptions> Options<A> {
             return jar_ty.clone();
         }
 
-        return parse_quote! {crate::Jar};
+        parse_quote! {crate::Jar}
     }
 
     pub(crate) fn should_backdate(&self) -> bool {

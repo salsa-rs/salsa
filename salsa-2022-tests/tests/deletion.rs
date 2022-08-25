@@ -69,10 +69,6 @@ impl salsa::Database for Database {
             _ => {}
         }
     }
-
-    fn salsa_runtime(&self) -> &salsa::Runtime {
-        self.storage.runtime()
-    }
 }
 
 impl Db for Database {}
@@ -89,7 +85,7 @@ fn basic() {
 
     // Creates 3 tracked structs
     let input = MyInput::new(&mut db, 3);
-    assert_eq!(final_result(&db, input), 2 * 2 + 1 * 2 + 0 * 2);
+    assert_eq!(final_result(&db, input), 2 * 2 + 2);
     db.assert_logs(expect![[r#"
         [
             "final_result(MyInput(Id { value: 1 }))",
@@ -104,7 +100,7 @@ fn basic() {
     // * the struct's field
     // * the `contribution_from_struct` result
     input.set_field(&mut db).to(2);
-    assert_eq!(final_result(&db, input), 1 * 2 + 0 * 2);
+    assert_eq!(final_result(&db, input), 2);
     db.assert_logs(expect![[r#"
         [
             "intermediate_result(MyInput(Id { value: 1 }))",

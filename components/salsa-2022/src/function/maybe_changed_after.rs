@@ -9,7 +9,7 @@ use crate::{
         StampedValue,
     },
     storage::HasJarsDyn,
-    Database, Revision, Runtime,
+    Revision, Runtime,
 };
 
 use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
@@ -24,7 +24,7 @@ where
         key: C::Key,
         revision: Revision,
     ) -> bool {
-        let runtime = db.salsa_runtime();
+        let runtime = db.runtime();
         runtime.unwind_if_revision_cancelled(db);
 
         loop {
@@ -61,7 +61,7 @@ where
         key_index: C::Key,
         revision: Revision,
     ) -> Option<bool> {
-        let runtime = db.salsa_runtime();
+        let runtime = db.runtime();
         let database_key_index = self.database_key_index(key_index);
 
         let _claim_guard = self
@@ -148,7 +148,7 @@ where
         old_memo: &Memo<C::Value>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> bool {
-        let runtime = db.salsa_runtime();
+        let runtime = db.runtime();
         let database_key_index = active_query.database_key_index;
 
         log::debug!(

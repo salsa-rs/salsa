@@ -3,8 +3,9 @@ use crossbeam::atomic::AtomicCell;
 use crate::{
     database::AsSalsaDatabase,
     runtime::local_state::{QueryOrigin, QueryRevisions},
+    storage::HasJarsDyn,
     tracked_struct::TrackedStructInDb,
-    Database, DatabaseKeyIndex, DebugWithDb,
+    DatabaseKeyIndex, DebugWithDb,
 };
 
 use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
@@ -25,7 +26,7 @@ where
     ) where
         C::Key: TrackedStructInDb<DynDb<'db, C>>,
     {
-        let runtime = db.salsa_runtime();
+        let runtime = db.runtime();
 
         let (active_query_key, current_deps) = match runtime.active_query() {
             Some(v) => v,
@@ -101,7 +102,7 @@ where
 
         // Record that the current query *specified* a value for this cell.
         let database_key_index = self.database_key_index(key);
-        db.salsa_runtime().add_output(database_key_index.into());
+        db.runtime().add_output(database_key_index.into());
     }
 
     /// Invoked when the query `executor` has been validated as having green inputs
@@ -114,7 +115,7 @@ where
         executor: DatabaseKeyIndex,
         key: C::Key,
     ) {
-        let runtime = db.salsa_runtime();
+        let runtime = db.runtime();
 
         let memo = match self.memo_map.get(key) {
             Some(m) => m,

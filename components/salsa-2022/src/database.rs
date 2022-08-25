@@ -1,4 +1,4 @@
-use crate::{storage::HasJarsDyn, DebugWithDb, Event, Runtime};
+use crate::{storage::HasJarsDyn, DebugWithDb, Durability, Event};
 
 pub trait Database: HasJarsDyn + AsSalsaDatabase {
     /// This function is invoked at key points in the salsa
@@ -11,7 +11,25 @@ pub trait Database: HasJarsDyn + AsSalsaDatabase {
         log::debug!("salsa_event: {:?}", event.debug(self));
     }
 
-    fn salsa_runtime(&self) -> &Runtime;
+    /// A "synthetic write" causes the system to act *as though* some
+    /// input of durability `durability` has changed. This is mostly
+    /// useful for profiling scenarios.
+    ///
+    /// **WARNING:** Just like an ordinary write, this method triggers
+    /// cancellation. If you invoke it while a snapshot exists, it
+    /// will block until that snapshot is dropped -- if that snapshot
+    /// is owned by the current thread, this could trigger deadlock.
+    fn synthetic_write(&mut self, durability: Durability) {
+        self.runtime_mut().report_tracked_write(durability);
+    }
+
+    /// Reports that the query depends on some state unknown to salsa.
+    ///
+    /// Queries which report untracked reads will be re-executed in the next
+    /// revision.
+    fn report_untracked_read(&self) {
+        self.runtime().report_untracked_read();
+    }
 }
 
 /// Indicates a database that also supports parallel query

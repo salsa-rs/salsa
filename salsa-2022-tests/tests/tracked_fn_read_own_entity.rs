@@ -41,11 +41,7 @@ struct Database {
     logger: Logger,
 }
 
-impl salsa::Database for Database {
-    fn salsa_runtime(&self) -> &salsa::Runtime {
-        self.storage.runtime()
-    }
-}
+impl salsa::Database for Database {}
 
 impl Db for Database {}
 

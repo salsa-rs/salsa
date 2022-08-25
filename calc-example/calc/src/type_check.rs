@@ -58,7 +58,7 @@ impl CheckExpression<'_> {
                 }
             }
             crate::ir::ExpressionData::Call(f, args) => {
-                if let None = self.find_function(*f) {
+                if self.find_function(*f).is_none() {
                     self.report_error(
                         expression.span,
                         format!("the function `{}` is not declared", f.text(self.db)),
@@ -91,8 +91,6 @@ fn check_string(
     expected_diagnostics: expect_test::Expect,
     edits: &[(&str, expect_test::Expect, expect_test::Expect)],
 ) {
-    use salsa::debug::DebugWithDb;
-
     use crate::{db::Database, ir::SourceProgram, parser::parse_statements};
 
     // Create the database

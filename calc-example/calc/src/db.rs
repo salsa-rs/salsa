@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use salsa::DebugWithDb;
 
 // ANCHOR: db_struct
+#[derive(Default)]
 #[salsa::db(crate::Jar)]
 pub(crate) struct Database {
     storage: salsa::Storage<Self>,
@@ -34,35 +35,16 @@ impl Database {
     }
 }
 
-// ANCHOR: default_impl
-impl Default for Database {
-    fn default() -> Self {
-        Self {
-            storage: Default::default(),
-            logs: None,
-        }
-    }
-}
-// ANCHOR_END: default_impl
-
 // ANCHOR: db_impl
 impl salsa::Database for Database {
-    fn salsa_runtime(&self) -> &salsa::Runtime {
-        self.storage.runtime()
-    }
-
     fn salsa_event(&self, event: salsa::Event) {
         // Log interesting events, if logging is enabled
         if let Some(logs) = &self.logs {
-            match event.kind {
-                salsa::EventKind::WillExecute { .. } => {
-                    logs.lock()
-                        .unwrap()
-                        .push(format!("Event: {:?}", event.debug(self)));
-                }
-                _ => {
-                    // don't log boring events
-                }
+            // don't log boring events
+            if let salsa::EventKind::WillExecute { .. } = event.kind {
+                logs.lock()
+                    .unwrap()
+                    .push(format!("Event: {:?}", event.debug(self)));
             }
         }
     }

@@ -157,10 +157,9 @@ where
         slots
             .values()
             .map(|slot| {
-                let value = match &*slot.stamped_value.read() {
-                    Some(stamped_value) => Some(stamped_value.value.clone()),
-                    None => None,
-                };
+                let value = (*slot.stamped_value.read())
+                    .as_ref()
+                    .map(|stamped_value| stamped_value.value.clone());
                 TableEntry::new(slot.key.clone(), value)
             })
             .collect()
@@ -239,7 +238,7 @@ where
             // (Otherwise, someone else might write a *newer* revision
             // into the same cell while we block on the lock.)
             let stamped_value = StampedValue {
-                value: value,
+                value,
                 durability,
                 changed_at: next_revision,
             };

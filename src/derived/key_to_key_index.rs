@@ -49,11 +49,7 @@ where
         K: Borrow<S>,
     {
         // Common case: get an existing key
-        if let Some(v) = self.index_map.get(key) {
-            Some(*v)
-        } else {
-            None
-        }
+        self.index_map.get(key).map(|v| *v)
     }
 
     pub(super) fn key_for_key_index(&self, key_index: DerivedKeyIndex) -> K {

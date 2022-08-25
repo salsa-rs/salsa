@@ -1,6 +1,6 @@
 use arc_swap::Guard;
 
-use crate::{database::AsSalsaDatabase, runtime::StampedValue, AsId, Database};
+use crate::{database::AsSalsaDatabase, runtime::StampedValue, storage::HasJarsDyn, AsId};
 
 use super::{Configuration, DynDb, FunctionIngredient};
 
@@ -9,7 +9,7 @@ where
     C: Configuration,
 {
     pub fn fetch(&self, db: &DynDb<C>, key: C::Key) -> &C::Value {
-        let runtime = db.salsa_runtime();
+        let runtime = db.runtime();
 
         runtime.unwind_if_revision_cancelled(db);
 
@@ -23,7 +23,7 @@ where
             self.evict(AsId::from_id(evicted));
         }
 
-        db.salsa_runtime().report_tracked_read(
+        db.runtime().report_tracked_read(
             self.database_key_index(key).into(),
             durability,
             changed_at,
@@ -46,7 +46,7 @@ where
         let memo_guard = self.memo_map.get(key);
         if let Some(memo) = &memo_guard {
             if memo.value.is_some() {
-                let runtime = db.salsa_runtime();
+                let runtime = db.runtime();
                 if self.shallow_verify_memo(db, runtime, self.database_key_index(key), memo) {
                     let value = unsafe {
                         // Unsafety invariant: memo is present in memo_map
@@ -60,7 +60,7 @@ where
     }
 
     fn fetch_cold(&self, db: &DynDb<C>, key: C::Key) -> Option<StampedValue<&C::Value>> {
-        let runtime = db.salsa_runtime();
+        let runtime = db.runtime();
         let database_key_index = self.database_key_index(key);
 
         // Try to claim this query: if someone else has claimed it already, go back and start again.
@@ -75,14 +75,12 @@ where
         // This time we can do a *deep* verify. Because this can recurse, don't hold the arcswap guard.
         let opt_old_memo = self.memo_map.get(key).map(Guard::into_inner);
         if let Some(old_memo) = &opt_old_memo {
-            if old_memo.value.is_some() {
-                if self.deep_verify_memo(db, old_memo, &active_query) {
-                    let value = unsafe {
-                        // Unsafety invariant: memo is present in memo_map.
-                        self.extend_memo_lifetime(old_memo).unwrap()
-                    };
-                    return Some(old_memo.revisions.stamped_value(value));
-                }
+            if old_memo.value.is_some() && self.deep_verify_memo(db, old_memo, &active_query) {
+                let value = unsafe {
+                    // Unsafety invariant: memo is present in memo_map.
+                    self.extend_memo_lifetime(old_memo).unwrap()
+                };
+                return Some(old_memo.revisions.stamped_value(value));
             }
         }
 

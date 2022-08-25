@@ -39,7 +39,7 @@ impl<V> MemoMap<V> {
         // but I can't see a clean way to encapsulate it otherwise. I suppose
         // it could take a closure, but it seems silly.
         match self.map.entry(key) {
-            Entry::Vacant(_) => return,
+            Entry::Vacant(_) => (),
             Entry::Occupied(entry) => {
                 let memo = entry.get().load();
 

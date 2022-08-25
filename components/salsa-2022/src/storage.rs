@@ -93,6 +93,10 @@ where
         &self.runtime
     }
 
+    pub fn runtime_mut(&mut self) -> &mut Runtime {
+        self.jars_mut().1
+    }
+
     // ANCHOR: jars_mut
     /// Gets mutable access to the jars. This will trigger a new revision
     /// and it will also cancel any ongoing work in the current revision.
@@ -183,9 +187,9 @@ pub trait DbWithJar<J>: HasJar<J> + Database {
 }
 
 pub trait JarFromJars<J>: HasJars {
-    fn jar_from_jars<'db>(jars: &Self::Jars) -> &J;
+    fn jar_from_jars(jars: &Self::Jars) -> &J;
 
-    fn jar_from_jars_mut<'db>(jars: &mut Self::Jars) -> &mut J;
+    fn jar_from_jars_mut(jars: &mut Self::Jars) -> &mut J;
 }
 
 pub trait HasJar<J> {
@@ -198,6 +202,8 @@ pub trait HasJar<J> {
 /// Dyn friendly subset of HasJars
 pub trait HasJarsDyn {
     fn runtime(&self) -> &Runtime;
+
+    fn runtime_mut(&mut self) -> &mut Runtime;
 
     fn maybe_changed_after(&self, input: DependencyIndex, revision: Revision) -> bool;
 
