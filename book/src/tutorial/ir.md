@@ -165,4 +165,4 @@ Since statements and expressions are not tracked, this implies that we are only 
 whenever anything in a function body changes, we consider the entire function body dirty and re-execute anything that depended on it.
 It usually makes sense to draw some kind of "reasonably coarse" boundary like this.
 
-One downside of the way we have set things up: we inlined the position into each of the structs [what exactly does this mean?].
+One downside of the way we have set things up: we inlined the position into each of the structs.

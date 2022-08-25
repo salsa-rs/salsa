@@ -11,8 +11,6 @@ base_db::ParseQuery.in_db_mut(self).set_lru_capacity(lru_capacity);
 
 The default is `0`, which disables LRU-caching entirely.
 
-See [The LRU RFC for more details](./rfcs/RFC0004-LRU.md).
-
 Note that there is no garbage collection for keys and
 results of old queries, so LRU caches are currently the
 only knob available for avoiding unbounded memory usage
@@ -27,7 +25,6 @@ Interning is especially useful for queries that involve nested,
 tree-like data structures.
 
 See:
-- The [Intern Queries RFC](./rfcs/RFC0002-Intern-Queries.md)
 - The [`compiler` example](https://github.com/salsa-rs/salsa/blob/master/examples/compiler/main.rs),
 which uses interning.
 
@@ -47,7 +44,5 @@ If you have a query that contains a long loop which does not execute any interme
 salsa won't be able to cancel it automatically. You may wish to check for cancellation yourself
 by invoking `db.unwind_if_cancelled()`.
 
-For more details on cancellation, see:
-- [the Opinionated cancellation RFC](./rfcs/RFC0007-Opinionated-Cancelation.md).
-- The tests for cancellation behavior in the Salsa repo.
+For more details on cancellation, see the tests for cancellation behavior in the Salsa repo.
 
