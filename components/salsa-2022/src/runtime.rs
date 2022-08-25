@@ -161,7 +161,7 @@ impl Runtime {
     /// entity table with the index `entity_index`. Has the following effects:
     ///
     /// * Add a query read on `DatabaseKeyIndex::for_table(entity_index)`
-    /// * Indentify a unique disambiguator for the hash within the current query,
+    /// * Identify a unique disambiguator for the hash within the current query,
     ///   adding the hash to the current query's disambiguator table.
     /// * Return that hash + id of the current query.
     pub(crate) fn disambiguate_entity(

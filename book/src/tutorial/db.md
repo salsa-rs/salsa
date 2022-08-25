@@ -27,7 +27,7 @@ In addition to the struct itself, we must add an impl of `salsa::Database`:
 {{#include ../../../calc-example/calc/src/db.rs:db_impl}}
 ```
 
-## Impementing the `salsa::ParallelDatabase` trait
+## Implementing the `salsa::ParallelDatabase` trait
 
 If you want to permit accessing your database from multiple threads at once, then you also need to implement the `ParallelDatabase` trait:
 

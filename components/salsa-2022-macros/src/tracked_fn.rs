@@ -28,7 +28,7 @@ fn tracked_fn(args: Args, item_fn: syn::ItemFn) -> syn::Result<TokenStream> {
         if requires_interning(&item_fn) {
             return Err(syn::Error::new(
                 s.span(),
-                "tracked functon takes too many argments to have its value set with `specify`",
+                "tracked function takes too many arguments to have its value set with `specify`",
             ));
         }
 
@@ -606,7 +606,7 @@ fn accumulated_fn(
 /// * the name of the database argument
 /// * the name(s) of the key arguments
 fn fn_args(item_fn: &syn::ItemFn) -> syn::Result<(proc_macro2::Ident, Vec<proc_macro2::Ident>)> {
-    // Check that we have no receiver and that all argments have names
+    // Check that we have no receiver and that all arguments have names
     if item_fn.sig.inputs.is_empty() {
         return Err(syn::Error::new(
             item_fn.sig.span(),

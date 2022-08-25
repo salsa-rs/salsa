@@ -81,7 +81,7 @@ where
 
     /// Specify the value for `key` but do not record it is an output.
     /// This is used for the value fields declared on a tracked struct.
-    /// They are different from other calls to specify beacuse we KNOW they will be given a value by construction,
+    /// They are different from other calls to specify because we KNOW they will be given a value by construction,
     /// so recording them as an explicit output (and checking them for validity, etc) is pure overhead.
     pub fn specify_field<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
     where

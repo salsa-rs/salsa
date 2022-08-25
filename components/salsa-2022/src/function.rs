@@ -84,7 +84,7 @@ pub trait Configuration {
     type SalsaStruct: for<'db> SalsaStructInDb<DynDb<'db, Self>>;
 
     /// What key is used to index the memo. Typically a salsa struct id,
-    /// but if this memoized function has multiple argments it will be a `salsa::Id`
+    /// but if this memoized function has multiple arguments it will be a `salsa::Id`
     /// that results from interning those arguments.
     type Key: AsId;
 

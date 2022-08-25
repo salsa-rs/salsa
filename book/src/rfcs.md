@@ -17,7 +17,7 @@ Then open a PR with a subject line that starts with "RFC:".
 
 ## RFC vs Implementation
 
-The RFC can be in its own PR, or it can also includ work on the implementation
+The RFC can be in its own PR, or it can also include work on the implementation
 together, whatever works best for you.
 
 ## Does my change need an RFC?
