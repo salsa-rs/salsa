@@ -20,7 +20,7 @@ pub trait Database: HasJarsDyn + AsSalsaDatabase {
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
     fn synthetic_write(&mut self, durability: Durability) {
-        self.runtime_mut().synthetic_write(durability);
+        self.runtime_mut().report_tracked_write(durability);
     }
 
     /// Reports that the query depends on some state unknown to salsa.
