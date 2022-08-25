@@ -17,14 +17,34 @@ pub(crate) fn input(
     }
 }
 
-struct InputStruct(SalsaStruct);
+struct InputStruct(SalsaStruct<Self>);
 
 impl std::ops::Deref for InputStruct {
-    type Target = SalsaStruct;
+    type Target = SalsaStruct<Self>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
+}
+
+impl crate::options::AllowedOptions for InputStruct {
+    const RETURN_REF: bool = false;
+
+    const SPECIFY: bool = false;
+
+    const NO_EQ: bool = false;
+
+    const JAR: bool = true;
+
+    const DATA: bool = true;
+
+    const DB: bool = false;
+
+    const RECOVERY_FN: bool = false;
+
+    const LRU: bool = false;
+
+    const CONSTRUCTOR_NAME: bool = true;
 }
 
 impl InputStruct {
