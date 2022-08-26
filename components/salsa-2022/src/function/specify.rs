@@ -33,6 +33,18 @@ where
             None => panic!("can only use `set` with an active query"),
         };
 
+        // `specify` only works if the key is a tracked struct created in the current query.
+        // 
+        // The reason is this. We want to ensure that the same result is reached regardless of 
+        // the "path" that the user takes through the execution graph. 
+        // If you permit values to be specified from other queries, you can have a situation like this:
+        // * Q0 creates the tracked struct T0
+        // * Q1 specifies the value for F(T0)
+        // * Q2 invokes F(T0)
+        // * Q3 invokes Q1 and then Q2
+        // * Q4 invokes Q2 and then Q1
+        //
+        // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
         let database_key_index = key.database_key_index(db);
         if !runtime.is_output_of_active_query(database_key_index) {
             panic!("can only use `set` on entities created during current query");
