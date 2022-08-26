@@ -172,8 +172,7 @@ If we had one function ingredient directly invoke a method on `Ingredient<DB>`, 
 
 We solve this via the `HasJarsDyn` trait. The `HasJarsDyn` trait exports a method that combines the "find ingredient, invoking method" steps into one method:
 
-[Perhaps this code snippet should only preview the HasJarsDyn method that is being referred to]
-```rust,ignore
+```rust,ignore aasaaasdfijjAasdfa
 {{#include ../../../components/salsa-2022/src/storage.rs:HasJarsDyn}}
 ```
 
