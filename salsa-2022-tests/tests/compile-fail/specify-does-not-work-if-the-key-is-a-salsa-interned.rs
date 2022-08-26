@@ -1,14 +1,14 @@
-//! Test that `specify` does not work if the key is a `salsa::input`
+//! Test that `specify` does not work if the key is a `salsa::interned`
 //! compilation fails
 #![allow(warnings)]
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked, tracked_fn);
+struct Jar(MyInterned, MyTracked, tracked_fn);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
-#[salsa::input(jar = Jar)]
-struct MyInput {
+#[salsa::interned(jar = Jar)]
+struct MyInterned {
     field: u32,
 }
 
@@ -18,7 +18,7 @@ struct MyTracked {
 }
 
 #[salsa::tracked(jar = Jar, specify)]
-fn tracked_fn(db: &dyn Db, input: MyInput) -> MyTracked {
+fn tracked_fn(db: &dyn Db, input: MyInterned) -> MyTracked {
     MyTracked::new(db, input.field(db) * 2)
 }
 

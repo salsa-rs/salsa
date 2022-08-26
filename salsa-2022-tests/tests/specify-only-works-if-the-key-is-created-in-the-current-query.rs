@@ -3,7 +3,13 @@
 #![allow(warnings)]
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked, tracked_fn, tracked_fn_extra, tracked_struct_created_in_another_query);
+struct Jar(
+    MyInput,
+    MyTracked,
+    tracked_fn,
+    tracked_fn_extra,
+    tracked_struct_created_in_another_query,
+);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
@@ -19,7 +25,7 @@ struct MyTracked {
 
 #[salsa::tracked(jar = Jar)]
 fn tracked_struct_created_in_another_query(db: &dyn Db, input: MyInput) -> MyTracked {
-     MyTracked::new(db, input.field(db) * 2)
+    MyTracked::new(db, input.field(db) * 2)
 }
 
 #[salsa::tracked(jar = Jar)]
@@ -53,5 +59,3 @@ fn execute_when_specified() {
     let input = MyInput::new(&mut db, 22);
     let tracked = tracked_fn(&db, input);
 }
-
-

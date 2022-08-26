@@ -34,9 +34,9 @@ where
         };
 
         // `specify` only works if the key is a tracked struct created in the current query.
-        // 
-        // The reason is this. We want to ensure that the same result is reached regardless of 
-        // the "path" that the user takes through the execution graph. 
+        //
+        // The reason is this. We want to ensure that the same result is reached regardless of
+        // the "path" that the user takes through the execution graph.
         // If you permit values to be specified from other queries, you can have a situation like this:
         // * Q0 creates the tracked struct T0
         // * Q1 specifies the value for F(T0)
