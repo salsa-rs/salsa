@@ -30,7 +30,7 @@ where
 
         let (active_query_key, current_deps) = match runtime.active_query() {
             Some(v) => v,
-            None => panic!("can only use `set` with an active query"),
+            None => panic!("can only use `specify` with an active query"),
         };
 
         // `specify` only works if the key is a tracked struct created in the current query.
@@ -47,7 +47,7 @@ where
         // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
         let database_key_index = key.database_key_index(db);
         if !runtime.is_output_of_active_query(database_key_index) {
-            panic!("can only use `set` on entities created during current query");
+            panic!("can only use `specfiy` on entities created during current query");
         }
 
         // Subtle: we treat the "input" to a set query as if it were
