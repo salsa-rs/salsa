@@ -10,13 +10,8 @@ use crate::salsa_struct::{SalsaField, SalsaStruct};
 pub(crate) fn tracked(
     args: proc_macro::TokenStream,
     struct_item: syn::ItemStruct,
-) -> proc_macro::TokenStream {
-    match SalsaStruct::with_struct(args, struct_item)
-        .and_then(|el| TrackedStruct(el).generate_tracked())
-    {
-        Ok(s) => s.into(),
-        Err(err) => err.into_compile_error().into(),
-    }
+) -> syn::Result<TokenStream> {
+    SalsaStruct::with_struct(args, struct_item).and_then(|el| TrackedStruct(el).generate_tracked())
 }
 
 struct TrackedStruct(SalsaStruct<Self>);
