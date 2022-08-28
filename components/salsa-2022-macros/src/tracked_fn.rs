@@ -11,10 +11,10 @@ pub(crate) fn tracked_fn(
     mut item_fn: syn::ItemFn,
 ) -> syn::Result<TokenStream> {
     let args: FnArgs = syn::parse(args)?;
-    if item_fn.sig.inputs.len() <= 1 {
+    if item_fn.sig.inputs.is_empty() {
         return Err(syn::Error::new(
             item_fn.sig.ident.span(),
-            "tracked functions must have at least a database and salsa struct argument",
+            "tracked functions must have at least a database argument",
         ));
     }
 
@@ -332,16 +332,19 @@ fn requires_interning(item_fn: &syn::ItemFn) -> bool {
 
 /// Every tracked fn takes a salsa struct as its second argument.
 /// This fn returns the type of that second argument.
-fn salsa_struct_ty(item_fn: &syn::ItemFn) -> &syn::Type {
+fn salsa_struct_ty(item_fn: &syn::ItemFn) -> syn::Type {
+    if item_fn.sig.inputs.len() == 1 {
+        return parse_quote! { () };
+    }
     match &item_fn.sig.inputs[1] {
         syn::FnArg::Receiver(_) => panic!("receiver not expected"),
-        syn::FnArg::Typed(pat_ty) => &pat_ty.ty,
+        syn::FnArg::Typed(pat_ty) => (*pat_ty.ty).clone(),
     }
 }
 
 fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
     let jar_ty = args.jar_ty();
-    let salsa_struct_ty = salsa_struct_ty(item_fn).clone();
+    let salsa_struct_ty = salsa_struct_ty(item_fn);
     let key_ty = if requires_interning(item_fn) {
         parse_quote!(salsa::id::Id)
     } else {
