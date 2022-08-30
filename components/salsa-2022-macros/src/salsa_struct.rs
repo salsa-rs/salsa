@@ -284,41 +284,33 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         let db_type = self.db_dyn_ty();
         let ident_string = ident.to_string();
 
-        let fields = self.all_fields().map(|field| {
-            let field_name_string = field.name().to_string();
-            let field_getter = field.get_name();
-            let field_ty = field.ty();
-            // If the field type implements DebugWithDb, use that.
-            // Otherwise, use Debug.
-            // That's the "has impl" trick (https://github.com/nvzqz/impls#how-it-works)
-            parse_quote_spanned! {field.field.span()=>
-                .field(#field_name_string, {
-                    struct Test<T, Db: ?Sized>(::core::marker::PhantomData<T>, ::core::marker::PhantomData<Db>);
+        // `::salsa::debug::helper::SalsaDebug` will use `DebugWithDb` or fallbak to `Debug`
+        let fields = self
+            .all_fields()
+            .map(|field| {
+                let field_name_string = field.name().to_string();
+                let field_getter = field.get_name();
+                let field_ty = field.ty();
 
-                    #[allow(dead_code)]
-                    impl<T: ::salsa::debug::DebugWithDb<Db>, Db: ?Sized> Test<T, Db> {
-                        fn salsa_debug<'a, 'b: 'a>(a: &'a T, db: &'b Db) -> ::salsa::debug::DebugWith<'a, Db> {
-                            a.debug(db)
-                        }
-                    }
+                parse_quote_spanned! {field.field.span() =>
+                    .field(
+                        #field_name_string,
+                        &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
+                            #[allow(clippy::needless_borrow)]
+                            &self.#field_getter(_db),
+                            _db
+                        )
+                    )
+                }
+            })
+            .collect::<Vec<TokenStream>>();
 
-                    trait Fallback<T: ::core::fmt::Debug, Db: ?Sized> {
-                        fn salsa_debug<'a, 'b>(a: &'a T, _db: &'b Db) -> &'a dyn ::core::fmt::Debug {
-                            a
-                        }
-                    }
-
-                    impl<Everything, Db: ?Sized, T: ::core::fmt::Debug> Fallback<T, Db> for Everything {}
-
-                    #[allow(clippy::needless_borrow)]
-                    &Test::<#field_ty, #db_type>::salsa_debug(&self.#field_getter(_db), _db)
-                })
-            }
-        }).collect::<Vec<TokenStream>>();
-
+        // `use ::salsa::debug::helper::Fallback` is needed for the fallback to `Debug` impl
         parse_quote_spanned! {ident.span()=>
             impl ::salsa::DebugWithDb<#db_type> for #ident {
                 fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type) -> ::std::fmt::Result {
+                    #[allow(unused_imports)]
+                    use ::salsa::debug::helper::Fallback;
                     f.debug_struct(#ident_string)
                         .field("[salsa id]", &self.0.as_u32())
                         #(#fields)*
