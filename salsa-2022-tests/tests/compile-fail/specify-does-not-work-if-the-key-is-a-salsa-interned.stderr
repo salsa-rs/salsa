@@ -1,0 +1,14 @@
+error[E0277]: the trait bound `MyInterned: TrackedStructInDb<dyn Db>` is not satisfied
+   --> tests/compile-fail/specify-does-not-work-if-the-key-is-a-salsa-interned.rs:21:28
+    |
+20  | #[salsa::tracked(jar = Jar, specify)]
+    | ------------------------------------- required by a bound introduced by this call
+21  | fn tracked_fn(db: &dyn Db, input: MyInterned) -> MyTracked {
+    |                            ^^^^^ the trait `TrackedStructInDb<dyn Db>` is not implemented for `MyInterned`
+    |
+    = help: the trait `TrackedStructInDb<DB>` is implemented for `MyTracked`
+note: required by a bound in `function::specify::<impl FunctionIngredient<C>>::specify_and_record`
+   --> $WORKSPACE/components/salsa-2022/src/function/specify.rs
+    |
+    |         C::Key: TrackedStructInDb<DynDb<'db, C>>,
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `function::specify::<impl FunctionIngredient<C>>::specify_and_record`
