@@ -310,14 +310,15 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
                     impl<Everything, Db: ?Sized, T: ::core::fmt::Debug> Fallback<T, Db> for Everything {}
 
-                    &Test::<#field_ty, #db_type>::salsa_debug(&self.#field_getter(db), db)
+                    #[allow(clippy::needless_borrow)]
+                    &Test::<#field_ty, #db_type>::salsa_debug(&self.#field_getter(_db), _db)
                 })
             }
         }).collect::<Vec<TokenStream>>();
 
         parse_quote_spanned! {ident.span()=>
             impl ::salsa::DebugWithDb<#db_type> for #ident {
-                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, db: &#db_type) -> ::std::fmt::Result {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type) -> ::std::fmt::Result {
                     f.debug_struct(#ident_string)
                         .field("[salsa id]", &self.0.as_u32())
                         #(#fields)*
