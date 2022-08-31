@@ -1,7 +1,7 @@
 use ordered_float::OrderedFloat;
 
 use crate::ir::{
-    Diagnostic, Diagnostics, Expression, ExpressionData, Function, FunctionId, Op, Program,
+    Anchor, Diagnostic, Diagnostics, Expression, ExpressionData, Function, FunctionId, Op, Program,
     SourceProgram, Span, Statement, StatementData, VariableId,
 };
 
@@ -15,8 +15,10 @@ pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program {
     let mut parser = Parser {
         db,
         source_text,
+        anchors: vec![],
         position: 0,
     };
+    parser.push_anchor(0);
 
     // Read in statements until we reach the end of the input
     let mut result = vec![];
@@ -61,19 +63,43 @@ pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program {
 struct Parser<'p> {
     db: &'p dyn crate::Db,
     source_text: &'p str,
+    anchors: Vec<Anchor>,
     position: usize,
 }
 
 impl Parser<'_> {
-    // Invoke `f` and, if it returns `None`, then restore the parsing position.
+    // Invoke `f` and, if it returns `None`, then restore the parsing position and anchors.
+    // You MUST use `probe` whenever you recover from a parsing failure.
+    // Our grammar is so simple that typically we don't need to recover from parsing failures,
+    // but probe is still useful to ensure that lexing individual tokens recovers without modifying
+    // self.position or self.anchors.
     fn probe<T: std::fmt::Debug>(&mut self, f: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
         let p = self.position;
+        let anchors = self.anchors.len();
         if let Some(v) = f(self) {
             Some(v)
         } else {
             self.position = p;
+            self.anchors.truncate(anchors);
             None
         }
+    }
+
+    /// Push an anchor onto the stack at the given position.
+    /// Any future spans that are created will be relative to the anchor
+    /// until it is popped.
+    fn push_anchor(&mut self, position: usize) {
+        self.anchors.push(Anchor::new(self.db, position));
+    }
+
+    /// Pop an anchor from the stack.
+    fn pop_anchor(&mut self) {
+        self.anchors.pop();
+    }
+
+    /// Return the top anchor from the stack.
+    fn anchor(&self) -> Anchor {
+        *self.anchors.last().unwrap()
     }
 
     // ANCHOR: report_error
@@ -100,7 +126,11 @@ impl Parser<'_> {
 
     // Returns a span ranging from `start_position` until the current position (exclusive)
     fn span_from(&self, start_position: usize) -> Span {
-        Span::new(self.db, start_position, self.position)
+        let anchor = self.anchor();
+        let location = anchor.location(self.db);
+        let start = start_position - location;
+        let end = self.position - location;
+        Span::new(anchor, start, end)
     }
 
     fn consume(&mut self, ch: char) {
@@ -125,11 +155,11 @@ impl Parser<'_> {
         let start_position = self.skip_whitespace();
         let word = self.word()?;
         if word == "fn" {
+            self.push_anchor(start_position);
             let func = self.parse_function()?;
-            Some(Statement::new(
-                self.span_from(start_position),
-                StatementData::Function(func),
-            ))
+            let span = self.span_from(start_position);
+            self.pop_anchor();
+            Some(Statement::new(span, StatementData::Function(func)))
         } else if word == "print" {
             let expr = self.parse_expression()?;
             Some(Statement::new(
@@ -297,7 +327,6 @@ impl Parser<'_> {
         // In this loop, if we consume any characters, we always
         // return `Some`.
         let mut s = String::new();
-        let _position = self.position;
         while let Some(ch) = self.peek() {
             if ch.is_alphabetic() || ch == '_' || (!s.is_empty() && ch.is_numeric()) {
                 s.push(ch);
@@ -319,7 +348,7 @@ impl Parser<'_> {
     ///
     /// Even on failure, only skips whitespace.
     fn number(&mut self) -> Option<f64> {
-        let _start_position = self.skip_whitespace();
+        self.skip_whitespace();
 
         self.probe(|this| {
             // 👆 We need the call to `probe` here because we could consume
@@ -381,25 +410,37 @@ fn parse_print() {
                 [salsa id]: 0,
                 statements: [
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 5,
-                            },
-                        ),
+                        span: Span {
+                            anchor: Anchor(
+                                Id {
+                                    value: 1,
+                                },
+                            ),
+                            start: 0,
+                            end: 11,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 4,
-                                    },
-                                ),
+                                span: Span {
+                                    anchor: Anchor(
+                                        Id {
+                                            value: 1,
+                                        },
+                                    ),
+                                    start: 6,
+                                    end: 11,
+                                },
                                 data: Op(
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 1,
-                                            },
-                                        ),
+                                        span: Span {
+                                            anchor: Anchor(
+                                                Id {
+                                                    value: 1,
+                                                },
+                                            ),
+                                            start: 6,
+                                            end: 7,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 1.0,
@@ -408,11 +449,15 @@ fn parse_print() {
                                     },
                                     Add,
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 3,
-                                            },
-                                        ),
+                                        span: Span {
+                                            anchor: Anchor(
+                                                Id {
+                                                    value: 1,
+                                                },
+                                            ),
+                                            start: 10,
+                                            end: 11,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 2.0,
@@ -448,11 +493,15 @@ fn parse_example() {
                 [salsa id]: 0,
                 statements: [
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 10,
-                            },
-                        ),
+                        span: Span {
+                            anchor: Anchor(
+                                Id {
+                                    value: 2,
+                                },
+                            ),
+                            start: 0,
+                            end: 44,
+                        },
                         data: Function(
                             Function(
                                 Id {
@@ -462,11 +511,15 @@ fn parse_example() {
                         ),
                     },
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 22,
-                            },
-                        ),
+                        span: Span {
+                            anchor: Anchor(
+                                Id {
+                                    value: 3,
+                                },
+                            ),
+                            start: 0,
+                            end: 45,
+                        },
                         data: Function(
                             Function(
                                 Id {
@@ -476,18 +529,26 @@ fn parse_example() {
                         ),
                     },
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 29,
-                            },
-                        ),
+                        span: Span {
+                            anchor: Anchor(
+                                Id {
+                                    value: 1,
+                                },
+                            ),
+                            start: 102,
+                            end: 141,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 28,
-                                    },
-                                ),
+                                span: Span {
+                                    anchor: Anchor(
+                                        Id {
+                                            value: 1,
+                                        },
+                                    ),
+                                    start: 108,
+                                    end: 128,
+                                },
                                 data: Call(
                                     FunctionId(
                                         Id {
@@ -496,11 +557,15 @@ fn parse_example() {
                                     ),
                                     [
                                         Expression {
-                                            span: Span(
-                                                Id {
-                                                    value: 24,
-                                                },
-                                            ),
+                                            span: Span {
+                                                anchor: Anchor(
+                                                    Id {
+                                                        value: 1,
+                                                    },
+                                                ),
+                                                start: 123,
+                                                end: 124,
+                                            },
                                             data: Number(
                                                 OrderedFloat(
                                                     3.0,
@@ -508,11 +573,15 @@ fn parse_example() {
                                             ),
                                         },
                                         Expression {
-                                            span: Span(
-                                                Id {
-                                                    value: 26,
-                                                },
-                                            ),
+                                            span: Span {
+                                                anchor: Anchor(
+                                                    Id {
+                                                        value: 1,
+                                                    },
+                                                ),
+                                                start: 126,
+                                                end: 127,
+                                            },
                                             data: Number(
                                                 OrderedFloat(
                                                     4.0,
@@ -525,18 +594,26 @@ fn parse_example() {
                         ),
                     },
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 34,
-                            },
-                        ),
+                        span: Span {
+                            anchor: Anchor(
+                                Id {
+                                    value: 1,
+                                },
+                            ),
+                            start: 141,
+                            end: 174,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 33,
-                                    },
-                                ),
+                                span: Span {
+                                    anchor: Anchor(
+                                        Id {
+                                            value: 1,
+                                        },
+                                    ),
+                                    start: 147,
+                                    end: 161,
+                                },
                                 data: Call(
                                     FunctionId(
                                         Id {
@@ -545,11 +622,15 @@ fn parse_example() {
                                     ),
                                     [
                                         Expression {
-                                            span: Span(
-                                                Id {
-                                                    value: 31,
-                                                },
-                                            ),
+                                            span: Span {
+                                                anchor: Anchor(
+                                                    Id {
+                                                        value: 1,
+                                                    },
+                                                ),
+                                                start: 159,
+                                                end: 160,
+                                            },
                                             data: Number(
                                                 OrderedFloat(
                                                     1.0,
@@ -562,25 +643,37 @@ fn parse_example() {
                         ),
                     },
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 39,
-                            },
-                        ),
+                        span: Span {
+                            anchor: Anchor(
+                                Id {
+                                    value: 1,
+                                },
+                            ),
+                            start: 174,
+                            end: 195,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 38,
-                                    },
-                                ),
+                                span: Span {
+                                    anchor: Anchor(
+                                        Id {
+                                            value: 1,
+                                        },
+                                    ),
+                                    start: 180,
+                                    end: 186,
+                                },
                                 data: Op(
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 35,
-                                            },
-                                        ),
+                                        span: Span {
+                                            anchor: Anchor(
+                                                Id {
+                                                    value: 1,
+                                                },
+                                            ),
+                                            start: 180,
+                                            end: 182,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 11.0,
@@ -589,11 +682,15 @@ fn parse_example() {
                                     },
                                     Multiply,
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 37,
-                                            },
-                                        ),
+                                        span: Span {
+                                            anchor: Anchor(
+                                                Id {
+                                                    value: 1,
+                                                },
+                                            ),
+                                            start: 185,
+                                            end: 186,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 2.0,
@@ -644,32 +741,48 @@ fn parse_precedence() {
                 [salsa id]: 0,
                 statements: [
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 11,
-                            },
-                        ),
+                        span: Span {
+                            anchor: Anchor(
+                                Id {
+                                    value: 1,
+                                },
+                            ),
+                            start: 0,
+                            end: 19,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 10,
-                                    },
-                                ),
+                                span: Span {
+                                    anchor: Anchor(
+                                        Id {
+                                            value: 1,
+                                        },
+                                    ),
+                                    start: 6,
+                                    end: 19,
+                                },
                                 data: Op(
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 7,
-                                            },
-                                        ),
+                                        span: Span {
+                                            anchor: Anchor(
+                                                Id {
+                                                    value: 1,
+                                                },
+                                            ),
+                                            start: 6,
+                                            end: 16,
+                                        },
                                         data: Op(
                                             Expression {
-                                                span: Span(
-                                                    Id {
-                                                        value: 1,
-                                                    },
-                                                ),
+                                                span: Span {
+                                                    anchor: Anchor(
+                                                        Id {
+                                                            value: 1,
+                                                        },
+                                                    ),
+                                                    start: 6,
+                                                    end: 7,
+                                                },
                                                 data: Number(
                                                     OrderedFloat(
                                                         1.0,
@@ -678,18 +791,26 @@ fn parse_precedence() {
                                             },
                                             Add,
                                             Expression {
-                                                span: Span(
-                                                    Id {
-                                                        value: 6,
-                                                    },
-                                                ),
+                                                span: Span {
+                                                    anchor: Anchor(
+                                                        Id {
+                                                            value: 1,
+                                                        },
+                                                    ),
+                                                    start: 10,
+                                                    end: 15,
+                                                },
                                                 data: Op(
                                                     Expression {
-                                                        span: Span(
-                                                            Id {
-                                                                value: 3,
-                                                            },
-                                                        ),
+                                                        span: Span {
+                                                            anchor: Anchor(
+                                                                Id {
+                                                                    value: 1,
+                                                                },
+                                                            ),
+                                                            start: 10,
+                                                            end: 11,
+                                                        },
                                                         data: Number(
                                                             OrderedFloat(
                                                                 2.0,
@@ -698,11 +819,15 @@ fn parse_precedence() {
                                                     },
                                                     Multiply,
                                                     Expression {
-                                                        span: Span(
-                                                            Id {
-                                                                value: 5,
-                                                            },
-                                                        ),
+                                                        span: Span {
+                                                            anchor: Anchor(
+                                                                Id {
+                                                                    value: 1,
+                                                                },
+                                                            ),
+                                                            start: 14,
+                                                            end: 15,
+                                                        },
                                                         data: Number(
                                                             OrderedFloat(
                                                                 3.0,
@@ -715,11 +840,15 @@ fn parse_precedence() {
                                     },
                                     Add,
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 9,
-                                            },
-                                        ),
+                                        span: Span {
+                                            anchor: Anchor(
+                                                Id {
+                                                    value: 1,
+                                                },
+                                            ),
+                                            start: 18,
+                                            end: 19,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 4.0,

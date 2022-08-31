@@ -168,16 +168,28 @@ where
                 // then we would have updated the `verified_at` field already.
                 // So the fact that we are here means that it was not specified
                 // during this revision or is otherwise stale.
+                log::debug!(
+                    "deep_verify_memo({:?}): assigned, assume false",
+                    database_key_index.debug(db),
+                );
                 return false;
             }
             QueryOrigin::BaseInput | QueryOrigin::Field => {
                 // BaseInput: This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
                 // Field: This value is the value of a field of some tracked struct S. It is always updated whenever S is created.
                 // So if a query has access to S, then they will have an up-to-date value.
+                log::debug!(
+                    "deep_verify_memo({:?}): base input or field, assume true",
+                    database_key_index.debug(db),
+                );
                 return true;
             }
             QueryOrigin::DerivedUntracked(_) => {
                 // Untracked inputs? Have to assume that it changed.
+                log::debug!(
+                    "deep_verify_memo({:?}): untracked inputs, assume false",
+                    database_key_index.debug(db),
+                );
                 return false;
             }
             QueryOrigin::Derived(edges) => {
@@ -190,12 +202,22 @@ where
                 let last_verified_at = old_memo.verified_at.load();
                 for &input in edges.inputs().iter() {
                     if db.maybe_changed_after(input, last_verified_at) {
+                        log::debug!(
+                            "deep_verify_memo({:?}): input {:?} maybe changed after {:?}",
+                            database_key_index.debug(db),
+                            input.debug(db),
+                            last_verified_at,
+                        );
                         return false;
                     }
                 }
             }
         }
 
+        log::debug!(
+            "deep_verify_memo({:?}): validated inputs",
+            database_key_index.debug(db),
+        );
         old_memo.mark_as_verified(db.as_salsa_database(), runtime, database_key_index);
         true
     }

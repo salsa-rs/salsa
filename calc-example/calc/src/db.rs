@@ -35,9 +35,19 @@ impl Database {
     }
 }
 
+impl crate::PushLog for Database {
+    fn push_log(&self, message: &mut dyn FnMut() -> String) {
+        if let Some(logs) = &self.logs {
+            logs.lock().unwrap().push(message());
+        }
+    }
+}
+
 // ANCHOR: db_impl
 impl salsa::Database for Database {
     fn salsa_event(&self, event: salsa::Event) {
+        log::debug!("salsa_event: {:?}", event.debug(self));
+
         // Log interesting events, if logging is enabled
         if let Some(logs) = &self.logs {
             // don't log boring events

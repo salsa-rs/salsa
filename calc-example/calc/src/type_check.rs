@@ -142,12 +142,12 @@ fn check_bad_variable_in_program() {
             [
                 Diagnostic {
                     start: 6,
-                    end: 8,
+                    end: 6,
                     message: "the variable `a` is not declared",
                 },
                 Diagnostic {
                     start: 10,
-                    end: 11,
+                    end: 10,
                     message: "the variable `b` is not declared",
                 },
             ]
@@ -164,7 +164,7 @@ fn check_bad_function_in_program() {
             [
                 Diagnostic {
                     start: 6,
-                    end: 11,
+                    end: 6,
                     message: "the function `a` is not declared",
                 },
             ]
@@ -184,7 +184,7 @@ fn check_bad_variable_in_function() {
             [
                 Diagnostic {
                     start: 33,
-                    end: 47,
+                    end: 33,
                     message: "the variable `b` is not declared",
                 },
             ]
@@ -204,12 +204,12 @@ fn check_bad_function_in_function() {
             [
                 Diagnostic {
                     start: 29,
-                    end: 39,
+                    end: 29,
                     message: "the function `add_two` is not declared",
                 },
                 Diagnostic {
                     start: 42,
-                    end: 56,
+                    end: 42,
                     message: "the variable `b` is not declared",
                 },
             ]
@@ -230,7 +230,7 @@ fn fix_bad_variable_in_function() {
             [
                 Diagnostic {
                     start: 32,
-                    end: 46,
+                    end: 32,
                     message: "the variable `b` is not declared",
                 },
             ]
@@ -247,7 +247,45 @@ fn fix_bad_variable_in_function() {
             expect![[r#"
                 [
                     "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_statements(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_program(0) } }",
                     "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_function(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(1) } }",
+                ]
+            "#]],
+        )],
+    );
+}
+
+#[test]
+fn fix_bug_in_function() {
+    check_string(
+        "
+            fn double(a) = a
+            fn quadruple(a) = double(double(a))
+            print quadruple(2)
+        ",
+        expect![[r#"
+            []
+        "#]],
+        &[(
+            "
+                fn double(a) = a * 2
+                fn quadruple(a) = double(double(a))
+                print quadruple(2)
+            ",
+            expect![[r#"
+                []
+            "#]],
+            // Important: quadruple does not get type-checked again, even though (for example)
+            // the positions of its various expressions and statements have changed.
+            expect![[r#"
+                [
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_statements(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_program(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_function(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(1) } }",
                 ]
             "#]],
         )],
