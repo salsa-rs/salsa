@@ -96,6 +96,11 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         self.all_fields().map(|ef| ef.name()).collect()
     }
 
+    /// Visibilities of all fields
+    pub(crate) fn all_field_vises(&self) -> Vec<&syn::Visibility> {
+        self.all_fields().map(|ef| ef.vis()).collect()
+    }
+
     /// Names of getters of all fields
     pub(crate) fn all_get_field_names(&self) -> Vec<&syn::Ident> {
         self.all_fields().map(|ef| ef.get_name()).collect()
@@ -404,6 +409,11 @@ impl SalsaField {
     /// The name of this field (all `SalsaField` instances are named).
     pub(crate) fn name(&self) -> &syn::Ident {
         self.field.ident.as_ref().unwrap()
+    }
+
+    /// The visibility of this field.
+    pub(crate) fn vis(&self) -> &syn::Visibility {
+        &self.field.vis
     }
 
     /// The type of this field (all `SalsaField` instances are named).
