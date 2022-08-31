@@ -7,19 +7,19 @@ struct Jar(MyInput, MyInput_tracked_fn, MyInput_tracked_fn_ref);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 impl MyInput {
-    #[tracked]
+    #[salsa::tracked]
     fn tracked_fn(self, db: &dyn Db) -> u32 {
         self.field(db) * 2
     }
 
-    #[tracked(return_ref)]
+    #[salsa::tracked(return_ref)]
     fn tracked_fn_ref(self, db: &dyn Db) -> u32 {
         self.field(db) * 3
     }

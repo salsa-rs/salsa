@@ -18,6 +18,13 @@ pub(crate) fn tracked_fn(
         ));
     }
 
+    if let syn::FnArg::Receiver(receiver) = &item_fn.sig.inputs[0] {
+        return Err(syn::Error::new(
+            receiver.span(),
+            "#[salsa::tracked] must also be applied to the impl block for tracked methods",
+        ));
+    }
+
     if let Some(s) = &args.specify {
         if requires_interning(&item_fn) {
             return Err(syn::Error::new(
@@ -96,10 +103,12 @@ pub(crate) fn tracked_impl(
                 _ => return None,
             };
             let salsa_tracked_attr = item_method.attrs.iter().position(|attr| {
-                attr.path
-                    .get_ident()
-                    .map(|ident| ident == "tracked")
-                    .unwrap_or(false)
+                let path = &attr.path.segments;
+                path.len() == 2
+                    && path[0].arguments == syn::PathArguments::None
+                    && path[0].ident == "salsa"
+                    && path[1].arguments == syn::PathArguments::None
+                    && path[1].ident == "tracked"
             })?;
             let salsa_tracked_attr = item_method.attrs.remove(salsa_tracked_attr);
             let inner_args = if !salsa_tracked_attr.tokens.is_empty() {
