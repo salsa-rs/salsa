@@ -21,7 +21,7 @@ pub struct Jar(
 // ANCHOR_END: jar_struct
 
 // ANCHOR: jar_db
-pub trait Db: PushLog + salsa::DbWithJar<Jar> {}
+pub trait Db: salsa::DbWithJar<Jar> + PushLog {}
 // ANCHOR_END: jar_db
 
 // ANCHOR: jar_db_impl
@@ -30,6 +30,11 @@ impl<DB> Db for DB where DB: ?Sized + PushLog + salsa::DbWithJar<Jar> {}
 
 // ANCHOR: PushLog
 pub trait PushLog {
+    /// When testing, invokes `message` to create a log string and
+    /// pushes that string onto an internal list of logs.
+    ///
+    /// This list of log can later be used to observe what got re-executed
+    /// or modified during execution.
     fn push_log(&self, message: &mut dyn FnMut() -> String);
 }
 // ANCHOR_END: PushLog

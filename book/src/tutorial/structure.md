@@ -77,7 +77,8 @@ which is a bit less intuitive but allows for more incremental re-use.
 The idea is to compute, for a given expression, which variables it references.
 Then there is a function `check` which ensures that those variables are a subset of those that are already defined.
 
-## Interpreter
+## Evaluator
 
-The interpreter will execute the program and print the result. We don't bother with much incremental re-use here,
-though it's certainly possible.
+The evaluator will execute the program and print the result.
+Mostly for demonstration purposes, we have set it up so that
+it will avoid re-executing functions if their body has not changed.

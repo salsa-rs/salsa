@@ -13,11 +13,16 @@ In `calc`, the database struct is in the [`db`] module, and it looks like this:
 {{#include ../../../calc-example/calc/src/db.rs:db_struct}}
 ```
 
-The `#[salsa::db(...)]` attribute takes a list of all the jars to include.
-The struct must have a field named `storage` whose type is `salsa::Storage<Self>`, but it can also contain whatever other fields you want.
+The `#[salsa::db(...)]` attribute takes a list of all the jars to include
+and it autogenerates a bunch of impls for things like the `salsa::HasJar<crate::Jar>` trait that we saw earlier.
+
+**The struct must have a field named `storage` whose type is `salsa::Storage<Self>`.**
 The `storage` struct owns all the data for the jars listed in the `db` attribute.
 
-The `salsa::db` attribute autogenerates a bunch of impls for things like the `salsa::HasJar<crate::Jar>` trait that we saw earlier.
+In addition to `storage`, your type may have whatever other fields you need.
+in this example, we added a `logs` field to store the log we use for testing.
+
+Note that we derive the `Default` trait -- this is not required, but it's often a convenient way to let users instantiate your database.
 
 ## Implementing the `salsa::Database` trait
 
@@ -27,6 +32,17 @@ In addition to the struct itself, we must add an impl of `salsa::Database`:
 {{#include ../../../calc-example/calc/src/db.rs:db_impl}}
 ```
 
+The `salsa::Database` trait includes a method `salsa_event` that you can choose to override
+to give yourself more insight into how salsa is executing.
+`salsa_event` is invoked when notable events occur, such as a function being executed
+or a result being re-used.
+Its default behavior is just to log the event using the `log` facade, so if you do not override
+`salsa_event`, and you setup the [`env_logger`](https://crates.io/crates/env_logger) crate,
+you can run your program with `RUST_LOG=salsa` to view what is happening.
+
+In our case, we are going to override the method to both issue a debug event (viewable with `RUST_LOG=calc`)
+and push some logging events for later observation.
+
 ## Implementing the `salsa::ParallelDatabase` trait
 
 If you want to permit accessing your database from multiple threads at once, then you also need to implement the `ParallelDatabase` trait:
@@ -35,12 +51,24 @@ If you want to permit accessing your database from multiple threads at once, the
 {{#include ../../../calc-example/calc/src/db.rs:par_db_impl}}
 ```
 
-## Implementing the `Default` trait
+The `ParallelDatabase` impl needs to supply some sort of value for every field in your database.
+The `storage` field provides a `snapshot` method for this purpose, but you have to figure out the best solution for custom fields.
+In this example, we can simply clone the `logs` field as well, since it's an `Arc` that is meant to be shared across threads.
 
-It's not required, but implementing the `Default` trait is often a convenient way to let users instantiate your database:
+## Implementing the `PushLog` trait
+
+If you recall, the `crate::Db` trait that [we defined earlier](./jar.md#defining-the-database-trait)
+had the `PushLog` trait as a supertrait.
+Because this is not a sala trait, it's our job to generate an impl for it.
 
 ```rust
-{{#include ../../../calc-example/calc/src/db.rs:default_impl}}
+{{#include ../../../calc-example/calc/src/db.rs:PushLogImpl}}
+```
+
+We also add some additional method to the `Database` that can only be used by tests:
+
+```rust
+{{#include ../../../calc-example/calc/src/db.rs:LoggingSupportCode}}
 ```
 
 ## Implementing the traits for each jar
