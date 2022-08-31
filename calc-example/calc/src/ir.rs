@@ -4,8 +4,17 @@ use derive_new::new;
 use ordered_float::OrderedFloat;
 
 // ANCHOR: input
+/// Represents the source program, which is the main input of our compiler.
+/// Each program begins as a simple string which we will parse into an AST
+/// and then evaluate to create the final result.
 #[salsa::input]
 pub struct SourceProgram {
+    /// The source of the program.
+    ///
+    /// The `return_ref` annotation makes the `text(db)` getter
+    /// return an `&String` that refers directly into the database
+    /// rather than returning a clone of the `String`. It is often
+    /// used for types, like `String`, that are expensive to clone.
     #[return_ref]
     text: String,
 }
