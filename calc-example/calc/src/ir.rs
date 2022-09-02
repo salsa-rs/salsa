@@ -120,19 +120,25 @@ impl Program {
     }
 }
 
-/// Anchors mark either the start of the input itself
-/// *or* the start a function.
-/// The spans used to identify the location of other bits of IR,
-/// such as an expression,
-/// are always relative to an anchor.
-/// Making spans relative to an anchor means that they do not
-/// change when the body of some prior function is modified.
+// ANCHOR: anchor
+/// Anchors mark significant points in the program text,
+/// such as the start of the input or the start of a function.
+/// All other spans are relative to an anchor, ensuring that
+/// the spans don't change even when other content is added before
+/// the anchor point.
 #[salsa::tracked]
 pub struct Anchor {
     location: usize,
 }
+// ANCHOR_END: anchor
 
+// ANCHOR: span
 /// Stores the location of a piece of IR within the source text.
+/// Spans are not stored as absolute values but rather relative to an anchor.
+/// This way, although the location of the anchor may change, the spans themselves rarely do.
+/// So long as a function doesn't convert the span into its absolute form,
+/// and thus read the anchor's precise location, it won't need to re-execute, even if the anchor
+/// has moved about in the file.
 #[derive(new, Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Span {
     /// The other fields in the span are "relative" to the given anchor.
@@ -144,6 +150,7 @@ pub struct Span {
     /// End of the span, relative to the anchor.
     pub end: usize,
 }
+// ANCHOR_END: span
 
 impl Span {
     /// Compute the absolute start of the span, relative to the start of the input.-

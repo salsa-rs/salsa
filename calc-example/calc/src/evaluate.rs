@@ -213,7 +213,7 @@ fn execute_example() {
                 // Everything gets evaluated.
                 expect![[r#"
                     [
-                        "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_statements(0) } }",
+                        "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_source_program(0) } }",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_program(0) } }",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_function(0) } }",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(0) } }",
@@ -244,7 +244,7 @@ fn execute_example() {
                 // We do have to search the list of statements, though, so `find_function` re-executes.
                 expect![[r#"
                     [
-                        "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_statements(0) } }",
+                        "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_source_program(0) } }",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_program(0) } }",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(0) } }",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(1) } }",

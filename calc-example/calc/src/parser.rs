@@ -5,9 +5,10 @@ use crate::ir::{
     SourceProgram, Span, Statement, StatementData, VariableId,
 };
 
-// ANCHOR: parse_statements
+// ANCHOR: parse_source_program
+/// Parse a source program into a compiled program.
 #[salsa::tracked]
-pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program {
+pub fn parse_source_program(db: &dyn crate::Db, source: SourceProgram) -> Program {
     // Get the source text from the database
     let source_text = source.text(db);
 
@@ -45,7 +46,7 @@ pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program {
 
     Program::new(db, result)
 }
-// ANCHOR_END: parse_statements
+// ANCHOR_END: parse_source_program
 
 /// The parser tracks the current position in the input.
 ///
@@ -390,10 +391,10 @@ fn parse_string(source_text: &str) -> String {
     let source_program = SourceProgram::new(&mut db, source_text.to_string());
 
     // Invoke the parser
-    let statements = parse_statements(&db, source_program);
+    let statements = parse_source_program(&db, source_program);
 
     // Read out any diagnostics
-    let accumulated = parse_statements::accumulated::<Diagnostics>(&db, source_program);
+    let accumulated = parse_source_program::accumulated::<Diagnostics>(&db, source_program);
 
     // Format the result as a string and return it
     format!("{:#?}", (statements.debug(&db), accumulated))

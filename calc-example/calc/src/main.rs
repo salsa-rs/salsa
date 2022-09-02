@@ -11,7 +11,7 @@ pub struct Jar(
     crate::ir::Function,
     crate::ir::Diagnostics,
     crate::ir::Anchor,
-    crate::parser::parse_statements,
+    crate::parser::parse_source_program,
     crate::type_check::type_check_program,
     crate::type_check::type_check_function,
     crate::evaluate::evaluate_function,

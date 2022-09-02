@@ -12,12 +12,12 @@ We're going to focus only on the Salsa-related aspects.
 
 [rd]: https://en.wikipedia.org/wiki/Recursive_descent_parser
 
-## The `parse_statements` function
+## The `parse_source_program` function
 
-The starting point for the parser is the `parse_statements` function:
+The starting point for the parser is the `parse_source_program` function:
 
 ```rust
-{{#include ../../../calc-example/calc/src/parser.rs:parse_statements}}
+{{#include ../../../calc-example/calc/src/parser.rs:parse_source_program}}
 ```
 
 This function is annotated as `#[salsa::tracked]`.
@@ -25,6 +25,7 @@ That means that, when it is called, Salsa will track what inputs it reads as wel
 The return value is *memoized*,
 which means that if you call this function again without changing the inputs,
 Salsa will just clone the result rather than re-execute it.
+(Because the result in this case is a `Program`, which is a tracked struct, cloning is very cheap.)
 
 ### Tracked functions are the unit of reuse
 
@@ -33,7 +34,7 @@ The goal of the framework is to avoid re-executing tracked functions and instead
 Salsa uses the [red-green algorithm](../reference/algorithm.md) to decide when to re-execute a function.
 The short version is that a tracked function is re-executed if either (a) it directly reads an input, and that input has changed,
 or (b) it directly invokes another tracked function and that function's return value has changed.
-In the case of `parse_statements`, it directly reads `ProgramSource::text`, so if the text changes, then the parser will re-execute.
+In the case of `parse_statements`, it reads the field `source.text(db)`, so if the text changes, then the parser will re-execute.
 
 By choosing which functions to mark as `#[tracked]`, you control how much reuse you get.
 In our case, we're opting to mark the outermost parsing function as tracked, but not the inner ones.
@@ -60,14 +61,4 @@ which should be a `dyn Trait` value for the database trait associated with the j
 Tracked functions may take other arguments as well, though our examples here do not.
 Functions that take additional arguments are less efficient and flexible.
 It's generally better to structure tracked functions as functions of a single Salsa struct if possible.
-
-### The `return_ref` annotation
-
-You may have noticed that `parse_statements` is tagged with `#[salsa::tracked(return_ref)]`. 
-Ordinarily, when you call a tracked function, the result you get back is cloned out of the database.
-The `return_ref` attribute means that a reference into the database is returned instead.
-So, when called, `parse_statements` will return an `&Vec<Statement>` rather than cloning the `Vec`.
-This is useful as a performance optimization.
-(You may recall the `return_ref` annotation from the [ir](./ir.md) section of the tutorial, 
-where it was placed on struct fields, with roughly the same meaning.)
 

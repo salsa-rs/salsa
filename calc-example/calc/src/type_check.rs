@@ -79,7 +79,7 @@ fn check_string(
     expected_diagnostics: expect_test::Expect,
     edits: &[(&str, expect_test::Expect, expect_test::Expect)],
 ) {
-    use crate::{db::Database, ir::SourceProgram, parser::parse_statements};
+    use crate::{db::Database, ir::SourceProgram, parser::parse_source_program};
 
     // Create the database
     let mut db = Database::default().enable_logging();
@@ -88,7 +88,7 @@ fn check_string(
     let source_program = SourceProgram::new(&mut db, source_text.to_string());
 
     // Invoke the parser
-    let program = parse_statements(&db, source_program);
+    let program = parse_source_program(&db, source_program);
 
     // Read out any diagnostics
     expected_diagnostics.assert_debug_eq(&type_check_program::accumulated::<Diagnostics>(
@@ -103,7 +103,7 @@ fn check_string(
         source_program
             .set_text(&mut db)
             .to(new_source_text.to_string());
-        let program = parse_statements(&db, source_program);
+        let program = parse_source_program(&db, source_program);
         expected_diagnostics.assert_debug_eq(&type_check_program::accumulated::<Diagnostics>(
             &db, program,
         ));
@@ -273,6 +273,39 @@ fn fix_bug_in_function() {
                     "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_program(0) } }",
                     "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_function(0) } }",
                     "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(1) } }",
+                ]
+            "#]],
+        )],
+    );
+}
+
+#[test]
+fn add_new_function() {
+    check_string(
+        "
+            fn quadruple(a) = a * 4
+            print quadruple(2)
+        ",
+        expect![[r#"
+            []
+        "#]],
+        &[(
+            "
+                fn double(a) = a * 2
+                fn quadruple(a) = a * 4
+                print quadruple(2)
+            ",
+            expect![[r#"
+                []
+            "#]],
+            // FIXME: quadruple should not get type-checked again!
+            expect![[r#"
+                [
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_source_program(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_program(1) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_function(1) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_function(2) } }",
                     "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(1) } }",
                 ]
             "#]],
