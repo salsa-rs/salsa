@@ -13,8 +13,8 @@ In `calc`, the database struct is in the [`db`] module, and it looks like this:
 {{#include ../../../calc-example/calc/src/db.rs:db_struct}}
 ```
 
-The `#[salsa::db(...)]` attribute takes a list of all the jars to include
-and it autogenerates a bunch of impls for things like the `salsa::HasJar<crate::Jar>` trait that we saw earlier.
+The `#[salsa::db(...)]` attribute takes a list of all the jars to include.
+It autogenerates various bits of glue, including the `salsa::HasJar<J>` impl for each jar `J` that the [`crate::Db` trait declared as a supertrait](./jar.md#defining-the-database-trait).
 
 **The struct must have a field named `storage` whose type is `salsa::Storage<Self>`.**
 The `storage` struct owns all the data for the jars listed in the `db` attribute.
