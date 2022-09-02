@@ -137,7 +137,6 @@ impl<A: AllowedOptions, M: AllowedModes> SalsaStruct<A, M> {
         self.fields.len()
     }
 
-
     pub(crate) fn struct_span(&self) -> Span {
         self.struct_item.span()
     }
@@ -451,8 +450,11 @@ impl SalsaField {
     }
 }
 
-
-pub(crate) fn check_singleton<M: AllowedModes>(mode: &Mode<M>, sing: Option<&syn::Ident>, s_span: Span) -> syn::Result<()> {
+pub(crate) fn check_singleton<M: AllowedModes>(
+    mode: &Mode<M>,
+    sing: Option<&syn::Ident>,
+    s_span: Span,
+) -> syn::Result<()> {
     if !mode.singleton_allowed() && sing.is_some() {
         Err(syn::Error::new(
             s_span,

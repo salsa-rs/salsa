@@ -7,9 +7,7 @@ use salsa_2022_tests::{HasLogger, Logger};
 use test_log::test;
 
 #[salsa::jar(db = Db)]
-struct Jar(
-    MyInput,
-);
+struct Jar(MyInput);
 
 trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
@@ -17,7 +15,6 @@ trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 struct MyInput {
     field: u32,
 }
-
 
 #[salsa::db(Jar)]
 #[derive(Default)]

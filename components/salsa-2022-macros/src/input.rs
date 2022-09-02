@@ -96,7 +96,7 @@ impl InputStruct {
                 self.0.struct_span(),
                 format!("`Singleton` input mut have only one field"),
             ));
-        } 
+        }
         Ok(())
     }
 
@@ -150,8 +150,6 @@ impl InputStruct {
 
         let constructor_name = self.constructor_name();
         let singleton = self.0.is_isingleton();
-
-        
 
         let constructor: syn::ImplItemMethod = if singleton {
             parse_quote! {
