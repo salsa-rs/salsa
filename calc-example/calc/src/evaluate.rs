@@ -1,7 +1,7 @@
 use crate::{
     compile,
     ir::{
-        Diagnostic, Diagnostics, Expression, Function, Op, Program, SourceProgram, Span,
+        Anchor, Diagnostic, Diagnostics, Expression, Function, Op, Program, SourceProgram, Span,
         StatementData, VariableId,
     },
 };
@@ -26,7 +26,7 @@ pub fn evaluate_source_program(
 }
 
 pub fn evaluate_program(db: &dyn crate::Db, program: Program) -> Result<String, Diagnostic> {
-    Evaluator::new(db, program, &[]).evaluate_program()
+    Evaluator::new(db, program, &program, &[]).evaluate_program()
 }
 
 #[salsa::tracked]
@@ -49,13 +49,14 @@ pub(crate) fn evaluate_function(
 
     let variables: Vec<_> = callee_args.iter().copied().zip(inputs).collect();
     let body = callee.body(db);
-    Evaluator::new(db, program, &variables).evaluate_expression(body)
+    Evaluator::new(db, program, &callee, &variables).evaluate_expression(body)
 }
 
 #[derive(new)]
 struct Evaluator<'data> {
     db: &'data dyn crate::Db,
     program: Program,
+    anchor: &'data dyn Anchor,
     variables: &'data [(VariableId, OrderedFloat<f64>)],
 }
 
@@ -76,8 +77,7 @@ impl Evaluator<'_> {
     }
 
     fn error(&self, span: Span, message: String) -> Diagnostic {
-        let start = span.start(self.db);
-        let end = span.end(self.db);
+        let (start, end) = span.absolute_locations(self.db, self.anchor);
         Diagnostic {
             start,
             end,
@@ -183,6 +183,7 @@ fn check_string(
     }
 }
 
+#[cfg(test)]
 #[test_log::test]
 fn execute_example() {
     use expect_test::expect;

@@ -10,7 +10,6 @@ pub struct Jar(
     crate::ir::FunctionId,
     crate::ir::Function,
     crate::ir::Diagnostics,
-    crate::ir::Anchor,
     crate::parser::parse_source_program,
     crate::type_check::type_check_program,
     crate::type_check::type_check_function,
