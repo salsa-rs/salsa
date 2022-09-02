@@ -40,9 +40,15 @@ The database trait for our `calc` crate is very simple:
 ```
 
 When you define a database trait like `Db`, the one thing that is required is that it must have a supertrait `salsa::DbWithJar<Jar>`,
-where `Jar` is the jar struct. If your jar depends on other jars, you can have multiple such supertraits (e.g., `salsa::DbWithJar<other_crate::Jar>`).
+where `Jar` is the jar struct. If your jar depends on other jars, typically because you want to call salsa functions defined in another crate, you can add multiple `DbWithJar` supertraits, like so:
 
-In this example, we have added a `PushLog` trait to the lit of supertraits.
+```rust
+pub trait Db: salsa::DbWithJar<Jar> + salsa::DbWithJar<other_crate::Jar> {}
+```
+
+## Custom database content not controlled by Salsa
+
+In the calc code, the `Db` trait has an additional supertrait, `PushLog`, that is not a Salsa trait.
 This demonstrates a common pattern that allows the functions in your jar to get other info from the database that is not moderated through Salsa.
 In this case, the `PushLog` trait will be used for testing: 
 it will give access to some mutable state we can use to "cheat" and observe which things got re-executed.
