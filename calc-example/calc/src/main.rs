@@ -14,7 +14,6 @@ pub struct Jar(
     crate::parser::parse_statements,
     crate::type_check::type_check_program,
     crate::type_check::type_check_function,
-    crate::type_check::find_function,
     crate::evaluate::evaluate_function,
     crate::ir::find_function,
 );

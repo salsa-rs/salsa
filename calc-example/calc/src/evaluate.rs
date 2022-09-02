@@ -218,8 +218,6 @@ fn execute_example() {
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_function(0) } }",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(0) } }",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(1) } }",
-                        "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(0) } }",
-                        "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(1) } }",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: evaluate_function(1) } }",
                         "evaluate_function(FunctionId { [salsa id]: 0, text: \"double\" }, [OrderedFloat(2.0)])",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: evaluate_function(0) } }",
@@ -248,8 +246,6 @@ fn execute_example() {
                     [
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_statements(0) } }",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_program(0) } }",
-                        "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(0) } }",
-                        "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(1) } }",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(0) } }",
                         "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(1) } }",
                     ]

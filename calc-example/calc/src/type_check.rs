@@ -22,18 +22,6 @@ pub fn type_check_function(db: &dyn crate::Db, function: Function, program: Prog
     CheckExpression::new(db, program, function.args(db)).check(function.body(db))
 }
 
-#[salsa::tracked]
-pub fn find_function(db: &dyn crate::Db, program: Program, name: FunctionId) -> Option<Function> {
-    program
-        .statements(db)
-        .iter()
-        .flat_map(|s| match &s.data {
-            StatementData::Function(f) if f.name(db) == name => Some(*f),
-            _ => None,
-        })
-        .next()
-}
-
 #[derive(new)]
 struct CheckExpression<'w> {
     db: &'w dyn crate::Db,
@@ -72,7 +60,7 @@ impl CheckExpression<'_> {
     }
 
     fn find_function(&self, f: FunctionId) -> Option<Function> {
-        find_function(self.db, self.program, f)
+        self.program.find_function(self.db, f)
     }
 
     fn report_error(&self, span: Span, message: String) {
