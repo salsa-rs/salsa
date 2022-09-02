@@ -743,7 +743,7 @@ such that when those inputs change, we can try to efficiently recompute the new 
 </span>#[salsa::input]
 pub struct SourceProgram {
     #[return_ref]
-    text: String,
+    pub text: String,
 }
 <span class="boring">}
 </span></code></pre></pre>
@@ -788,7 +788,7 @@ Whereas inputs represent the <em>start</em> of a computation, tracked structs re
 </span>#[salsa::tracked]
 pub struct Program {
     #[return_ref]
-    statements: Vec&lt;Statement&gt;,
+    pub statements: Vec&lt;Statement&gt;,
 }
 <span class="boring">}
 </span></code></pre></pre>
@@ -815,15 +815,15 @@ The <code>Function</code> struct is going to be created by the parser to represe
 </span>#[salsa::tracked]
 pub struct Function {
     #[id]
-    name: FunctionId,
+    pub name: FunctionId,
 
     name_span: Span,
 
     #[return_ref]
-    args: Vec&lt;VariableId&gt;,
+    pub args: Vec&lt;VariableId&gt;,
 
     #[return_ref]
-    body: Expression,
+    pub body: Expression,
 }
 <span class="boring">}
 </span></code></pre></pre>
