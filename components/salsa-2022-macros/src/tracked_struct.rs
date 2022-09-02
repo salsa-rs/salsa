@@ -1,6 +1,9 @@
 use proc_macro2::{Literal, TokenStream};
 
-use crate::salsa_struct::{SalsaField, SalsaStruct};
+use crate::{
+    modes::Mode,
+    salsa_struct::{SalsaField, SalsaStruct},
+};
 
 /// For an tracked struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///
@@ -11,7 +14,10 @@ pub(crate) fn tracked(
     args: proc_macro::TokenStream,
     struct_item: syn::ItemStruct,
 ) -> proc_macro::TokenStream {
-    match SalsaStruct::with_struct(args, struct_item)
+    let mode = Mode {
+        ..Default::default()
+    };
+    match SalsaStruct::with_struct(args, struct_item, mode)
         .and_then(|el| TrackedStruct(el).generate_tracked())
     {
         Ok(s) => s.into(),
@@ -19,10 +25,10 @@ pub(crate) fn tracked(
     }
 }
 
-struct TrackedStruct(SalsaStruct<Self>);
+struct TrackedStruct(SalsaStruct<Self, Self>);
 
 impl std::ops::Deref for TrackedStruct {
-    type Target = SalsaStruct<Self>;
+    type Target = SalsaStruct<Self, Self>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -36,6 +42,8 @@ impl crate::options::AllowedOptions for TrackedStruct {
 
     const NO_EQ: bool = false;
 
+    const SINGLETON: bool = false;
+
     const JAR: bool = true;
 
     const DATA: bool = true;
@@ -47,6 +55,16 @@ impl crate::options::AllowedOptions for TrackedStruct {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = true;
+}
+
+impl crate::modes::AllowedModes for TrackedStruct {
+    const TRACKED: bool = true;
+
+    const INPUT: bool = false;
+
+    const INTERNED: bool = false;
+
+    const ACCUMULATOR: bool = false;
 }
 
 impl TrackedStruct {

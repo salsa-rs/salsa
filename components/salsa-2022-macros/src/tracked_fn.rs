@@ -72,6 +72,8 @@ impl crate::options::AllowedOptions for TrackedFn {
 
     const NO_EQ: bool = true;
 
+    const SINGLETON: bool = false;
+
     const JAR: bool = true;
 
     const DATA: bool = false;

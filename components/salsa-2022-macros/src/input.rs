@@ -1,6 +1,6 @@
-use proc_macro2::{Literal, TokenStream};
-
+use crate::modes::Mode;
 use crate::salsa_struct::{SalsaField, SalsaStruct};
+use proc_macro2::{Literal, TokenStream};
 
 /// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///
@@ -11,16 +11,19 @@ pub(crate) fn input(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    match SalsaStruct::new(args, input).and_then(|el| InputStruct(el).generate_input()) {
+    let mode = Mode {
+        ..Default::default()
+    };
+    match SalsaStruct::new(args, input, mode).and_then(|el| InputStruct(el).generate_input()) {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
 }
 
-struct InputStruct(SalsaStruct<Self>);
+struct InputStruct(SalsaStruct<Self, Self>);
 
 impl std::ops::Deref for InputStruct {
-    type Target = SalsaStruct<Self>;
+    type Target = SalsaStruct<Self, Self>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -33,6 +36,7 @@ impl crate::options::AllowedOptions for InputStruct {
     const SPECIFY: bool = false;
 
     const NO_EQ: bool = false;
+    const SINGLETON: bool = true;
 
     const JAR: bool = true;
 
@@ -45,6 +49,16 @@ impl crate::options::AllowedOptions for InputStruct {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = true;
+}
+
+impl crate::modes::AllowedModes for InputStruct {
+    const TRACKED: bool = false;
+
+    const INPUT: bool = true;
+
+    const INTERNED: bool = false;
+
+    const ACCUMULATOR: bool = false;
 }
 
 impl InputStruct {
@@ -73,8 +87,16 @@ impl InputStruct {
     }
 
     fn validate_input(&self) -> syn::Result<()> {
+        // check for dissalowed fields
         self.disallow_id_fields("input")?;
 
+        // check if an input struct labeled singleton truly has one field
+        if self.0.is_isingleton() && self.0.num_fields() != 1 {
+            return Err(syn::Error::new(
+                self.0.struct_span(),
+                format!("`Singleton` input mut have only one field"),
+            ));
+        } 
         Ok(())
     }
 
@@ -127,8 +149,25 @@ impl InputStruct {
         .collect();
 
         let constructor_name = self.constructor_name();
-        parse_quote! {
-            impl #ident {
+        let singleton = self.0.is_isingleton();
+
+        
+
+        let constructor: syn::ImplItemMethod = if singleton {
+            parse_quote! {
+                pub fn #constructor_name(__db: &mut #db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
+                {
+                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
+                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient_mut(__jar);
+                    let __id = __ingredients.#input_index.new_singleton_input(__runtime);
+                    #(
+                        __ingredients.#field_indices.store(__runtime, __id, #field_names, salsa::Durability::LOW);
+                    )*
+                    __id
+                }
+            }
+        } else {
+            parse_quote! {
                 pub fn #constructor_name(__db: &mut #db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
@@ -139,12 +178,54 @@ impl InputStruct {
                     )*
                     __id
                 }
+            }
+        };
 
-                #(#field_getters)*
+        if singleton {
+            let get: syn::ImplItemMethod = parse_quote! {
+                #[track_caller]
+                pub fn get(__db: &#db_dyn_ty) -> Self {
+                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
+                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
+                    __ingredients.#input_index.get_singleton_input(__runtime).expect("singleton not yet initialized")
+                }
+            };
 
-                #(#field_setters)*
+            let try_get: syn::ImplItemMethod = parse_quote! {
+                #[track_caller]
+                pub fn try_get(__db: &#db_dyn_ty) -> Option<Self> {
+                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
+                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
+                    __ingredients.#input_index.get_singleton_input(__runtime)
+                }
+            };
+
+            parse_quote! {
+                impl #ident {
+                    #constructor
+
+                    #get
+
+                    #try_get
+
+                    #(#field_getters)*
+
+                    #(#field_setters)*
+                }
+            }
+        } else {
+            parse_quote! {
+                impl #ident {
+                    #constructor
+
+                    #(#field_getters)*
+
+                    #(#field_setters)*
+                }
             }
         }
+
+        // }
     }
 
     /// Generate the `IngredientsFor` impl for this entity.

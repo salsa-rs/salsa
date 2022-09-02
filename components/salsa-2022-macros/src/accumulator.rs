@@ -25,6 +25,8 @@ impl crate::options::AllowedOptions for Accumulator {
 
     const NO_EQ: bool = false;
 
+    const SINGLETON: bool = false;
+
     const JAR: bool = true;
 
     const DATA: bool = false;
@@ -36,6 +38,16 @@ impl crate::options::AllowedOptions for Accumulator {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = false;
+}
+
+impl crate::modes::AllowedModes for Accumulator {
+    const TRACKED: bool = false;
+
+    const INPUT: bool = false;
+
+    const INTERNED: bool = false;
+
+    const ACCUMULATOR: bool = true;
 }
 
 fn accumulator_contents(

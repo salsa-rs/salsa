@@ -36,6 +36,7 @@ mod db;
 mod input;
 mod interned;
 mod jar;
+mod modes;
 mod options;
 mod salsa_struct;
 mod tracked;

@@ -19,6 +19,10 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `no_eq` identifier.
     pub no_eq: Option<syn::Ident>,
 
+    /// The `singleton` option is used on input with only one field
+    /// It allows the creation of convenient methods
+    pub singleton: Option<syn::Ident>,
+
     /// The `specify` option is used to signal that a tracked function can
     /// have its value externally specified (at least some of the time).
     ///
@@ -74,6 +78,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             constructor_name: Default::default(),
             phantom: Default::default(),
             lru: Default::default(),
+            singleton: Default::default(),
         }
     }
 }
@@ -83,6 +88,7 @@ pub(crate) trait AllowedOptions {
     const RETURN_REF: bool;
     const SPECIFY: bool;
     const NO_EQ: bool;
+    const SINGLETON: bool;
     const JAR: bool;
     const DATA: bool;
     const DB: bool;
@@ -139,6 +145,20 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`no_eq` option not allowed here",
+                    ));
+                }
+            } else if ident == "singleton" {
+                if A::SINGLETON {
+                    if let Some(old) = std::mem::replace(&mut options.singleton, Some(ident)) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `singleton` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`singleton` option not allowed here",
                     ));
                 }
             } else if ident == "specify" {

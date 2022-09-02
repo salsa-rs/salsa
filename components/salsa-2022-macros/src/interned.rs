@@ -1,6 +1,6 @@
-use proc_macro2::TokenStream;
-
+use crate::modes::Mode;
 use crate::salsa_struct::SalsaStruct;
+use proc_macro2::TokenStream;
 
 // #[salsa::interned(jar = Jar0, data = TyData0)]
 // #[derive(Eq, PartialEq, Hash, Debug, Clone)]
@@ -14,16 +14,20 @@ pub(crate) fn interned(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    match SalsaStruct::new(args, input).and_then(|el| InternedStruct(el).generate_interned()) {
+    let mode = Mode {
+        ..Default::default()
+    };
+    match SalsaStruct::new(args, input, mode).and_then(|el| InternedStruct(el).generate_interned())
+    {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
 }
 
-struct InternedStruct(SalsaStruct<Self>);
+struct InternedStruct(SalsaStruct<Self, Self>);
 
 impl std::ops::Deref for InternedStruct {
-    type Target = SalsaStruct<Self>;
+    type Target = SalsaStruct<Self, Self>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -37,6 +41,8 @@ impl crate::options::AllowedOptions for InternedStruct {
 
     const NO_EQ: bool = false;
 
+    const SINGLETON: bool = false;
+
     const JAR: bool = true;
 
     const DATA: bool = true;
@@ -48,6 +54,16 @@ impl crate::options::AllowedOptions for InternedStruct {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = true;
+}
+
+impl crate::modes::AllowedModes for InternedStruct {
+    const TRACKED: bool = false;
+
+    const INPUT: bool = true;
+
+    const INTERNED: bool = false;
+
+    const ACCUMULATOR: bool = false;
 }
 
 impl InternedStruct {

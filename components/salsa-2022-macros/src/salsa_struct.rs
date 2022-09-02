@@ -25,41 +25,46 @@
 //! * data method `impl Foo { fn data(&self, db: &dyn crate::Db) -> FooData { FooData { f: self.f(db), ... } } }`
 //!     * this could be optimized, particularly for interned fields
 
+use crate::modes::Mode;
+use crate::{
+    configuration,
+    modes::AllowedModes,
+    options::{AllowedOptions, Options},
+};
 use heck::ToUpperCamelCase;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use syn::spanned::Spanned;
 
-use crate::{
-    configuration,
-    options::{AllowedOptions, Options},
-};
-
-pub(crate) struct SalsaStruct<A: AllowedOptions> {
+pub(crate) struct SalsaStruct<A: AllowedOptions, M: AllowedModes> {
     args: Options<A>,
+    _mode: Mode<M>,
     struct_item: syn::ItemStruct,
     fields: Vec<SalsaField>,
 }
 
 const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 
-impl<A: AllowedOptions> SalsaStruct<A> {
+impl<A: AllowedOptions, M: AllowedModes> SalsaStruct<A, M> {
     pub(crate) fn new(
         args: proc_macro::TokenStream,
         input: proc_macro::TokenStream,
+        mode: Mode<M>,
     ) -> syn::Result<Self> {
         let struct_item = syn::parse(input)?;
-        Self::with_struct(args, struct_item)
+        Self::with_struct(args, struct_item, mode)
     }
 
     pub(crate) fn with_struct(
         args: proc_macro::TokenStream,
         struct_item: syn::ItemStruct,
+        mode: Mode<M>,
     ) -> syn::Result<Self> {
-        let args = syn::parse(args)?;
+        let args: Options<A> = syn::parse(args)?;
         let fields = Self::extract_options(&struct_item)?;
-
+        check_singleton(&mode, args.singleton.as_ref(), struct_item.span())?;
         Ok(Self {
             args,
+            _mode: mode,
             struct_item,
             fields,
         })
@@ -121,6 +126,20 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     /// Type of the jar for this struct
     pub(crate) fn jar_ty(&self) -> syn::Type {
         self.args.jar_ty()
+    }
+
+    /// checks if the "singleton" flag was set
+    pub(crate) fn is_isingleton(&self) -> bool {
+        self.args.singleton.is_some()
+    }
+
+    pub(crate) fn num_fields(&self) -> usize {
+        self.fields.len()
+    }
+
+
+    pub(crate) fn struct_span(&self) -> Span {
+        self.struct_item.span()
     }
 
     pub(crate) fn db_dyn_ty(&self) -> syn::Type {
@@ -429,5 +448,17 @@ impl SalsaField {
     /// Do you potentially backdate the value of this field? (True if it is not a no-eq field)
     pub(crate) fn is_backdate_field(&self) -> bool {
         !self.has_no_eq_attr
+    }
+}
+
+
+pub(crate) fn check_singleton<M: AllowedModes>(mode: &Mode<M>, sing: Option<&syn::Ident>, s_span: Span) -> syn::Result<()> {
+    if !mode.singleton_allowed() && sing.is_some() {
+        Err(syn::Error::new(
+            s_span,
+            format!("`Singleton` not allowed for this Salsa struct type"),
+        ))
+    } else {
+        Ok(())
     }
 }
