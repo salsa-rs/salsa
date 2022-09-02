@@ -32,7 +32,7 @@ pub trait PushLog {
     /// When testing, invokes `message` to create a log string and
     /// pushes that string onto an internal list of logs.
     ///
-    /// This list of log can later be used to observe what got re-executed
+    /// This list of logs can later be used to observe what got re-executed
     /// or modified during execution.
     fn push_log(&self, message: &mut dyn FnMut() -> String);
 }
