@@ -173,7 +173,7 @@ There are three key bits of data:</p>
 </ul>
 </li>
 <li>The <code>Routes</code> struct, which contains the information to find any particular ingredient -- this is also shared across all handles, and its construction is also described in the <a href="./jars_and_ingredients.html">jars and ingredients chapter</a>. The routes are separated out from the <code>Shared</code> struct because they are truly immutable at all times, and we want to be able to hold a handle to them while getting <code>&amp;mut</code> access to the <code>Shared</code> struct.</li>
-<li>The <code>Runtime</code> struct, which is specific to a particular database instance. It contains the data for a single active thread, along with some links to shraed data of its own.</li>
+<li>The <code>Runtime</code> struct, which is specific to a particular database instance. It contains the data for a single active thread, along with some links to shared data of its own.</li>
 </ul>
 <h2 id="incrementing-the-revision-counter-and-getting-mutable-access-to-the-jars"><a class="header" href="#incrementing-the-revision-counter-and-getting-mutable-access-to-the-jars">Incrementing the revision counter and getting mutable access to the jars</a></h2>
 <p>Salsa's general model is that there is a single &quot;master&quot; copy of the database and, potentially, multiple snapshots.

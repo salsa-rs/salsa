@@ -1825,7 +1825,7 @@ There are three key bits of data:</p>
 </ul>
 </li>
 <li>The <code>Routes</code> struct, which contains the information to find any particular ingredient -- this is also shared across all handles, and its construction is also described in the <a href="plumbing/./jars_and_ingredients.html">jars and ingredients chapter</a>. The routes are separated out from the <code>Shared</code> struct because they are truly immutable at all times, and we want to be able to hold a handle to them while getting <code>&amp;mut</code> access to the <code>Shared</code> struct.</li>
-<li>The <code>Runtime</code> struct, which is specific to a particular database instance. It contains the data for a single active thread, along with some links to shraed data of its own.</li>
+<li>The <code>Runtime</code> struct, which is specific to a particular database instance. It contains the data for a single active thread, along with some links to shared data of its own.</li>
 </ul>
 <h2 id="incrementing-the-revision-counter-and-getting-mutable-access-to-the-jars"><a class="header" href="#incrementing-the-revision-counter-and-getting-mutable-access-to-the-jars">Incrementing the revision counter and getting mutable access to the jars</a></h2>
 <p>Salsa's general model is that there is a single &quot;master&quot; copy of the database and, potentially, multiple snapshots.
@@ -1917,7 +1917,7 @@ where
 <p>which defines the basic operations that all queries support. The most important are these two:</p>
 <ul>
 <li><a href="plumbing/./maybe_changed_after.html">maybe changed after</a>: Returns true if the value of the query (for the given key) may have changed since the given revision.</li>
-<li><a href="plumbing/./fetch.html">Fetch</a>: Returms the up-to-date value for the given K (or an error in the case of an &quot;unrecovered&quot; cycle).</li>
+<li><a href="plumbing/./fetch.html">Fetch</a>: Returns the up-to-date value for the given K (or an error in the case of an &quot;unrecovered&quot; cycle).</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="maybe-changed-after"><a class="header" href="#maybe-changed-after">Maybe changed after</a></h1>
 <pre><code class="language-rust no_run noplayground">    /// True if the value of `input`, which must be from this query, may have
