@@ -69,16 +69,12 @@ type VariableId = /* interned string */;
 
 [^lexer]: Because calc is so simple, we don't have to bother separating out the lexer from the parser.
 
-## Checker
+## Type Checker
 
-The "checker" has the job of ensuring that the user only references variables that have been defined.
-We're going to write the checker in a "context-less" style,
-which is a bit less intuitive but allows for more incremental re-use.
-The idea is to compute, for a given expression, which variables it references.
-Then there is a function `check` which ensures that those variables are a subset of those that are already defined.
+The "type checker" has the job of ensuring that the user only references variables and functions that have been defined.
 
-## Evaluator
+## Interpreter
 
-The evaluator will execute the program and print the result.
+The interpreter will execute the program and print the result.
 Mostly for demonstration purposes, we have set it up so that
 it will avoid re-executing functions if their body has not changed.
