@@ -33,7 +33,7 @@ In addition to the struct itself, we must add an impl of `salsa::Database`:
 ```
 
 The `salsa::Database` trait includes a method `salsa_event` that you can choose to override
-to give yourself more insight into how salsa is executing.
+to give yourself more insight into how Salsa is executing.
 `salsa_event` is invoked when notable events occur, such as a function being executed
 or a result being re-used.
 Its default behavior is just to log the event using the `log` facade, so if you do not override
@@ -65,7 +65,7 @@ But because `PushLog` is not a sala trait, it's our job to generate an impl for 
 {{#include ../../../calc-example/calc/src/db.rs:PushLogImpl}}
 ```
 
-We also add some additional method to the `Database` that can only be used by tests:
+We also add some additional methods to the `Database` that can only be used by tests:
 
 ```rust
 {{#include ../../../calc-example/calc/src/db.rs:LoggingSupportCode}}
