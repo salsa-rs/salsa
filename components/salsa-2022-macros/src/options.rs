@@ -2,12 +2,13 @@ use std::marker::PhantomData;
 
 use syn::{ext::IdentExt, spanned::Spanned};
 
+
 /// "Options" are flags that can be supplied to the various salsa related
 /// macros. They are listed like `(ref, no_eq, foo=bar)` etc. The commas
 /// are required and trailing commas are permitted. The options accepted
 /// for any particular location are configured via the `AllowedOptions`
 /// trait.
-pub(crate) struct Options<A: AllowedOptions> {
+pub(crate) struct Options<A: AllowedOptions > {
     /// The `return_ref` option is used to signal that field/return type is "by ref"
     ///
     /// If this is `Some`, the value is the `ref` identifier.
@@ -116,7 +117,7 @@ impl<A: AllowedOptions> Options<A> {
     }
 }
 
-impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
+impl<A: AllowedOptions > syn::parse::Parse for Options<A> {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut options = Options::default();
 

@@ -1,7 +1,6 @@
 use proc_macro2::{Literal, TokenStream};
 
 use crate::{
-    modes::Mode,
     salsa_struct::{SalsaField, SalsaStruct},
 };
 
@@ -14,10 +13,7 @@ pub(crate) fn tracked(
     args: proc_macro::TokenStream,
     struct_item: syn::ItemStruct,
 ) -> proc_macro::TokenStream {
-    let mode = Mode {
-        ..Default::default()
-    };
-    match SalsaStruct::with_struct(args, struct_item, mode)
+    match SalsaStruct::with_struct(args, struct_item)
         .and_then(|el| TrackedStruct(el).generate_tracked())
     {
         Ok(s) => s.into(),
@@ -25,10 +21,10 @@ pub(crate) fn tracked(
     }
 }
 
-struct TrackedStruct(SalsaStruct<Self, Self>);
+struct TrackedStruct(SalsaStruct<Self>);
 
 impl std::ops::Deref for TrackedStruct {
-    type Target = SalsaStruct<Self, Self>;
+    type Target = SalsaStruct<Self>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -57,15 +53,7 @@ impl crate::options::AllowedOptions for TrackedStruct {
     const CONSTRUCTOR_NAME: bool = true;
 }
 
-impl crate::modes::AllowedModes for TrackedStruct {
-    const TRACKED: bool = true;
 
-    const INPUT: bool = false;
-
-    const INTERNED: bool = false;
-
-    const ACCUMULATOR: bool = false;
-}
 
 impl TrackedStruct {
     fn generate_tracked(&self) -> syn::Result<TokenStream> {

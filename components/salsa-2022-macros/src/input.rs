@@ -1,4 +1,3 @@
-use crate::modes::Mode;
 use crate::salsa_struct::{SalsaField, SalsaStruct};
 use proc_macro2::{Literal, TokenStream};
 
@@ -11,19 +10,16 @@ pub(crate) fn input(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let mode = Mode {
-        ..Default::default()
-    };
-    match SalsaStruct::new(args, input, mode).and_then(|el| InputStruct(el).generate_input()) {
+    match SalsaStruct::new(args, input).and_then(|el| InputStruct(el).generate_input()) {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
 }
 
-struct InputStruct(SalsaStruct<Self, Self>);
+struct InputStruct(SalsaStruct<Self>);
 
 impl std::ops::Deref for InputStruct {
-    type Target = SalsaStruct<Self, Self>;
+    type Target = SalsaStruct<Self>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -51,15 +47,7 @@ impl crate::options::AllowedOptions for InputStruct {
     const CONSTRUCTOR_NAME: bool = true;
 }
 
-impl crate::modes::AllowedModes for InputStruct {
-    const TRACKED: bool = false;
 
-    const INPUT: bool = true;
-
-    const INTERNED: bool = false;
-
-    const ACCUMULATOR: bool = false;
-}
 
 impl InputStruct {
     fn generate_input(&self) -> syn::Result<TokenStream> {
@@ -89,14 +77,6 @@ impl InputStruct {
     fn validate_input(&self) -> syn::Result<()> {
         // check for dissalowed fields
         self.disallow_id_fields("input")?;
-
-        // check if an input struct labeled singleton truly has one field
-        if self.0.is_isingleton() && self.0.num_fields() != 1 {
-            return Err(syn::Error::new(
-                self.0.struct_span(),
-                format!("`Singleton` input mut have only one field"),
-            ));
-        }
         Ok(())
     }
 

@@ -40,15 +40,6 @@ impl crate::options::AllowedOptions for Accumulator {
     const CONSTRUCTOR_NAME: bool = false;
 }
 
-impl crate::modes::AllowedModes for Accumulator {
-    const TRACKED: bool = false;
-
-    const INPUT: bool = false;
-
-    const INTERNED: bool = false;
-
-    const ACCUMULATOR: bool = true;
-}
 
 fn accumulator_contents(
     args: &Args,

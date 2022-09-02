@@ -1,4 +1,3 @@
-use crate::modes::Mode;
 use crate::salsa_struct::SalsaStruct;
 use proc_macro2::TokenStream;
 
@@ -14,20 +13,17 @@ pub(crate) fn interned(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let mode = Mode {
-        ..Default::default()
-    };
-    match SalsaStruct::new(args, input, mode).and_then(|el| InternedStruct(el).generate_interned())
+    match SalsaStruct::new(args, input).and_then(|el| InternedStruct(el).generate_interned())
     {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
 }
 
-struct InternedStruct(SalsaStruct<Self, Self>);
+struct InternedStruct(SalsaStruct<Self>);
 
 impl std::ops::Deref for InternedStruct {
-    type Target = SalsaStruct<Self, Self>;
+    type Target = SalsaStruct<Self>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -56,15 +52,6 @@ impl crate::options::AllowedOptions for InternedStruct {
     const CONSTRUCTOR_NAME: bool = true;
 }
 
-impl crate::modes::AllowedModes for InternedStruct {
-    const TRACKED: bool = false;
-
-    const INPUT: bool = true;
-
-    const INTERNED: bool = false;
-
-    const ACCUMULATOR: bool = false;
-}
 
 impl InternedStruct {
     fn generate_interned(&self) -> syn::Result<TokenStream> {

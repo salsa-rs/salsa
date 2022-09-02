@@ -1,6 +1,6 @@
-//! Basic deletion test:
+//! Basic Singleton struct test:
 //!
-//! * entities not created in a revision are deleted, as is any memoized data keyed on them.
+//! Singleton structs are created only once. Subsequent `get`s and `new`s after creation return the same `Id`.
 
 use salsa_2022_tests::{HasLogger, Logger};
 
