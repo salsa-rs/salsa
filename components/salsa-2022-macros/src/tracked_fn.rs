@@ -26,7 +26,7 @@ pub(crate) fn tracked_fn(
     }
 
     if let Some(s) = &args.specify {
-        if requires_interning(&item_fn) {
+        if function_type(&item_fn) == FunctionType::RequiresInterning {
             return Err(syn::Error::new(
                 s.span(),
                 "tracked function takes too many arguments to have its value set with `specify`",
@@ -309,11 +309,17 @@ fn configuration_struct(item_fn: &syn::ItemFn) -> syn::ItemStruct {
     let visibility = &item_fn.vis;
 
     let salsa_struct_ty = salsa_struct_ty(item_fn);
-    let intern_map: syn::Type = if requires_interning(item_fn) {
-        let key_ty = key_tuple_ty(item_fn);
-        parse_quote! { salsa::interned::InternedIngredient<salsa::Id, #key_ty> }
-    } else {
-        parse_quote! { salsa::interned::IdentityInterner<#salsa_struct_ty> }
+    let intern_map: syn::Type = match function_type(item_fn) {
+        FunctionType::Constant => {
+            parse_quote! { salsa::interned::IdentityInterner<()> }
+        }
+        FunctionType::SalsaStruct => {
+            parse_quote! { salsa::interned::IdentityInterner<#salsa_struct_ty> }
+        }
+        FunctionType::RequiresInterning => {
+            let key_ty = key_tuple_ty(item_fn);
+            parse_quote! { salsa::interned::InternedIngredient<salsa::Id, #key_ty> }
+        }
     };
 
     parse_quote! {
@@ -325,16 +331,29 @@ fn configuration_struct(item_fn: &syn::ItemFn) -> syn::ItemStruct {
     }
 }
 
-/// True if this fn takes more arguments.
-fn requires_interning(item_fn: &syn::ItemFn) -> bool {
-    item_fn.sig.inputs.len() > 2
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum FunctionType {
+    Constant,
+    SalsaStruct,
+    RequiresInterning,
+}
+
+fn function_type(item_fn: &syn::ItemFn) -> FunctionType {
+    match item_fn.sig.inputs.len() {
+        0 => unreachable!(
+            "functions have been checked to have at least a database argument by this point"
+        ),
+        1 => FunctionType::Constant,
+        2 => FunctionType::SalsaStruct,
+        _ => FunctionType::RequiresInterning,
+    }
 }
 
 /// Every tracked fn takes a salsa struct as its second argument.
 /// This fn returns the type of that second argument.
 fn salsa_struct_ty(item_fn: &syn::ItemFn) -> syn::Type {
     if item_fn.sig.inputs.len() == 1 {
-        return parse_quote! { () };
+        return parse_quote! { salsa::salsa_struct::Singleton };
     }
     match &item_fn.sig.inputs[1] {
         syn::FnArg::Receiver(_) => panic!("receiver not expected"),
@@ -345,10 +364,10 @@ fn salsa_struct_ty(item_fn: &syn::ItemFn) -> syn::Type {
 fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
     let jar_ty = args.jar_ty();
     let salsa_struct_ty = salsa_struct_ty(item_fn);
-    let key_ty = if requires_interning(item_fn) {
-        parse_quote!(salsa::id::Id)
-    } else {
-        salsa_struct_ty.clone()
+    let key_ty = match function_type(item_fn) {
+        FunctionType::Constant => parse_quote!(()),
+        FunctionType::SalsaStruct => salsa_struct_ty.clone(),
+        FunctionType::RequiresInterning => parse_quote!(salsa::id::Id),
     };
     let value_ty = configuration::value_ty(&item_fn.sig);
 
@@ -423,29 +442,32 @@ fn ingredients_for_impl(
     let jar_ty = args.jar_ty();
     let debug_name = crate::literal(&item_fn.sig.ident);
 
-    let intern_map: syn::Expr = if requires_interning(item_fn) {
-        parse_quote! {
-            {
-                let index = routes.push(
-                    |jars| {
-                        let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
-                        let ingredients =
-                            <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
-                        &ingredients.intern_map
-                    },
-                    |jars| {
-                        let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
-                        let ingredients =
-                            <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient_mut(jar);
-                        &mut ingredients.intern_map
-                    }
-                );
-                salsa::interned::InternedIngredient::new(index, #debug_name)
+    let intern_map: syn::Expr = match function_type(item_fn) {
+        FunctionType::Constant | FunctionType::SalsaStruct => {
+            parse_quote! {
+                salsa::interned::IdentityInterner::new()
             }
         }
-    } else {
-        parse_quote! {
-            salsa::interned::IdentityInterner::new()
+        FunctionType::RequiresInterning => {
+            parse_quote! {
+                {
+                    let index = routes.push(
+                        |jars| {
+                            let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
+                            let ingredients =
+                                <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient(jar);
+                            &ingredients.intern_map
+                        },
+                        |jars| {
+                            let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
+                            let ingredients =
+                                <_ as salsa::storage::HasIngredientsFor<Self::Ingredients>>::ingredient_mut(jar);
+                            &mut ingredients.intern_map
+                        }
+                    );
+                    salsa::interned::InternedIngredient::new(index, #debug_name)
+                }
+            }
         }
     };
 

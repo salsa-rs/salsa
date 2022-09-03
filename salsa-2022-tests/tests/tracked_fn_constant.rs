@@ -7,7 +7,7 @@ struct Jar(tracked_fn);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn tracked_fn(db: &dyn Db) -> u32 {
     44
 }
