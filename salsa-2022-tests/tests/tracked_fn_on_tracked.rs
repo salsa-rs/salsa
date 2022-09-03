@@ -33,7 +33,7 @@ impl Db for Database {}
 
 #[test]
 fn execute() {
-    let mut db = Database::default();
-    let input = MyInput::new(&mut db, 22);
+    let db = Database::default();
+    let input = MyInput::new(&db, 22);
     assert_eq!(tracked_fn(&db, input).field(&db), 44);
 }

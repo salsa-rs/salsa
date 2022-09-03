@@ -30,6 +30,6 @@ fn execute() {
     impl Db for Database {}
 
     let mut db = Database::default();
-    let input = MyInput::new(&mut db, 22);
+    let input = MyInput::new(&db, 22);
     assert_eq!(tracked_fn(&db, input), 44);
 }

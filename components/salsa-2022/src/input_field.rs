@@ -4,7 +4,7 @@ use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::StampedValue;
 use crate::{AsId, DatabaseKeyIndex, Durability, Id, IngredientIndex, Revision, Runtime};
-use rustc_hash::FxHashMap;
+use dashmap::DashMap;
 use std::fmt;
 use std::hash::Hash;
 
@@ -15,7 +15,7 @@ use std::hash::Hash;
 /// This makes the implementation considerably simpler.
 pub struct InputFieldIngredient<K, F> {
     index: IngredientIndex,
-    map: FxHashMap<K, StampedValue<F>>,
+    map: DashMap<K, StampedValue<F>>,
     debug_name: &'static str,
 }
 
@@ -31,13 +31,7 @@ where
         }
     }
 
-    pub fn store(
-        &mut self,
-        runtime: &mut Runtime,
-        key: K,
-        value: F,
-        durability: Durability,
-    ) -> Option<F> {
+    pub fn store(&self, runtime: &Runtime, key: K, value: F, durability: Durability) -> Option<F> {
         let revision = runtime.current_revision();
         let stamped_value = StampedValue {
             value,
@@ -52,12 +46,12 @@ where
         }
     }
 
-    pub fn fetch(&self, runtime: &Runtime, key: K) -> &F {
+    pub fn fetch<'db>(&'db self, runtime: &'db Runtime, key: K) -> &F {
         let StampedValue {
             value,
             durability,
             changed_at,
-        } = self.map.get(&key).unwrap();
+        } = &*self.map.get(&key).unwrap();
 
         runtime.report_tracked_read(
             self.database_key_index(key).into(),
@@ -65,7 +59,9 @@ where
             *changed_at,
         );
 
-        value
+        // SAFETY:
+        // * Values are only removed or altered when we have `&mut self`
+        unsafe { transmute_lifetime(self, value) }
     }
 
     fn database_key_index(&self, key: K) -> DatabaseKeyIndex {
@@ -74,6 +70,14 @@ where
             key_index: key.as_id(),
         }
     }
+}
+
+// Returns `u` but with the lifetime of `t`.
+//
+// Safe if you know that data at `u` will remain shared
+// until the reference `t` expires.
+unsafe fn transmute_lifetime<'t, 'u, T, U>(_t: &'t T, u: &'u U) -> &'t U {
+    std::mem::transmute(u)
 }
 
 impl<DB: ?Sized, K, F> Ingredient<DB> for InputFieldIngredient<K, F>

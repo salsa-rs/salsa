@@ -33,8 +33,8 @@ mod parser;
 mod type_check;
 
 pub fn main() {
-    let mut db = db::Database::default();
-    let source_program = SourceProgram::new(&mut db, String::new());
+    let db = db::Database::default();
+    let source_program = SourceProgram::new(&db, String::new());
     compile::compile(&db, source_program);
     let diagnostics = compile::compile::accumulated::<Diagnostics>(&db, source_program);
     eprintln!("{diagnostics:?}");

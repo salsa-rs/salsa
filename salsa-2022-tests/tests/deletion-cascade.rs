@@ -91,7 +91,7 @@ fn basic() {
     let mut db = Database::default();
 
     // Creates 3 tracked structs
-    let input = MyInput::new(&mut db, 3);
+    let input = MyInput::new(&db, 3);
     assert_eq!(final_result(&db, input), 2 * 2 + 2);
     db.assert_logs(expect![[r#"
         [
