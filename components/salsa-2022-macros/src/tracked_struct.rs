@@ -1,8 +1,6 @@
 use proc_macro2::{Literal, TokenStream};
 
-use crate::{
-    salsa_struct::{SalsaField, SalsaStruct},
-};
+use crate::salsa_struct::{SalsaField, SalsaStruct};
 
 /// For an tracked struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///
@@ -52,8 +50,6 @@ impl crate::options::AllowedOptions for TrackedStruct {
 
     const CONSTRUCTOR_NAME: bool = true;
 }
-
-
 
 impl TrackedStruct {
     fn generate_tracked(&self) -> syn::Result<TokenStream> {

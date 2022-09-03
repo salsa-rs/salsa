@@ -47,8 +47,6 @@ impl crate::options::AllowedOptions for InputStruct {
     const CONSTRUCTOR_NAME: bool = true;
 }
 
-
-
 impl InputStruct {
     fn generate_input(&self) -> syn::Result<TokenStream> {
         self.validate_input()?;

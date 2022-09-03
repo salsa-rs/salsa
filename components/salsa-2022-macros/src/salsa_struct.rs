@@ -126,7 +126,6 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         self.args.singleton.is_some()
     }
 
-
     pub(crate) fn db_dyn_ty(&self) -> syn::Type {
         let jar_ty = self.jar_ty();
         parse_quote! {
@@ -435,4 +434,3 @@ impl SalsaField {
         !self.has_no_eq_attr
     }
 }
-

@@ -40,7 +40,6 @@ impl crate::options::AllowedOptions for Accumulator {
     const CONSTRUCTOR_NAME: bool = false;
 }
 
-
 fn accumulator_contents(
     args: &Args,
     struct_item: &syn::ItemStruct,
