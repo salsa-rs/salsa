@@ -94,6 +94,15 @@ pub(crate) fn tracked_impl(
             ))
         }
     };
+    let self_type_name = &self_type.path.segments.last().unwrap().ident;
+    let name_prefix = match &item_impl.trait_ {
+        Some((_, trait_name, _)) => format!(
+            "{}_{}",
+            self_type_name,
+            trait_name.segments.last().unwrap().ident
+        ),
+        None => format!("{}", self_type_name),
+    };
     let extra_impls = item_impl
         .items
         .iter_mut()
@@ -116,10 +125,18 @@ pub(crate) fn tracked_impl(
             } else {
                 Ok(FnArgs::default())
             };
-            Some(match inner_args {
-                Ok(inner_args) => tracked_method(&args, inner_args, item_method, self_type),
-                Err(e) => Err(e),
-            })
+            let inner_args = match inner_args {
+                Ok(inner_args) => inner_args,
+                Err(err) => return Some(Err(err)),
+            };
+            let name = format!("{}_{}", name_prefix, item_method.sig.ident);
+            Some(tracked_method(
+                &args,
+                inner_args,
+                item_method,
+                self_type,
+                &name,
+            ))
         })
         // Collate all the errors so we can display them all at once
         .fold(Ok(Vec::new()), |mut acc, res| {
@@ -166,6 +183,7 @@ fn tracked_method(
     mut args: FnArgs,
     item_method: &mut syn::ImplItemMethod,
     self_type: &syn::TypePath,
+    name: &str,
 ) -> syn::Result<TokenStream> {
     args.jar_ty = args.jar_ty.or_else(|| outer_args.jar_ty.clone());
 
@@ -182,14 +200,7 @@ fn tracked_method(
         sig: item_method.sig.clone(),
         block: Box::new(rename_self_in_block(item_method.block.clone())?),
     };
-    item_fn.sig.ident = syn::Ident::new(
-        &format!(
-            "{}_{}",
-            self_type.path.segments.last().unwrap().ident,
-            item_fn.sig.ident
-        ),
-        item_fn.sig.ident.span(),
-    );
+    item_fn.sig.ident = syn::Ident::new(name, item_fn.sig.ident.span());
     // Flip the first and second arguments as the rest of the code expects the
     // database to come first and the struct to come second. We also need to
     // change the self argument to a normal typed argument called __salsa_self.

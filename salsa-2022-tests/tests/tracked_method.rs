@@ -3,9 +3,18 @@
 #![allow(warnings)]
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyInput_tracked_fn, MyInput_tracked_fn_ref);
+struct Jar(
+    MyInput,
+    MyInput_tracked_fn,
+    MyInput_tracked_fn_ref,
+    MyInput_TrackedTrait_tracked_trait_fn,
+);
 
 trait Db: salsa::DbWithJar<Jar> {}
+
+trait TrackedTrait {
+    fn tracked_trait_fn(self, db: &dyn Db) -> u32;
+}
 
 #[salsa::input]
 struct MyInput {
@@ -25,6 +34,14 @@ impl MyInput {
     }
 }
 
+#[salsa::tracked]
+impl TrackedTrait for MyInput {
+    #[salsa::tracked]
+    fn tracked_trait_fn(self, db: &dyn Db) -> u32 {
+        self.field(db) * 4
+    }
+}
+
 #[test]
 fn execute() {
     #[salsa::db(Jar)]
@@ -41,4 +58,5 @@ fn execute() {
     let object = MyInput::new(&mut db, 22);
     assert_eq!(object.tracked_fn(&db), 44);
     assert_eq!(*object.tracked_fn_ref(&db), 66);
+    assert_eq!(object.tracked_trait_fn(&db), 88);
 }
