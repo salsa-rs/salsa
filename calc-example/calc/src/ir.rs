@@ -7,7 +7,7 @@ use ordered_float::OrderedFloat;
 #[salsa::input]
 pub struct SourceProgram {
     #[return_ref]
-    text: String,
+    pub text: String,
 }
 // ANCHOR_END: input
 
@@ -29,7 +29,7 @@ pub struct FunctionId {
 #[salsa::tracked]
 pub struct Program {
     #[return_ref]
-    statements: Vec<Statement>,
+    pub statements: Vec<Statement>,
 }
 // ANCHOR_END: program
 
@@ -77,15 +77,15 @@ pub enum Op {
 #[salsa::tracked]
 pub struct Function {
     #[id]
-    name: FunctionId,
+    pub name: FunctionId,
 
     name_span: Span,
 
     #[return_ref]
-    args: Vec<VariableId>,
+    pub args: Vec<VariableId>,
 
     #[return_ref]
-    body: Expression,
+    pub body: Expression,
 }
 // ANCHOR_END: functions
 

@@ -1,0 +1,17 @@
+error[E0624]: associated function `field` is private
+  --> tests/compile-fail/get-set-on-private-field.rs:29:11
+   |
+7  |     #[salsa::input(jar = Jar)]
+   |     -------------------------- private associated function defined here
+...
+29 |     input.field(&db);
+   |           ^^^^^ private associated function
+
+error[E0624]: associated function `set_field` is private
+  --> tests/compile-fail/get-set-on-private-field.rs:30:11
+   |
+7  |     #[salsa::input(jar = Jar)]
+   |     -------------------------- private associated function defined here
+...
+30 |     input.set_field(&mut db).to(23);
+   |           ^^^^^^^^^ private associated function

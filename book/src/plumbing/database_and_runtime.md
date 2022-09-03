@@ -31,7 +31,7 @@ There are three key bits of data:
 * The `Shared` struct, which contains the data stored across all snapshots. This is primarily the ingredients described in the [jars and ingredients chapter](./jars_and_ingredients.md), but it also contains some synchronization information (a cond var). This is used for cancellation, as described below.
     * The data in the `Shared` struct is only shared across threads when other threads are active. Some operations, like mutating an input, require an `&mut` handle to the `Shared` struct. This is obtained by using the `Arc::get_mut` methods; obviously this is only possible when all snapshots and threads have ceased executing, since there must be a single handle to the `Arc`.
 * The `Routes` struct, which contains the information to find any particular ingredient -- this is also shared across all handles, and its construction is also described in the [jars and ingredients chapter](./jars_and_ingredients.md). The routes are separated out from the `Shared` struct because they are truly immutable at all times, and we want to be able to hold a handle to them while getting `&mut` access to the `Shared` struct.
-* The `Runtime` struct, which is specific to a particular database instance. It contains the data for a single active thread, along with some links to shraed data of its own.
+* The `Runtime` struct, which is specific to a particular database instance. It contains the data for a single active thread, along with some links to shared data of its own.
 
 ## Incrementing the revision counter and getting mutable access to the jars
 
