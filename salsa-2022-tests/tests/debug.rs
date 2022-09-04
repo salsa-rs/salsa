@@ -51,6 +51,8 @@ fn input() {
 
     // all fields
     let actual = format!("{:?}", complex_struct.debug_all(&db));
-    let expected = expect![[r#"ComplexStruct { [salsa id]: 0, my_input: MyInput { [salsa id]: 0, field: 22 }, not_salsa: NotSalsa { field: "it's salsa time" } }"#]];
+    let expected = expect![[
+        r#"ComplexStruct { [salsa id]: 0, my_input: MyInput { [salsa id]: 0, field: 22 }, not_salsa: NotSalsa { field: "it's salsa time" } }"#
+    ]];
     expected.assert_eq(&actual);
 }

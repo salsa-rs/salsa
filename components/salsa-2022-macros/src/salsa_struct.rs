@@ -319,7 +319,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                 let field_getter = field.get_name();
                 let field_ty = field.ty();
 
-                if self.is_identity_field(field){
+                if self.is_identity_field(field) {
                     parse_quote_spanned! {field.field.span() =>
                         debug_struct = debug_struct.field(
                             #field_name_string,
@@ -331,7 +331,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                             )
                         );
                     }
-                }else{
+                } else {
                     parse_quote_spanned! {field.field.span() =>
                         if _include_all_fields {
                             debug_struct = debug_struct.field(
