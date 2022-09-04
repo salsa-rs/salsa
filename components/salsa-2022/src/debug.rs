@@ -16,6 +16,9 @@ pub trait DebugWithDb<Db: ?Sized> {
         }
     }
 
+    /// Be careful when using this method inside a tracked function,
+    /// because the default macro generated implementation will read all fields,
+    /// maybe introducing undesired dependencies.
     fn debug_all<'me, 'db>(&'me self, db: &'me Db) -> DebugWith<'me, Db>
     where
         Self: Sized + 'me,
@@ -38,6 +41,9 @@ pub trait DebugWithDb<Db: ?Sized> {
         }
     }
 
+    /// Be careful when using this method inside a tracked function,
+    /// because the default macro generated implementation will read all fields,
+    /// maybe introducing undesired dependencies.
     fn into_debug_all<'me, 'db>(self, db: &'me Db) -> DebugWith<'me, Db>
     where
         Self: Sized + 'me,
@@ -49,8 +55,13 @@ pub trait DebugWithDb<Db: ?Sized> {
         }
     }
 
+    /// Should only read fields that are part of the identity, which means:
+    ///     - for [#\[salsa::input\]](salsa_2022_macros::input) no fields
+    ///     - for [#\[salsa::tracked\]](salsa_2022_macros::tracked) only fields with `#[id]` attribute
+    ///     - for [#\[salsa::interned\]](salsa_2022_macros::interned) any field
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result;
 
+    /// Unlike [DebugWithDb::fmt], may read any field.
     fn fmt_all(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
         self.fmt(f, db)
     }
