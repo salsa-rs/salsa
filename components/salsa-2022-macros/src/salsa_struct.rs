@@ -33,7 +33,14 @@ use heck::ToUpperCamelCase;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use syn::spanned::Spanned;
 
+pub(crate) enum SalsaStructKind {
+    Input,
+    Tracked,
+    Interned,
+}
+
 pub(crate) struct SalsaStruct<A: AllowedOptions> {
+    kind: SalsaStructKind,
     args: Options<A>,
     struct_item: syn::ItemStruct,
     fields: Vec<SalsaField>,
@@ -43,20 +50,23 @@ const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 
 impl<A: AllowedOptions> SalsaStruct<A> {
     pub(crate) fn new(
+        kind: SalsaStructKind,
         args: proc_macro::TokenStream,
         input: proc_macro::TokenStream,
     ) -> syn::Result<Self> {
         let struct_item = syn::parse(input)?;
-        Self::with_struct(args, struct_item)
+        Self::with_struct(kind, args, struct_item)
     }
 
     pub(crate) fn with_struct(
+        kind: SalsaStructKind,
         args: proc_macro::TokenStream,
         struct_item: syn::ItemStruct,
     ) -> syn::Result<Self> {
         let args: Options<A> = syn::parse(args)?;
         let fields = Self::extract_options(&struct_item)?;
         Ok(Self {
+            kind,
             args,
             struct_item,
             fields,
@@ -85,6 +95,17 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     /// If this is an enum, empty iterator.
     pub(crate) fn all_fields(&self) -> impl Iterator<Item = &SalsaField> {
         self.fields.iter()
+    }
+
+    /// Iterator over fields that are part of structs identity.
+    ///
+    /// If this is an input, empty iterator.
+    pub(crate) fn identity_fields(&self) -> Vec<&SalsaField> {
+        match self.kind {
+            SalsaStructKind::Input => Vec::new(),
+            SalsaStructKind::Tracked => self.all_fields().filter(|f| f.has_id_attr).collect(),
+            SalsaStructKind::Interned => self.all_fields().collect(),
+        }
     }
 
     /// Names of all fields (id and value).
@@ -293,25 +314,35 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         let ident_string = ident.to_string();
 
         // `::salsa::debug::helper::SalsaDebug` will use `DebugWithDb` or fallbak to `Debug`
-        let fields = self
-            .all_fields()
-            .map(|field| {
-                let field_name_string = field.name().to_string();
-                let field_getter = field.get_name();
-                let field_ty = field.ty();
 
-                parse_quote_spanned! {field.field.span() =>
-                    .field(
-                        #field_name_string,
-                        &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
-                            #[allow(clippy::needless_borrow)]
-                            &self.#field_getter(_db),
-                            _db
-                        )
+        let field_debug_impl = |field: &SalsaField| -> TokenStream {
+            let field_name_string = field.name().to_string();
+            let field_getter = field.get_name();
+            let field_ty = field.ty();
+
+            parse_quote_spanned! {field.field.span() =>
+                .field(
+                    #field_name_string,
+                    &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
+                        #[allow(clippy::needless_borrow)]
+                        &self.#field_getter(_db),
+                        _db
                     )
-                }
-            })
-            .collect::<Vec<TokenStream>>();
+                )
+            }
+        };
+
+        let identity_fields = self
+            .identity_fields()
+            .into_iter()
+            .map(field_debug_impl)
+            .collect::<TokenStream>();
+
+        let all_fields = self
+            .all_fields()
+            .into_iter()
+            .map(field_debug_impl)
+            .collect::<TokenStream>();
 
         // `use ::salsa::debug::helper::Fallback` is needed for the fallback to `Debug` impl
         parse_quote_spanned! {ident.span()=>
@@ -320,9 +351,18 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                     #[allow(unused_imports)]
                     use ::salsa::debug::helper::Fallback;
                     f.debug_struct(#ident_string)
-                        .field("[salsa id]", &self.0.as_u32())
-                        #(#fields)*
-                        .finish()
+                    .field("[salsa id]", &self.0.as_u32())
+                    #identity_fields
+                    .finish()
+                }
+
+                fn fmt_all(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type) -> ::std::fmt::Result {
+                    #[allow(unused_imports)]
+                    use ::salsa::debug::helper::Fallback;
+                    f.debug_struct(#ident_string)
+                    .field("[salsa id]", &self.0.as_u32())
+                    #all_fields
+                    .finish()
                 }
             }
         }

@@ -12,6 +12,18 @@ pub trait DebugWithDb<Db: ?Sized> {
         DebugWith {
             value: BoxRef::Ref(self),
             db,
+            all_fields: false,
+        }
+    }
+
+    fn debug_all<'me, 'db>(&'me self, db: &'me Db) -> DebugWith<'me, Db>
+    where
+        Self: Sized + 'me,
+    {
+        DebugWith {
+            value: BoxRef::Ref(self),
+            db,
+            all_fields: true,
         }
     }
 
@@ -22,15 +34,32 @@ pub trait DebugWithDb<Db: ?Sized> {
         DebugWith {
             value: BoxRef::Box(Box::new(self)),
             db,
+            all_fields: false,
+        }
+    }
+
+    fn into_debug_all<'me, 'db>(self, db: &'me Db) -> DebugWith<'me, Db>
+    where
+        Self: Sized + 'me,
+    {
+        DebugWith {
+            value: BoxRef::Box(Box::new(self)),
+            db,
+            all_fields: true,
         }
     }
 
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result;
+
+    fn fmt_all(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
+        self.fmt(f, db)
+    }
 }
 
 pub struct DebugWith<'me, Db: ?Sized> {
     value: BoxRef<'me, dyn DebugWithDb<Db> + 'me>,
     db: &'me Db,
+    all_fields: bool,
 }
 
 enum BoxRef<'me, T: ?Sized> {
@@ -51,7 +80,11 @@ impl<T: ?Sized> std::ops::Deref for BoxRef<'_, T> {
 
 impl<D: ?Sized> std::fmt::Debug for DebugWith<'_, D> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        DebugWithDb::fmt(&*self.value, f, self.db)
+        if self.all_fields {
+            DebugWithDb::fmt_all(&*self.value, f, self.db)
+        } else {
+            DebugWithDb::fmt(&*self.value, f, self.db)
+        }
     }
 }
 
