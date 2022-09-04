@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt,
     rc::Rc,
     sync::Arc,
 };
@@ -66,12 +67,7 @@ pub trait DebugWithDb<Db: ?Sized> {
         }
     }
 
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        db: &Db,
-        include_all_fields: bool,
-    ) -> std::fmt::Result;
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result;
 }
 
 pub struct DebugWith<'me, Db: ?Sized> {
@@ -96,8 +92,8 @@ impl<T: ?Sized> std::ops::Deref for BoxRef<'_, T> {
     }
 }
 
-impl<D: ?Sized> std::fmt::Debug for DebugWith<'_, D> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<D: ?Sized> fmt::Debug for DebugWith<'_, D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         DebugWithDb::fmt(&*self.value, f, self.db, self.include_all_fields)
     }
 }
@@ -106,12 +102,7 @@ impl<Db: ?Sized, T: ?Sized> DebugWithDb<Db> for &T
 where
     T: DebugWithDb<Db>,
 {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        db: &Db,
-        include_all_fields: bool,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
         T::fmt(self, f, db, include_all_fields)
     }
 }
@@ -120,12 +111,7 @@ impl<Db: ?Sized, T: ?Sized> DebugWithDb<Db> for Box<T>
 where
     T: DebugWithDb<Db>,
 {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        db: &Db,
-        include_all_fields: bool,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
         T::fmt(self, f, db, include_all_fields)
     }
 }
@@ -134,12 +120,7 @@ impl<Db: ?Sized, T> DebugWithDb<Db> for Rc<T>
 where
     T: DebugWithDb<Db>,
 {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        db: &Db,
-        include_all_fields: bool,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
         T::fmt(self, f, db, include_all_fields)
     }
 }
@@ -148,12 +129,7 @@ impl<Db: ?Sized, T: ?Sized> DebugWithDb<Db> for Arc<T>
 where
     T: DebugWithDb<Db>,
 {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        db: &Db,
-        include_all_fields: bool,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
         T::fmt(self, f, db, include_all_fields)
     }
 }
@@ -162,12 +138,7 @@ impl<Db: ?Sized, T> DebugWithDb<Db> for Vec<T>
 where
     T: DebugWithDb<Db>,
 {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        db: &Db,
-        include_all_fields: bool,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
         let elements = self.iter().map(|e| e.debug_with(db, include_all_fields));
         f.debug_list().entries(elements).finish()
     }
@@ -177,14 +148,9 @@ impl<Db: ?Sized, T> DebugWithDb<Db> for Option<T>
 where
     T: DebugWithDb<Db>,
 {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        db: &Db,
-        include_all_fields: bool,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
         let me = self.as_ref().map(|v| v.debug_with(db, include_all_fields));
-        std::fmt::Debug::fmt(&me, f)
+        fmt::Debug::fmt(&me, f)
     }
 }
 
@@ -193,12 +159,7 @@ where
     K: DebugWithDb<Db>,
     V: DebugWithDb<Db>,
 {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        db: &Db,
-        include_all_fields: bool,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
         let elements = self.iter().map(|(k, v)| {
             (
                 k.debug_with(db, include_all_fields),
@@ -214,12 +175,7 @@ where
     A: DebugWithDb<Db>,
     B: DebugWithDb<Db>,
 {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        db: &Db,
-        include_all_fields: bool,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
         f.debug_tuple("")
             .field(&self.0.debug_with(db, include_all_fields))
             .field(&self.1.debug_with(db, include_all_fields))
@@ -233,12 +189,7 @@ where
     B: DebugWithDb<Db>,
     C: DebugWithDb<Db>,
 {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        db: &Db,
-        include_all_fields: bool,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
         f.debug_tuple("")
             .field(&self.0.debug_with(db, include_all_fields))
             .field(&self.1.debug_with(db, include_all_fields))
@@ -251,12 +202,7 @@ impl<Db: ?Sized, V, S> DebugWithDb<Db> for HashSet<V, S>
 where
     V: DebugWithDb<Db>,
 {
-    fn fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        db: &Db,
-        include_all_fields: bool,
-    ) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
         let elements = self.iter().map(|e| e.debug_with(db, include_all_fields));
         f.debug_list().entries(elements).finish()
     }
