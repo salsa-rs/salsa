@@ -319,34 +319,29 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                 let field_getter = field.get_name();
                 let field_ty = field.ty();
 
+                let field_debug = quote_spanned! { field.field.span() =>
+                    debug_struct = debug_struct.field(
+                        #field_name_string,
+                        &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
+                            #[allow(clippy::needless_borrow)]
+                            &self.#field_getter(_db),
+                            _db,
+                            _include_all_fields
+                        )
+                    );
+                };
+
                 if self.is_identity_field(field) {
-                    parse_quote_spanned! {field.field.span() =>
-                        debug_struct = debug_struct.field(
-                            #field_name_string,
-                            &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
-                                #[allow(clippy::needless_borrow)]
-                                &self.#field_getter(_db),
-                                _db,
-                                _include_all_fields
-                            )
-                        );
+                    quote_spanned! { field.field.span() =>
+                        #field_debug
                     }
                 } else {
-                    parse_quote_spanned! {field.field.span() =>
+                    quote_spanned! { field.field.span() =>
                         if _include_all_fields {
-                            debug_struct = debug_struct.field(
-                                #field_name_string,
-                                &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
-                                    #[allow(clippy::needless_borrow)]
-                                    &self.#field_getter(_db),
-                                    _db,
-                                    true
-                                )
-                            );
+                            #field_debug
                         }
                     }
                 }
-
             })
             .collect::<TokenStream>();
 
