@@ -97,14 +97,11 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         self.fields.iter()
     }
 
-    /// Iterator over fields that are part of structs identity.
-    ///
-    /// If this is an input, empty iterator.
-    pub(crate) fn identity_fields(&self) -> Vec<&SalsaField> {
+    pub(crate) fn is_identity_field(&self, field: &SalsaField) -> bool {
         match self.kind {
-            SalsaStructKind::Input => Vec::new(),
-            SalsaStructKind::Tracked => self.all_fields().filter(|f| f.has_id_attr).collect(),
-            SalsaStructKind::Interned => self.all_fields().collect(),
+            SalsaStructKind::Input => false,
+            SalsaStructKind::Tracked => field.has_id_attr,
+            SalsaStructKind::Interned => true,
         }
     }
 
@@ -314,55 +311,55 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         let ident_string = ident.to_string();
 
         // `::salsa::debug::helper::SalsaDebug` will use `DebugWithDb` or fallbak to `Debug`
-
-        let field_debug_impl = |field: &SalsaField| -> TokenStream {
-            let field_name_string = field.name().to_string();
-            let field_getter = field.get_name();
-            let field_ty = field.ty();
-
-            parse_quote_spanned! {field.field.span() =>
-                .field(
-                    #field_name_string,
-                    &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
-                        #[allow(clippy::needless_borrow)]
-                        &self.#field_getter(_db),
-                        _db
-                    )
-                )
-            }
-        };
-
-        let identity_fields = self
-            .identity_fields()
-            .into_iter()
-            .map(field_debug_impl)
-            .collect::<TokenStream>();
-
-        let all_fields = self
+        let fields = self
             .all_fields()
             .into_iter()
-            .map(field_debug_impl)
+            .map(|field| -> TokenStream {
+                let field_name_string = field.name().to_string();
+                let field_getter = field.get_name();
+                let field_ty = field.ty();
+
+                if self.is_identity_field(field){
+                    parse_quote_spanned! {field.field.span() =>
+                        debug_struct = debug_struct.field(
+                            #field_name_string,
+                            &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
+                                #[allow(clippy::needless_borrow)]
+                                &self.#field_getter(_db),
+                                _db,
+                                _include_all_fields
+                            )
+                        );
+                    }
+                }else{
+                    parse_quote_spanned! {field.field.span() =>
+                        if _include_all_fields {
+                            debug_struct = debug_struct.field(
+                                #field_name_string,
+                                &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
+                                    #[allow(clippy::needless_borrow)]
+                                    &self.#field_getter(_db),
+                                    _db,
+                                    true
+                                )
+                            );
+                        }
+                    }
+                }
+
+            })
             .collect::<TokenStream>();
 
         // `use ::salsa::debug::helper::Fallback` is needed for the fallback to `Debug` impl
         parse_quote_spanned! {ident.span()=>
             impl ::salsa::DebugWithDb<#db_type> for #ident {
-                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type) -> ::std::fmt::Result {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type, _include_all_fields: bool) -> ::std::fmt::Result {
                     #[allow(unused_imports)]
                     use ::salsa::debug::helper::Fallback;
-                    f.debug_struct(#ident_string)
-                    .field("[salsa id]", &self.0.as_u32())
-                    #identity_fields
-                    .finish()
-                }
-
-                fn fmt_all(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type) -> ::std::fmt::Result {
-                    #[allow(unused_imports)]
-                    use ::salsa::debug::helper::Fallback;
-                    f.debug_struct(#ident_string)
-                    .field("[salsa id]", &self.0.as_u32())
-                    #all_fields
-                    .finish()
+                    let mut debug_struct = &mut f.debug_struct(#ident_string);
+                    debug_struct = debug_struct.field("[salsa id]", &self.0.as_u32());
+                    #fields
+                    debug_struct.finish()
                 }
             }
         }

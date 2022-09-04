@@ -28,10 +28,15 @@ impl<Db> DebugWithDb<Db> for Event
 where
     Db: ?Sized + Database,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
         f.debug_struct("Event")
             .field("runtime_id", &self.runtime_id)
-            .field("kind", &self.kind.debug(db))
+            .field("kind", &self.kind.debug_with(db, include_all_fields))
             .finish()
     }
 }
@@ -149,11 +154,19 @@ impl<Db> DebugWithDb<Db> for EventKind
 where
     Db: ?Sized + Database,
 {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        fmt: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
         match self {
             EventKind::DidValidateMemoizedValue { database_key } => fmt
                 .debug_struct("DidValidateMemoizedValue")
-                .field("database_key", &database_key.debug(db))
+                .field(
+                    "database_key",
+                    &database_key.debug_with(db, include_all_fields),
+                )
                 .finish(),
             EventKind::WillBlockOn {
                 other_runtime_id,
@@ -161,11 +174,17 @@ where
             } => fmt
                 .debug_struct("WillBlockOn")
                 .field("other_runtime_id", other_runtime_id)
-                .field("database_key", &database_key.debug(db))
+                .field(
+                    "database_key",
+                    &database_key.debug_with(db, include_all_fields),
+                )
                 .finish(),
             EventKind::WillExecute { database_key } => fmt
                 .debug_struct("WillExecute")
-                .field("database_key", &database_key.debug(db))
+                .field(
+                    "database_key",
+                    &database_key.debug_with(db, include_all_fields),
+                )
                 .finish(),
             EventKind::WillCheckCancellation => fmt.debug_struct("WillCheckCancellation").finish(),
             EventKind::WillDiscardStaleOutput {
@@ -173,20 +192,29 @@ where
                 output_key,
             } => fmt
                 .debug_struct("WillDiscardStaleOutput")
-                .field("execute_key", &execute_key.debug(db))
-                .field("output_key", &output_key.debug(db))
+                .field(
+                    "execute_key",
+                    &execute_key.debug_with(db, include_all_fields),
+                )
+                .field("output_key", &output_key.debug_with(db, include_all_fields))
                 .finish(),
             EventKind::DidDiscard { key } => fmt
                 .debug_struct("DidDiscard")
-                .field("key", &key.debug(db))
+                .field("key", &key.debug_with(db, include_all_fields))
                 .finish(),
             EventKind::DidDiscardAccumulated {
                 executor_key,
                 accumulator,
             } => fmt
                 .debug_struct("DidDiscardAccumulated")
-                .field("executor_key", &executor_key.debug(db))
-                .field("accumulator", &accumulator.debug(db))
+                .field(
+                    "executor_key",
+                    &executor_key.debug_with(db, include_all_fields),
+                )
+                .field(
+                    "accumulator",
+                    &accumulator.debug_with(db, include_all_fields),
+                )
                 .finish(),
         }
     }

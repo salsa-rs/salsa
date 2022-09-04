@@ -12,7 +12,18 @@ pub trait DebugWithDb<Db: ?Sized> {
         DebugWith {
             value: BoxRef::Ref(self),
             db,
-            all_fields: false,
+            include_all_fields: false,
+        }
+    }
+
+    fn debug_with<'me, 'db>(&'me self, db: &'me Db, include_all_fields: bool) -> DebugWith<'me, Db>
+    where
+        Self: Sized + 'me,
+    {
+        DebugWith {
+            value: BoxRef::Ref(self),
+            db,
+            include_all_fields,
         }
     }
 
@@ -26,7 +37,7 @@ pub trait DebugWithDb<Db: ?Sized> {
         DebugWith {
             value: BoxRef::Ref(self),
             db,
-            all_fields: true,
+            include_all_fields: true,
         }
     }
 
@@ -37,7 +48,7 @@ pub trait DebugWithDb<Db: ?Sized> {
         DebugWith {
             value: BoxRef::Box(Box::new(self)),
             db,
-            all_fields: false,
+            include_all_fields: false,
         }
     }
 
@@ -51,26 +62,22 @@ pub trait DebugWithDb<Db: ?Sized> {
         DebugWith {
             value: BoxRef::Box(Box::new(self)),
             db,
-            all_fields: true,
+            include_all_fields: true,
         }
     }
 
-    /// Should only read fields that are part of the identity, which means:
-    ///     - for [#\[salsa::input\]](salsa_2022_macros::input) no fields
-    ///     - for [#\[salsa::tracked\]](salsa_2022_macros::tracked) only fields with `#[id]` attribute
-    ///     - for [#\[salsa::interned\]](salsa_2022_macros::interned) any field
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result;
-
-    /// Unlike [DebugWithDb::fmt], may read any field.
-    fn fmt_all(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
-        self.fmt(f, db)
-    }
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result;
 }
 
 pub struct DebugWith<'me, Db: ?Sized> {
     value: BoxRef<'me, dyn DebugWithDb<Db> + 'me>,
     db: &'me Db,
-    all_fields: bool,
+    include_all_fields: bool,
 }
 
 enum BoxRef<'me, T: ?Sized> {
@@ -91,11 +98,7 @@ impl<T: ?Sized> std::ops::Deref for BoxRef<'_, T> {
 
 impl<D: ?Sized> std::fmt::Debug for DebugWith<'_, D> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.all_fields {
-            DebugWithDb::fmt_all(&*self.value, f, self.db)
-        } else {
-            DebugWithDb::fmt(&*self.value, f, self.db)
-        }
+        DebugWithDb::fmt(&*self.value, f, self.db, self.include_all_fields)
     }
 }
 
@@ -103,8 +106,13 @@ impl<Db: ?Sized, T: ?Sized> DebugWithDb<Db> for &T
 where
     T: DebugWithDb<Db>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
-        T::fmt(self, f, db)
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
+        T::fmt(self, f, db, include_all_fields)
     }
 }
 
@@ -112,8 +120,13 @@ impl<Db: ?Sized, T: ?Sized> DebugWithDb<Db> for Box<T>
 where
     T: DebugWithDb<Db>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
-        T::fmt(self, f, db)
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
+        T::fmt(self, f, db, include_all_fields)
     }
 }
 
@@ -121,8 +134,13 @@ impl<Db: ?Sized, T> DebugWithDb<Db> for Rc<T>
 where
     T: DebugWithDb<Db>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
-        T::fmt(self, f, db)
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
+        T::fmt(self, f, db, include_all_fields)
     }
 }
 
@@ -130,8 +148,13 @@ impl<Db: ?Sized, T: ?Sized> DebugWithDb<Db> for Arc<T>
 where
     T: DebugWithDb<Db>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
-        T::fmt(self, f, db)
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
+        T::fmt(self, f, db, include_all_fields)
     }
 }
 
@@ -139,8 +162,13 @@ impl<Db: ?Sized, T> DebugWithDb<Db> for Vec<T>
 where
     T: DebugWithDb<Db>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
-        let elements = self.iter().map(|e| e.debug(db));
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
+        let elements = self.iter().map(|e| e.debug_with(db, include_all_fields));
         f.debug_list().entries(elements).finish()
     }
 }
@@ -149,8 +177,13 @@ impl<Db: ?Sized, T> DebugWithDb<Db> for Option<T>
 where
     T: DebugWithDb<Db>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
-        let me = self.as_ref().map(|v| v.debug(db));
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
+        let me = self.as_ref().map(|v| v.debug_with(db, include_all_fields));
         std::fmt::Debug::fmt(&me, f)
     }
 }
@@ -160,8 +193,18 @@ where
     K: DebugWithDb<Db>,
     V: DebugWithDb<Db>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
-        let elements = self.iter().map(|(k, v)| (k.debug(db), v.debug(db)));
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
+        let elements = self.iter().map(|(k, v)| {
+            (
+                k.debug_with(db, include_all_fields),
+                v.debug_with(db, include_all_fields),
+            )
+        });
         f.debug_map().entries(elements).finish()
     }
 }
@@ -171,10 +214,15 @@ where
     A: DebugWithDb<Db>,
     B: DebugWithDb<Db>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
         f.debug_tuple("")
-            .field(&self.0.debug(db))
-            .field(&self.1.debug(db))
+            .field(&self.0.debug_with(db, include_all_fields))
+            .field(&self.1.debug_with(db, include_all_fields))
             .finish()
     }
 }
@@ -185,11 +233,16 @@ where
     B: DebugWithDb<Db>,
     C: DebugWithDb<Db>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
         f.debug_tuple("")
-            .field(&self.0.debug(db))
-            .field(&self.1.debug(db))
-            .field(&self.2.debug(db))
+            .field(&self.0.debug_with(db, include_all_fields))
+            .field(&self.1.debug_with(db, include_all_fields))
+            .field(&self.2.debug_with(db, include_all_fields))
             .finish()
     }
 }
@@ -198,8 +251,13 @@ impl<Db: ?Sized, V, S> DebugWithDb<Db> for HashSet<V, S>
 where
     V: DebugWithDb<Db>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
-        let elements = self.iter().map(|e| e.debug(db));
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
+        let elements = self.iter().map(|e| e.debug_with(db, include_all_fields));
         f.debug_list().entries(elements).finish()
     }
 }
@@ -213,7 +271,11 @@ pub mod helper {
     use std::{fmt, marker::PhantomData};
 
     pub trait Fallback<T: fmt::Debug, Db: ?Sized> {
-        fn salsa_debug<'a, 'b>(a: &'a T, _db: &'b Db) -> &'a dyn fmt::Debug {
+        fn salsa_debug<'a, 'b>(
+            a: &'a T,
+            _db: &'b Db,
+            _include_all_fields: bool,
+        ) -> &'a dyn fmt::Debug {
             a
         }
     }
@@ -222,8 +284,12 @@ pub mod helper {
 
     impl<T: DebugWithDb<Db>, Db: ?Sized> SalsaDebug<T, Db> {
         #[allow(dead_code)]
-        pub fn salsa_debug<'a, 'b: 'a>(a: &'a T, db: &'b Db) -> DebugWith<'a, Db> {
-            a.debug(db)
+        pub fn salsa_debug<'a, 'b: 'a>(
+            a: &'a T,
+            db: &'b Db,
+            include_all_fields: bool,
+        ) -> DebugWith<'a, Db> {
+            a.debug_with(db, include_all_fields)
         }
     }
 
