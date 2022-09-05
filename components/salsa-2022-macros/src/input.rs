@@ -51,8 +51,6 @@ impl InputStruct {
     fn generate_input(&self) -> syn::Result<TokenStream> {
         self.validate_input()?;
 
-        let (config_structs, config_impls) = self.field_config_structs_and_impls(self.all_fields());
-
         let id_struct = self.id_struct();
         let inherent_impl = self.input_inherent_impl();
         let ingredients_for_impl = self.input_ingredients();
@@ -61,13 +59,11 @@ impl InputStruct {
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
 
         Ok(quote! {
-            #(#config_structs)*
             #id_struct
             #inherent_impl
             #ingredients_for_impl
             #as_id_impl
             #as_debug_with_db_impl
-            #(#config_impls)*
             #salsa_struct_in_db_impl
         })
     }
