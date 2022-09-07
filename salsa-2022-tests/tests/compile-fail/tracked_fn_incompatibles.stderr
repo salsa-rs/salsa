@@ -16,12 +16,6 @@ error: `constructor` option not allowed here
 22 | #[salsa::tracked(jar = Jar, constructor = TrackedFn3)]
    |                             ^^^^^^^^^^^
 
-error: tracked functions must have at least a database and salsa struct argument
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:29:4
-   |
-29 | fn tracked_fn_with_one_input(db: &dyn Db) -> u32 {
-   |    ^^^^^^^^^^^^^^^^^^^^^^^^^
-
 error: #[salsa::tracked] must also be applied to the impl block for tracked methods
   --> tests/compile-fail/tracked_fn_incompatibles.rs:34:55
    |
@@ -47,19 +41,24 @@ error[E0412]: cannot find type `tracked_fn_with_db` in this scope
   |                                           ^^^^^^^^^^^^^^^^^^ not found in this scope
 
 error[E0412]: cannot find type `tracked_fn_with_constructor` in this scope
- --> tests/compile-fail/tracked_fn_incompatibles.rs:2:63
-  |
-2 | struct Jar(MyInput, tracked_fn_with_data, tracked_fn_with_db, tracked_fn_with_constructor, tracked_fn_with_one_input, tracked_fn_with_rec...
-  |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
-
-error[E0412]: cannot find type `tracked_fn_with_one_input` in this scope
- --> tests/compile-fail/tracked_fn_incompatibles.rs:2:92
-  |
-2 | ..._fn_with_db, tracked_fn_with_constructor, tracked_fn_with_one_input, tracked_fn_with_receiver_not_applied_to_impl_block);
-  |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:2:63
+   |
+2  | struct Jar(MyInput, tracked_fn_with_data, tracked_fn_with_db, tracked_fn_with_constructor, tracked_fn_with_one_input, tracked_fn_with_rec...
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: a struct with a similar name exists: `tracked_fn_with_one_input`
+...
+28 | #[salsa::tracked(jar = Jar)]
+   | ---------------------------- similarly named struct `tracked_fn_with_one_input` defined here
 
 error[E0412]: cannot find type `tracked_fn_with_receiver_not_applied_to_impl_block` in this scope
  --> tests/compile-fail/tracked_fn_incompatibles.rs:2:119
   |
 2 | ...r, tracked_fn_with_one_input, tracked_fn_with_receiver_not_applied_to_impl_block);
   |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0308]: mismatched types
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:29:46
+   |
+29 | fn tracked_fn_with_one_input(db: &dyn Db) -> u32 {
+   |    -------------------------                 ^^^ expected `u32`, found `()`
+   |    |
+   |    implicitly returns `()` as its body has no tail or `return` expression
