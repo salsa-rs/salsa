@@ -1,0 +1,5 @@
+error: tracked functions must have at least a database and salsa struct argument
+  --> tests/compile-fail/tracked_method_incompatibles.rs:13:8
+   |
+13 |     fn use_tracked(&self) {
+   |        ^^^^^^^^^^^

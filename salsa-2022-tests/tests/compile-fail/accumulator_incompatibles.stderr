@@ -1,0 +1,95 @@
+error: `return_ref` option not allowed here
+ --> tests/compile-fail/accumulator_incompatibles.rs:6:33
+  |
+6 | #[salsa::accumulator(jar = Jar, return_ref)]
+  |                                 ^^^^^^^^^^
+
+error: `specify` option not allowed here
+ --> tests/compile-fail/accumulator_incompatibles.rs:9:33
+  |
+9 | #[salsa::accumulator(jar = Jar, specify)]
+  |                                 ^^^^^^^
+
+error: `no_eq` option not allowed here
+  --> tests/compile-fail/accumulator_incompatibles.rs:12:33
+   |
+12 | #[salsa::accumulator(jar = Jar, no_eq)]
+   |                                 ^^^^^
+
+error: `data` option not allowed here
+  --> tests/compile-fail/accumulator_incompatibles.rs:15:33
+   |
+15 | #[salsa::accumulator(jar = Jar, data = MyAcc)]
+   |                                 ^^^^
+
+error: `db` option not allowed here
+  --> tests/compile-fail/accumulator_incompatibles.rs:18:33
+   |
+18 | #[salsa::accumulator(jar = Jar, db = Db)]
+   |                                 ^^
+
+error: unrecognized option `recover_fn`
+  --> tests/compile-fail/accumulator_incompatibles.rs:21:33
+   |
+21 | #[salsa::accumulator(jar = Jar, recover_fn = recover)]
+   |                                 ^^^^^^^^^^
+
+error: `lru` option not allowed here
+  --> tests/compile-fail/accumulator_incompatibles.rs:24:33
+   |
+24 | #[salsa::accumulator(jar = Jar, lru =12)]
+   |                                 ^^^
+
+error: `constructor` option not allowed here
+  --> tests/compile-fail/accumulator_incompatibles.rs:27:33
+   |
+27 | #[salsa::accumulator(jar = Jar, constructor = Constructor)]
+   |                                 ^^^^^^^^^^^
+
+error[E0412]: cannot find type `AccWithRetRef` in this scope
+ --> tests/compile-fail/accumulator_incompatibles.rs:2:12
+  |
+2 | struct Jar(AccWithRetRef, AccWithSpecify, AccWithNoEq, AccWithData, AcWithcDb, AccWithRecover, AccWithLru, AccWithConstructor);
+  |            ^^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `AccWithSpecify` in this scope
+ --> tests/compile-fail/accumulator_incompatibles.rs:2:27
+  |
+2 | struct Jar(AccWithRetRef, AccWithSpecify, AccWithNoEq, AccWithData, AcWithcDb, AccWithRecover, AccWithLru, AccWithConstructor);
+  |                           ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `AccWithNoEq` in this scope
+ --> tests/compile-fail/accumulator_incompatibles.rs:2:43
+  |
+2 | struct Jar(AccWithRetRef, AccWithSpecify, AccWithNoEq, AccWithData, AcWithcDb, AccWithRecover, AccWithLru, AccWithConstructor);
+  |                                           ^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `AccWithData` in this scope
+ --> tests/compile-fail/accumulator_incompatibles.rs:2:56
+  |
+2 | struct Jar(AccWithRetRef, AccWithSpecify, AccWithNoEq, AccWithData, AcWithcDb, AccWithRecover, AccWithLru, AccWithConstructor);
+  |                                                        ^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `AcWithcDb` in this scope
+ --> tests/compile-fail/accumulator_incompatibles.rs:2:69
+  |
+2 | struct Jar(AccWithRetRef, AccWithSpecify, AccWithNoEq, AccWithData, AcWithcDb, AccWithRecover, AccWithLru, AccWithConstructor);
+  |                                                                     ^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `AccWithRecover` in this scope
+ --> tests/compile-fail/accumulator_incompatibles.rs:2:80
+  |
+2 | struct Jar(AccWithRetRef, AccWithSpecify, AccWithNoEq, AccWithData, AcWithcDb, AccWithRecover, AccWithLru, AccWithConstructor);
+  |                                                                                ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `AccWithLru` in this scope
+ --> tests/compile-fail/accumulator_incompatibles.rs:2:96
+  |
+2 | struct Jar(AccWithRetRef, AccWithSpecify, AccWithNoEq, AccWithData, AcWithcDb, AccWithRecover, AccWithLru, AccWithConstructor);
+  |                                                                                                ^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `AccWithConstructor` in this scope
+ --> tests/compile-fail/accumulator_incompatibles.rs:2:108
+  |
+2 | struct Jar(AccWithRetRef, AccWithSpecify, AccWithNoEq, AccWithData, AcWithcDb, AccWithRecover, AccWithLru, AccWithConstructor);
+  |                                                                                                            ^^^^^^^^^^^^^^^^^^ not found in this scope

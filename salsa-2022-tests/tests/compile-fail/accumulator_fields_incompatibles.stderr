@@ -1,0 +1,23 @@
+error: accumulator structs should have only one anonymous field
+ --> tests/compile-fail/accumulator_fields_incompatibles.rs:8:8
+  |
+8 | struct AccTwoUnnamedFields (u32, u32);
+  |        ^^^^^^^^^^^^^^^^^^^
+
+error: accumulator structs should have only one anonymous field
+  --> tests/compile-fail/accumulator_fields_incompatibles.rs:13:8
+   |
+13 | struct AccNamedField {
+   |        ^^^^^^^^^^^^^
+
+error[E0412]: cannot find type `AccTwoUnnamedFields` in this scope
+ --> tests/compile-fail/accumulator_fields_incompatibles.rs:2:12
+  |
+2 | struct Jar(AccTwoUnnamedFields, AccNamedField);
+  |            ^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `AccNamedField` in this scope
+ --> tests/compile-fail/accumulator_fields_incompatibles.rs:2:33
+  |
+2 | struct Jar(AccTwoUnnamedFields, AccNamedField);
+  |                                 ^^^^^^^^^^^^^ not found in this scope
