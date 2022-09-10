@@ -1,0 +1,5 @@
+error: #[salsa::tracked] must also be applied to the impl block for tracked methods
+  --> tests/compile-fail/tracked_method_incompatibles.rs:13:20
+   |
+13 |     fn use_tracked(&self) {
+   |                    ^

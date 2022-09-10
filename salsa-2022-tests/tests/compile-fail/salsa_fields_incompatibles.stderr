@@ -1,0 +1,23 @@
+error: the field name `from` is disallowed in salsa structs
+ --> tests/compile-fail/salsa_fields_incompatibles.rs:7:5
+  |
+7 |     from: u32,
+  |     ^^^^
+
+error: the field name `new` is disallowed in salsa structs
+  --> tests/compile-fail/salsa_fields_incompatibles.rs:13:5
+   |
+13 |     new: u32,
+   |     ^^^
+
+error[E0412]: cannot find type `InputWithBannedName1` in this scope
+ --> tests/compile-fail/salsa_fields_incompatibles.rs:2:12
+  |
+2 | struct Jar(InputWithBannedName1, InputWithBannedName2);
+  |            ^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `InputWithBannedName2` in this scope
+ --> tests/compile-fail/salsa_fields_incompatibles.rs:2:34
+  |
+2 | struct Jar(InputWithBannedName1, InputWithBannedName2);
+  |                                  ^^^^^^^^^^^^^^^^^^^^ not found in this scope
