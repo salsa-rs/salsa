@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-salsa = { path = "../components/salsa-2022", package = "salsa-2022" }
-ordered-float = "3.0"
-dashmap = "5.4.0"
-notify = "5.0.0"
 crossbeam-channel = "0.5.6"
+dashmap = "5.4.0"
+eyre = "0.6.8"
+notify-debouncer-mini = "0.2.1"
+salsa = { path = "../components/salsa-2022", package = "salsa-2022" }
 
 [dev-dependencies]
 expect-test = "1.4.0"
