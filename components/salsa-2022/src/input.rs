@@ -49,7 +49,7 @@ where
         Id::from_id(crate::Id::from_u32(next_id))
     }
 
-    pub fn new_singleton_input(&self, _runtime: &Runtime) -> Id {
+    pub fn new_singleton_input(&mut self, _runtime: &Runtime) -> Id {
         // There's only one singleton so record that we've created it
         // and return the only id.
         self.counter.store(1, Ordering::Relaxed);
