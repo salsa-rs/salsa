@@ -8,7 +8,7 @@ crossbeam-channel = "0.5.6"
 dashmap = "5.4.0"
 eyre = "0.6.8"
 notify-debouncer-mini = "0.2.1"
-salsa = { path = "../components/salsa-2022", package = "salsa-2022" }
+salsa = { path = "../../components/salsa-2022", package = "salsa-2022" }
 
 [dev-dependencies]
 expect-test = "1.4.0"

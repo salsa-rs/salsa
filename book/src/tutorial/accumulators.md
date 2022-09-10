@@ -10,7 +10,7 @@ Salsa defines a mechanism for managing this called an **accumulator**.
 In our case, we define an accumulator struct called `Diagnostics` in the `ir` module:
 
 ```rust
-{{#include ../../../calc-example/calc/src/ir.rs:diagnostic}}
+{{#include ../../../examples-2022/calc/src/ir.rs:diagnostic}}
 ```
 
 Accumulator structs are always newtype structs with a single field, in this case of type `Diagnostic`.
@@ -22,7 +22,7 @@ or any functions that they called
 The `Parser::report_error` method contains an example of pushing a diagnostic:
 
 ```rust
-{{#include ../../../calc-example/calc/src/parser.rs:report_error}}
+{{#include ../../../examples-2022/calc/src/parser.rs:report_error}}
 ```
 
 To get the set of diagnostics produced by `parse_errors`, or any other memoized function,

@@ -31,7 +31,7 @@ such that when those inputs change, we can try to efficiently recompute the new 
 Inputs are defined as Rust structs with a `#[salsa::input]` annotation:
 
 ```rust
-{{#include ../../../calc-example/calc/src/ir.rs:input}}
+{{#include ../../../examples-2022/calc/src/ir.rs:input}}
 ```
 
 In our compiler, we have just one simple input, the `SourceProgram`, which has a `text` field (the string).
@@ -77,7 +77,7 @@ Whereas inputs represent the *start* of a computation, tracked structs represent
 In this case, the parser is going to take in the `SourceProgram` struct that we saw and return a `Program` that represents the fully parsed program:
 
 ```rust
-{{#include ../../../calc-example/calc/src/ir.rs:program}}
+{{#include ../../../examples-2022/calc/src/ir.rs:program}}
 ```
 
 Like with an input, the fields of a tracked struct are also stored in the database.
@@ -98,7 +98,7 @@ We will also use a tracked struct to represent each function:
 The `Function` struct is going to be created by the parser to represent each of the functions defined by the user:
 
 ```rust
-{{#include ../../../calc-example/calc/src/ir.rs:functions}}
+{{#include ../../../examples-2022/calc/src/ir.rs:functions}}
 ```
 
 If we had created some `Function` instance `f`, for example, we might find that `the f.body` field changes
@@ -131,7 +131,7 @@ it's also inefficient to have to compare them for equality via string comparison
 Therefore, we define two interned structs, `FunctionId` and `VariableId`, each with a single field that stores the string:
 
 ```rust
-{{#include ../../../calc-example/calc/src/ir.rs:interned_ids}}
+{{#include ../../../examples-2022/calc/src/ir.rs:interned_ids}}
 ```
 
 When you invoke e.g. `FunctionId::new(&db, "my_string".to_string())`, you will get back a `FunctionId` that is just a newtype'd integer.
@@ -158,7 +158,7 @@ If, however, you export interned identifiers outside the computation, and then c
 We won't use any special "Salsa structs" for expressions and statements:
 
 ```rust
-{{#include ../../../calc-example/calc/src/ir.rs:statements_and_expressions}}
+{{#include ../../../examples-2022/calc/src/ir.rs:statements_and_expressions}}
 ```
 
 Since statements and expressions are not tracked, this implies that we are only attempting to get incremental re-use at the granularity of functions --
