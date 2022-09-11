@@ -178,6 +178,8 @@ impl crate::options::AllowedOptions for TrackedImpl {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = false;
+
+    const SINGLETON: bool = false;
 }
 
 fn tracked_method(
