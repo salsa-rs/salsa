@@ -1,0 +1,71 @@
+error: `return_ref` option not allowed here
+ --> tests/compile-fail/input_struct_incompatibles.rs:6:27
+  |
+6 | #[salsa::input(jar = Jar, return_ref)]
+  |                           ^^^^^^^^^^
+
+error: `specify` option not allowed here
+ --> tests/compile-fail/input_struct_incompatibles.rs:9:27
+  |
+9 | #[salsa::input(jar = Jar, specify)]
+  |                           ^^^^^^^
+
+error: `no_eq` option not allowed here
+  --> tests/compile-fail/input_struct_incompatibles.rs:12:27
+   |
+12 | #[salsa::input(jar = Jar, no_eq)]
+   |                           ^^^^^
+
+error: `db` option not allowed here
+  --> tests/compile-fail/input_struct_incompatibles.rs:15:27
+   |
+15 | #[salsa::input(jar = Jar, db = Db)]
+   |                           ^^
+
+error: unrecognized option `recover_fn`
+  --> tests/compile-fail/input_struct_incompatibles.rs:18:27
+   |
+18 | #[salsa::input(jar = Jar, recover_fn = recover)]
+   |                           ^^^^^^^^^^
+
+error: `lru` option not allowed here
+  --> tests/compile-fail/input_struct_incompatibles.rs:21:27
+   |
+21 | #[salsa::input(jar = Jar, lru =12)]
+   |                           ^^^
+
+error[E0412]: cannot find type `InputWithRetRef` in this scope
+ --> tests/compile-fail/input_struct_incompatibles.rs:2:12
+  |
+2 | struct Jar(InputWithRetRef, InputWithSpecify, InputNoWithEq, InputWithDb, InputWithRecover, InputWithLru);
+  |            ^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `InputWithSpecify` in this scope
+ --> tests/compile-fail/input_struct_incompatibles.rs:2:29
+  |
+2 | struct Jar(InputWithRetRef, InputWithSpecify, InputNoWithEq, InputWithDb, InputWithRecover, InputWithLru);
+  |                             ^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `InputNoWithEq` in this scope
+ --> tests/compile-fail/input_struct_incompatibles.rs:2:47
+  |
+2 | struct Jar(InputWithRetRef, InputWithSpecify, InputNoWithEq, InputWithDb, InputWithRecover, InputWithLru);
+  |                                               ^^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `InputWithDb` in this scope
+ --> tests/compile-fail/input_struct_incompatibles.rs:2:62
+  |
+2 | struct Jar(InputWithRetRef, InputWithSpecify, InputNoWithEq, InputWithDb, InputWithRecover, InputWithLru);
+  |                                                              ^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `InputWithRecover` in this scope
+ --> tests/compile-fail/input_struct_incompatibles.rs:2:75
+  |
+2 | struct Jar(InputWithRetRef, InputWithSpecify, InputNoWithEq, InputWithDb, InputWithRecover, InputWithLru);
+  |                                                                           ^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `InputWithLru` in this scope
+ --> tests/compile-fail/input_struct_incompatibles.rs:2:93
+  |
+2 | struct Jar(InputWithRetRef, InputWithSpecify, InputNoWithEq, InputWithDb, InputWithRecover, InputWithLru);
+  |                                                                                             ^^^^^^^^^^^^ not found in this scope

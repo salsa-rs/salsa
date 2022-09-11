@@ -1,0 +1,61 @@
+error: `return_ref` option not allowed here
+ --> tests/compile-fail/jars_incompatibles.rs:1:23
+  |
+1 | #[salsa::jar(db = Db, return_ref)]
+  |                       ^^^^^^^^^^
+
+error: `specify` option not allowed here
+ --> tests/compile-fail/jars_incompatibles.rs:4:23
+  |
+4 | #[salsa::jar(db = Db, specify)]
+  |                       ^^^^^^^
+
+error: `no_eq` option not allowed here
+ --> tests/compile-fail/jars_incompatibles.rs:8:23
+  |
+8 | #[salsa::jar(db = Db, no_eq)]
+  |                       ^^^^^
+
+error: `jar` option not allowed here
+  --> tests/compile-fail/jars_incompatibles.rs:11:23
+   |
+11 | #[salsa::jar(db = Db, jar = Jar)]
+   |                       ^^^
+
+error: `data` option not allowed here
+  --> tests/compile-fail/jars_incompatibles.rs:14:23
+   |
+14 | #[salsa::jar(db = Db, data = Data)]
+   |                       ^^^^
+
+error: `recovery_fn` option not allowed here
+  --> tests/compile-fail/jars_incompatibles.rs:17:23
+   |
+17 | #[salsa::jar(db = Db, recovery_fn = recover)]
+   |                       ^^^^^^^^^^^
+
+error: `lru` option not allowed here
+  --> tests/compile-fail/jars_incompatibles.rs:20:23
+   |
+20 | #[salsa::jar(db = Db, lru = 32)]
+   |                       ^^^
+
+error: `constructor` option not allowed here
+  --> tests/compile-fail/jars_incompatibles.rs:23:23
+   |
+23 | #[salsa::jar(db = Db, constructor = JarConstructor)]
+   |                       ^^^^^^^^^^^
+
+error[E0412]: cannot find type `Jar1` in this scope
+  --> tests/compile-fail/jars_incompatibles.rs:26:22
+   |
+26 | #[salsa::input(jar = Jar1)]
+   |                      ^^^^ not found in this scope
+
+error[E0412]: cannot find type `Jar1` in this scope
+  --> tests/compile-fail/jars_incompatibles.rs:26:22
+   |
+26 | #[salsa::input(jar = Jar1)]
+   |                      ^^^^ not found in this scope
+27 | struct MyInput {
+   |               - help: you might be missing a type parameter: `<Jar1>`

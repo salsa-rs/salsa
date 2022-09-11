@@ -1,0 +1,11 @@
+error: #[salsa::tracked] must also be applied to the impl block for tracked methods
+  --> tests/compile-fail/tracked_method_on_untracked_impl.rs:13:41
+   |
+13 |     fn tracked_method_on_untracked_impl(self, db: &dyn Db) -> u32 {
+   |                                         ^^^^
+
+error[E0412]: cannot find type `tracked_method_on_untracked_impl` in this scope
+ --> tests/compile-fail/tracked_method_on_untracked_impl.rs:2:21
+  |
+2 | struct Jar(MyInput, tracked_method_on_untracked_impl);
+  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope

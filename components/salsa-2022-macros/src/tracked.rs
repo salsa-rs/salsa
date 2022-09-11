@@ -5,14 +5,17 @@ pub(crate) fn tracked(
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     let item = syn::parse_macro_input!(input as Item);
-    match item {
+    let res = match item {
         syn::Item::Struct(item) => crate::tracked_struct::tracked(args, item),
-        syn::Item::Fn(item) => crate::tracked_fn::tracked(args, item),
-        _ => syn::Error::new(
+        syn::Item::Fn(item) => crate::tracked_fn::tracked_fn(args, item),
+        syn::Item::Impl(item) => crate::tracked_fn::tracked_impl(args, item),
+        _ => Err(syn::Error::new(
             item.span(),
-            &"tracked can be applied to structs and functions only".to_string(),
-        )
-        .into_compile_error()
-        .into(),
+            "tracked can only be applied to structs, functions, and impls",
+        )),
+    };
+    match res {
+        Ok(s) => s.into(),
+        Err(err) => err.into_compile_error().into(),
     }
 }
