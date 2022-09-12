@@ -83,23 +83,28 @@ where
             self.reset_at,
         );
 
+        // Optimisation to only get read lock on the map if the data has already
+        // been interned.
         if let Some(id) = self.key_map.get(&data) {
             return *id;
         }
 
-        loop {
-            let next_id = self.counter.fetch_add(1);
-            let next_id = Id::from_id(crate::id::Id::from_u32(next_id));
-            match self.value_map.entry(next_id) {
-                // If we already have an entry with this id...
-                dashmap::mapref::entry::Entry::Occupied(_) => continue,
-
-                // Otherwise...
-                dashmap::mapref::entry::Entry::Vacant(entry) => {
-                    self.key_map.insert(data.clone(), next_id);
-                    entry.insert(Box::new(data));
-                    return next_id;
-                }
+        match self.key_map.entry(data.clone()) {
+            // Data has already been interned, just use the existing ID
+            dashmap::mapref::entry::Entry::Occupied(entry) => *entry.get(),
+            // Insert the new value at the next available id
+            // This holds a lock on the entry so other can't attempt to insert
+            // at the same time.
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                let next_id = self.counter.fetch_add(1);
+                let next_id = Id::from_id(crate::id::Id::from_u32(next_id));
+                let old_value = self.value_map.insert(next_id, Box::new(data));
+                assert!(
+                    old_value.is_none(),
+                    "next_id is guaranteed to be unique, bar overflow"
+                );
+                entry.insert(next_id);
+                next_id
             }
         }
     }
