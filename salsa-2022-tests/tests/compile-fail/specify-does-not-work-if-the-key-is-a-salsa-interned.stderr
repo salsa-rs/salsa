@@ -1,9 +1,9 @@
 error[E0277]: the trait bound `MyInterned: TrackedStructInDb<dyn Db>` is not satisfied
-   --> tests/compile-fail/specify-does-not-work-if-the-key-is-a-salsa-interned.rs:21:28
+   --> tests/compile-fail/specify-does-not-work-if-the-key-is-a-salsa-interned.rs:22:28
     |
-20  | #[salsa::tracked(jar = Jar, specify)]
+21  | #[salsa::tracked(jar = Jar, specify)]
     | ------------------------------------- required by a bound introduced by this call
-21  | fn tracked_fn(db: &dyn Db, input: MyInterned) -> MyTracked {
+22  | fn tracked_fn(db: &dyn Db, input: MyInterned) -> MyTracked {
     |                            ^^^^^ the trait `TrackedStructInDb<dyn Db>` is not implemented for `MyInterned`
     |
     = help: the trait `TrackedStructInDb<DB>` is implemented for `MyTracked`

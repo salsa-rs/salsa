@@ -25,6 +25,8 @@ impl crate::options::AllowedOptions for Accumulator {
 
     const NO_EQ: bool = false;
 
+    const SINGLETON: bool = false;
+
     const JAR: bool = true;
 
     const DATA: bool = false;

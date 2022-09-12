@@ -46,6 +46,20 @@ where
         self.counter += 1;
         Id::from_id(crate::Id::from_u32(next_id))
     }
+
+    pub fn new_singleton_input(&mut self, _runtime: &mut Runtime) -> Id {
+        if self.counter >= 1 {
+            // already exists
+            Id::from_id(crate::Id::from_u32(self.counter - 1))
+        } else {
+            self.new_input(_runtime)
+        }
+    }
+
+    pub fn get_singleton_input(&self, _runtime: &Runtime) -> Option<Id> {
+        (self.counter > 0)
+            .then(|| Id::from_id(crate::Id::from_id(crate::Id::from_u32(self.counter - 1))))
+    }
 }
 
 impl<DB: ?Sized, Id> Ingredient<DB> for InputIngredient<Id>

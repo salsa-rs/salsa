@@ -65,6 +65,8 @@ impl crate::options::AllowedOptions for TrackedFn {
 
     const NO_EQ: bool = true;
 
+    const SINGLETON: bool = false;
+
     const JAR: bool = true;
 
     const DATA: bool = false;
@@ -176,6 +178,8 @@ impl crate::options::AllowedOptions for TrackedImpl {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = false;
+
+    const SINGLETON: bool = false;
 }
 
 fn tracked_method(

@@ -1,6 +1,5 @@
-use proc_macro2::TokenStream;
-
 use crate::salsa_struct::SalsaStruct;
+use proc_macro2::TokenStream;
 
 // #[salsa::interned(jar = Jar0, data = TyData0)]
 // #[derive(Eq, PartialEq, Hash, Debug, Clone)]
@@ -36,6 +35,8 @@ impl crate::options::AllowedOptions for InternedStruct {
     const SPECIFY: bool = false;
 
     const NO_EQ: bool = false;
+
+    const SINGLETON: bool = false;
 
     const JAR: bool = true;
 

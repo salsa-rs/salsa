@@ -1,0 +1,43 @@
+error: `singleton` option not allowed here
+  --> tests/compile-fail/singleton_only_for_input.rs:20:18
+   |
+20 | #[salsa::tracked(singleton)]
+   |                  ^^^^^^^^^
+
+error: `singleton` option not allowed here
+  --> tests/compile-fail/singleton_only_for_input.rs:26:18
+   |
+26 | #[salsa::tracked(singleton)]
+   |                  ^^^^^^^^^
+
+error: `singleton` option not allowed here
+  --> tests/compile-fail/singleton_only_for_input.rs:33:22
+   |
+33 | #[salsa::accumulator(singleton)]
+   |                      ^^^^^^^^^
+
+error[E0412]: cannot find type `MyTracked` in this scope
+  --> tests/compile-fail/singleton_only_for_input.rs:10:21
+   |
+10 | struct Jar(MyInput, MyTracked, Integers, create_tracked_structs );
+   |                     ^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `Integers` in this scope
+  --> tests/compile-fail/singleton_only_for_input.rs:10:32
+   |
+10 | struct Jar(MyInput, MyTracked, Integers, create_tracked_structs );
+   |                                ^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `create_tracked_structs` in this scope
+  --> tests/compile-fail/singleton_only_for_input.rs:10:42
+   |
+10 | struct Jar(MyInput, MyTracked, Integers, create_tracked_structs );
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+warning: unused import: `test_log::test`
+ --> tests/compile-fail/singleton_only_for_input.rs:7:5
+  |
+7 | use test_log::test;
+  |     ^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default

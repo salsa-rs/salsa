@@ -34,6 +34,8 @@ impl crate::options::AllowedOptions for Jar {
 
     const NO_EQ: bool = false;
 
+    const SINGLETON: bool = false;
+
     const JAR: bool = false;
 
     const DATA: bool = false;

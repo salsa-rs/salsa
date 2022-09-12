@@ -25,14 +25,13 @@
 //! * data method `impl Foo { fn data(&self, db: &dyn crate::Db) -> FooData { FooData { f: self.f(db), ... } } }`
 //!     * this could be optimized, particularly for interned fields
 
-use heck::ToUpperCamelCase;
-use proc_macro2::{Ident, Literal, Span, TokenStream};
-use syn::spanned::Spanned;
-
 use crate::{
     configuration,
     options::{AllowedOptions, Options},
 };
+use heck::ToUpperCamelCase;
+use proc_macro2::{Ident, Literal, Span, TokenStream};
+use syn::spanned::Spanned;
 
 pub(crate) struct SalsaStruct<A: AllowedOptions> {
     args: Options<A>,
@@ -55,9 +54,8 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         args: proc_macro::TokenStream,
         struct_item: syn::ItemStruct,
     ) -> syn::Result<Self> {
-        let args = syn::parse(args)?;
+        let args: Options<A> = syn::parse(args)?;
         let fields = Self::extract_options(&struct_item)?;
-
         Ok(Self {
             args,
             struct_item,
@@ -126,6 +124,11 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     /// Type of the jar for this struct
     pub(crate) fn jar_ty(&self) -> syn::Type {
         self.args.jar_ty()
+    }
+
+    /// checks if the "singleton" flag was set
+    pub(crate) fn is_isingleton(&self) -> bool {
+        self.args.singleton.is_some()
     }
 
     pub(crate) fn db_dyn_ty(&self) -> syn::Type {

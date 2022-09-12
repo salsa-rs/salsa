@@ -31,6 +31,8 @@ impl crate::options::AllowedOptions for TrackedStruct {
 
     const NO_EQ: bool = false;
 
+    const SINGLETON: bool = false;
+
     const JAR: bool = true;
 
     const DATA: bool = true;
