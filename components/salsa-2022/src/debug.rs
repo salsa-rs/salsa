@@ -158,6 +158,19 @@ where
     }
 }
 
+impl<Db: ?Sized, A, B> DebugWithDb<Db> for Result<A, B>
+where
+    A: DebugWithDb<Db>,
+    B: DebugWithDb<Db>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
+        match self {
+            Ok(s) => f.debug_tuple("Ok").field(&s.debug(db)).finish(),
+            Err(e) => f.debug_tuple("Err").field(&e.debug(db)).finish(),
+        }
+    }
+}
+
 impl<Db: ?Sized, K, V, S> DebugWithDb<Db> for HashMap<K, V, S>
 where
     K: DebugWithDb<Db>,
@@ -209,6 +222,34 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
         let elements = self.iter().map(|e| e.debug_with(db, include_all_fields));
         f.debug_list().entries(elements).finish()
+    }
+}
+
+// These impls are here for convenience, it's not really a scalable sol'n.
+impl<Db: ?Sized> DebugWithDb<Db> for String {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, _db: &Db) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+
+// These impls are here for convenience, it's not really a scalable sol'n.
+impl<Db: ?Sized> DebugWithDb<Db> for u64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, _db: &Db) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+
+// These impls are here for convenience, it's not really a scalable sol'n.
+impl<Db: ?Sized> DebugWithDb<Db> for u32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, _db: &Db) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+
+// These impls are here for convenience, it's not really a scalable sol'n.
+impl<Db: ?Sized> DebugWithDb<Db> for char {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, _db: &Db) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
     }
 }
 

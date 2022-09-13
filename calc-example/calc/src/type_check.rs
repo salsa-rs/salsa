@@ -1,6 +1,6 @@
 use crate::ir::{
-    Diagnostic, Diagnostics, Expression, Function, FunctionId, Program, Span, StatementData,
-    VariableId,
+    Anchor, Diagnostic, Diagnostics, Expression, Function, FunctionId, Program, Span,
+    StatementData, VariableId,
 };
 use derive_new::new;
 #[cfg(test)]
@@ -12,32 +12,21 @@ pub fn type_check_program(db: &dyn crate::Db, program: Program) {
     for statement in program.statements(db) {
         match &statement.data {
             StatementData::Function(f) => type_check_function(db, *f, program),
-            StatementData::Print(e) => CheckExpression::new(db, program, &[]).check(e),
+            StatementData::Print(e) => CheckExpression::new(db, program, &program, &[]).check(e),
         }
     }
 }
 
 #[salsa::tracked]
 pub fn type_check_function(db: &dyn crate::Db, function: Function, program: Program) {
-    CheckExpression::new(db, program, function.args(db)).check(function.body(db))
-}
-
-#[salsa::tracked]
-pub fn find_function(db: &dyn crate::Db, program: Program, name: FunctionId) -> Option<Function> {
-    program
-        .statements(db)
-        .iter()
-        .flat_map(|s| match &s.data {
-            StatementData::Function(f) if f.name(db) == name => Some(*f),
-            _ => None,
-        })
-        .next()
+    CheckExpression::new(db, program, &function, function.args(db)).check(function.body(db))
 }
 
 #[derive(new)]
 struct CheckExpression<'w> {
     db: &'w dyn crate::Db,
     program: Program,
+    anchor: &'w dyn Anchor,
     names_in_scope: &'w [VariableId],
 }
 
@@ -72,14 +61,12 @@ impl CheckExpression<'_> {
     }
 
     fn find_function(&self, f: FunctionId) -> Option<Function> {
-        find_function(self.db, self.program, f)
+        self.program.find_function(self.db, f)
     }
 
     fn report_error(&self, span: Span, message: String) {
-        Diagnostics::push(
-            self.db,
-            Diagnostic::new(span.start(self.db), span.end(self.db), message),
-        );
+        let (start, end) = span.absolute_locations(self.db, self.anchor);
+        Diagnostics::push(self.db, Diagnostic::new(start, end, message));
     }
 }
 
@@ -91,7 +78,7 @@ fn check_string(
     expected_diagnostics: expect_test::Expect,
     edits: &[(&str, expect_test::Expect, expect_test::Expect)],
 ) {
-    use crate::{db::Database, ir::SourceProgram, parser::parse_statements};
+    use crate::{db::Database, ir::SourceProgram, parser::parse_source_program};
 
     // Create the database
     let mut db = Database::default().enable_logging();
@@ -100,7 +87,7 @@ fn check_string(
     let source_program = SourceProgram::new(&mut db, source_text.to_string());
 
     // Invoke the parser
-    let program = parse_statements(&db, source_program);
+    let program = parse_source_program(&db, source_program);
 
     // Read out any diagnostics
     expected_diagnostics.assert_debug_eq(&type_check_program::accumulated::<Diagnostics>(
@@ -115,7 +102,7 @@ fn check_string(
         source_program
             .set_text(&mut db)
             .to(new_source_text.to_string());
-        let program = parse_statements(&db, source_program);
+        let program = parse_source_program(&db, source_program);
         expected_diagnostics.assert_debug_eq(&type_check_program::accumulated::<Diagnostics>(
             &db, program,
         ));
@@ -141,13 +128,21 @@ fn check_bad_variable_in_program() {
         expect![[r#"
             [
                 Diagnostic {
-                    start: 6,
-                    end: 8,
+                    start: Location(
+                        6,
+                    ),
+                    end: Location(
+                        8,
+                    ),
                     message: "the variable `a` is not declared",
                 },
                 Diagnostic {
-                    start: 10,
-                    end: 11,
+                    start: Location(
+                        10,
+                    ),
+                    end: Location(
+                        11,
+                    ),
                     message: "the variable `b` is not declared",
                 },
             ]
@@ -163,8 +158,12 @@ fn check_bad_function_in_program() {
         expect![[r#"
             [
                 Diagnostic {
-                    start: 6,
-                    end: 11,
+                    start: Location(
+                        6,
+                    ),
+                    end: Location(
+                        11,
+                    ),
                     message: "the function `a` is not declared",
                 },
             ]
@@ -183,8 +182,12 @@ fn check_bad_variable_in_function() {
         expect![[r#"
             [
                 Diagnostic {
-                    start: 33,
-                    end: 47,
+                    start: Location(
+                        33,
+                    ),
+                    end: Location(
+                        47,
+                    ),
                     message: "the variable `b` is not declared",
                 },
             ]
@@ -203,13 +206,21 @@ fn check_bad_function_in_function() {
         expect![[r#"
             [
                 Diagnostic {
-                    start: 29,
-                    end: 39,
+                    start: Location(
+                        29,
+                    ),
+                    end: Location(
+                        39,
+                    ),
                     message: "the function `add_two` is not declared",
                 },
                 Diagnostic {
-                    start: 42,
-                    end: 56,
+                    start: Location(
+                        42,
+                    ),
+                    end: Location(
+                        56,
+                    ),
                     message: "the variable `b` is not declared",
                 },
             ]
@@ -229,8 +240,12 @@ fn fix_bad_variable_in_function() {
         expect![[r#"
             [
                 Diagnostic {
-                    start: 32,
-                    end: 46,
+                    start: Location(
+                        32,
+                    ),
+                    end: Location(
+                        46,
+                    ),
                     message: "the variable `b` is not declared",
                 },
             ]
@@ -246,8 +261,79 @@ fn fix_bad_variable_in_function() {
             "#]],
             expect![[r#"
                 [
-                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_statements(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_source_program(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_program(0) } }",
                     "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_function(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(1) } }",
+                ]
+            "#]],
+        )],
+    );
+}
+
+#[test]
+fn fix_bug_in_function() {
+    check_string(
+        "
+            fn double(a) = a
+            fn quadruple(a) = double(double(a))
+            print quadruple(2)
+        ",
+        expect![[r#"
+            []
+        "#]],
+        &[(
+            "
+                fn double(a) = a * 2
+                fn quadruple(a) = double(double(a))
+                print quadruple(2)
+            ",
+            expect![[r#"
+                []
+            "#]],
+            // Important: quadruple does not get type-checked again, even though (for example)
+            // the positions of its various expressions and statements have changed.
+            expect![[r#"
+                [
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_source_program(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_program(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_function(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(1) } }",
+                ]
+            "#]],
+        )],
+    );
+}
+
+#[test]
+fn add_new_function() {
+    check_string(
+        "
+            fn quadruple(a) = a * 4
+            print quadruple(2)
+        ",
+        expect![[r#"
+            []
+        "#]],
+        &[(
+            "
+                fn double(a) = a * 2
+                fn quadruple(a) = a * 4
+                print quadruple(2)
+            ",
+            expect![[r#"
+                []
+            "#]],
+            // Note: `type_function` only executes once, not twice (huzzah),
+            // because we don't need to type-check `quadruple` again.
+            expect![[r#"
+                [
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_source_program(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_program(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_function(1) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: find_function(0) } }",
                 ]
             "#]],
         )],

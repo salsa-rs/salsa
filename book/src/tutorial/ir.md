@@ -60,6 +60,14 @@ let source = SourceProgram::new(&mut db, "print 11 + 11".to_string());
 You can read the value of the field with `source.text(&db)`, 
 and you can set the value of the field with `source.set_text(&mut db, "print 11 * 2".to_string())`.
 
+### The `return_ref` annotation
+
+You may have noticed that the `text` field of `SourceProgram` is annotated with `#[return_ref]`. 
+Ordinarily, the getter for a field clones the value of the field before returning it to you.
+But when the field is annotated with `return_ref`, the getter instead returns an `&`-reference to the fields content in the database.
+In other words, calling `source_program.text(db)` will return an `&String` with the lifetime of the database `db`.
+This is useful as a performance optimization.
+
 ### Database revisions
 
 Whenever a function takes an `&mut` reference to the database, 
@@ -69,12 +77,30 @@ When you change the value of an input field, that increments a 'revision counter
 indicating that some inputs are different now.
 When we talk about a "revision" of the database, we are referring to the state of the database in between changes to the input values.
 
-### Representing the parsed program
+## Tracked structs
 
-Next we will define a **tracked struct**.
+Next we will define various **tracked structs**. 
 Whereas inputs represent the *start* of a computation, tracked structs represent intermediate values created during your computation.
+You use tracked structs to identify the bits of state that will "line up" across revisions.
+When you define functions that read from those tracked structs, 
+we'll track which fields and from which struct instances,
+and then later see if the values of those fields (for those same struct instances)
+changed in the next revision.
+This will tell us if the function has to be re-executed or not.
 
-In this case, the parser is going to take in the `SourceProgram` struct that we saw and return a `Program` that represents the fully parsed program:
+### Tracked structs affect much reuse you get
+
+Typically, you use tracked structs to define the "big definitions" of your input.
+We'll use tracked structs to define the program itself and each function within it.
+This way, when the program is edited, we can localize the effect of those edits to see which functions changed.
+Because the function body itself is not defined with a tracked struct, we won't be able to track edits any more precisely than "something within the body changed". 
+This is fine, because processing a single function is not very expensive.
+There is a tradeoff here: tracking the content of a struct adds overhead, so you should generally prefer to have the tracked structs be relatively high-level things like a function, and not individual statements.
+
+### `Program`: Representing the parsed program
+
+The first tracked struct is called `Program`.
+It represents a fully parsed program (in contrast to the `SourceProgram` we saw earlier):
 
 ```rust
 {{#include ../../../calc-example/calc/src/ir.rs:program}}
@@ -90,9 +116,9 @@ Apart from the fields being immutable, the API for working with a tracked struct
 
 * You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Program::new(&db, some_staements)`)
 * You use a getter to read the value of a field, just like with an input (e.g., `my_func.statements(db)` to read the `statements` field).
-    * In this case, the field is tagged as `#[return_ref]`, which means that the getter will return a `&Vec<Statement>`, instead of cloning the vector.
+    * Like the `text` field we saw earlier, `statements` is annotated with `#[return_ref]`, and so the getter will return a `&Vec<Statement>`, instead of cloning the vector.
 
-## Representing functions
+### `Function`: Representing functions
 
 We will also use a tracked struct to represent each function:
 The `Function` struct is going to be created by the parser to represent each of the functions defined by the user:
@@ -101,7 +127,7 @@ The `Function` struct is going to be created by the parser to represent each of 
 {{#include ../../../calc-example/calc/src/ir.rs:functions}}
 ```
 
-If we had created some `Function` instance `f`, for example, we might find that `the f.body` field changes
+If we had created some `Function` instance `f`, for example, we might find that the `f.body` field changes
 because the user changed the definition of `f`.
 This would mean that we have to re-execute those parts of the code that depended on `f.body`
 (but not those parts of the code that depended on the body of *other* functions).
@@ -111,13 +137,52 @@ Apart from the fields being immutable, the API for working with a tracked struct
 * You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Function::new(&db, some_name, some_args, some_body)`)
 * You use a getter to read the value of a field, just like with an input (e.g., `my_func.args(db)` to read the `args` field).
 
-### id fields
+### `#[id]` fields
 
 To get better reuse across revisions, particularly when things are reordered, you can mark some entity fields with `#[id]`.
 Normally, you would do this on fields that represent the "name" of an entity.
 This indicates that, across two revisions R1 and R2, if two functions are created with the same name, they refer to the same entity, so we can compare their other fields for equality to determine what needs to be re-executed.
 Adding `#[id]` attributes is an optimization and never affects correctness.
 For more details, see the [algorithm](../reference/algorithm.md) page of the reference.
+(If you're familiar with React, the `#[id]` fields serve the same role as ["key" fields on the React dom](https://reactjs.org/docs/reconciliation.html#recursing-on-children).)
+
+### `Anchor`: Significant points in the program text
+
+The final tracked struct is called `Anchor`:
+
+```rust
+{{#include ../../../calc-example/calc/src/ir.rs:anchor}}
+```
+
+As the comment says, anchors are used to solve a common problem with incremental compilation.
+To give good error messages, you would like to track the "span" of each statement in the program:
+that is, you'd like to track the offset into the source string where the statement occurs
+(sometimes you track line/column information, instead, but it's the same idea).
+However, that information often changes across revisions, even if the actual statement hasn't changed at all.
+For example, if I have one function...
+
+```
+fn foo(a) = a * 2
+```
+
+...and I add another function on top of it...
+
+```
+fn bar(a) = a * 4
+fn foo(a) = a * 2
+```
+
+...the span information for `foo`, because it is now on line 2 instead of line 1,
+but it would be a waste of time to type-check it again.
+
+To address this problem, the `calc` compiler, tracks every span relative to an anchor:
+
+```rust
+{{#include ../../../calc-example/calc/src/ir.rs:span}}
+```
+
+Now, when we add `bar` before `foo` in the file, the content of `foo` itself doesn't change.
+The only thing that changes is the `location` field of the `Anchor`.
 
 ## Interned structs
 
