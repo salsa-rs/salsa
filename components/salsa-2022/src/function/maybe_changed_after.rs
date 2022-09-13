@@ -170,11 +170,17 @@ where
                 // during this revision or is otherwise stale.
                 return false;
             }
-            QueryOrigin::BaseInput | QueryOrigin::Field => {
-                // BaseInput: This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
-                // Field: This value is the value of a field of some tracked struct S. It is always updated whenever S is created.
-                // So if a query has access to S, then they will have an up-to-date value.
+            QueryOrigin::BaseInput => {
+                // This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
                 return true;
+            }
+            QueryOrigin::Field => {
+                // This value is the value of a field of some tracked struct S.
+                // The fact that we are here means that we are accessing fields from old revisions, which is not allowed.
+                panic!(
+                    "accessing fields of tracked struct {:?} from older revisions",
+                    std::any::type_name::<<C as Configuration>::SalsaStruct>()
+                )
             }
             QueryOrigin::DerivedUntracked(_) => {
                 // Untracked inputs? Have to assume that it changed.
