@@ -100,6 +100,8 @@ where
         C::Key: TrackedStructInDb<DynDb<'db, C>>,
     {
         self.specify(db, key, value, |_| QueryOrigin::Field);
+        let database_key_index = self.database_key_index(key);
+        db.runtime().add_output(database_key_index.into());
     }
 
     /// Specify the value for `key` *and* record that we did so.
@@ -138,6 +140,7 @@ where
         // assigneed by `executor`.
         match memo.revisions.origin {
             QueryOrigin::Assigned(by_query) => assert_eq!(by_query, executor),
+            QueryOrigin::Field => {}
             _ => panic!(
                 "expected a query assigned by `{:?}`, not `{:?}`",
                 executor.debug(db),
