@@ -367,7 +367,7 @@ fn parse_string(source_text: &str) -> String {
     let accumulated = parse_statements::accumulated::<Diagnostics>(&db, source_program);
 
     // Format the result as a string and return it
-    format!("{:#?}", (statements.debug(&db), accumulated))
+    format!("{:#?}", (statements.debug_all(&db), accumulated))
 }
 // ANCHOR_END: parse_string
 

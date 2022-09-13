@@ -33,7 +33,14 @@ use heck::ToUpperCamelCase;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use syn::spanned::Spanned;
 
+pub(crate) enum SalsaStructKind {
+    Input,
+    Tracked,
+    Interned,
+}
+
 pub(crate) struct SalsaStruct<A: AllowedOptions> {
+    kind: SalsaStructKind,
     args: Options<A>,
     struct_item: syn::ItemStruct,
     fields: Vec<SalsaField>,
@@ -43,20 +50,23 @@ const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 
 impl<A: AllowedOptions> SalsaStruct<A> {
     pub(crate) fn new(
+        kind: SalsaStructKind,
         args: proc_macro::TokenStream,
         input: proc_macro::TokenStream,
     ) -> syn::Result<Self> {
         let struct_item = syn::parse(input)?;
-        Self::with_struct(args, struct_item)
+        Self::with_struct(kind, args, struct_item)
     }
 
     pub(crate) fn with_struct(
+        kind: SalsaStructKind,
         args: proc_macro::TokenStream,
         struct_item: syn::ItemStruct,
     ) -> syn::Result<Self> {
         let args: Options<A> = syn::parse(args)?;
         let fields = Self::extract_options(&struct_item)?;
         Ok(Self {
+            kind,
             args,
             struct_item,
             fields,
@@ -85,6 +95,14 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     /// If this is an enum, empty iterator.
     pub(crate) fn all_fields(&self) -> impl Iterator<Item = &SalsaField> {
         self.fields.iter()
+    }
+
+    pub(crate) fn is_identity_field(&self, field: &SalsaField) -> bool {
+        match self.kind {
+            SalsaStructKind::Input => false,
+            SalsaStructKind::Tracked => field.has_id_attr,
+            SalsaStructKind::Interned => true,
+        }
     }
 
     /// Names of all fields (id and value).
@@ -295,34 +313,48 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         // `::salsa::debug::helper::SalsaDebug` will use `DebugWithDb` or fallbak to `Debug`
         let fields = self
             .all_fields()
-            .map(|field| {
+            .into_iter()
+            .map(|field| -> TokenStream {
                 let field_name_string = field.name().to_string();
                 let field_getter = field.get_name();
                 let field_ty = field.ty();
 
-                parse_quote_spanned! {field.field.span() =>
-                    .field(
+                let field_debug = quote_spanned! { field.field.span() =>
+                    debug_struct = debug_struct.field(
                         #field_name_string,
                         &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
                             #[allow(clippy::needless_borrow)]
                             &self.#field_getter(_db),
-                            _db
+                            _db,
+                            _include_all_fields
                         )
-                    )
+                    );
+                };
+
+                if self.is_identity_field(field) {
+                    quote_spanned! { field.field.span() =>
+                        #field_debug
+                    }
+                } else {
+                    quote_spanned! { field.field.span() =>
+                        if _include_all_fields {
+                            #field_debug
+                        }
+                    }
                 }
             })
-            .collect::<Vec<TokenStream>>();
+            .collect::<TokenStream>();
 
         // `use ::salsa::debug::helper::Fallback` is needed for the fallback to `Debug` impl
         parse_quote_spanned! {ident.span()=>
             impl ::salsa::DebugWithDb<#db_type> for #ident {
-                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type) -> ::std::fmt::Result {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type, _include_all_fields: bool) -> ::std::fmt::Result {
                     #[allow(unused_imports)]
                     use ::salsa::debug::helper::Fallback;
-                    f.debug_struct(#ident_string)
-                        .field("[salsa id]", &self.0.as_u32())
-                        #(#fields)*
-                        .finish()
+                    let mut debug_struct = &mut f.debug_struct(#ident_string);
+                    debug_struct = debug_struct.field("[salsa id]", &self.0.as_u32());
+                    #fields
+                    debug_struct.finish()
                 }
             }
         }

@@ -38,7 +38,12 @@ impl<Db> crate::debug::DebugWithDb<Db> for DependencyIndex
 where
     Db: ?Sized + Database,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        _include_all_fields: bool,
+    ) -> std::fmt::Result {
         db.fmt_index(*self, f)
     }
 }
@@ -68,9 +73,14 @@ impl<Db> crate::debug::DebugWithDb<Db> for DatabaseKeyIndex
 where
     Db: ?Sized + Database,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        db: &Db,
+        include_all_fields: bool,
+    ) -> std::fmt::Result {
         let i: DependencyIndex = (*self).into();
-        DebugWithDb::fmt(&i, f, db)
+        DebugWithDb::fmt(&i, f, db, include_all_fields)
     }
 }
 
