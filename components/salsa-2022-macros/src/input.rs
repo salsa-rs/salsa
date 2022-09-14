@@ -51,8 +51,6 @@ impl crate::options::AllowedOptions for InputStruct {
 
 impl InputStruct {
     fn generate_input(&self) -> syn::Result<TokenStream> {
-        self.validate_input()?;
-
         let id_struct = self.id_struct();
         let inherent_impl = self.input_inherent_impl();
         let ingredients_for_impl = self.input_ingredients();
@@ -68,12 +66,6 @@ impl InputStruct {
             #as_debug_with_db_impl
             #salsa_struct_in_db_impl
         })
-    }
-
-    fn validate_input(&self) -> syn::Result<()> {
-        // check for dissalowed fields
-        self.disallow_id_fields("input")?;
-        Ok(())
     }
 
     /// Generate an inherent impl with methods on the entity type.
@@ -112,8 +104,16 @@ impl InputStruct {
         )
         .collect();
 
+        // setters
         let set_field_names = self.all_set_field_names();
-        let field_setters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&set_field_names).zip(&field_vises).zip(&field_tys).map(|(((field_index, set_field_name), field_vis), field_ty)| {
+        let field_immuts = self.all_fields_immuts();
+        let field_setters: Vec<syn::ImplItemMethod> = field_indices.iter()
+            .zip(&set_field_names)
+            .zip(&field_vises)
+            .zip(&field_tys)
+            .zip(&field_immuts)
+            .filter(|(_, &is_immut )| !is_immut)
+            .map(|((((field_index, set_field_name), field_vis), field_ty), _)| {
             parse_quote! {
                 #field_vis fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty) -> salsa::setter::Setter<'db, #ident, #field_ty>
                 {
@@ -287,6 +287,10 @@ impl InputStruct {
             .zip(0..)
             .map(|(_, i)| Literal::usize_unsuffixed(i))
             .collect()
+    }
+
+    fn all_fields_immuts(&self) -> Vec<bool> {
+        self.all_fields().map(|f| f.has_id_attr).collect()
     }
 
     /// Implementation of `SalsaStructInDb`.

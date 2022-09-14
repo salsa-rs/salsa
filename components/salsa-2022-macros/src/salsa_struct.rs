@@ -99,8 +99,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
     pub(crate) fn is_identity_field(&self, field: &SalsaField) -> bool {
         match self.kind {
-            SalsaStructKind::Input => false,
-            SalsaStructKind::Tracked => field.has_id_attr,
+            SalsaStructKind::Input | SalsaStructKind::Tracked => field.has_id_attr,
             SalsaStructKind::Interned => true,
         }
     }
