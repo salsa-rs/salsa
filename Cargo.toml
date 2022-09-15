@@ -35,6 +35,7 @@ members = [
     "components/salsa-macros",
     "components/salsa-2022",
     "components/salsa-2022-macros",
-    "calc-example/calc",
+    "examples-2022/calc",
+    "examples-2022/lazy-input",
     "salsa-2022-tests",
 ]

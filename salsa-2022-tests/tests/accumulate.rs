@@ -85,7 +85,7 @@ fn accumulate_once() {
     let mut db = Database::default();
 
     // Just call accumulate on a base input to see what happens.
-    let input = MyInput::new(&mut db, 2, 3);
+    let input = MyInput::new(&db, 2, 3);
     let logs = push_logs::accumulated::<Logs>(&db, input);
     expect![[r#"
         [
@@ -109,7 +109,7 @@ fn change_a_and_reaccumulate() {
     let mut db = Database::default();
 
     // Accumulate logs for `a = 2` and `b = 3`
-    let input = MyInput::new(&mut db, 2, 3);
+    let input = MyInput::new(&db, 2, 3);
     let logs = push_logs::accumulated::<Logs>(&db, input);
     expect![[r#"
         [
@@ -148,7 +148,7 @@ fn get_a_logs_after_changing_b() {
     let mut db = Database::default();
 
     // Invoke `push_a_logs` with `a = 2` and `b = 3` (but `b` doesn't matter)
-    let input = MyInput::new(&mut db, 2, 3);
+    let input = MyInput::new(&db, 2, 3);
     let logs = push_a_logs::accumulated::<Logs>(&db, input);
     expect![[r#"
         [

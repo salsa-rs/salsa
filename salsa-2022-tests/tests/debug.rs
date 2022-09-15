@@ -36,13 +36,13 @@ impl Db for Database {}
 
 #[test]
 fn input() {
-    let mut db = Database::default();
+    let db = Database::default();
 
-    let input = MyInput::new(&mut db, 22);
+    let input = MyInput::new(&db, 22);
     let not_salsa = NotSalsa {
         field: "it's salsa time".to_string(),
     };
-    let complex_struct = ComplexStruct::new(&mut db, input, not_salsa);
+    let complex_struct = ComplexStruct::new(&db, input, not_salsa);
 
     // default debug only includes identity fields
     let actual = format!("{:?}", complex_struct.debug(&db));

@@ -33,7 +33,7 @@ where
 
     pub fn to(self, value: F) -> F {
         self.ingredient
-            .store(self.runtime, self.key, value, self.durability)
+            .store_mut(self.runtime, self.key, value, self.durability)
             .unwrap()
     }
 }

@@ -4,18 +4,23 @@ use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::StampedValue;
 use crate::{AsId, DatabaseKeyIndex, Durability, Id, IngredientIndex, Revision, Runtime};
-use rustc_hash::FxHashMap;
+use dashmap::mapref::entry::Entry;
+use dashmap::DashMap;
 use std::fmt;
 use std::hash::Hash;
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
-/// These fields can only be mutated by an explicit call to a setter
-/// with an `&mut` reference to the database,
-/// and therefore cannot be mutated during a tracked function or in parallel.
-/// This makes the implementation considerably simpler.
+///
+/// These fields can only be mutated by a call to a setter with an `&mut`
+/// reference to the database, and therefore cannot be mutated during a tracked
+/// function or in parallel.
+/// However for on-demand inputs to work the fields must be able to be set via
+/// a shared reference, so some locking is required.
+/// Altogether this makes the implementation somewhat simpler than tracked
+/// structs.
 pub struct InputFieldIngredient<K, F> {
     index: IngredientIndex,
-    map: FxHashMap<K, StampedValue<F>>,
+    map: DashMap<K, Box<StampedValue<F>>>,
     debug_name: &'static str,
 }
 
@@ -31,33 +36,52 @@ where
         }
     }
 
-    pub fn store(
+    pub fn store_mut(
         &mut self,
-        runtime: &mut Runtime,
+        runtime: &Runtime,
         key: K,
         value: F,
         durability: Durability,
     ) -> Option<F> {
         let revision = runtime.current_revision();
-        let stamped_value = StampedValue {
+        let stamped_value = Box::new(StampedValue {
             value,
             durability,
             changed_at: revision,
-        };
+        });
 
-        if let Some(old_value) = self.map.insert(key, stamped_value) {
-            Some(old_value.value)
-        } else {
-            None
+        self.map
+            .insert(key, stamped_value)
+            .map(|old_value| old_value.value)
+    }
+
+    /// Set the field of a new input.
+    ///
+    /// This function panics if the field has ever been set before.
+    pub fn store_new(&self, runtime: &Runtime, key: K, value: F, durability: Durability) {
+        let revision = runtime.current_revision();
+        let stamped_value = Box::new(StampedValue {
+            value,
+            durability,
+            changed_at: revision,
+        });
+
+        match self.map.entry(key) {
+            Entry::Occupied(_) => {
+                panic!("attempted to set field of existing input using `store_new`, use `store_mut` instead");
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(stamped_value);
+            }
         }
     }
 
-    pub fn fetch(&self, runtime: &Runtime, key: K) -> &F {
+    pub fn fetch<'db>(&'db self, runtime: &'db Runtime, key: K) -> &F {
         let StampedValue {
             value,
             durability,
             changed_at,
-        } = self.map.get(&key).unwrap();
+        } = &**self.map.get(&key).unwrap();
 
         runtime.report_tracked_read(
             self.database_key_index(key).into(),
@@ -65,7 +89,11 @@ where
             *changed_at,
         );
 
-        value
+        // SAFETY:
+        // The value is stored in a box so internal moves in the dashmap don't
+        // invalidate the reference to the value inside the box.
+        // Values are only removed or altered when we have `&mut self`.
+        unsafe { transmute_lifetime(self, value) }
     }
 
     fn database_key_index(&self, key: K) -> DatabaseKeyIndex {
@@ -74,6 +102,14 @@ where
             key_index: key.as_id(),
         }
     }
+}
+
+// Returns `u` but with the lifetime of `t`.
+//
+// Safe if you know that data at `u` will remain shared
+// until the reference `t` expires.
+unsafe fn transmute_lifetime<'t, 'u, T, U>(_t: &'t T, u: &'u U) -> &'t U {
+    std::mem::transmute(u)
 }
 
 impl<DB: ?Sized, K, F> Ingredient<DB> for InputFieldIngredient<K, F>

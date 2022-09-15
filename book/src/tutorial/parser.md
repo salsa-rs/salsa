@@ -17,7 +17,7 @@ We're going to focus only on the Salsa-related aspects.
 The starting point for the parser is the `parse_statements` function:
 
 ```rust
-{{#include ../../../calc-example/calc/src/parser.rs:parse_statements}}
+{{#include ../../../examples-2022/calc/src/parser.rs:parse_statements}}
 ```
 
 This function is annotated as `#[salsa::tracked]`.

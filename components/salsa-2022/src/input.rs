@@ -1,4 +1,7 @@
-use std::fmt;
+use std::{
+    fmt,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use crate::{
     cycle::CycleRecoveryStrategy,
@@ -16,7 +19,7 @@ where
     Id: InputId,
 {
     ingredient_index: IngredientIndex,
-    counter: u32,
+    counter: AtomicU32,
     debug_name: &'static str,
     _phantom: std::marker::PhantomData<Id>,
 }
@@ -41,24 +44,20 @@ where
         }
     }
 
-    pub fn new_input(&mut self, _runtime: &mut Runtime) -> Id {
-        let next_id = self.counter;
-        self.counter += 1;
+    pub fn new_input(&self, _runtime: &Runtime) -> Id {
+        let next_id = self.counter.fetch_add(1, Ordering::Relaxed);
         Id::from_id(crate::Id::from_u32(next_id))
     }
 
-    pub fn new_singleton_input(&mut self, _runtime: &mut Runtime) -> Id {
-        if self.counter >= 1 {
-            // already exists
-            Id::from_id(crate::Id::from_u32(self.counter - 1))
-        } else {
-            self.new_input(_runtime)
-        }
+    pub fn new_singleton_input(&mut self, _runtime: &Runtime) -> Id {
+        // There's only one singleton so record that we've created it
+        // and return the only id.
+        self.counter.store(1, Ordering::Relaxed);
+        Id::from_id(crate::Id::from_u32(0))
     }
 
     pub fn get_singleton_input(&self, _runtime: &Runtime) -> Option<Id> {
-        (self.counter > 0)
-            .then(|| Id::from_id(crate::Id::from_id(crate::Id::from_u32(self.counter - 1))))
+        (self.counter.load(Ordering::Relaxed) > 0).then(|| Id::from_id(crate::Id::from_u32(0)))
     }
 }
 

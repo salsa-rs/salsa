@@ -36,7 +36,7 @@ impl HasLogger for Database {
 fn execute() {
     let mut db = Database::default();
 
-    let input = MyInput::new(&mut db, "Hello".to_string());
+    let input = MyInput::new(&db, "Hello".to_string());
 
     // Overwrite field with an empty String
     // and store the old value in my_string

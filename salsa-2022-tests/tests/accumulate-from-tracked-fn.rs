@@ -65,8 +65,8 @@ impl HasLogger for Database {
 fn test1() {
     let mut db = Database::default();
 
-    let l0 = List::new(&mut db, 1, None);
-    let l1 = List::new(&mut db, 10, Some(l0));
+    let l0 = List::new(&db, 1, None);
+    let l1 = List::new(&db, 10, Some(l0));
 
     compute(&db, l1);
     expect![[r#"

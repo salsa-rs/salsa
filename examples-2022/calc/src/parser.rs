@@ -355,10 +355,10 @@ fn parse_string(source_text: &str) -> String {
     use salsa::debug::DebugWithDb;
 
     // Create the database
-    let mut db = crate::db::Database::default();
+    let db = crate::db::Database::default();
 
     // Create the source program
-    let source_program = SourceProgram::new(&mut db, source_text.to_string());
+    let source_program = SourceProgram::new(&db, source_text.to_string());
 
     // Invoke the parser
     let statements = parse_statements(&db, source_program);

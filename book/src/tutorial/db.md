@@ -7,10 +7,10 @@ the one which starts up the program, supplies the inputs, and relays the outputs
 
 In `calc`, the database struct is in the [`db`] module, and it looks like this:
 
-[`db`]: https://github.com/salsa-rs/salsa/blob/master/calc-example/calc/src/db.rs
+[`db`]: https://github.com/salsa-rs/salsa/blob/master/examples-2022/calc/src/db.rs
 
 ```rust
-{{#include ../../../calc-example/calc/src/db.rs:db_struct}}
+{{#include ../../../examples-2022/calc/src/db.rs:db_struct}}
 ```
 
 The `#[salsa::db(...)]` attribute takes a list of all the jars to include.
@@ -24,7 +24,7 @@ The `salsa::db` attribute autogenerates a bunch of impls for things like the `sa
 In addition to the struct itself, we must add an impl of `salsa::Database`:
 
 ```rust
-{{#include ../../../calc-example/calc/src/db.rs:db_impl}}
+{{#include ../../../examples-2022/calc/src/db.rs:db_impl}}
 ```
 
 ## Implementing the `salsa::ParallelDatabase` trait
@@ -32,7 +32,7 @@ In addition to the struct itself, we must add an impl of `salsa::Database`:
 If you want to permit accessing your database from multiple threads at once, then you also need to implement the `ParallelDatabase` trait:
 
 ```rust
-{{#include ../../../calc-example/calc/src/db.rs:par_db_impl}}
+{{#include ../../../examples-2022/calc/src/db.rs:par_db_impl}}
 ```
 
 ## Implementing the `Default` trait
@@ -40,7 +40,7 @@ If you want to permit accessing your database from multiple threads at once, the
 It's not required, but implementing the `Default` trait is often a convenient way to let users instantiate your database:
 
 ```rust
-{{#include ../../../calc-example/calc/src/db.rs:default_impl}}
+{{#include ../../../examples-2022/calc/src/db.rs:default_impl}}
 ```
 
 ## Implementing the traits for each jar

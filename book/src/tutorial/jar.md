@@ -19,7 +19,7 @@ This permits the crates to define private functions and other things that are me
 To define a jar struct, you create a tuple struct with the `#[salsa::jar]` annotation:
 
 ```rust
-{{#include ../../../calc-example/calc/src/main.rs:jar_struct}}
+{{#include ../../../examples-2022/calc/src/main.rs:jar_struct}}
 ```
 
 Although it's not required, it's highly recommended to put the `jar` struct at the root of your crate, so that it can be referred to as `crate::Jar`.
@@ -36,7 +36,7 @@ This allows for separate compilation, where you have a database that contains th
 The database trait for our `calc` crate is very simple:
 
 ```rust
-{{#include ../../../calc-example/calc/src/main.rs:jar_db}}
+{{#include ../../../examples-2022/calc/src/main.rs:jar_db}}
 ```
 
 When you define a database trait like `Db`, the one thing that is required is that it must have a supertrait `salsa::DbWithJar<Jar>`,
@@ -57,7 +57,7 @@ a common choice is to write a blanket impl for any type that implements `DbWithJ
 and that's what we do here:
 
 ```rust
-{{#include ../../../calc-example/calc/src/main.rs:jar_db_impl}}
+{{#include ../../../examples-2022/calc/src/main.rs:jar_db_impl}}
 ```
 
 ## Summary
