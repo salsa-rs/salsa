@@ -183,10 +183,10 @@ fn parse_string(source_text: &amp;str) -&gt; String {
     use salsa::debug::DebugWithDb;
 
     // Create the database
-    let mut db = crate::db::Database::default();
+    let db = crate::db::Database::default();
 
     // Create the source program
-    let source_program = SourceProgram::new(&amp;mut db, source_text.to_string());
+    let source_program = SourceProgram::new(&amp;db, source_text.to_string());
 
     // Invoke the parser
     let statements = parse_statements(&amp;db, source_program);

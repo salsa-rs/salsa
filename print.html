@@ -645,7 +645,7 @@ and that's what we do here:</p>
 The database struct is where all the jars come together.
 Typically it is only used by the &quot;driver&quot; of your application;
 the one which starts up the program, supplies the inputs, and relays the outputs.</p>
-<p>In <code>calc</code>, the database struct is in the <a href="https://github.com/salsa-rs/salsa/blob/master/calc-example/calc/src/db.rs"><code>db</code></a> module, and it looks like this:</p>
+<p>In <code>calc</code>, the database struct is in the <a href="https://github.com/salsa-rs/salsa/blob/master/examples-2022/calc/src/db.rs"><code>db</code></a> module, and it looks like this:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1124,10 +1124,10 @@ fn parse_string(source_text: &amp;str) -&gt; String {
     use salsa::debug::DebugWithDb;
 
     // Create the database
-    let mut db = crate::db::Database::default();
+    let db = crate::db::Database::default();
 
     // Create the source program
-    let source_program = SourceProgram::new(&amp;mut db, source_text.to_string());
+    let source_program = SourceProgram::new(&amp;db, source_text.to_string());
 
     // Invoke the parser
     let statements = parse_statements(&amp;db, source_program);
@@ -1384,52 +1384,137 @@ is going to produce a deep copy of the result. As a simple fix, you
 might convert your data structures to use <code>Arc</code> (e.g., <code>Arc&lt;Vec&lt;ParsedHeader&gt;&gt;</code>),
 which makes cloning cheap.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="on-demand-lazy-inputs"><a class="header" href="#on-demand-lazy-inputs">On-Demand (Lazy) Inputs</a></h1>
-<p>Salsa input queries work best if you can easily provide all of the inputs upfront.
+<blockquote>
+<p>⚠️ <strong>IN-PROGRESS VERSION OF SALSA.</strong> ⚠️</p>
+<p>This page describes the unreleased &quot;Salsa 2022&quot; version, which is a major departure from older versions of salsa. The code here works but is only available on github and from the <code>salsa-2022</code> crate.</p>
+</blockquote>
+<p>Salsa inputs work best if you can easily provide all of the inputs upfront.
 However sometimes the set of inputs is not known beforehand.</p>
 <p>A typical example is reading files from disk.
-While it is possible to eagerly scan a particular directory and create an in-memory file tree in a salsa input query, a more straight-forward approach is to read the files lazily.
-That is, when someone requests the text of a file for the first time:</p>
+While it is possible to eagerly scan a particular directory and create an in-memory file tree as salsa input structs, a more straight-forward approach is to read the files lazily.
+That is, when a query requests the text of a file for the first time:</p>
 <ol>
 <li>Read the file from disk and cache it.</li>
 <li>Setup a file-system watcher for this path.</li>
-<li>Invalidate the cached file once the watcher sends a change notification.</li>
+<li>Update the cached file when the watcher sends a change notification.</li>
 </ol>
-<p>This is possible to achieve in salsa, using a derived query and <code>report_synthetic_read</code> and <code>invalidate</code> queries.
-The setup looks roughly like this:</p>
-<pre><code class="language-rust ignore">#[salsa::query_group(VfsDatabaseStorage)]
-trait VfsDatabase: salsa::Database + FileWatcher {
-    fn read(&amp;self, path: PathBuf) -&gt; String;
+<p>This is possible to achieve in salsa, by caching the inputs in your database structs and adding a method to the database trait to retrieve them out of this cache.</p>
+<p>A complete, runnable file-watching example can be found in <a href="https://github.com/salsa-rs/salsa/tree/master/examples-2022/lazy-input">the lazy-input example</a>.</p>
+<p>The setup looks roughly like this:</p>
+<pre><code class="language-rust ignore">#[salsa::input]
+struct File {
+    path: PathBuf,
+    #[return_ref]
+    contents: String,
 }
 
-trait FileWatcher {
-    fn watch(&amp;self, path: &amp;Path);
-    fn did_change_file(&amp;mut self, path: &amp;Path);
+trait Db: salsa::DbWithJar&lt;Jar&gt; {
+    fn input(&amp;self, path: PathBuf) -&gt; Result&lt;File&gt;;
 }
 
-fn read(db: &amp;dyn VfsDatabase, path: PathBuf) -&gt; String {
-    db.salsa_runtime()
-        .report_synthetic_read(salsa::Durability::LOW);
-    db.watch(&amp;path);
-    std::fs::read_to_string(&amp;path).unwrap_or_default()
+#[salsa::db(Jar)]
+struct Database {
+    storage: salsa::Storage&lt;Self&gt;,
+    logs: Mutex&lt;Vec&lt;String&gt;&gt;,
+    files: DashMap&lt;PathBuf, File&gt;,
+    file_watcher: Mutex&lt;Debouncer&lt;RecommendedWatcher&gt;&gt;,
 }
 
-#[salsa::database(VfsDatabaseStorage)]
-struct MyDatabase { ... }
+impl Database {
+    fn new(tx: Sender&lt;DebounceEventResult&gt;) -&gt; Self {
+        let storage = Default::default();
+        Self {
+            storage,
+            logs: Default::default(),
+            files: DashMap::new(),
+            file_watcher: Mutex::new(new_debouncer(Duration::from_secs(1), None, tx).unwrap()),
+        }
+    }
+}
 
-impl FileWatcher for MyDatabase {
-    fn watch(&amp;self, path: &amp;Path) { ... }
-    fn did_change_file(&amp;mut self, path: &amp;Path) {
-        ReadQuery.in_db_mut(self).invalidate(path);
+impl Db for Database {
+    fn input(&amp;self, path: PathBuf) -&gt; Result&lt;File&gt; {
+        let path = path
+            .canonicalize()
+            .wrap_err_with(|| format!(&quot;Failed to read {}&quot;, path.display()))?;
+        Ok(match self.files.entry(path.clone()) {
+            // If the file already exists in our cache then just return it.
+            Entry::Occupied(entry) =&gt; *entry.get(),
+            // If we haven't read this file yet set up the watch, read the
+            // contents, store it in the cache, and return it.
+            Entry::Vacant(entry) =&gt; {
+                // Set up the watch before reading the contents to try to avoid
+                // race conditions.
+                let watcher = &amp;mut *self.file_watcher.lock().unwrap();
+                watcher
+                    .watcher()
+                    .watch(&amp;path, RecursiveMode::NonRecursive)
+                    .unwrap();
+                let contents = std::fs::read_to_string(&amp;path)
+                    .wrap_err_with(|| format!(&quot;Failed to read {}&quot;, path.display()))?;
+                *entry.insert(File::new(self, path, contents))
+            }
+        })
     }
 }
 </code></pre>
 <ul>
-<li>We declare the query as a derived query (which is the default).</li>
-<li>In the query implementation, we don't call any other query and just directly read file from disk.</li>
-<li>Because the query doesn't read any inputs, it will be assigned a <code>HIGH</code> durability by default, which we override with <code>report_synthetic_read</code>.</li>
-<li>The result of the query is cached, and we must call <code>invalidate</code> to clear this cache.</li>
+<li>We declare a method on the <code>Db</code> trait that gives us a <code>File</code> input on-demand (it only requires a <code>&amp;dyn Db</code> not a <code>&amp;mut dyn Db</code>).</li>
+<li>There should only be one input struct per file, so we implement that method using a cache (<code>DashMap</code> is like a <code>RwLock&lt;HashMap&gt;</code>).</li>
 </ul>
-<p>A complete, runnable file-watching example can be found in <a href="https://github.com/ChristopherBiscardi/salsa-file-watch-example/blob/f968dc8ea13a90373f91d962f173de3fe6ae24cd/main.rs">this git repo</a> along with <a href="https://www.christopherbiscardi.com/on-demand-lazy-inputs-for-incremental-computation-in-salsa-with-file-watching-powered-by-notify-in-rust">a write-up</a> that explains more about the code and what it is doing.</p>
+<p>The driving code that's doing the top-level queries is then in charge of updating the file contents when a file-change notification arrives.
+It does this by updating the Salsa input in the same way that you would update any other input.</p>
+<p>Here we implement a simple driving loop, that recompiles the code whenever a file changes.
+You can use the logs to check that only the queries that could have changed are re-evaluated.</p>
+<pre><code class="language-rust ignore">fn main() -&gt; Result&lt;()&gt; {
+    // Create the channel to receive file change events.
+    let (tx, rx) = unbounded();
+    let mut db = Database::new(tx);
+
+    let initial_file_path = std::env::args_os()
+        .nth(1)
+        .ok_or_else(|| eyre!(&quot;Usage: ./lazy-input &lt;input-file&gt;&quot;))?;
+
+    // Create the initial input using the input method so that changes to it
+    // will be watched like the other files.
+    let initial = db.input(initial_file_path.into())?;
+    loop {
+        // Compile the code starting at the provided input, this will read other
+        // needed files using the on-demand mechanism.
+        let sum = compile(&amp;db, initial);
+        let diagnostics = compile::accumulated::&lt;Diagnostic&gt;(&amp;db, initial);
+        if diagnostics.is_empty() {
+            println!(&quot;Sum is: {}&quot;, sum);
+        } else {
+            for diagnostic in diagnostics {
+                println!(&quot;{}&quot;, diagnostic);
+            }
+        }
+
+        for log in db.logs.lock().unwrap().drain(..) {
+            eprintln!(&quot;{}&quot;, log);
+        }
+
+        // Wait for file change events, the output can't change unless the
+        // inputs change.
+        for event in rx.recv()?.unwrap() {
+            let path = event.path.canonicalize().wrap_err_with(|| {
+                format!(&quot;Failed to canonicalize path {}&quot;, event.path.display())
+            })?;
+            let file = match db.files.get(&amp;path) {
+                Some(file) =&gt; *file,
+                None =&gt; continue,
+            };
+            // `path` has changed, so read it and update the contents to match.
+            // This creates a new revision and causes the incremental algorithm
+            // to kick in, just like any other update to a salsa input.
+            let contents = std::fs::read_to_string(path)
+                .wrap_err_with(|| format!(&quot;Failed to read file {}&quot;, event.path.display()))?;
+            file.set_contents(&amp;mut db).to(contents);
+        }
+    }
+}
+</code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="tuning-salsa"><a class="header" href="#tuning-salsa">Tuning Salsa</a></h1>
 <h2 id="lru-cache"><a class="header" href="#lru-cache">LRU Cache</a></h2>
 <p>You can specify an LRU cache size for any non-input query:</p>
