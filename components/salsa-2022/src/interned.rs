@@ -89,20 +89,31 @@ where
             return *id;
         }
 
-        match self.key_map.entry(data.clone()) {
-            // Data has already been interned, just use the existing ID
-            dashmap::mapref::entry::Entry::Occupied(entry) => *entry.get(),
-            // Insert the new value at the next available id
-            // This holds a lock on the entry so other can't attempt to insert
-            // at the same time.
+        let next_id = self.counter.fetch_add(1);
+        let next_id = Id::from_id(crate::id::Id::from_u32(next_id));
+        // Insert the data into the value map. This temporarily breaks the
+        // invariant that value_map and key_map are opposites, this is fine
+        // because bno-one has the value next_id so it's not observable.
+        let old_value = self.value_map.insert(next_id, Box::new(data.clone()));
+        assert!(
+            old_value.is_none(),
+            "next_id is guaranteed to be unique, bar overflow"
+        );
+        match self.key_map.entry(data) {
+            // Data has been interned by a racing call, use that ID instead
+            dashmap::mapref::entry::Entry::Occupied(entry) => {
+                // Return the interned ID set by the thread that beat us here.
+                let id = *entry.get();
+                // Release the lock on key_map so we don't deadlock.
+                drop(entry);
+                // Fixup the broken invariant by removing the vale we just
+                // optimistically added.
+                self.value_map.remove(&next_id);
+                id
+            }
+            // We won any races so can complete the interning
             dashmap::mapref::entry::Entry::Vacant(entry) => {
-                let next_id = self.counter.fetch_add(1);
-                let next_id = Id::from_id(crate::id::Id::from_u32(next_id));
-                let old_value = self.value_map.insert(next_id, Box::new(data));
-                assert!(
-                    old_value.is_none(),
-                    "next_id is guaranteed to be unique, bar overflow"
-                );
+                // Fixup the broken invariant by adding next_id to the key_map.
                 entry.insert(next_id);
                 next_id
             }
