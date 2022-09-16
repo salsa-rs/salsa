@@ -67,8 +67,7 @@ impl Stack {
         match origin {
             None
             | Some(QueryOrigin::Assigned(_))
-            | Some(QueryOrigin::BaseInput)
-            | Some(QueryOrigin::Field) => {}
+            | Some(QueryOrigin::BaseInput) => {}
             Some(QueryOrigin::Derived(edges)) | Some(QueryOrigin::DerivedUntracked(edges)) => {
                 for DependencyIndex {
                     ingredient_index,

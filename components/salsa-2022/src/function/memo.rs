@@ -55,8 +55,7 @@ impl<K: AsId, V> MemoMap<K, V> {
             match memo.revisions.origin {
                 QueryOrigin::Assigned(_)
                 | QueryOrigin::DerivedUntracked(_)
-                | QueryOrigin::BaseInput
-                | QueryOrigin::Field => {
+                | QueryOrigin::BaseInput => {
                     // Careful: Cannot evict memos whose values were
                     // assigned as output of another query
                     // or those with untracked inputs

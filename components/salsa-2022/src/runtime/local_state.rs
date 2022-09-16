@@ -60,10 +60,6 @@ pub enum QueryOrigin {
     /// The `DatabaseKeyIndex` is the identity of the assigning query.
     Assigned(DatabaseKeyIndex),
 
-    /// This is the value field of a tracked struct.
-    /// These are different from `Assigned` because we know they will always be assigned a value and hence are never "out of date".
-    Field,
-
     /// This value was set as a base input to the computation.
     BaseInput,
 
@@ -86,7 +82,7 @@ impl QueryOrigin {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => {
                 &edges.input_outputs[edges.separator as usize..]
             }
-            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput | QueryOrigin::Field => &[],
+            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => &[],
         };
 
         slice.iter().copied()
