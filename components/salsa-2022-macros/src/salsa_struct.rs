@@ -121,11 +121,6 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         self.all_fields().map(|ef| ef.get_name()).collect()
     }
 
-    /// Names of setters of all fields
-    pub(crate) fn all_set_field_names(&self) -> Vec<&syn::Ident> {
-        self.all_fields().map(|ef| ef.set_name()).collect()
-    }
-
     /// Types of all fields (id and value).
     ///
     /// If this is an enum, empty vec.

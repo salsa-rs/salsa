@@ -106,14 +106,11 @@ impl InputStruct {
 
         // setters
         let set_field_names = self.all_set_field_names();
-        let field_immuts = self.all_fields_immuts();
         let field_setters: Vec<syn::ImplItemMethod> = field_indices.iter()
             .zip(&set_field_names)
             .zip(&field_vises)
             .zip(&field_tys)
-            .zip(&field_immuts)
-            .filter(|(_, &is_immut )| !is_immut)
-            .map(|((((field_index, set_field_name), field_vis), field_ty), _)| {
+            .map(|(((field_index, set_field_name), field_vis), field_ty)| {
             parse_quote! {
                 #field_vis fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty) -> salsa::setter::Setter<'db, #ident, #field_ty>
                 {
@@ -130,13 +127,18 @@ impl InputStruct {
 
         let constructor: syn::ImplItemMethod = if singleton {
             parse_quote! {
-                pub fn #constructor_name(__db: &mut #db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
+                /// Creates a new singleton input
+                ///
+                /// # Panics
+                ///
+                /// If called when an instance already exists
+                pub fn #constructor_name(__db: &#db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
                 {
-                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
-                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient_mut(__jar);
+                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
+                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
                     let __id = __ingredients.#input_index.new_singleton_input(__runtime);
                     #(
-                        __ingredients.#field_indices.store_mut(__runtime, __id, #field_names, salsa::Durability::LOW);
+                        __ingredients.#field_indices.store_new(__runtime, __id, #field_names, salsa::Durability::LOW);
                     )*
                     __id
                 }
@@ -162,7 +164,7 @@ impl InputStruct {
                 pub fn get(__db: &#db_dyn_ty) -> Self {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                    __ingredients.#input_index.get_singleton_input(__runtime).expect("singleton not yet initialized")
+                    __ingredients.#input_index.get_singleton_input(__runtime).expect("singleton input struct not yet initialized")
                 }
             };
 
@@ -289,8 +291,13 @@ impl InputStruct {
             .collect()
     }
 
-    fn all_fields_immuts(&self) -> Vec<bool> {
-        self.all_fields().map(|f| f.has_id_attr).collect()
+    /// Names of setters of all fields
+    /// setters are not created for fields with #[id] tag so they'll be safe to include in debug formatting
+    pub(crate) fn all_set_field_names(&self) -> Vec<&syn::Ident> {
+        self.all_fields()
+            .filter(|&field| !field.has_id_attr)
+            .map(|ef| ef.set_name())
+            .collect()
     }
 
     /// Implementation of `SalsaStructInDb`.

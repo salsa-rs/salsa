@@ -49,13 +49,16 @@ where
         Id::from_id(crate::Id::from_u32(next_id))
     }
 
-    pub fn new_singleton_input(&mut self, _runtime: &Runtime) -> Id {
-        // There's only one singleton so record that we've created it
-        // and return the only id.
+    pub fn new_singleton_input(&self, _runtime: &Runtime) -> Id {
+        // when one exists already, panic
+        if self.counter.load(Ordering::Relaxed) >= 1 {
+            panic!("Singleton struct may not be duplicated");
+        }
+        // fresh new ingredient
         self.counter.store(1, Ordering::Relaxed);
         Id::from_id(crate::Id::from_u32(0))
     }
-
+    
     pub fn get_singleton_input(&self, _runtime: &Runtime) -> Option<Id> {
         (self.counter.load(Ordering::Relaxed) > 0).then(|| Id::from_id(crate::Id::from_u32(0)))
     }
