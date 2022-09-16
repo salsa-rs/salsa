@@ -58,7 +58,7 @@ where
         self.counter.store(1, Ordering::Relaxed);
         Id::from_id(crate::Id::from_u32(0))
     }
-    
+
     pub fn get_singleton_input(&self, _runtime: &Runtime) -> Option<Id> {
         (self.counter.load(Ordering::Relaxed) > 0).then(|| Id::from_id(crate::Id::from_u32(0)))
     }
