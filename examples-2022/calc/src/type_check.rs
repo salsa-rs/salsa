@@ -97,7 +97,7 @@ fn check_string(
     let mut db = Database::default().enable_logging();
 
     // Create the source program
-    let source_program = SourceProgram::new(&mut db, source_text.to_string());
+    let source_program = SourceProgram::new(&db, source_text.to_string());
 
     // Invoke the parser
     let program = parse_statements(&db, source_program);

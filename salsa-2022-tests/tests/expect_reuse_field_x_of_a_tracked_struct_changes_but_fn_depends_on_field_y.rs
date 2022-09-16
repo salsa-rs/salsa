@@ -74,7 +74,7 @@ fn execute() {
     // intermediate results:
     // x = (22 + 1) / 2 = 11
     // y = 22 / 2 = 11
-    let input = MyInput::new(&mut db, 22);
+    let input = MyInput::new(&db, 22);
     assert_eq!(final_result_depends_on_x(&db, input), 22);
     db.assert_logs(expect![[r#"
         [

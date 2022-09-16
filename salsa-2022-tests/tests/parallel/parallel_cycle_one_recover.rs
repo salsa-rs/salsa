@@ -76,10 +76,10 @@ pub(crate) fn b2(db: &dyn Db, input: MyInput) -> i32 {
 
 #[test]
 fn execute() {
-    let mut db = Database::default();
+    let db = Database::default();
     db.knobs().signal_on_will_block.set(3);
 
-    let input = MyInput::new(&mut db, 1);
+    let input = MyInput::new(&db, 1);
 
     let thread_a = std::thread::spawn({
         let db = db.snapshot();

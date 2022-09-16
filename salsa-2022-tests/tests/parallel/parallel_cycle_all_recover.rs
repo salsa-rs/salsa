@@ -92,10 +92,10 @@ fn recover_b2(db: &dyn Db, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
 
 #[test]
 fn execute() {
-    let mut db = Database::default();
+    let db = Database::default();
     db.knobs().signal_on_will_block.set(3);
 
-    let input = MyInput::new(&mut db, 1);
+    let input = MyInput::new(&db, 1);
 
     let thread_a = std::thread::spawn({
         let db = db.snapshot();

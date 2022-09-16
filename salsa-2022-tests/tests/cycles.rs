@@ -183,7 +183,7 @@ fn extract_cycle(f: impl FnOnce() + UnwindSafe) -> salsa::Cycle {
 #[test]
 fn cycle_memoized() {
     let mut db = Database::default();
-    let input = MyInput::new(&mut db);
+    let input = MyInput::new(&db);
     let cycle = extract_cycle(|| memoized_a(&db, input));
     let expected = expect![[r#"
         [
@@ -197,7 +197,7 @@ fn cycle_memoized() {
 #[test]
 fn cycle_volatile() {
     let mut db = Database::default();
-    let input = MyInput::new(&mut db);
+    let input = MyInput::new(&db);
     let cycle = extract_cycle(|| volatile_a(&db, input));
     let expected = expect![[r#"
         [
@@ -215,7 +215,7 @@ fn expect_cycle() {
     //     +-----+
 
     let mut db = Database::default();
-    let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
     assert!(cycle_a(&db, abc).is_err());
 }
 
@@ -225,7 +225,7 @@ fn inner_cycle() {
     //     ^     |
     //     +-----+
     let mut db = Database::default();
-    let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::A, CycleQuery::B);
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::B);
     let err = cycle_c(&db, abc);
     assert!(err.is_err());
     let expected = expect![[r#"
@@ -243,7 +243,7 @@ fn cycle_revalidate() {
     //     ^     |
     //     +-----+
     let mut db = Database::default();
-    let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
     assert!(cycle_a(&db, abc).is_err());
     abc.set_b(&mut db).to(CycleQuery::A); // same value as default
     assert!(cycle_a(&db, abc).is_err());
@@ -255,7 +255,7 @@ fn cycle_recovery_unchanged_twice() {
     //     ^     |
     //     +-----+
     let mut db = Database::default();
-    let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
     assert!(cycle_a(&db, abc).is_err());
 
     abc.set_c(&mut db).to(CycleQuery::A); // force new revision
@@ -267,7 +267,7 @@ fn cycle_appears() {
     let mut db = Database::default();
 
     //     A --> B
-    let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::None, CycleQuery::None);
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::None, CycleQuery::None);
     assert!(cycle_a(&db, abc).is_ok());
 
     //     A --> B
@@ -284,7 +284,7 @@ fn cycle_disappears() {
     //     A --> B
     //     ^     |
     //     +-----+
-    let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
     assert!(cycle_a(&db, abc).is_err());
 
     //     A --> B
@@ -334,7 +334,7 @@ fn cycle_mixed_1() {
     //     A --> B <-- C
     //           |     ^
     //           +-----+
-    let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::C, CycleQuery::B);
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::C, CycleQuery::B);
 
     let expected = expect![[r#"
         [
@@ -354,7 +354,7 @@ fn cycle_mixed_2() {
     //     A --> B --> C
     //     ^           |
     //     +-----------+
-    let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::C, CycleQuery::A);
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::C, CycleQuery::A);
     let expected = expect![[r#"
         [
             "cycle_a(0)",
@@ -374,7 +374,7 @@ fn cycle_deterministic_order() {
         //     A --> B
         //     ^     |
         //     +-----+
-        let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
+        let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
         (db, abc)
     };
     let (db, abc) = f();
@@ -411,7 +411,7 @@ fn cycle_multiple() {
     //
     // Here, conceptually, B encounters a cycle with A and then
     // recovers.
-    let abc = ABC::new(&mut db, CycleQuery::B, CycleQuery::AthenC, CycleQuery::A);
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::AthenC, CycleQuery::A);
 
     let c = cycle_c(&db, abc);
     let b = cycle_b(&db, abc);
@@ -446,7 +446,7 @@ fn cycle_recovery_set_but_not_participating() {
     //     A --> C -+
     //           ^  |
     //           +--+
-    let abc = ABC::new(&mut db, CycleQuery::C, CycleQuery::None, CycleQuery::C);
+    let abc = ABC::new(&db, CycleQuery::C, CycleQuery::None, CycleQuery::C);
 
     // Here we expect C to panic and A not to recover:
     let r = extract_cycle(|| drop(cycle_a(&db, abc)));

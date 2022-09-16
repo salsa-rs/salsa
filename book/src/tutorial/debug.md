@@ -25,7 +25,7 @@ The `DebugWithDb` trait is automatically derived for all `#[input]`, `#[interned
 For consistency, it is sometimes useful to have a `DebugWithDb` implementation even for types, like `Op`, that are just ordinary enums. You can do that like so:
 
 ```rust
-{{#include ../../../calc-example/calc/src/ir.rs:op_debug_impl}}
+{{#include ../../../examples-2022/calc/src/ir.rs:op_debug_impl}}
 ```
 
 ## Writing the unit test
@@ -34,11 +34,11 @@ Now that we have our `DebugWithDb` impls in place, we can write a simple unit te
 The `parse_string` function below creates a database, sets the source text, and then invokes the parser:
 
 ```rust
-{{#include ../../../calc-example/calc/src/parser.rs:parse_string}}
+{{#include ../../../examples-2022/calc/src/parser.rs:parse_string}}
 ```
 
 Combined with the [`expect-test`](https://crates.io/crates/expect-test) crate, we can then write unit tests like this one:
 
 ```rust
-{{#include ../../../calc-example/calc/src/parser.rs:parse_print}}
+{{#include ../../../examples-2022/calc/src/parser.rs:parse_print}}
 ```
