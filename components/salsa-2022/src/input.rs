@@ -52,7 +52,7 @@ where
     pub fn new_singleton_input(&self, _runtime: &Runtime) -> Id {
         // when one exists already, panic
         if self.counter.load(Ordering::Relaxed) >= 1 {
-            panic!("Singleton struct may not be duplicated");
+            panic!("singleton struct may not be duplicated");
         }
         // fresh new ingredient
         self.counter.store(1, Ordering::Relaxed);
