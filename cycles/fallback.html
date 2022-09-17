@@ -146,7 +146,7 @@
                     <main>
                         <h1 id="recovering-via-fallback"><a class="header" href="#recovering-via-fallback">Recovering via fallback</a></h1>
 <p>Panicking when a cycle occurs is ok for situations where you believe a cycle is impossible. But sometimes cycles can result from illegal user input and cannot be statically prevented. In these cases, you might prefer to gracefully recover from a cycle rather than panicking the entire query. Salsa supports that with the idea of <em>cycle recovery</em>.</p>
-<p>To use cycle recovery, you annotate potential participants in the cycle with a <code>#[salsa::recover(my_recover_fn)]</code> attribute. When a cycle occurs, if any participant P has recovery information, then no panic occurs. Instead, the execution of P is aborted and P will execute the recovery function to generate its result. Participants in the cycle that do not have recovery information continue executing as normal, using this recovery result.</p>
+<p>To use cycle recovery, you annotate potential participants in the cycle with a <code>#[salsa::cycle(my_recover_fn)]</code> attribute. When a cycle occurs, if any participant P has recovery information, then no panic occurs. Instead, the execution of P is aborted and P will execute the recovery function to generate its result. Participants in the cycle that do not have recovery information continue executing as normal, using this recovery result.</p>
 <p>The recovery function has a similar signature to a query function. It is given a reference to your database along with a <code>salsa::Cycle</code> describing the cycle that occurred; it returns the result of the query. Example:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
@@ -160,7 +160,7 @@
 <p>The <code>db</code> and <code>cycle</code> argument can be used to prepare a useful error message for your users. </p>
 <p><strong>Important:</strong> Although the recovery function is given a <code>db</code> handle, you should be careful to avoid creating a cycle from within recovery or invoking queries that may be participating in the current cycle. Attempting to do so can result in inconsistent results.</p>
 <h2 id="figuring-out-why-recovery-did-not-work"><a class="header" href="#figuring-out-why-recovery-did-not-work">Figuring out why recovery did not work</a></h2>
-<p>If a cycle occurs and <em>some</em> of the participant queries have <code>#[salsa::recover]</code> annotations and others do not, then the query will be treated as irrecoverable and will simply panic. You can use the <code>Cycle::unexpected_participants</code> method to figure out why recovery did not succeed and add the appropriate <code>#[salsa::recover]</code> annotations.</p>
+<p>If a cycle occurs and <em>some</em> of the participant queries have <code>#[salsa::cycle]</code> annotations and others do not, then the query will be treated as irrecoverable and will simply panic. You can use the <code>Cycle::unexpected_participants</code> method to figure out why recovery did not succeed and add the appropriate <code>#[salsa::cycle]</code> annotations.</p>
 
                     </main>
 

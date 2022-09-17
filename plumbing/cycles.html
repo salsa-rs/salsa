@@ -177,7 +177,7 @@
 <p>Recovery works in phases:</p>
 <ul>
 <li><strong>Analyze:</strong> As we enumerate the query participants, we collect their collective inputs (all queries invoked so far by any cycle participant) and the max changed-at and min duration. We then remove the cycle participants themselves from this list of inputs, leaving only the queries external to the cycle.</li>
-<li><strong>Mark</strong>: For each query Q that is annotated with <code>#[salsa::recover]</code>, we mark it and all of its successors on the same thread by setting its <code>cycle</code> flag to the <code>c: Cycle</code> we constructed earlier; we also reset its inputs to the collective inputs gathering during analysis. If those queries resume execution later, those marks will trigger them to immediately unwind and use cycle recovery, and the inputs will be used as the inputs to the recovery value.
+<li><strong>Mark</strong>: For each query Q that is annotated with <code>#[salsa::cycle]</code>, we mark it and all of its successors on the same thread by setting its <code>cycle</code> flag to the <code>c: Cycle</code> we constructed earlier; we also reset its inputs to the collective inputs gathering during analysis. If those queries resume execution later, those marks will trigger them to immediately unwind and use cycle recovery, and the inputs will be used as the inputs to the recovery value.
 <ul>
 <li>Note that we mark <em>all</em> the successors of Q on the same thread, whether or not they have recovery set. We'll discuss later how this is important in the case where the active thread (A, here) doesn't have any recovery set.</li>
 </ul>
