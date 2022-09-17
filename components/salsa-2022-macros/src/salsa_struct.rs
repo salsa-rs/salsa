@@ -99,8 +99,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
     pub(crate) fn is_identity_field(&self, field: &SalsaField) -> bool {
         match self.kind {
-            SalsaStructKind::Input => false,
-            SalsaStructKind::Tracked => field.has_id_attr,
+            SalsaStructKind::Input | SalsaStructKind::Tracked => field.has_id_attr,
             SalsaStructKind::Interned => true,
         }
     }
@@ -120,11 +119,6 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     /// Names of getters of all fields
     pub(crate) fn all_get_field_names(&self) -> Vec<&syn::Ident> {
         self.all_fields().map(|ef| ef.get_name()).collect()
-    }
-
-    /// Names of setters of all fields
-    pub(crate) fn all_set_field_names(&self) -> Vec<&syn::Ident> {
-        self.all_fields().map(|ef| ef.set_name()).collect()
     }
 
     /// Types of all fields (id and value).
