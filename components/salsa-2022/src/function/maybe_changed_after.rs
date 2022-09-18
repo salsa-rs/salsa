@@ -5,7 +5,7 @@ use crate::{
     debug::DebugWithDb,
     key::DatabaseKeyIndex,
     runtime::{
-        local_state::{ActiveQueryGuard, QueryOrigin},
+        local_state::{ActiveQueryGuard, QueryOrigin, EdgeKind},
         StampedValue,
     },
     storage::HasJarsDyn,
@@ -186,9 +186,16 @@ where
                 // valid, then some later input I1 might never have executed at all, so verifying
                 // it is still up to date is meaningless.
                 let last_verified_at = old_memo.verified_at.load();
-                for &input in edges.inputs().iter() {
-                    if db.maybe_changed_after(input, last_verified_at) {
-                        return false;
+                for &(edge_kind, dependency_index) in edges.input_outputs.iter() {
+                    match edge_kind {
+                        EdgeKind::Input => {
+                            if db.maybe_changed_after(dependency_index, last_verified_at) {
+                                return false;
+                            }
+                        },
+                        EdgeKind::Output => {
+                            db.mark_validated_output(database_key_index, dependency_index);
+                        },
                     }
                 }
             }

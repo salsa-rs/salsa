@@ -114,7 +114,7 @@ pub struct QueryEdges {
     /// Important:
     ///
     /// * The inputs must be in **execution order** for the red-green algorithm to work.
-    input_outputs: Arc<[(EdgeKind, DependencyIndex)]>,
+    pub input_outputs: Arc<[(EdgeKind, DependencyIndex)]>,
 }
 
 impl QueryEdges {
