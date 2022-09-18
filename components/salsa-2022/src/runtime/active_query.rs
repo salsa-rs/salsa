@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use crate::{
     durability::Durability,
     hash::{FxIndexMap, FxIndexSet},
@@ -8,7 +6,7 @@ use crate::{
     Cycle, Revision, Runtime,
 };
 
-use super::local_state::{QueryEdges, QueryOrigin, QueryRevisions};
+use super::local_state::{QueryEdges, QueryOrigin, QueryRevisions, EdgeKind};
 
 #[derive(Debug)]
 pub(super) struct ActiveQuery {
@@ -22,8 +20,13 @@ pub(super) struct ActiveQuery {
     /// untracked read, this will be set to the most recent revision.
     pub(super) changed_at: Revision,
 
-    /// Set of subqueries that were accessed thus far.
-    pub(super) dependencies: FxIndexSet<DependencyIndex>,
+    /// Inputs: Set of subqueries that were accessed thus far.
+    /// Outputs: Tracks values written by this query. Could be...
+    ///
+    /// * tracked structs created
+    /// * invocations of `specify`
+    /// * accumulators pushed to
+    pub(super) input_outputs: FxIndexSet<(EdgeKind, DependencyIndex)>,
 
     /// True if there was an untracked read.
     pub(super) untracked_read: bool,
@@ -35,16 +38,6 @@ pub(super) struct ActiveQuery {
     /// hash is added to this map. If it is not present, then the disambiguator is 0.
     /// Otherwise it is 1 more than the current value (which is incremented).
     pub(super) disambiguator_map: FxIndexMap<u64, Disambiguator>,
-
-    /// Tracks values written by this query. Could be...
-    ///
-    /// * tracked structs created
-    /// * invocations of `specify`
-    /// * accumulators pushed to
-    ///
-    /// We use a btree-set because we want to be able to
-    /// extract the keys in sorted order.
-    pub(super) outputs: BTreeSet<DependencyIndex>,
 }
 
 impl ActiveQuery {
@@ -53,11 +46,10 @@ impl ActiveQuery {
             database_key_index,
             durability: Durability::MAX,
             changed_at: Revision::start(),
-            dependencies: FxIndexSet::default(),
+            input_outputs: FxIndexSet::default(),
             untracked_read: false,
             cycle: None,
             disambiguator_map: Default::default(),
-            outputs: Default::default(),
         }
     }
 
@@ -67,7 +59,7 @@ impl ActiveQuery {
         durability: Durability,
         revision: Revision,
     ) {
-        self.dependencies.insert(input);
+        self.input_outputs.insert((EdgeKind::Input, input));
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(revision);
     }
@@ -86,29 +78,19 @@ impl ActiveQuery {
 
     /// Adds a key to our list of outputs.
     pub(super) fn add_output(&mut self, key: DependencyIndex) {
-        self.outputs.insert(key);
+        self.input_outputs.insert((EdgeKind::Output, key));
     }
 
     /// True if the given key was output by this query.
     pub(super) fn is_output(&self, key: DatabaseKeyIndex) -> bool {
         let key: DependencyIndex = key.into();
-        self.outputs.contains(&key)
+        self.input_outputs.contains(&(EdgeKind::Output, key))
     }
 
     pub(crate) fn revisions(&self, runtime: &Runtime) -> QueryRevisions {
-        let separator = self.dependencies.len();
+        let input_outputs = self.input_outputs.iter().copied().collect();
 
-        let input_outputs = if self.dependencies.is_empty() && self.outputs.is_empty() {
-            runtime.empty_dependencies()
-        } else {
-            self.dependencies
-                .iter()
-                .copied()
-                .chain(self.outputs.iter().copied())
-                .collect()
-        };
-
-        let edges = QueryEdges::new(separator, input_outputs);
+        let edges = QueryEdges::new(input_outputs);
 
         let origin = if self.untracked_read {
             QueryOrigin::DerivedUntracked(edges)
@@ -129,7 +111,7 @@ impl ActiveQuery {
         self.changed_at = self.changed_at.max(other.changed_at);
         self.durability = self.durability.min(other.durability);
         self.untracked_read |= other.untracked_read;
-        self.dependencies.extend(other.dependencies.iter().copied());
+        self.input_outputs.extend(other.input_outputs.iter().copied());
     }
 
     /// Removes the participants in `cycle` from my dependencies.
@@ -137,7 +119,7 @@ impl ActiveQuery {
     pub(super) fn remove_cycle_participants(&mut self, cycle: &Cycle) {
         for p in cycle.participant_keys() {
             let p: DependencyIndex = p.into();
-            self.dependencies.remove(&p);
+            self.input_outputs.remove(&(EdgeKind::Input, p));
         }
     }
 
@@ -146,7 +128,7 @@ impl ActiveQuery {
     pub(crate) fn take_inputs_from(&mut self, cycle_query: &ActiveQuery) {
         self.changed_at = cycle_query.changed_at;
         self.durability = cycle_query.durability;
-        self.dependencies = cycle_query.dependencies.clone();
+        self.input_outputs = cycle_query.input_outputs.clone();
     }
 
     pub(super) fn disambiguate(&mut self, hash: u64) -> Disambiguator {

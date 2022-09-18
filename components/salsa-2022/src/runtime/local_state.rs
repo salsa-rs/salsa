@@ -76,17 +76,23 @@ pub enum QueryOrigin {
 }
 
 impl QueryOrigin {
-    /// Indices for queries *written* by this query (or `&[]` if its value was assigned).
+    /// Indices for queries *written* by this query (or `vec![]` if its value was assigned).
     pub(crate) fn outputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
         let slice = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => {
-                &edges.input_outputs[edges.separator as usize..]
+                edges.outputs()
             }
-            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => &[],
+            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => vec![],
         };
 
-        slice.iter().copied()
+        slice.into_iter()
     }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum EdgeKind {
+    Input,
+    Output,
 }
 
 /// The edges between a memoized value and other queries in the dependency graph.
@@ -98,8 +104,6 @@ impl QueryOrigin {
 pub struct QueryEdges {
     /// The list of outgoing edges from this node.
     /// This list combines *both* inputs and outputs.
-    /// The inputs are defined from the indices `0..S` where
-    /// `S` is the value of the `separator` field.
     ///
     /// Note that we always track input dependencies even when there are untracked reads.
     /// Untracked reads mean that we can't verify values, so we don't use the list of inputs for that,
@@ -110,26 +114,35 @@ pub struct QueryEdges {
     /// Important:
     ///
     /// * The inputs must be in **execution order** for the red-green algorithm to work.
-    /// * The outputs must be in **sorted order** so that we can easily "diff" them between revisions.
-    input_outputs: Arc<[DependencyIndex]>,
-
-    /// The index that separates inputs from outputs in the `tracked` field.
-    separator: u32,
+    input_outputs: Arc<[(EdgeKind, DependencyIndex)]>,
 }
 
 impl QueryEdges {
     /// Returns the (tracked) inputs that were executed in computing this memoized value.
     ///
     /// These will always be in execution order.
-    pub(crate) fn inputs(&self) -> &[DependencyIndex] {
-        &self.input_outputs[0..self.separator as usize]
+    pub(crate) fn inputs(&self) -> Vec<DependencyIndex> {
+        self.input_outputs
+            .iter()
+            .filter(|(edge_kind, _)| *edge_kind == EdgeKind::Input)
+            .map(|(_, dependency_index)| *dependency_index)
+            .collect()
+    }
+
+    /// Returns the (tracked) inputs that were executed in computing this memoized value.
+    ///
+    /// These will always be in execution order.
+    pub(crate) fn outputs(&self) -> Vec<DependencyIndex> {
+        self.input_outputs
+            .iter()
+            .filter(|(edge_kind, _)| *edge_kind == EdgeKind::Output)
+            .map(|(_, dependency_index)| *dependency_index)
+            .collect()
     }
 
     /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.
-    pub(crate) fn new(separator: usize, input_outputs: Arc<[DependencyIndex]>) -> Self {
-        debug_assert!(separator <= input_outputs.len());
+    pub(crate) fn new(input_outputs: Arc<[(EdgeKind, DependencyIndex)]>) -> Self {
         Self {
-            separator: u32::try_from(separator).unwrap(),
             input_outputs,
         }
     }
