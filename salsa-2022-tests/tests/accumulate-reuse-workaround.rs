@@ -89,5 +89,6 @@ fn test1() {
         [
             "accumulated(List(Id { value: 1 }))",
             "compute(List(Id { value: 1 }))",
+            "compute(List(Id { value: 2 }))",
         ]"#]]);
 }

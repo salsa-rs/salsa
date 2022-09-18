@@ -6,7 +6,7 @@ use crate::{
     Cycle, Revision, Runtime,
 };
 
-use super::local_state::{QueryEdges, QueryOrigin, QueryRevisions, EdgeKind};
+use super::local_state::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
 
 #[derive(Debug)]
 pub(super) struct ActiveQuery {
@@ -111,7 +111,8 @@ impl ActiveQuery {
         self.changed_at = self.changed_at.max(other.changed_at);
         self.durability = self.durability.min(other.durability);
         self.untracked_read |= other.untracked_read;
-        self.input_outputs.extend(other.input_outputs.iter().copied());
+        self.input_outputs
+            .extend(other.input_outputs.iter().copied());
     }
 
     /// Removes the participants in `cycle` from my dependencies.

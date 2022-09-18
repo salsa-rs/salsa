@@ -5,7 +5,7 @@ use crate::{
     debug::DebugWithDb,
     key::DatabaseKeyIndex,
     runtime::{
-        local_state::{ActiveQueryGuard, QueryOrigin, EdgeKind},
+        local_state::{ActiveQueryGuard, EdgeKind, QueryOrigin},
         StampedValue,
     },
     storage::HasJarsDyn,
@@ -192,10 +192,10 @@ where
                             if db.maybe_changed_after(dependency_index, last_verified_at) {
                                 return false;
                             }
-                        },
+                        }
                         EdgeKind::Output => {
                             db.mark_validated_output(database_key_index, dependency_index);
-                        },
+                        }
                     }
                 }
             }

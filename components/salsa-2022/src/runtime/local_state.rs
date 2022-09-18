@@ -79,9 +79,7 @@ impl QueryOrigin {
     /// Indices for queries *written* by this query (or `vec![]` if its value was assigned).
     pub(crate) fn outputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
         let slice = match self {
-            QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => {
-                edges.outputs()
-            }
+            QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => edges.outputs(),
             QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => vec![],
         };
 
@@ -142,9 +140,7 @@ impl QueryEdges {
 
     /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.
     pub(crate) fn new(input_outputs: Arc<[(EdgeKind, DependencyIndex)]>) -> Self {
-        Self {
-            input_outputs,
-        }
+        Self { input_outputs }
     }
 }
 
