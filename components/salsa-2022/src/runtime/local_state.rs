@@ -76,7 +76,7 @@ pub enum QueryOrigin {
 
 impl QueryOrigin {
     /// Indices for queries *written* by this query (or `vec![]` if its value was assigned).
-    pub(crate) fn outputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn outputs(&self) -> impl Iterator<Item = DependencyIndex> {
         let slice = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => edges.outputs(),
             QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => vec![],
@@ -115,18 +115,7 @@ pub struct QueryEdges {
 }
 
 impl QueryEdges {
-    /// Returns the (tracked) inputs that were executed in computing this memoized value.
-    ///
-    /// These will always be in execution order.
-    pub(crate) fn inputs(&self) -> Vec<DependencyIndex> {
-        self.input_outputs
-            .iter()
-            .filter(|(edge_kind, _)| *edge_kind == EdgeKind::Input)
-            .map(|(_, dependency_index)| *dependency_index)
-            .collect()
-    }
-
-    /// Returns the (tracked) inputs that were executed in computing this memoized value.
+    /// Returns the (tracked) outputs that were executed in computing this memoized value.
     ///
     /// These will always be in execution order.
     pub(crate) fn outputs(&self) -> Vec<DependencyIndex> {

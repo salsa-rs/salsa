@@ -1,7 +1,6 @@
 use crate::{
     hash::FxHashSet,
-    key::DependencyIndex,
-    runtime::local_state::QueryOrigin,
+    runtime::local_state::{EdgeKind, QueryOrigin},
     storage::{HasJar, HasJarsDyn},
     DatabaseKeyIndex,
 };
@@ -67,18 +66,15 @@ impl Stack {
         match origin {
             None | Some(QueryOrigin::Assigned(_)) | Some(QueryOrigin::BaseInput) => {}
             Some(QueryOrigin::Derived(edges)) | Some(QueryOrigin::DerivedUntracked(edges)) => {
-                for DependencyIndex {
-                    ingredient_index,
-                    key_index,
-                } in edges.inputs().iter().copied()
+                for (_, dependency_index) in edges
+                    .input_outputs
+                    .iter()
+                    .filter(|edge| edge.0 == EdgeKind::Input)
+                    .copied()
                 {
-                    if let Some(key_index) = key_index {
-                        let i = DatabaseKeyIndex {
-                            ingredient_index,
-                            key_index,
-                        };
+                    if let Ok(i) = DatabaseKeyIndex::try_from(dependency_index) {
                         if self.s.insert(i) {
-                            self.v.push(i);
+                            self.v.push(i)
                         }
                     }
                 }
