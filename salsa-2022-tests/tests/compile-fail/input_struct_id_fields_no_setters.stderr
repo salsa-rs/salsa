@@ -2,7 +2,7 @@ error[E0599]: no method named `set_id_one` found for struct `MyInput` in the cur
   --> tests/compile-fail/input_struct_id_fields_no_setters.rs:30:11
    |
 7  | #[salsa::input(jar = Jar)]
-   | -------------------------- method `set_id_one` not found for this
+   | -------------------------- method `set_id_one` not found for this struct
 ...
 30 |     input.set_id_one(1);
    |           ^^^^^^^^^^ help: there is an associated function with a similar name: `id_one`
