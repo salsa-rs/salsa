@@ -6,7 +6,6 @@ use crate::key::DependencyIndex;
 use crate::runtime::Revision;
 use crate::tracked_struct::Disambiguator;
 use crate::Cycle;
-use crate::Runtime;
 use std::cell::RefCell;
 use std::sync::Arc;
 
@@ -339,14 +338,14 @@ impl ActiveQueryGuard<'_> {
     /// which summarizes the other queries that were accessed during this
     /// query's execution.
     #[inline]
-    pub(crate) fn pop(self, runtime: &Runtime) -> QueryRevisions {
+    pub(crate) fn pop(self) -> QueryRevisions {
         // Extract accumulated inputs.
         let popped_query = self.complete();
 
         // If this frame were a cycle participant, it would have unwound.
         assert!(popped_query.cycle.is_none());
 
-        popped_query.revisions(runtime)
+        popped_query.revisions()
     }
 
     /// If the active query is registered as a cycle participant, remove and

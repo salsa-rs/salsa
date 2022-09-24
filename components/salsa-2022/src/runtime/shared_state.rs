@@ -1,9 +1,9 @@
-use std::sync::{atomic::AtomicUsize, Arc};
+use std::sync::atomic::AtomicUsize;
 
 use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 
-use crate::{durability::Durability, key::DependencyIndex, revision::AtomicRevision};
+use crate::{durability::Durability, revision::AtomicRevision};
 
 use super::dependency_graph::DependencyGraph;
 
@@ -12,9 +12,6 @@ use super::dependency_graph::DependencyGraph;
 pub(super) struct SharedState {
     /// Stores the next id to use for a snapshotted runtime (starts at 1).
     pub(super) next_id: AtomicUsize,
-
-    /// Vector we can clone
-    pub(super) empty_dependencies: Arc<[DependencyIndex]>,
 
     /// Set to true when the current revision has been canceled.
     /// This is done when we an input is being changed. The flag
@@ -47,7 +44,6 @@ impl SharedState {
     fn with_durabilities(durabilities: usize) -> Self {
         SharedState {
             next_id: AtomicUsize::new(1),
-            empty_dependencies: None.into_iter().collect(),
             revision_canceled: Default::default(),
             revisions: (0..durabilities).map(|_| AtomicRevision::start()).collect(),
             dependency_graph: Default::default(),

@@ -3,7 +3,7 @@ use crate::{
     hash::{FxIndexMap, FxIndexSet},
     key::{DatabaseKeyIndex, DependencyIndex},
     tracked_struct::Disambiguator,
-    Cycle, Revision, Runtime,
+    Cycle, Revision,
 };
 
 use super::local_state::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
@@ -87,7 +87,7 @@ impl ActiveQuery {
         self.input_outputs.contains(&(EdgeKind::Output, key))
     }
 
-    pub(crate) fn revisions(&self, runtime: &Runtime) -> QueryRevisions {
+    pub(crate) fn revisions(&self) -> QueryRevisions {
         let input_outputs = self.input_outputs.iter().copied().collect();
 
         let edges = QueryEdges::new(input_outputs);
