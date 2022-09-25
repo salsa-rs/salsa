@@ -149,7 +149,7 @@ impl Runtime {
     }
 
     /// Check whether `entity` is contained the list of outputs written by the current query.
-    pub(super) fn is_output_of_active_query(&self, entity: DatabaseKeyIndex) -> bool {
+    pub(super) fn is_output_of_active_query(&self, entity: DependencyIndex) -> bool {
         self.local_state.is_output(entity)
     }
 

@@ -82,8 +82,7 @@ impl ActiveQuery {
     }
 
     /// True if the given key was output by this query.
-    pub(super) fn is_output(&self, key: DatabaseKeyIndex) -> bool {
-        let key: DependencyIndex = key.into();
+    pub(super) fn is_output(&self, key: DependencyIndex) -> bool {
         self.input_outputs.contains(&(EdgeKind::Output, key))
     }
 
