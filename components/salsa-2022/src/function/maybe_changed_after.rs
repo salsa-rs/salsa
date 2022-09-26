@@ -194,6 +194,22 @@ where
                             }
                         }
                         EdgeKind::Output => {
+                            // Subtle: Mark outputs as validated now, even though we may
+                            // later find an input that requires us to re-execute the function.
+                            // Even if it re-execute, the function will wind up writing the same value,
+                            // since all prior inputs were green. It's important to do this during
+                            // this loop, because it's possible that one of our input queries will
+                            // re-execute and may read one of our earlier outputs
+                            // (e.g., in a scenario where we do something like 
+                            // `e = Entity::new(..); query(e);` and `query` reads a field of `e`). 
+                            //
+                            // NB. Accumulators are also outputs, but the above logic doesn't
+                            // quite apply to them. Since multiple values are pushed, the first value
+                            // may be unchanged, but later values could be different.
+                            // In that case, however, the data accumulated
+                            // by this function cannot be read until this function is marked green,
+                            // so even if we mark them as valid here, the function will re-execute
+                            // and overwrite the contents.
                             db.mark_validated_output(database_key_index, dependency_index);
                         }
                     }
