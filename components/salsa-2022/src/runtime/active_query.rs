@@ -87,7 +87,11 @@ impl ActiveQuery {
     }
 
     pub(crate) fn revisions(&self, runtime: &Runtime) -> QueryRevisions {
-        let input_outputs = self.input_outputs.iter().copied().collect();
+        let input_outputs = if self.input_outputs.is_empty() {
+            runtime.empty_dependencies()
+        } else {
+            self.input_outputs.iter().copied().collect()
+        };
 
         let edges = QueryEdges::new(input_outputs);
 

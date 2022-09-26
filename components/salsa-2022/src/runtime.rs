@@ -12,7 +12,10 @@ use crate::{
     Cancelled, Cycle, Database, Event, EventKind, Revision,
 };
 
-use self::{dependency_graph::DependencyGraph, local_state::ActiveQueryGuard};
+use self::{
+    dependency_graph::DependencyGraph,
+    local_state::{ActiveQueryGuard, EdgeKind},
+};
 
 use super::{tracked_struct::Disambiguator, IngredientIndex};
 
@@ -97,7 +100,7 @@ impl Runtime {
         self.local_state.active_query()
     }
 
-    pub(crate) fn empty_dependencies(&self) -> Arc<[DependencyIndex]> {
+    pub(crate) fn empty_dependencies(&self) -> Arc<[(EdgeKind, DependencyIndex)]> {
         self.shared_state.empty_dependencies.clone()
     }
 
