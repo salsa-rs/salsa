@@ -71,7 +71,7 @@ where
                 }
             }
         };
-        let mut revisions = active_query.pop();
+        let mut revisions = active_query.pop(runtime);
 
         // We assume that query is side-effect free -- that is, does
         // not mutate the "inputs" to the query system. Sanity check

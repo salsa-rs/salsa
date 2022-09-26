@@ -97,6 +97,10 @@ impl Runtime {
         self.local_state.active_query()
     }
 
+    pub(crate) fn empty_dependencies(&self) -> Arc<[DependencyIndex]> {
+        self.shared_state.empty_dependencies.clone()
+    }
+
     pub fn snapshot(&self) -> Self {
         if self.local_state.query_in_progress() {
             panic!("it is not legal to `snapshot` during a query (see salsa-rs/salsa#80)");
