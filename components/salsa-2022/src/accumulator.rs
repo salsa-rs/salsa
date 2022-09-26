@@ -61,8 +61,10 @@ impl<Data: Clone> AccumulatorIngredient<Data> {
             produced_at: current_revision,
         });
 
-        // This is the first push in a new revision. Reset.
-        if accumulated_values.produced_at != current_revision {
+        // When we call `push' in a query, we will add the accumulator to the output of the query.
+        // If we find here that this accumulator is not the output of the query,
+        // we can say that the accumulated values we stored for this query is out of date.
+        if !runtime.is_output_of_active_query(self.dependency_index()) {
             accumulated_values.values.truncate(0);
             accumulated_values.produced_at = current_revision;
         }

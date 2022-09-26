@@ -12,7 +12,10 @@ use crate::{
     Cancelled, Cycle, Database, Event, EventKind, Revision,
 };
 
-use self::{dependency_graph::DependencyGraph, local_state::ActiveQueryGuard};
+use self::{
+    dependency_graph::DependencyGraph,
+    local_state::{ActiveQueryGuard, EdgeKind},
+};
 
 use super::{tracked_struct::Disambiguator, IngredientIndex};
 
@@ -97,7 +100,7 @@ impl Runtime {
         self.local_state.active_query()
     }
 
-    pub(crate) fn empty_dependencies(&self) -> Arc<[DependencyIndex]> {
+    pub(crate) fn empty_dependencies(&self) -> Arc<[(EdgeKind, DependencyIndex)]> {
         self.shared_state.empty_dependencies.clone()
     }
 
@@ -153,7 +156,7 @@ impl Runtime {
     }
 
     /// Check whether `entity` is contained the list of outputs written by the current query.
-    pub(super) fn is_output_of_active_query(&self, entity: DatabaseKeyIndex) -> bool {
+    pub(super) fn is_output_of_active_query(&self, entity: DependencyIndex) -> bool {
         self.local_state.is_output(entity)
     }
 

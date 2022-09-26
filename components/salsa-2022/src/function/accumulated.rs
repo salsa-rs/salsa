@@ -1,6 +1,5 @@
 use crate::{
     hash::FxHashSet,
-    key::DependencyIndex,
     runtime::local_state::QueryOrigin,
     storage::{HasJar, HasJarsDyn},
     DatabaseKeyIndex,
@@ -65,23 +64,12 @@ impl Stack {
     /// Extend the stack of queries with the dependencies from `origin`.
     fn extend(&mut self, origin: Option<QueryOrigin>) {
         match origin {
-            None
-            | Some(QueryOrigin::Assigned(_))
-            | Some(QueryOrigin::BaseInput)
-            | Some(QueryOrigin::Field) => {}
+            None | Some(QueryOrigin::Assigned(_)) | Some(QueryOrigin::BaseInput) => {}
             Some(QueryOrigin::Derived(edges)) | Some(QueryOrigin::DerivedUntracked(edges)) => {
-                for DependencyIndex {
-                    ingredient_index,
-                    key_index,
-                } in edges.inputs().iter().copied()
-                {
-                    if let Some(key_index) = key_index {
-                        let i = DatabaseKeyIndex {
-                            ingredient_index,
-                            key_index,
-                        };
+                for dependency_index in edges.inputs() {
+                    if let Ok(i) = DatabaseKeyIndex::try_from(dependency_index) {
                         if self.s.insert(i) {
-                            self.v.push(i);
+                            self.v.push(i)
                         }
                     }
                 }

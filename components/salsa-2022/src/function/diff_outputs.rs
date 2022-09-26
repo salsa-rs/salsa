@@ -1,6 +1,6 @@
 use crate::{
-    key::DependencyIndex, runtime::local_state::QueryRevisions, storage::HasJarsDyn, Database,
-    DatabaseKeyIndex, Event, EventKind,
+    hash::FxHashSet, key::DependencyIndex, runtime::local_state::QueryRevisions,
+    storage::HasJarsDyn, Database, DatabaseKeyIndex, Event, EventKind,
 };
 
 use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
@@ -18,25 +18,17 @@ where
         old_memo: &Memo<C::Value>,
         revisions: &QueryRevisions,
     ) {
-        let mut old_outputs = old_memo.revisions.origin.outputs().peekable();
-        let mut new_outputs = revisions.origin.outputs().peekable();
+        // Iterate over the outputs of the `old_memo` and put them into a hashset
+        let mut old_outputs = FxHashSet::default();
+        old_memo.revisions.origin.outputs().for_each(|i| {
+            old_outputs.insert(i);
+        });
 
-        // two list are in sorted order, we can merge them in linear time.
-        while let (Some(&old_output), Some(&new_output)) = (old_outputs.peek(), new_outputs.peek())
-        {
-            #[allow(clippy::comparison_chain)]
-            if old_output < new_output {
-                // Output that was generated but is no longer.
-                Self::report_stale_output(db, key, old_output);
-                old_outputs.next();
-            } else if new_output < old_output {
-                // This is a new output that was not generated before.
-                // No action needed.
-                new_outputs.next();
-            } else {
-                // Output generated both times.
-                old_outputs.next();
-                new_outputs.next();
+        // Iterate over the outputs of the current query
+        // and remove elements from `old_outputs` when we find them
+        for new_output in revisions.origin.outputs() {
+            if old_outputs.contains(&new_output) {
+                old_outputs.remove(&new_output);
             }
         }
 

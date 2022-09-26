@@ -46,7 +46,8 @@ where
         //
         // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
         let database_key_index = key.database_key_index(db);
-        if !runtime.is_output_of_active_query(database_key_index) {
+        let dependency_index = database_key_index.into();
+        if !runtime.is_output_of_active_query(dependency_index) {
             panic!("can only use `specfiy` on entities created during current query");
         }
 
@@ -89,17 +90,6 @@ where
 
         log::debug!("specify: about to add memo {:#?} for key {:?}", memo, key);
         self.insert_memo(db, key, memo);
-    }
-
-    /// Specify the value for `key` but do not record it is an output.
-    /// This is used for the value fields declared on a tracked struct.
-    /// They are different from other calls to specify because we KNOW they will be given a value by construction,
-    /// so recording them as an explicit output (and checking them for validity, etc) is pure overhead.
-    pub fn specify_field<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
-    where
-        C::Key: TrackedStructInDb<DynDb<'db, C>>,
-    {
-        self.specify(db, key, value, |_| QueryOrigin::Field);
     }
 
     /// Specify the value for `key` *and* record that we did so.

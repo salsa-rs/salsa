@@ -39,8 +39,8 @@ impl HasLogger for Database {
 
 #[test]
 fn basic() {
-    let mut db = Database::default();
-    let input1 = MyInput::new(&mut db, 3, 4);
+    let db = Database::default();
+    let input1 = MyInput::new(&db, 3, 4);
     let input2 = MyInput::get(&db);
 
     assert_eq!(input1, input2);
@@ -52,20 +52,20 @@ fn basic() {
 #[test]
 #[should_panic]
 fn twice() {
-    let mut db = Database::default();
-    let input1 = MyInput::new(&mut db, 3, 4);
+    let db = Database::default();
+    let input1 = MyInput::new(&db, 3, 4);
     let input2 = MyInput::get(&db);
 
     assert_eq!(input1, input2);
 
     // should panic here
-    _ = MyInput::new(&mut db, 3, 5);
+    _ = MyInput::new(&db, 3, 5);
 }
 
 #[test]
 fn debug() {
-    let mut db = Database::default();
-    let input = MyInput::new(&mut db, 3, 4);
+    let db = Database::default();
+    let input = MyInput::new(&db, 3, 4);
     let actual = format!("{:?}", input.debug(&db));
     let expected = expect![[r#"MyInput { [salsa id]: 0, id_field: 4 }"#]];
     expected.assert_eq(&actual);

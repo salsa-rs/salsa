@@ -5,7 +5,7 @@ use crate::{
     debug::DebugWithDb,
     key::DatabaseKeyIndex,
     runtime::{
-        local_state::{ActiveQueryGuard, QueryOrigin},
+        local_state::{ActiveQueryGuard, EdgeKind, QueryOrigin},
         StampedValue,
     },
     storage::HasJarsDyn,
@@ -170,10 +170,8 @@ where
                 // during this revision or is otherwise stale.
                 return false;
             }
-            QueryOrigin::BaseInput | QueryOrigin::Field => {
-                // BaseInput: This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
-                // Field: This value is the value of a field of some tracked struct S. It is always updated whenever S is created.
-                // So if a query has access to S, then they will have an up-to-date value.
+            QueryOrigin::BaseInput => {
+                // This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
                 return true;
             }
             QueryOrigin::DerivedUntracked(_) => {
@@ -188,9 +186,32 @@ where
                 // valid, then some later input I1 might never have executed at all, so verifying
                 // it is still up to date is meaningless.
                 let last_verified_at = old_memo.verified_at.load();
-                for &input in edges.inputs().iter() {
-                    if db.maybe_changed_after(input, last_verified_at) {
-                        return false;
+                for &(edge_kind, dependency_index) in edges.input_outputs.iter() {
+                    match edge_kind {
+                        EdgeKind::Input => {
+                            if db.maybe_changed_after(dependency_index, last_verified_at) {
+                                return false;
+                            }
+                        }
+                        EdgeKind::Output => {
+                            // Subtle: Mark outputs as validated now, even though we may
+                            // later find an input that requires us to re-execute the function.
+                            // Even if it re-execute, the function will wind up writing the same value,
+                            // since all prior inputs were green. It's important to do this during
+                            // this loop, because it's possible that one of our input queries will
+                            // re-execute and may read one of our earlier outputs
+                            // (e.g., in a scenario where we do something like
+                            // `e = Entity::new(..); query(e);` and `query` reads a field of `e`).
+                            //
+                            // NB. Accumulators are also outputs, but the above logic doesn't
+                            // quite apply to them. Since multiple values are pushed, the first value
+                            // may be unchanged, but later values could be different.
+                            // In that case, however, the data accumulated
+                            // by this function cannot be read until this function is marked green,
+                            // so even if we mark them as valid here, the function will re-execute
+                            // and overwrite the contents.
+                            db.mark_validated_output(database_key_index, dependency_index);
+                        }
                     }
                 }
             }
