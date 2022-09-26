@@ -200,8 +200,8 @@ where
                             // since all prior inputs were green. It's important to do this during
                             // this loop, because it's possible that one of our input queries will
                             // re-execute and may read one of our earlier outputs
-                            // (e.g., in a scenario where we do something like 
-                            // `e = Entity::new(..); query(e);` and `query` reads a field of `e`). 
+                            // (e.g., in a scenario where we do something like
+                            // `e = Entity::new(..); query(e);` and `query` reads a field of `e`).
                             //
                             // NB. Accumulators are also outputs, but the above logic doesn't
                             // quite apply to them. Since multiple values are pushed, the first value
