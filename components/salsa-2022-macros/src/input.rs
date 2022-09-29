@@ -1,3 +1,5 @@
+use std::fmt::Formatter;
+
 use crate::salsa_struct::{SalsaField, SalsaStruct, SalsaStructKind};
 use proc_macro2::{Literal, TokenStream};
 
@@ -52,6 +54,7 @@ impl crate::options::AllowedOptions for InputStruct {
 impl InputStruct {
     fn generate_input(&self) -> syn::Result<TokenStream> {
         let id_struct = self.id_struct();
+        let (builder, builder_impl) = self.input_builder();
         let inherent_impl = self.input_inherent_impl();
         let ingredients_for_impl = self.input_ingredients();
         let as_id_impl = self.as_id_impl();
@@ -60,6 +63,8 @@ impl InputStruct {
 
         Ok(quote! {
             #id_struct
+            #builder
+            #builder_impl
             #inherent_impl
             #ingredients_for_impl
             #as_id_impl
@@ -158,6 +163,18 @@ impl InputStruct {
             }
         };
 
+        let builder_fn: syn::ImplItemMethod = {
+            let builder_name = self.builder_name();
+            parse_quote! {
+                fn new_builder() -> #builder_name {
+                    #builder_name{
+                        #(#field_names: None,)*
+                        durability: None,
+                    }
+                }
+            }
+        };
+
         if singleton {
             let get: syn::ImplItemMethod = parse_quote! {
                 #[track_caller]
@@ -188,6 +205,8 @@ impl InputStruct {
                     #(#field_getters)*
 
                     #(#field_setters)*
+
+                    #builder_fn
                 }
             }
         } else {
@@ -198,11 +217,86 @@ impl InputStruct {
                     #(#field_getters)*
 
                     #(#field_setters)*
+
+                    #builder_fn
                 }
             }
         }
+    }
 
-        // }
+    /// generate builder struct
+    fn input_builder(&self) -> (syn::ItemStruct, syn::ItemImpl) {
+        let ident = self.id_ident();
+        let struct_name = self.builder_name();
+        let field_names = self.all_field_names();
+        let field_tys: Vec<_> = self.all_field_tys();
+        let db_dyn_ty = self.db_dyn_ty();
+        let jar_ty = self.jar_ty();
+        let input_index = self.input_index();
+        let field_indices = self.all_field_indices();
+
+        let buidler: syn::ItemStruct = parse_quote! {
+            struct #struct_name{
+                #(#field_names: Option<#field_tys>,)*
+                durability: Option<salsa::durability::Durability>,
+            }
+        };
+
+        let build_fn: syn::ImplItemMethod = if self.0.is_isingleton() {
+            parse_quote! {
+                fn build(&mut self, __db: &#db_dyn_ty) -> std::result::Result<#ident, std::boxed::Box<dyn std::error::Error>> {
+                    let durability = self.durability.ok_or_else(|| "durability not provided")?;
+
+                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
+                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
+                    let __id = __ingredients.#input_index.new_singleton_input(__runtime);
+
+                    #(
+                        __ingredients.#field_indices.store_new(__runtime, __id, self.#field_names.clone().ok_or_else(||"field not provided")?, durability);
+                    )*
+                    std::result::Result::Ok(__id)
+                }
+            }
+        } else {
+            parse_quote! {
+                fn build(&mut self, __db: &#db_dyn_ty) -> std::result::Result<#ident, std::boxed::Box<dyn std::error::Error>> {
+                    let durability = self.durability.ok_or_else(|| "durability not provided")?;
+
+                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
+                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
+                    let __id =__ingredients.#input_index.new_input(__runtime);
+                    #(
+                        __ingredients.#field_indices.store_new(__runtime, __id, self.#field_names.clone().ok_or_else(||"field not provided")?, durability);
+                    )*
+                    std::result::Result::Ok(__id)
+                }
+            }
+        };
+
+        let impls: syn::ItemImpl = {
+            parse_quote! {
+                impl #struct_name {
+                    fn with_durability(&mut self, durability: salsa::durability::Durability) -> &mut Self {
+                        self.durability = Some(durability);
+                        self
+                    }
+
+                    fn with_fields(&mut self, #(#field_names: #field_tys,)*) -> &mut Self {
+                        #(self.#field_names = Some(#field_names);)*
+                        self
+                    }
+
+                    #build_fn
+                }
+            }
+        };
+
+        (buidler, impls)
+    }
+
+    fn builder_name(&self) -> syn::Ident {
+        let ident = self.id_ident();
+        syn::Ident::new(&format!("{}Builder", ident), ident.span())
     }
 
     /// Generate the `IngredientsFor` impl for this entity.
@@ -317,3 +411,14 @@ impl InputStruct {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct InputBuilderError(String);
+
+impl std::fmt::Display for InputBuilderError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{:?}", self.0)
+    }
+}
+
+impl std::error::Error for InputBuilderError {}
