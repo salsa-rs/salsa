@@ -1,4 +1,4 @@
-# Defining the IR
+# Defining the Intermediate Representation (IR)
 
 Before we can define the [parser](./parser.md), we need to define the intermediate representation (IR) that we will use for `calc` programs.
 In the [basic structure](./structure.md), we defined some "pseudo-Rust" structures like `Statement` and `Expression`;
@@ -35,6 +35,7 @@ Inputs are defined as Rust structs with a `#[salsa::input]` annotation:
 ```
 
 In our compiler, we have just one simple input, the `SourceProgram`, which has a `text` field (the string).
+The `#[return_ref]` annotation is explained later.
 
 ### The data lives in the database
 
@@ -57,42 +58,50 @@ For an input, a `&mut db` reference is required, along with the values for each 
 let source = SourceProgram::new(&mut db, "print 11 + 11".to_string());
 ```
 
-You can read the value of the field with `source.text(&db)`, 
-and you can set the value of the field with `source.set_text(&mut db, "print 11 * 2".to_string())`.
+* You can set the value of the field with `source.set_text(&mut db, "print 11 * 2".to_string())`.
+* You can read the value of the field with `source.text(&db)`
+    * In this case, the field is tagged as `#[return_ref]`, which means that the getter will return a `&String`, instead of cloning the string.
 
 ### Database revisions
 
-Whenever a function takes an `&mut` reference to the database, 
-that means that it can only be invoked from outside the incrementalized part of your program,
-as explained in [the overview](../overview.md#goal-of-salsa).
-When you change the value of an input field, that increments a 'revision counter' in the database,
+As explained in [the overview](../overview.md#goal-of-salsa),
+a mutable reference of the database `&mut db` is only invoked outside the incrementalized part of your program,
+since your program takes an inmutable reference of the `input`.
+
+After your program is invoked, the `input` can change, which means mutating the database.
+Changing the value of an input field increments a 'revision counter' in the database,
 indicating that some inputs are different now.
 When we talk about a "revision" of the database, we are referring to the state of the database in between changes to the input values.
 
-### Representing the parsed program
+## Tracked structs
 
-Next we will define a **tracked struct**.
+Next, we define **tracked** structs.
 Whereas inputs represent the *start* of a computation, tracked structs represent intermediate values created during your computation.
 
-In this case, the parser is going to take in the `SourceProgram` struct that we saw and return a `Program` that represents the fully parsed program:
+In our case, we track two structs created during the execution of the program:
+the parsed program and functions in the source program.
+
+### Representing the parsed program
+
+The parser (that we define later) takes a `SourceProgram` struct and returns a `Program` that represents the fully parsed program:
 
 ```rust
 {{#include ../../../examples-2022/calc/src/ir.rs:program}}
 ```
 
-Like with an input, the fields of a tracked struct are also stored in the database.
-Unlike an input, those fields are immutable (they cannot be "set"), and Salsa compares them across revisions to know when they have changed.
+Like with an **input**, the fields of a **tracked** struct are also stored in the database.
+Unlike an **input**, those fields are immutable (they cannot be "set"), and Salsa compares them across revisions to know when they have changed.
 In this case, if parsing the input produced the same `Program` result (e.g., because the only change to the input was some trailing whitespace, perhaps),
 then subsequent parts of the computation won't need to re-execute.
 (We'll revisit the role of tracked structs in reuse more in future parts of the IR.)
 
-Apart from the fields being immutable, the API for working with a tracked struct is quite similar to an input:
+Apart from the fields being immutable, the API for working with a `tracked` struct is quite similar to an `input` struct:
 
 * You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Program::new(&db, some_staements)`)
-* You use a getter to read the value of a field, just like with an input (e.g., `my_func.statements(db)` to read the `statements` field).
+* You use a getter to read the value of a field, just like with an input (e.g., `my_func.statements(&db)` to read the `statements` field).
     * In this case, the field is tagged as `#[return_ref]`, which means that the getter will return a `&Vec<Statement>`, instead of cloning the vector.
 
-## Representing functions
+### Representing functions
 
 We will also use a tracked struct to represent each function:
 The `Function` struct is going to be created by the parser to represent each of the functions defined by the user:
@@ -106,12 +115,12 @@ because the user changed the definition of `f`.
 This would mean that we have to re-execute those parts of the code that depended on `f.body`
 (but not those parts of the code that depended on the body of *other* functions).
 
-Apart from the fields being immutable, the API for working with a tracked struct is quite similar to an input:
+Apart from the fields being immutable, the API for working with a **tracked** struct is quite similar to an **input** struct:
 
 * You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Function::new(&db, some_name, some_args, some_body)`)
-* You use a getter to read the value of a field, just like with an input (e.g., `my_func.args(db)` to read the `args` field).
+* You use a getter to read the value of a field, just like with an input (e.g., `my_func.args(&db)` to read the `args` field).
 
-### id fields
+#### id fields
 
 To get better reuse across revisions, particularly when things are reordered, you can mark some entity fields with `#[id]`.
 Normally, you would do this on fields that represent the "name" of an entity.
@@ -121,9 +130,9 @@ For more details, see the [algorithm](../reference/algorithm.md) page of the ref
 
 ## Interned structs
 
-The final kind of Salsa struct are *interned structs*.
-As with input and tracked structs, the data for an interned struct is stored in the database, and you just pass around a single integer.
-Unlike those structs, if you intern the same data twice, you get back the **same integer**.
+The final kind of Salsa struct are **interned structs**.
+As with **input** and **tracked** structs, the data for an **interned** struct is stored in the database, and you just pass around a single integer.
+Unlike those structs, if you intern the same data twice, you get back the **same integer**!!.
 
 A classic use of interning is for small strings like function names and variables.
 It's annoying and inefficient to pass around those names with `String` values which must be cloned;
@@ -143,9 +152,13 @@ let f2 = FunctionId::new(&db, "my_string".to_string());
 assert_eq!(f1, f2);
 ```
 
-### Interned ids are guaranteed to be consistent within a revision, but not across revisions (but you don't have to care)
+### Interned structs and revisions
 
-Interned ids are guaranteed not to change within a single revision, so you can intern things from all over your program and get back consistent results.
+<strong>
+   Interned ids are guaranteed to be consistent within a revision, but not across revisions (and you don't have to care).
+</strong>
+
+**Interned** structs are guaranteed not to change within a single revision, so you can intern things from all over your program and get back consistent results.
 When you change the inputs, however, Salsa may opt to clear some of the interned values and choose different integers.
 However, if this happens, it will also be sure to re-execute every function that interned that value, so all of them still see a consistent value,
 just a different one than they saw in a previous revision.
@@ -153,7 +166,7 @@ just a different one than they saw in a previous revision.
 In other words, within a Salsa computation, you can assume that interning produces a single consistent integer, and you don't have to think about it.
 If, however, you export interned identifiers outside the computation, and then change the inputs, they may no longer be valid or may refer to different values.
 
-### Expressions and statements
+## Expressions and statements
 
 We won't use any special "Salsa structs" for expressions and statements:
 
