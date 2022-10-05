@@ -17,7 +17,7 @@ The `#[salsa::db(...)]` attribute takes a list of all the jars to include.
 The struct must have a field named `storage` whose type is `salsa::Storage<Self>`, but it can also contain whatever other fields you want.
 The `storage` struct owns all the data for the jars listed in the `db` attribute.
 
-The `salsa::db` attribute autogenerates a bunch of impls for things like the `salsa::HasJar<crate::Jar>` trait that we saw earlier.
+The `salsa::db` attribute autogenerates a bunch of impls for things like the `salsa::HasJar<crate::Jar>` trait.
 
 ## Implementing the `salsa::Database` trait
 
