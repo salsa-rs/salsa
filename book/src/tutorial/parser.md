@@ -41,7 +41,7 @@ This means that if the input changes, we will always re-parse the entire input a
 We'll see later that this *doesn't* mean we will always re-run the type checker and other parts of the compiler.
 
 This trade-off makes sense because (a) parsing is very cheap, so the overhead of tracking and enabling finer-grained reuse doesn't pay off
-and because (b) since strings are just a big blob-o-bytes without any structure, it's rather hard to identify which parts of the IR need to be reparsed.
+and (b) since strings are just a big blob-o-bytes without any structure, it's rather hard to identify which parts of the IR need to be reparsed.
 Some systems do choose to do more granular reparsing, often by doing a "first pass" over the string to give it a bit of structure, 
 e.g. to identify the functions,
 but deferring the parsing of the body of each function until later.
@@ -50,12 +50,10 @@ Setting up a scheme like this is relatively easy in Salsa and uses the same prin
 ### Parameters to a tracked function
 
 The **first** parameter to a tracked function is **always** the database, `db: &dyn crate::Db`.
-It must be a `dyn` value of whatever database is associated with the jar.
+It must be a `dyn` value of whatever database is associated with the jar (the default jar is `crate::Jar`).
 
-The **second** parameter to a tracked function is **always** some kind of Salsa struct.
-The first parameter to a memoized function is always the database,
-which should be a `dyn Trait` value for the database trait associated with the jar
-(the default jar is `crate::Jar`).
+
+The **second** parameter to a tracked function is **always** some kind of Salsa struct (input, tracked or interned).
 
 Tracked functions may take other arguments as well, though our examples here do not.
 Functions that take additional arguments are less efficient and flexible.
@@ -63,11 +61,13 @@ It's generally better to structure tracked functions as functions of a single Sa
 
 ### The `return_ref` annotation
 
-You may have noticed that `parse_statements` is tagged with `#[salsa::tracked(return_ref)]`. 
+Tracked functions may be tagged with `#[salsa::tracked(return_ref)]`, as opposed to simply with `#[salsa::tracked]`. 
+
 Ordinarily, when you call a tracked function, the result you get back is cloned out of the database.
 The `return_ref` attribute means that a reference into the database is returned instead.
-So, when called, `parse_statements` will return an `&Vec<Statement>` rather than cloning the `Vec`.
+For example, `parse_statements` would return `&Vec<Statement>` rather than cloning `Vec<Statement>`.
+
 This is useful as a performance optimization.
-(You may recall the `return_ref` annotation from the [ir](./ir.md) section of the tutorial, 
-where it was placed on struct fields, with roughly the same meaning.)
+You may recall the `return_ref` annotation from the [ir](./ir.md) section of the tutorial, 
+where it was placed on struct fields, with roughly the same meaning.
 
