@@ -2,14 +2,25 @@ use crate::implementation::{TestContext, TestContextImpl};
 
 #[salsa::query_group(MemoizedDepInputs)]
 pub(crate) trait MemoizedDepInputsContext: TestContext {
+    fn dep_memoized3(&self) -> usize;
     fn dep_memoized2(&self) -> usize;
     fn dep_memoized1(&self) -> usize;
+
+    #[salsa::volatile]
+    fn dep_volatile1(&self) -> usize;
+
     #[salsa::dependencies]
     fn dep_derived1(&self) -> usize;
+
     #[salsa::input]
     fn dep_input1(&self) -> usize;
     #[salsa::input]
     fn dep_input2(&self) -> usize;
+}
+
+fn dep_memoized3(db: &dyn MemoizedDepInputsContext) -> usize {
+    db.log().add("Memoized3 invoked");
+    db.dep_volatile1()
 }
 
 fn dep_memoized2(db: &dyn MemoizedDepInputsContext) -> usize {
@@ -20,6 +31,11 @@ fn dep_memoized2(db: &dyn MemoizedDepInputsContext) -> usize {
 fn dep_memoized1(db: &dyn MemoizedDepInputsContext) -> usize {
     db.log().add("Memoized1 invoked");
     db.dep_derived1() * 2
+}
+
+fn dep_volatile1(db: &dyn MemoizedDepInputsContext) -> usize {
+    db.log().add("Volatile1 invoked");
+    db.dep_input1() / 2
 }
 
 fn dep_derived1(db: &dyn MemoizedDepInputsContext) -> usize {
@@ -58,4 +74,28 @@ fn revalidate() {
     let v = db.dep_memoized2();
     assert_eq!(v, 44);
     db.assert_log(&[]);
+}
+
+#[test]
+fn revalidate_volatile() {
+    let db = &mut TestContextImpl::default();
+
+    db.set_dep_input1(0);
+
+    // Initial run starts from Memoized3:
+    let v = db.dep_memoized3();
+    assert_eq!(v, 0);
+    db.assert_log(&["Memoized3 invoked", "Volatile1 invoked"]);
+
+    // The value is still cached
+    let v = db.dep_memoized3();
+    assert_eq!(v, 0);
+    db.assert_log(&[]);
+
+    // A change will force both the volatile and the memoized query to run again
+    db.set_dep_input1(44);
+
+    let v = db.dep_memoized3();
+    assert_eq!(v, 22);
+    db.assert_log(&["Volatile1 invoked", "Memoized3 invoked"]);
 }

@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 pub use crate::derived::DependencyStorage;
 pub use crate::derived::MemoizedStorage;
+pub use crate::derived::VolatileStorage;
 pub use crate::input::InputStorage;
 pub use crate::interned::InternedStorage;
 pub use crate::interned::LookupInternedStorage;

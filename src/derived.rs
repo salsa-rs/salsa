@@ -34,6 +34,11 @@ pub type MemoizedStorage<Q> = DerivedStorage<Q, AlwaysMemoizeValue>;
 /// storage requirements.
 pub type DependencyStorage<Q> = DerivedStorage<Q, NeverMemoizeValue>;
 
+/// "Volatile" quries stores the value but always updates the value when recomputed,
+/// forcing any dependent queries to also be recomputed. No `Eq` constraint is required
+/// for the value stored.
+pub type VolatileStorage<Q> = DerivedStorage<Q, VolatileMemoizeValue>;
+
 /// Handles storage where the value is 'derived' by executing a
 /// function (in contrast to "inputs").
 pub struct DerivedStorage<Q, MP>
@@ -95,6 +100,20 @@ where
 
     fn memoized_value_eq(_old_value: &Q::Value, _new_value: &Q::Value) -> bool {
         panic!("cannot reach since we never memoize")
+    }
+}
+
+pub enum VolatileMemoizeValue {}
+impl<Q> MemoizationPolicy<Q> for VolatileMemoizeValue
+where
+    Q: QueryFunction,
+{
+    fn should_memoize_value(_key: &Q::Key) -> bool {
+        true
+    }
+
+    fn memoized_value_eq(_old_value: &Q::Value, _new_value: &Q::Value) -> bool {
+        false
     }
 }
 

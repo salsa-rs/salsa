@@ -59,6 +59,10 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                         storage = QueryStorage::Dependencies;
                         num_storages += 1;
                     }
+                    "volatile" => {
+                        storage = QueryStorage::Volatile;
+                        num_storages += 1;
+                    }
                     "input" => {
                         storage = QueryStorage::Input;
                         num_storages += 1;
@@ -277,7 +281,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 specific durability instead of the default of
                 `Durability::LOW`. You can use `Durability::MAX`
                 to promise that its value will never change again.
- 
+
                 See `{fn_name}` for details.
 
                 *Note:* Setting values will trigger cancellation
@@ -400,6 +404,9 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
             QueryStorage::Memoized => quote!(salsa::plumbing::MemoizedStorage<Self>),
             QueryStorage::Dependencies => {
                 quote!(salsa::plumbing::DependencyStorage<Self>)
+            }
+            QueryStorage::Volatile => {
+                quote!(salsa::plumbing::VolatileStorage<Self>)
             }
             QueryStorage::Input => quote!(salsa::plumbing::InputStorage<Self>),
             QueryStorage::Interned => quote!(salsa::plumbing::InternedStorage<Self>),
@@ -747,6 +754,7 @@ enum QueryStorage {
     Interned,
     InternedLookup { intern_query_type: Ident },
     Transparent,
+    Volatile,
 }
 
 impl QueryStorage {
@@ -757,7 +765,7 @@ impl QueryStorage {
             | QueryStorage::Interned
             | QueryStorage::InternedLookup { .. }
             | QueryStorage::Transparent => false,
-            QueryStorage::Memoized | QueryStorage::Dependencies => true,
+            QueryStorage::Memoized | QueryStorage::Dependencies | QueryStorage::Volatile => true,
         }
     }
 }
