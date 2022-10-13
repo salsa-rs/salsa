@@ -304,7 +304,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         let db_type = self.db_dyn_ty();
         let ident_string = ident.to_string();
 
-        // `::salsa::debug::helper::SalsaDebug` will use `DebugWithDb` or fallbak to `Debug`
+        // `salsa::debug::helper::SalsaDebug` will use `DebugWithDb` or fallback to `Debug`
         let fields = self
             .all_fields()
             .into_iter()
@@ -316,7 +316,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                 let field_debug = quote_spanned! { field.field.span() =>
                     debug_struct = debug_struct.field(
                         #field_name_string,
-                        &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
+                        &salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
                             #[allow(clippy::needless_borrow)]
                             &self.#field_getter(_db),
                             _db,
@@ -339,12 +339,12 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             })
             .collect::<TokenStream>();
 
-        // `use ::salsa::debug::helper::Fallback` is needed for the fallback to `Debug` impl
+        // `use salsa::debug::helper::Fallback` is needed for the fallback to `Debug` impl
         parse_quote_spanned! {ident.span()=>
-            impl ::salsa::DebugWithDb<#db_type> for #ident {
+            impl salsa::DebugWithDb<#db_type> for #ident {
                 fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type, _include_all_fields: bool) -> ::std::fmt::Result {
                     #[allow(unused_imports)]
-                    use ::salsa::debug::helper::Fallback;
+                    use salsa::debug::helper::Fallback;
                     let mut debug_struct = &mut f.debug_struct(#ident_string);
                     debug_struct = debug_struct.field("[salsa id]", &self.0.as_u32());
                     #fields
