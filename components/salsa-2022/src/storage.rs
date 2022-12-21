@@ -22,7 +22,7 @@ pub struct Storage<DB: HasJars> {
     ///
     /// Even though this struct is stored in an `Arc`, we sometimes get mutable access to it
     /// by using `Arc::get_mut`. This is only possible when all parallel snapshots have been dropped.
-    shared: Arc<Shared<DB>>,
+    shared: Shared<DB>,
 
     /// The "ingredients" structure stores the information about how to find each ingredient in the database.
     /// It allows us to take the [`IngredientIndex`] assigned to a particular ingredient
@@ -43,11 +43,11 @@ struct Shared<DB: HasJars> {
     /// Contains the data for each jar in the database.
     /// Each jar stores its own structs in there that ultimately contain ingredients
     /// (types that implement the [`Ingredient`] trait, like [`crate::function::FunctionIngredient`]).
-    jars: DB::Jars,
+    jars: Option<Arc<DB::Jars>>,
 
     /// Conditional variable that is used to coordinate cancellation.
     /// When the main thread writes to the database, it blocks until each of the snapshots can be cancelled.
-    cvar: Condvar,
+    cvar: Arc<Condvar>,
 }
 
 // ANCHOR: default
@@ -59,10 +59,10 @@ where
         let mut routes = Routes::new();
         let jars = DB::create_jars(&mut routes);
         Self {
-            shared: Arc::new(Shared {
-                jars,
-                cvar: Default::default(),
-            }),
+            shared: Shared {
+                jars: Some(Arc::new(jars)),
+                cvar: Arc::new(Default::default()),
+            },
             routes: Arc::new(routes),
             runtime: Runtime::default(),
         }
@@ -86,7 +86,7 @@ where
     }
 
     pub fn jars(&self) -> (&DB::Jars, &Runtime) {
-        (&self.shared.jars, &self.runtime)
+        (self.shared.jars.as_ref().unwrap(), &self.runtime)
     }
 
     pub fn runtime(&self) -> &Runtime {
@@ -111,17 +111,17 @@ where
 
         // Acquire `&mut` access to `self.shared` -- this is only possible because
         // the snapshots have all been dropped, so we hold the only handle to the `Arc`.
-        let shared = Arc::get_mut(&mut self.shared).unwrap();
+        let jars = Arc::get_mut(self.shared.jars.as_mut().unwrap()).unwrap();
 
         // Inform other ingredients that a new revision has begun.
         // This gives them a chance to free resources that were being held until the next revision.
         let routes = self.routes.clone();
         for route in routes.reset_routes() {
-            route(&mut shared.jars).reset_for_new_revision();
+            route(jars).reset_for_new_revision();
         }
 
         // Return mut ref to jars + runtime.
-        (&mut shared.jars, &mut self.runtime)
+        (jars, &mut self.runtime)
     }
     // ANCHOR_END: jars_mut
 
@@ -136,7 +136,7 @@ where
             self.runtime.set_cancellation_flag();
 
             // If we have unique access to the jars, we are done.
-            if Arc::get_mut(&mut self.shared).is_some() {
+            if Arc::get_mut(self.shared.jars.as_mut().unwrap()).is_some() {
                 return;
             }
 
@@ -155,7 +155,19 @@ where
 
     pub fn ingredient(&self, ingredient_index: IngredientIndex) -> &dyn Ingredient<DB> {
         let route = self.routes.route(ingredient_index);
-        route(&self.shared.jars)
+        route(self.shared.jars.as_ref().unwrap())
+    }
+}
+
+impl<DB> Clone for Shared<DB>
+where
+    DB: HasJars,
+{
+    fn clone(&self) -> Self {
+        Self {
+            jars: self.jars.clone(),
+            cvar: self.cvar.clone(),
+        }
     }
 }
 
@@ -164,6 +176,7 @@ where
     DB: HasJars,
 {
     fn drop(&mut self) {
+        drop(self.jars.take());
         self.cvar.notify_all();
     }
 }
