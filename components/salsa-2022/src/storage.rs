@@ -19,9 +19,6 @@ pub struct Storage<DB: HasJars> {
     /// Data shared across all databases. This contains the ingredients needed by each jar.
     /// See the ["jars and ingredients" chapter](https://salsa-rs.github.io/salsa/plumbing/jars_and_ingredients.html)
     /// for more detailed description.
-    ///
-    /// Even though this struct is stored in an `Arc`, we sometimes get mutable access to it
-    /// by using `Arc::get_mut`. This is only possible when all parallel snapshots have been dropped.
     shared: Shared<DB>,
 
     /// The "ingredients" structure stores the information about how to find each ingredient in the database.
@@ -43,6 +40,9 @@ struct Shared<DB: HasJars> {
     /// Contains the data for each jar in the database.
     /// Each jar stores its own structs in there that ultimately contain ingredients
     /// (types that implement the [`Ingredient`] trait, like [`crate::function::FunctionIngredient`]).
+    ///
+    /// Even though these jars are stored in an `Arc`, we sometimes get mutable access to them
+    /// by using `Arc::get_mut`. This is only possible when all parallel snapshots have been dropped.
     jars: Option<Arc<DB::Jars>>,
 
     /// Conditional variable that is used to coordinate cancellation.
