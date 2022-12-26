@@ -171,13 +171,13 @@ where
     }
 }
 
-impl<DB> Drop for Shared<DB>
+impl<DB> Drop for Storage<DB>
 where
     DB: HasJars,
 {
     fn drop(&mut self) {
-        drop(self.jars.take());
-        self.cvar.notify_all();
+        drop(self.shared.jars.take());
+        self.shared.cvar.notify_all();
     }
 }
 
