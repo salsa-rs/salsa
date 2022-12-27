@@ -1,41 +1,65 @@
-/// This example is an analogy of a calculation
-/// that has multiple inputs that refer to each other
-/// and any input can be the entry point of a calculation.
-///
-/// `FlatNode` represents an input.
-/// `Tree` represents an intermediate or final result of a computation.
-/// `construct_tree` represents an internal recursive computation.
-/// `entrypoint` represents an entrypoint of a computation.
+// This example is an analogy of a calculation
+// that has multiple inputs that depend on each other
+// and any input can be the entry point of a calculation.
+//
+// - `FlatNode` represents an input.
+// - `usize` represents an input id.
+// - `Tree` represents an intermediate or final result of a computation.
+// - `fn construct_tree` represents an internal recursive computation.
+// - `fn entrypoint` represents an entrypoint of a computation.
 
 #[salsa::jar(db = Db)]
 struct Jar(FlatNode, Tree, construct_tree, entrypoint);
 
-trait Db: salsa::DbWithJar<Jar> {}
+trait Db: salsa::DbWithJar<Jar> {
+    fn create_flat_node(&mut self, id: usize, children: Vec<usize>) -> FlatNode;
 
-impl<DB> Db for DB where DB: ?Sized + salsa::DbWithJar<Jar> {}
+    fn get_flat_node(&self, id: usize) -> FlatNode;
+
+    fn remove_flat_node(&mut self, id: usize);
+}
+
+impl Db for Database {
+    fn create_flat_node(&mut self, id: usize, children: Vec<usize>) -> FlatNode {
+        let flat_node = FlatNode::new(self, id, children);
+        self.flat_nodes.insert(id, flat_node);
+        flat_node
+    }
+
+    fn get_flat_node(&self, id: usize) -> FlatNode {
+        self.flat_nodes[&id]
+    }
+
+    fn remove_flat_node(&mut self, id: usize) {
+        let _flat_node = self.flat_nodes.remove(&id);
+        // TODO: How to remove it from the storage?
+    }
+}
 
 #[derive(Default)]
 #[salsa::db(Jar)]
 struct Database {
     storage: salsa::Storage<Self>,
+    flat_nodes: std::collections::HashMap<usize, FlatNode>,
 }
 
 impl salsa::Database for Database {}
 
-// Looks like recursive but it's not.
 #[salsa::input]
 struct FlatNode {
     #[salsa::id]
     id: usize,
-    children: Vec<FlatNode>,
+    children: Vec<usize>,
 }
 
+// We cannot construct a real recursive data structure as a salsa item,
+// so we need a wrapper.
 #[salsa::tracked]
 struct Tree {
     root: Node,
 }
 
-// True recursive data structure.
+// The recursive data structure.
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct Node {
     id: usize,
@@ -48,8 +72,13 @@ fn construct_tree(db: &dyn Db, node: FlatNode) -> Tree {
         id: node.id(db),
         children: node
             .children(db)
-            .iter()
-            .map(|child| construct_tree(db, *child).root(db))
+            .into_iter()
+            .map(|child| {
+                let flat_node = db.get_flat_node(child);
+                let tree = construct_tree(db, flat_node);
+                // Unwrap the wrapper.
+                tree.root(db)
+            })
             .collect(),
     };
     Tree::new(db, node)
@@ -63,10 +92,10 @@ fn entrypoint(db: &dyn Db, node: FlatNode) -> Tree {
 pub fn main() {
     let mut db = Database::default();
 
-    let node0 = FlatNode::new(&db, 0, vec![]);
-    let node1 = FlatNode::new(&db, 1, vec![]);
-    let node2 = FlatNode::new(&db, 2, vec![node0, node1]);
-    let node3 = FlatNode::new(&db, 3, vec![node2]);
+    let node0 = db.create_flat_node(0, vec![]);
+    let _node1 = db.create_flat_node(1, vec![]);
+    let node2 = db.create_flat_node(2, vec![0, 1]);
+    let node3 = db.create_flat_node(3, vec![2]);
 
     assert_eq!(
         entrypoint(&db, node0).root(&db),
@@ -95,7 +124,8 @@ pub fn main() {
         }
     );
 
-    node2.set_children(&mut db).to(vec![node1]);
+    // Removes nede0 from node2's children.
+    node2.set_children(&mut db).to(vec![1]);
     assert_eq!(
         entrypoint(&db, node3).root(&db),
         Node {
@@ -110,6 +140,5 @@ pub fn main() {
         }
     );
 
-    // TODO: How to remove a node?
-    // node0.remove(&mut db);
+    db.remove_flat_node(0)
 }
