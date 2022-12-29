@@ -336,10 +336,10 @@ where
         let mut routes = Routes::new();
         let jars = DB::create_jars(&amp;mut routes);
         Self {
-            shared: Arc::new(Shared {
-                jars,
-                cvar: Default::default(),
-            }),
+            shared: Shared {
+                jars: Some(Arc::new(jars)),
+                cvar: Arc::new(Default::default()),
+            },
             routes: Arc::new(routes),
             runtime: Runtime::default(),
         }

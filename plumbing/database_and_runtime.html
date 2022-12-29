@@ -203,17 +203,17 @@ guarantees that we have successfully managed to cancel the other worker threads
 
         // Acquire `&amp;mut` access to `self.shared` -- this is only possible because
         // the snapshots have all been dropped, so we hold the only handle to the `Arc`.
-        let shared = Arc::get_mut(&amp;mut self.shared).unwrap();
+        let jars = Arc::get_mut(self.shared.jars.as_mut().unwrap()).unwrap();
 
         // Inform other ingredients that a new revision has begun.
         // This gives them a chance to free resources that were being held until the next revision.
         let routes = self.routes.clone();
         for route in routes.reset_routes() {
-            route(&amp;mut shared.jars).reset_for_new_revision();
+            route(jars).reset_for_new_revision();
         }
 
         // Return mut ref to jars + runtime.
-        (&amp;mut shared.jars, &amp;mut self.runtime)
+        (jars, &amp;mut self.runtime)
     }
 <span class="boring">}
 </span></code></pre></pre>
@@ -231,7 +231,7 @@ guarantees that we have successfully managed to cancel the other worker threads
             self.runtime.set_cancellation_flag();
 
             // If we have unique access to the jars, we are done.
-            if Arc::get_mut(&amp;mut self.shared).is_some() {
+            if Arc::get_mut(self.shared.jars.as_mut().unwrap()).is_some() {
                 return;
             }
 
