@@ -176,6 +176,8 @@ where
     DB: HasJars,
 {
     fn drop(&mut self) {
+        // Drop the Arc reference before the cvar is notified,
+        // since other threads are sleeping, waiting for it to reach 1.
         drop(self.shared.jars.take());
         self.shared.cvar.notify_all();
     }
