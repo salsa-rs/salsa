@@ -16,18 +16,17 @@ fn main() -> Result<()> {
     let (tx, rx) = unbounded();
     let mut db = Database::new(tx);
 
-    let initial_file_path = std::env::args_os()
+    let initial_file_path: PathBuf = std::env::args_os()
         .nth(1)
-        .ok_or_else(|| eyre!("Usage: ./lazy-input <input-file>"))?;
+        .ok_or_else(|| eyre!("Usage: ./lazy-input <input-file>"))?
+        .into();
 
-    // Create the initial input using the input method so that changes to it
-    // will be watched like the other files.
-    let initial = db.input(initial_file_path.into())?;
     loop {
         // Compile the code starting at the provided input, this will read other
         // needed files using the on-demand mechanism.
-        let sum = compile(&db, initial);
-        let diagnostics = compile::accumulated::<Diagnostic>(&db, initial);
+        let file = db.file(initial_file_path.clone())?;
+        let sum = sum(&db, file);
+        let diagnostics = sum::accumulated::<Diagnostic>(&db, file);
         if diagnostics.is_empty() {
             println!("Sum is: {}", sum);
         } else {
@@ -46,41 +45,47 @@ fn main() -> Result<()> {
             let path = event.path.canonicalize().wrap_err_with(|| {
                 format!("Failed to canonicalize path {}", event.path.display())
             })?;
-            let file = match db.files.get(&path) {
-                Some(file) => *file,
+            let contents = match db.files.get(&path) {
+                Some(contents) => *contents,
                 None => continue,
             };
             // `path` has changed, so read it and update the contents to match.
             // This creates a new revision and causes the incremental algorithm
             // to kick in, just like any other update to a salsa input.
-            let contents = std::fs::read_to_string(path)
+            let data = std::fs::read_to_string(path)
                 .wrap_err_with(|| format!("Failed to read file {}", event.path.display()))?;
-            file.set_contents(&mut db).to(contents);
+            contents.set_data(&mut db).to(data);
         }
     }
 }
 // ANCHOR_END: main
 
 #[salsa::jar(db = Db)]
-struct Jar(Diagnostic, File, ParsedFile, compile, parse, sum);
+struct Jar(Diagnostic, File, Contents, ParsedFile, parse, sum);
+
+#[salsa::interned]
+struct File {
+    #[return_ref]
+    path: PathBuf,
+}
 
 // ANCHOR: db
 #[salsa::input]
-struct File {
-    path: PathBuf,
+struct Contents {
     #[return_ref]
-    contents: String,
+    data: String,
 }
 
 trait Db: salsa::DbWithJar<Jar> {
-    fn input(&self, path: PathBuf) -> Result<File>;
+    fn file(&self, path: PathBuf) -> Result<File>;
+    fn contents(&self, file: File) -> Result<&str>;
 }
 
 #[salsa::db(Jar)]
 struct Database {
     storage: salsa::Storage<Self>,
     logs: Mutex<Vec<String>>,
-    files: DashMap<PathBuf, File>,
+    files: DashMap<PathBuf, Contents>,
     file_watcher: Mutex<Debouncer<RecommendedWatcher>>,
 }
 
@@ -97,11 +102,15 @@ impl Database {
 }
 
 impl Db for Database {
-    fn input(&self, path: PathBuf) -> Result<File> {
+    fn file(&self, path: PathBuf) -> Result<File> {
         let path = path
             .canonicalize()
             .wrap_err_with(|| format!("Failed to read {}", path.display()))?;
-        Ok(match self.files.entry(path.clone()) {
+        Ok(File::new(self, path))
+    }
+
+    fn contents(&self, file: File) -> Result<&str> {
+        let contents = match self.files.entry(file.path(self).clone()) {
             // If the file already exists in our cache then just return it.
             Entry::Occupied(entry) => *entry.get(),
             // If we haven't read this file yet set up the watch, read the
@@ -109,16 +118,18 @@ impl Db for Database {
             Entry::Vacant(entry) => {
                 // Set up the watch before reading the contents to try to avoid
                 // race conditions.
+                let path = file.path(self);
                 let watcher = &mut *self.file_watcher.lock().unwrap();
                 watcher
                     .watcher()
-                    .watch(&path, RecursiveMode::NonRecursive)
+                    .watch(path, RecursiveMode::NonRecursive)
                     .unwrap();
-                let contents = std::fs::read_to_string(&path)
+                let data = std::fs::read_to_string(path)
                     .wrap_err_with(|| format!("Failed to read {}", path.display()))?;
-                *entry.insert(File::new(self, path, contents))
+                *entry.insert(Contents::new(self, data))
             }
-        })
+        };
+        Ok(contents.data(self))
     }
 }
 // ANCHOR_END: db
@@ -158,24 +169,26 @@ impl Diagnostic {
 struct ParsedFile {
     value: u32,
     #[return_ref]
-    links: Vec<ParsedFile>,
+    links: Vec<File>,
 }
 
 #[salsa::tracked]
-fn compile(db: &dyn Db, input: File) -> u32 {
-    let parsed = parse(db, input);
-    sum(db, parsed)
-}
+fn parse(db: &dyn Db, file: File) -> ParsedFile {
+    let contents = match db.contents(file) {
+        Ok(file) => file,
+        Err(err) => {
+            Diagnostic::push_error(db, file, err);
+            return ParsedFile::new(db, 0, vec![]);
+        }
+    };
 
-#[salsa::tracked(recovery_fn = recover_parse)]
-fn parse(db: &dyn Db, input: File) -> ParsedFile {
-    let mut lines = input.contents(db).lines();
+    let mut lines = contents.lines();
     let value = match lines.next().map(|line| (line.parse::<u32>(), line)) {
         Some((Ok(num), _)) => num,
         Some((Err(e), line)) => {
             Diagnostic::push_error(
                 db,
-                input,
+                file,
                 Report::new(e).wrap_err(format!(
                     "First line ({}) could not be parsed as an integer",
                     line
@@ -184,7 +197,7 @@ fn parse(db: &dyn Db, input: File) -> ParsedFile {
             0
         }
         None => {
-            Diagnostic::push_error(db, input, eyre!("File must contain an integer"));
+            Diagnostic::push_error(db, file, eyre!("File must contain an integer"));
             0
         }
     };
@@ -195,36 +208,35 @@ fn parse(db: &dyn Db, input: File) -> ParsedFile {
                 Err(err) => {
                     Diagnostic::push_error(
                         db,
-                        input,
+                        file,
                         Report::new(err).wrap_err(format!("Failed to parse path: {}", path)),
                     );
                     return None;
                 }
             };
-            let link_path = input.path(db).parent().unwrap().join(relative_path);
-            match db.input(link_path) {
-                Ok(file) => Some(parse(db, file)),
-                Err(err) => {
-                    Diagnostic::push_error(db, input, err);
-                    None
-                }
-            }
+            let path = file.path(db).parent().unwrap().join(relative_path);
+            db.file(path)
+                .map_err(|err| {
+                    Diagnostic::push_error(db, file, err);
+                })
+                .ok()
         })
         .collect();
     ParsedFile::new(db, value, links)
 }
 
-fn recover_parse(db: &dyn Db, _cycle: &salsa::Cycle, input: File) -> ParsedFile {
-    Diagnostic::push_error(db, input, Report::msg("Include cycle"));
-    ParsedFile::new(db, 0, vec![])
-}
-
-#[salsa::tracked]
-fn sum(db: &dyn Db, input: ParsedFile) -> u32 {
-    input.value(db)
-        + input
+#[salsa::tracked(recovery_fn = recover_sum)]
+fn sum(db: &dyn Db, file: File) -> u32 {
+    let parsed = parse(db, file);
+    parsed.value(db)
+        + parsed
             .links(db)
             .iter()
             .map(|&file| sum(db, file))
             .sum::<u32>()
+}
+
+fn recover_sum(db: &dyn Db, _cycle: &salsa::Cycle, file: File) -> u32 {
+    Diagnostic::push_error(db, file, Report::msg("File cycle"));
+    0
 }
