@@ -167,7 +167,7 @@ fn compile(db: &dyn Db, input: File) -> u32 {
     sum(db, parsed)
 }
 
-#[salsa::tracked]
+#[salsa::tracked(recovery_fn = recover_parse)]
 fn parse(db: &dyn Db, input: File) -> ParsedFile {
     let mut lines = input.contents(db).lines();
     let value = match lines.next().map(|line| (line.parse::<u32>(), line)) {
@@ -212,6 +212,11 @@ fn parse(db: &dyn Db, input: File) -> ParsedFile {
         })
         .collect();
     ParsedFile::new(db, value, links)
+}
+
+fn recover_parse(db: &dyn Db, _cycle: &salsa::Cycle, input: File) -> ParsedFile {
+    Diagnostic::push_error(db, input, Report::msg("Include cycle"));
+    ParsedFile::new(db, 0, vec![])
 }
 
 #[salsa::tracked]
