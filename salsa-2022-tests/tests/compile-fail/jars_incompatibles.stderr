@@ -57,5 +57,8 @@ error[E0412]: cannot find type `Jar1` in this scope
    |
 26 | #[salsa::input(jar = Jar1)]
    |                      ^^^^ not found in this scope
-27 | struct MyInput {
-   |               - help: you might be missing a type parameter: `<Jar1>`
+   |
+help: you might be missing a type parameter
+   |
+27 | struct MyInput<Jar1> {
+   |               ++++++
