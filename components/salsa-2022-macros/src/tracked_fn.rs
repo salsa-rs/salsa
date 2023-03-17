@@ -234,6 +234,12 @@ fn tracked_method(
 
     let (config_ty, fn_struct) = crate::tracked_fn::fn_struct(&args, &item_fn)?;
 
+    // we generate a `'db` lifetime that clippy
+    // sometimes doesn't like
+    item_method
+        .attrs
+        .push(syn::parse_quote! {#[allow(clippy::needless_lifetimes)]});
+
     item_method.block = getter_fn(
         &args,
         &mut item_method.sig,
