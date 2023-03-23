@@ -11,6 +11,7 @@ on:
     - '**.rs'
     - '**/Cargo.*'
     - '.github/workflows/**.yml'
+    - 'salsa-2022-tests/tests/compile-fail/**.stderr'
 
 jobs:
   test:
