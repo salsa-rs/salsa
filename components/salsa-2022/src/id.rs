@@ -26,14 +26,16 @@ impl Id {
     /// but it can be useful if you are using the type as a general
     /// purpose "identifier" internally.
     #[track_caller]
-    pub fn from_u32(x: u32) -> Self {
-        assert!(x < Self::MAX_U32);
+    pub const fn from_u32(x: u32) -> Self {
         Id {
-            value: NonZeroU32::new(x + 1).unwrap(),
+            value: match NonZeroU32::new(x + 1) {
+                Some(v) => v,
+                None => panic!("given value is too large to be a `salsa::Id`"),
+            },
         }
     }
 
-    pub fn as_u32(self) -> u32 {
+    pub const fn as_u32(self) -> u32 {
         self.value.get() - 1
     }
 }
