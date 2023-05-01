@@ -158,9 +158,7 @@ fn generate_fields(input: &ItemStruct) -> FieldsUnnamed {
             span: f.brace_token.span,
         },
         syn::Fields::Unnamed(f) => f.paren_token,
-        syn::Fields::Unit => syn::token::Paren {
-            span: input.ident.span(),
-        },
+        syn::Fields::Unit => syn::token::Paren(input.ident.span()),
     };
 
     FieldsUnnamed {

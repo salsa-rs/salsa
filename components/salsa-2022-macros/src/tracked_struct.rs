@@ -91,7 +91,7 @@ impl TrackedStruct {
         let id_field_tys: Vec<_> = self.id_fields().map(SalsaField::ty).collect();
         let id_field_vises: Vec<_> = self.id_fields().map(SalsaField::vis).collect();
         let id_field_clones: Vec<_> = self.id_fields().map(SalsaField::is_clone_field).collect();
-        let id_field_getters: Vec<syn::ImplItemMethod> = id_field_indices.iter().zip(&id_field_get_names).zip(&id_field_tys).zip(&id_field_vises).zip(&id_field_clones).map(|((((field_index, field_get_name), field_ty), field_vis), is_clone_field)|
+        let id_field_getters: Vec<syn::ImplItemFn> = id_field_indices.iter().zip(&id_field_get_names).zip(&id_field_tys).zip(&id_field_vises).zip(&id_field_clones).map(|((((field_index, field_get_name), field_ty), field_vis), is_clone_field)|
             if !*is_clone_field {
                 parse_quote! {
                     #field_vis fn #field_get_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty
@@ -123,7 +123,7 @@ impl TrackedStruct {
             .value_fields()
             .map(SalsaField::is_clone_field)
             .collect();
-        let value_field_getters: Vec<syn::ImplItemMethod> = value_field_indices.iter().zip(&value_field_get_names).zip(&value_field_tys).zip(&value_field_vises).zip(&value_field_clones).map(|((((field_index, field_get_name), field_ty), field_vis), is_clone_field)|
+        let value_field_getters: Vec<syn::ImplItemFn> = value_field_indices.iter().zip(&value_field_get_names).zip(&value_field_tys).zip(&value_field_vises).zip(&value_field_clones).map(|((((field_index, field_get_name), field_ty), field_vis), is_clone_field)|
             if !*is_clone_field {
                 parse_quote! {
                     #field_vis fn #field_get_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty

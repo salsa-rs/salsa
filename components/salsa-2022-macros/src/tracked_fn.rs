@@ -110,11 +110,11 @@ pub(crate) fn tracked_impl(
         .iter_mut()
         .filter_map(|item| {
             let item_method = match item {
-                syn::ImplItem::Method(item_method) => item_method,
+                syn::ImplItem::Fn(item_method) => item_method,
                 _ => return None,
             };
             let salsa_tracked_attr = item_method.attrs.iter().position(|attr| {
-                let path = &attr.path.segments;
+                let path = &attr.path().segments;
                 path.len() == 2
                     && path[0].arguments == syn::PathArguments::None
                     && path[0].ident == "salsa"
@@ -122,10 +122,9 @@ pub(crate) fn tracked_impl(
                     && path[1].ident == "tracked"
             })?;
             let salsa_tracked_attr = item_method.attrs.remove(salsa_tracked_attr);
-            let inner_args = if !salsa_tracked_attr.tokens.is_empty() {
-                salsa_tracked_attr.parse_args()
-            } else {
-                Ok(FnArgs::default())
+            let inner_args = match salsa_tracked_attr.meta {
+                syn::Meta::Path(_) => Ok(FnArgs::default()),
+                syn::Meta::List(_) | syn::Meta::NameValue(_) => salsa_tracked_attr.parse_args(),
             };
             let inner_args = match inner_args {
                 Ok(inner_args) => inner_args,
@@ -185,7 +184,7 @@ impl crate::options::AllowedOptions for TrackedImpl {
 fn tracked_method(
     outer_args: &ImplArgs,
     mut args: FnArgs,
-    item_method: &mut syn::ImplItemMethod,
+    item_method: &mut syn::ImplItemFn,
     self_type: &syn::TypePath,
     name: &str,
 ) -> syn::Result<TokenStream> {
@@ -633,7 +632,7 @@ fn setter_fn(
     args: &FnArgs,
     item_fn: &syn::ItemFn,
     config_ty: &syn::Type,
-) -> syn::Result<syn::ImplItemMethod> {
+) -> syn::Result<syn::ImplItemFn> {
     // The setter has *always* the same signature as the original:
     // but it takes a value arg and has no return type.
     let jar_ty = args.jar_ty();
@@ -654,7 +653,7 @@ fn setter_fn(
     let value_arg = syn::Ident::new("__value", item_fn.sig.output.span());
     setter_sig.inputs.push(parse_quote!(#value_arg: #value_ty));
     setter_sig.output = ReturnType::Default;
-    Ok(syn::ImplItemMethod {
+    Ok(syn::ImplItemFn {
         attrs: vec![],
         vis: item_fn.vis.clone(),
         defaultness: None,
@@ -685,7 +684,7 @@ fn setter_fn(
 fn set_lru_capacity_fn(
     args: &FnArgs,
     config_ty: &syn::Type,
-) -> syn::Result<Option<syn::ImplItemMethod>> {
+) -> syn::Result<Option<syn::ImplItemFn>> {
     if args.lru.is_none() {
         return Ok(None);
     }
@@ -707,7 +706,7 @@ fn specify_fn(
     args: &FnArgs,
     item_fn: &syn::ItemFn,
     config_ty: &syn::Type,
-) -> syn::Result<Option<syn::ImplItemMethod>> {
+) -> syn::Result<Option<syn::ImplItemFn>> {
     if args.specify.is_none() {
         return Ok(None);
     }
@@ -722,7 +721,7 @@ fn specify_fn(
     let value_arg = syn::Ident::new("__value", item_fn.sig.output.span());
     setter_sig.inputs.push(parse_quote!(#value_arg: #value_ty));
     setter_sig.output = ReturnType::Default;
-    Ok(Some(syn::ImplItemMethod {
+    Ok(Some(syn::ImplItemFn {
         attrs: vec![],
         vis: item_fn.vis.clone(),
         defaultness: None,
@@ -740,13 +739,19 @@ fn specify_fn(
 /// Given a function def tagged with `#[return_ref]`, modifies `fn_sig` so that
 /// it returns an `&Value` instead of `Value`. May introduce a name for the
 /// database lifetime if required.
-fn make_fn_return_ref(mut fn_sig: &mut syn::Signature) -> syn::Result<()> {
+fn make_fn_return_ref(fn_sig: &mut syn::Signature) -> syn::Result<()> {
     // An input should be a `&dyn Db`.
     // We need to ensure it has a named lifetime parameter.
     let (db_lifetime, _) = db_lifetime_and_ty(fn_sig)?;
 
     let (right_arrow, elem) = match fn_sig.output.clone() {
-        ReturnType::Default => (syn::Token![->](fn_sig.paren_token.span), parse_quote!(())),
+        ReturnType::Default => (
+            syn::Token![->]([
+                fn_sig.paren_token.span.open(),
+                fn_sig.paren_token.span.close(),
+            ]),
+            parse_quote!(()),
+        ),
         ReturnType::Type(rarrow, ty) => (rarrow, ty),
     };
 
@@ -783,7 +788,7 @@ fn db_lifetime_and_ty(func: &mut syn::Signature) -> syn::Result<(syn::Lifetime, 
                     let ident = syn::Ident::new("__db", and_token_span);
                     func.generics.params.insert(
                         0,
-                        syn::LifetimeDef {
+                        syn::LifetimeParam {
                             attrs: vec![],
                             lifetime: syn::Lifetime {
                                 apostrophe: and_token_span,

@@ -81,7 +81,7 @@ impl InputStruct {
         let field_tys: Vec<_> = self.all_field_tys();
         let field_clones: Vec<_> = self.all_fields().map(SalsaField::is_clone_field).collect();
         let get_field_names: Vec<_> = self.all_get_field_names();
-        let field_getters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&get_field_names).zip(&field_vises).zip(&field_tys).zip(&field_clones).map(|((((field_index, get_field_name), field_vis), field_ty), is_clone_field)|
+        let field_getters: Vec<syn::ImplItemFn> = field_indices.iter().zip(&get_field_names).zip(&field_vises).zip(&field_tys).zip(&field_clones).map(|((((field_index, get_field_name), field_vis), field_ty), is_clone_field)|
             if !*is_clone_field {
                 parse_quote! {
                     #field_vis fn #get_field_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty
@@ -106,7 +106,7 @@ impl InputStruct {
 
         // setters
         let set_field_names = self.all_set_field_names();
-        let field_setters: Vec<syn::ImplItemMethod> = field_indices.iter()
+        let field_setters: Vec<syn::ImplItemFn> = field_indices.iter()
             .zip(&set_field_names)
             .zip(&field_vises)
             .zip(&field_tys)
@@ -126,7 +126,7 @@ impl InputStruct {
         let constructor_name = self.constructor_name();
         let singleton = self.0.is_isingleton();
 
-        let constructor: syn::ImplItemMethod = if singleton {
+        let constructor: syn::ImplItemFn = if singleton {
             parse_quote! {
                 /// Creates a new singleton input
                 ///
@@ -160,7 +160,7 @@ impl InputStruct {
         };
 
         if singleton {
-            let get: syn::ImplItemMethod = parse_quote! {
+            let get: syn::ImplItemFn = parse_quote! {
                 #[track_caller]
                 pub fn get(__db: &#db_dyn_ty) -> Self {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
@@ -169,7 +169,7 @@ impl InputStruct {
                 }
             };
 
-            let try_get: syn::ImplItemMethod = parse_quote! {
+            let try_get: syn::ImplItemFn = parse_quote! {
                 #[track_caller]
                 pub fn try_get(__db: &#db_dyn_ty) -> Option<Self> {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);

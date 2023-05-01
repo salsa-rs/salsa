@@ -88,7 +88,7 @@ impl InternedStruct {
         let db_dyn_ty = self.db_dyn_ty();
         let jar_ty = self.jar_ty();
 
-        let field_getters: Vec<syn::ImplItemMethod> = self
+        let field_getters: Vec<syn::ImplItemFn> = self
             .all_fields()
             .map(|field| {
                 let field_name = field.name();
@@ -119,7 +119,7 @@ impl InternedStruct {
         let field_tys = self.all_field_tys();
         let data_ident = self.data_ident();
         let constructor_name = self.constructor_name();
-        let new_method: syn::ImplItemMethod = parse_quote! {
+        let new_method: syn::ImplItemFn = parse_quote! {
             #vis fn #constructor_name(
                 db: &#db_dyn_ty,
                 #(#field_names: #field_tys,)*

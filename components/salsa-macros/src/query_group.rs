@@ -1,4 +1,4 @@
-use std::convert::TryFrom;
+use std::{convert::TryFrom, iter::FromIterator};
 
 use crate::parenthesized::Parenthesized;
 use heck::ToUpperCamelCase;
@@ -36,7 +36,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
     // Decompose the trait into the corresponding queries.
     let mut queries = vec![];
     for item in input.items {
-        if let TraitItem::Method(method) = item {
+        if let TraitItem::Fn(method) = item {
             let query_name = method.sig.ident.to_string();
 
             let mut storage = QueryStorage::Memoized;
@@ -277,7 +277,7 @@ pub(crate) fn query_group(args: TokenStream, input: TokenStream) -> TokenStream 
                 specific durability instead of the default of
                 `Durability::LOW`. You can use `Durability::MAX`
                 to promise that its value will never change again.
- 
+
                 See `{fn_name}` for details.
 
                 *Note:* Setting values will trigger cancellation
@@ -681,13 +681,24 @@ impl TryFrom<syn::Attribute> for SalsaAttr {
     type Error = syn::Attribute;
 
     fn try_from(attr: syn::Attribute) -> Result<SalsaAttr, syn::Attribute> {
-        if is_not_salsa_attr_path(&attr.path) {
+        if is_not_salsa_attr_path(attr.path()) {
             return Err(attr);
         }
 
         let span = attr.span();
-        let name = attr.path.segments[1].ident.to_string();
-        let tts = attr.tokens.into();
+        let name = attr.path().segments[1].ident.to_string();
+        let tts = match attr.meta {
+            syn::Meta::Path(path) => path.into_token_stream(),
+            syn::Meta::List(ref list) => {
+                let tts = list
+                    .into_token_stream()
+                    .into_iter()
+                    .skip(attr.path().to_token_stream().into_iter().count());
+                proc_macro2::TokenStream::from_iter(tts)
+            }
+            syn::Meta::NameValue(nv) => nv.into_token_stream(),
+        }
+        .into();
 
         Ok(SalsaAttr { name, tts, span })
     }

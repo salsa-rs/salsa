@@ -220,7 +220,8 @@ struct QueryGroupList {
 
 impl Parse for QueryGroupList {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let query_groups: PunctuatedQueryGroups = input.parse_terminated(QueryGroup::parse)?;
+        let query_groups: PunctuatedQueryGroups =
+            input.parse_terminated(QueryGroup::parse, Token![,])?;
         Ok(QueryGroupList { query_groups })
     }
 }
