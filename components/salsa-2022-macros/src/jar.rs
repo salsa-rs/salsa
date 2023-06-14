@@ -106,21 +106,23 @@ pub(crate) fn jar_impl(
         .fields
         .iter()
         .zip(0..)
-        .map(|(f, i)| Ident::new(&format!("i{}", i), f.ty.span()))
+        .map(|(f, i)| syn::LitInt::new(&format!("{}", i), f.ty.span()))
         .collect();
     // ANCHOR: create_jar
     quote! {
-        impl<'salsa_db> salsa::jar::Jar<'salsa_db> for #jar_struct {
+        unsafe impl<'salsa_db> salsa::jar::Jar<'salsa_db> for #jar_struct {
             type DynDb = dyn #jar_trait + 'salsa_db;
 
-            fn create_jar<DB>(routes: &mut salsa::routes::Routes<DB>) -> Self
+            unsafe fn init_jar<DB>(place: *mut Self, routes: &mut salsa::routes::Routes<DB>)
             where
                 DB: salsa::storage::JarFromJars<Self> + salsa::storage::DbWithJar<Self>,
             {
                 #(
-                    let #field_var_names = <#field_tys as salsa::storage::IngredientsFor>::create_ingredients(routes);
+                    unsafe {
+                        std::ptr::addr_of_mut!((*place).#field_var_names)
+                            .write(<#field_tys as salsa::storage::IngredientsFor>::create_ingredients(routes));
+                    }
                 )*
-                Self(#(#field_var_names),*)
             }
         }
     }

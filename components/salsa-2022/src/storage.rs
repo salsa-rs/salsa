@@ -60,7 +60,7 @@ where
         let jars = DB::create_jars(&mut routes);
         Self {
             shared: Shared {
-                jars: Some(Arc::new(jars)),
+                jars: Some(Arc::from(jars)),
                 cvar: Arc::new(Default::default()),
             },
             routes: Arc::new(routes),
@@ -192,7 +192,7 @@ pub trait HasJars: HasJarsDyn + Sized {
     /// and it will also cancel any ongoing work in the current revision.
     fn jars_mut(&mut self) -> (&mut Self::Jars, &mut Runtime);
 
-    fn create_jars(routes: &mut Routes<Self>) -> Self::Jars;
+    fn create_jars(routes: &mut Routes<Self>) -> Box<Self::Jars>;
 }
 
 pub trait DbWithJar<J>: HasJar<J> + Database {
