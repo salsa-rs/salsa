@@ -194,6 +194,10 @@ where
     Id: InternedId,
     Data: InternedData,
 {
+    fn ingredient_index(&self) -> IngredientIndex {
+        self.ingredient_index
+    }
+
     fn maybe_changed_after(&self, _db: &DB, _input: DependencyIndex, revision: Revision) -> bool {
         revision < self.reset_at
     }

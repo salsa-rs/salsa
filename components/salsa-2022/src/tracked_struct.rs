@@ -137,6 +137,10 @@ where
     Data: TrackedStructData,
     DB: crate::Database,
 {
+    fn ingredient_index(&self) -> IngredientIndex {
+        self.interned.ingredient_index()
+    }
+
     fn maybe_changed_after(&self, db: &DB, input: DependencyIndex, revision: Revision) -> bool {
         self.interned.maybe_changed_after(db, input, revision)
     }

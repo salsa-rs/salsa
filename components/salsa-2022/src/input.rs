@@ -68,6 +68,10 @@ impl<DB: ?Sized, Id> Ingredient<DB> for InputIngredient<Id>
 where
     Id: InputId,
 {
+    fn ingredient_index(&self) -> IngredientIndex {
+        self.ingredient_index
+    }
+
     fn maybe_changed_after(&self, _db: &DB, _input: DependencyIndex, _revision: Revision) -> bool {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
