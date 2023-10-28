@@ -9,7 +9,7 @@ edition = "2021"
 crossbeam = "0.8.1"
 dashmap = "5.3.4"
 rustc-hash = "1.1.0"
-indexmap = "1.7.0"
+indexmap = "2"
 hashlink = "0.8.0"
 arc-swap = "1.4.0"
 crossbeam-utils = { version = "0.8", default-features = false }
