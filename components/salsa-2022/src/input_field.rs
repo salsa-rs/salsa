@@ -116,6 +116,10 @@ impl<DB: ?Sized, K, F> Ingredient<DB> for InputFieldIngredient<K, F>
 where
     K: AsId,
 {
+    fn ingredient_index(&self) -> IngredientIndex {
+        self.index
+    }
+
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
         CycleRecoveryStrategy::Panic
     }
