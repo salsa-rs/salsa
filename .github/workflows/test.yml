@@ -67,6 +67,8 @@ jobs:
   miri:
     name: "Miri"
     runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: "-Zmiri-isolation-error=warn"
     steps:
       - uses: actions/checkout@v3
       - name: Install Miri
