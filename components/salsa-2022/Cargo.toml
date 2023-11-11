@@ -11,7 +11,7 @@ dashmap = "5.3.4"
 rustc-hash = "1.1.0"
 indexmap = "2"
 hashlink = "0.8.0"
-arc-swap = "1.4.0"
+arc-swap = "1.6.0"
 crossbeam-utils = { version = "0.8", default-features = false }
 log = "0.4.5"
 parking_lot = "0.12.1"
