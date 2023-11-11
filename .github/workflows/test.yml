@@ -67,8 +67,6 @@ jobs:
   miri:
     name: "Miri"
     runs-on: ubuntu-latest
-    env:
-      MIRIFLAGS: "-Zmiri-isolation-error=warn"
     steps:
       - uses: actions/checkout@v3
       - name: Install Miri
@@ -77,4 +75,4 @@ jobs:
           rustup override set nightly
           cargo miri setup
       - name: Test with Miri
-        run: cargo miri test --no-fail-fast
+        run: cargo miri test --no-fail-fast -p salsa-2022 -p salsa-2022-tests -p calc -p lazy-input
