@@ -701,14 +701,6 @@ The <code>storage</code> struct owns all the data for the jars listed in the <co
 }
 <span class="boring">}
 </span></code></pre></pre>
-<h2 id="implementing-the-default-trait"><a class="header" href="#implementing-the-default-trait">Implementing the <code>Default</code> trait</a></h2>
-<p>It's not required, but implementing the <code>Default</code> trait is often a convenient way to let users instantiate your database:</p>
-<pre><pre class="playground"><code class="language-rust">
-<span class="boring">#![allow(unused)]
-</span>
-<span class="boring">fn main() {
-</span><span class="boring">}
-</span></code></pre></pre>
 <h2 id="implementing-the-traits-for-each-jar"><a class="header" href="#implementing-the-traits-for-each-jar">Implementing the traits for each jar</a></h2>
 <p>The <code>Database</code> struct also needs to implement the <a href="tutorial/./jar.html#database-trait-for-the-jar">database traits for each jar</a>.
 In our case, though, we already wrote that impl as a <a href="tutorial/./jar.html#implementing-the-database-trait-for-the-jar">blanket impl alongside the jar itself</a>,
