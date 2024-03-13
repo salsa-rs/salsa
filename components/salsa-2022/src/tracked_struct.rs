@@ -50,7 +50,7 @@ where
 
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
 struct TrackedStructKey<Data> {
-    query_key: Option<DatabaseKeyIndex>,
+    query_key: DatabaseKeyIndex,
     disambiguator: Disambiguator,
     data: Data,
 }
@@ -86,7 +86,7 @@ where
             data_hash,
         );
         let entity_key = TrackedStructKey {
-            query_key: Some(query_key),
+            query_key,
             disambiguator,
             data,
         };
