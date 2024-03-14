@@ -31,6 +31,7 @@
 - [Plumbing](./plumbing.md)
   - [Jars and ingredients](./plumbing/jars_and_ingredients.md)
   - [Databases and runtime](./plumbing/database_and_runtime.md)
+  - [Tracked structures](./plumbing/tracked_structs.md)
   - [Query operations](./plumbing/query_ops.md)
     - [maybe changed after](./plumbing/maybe_changed_after.md)
     - [Fetch](./plumbing/fetch.md)
