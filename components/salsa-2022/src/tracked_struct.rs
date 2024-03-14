@@ -1,14 +1,18 @@
 use std::fmt;
 
+use crossbeam::queue::SegQueue;
+
 use crate::{
     cycle::CycleRecoveryStrategy,
+    hash::FxDashMap,
     ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
     ingredient_list::IngredientList,
     interned::{InternedData, InternedId, InternedIngredient},
     key::{DatabaseKeyIndex, DependencyIndex},
+    plumbing::transmute_lifetime,
     runtime::{local_state::QueryOrigin, Runtime},
     salsa_struct::SalsaStructInDb,
-    Database, Event, IngredientIndex, Revision,
+    Database, Durability, Event, IngredientIndex, Revision,
 };
 
 pub trait TrackedStructId: InternedId {}
@@ -35,7 +39,9 @@ where
     Id: TrackedStructId,
     Data: TrackedStructData,
 {
-    interned: InternedIngredient<Id, TrackedStructKey<Data>>,
+    interned: InternedIngredient<Id, TrackedStructKey>,
+
+    entity_data: FxDashMap<Id, Box<TrackedStructValue<Data>>>,
 
     /// A list of each tracked function `f` whose key is this
     /// tracked struct.
@@ -45,13 +51,26 @@ where
     /// so they can remove any data tied to that instance.
     dependent_fns: IngredientList,
 
+    /// When specific entities are deleted, their data is added
+    /// to this vector rather than being immediately freed. This is because we may` have
+    /// references to that data floating about that are tied to the lifetime of some
+    /// `&db` reference. This queue itself is not freed until we have an `&mut db` reference,
+    /// guaranteeing that there are no more references to it.
+    deleted_entries: SegQueue<Box<TrackedStructValue<Data>>>,
+
     debug_name: &'static str,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
-struct TrackedStructKey<Data> {
+struct TrackedStructKey {
     query_key: DatabaseKeyIndex,
     disambiguator: Disambiguator,
+    data_hash: u64,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
+struct TrackedStructValue<Data> {
+    created_at: Revision,
     data: Data,
 }
 
@@ -66,7 +85,9 @@ where
     pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
             interned: InternedIngredient::new(index, debug_name),
+            entity_data: FxDashMap::default(),
             dependent_fns: IngredientList::new(),
+            deleted_entries: SegQueue::default(),
             debug_name,
         }
     }
@@ -85,18 +106,39 @@ where
             self.interned.reset_at(),
             data_hash,
         );
+
         let entity_key = TrackedStructKey {
             query_key,
             disambiguator,
-            data,
+            data_hash,
         };
-        let result = self.interned.intern(runtime, entity_key);
+        let (result, new_id) = self.interned.intern_full(runtime, entity_key);
         runtime.add_output(self.database_key_index(result).into());
+
+        if new_id {
+            let created_at = runtime.current_revision();
+            self.entity_data
+                .insert(result, Box::new(TrackedStructValue { created_at, data }));
+        }
+
         result
     }
 
     pub fn tracked_struct_data<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db Data {
-        &self.interned.data(runtime, id).data
+        let Some(data) = self.entity_data.get(&id) else {
+            panic!("no data found for entity id {id:?}");
+        };
+
+        runtime.report_tracked_read(
+            DependencyIndex::for_table(self.interned.ingredient_index()),
+            Durability::MAX,
+            data.created_at,
+        );
+
+        // Unsafety clause:
+        //
+        // * Values are only removed or altered when we have `&mut self`
+        unsafe { transmute_lifetime(self, &data.data) }
     }
 
     /// Deletes the given entities. This is used after a query `Q` executes and we can compare
@@ -118,6 +160,10 @@ where
         });
 
         self.interned.delete_index(id);
+        if let Some((_, data)) = self.entity_data.remove(&id) {
+            self.deleted_entries.push(data);
+        }
+
         for dependent_fn in self.dependent_fns.iter() {
             db.salsa_struct_deleted(dependent_fn, id.as_id());
         }
@@ -178,6 +224,7 @@ where
 
     fn reset_for_new_revision(&mut self) {
         self.interned.clear_deleted_indices();
+        std::mem::take(&mut self.deleted_entries);
     }
 
     fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
