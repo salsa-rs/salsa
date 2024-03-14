@@ -8,6 +8,7 @@ use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::{fmt_index, IngredientRequiresReset};
 use crate::key::DependencyIndex;
+use crate::plumbing::transmute_lifetime;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
 use crate::DatabaseKeyIndex;
@@ -179,14 +180,6 @@ where
     pub(crate) fn clear_deleted_indices(&mut self) {
         std::mem::take(&mut self.deleted_entries);
     }
-}
-
-// Returns `u` but with the lifetime of `t`.
-//
-// Safe if you know that data at `u` will remain shared
-// until the reference `t` expires.
-unsafe fn transmute_lifetime<'t, 'u, T, U>(_t: &'t T, u: &'u U) -> &'t U {
-    std::mem::transmute(u)
 }
 
 impl<DB: ?Sized, Id, Data> Ingredient<DB> for InternedIngredient<Id, Data>

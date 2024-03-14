@@ -1,6 +1,7 @@
 use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{fmt_index, Ingredient, IngredientRequiresReset};
 use crate::key::DependencyIndex;
+use crate::plumbing::transmute_lifetime;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::StampedValue;
 use crate::{AsId, DatabaseKeyIndex, Durability, Id, IngredientIndex, Revision, Runtime};
@@ -102,14 +103,6 @@ where
             key_index: key.as_id(),
         }
     }
-}
-
-// Returns `u` but with the lifetime of `t`.
-//
-// Safe if you know that data at `u` will remain shared
-// until the reference `t` expires.
-unsafe fn transmute_lifetime<'t, 'u, T, U>(_t: &'t T, u: &'u U) -> &'t U {
-    std::mem::transmute(u)
 }
 
 impl<DB: ?Sized, K, F> Ingredient<DB> for InputFieldIngredient<K, F>

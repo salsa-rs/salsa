@@ -26,3 +26,11 @@ pub unsafe fn create_jars_inplace<DB: HasJars>(init: impl FnOnce(*mut DB::Jars))
         unsafe { Box::from_raw(place) }
     }
 }
+
+// Returns `u` but with the lifetime of `t`.
+//
+// Safe if you know that data at `u` will remain shared
+// until the reference `t` expires.
+pub(crate) unsafe fn transmute_lifetime<'t, 'u, T, U>(_t: &'t T, u: &'u U) -> &'t U {
+    std::mem::transmute(u)
+}
