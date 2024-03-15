@@ -31,6 +31,7 @@ pub struct Storage<DB: HasJars> {
     /// The runtime for this particular salsa database handle.
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
     runtime: Runtime,
+
 }
 
 /// Data shared between all threads.
@@ -48,6 +49,9 @@ struct Shared<DB: HasJars> {
     /// Conditional variable that is used to coordinate cancellation.
     /// When the main thread writes to the database, it blocks until each of the snapshots can be cancelled.
     cvar: Arc<Condvar>,
+
+    /// Mutex that is used to protect the `jars` field when waiting for snapshots to be dropped.
+    noti_lock:Arc< parking_lot::Mutex<()>>
 }
 
 // ANCHOR: default
@@ -62,6 +66,7 @@ where
             shared: Shared {
                 jars: Some(Arc::from(jars)),
                 cvar: Arc::new(Default::default()),
+                noti_lock:Arc::new( parking_lot::Mutex::new(()))
             },
             routes: Arc::new(routes),
             runtime: Runtime::default(),
@@ -135,19 +140,16 @@ where
         loop {
             self.runtime.set_cancellation_flag();
 
+            // jars need to be protected by a lock to avoid deadlocks.
+            let mut guard =self.shared.noti_lock.lock();
             // If we have unique access to the jars, we are done.
             if Arc::get_mut(self.shared.jars.as_mut().unwrap()).is_some() {
                 return;
             }
 
             // Otherwise, wait until some other storage entities have dropped.
-            // We create a mutex here because the cvar api requires it, but we
-            // don't really need one as the data being protected is actually
-            // the jars above.
             //
             // The cvar `self.shared.cvar` is notified by the `Drop` impl.
-            let mutex = parking_lot::Mutex::new(());
-            let mut guard = mutex.lock();
             self.shared.cvar.wait(&mut guard);
         }
     }
@@ -167,6 +169,7 @@ where
         Self {
             jars: self.jars.clone(),
             cvar: self.cvar.clone(),
+            noti_lock: self.noti_lock.clone()
         }
     }
 }
@@ -178,6 +181,7 @@ where
     fn drop(&mut self) {
         // Drop the Arc reference before the cvar is notified,
         // since other threads are sleeping, waiting for it to reach 1.
+        let _guard =self.shared.noti_lock.lock();
         drop(self.shared.jars.take());
         self.shared.cvar.notify_all();
     }
