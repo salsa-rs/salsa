@@ -217,6 +217,14 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         }
     }
 
+    /// Returns the `destructor_name` in `Options` if it is `Some`, else `new`
+    pub(crate) fn destructor_name(&self) -> syn::Ident {
+        match self.args.destructor_name.clone() {
+            Some(name) => name,
+            None => Ident::new("delete", Span::call_site()),
+        }
+    }
+
     /// For each of the fields passed as an argument,
     /// generate a struct named `Ident_Field` and an impl
     /// of `salsa::function::Configuration` for that struct.

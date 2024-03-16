@@ -47,6 +47,8 @@ impl crate::options::AllowedOptions for InputStruct {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = true;
+
+    const DESTRUCTOR_NAME: bool = true;
 }
 
 impl InputStruct {
@@ -192,9 +194,30 @@ impl InputStruct {
                 }
             }
         } else {
+            let destructor_name = self.destructor_name();
+            let destructor: syn::ImplItemMethod = parse_quote! {
+                pub fn #destructor_name(self, __db: &#db_dyn_ty) -> Option<(#(#field_tys,)*)>
+                {
+                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
+                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
+                    let __db = __db.as_salsa_database();
+                    #(
+                        let #field_names = __ingredients.#field_indices.delete_entity(__db, self)?;
+                    )*
+
+                    Some((
+                        #(
+                            #field_names,
+                        )*
+                    ))
+                }
+            };
+
             parse_quote! {
                 impl #ident {
                     #constructor
+
+                    #destructor
 
                     #(#field_getters)*
 
@@ -306,14 +329,19 @@ impl InputStruct {
     fn salsa_struct_in_db_impl(&self) -> syn::ItemImpl {
         let ident = self.id_ident();
         let jar_ty = self.jar_ty();
+        let field_indices = self.all_field_indices();
+
         parse_quote! {
             impl<DB> salsa::salsa_struct::SalsaStructInDb<DB> for #ident
             where
                 DB: ?Sized + salsa::DbWithJar<#jar_ty>,
             {
-                fn register_dependent_fn(_db: &DB, _index: salsa::routes::IngredientIndex) {
-                    // Do nothing here, at least for now.
-                    // If/when we add ability to delete inputs, this would become relevant.
+                fn register_dependent_fn(db: &DB, index: salsa::routes::IngredientIndex) {
+                    let (jar, _) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
+                    let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident>>::ingredient(jar);
+                    #(
+                        ingredients.#field_indices.register_dependent_fn(index);
+                    )*
                 }
             }
         }

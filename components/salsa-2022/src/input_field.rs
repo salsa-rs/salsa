@@ -1,9 +1,10 @@
 use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{fmt_index, Ingredient, IngredientRequiresReset};
+use crate::ingredient_list::IngredientList;
 use crate::key::DependencyIndex;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::StampedValue;
-use crate::{AsId, DatabaseKeyIndex, Durability, Id, IngredientIndex, Revision, Runtime};
+use crate::{AsId, DatabaseKeyIndex, Durability, Event, Id, IngredientIndex, Revision, Runtime};
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use std::fmt;
@@ -21,6 +22,7 @@ use std::hash::Hash;
 pub struct InputFieldIngredient<K, F> {
     index: IngredientIndex,
     map: DashMap<K, Box<StampedValue<F>>>,
+    dependent_fns: IngredientList,
     debug_name: &'static str,
 }
 
@@ -32,6 +34,7 @@ where
         Self {
             index,
             map: Default::default(),
+            dependent_fns: IngredientList::new(),
             debug_name,
         }
     }
@@ -76,6 +79,23 @@ where
         }
     }
 
+    pub fn delete_entity(&self, db: &dyn crate::Database, key: K) -> Option<F> {
+        db.salsa_event(Event {
+            runtime_id: db.runtime().id(),
+            kind: crate::EventKind::DidDiscard {
+                key: self.database_key_index(key),
+            },
+        });
+
+        let value = self.map.remove(&key);
+
+        for dependent_fn in self.dependent_fns.iter() {
+            db.salsa_struct_deleted(dependent_fn, key.as_id());
+        }
+
+        value.map(|x| x.1.value)
+    }
+
     pub fn fetch<'db>(&'db self, runtime: &'db Runtime, key: K) -> &F {
         let StampedValue {
             value,
@@ -101,6 +121,13 @@ where
             ingredient_index: self.index,
             key_index: key.as_id(),
         }
+    }
+
+    /// Adds a dependent function (one keyed by this tracked struct) to our list.
+    /// When instances of this struct are deleted, these dependent functions
+    /// will be notified.
+    pub fn register_dependent_fn(&self, index: IngredientIndex) {
+        self.dependent_fns.push(index);
     }
 }
 

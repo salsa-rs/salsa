@@ -78,6 +78,8 @@ impl crate::options::AllowedOptions for TrackedFn {
     const LRU: bool = true;
 
     const CONSTRUCTOR_NAME: bool = false;
+
+    const DESTRUCTOR_NAME: bool = false;
 }
 
 type ImplArgs = Options<TrackedImpl>;
@@ -180,6 +182,8 @@ impl crate::options::AllowedOptions for TrackedImpl {
     const CONSTRUCTOR_NAME: bool = false;
 
     const SINGLETON: bool = false;
+
+    const DESTRUCTOR_NAME: bool = false;
 }
 
 fn tracked_method(

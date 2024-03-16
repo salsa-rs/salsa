@@ -45,6 +45,8 @@ impl crate::options::AllowedOptions for TrackedStruct {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = true;
+
+    const DESTRUCTOR_NAME: bool = false;
 }
 
 impl TrackedStruct {

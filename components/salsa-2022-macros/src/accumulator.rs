@@ -38,6 +38,8 @@ impl crate::options::AllowedOptions for Accumulator {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = false;
+
+    const DESTRUCTOR_NAME: bool = false;
 }
 
 fn accumulator_contents(
