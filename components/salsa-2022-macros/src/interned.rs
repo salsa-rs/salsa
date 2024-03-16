@@ -51,6 +51,8 @@ impl crate::options::AllowedOptions for InternedStruct {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = true;
+
+    const DESTRUCTOR_NAME: bool = false;
 }
 
 impl InternedStruct {

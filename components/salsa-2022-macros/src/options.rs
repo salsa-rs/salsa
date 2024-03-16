@@ -61,6 +61,13 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<ident>`.
     pub constructor_name: Option<syn::Ident>,
 
+    /// The `destructor = <ident>` option lets the user specify the name of
+    /// the destructor of a salsa struct. The destructor is only created for
+    /// non-singleton inputs.
+    ///
+    /// If this is `Some`, the value is the `<ident>`.
+    pub destructor_name: Option<syn::Ident>,
+
     /// Remember the `A` parameter, which plays no role after parsing.
     phantom: PhantomData<A>,
 }
@@ -76,6 +83,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             recovery_fn: Default::default(),
             data: Default::default(),
             constructor_name: Default::default(),
+            destructor_name: Default::default(),
             phantom: Default::default(),
             lru: Default::default(),
             singleton: Default::default(),
@@ -95,6 +103,7 @@ pub(crate) trait AllowedOptions {
     const RECOVERY_FN: bool;
     const LRU: bool;
     const CONSTRUCTOR_NAME: bool;
+    const DESTRUCTOR_NAME: bool;
 }
 
 type Equals = syn::Token![=];
@@ -259,6 +268,23 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`constructor` option not allowed here",
+                    ));
+                }
+            } else if ident == "destructor" {
+                if A::DESTRUCTOR_NAME {
+                    let _eq = Equals::parse(input)?;
+                    let ident = syn::Ident::parse(input)?;
+                    if let Some(old) = std::mem::replace(&mut options.destructor_name, Some(ident))
+                    {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `destructor` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`destructor` option not allowed here",
                     ));
                 }
             } else {

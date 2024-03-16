@@ -47,6 +47,8 @@ impl crate::options::AllowedOptions for Jar {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = false;
+
+    const DESTRUCTOR_NAME: bool = false;
 }
 
 pub(crate) fn jar_struct_and_friends(
