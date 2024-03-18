@@ -10,7 +10,7 @@ Because an interned type like `Expression` just stores an integer, the tradition
 To properly print a `Expression`, you need to access the Salsa database to find out what its value is.
 To solve this, `salsa` provides a `DebugWithDb` trait that acts like the regular `Debug`, but takes a database as argument.
 For types that implement this trait, you can invoke the `debug` method.
-This returns a temporary that implements the ordinary `Debug` trait, allowing you to write something like
+This returns a temporary struct that implements the ordinary `Debug` trait, allowing you to write something like
 
 ```rust
 eprintln!("Expression = {:?}", expr.debug(db));

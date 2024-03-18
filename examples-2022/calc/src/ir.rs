@@ -1,8 +1,5 @@
 #![allow(clippy::needless_borrow)]
 
-use derive_new::new;
-use ordered_float::OrderedFloat;
-
 // ANCHOR: input
 #[salsa::input]
 pub struct SourceProgram {
@@ -34,6 +31,9 @@ pub struct Program {
 // ANCHOR_END: program
 
 // ANCHOR: statements_and_expressions
+use derive_new::new;
+use ordered_float::OrderedFloat;
+
 #[derive(Eq, PartialEq, Debug, Hash, new)]
 pub struct Statement {
     pub span: Span,

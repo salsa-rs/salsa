@@ -24,7 +24,7 @@ struct ProgramSource {
 }
 ```
 
-The first thing it does it to parse that string into a series of statements that look something like the following pseudo-Rust:[^lexer]
+The first thing the calc compiler does is parsing a calc program into a series of statements that look something like the following pseudo-Rust:[^lexer]
 
 ```rust
 enum Statement {
@@ -75,7 +75,7 @@ The "checker" has the job of ensuring that the user only references variables th
 We're going to write the checker in a "context-less" style,
 which is a bit less intuitive but allows for more incremental re-use.
 The idea is to compute, for a given expression, which variables it references.
-Then there is a function `check` which ensures that those variables are a subset of those that are already defined.
+Then, there will be a function `check` which ensures that those variables are a subset of the variables already defined.
 
 ## Interpreter
 

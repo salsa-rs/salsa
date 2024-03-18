@@ -2,8 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use salsa::DebugWithDb;
 
-// ANCHOR: db_struct
+// ANCHOR: default_impl
 #[derive(Default)]
+// ANCHOR_END: default_impl
+// ANCHOR: db_struct
 #[salsa::db(crate::Jar)]
 pub(crate) struct Database {
     storage: salsa::Storage<Self>,
