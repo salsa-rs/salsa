@@ -13,10 +13,6 @@ fn my_recover_fn(
 ) -> MyResultValue
 ```
 
-The `db` and `cycle` argument can be used to prepare a useful error message for your users. 
+The `db` and `cycle` argument can be used to prepare a useful error message for your users.
 
 **Important:** Although the recovery function is given a `db` handle, you should be careful to avoid creating a cycle from within recovery or invoking queries that may be participating in the current cycle. Attempting to do so can result in inconsistent results.
-
-## Figuring out why recovery did not work
-
-If a cycle occurs and *some* of the participant queries have `#[salsa::cycle]` annotations and others do not, then the query will be treated as irrecoverable and will simply panic. You can use the `Cycle::unexpected_participants` method to figure out why recovery did not succeed and add the appropriate `#[salsa::cycle]` annotations.
