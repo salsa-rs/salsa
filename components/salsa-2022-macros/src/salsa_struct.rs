@@ -240,7 +240,6 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         // `::salsa::debug::helper::SalsaDebug` will use `DebugWithDb` or fallbak to `Debug`
         let fields = self
             .all_fields()
-            .into_iter()
             .map(|field| -> TokenStream {
                 let field_name_string = field.name().to_string();
                 let field_getter = field.get_name();
@@ -338,7 +337,7 @@ impl SalsaField {
         if BANNED_FIELD_NAMES.iter().any(|n| *n == field_name_str) {
             return Err(syn::Error::new(
                 field_name.span(),
-                &format!(
+                format!(
                     "the field name `{}` is disallowed in salsa structs",
                     field_name_str
                 ),

@@ -130,6 +130,7 @@ impl TrackedStruct {
                 type Fields = ( #(#field_tys,)* );
                 type Revisions = [salsa::Revision; #arity];
 
+                #[allow(clippy::unused_unit)]
                 fn id_fields(fields: &Self::Fields) -> impl std::hash::Hash {
                     ( #( &fields.#id_field_indices ),* )
                 }

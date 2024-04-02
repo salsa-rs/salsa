@@ -10,7 +10,6 @@ use crate::{
     ingredient_list::IngredientList,
     interned::{InternedId, InternedIngredient},
     key::{DatabaseKeyIndex, DependencyIndex},
-    plumbing::transmute_lifetime,
     runtime::{local_state::QueryOrigin, Runtime},
     salsa_struct::SalsaStructInDb,
     Database, Durability, Event, IngredientIndex, Revision,
