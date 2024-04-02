@@ -33,7 +33,9 @@ pub trait Configuration {
     type Fields;
 
     /// A array of [`Revision`][] values, one per each of the value fields.
-    /// When a struct is re-recreated in a new revision, the
+    /// When a struct is re-recreated in a new revision, the corresponding
+    /// entries for each field are updated to the new revision if their
+    /// values have changed (or if the field is marked as `#[no_eq]`).
     type Revisions;
 
     fn id_fields(fields: &Self::Fields) -> impl Hash;
