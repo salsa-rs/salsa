@@ -139,7 +139,14 @@ where
         loop {
             self.runtime.set_cancellation_flag();
 
-            // jars need to be protected by a lock to avoid deadlocks.
+            // Acquire lock before we check if we have unique access to the jars.
+            // If we do not yet have unique access, we will go to sleep and wait for
+            // the snapshots to be dropped, which will signal the cond var associated
+            // with this lock.
+            //
+            // NB: We have to acquire the lock first to ensure that we can check for
+            // unique access and go to sleep waiting on the condvar atomically,
+            // as described in PR #474.
             let mut guard = self.shared.noti_lock.lock();
             // If we have unique access to the jars, we are done.
             if Arc::get_mut(self.shared.jars.as_mut().unwrap()).is_some() {
