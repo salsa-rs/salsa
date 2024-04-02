@@ -5,6 +5,8 @@ use crate::ir::{
 use derive_new::new;
 #[cfg(test)]
 use expect_test::expect;
+#[cfg(test)]
+use test_log::test;
 
 // ANCHOR: parse_statements
 #[salsa::tracked]

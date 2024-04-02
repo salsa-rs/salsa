@@ -123,7 +123,7 @@ impl ActiveQuery {
     pub(super) fn remove_cycle_participants(&mut self, cycle: &Cycle) {
         for p in cycle.participant_keys() {
             let p: DependencyIndex = p.into();
-            self.input_outputs.remove(&(EdgeKind::Input, p));
+            self.input_outputs.shift_remove(&(EdgeKind::Input, p));
         }
     }
 

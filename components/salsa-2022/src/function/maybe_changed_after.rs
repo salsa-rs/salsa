@@ -168,6 +168,12 @@ where
                 // then we would have updated the `verified_at` field already.
                 // So the fact that we are here means that it was not specified
                 // during this revision or is otherwise stale.
+                //
+                // Example of how this can happen:
+                //
+                // Conditionally specified queries
+                // where the value is specified
+                // in rev 1 but not in rev 2.
                 return false;
             }
             QueryOrigin::BaseInput => {

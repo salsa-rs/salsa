@@ -17,7 +17,7 @@ trait LruPeek {
 struct HotPotato(u32);
 
 thread_local! {
-    static N_POTATOES: AtomicUsize = AtomicUsize::new(0)
+    static N_POTATOES: AtomicUsize = const { AtomicUsize::new(0) }
 }
 
 impl HotPotato {

@@ -31,5 +31,6 @@ fn ensure_init(place: *const <Database as HasJars>::Jars) {
 
     // SAFETY: Intentionally tries to access potentially uninitialized memory,
     // so that miri can catch if we accidentally forget to initialize the memory.
+    #[allow(clippy::forget_non_drop)]
     forget(unsafe { addr_of!((*place).0).read() });
 }

@@ -105,6 +105,7 @@ pub(crate) fn tracked_impl(
         ),
         None => format!("{}", self_type_name),
     };
+    #[allow(clippy::manual_try_fold)] // we accumulate errors
     let extra_impls = item_impl
         .items
         .iter_mut()

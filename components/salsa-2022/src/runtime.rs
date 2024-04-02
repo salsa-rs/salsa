@@ -166,13 +166,16 @@ impl Runtime {
     /// * Add a query read on `DatabaseKeyIndex::for_table(entity_index)`
     /// * Identify a unique disambiguator for the hash within the current query,
     ///   adding the hash to the current query's disambiguator table.
-    /// * Return that hash + id of the current query.
+    /// * Returns a tuple of:
+    ///   * the id of the current query
+    ///   * the current dependencies (durability, changed_at) of current query
+    ///   * the disambiguator index
     pub(crate) fn disambiguate_entity(
         &self,
         entity_index: IngredientIndex,
         reset_at: Revision,
         data_hash: u64,
-    ) -> (DatabaseKeyIndex, Disambiguator) {
+    ) -> (DatabaseKeyIndex, StampedValue<()>, Disambiguator) {
         self.report_tracked_read(
             DependencyIndex::for_table(entity_index),
             Durability::MAX,
