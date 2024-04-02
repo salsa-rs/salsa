@@ -14,6 +14,7 @@ struct MyInput {
     field: bool,
 }
 
+#[allow(clippy::derived_hash_with_manual_eq)]
 #[derive(Eq, Hash, Debug, Clone)]
 struct BadEq {
     field: bool,
