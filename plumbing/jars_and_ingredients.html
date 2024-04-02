@@ -340,6 +340,7 @@ where
             shared: Shared {
                 jars: Some(Arc::from(jars)),
                 cvar: Arc::new(Default::default()),
+                noti_lock: Arc::new(parking_lot::Mutex::new(())),
             },
             routes: Arc::new(routes),
             runtime: Runtime::default(),
