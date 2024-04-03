@@ -38,7 +38,7 @@ fn test_debug() {
     let input = MyInput::new(&mut db, 50, 10, Field {});
 
     let actual = format!("{:?}", input.debug(&db));
-    let expected = expect![[r#"MyInput { [salsa id]: 0, id_one: 50, id_two: 10 }"#]];
+    let expected = expect!["MyInput { [salsa id]: 0, id_one: 50, id_two: 10, field: Field }"];
     expected.assert_eq(&actual);
 }
 

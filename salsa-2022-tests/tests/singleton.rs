@@ -67,6 +67,6 @@ fn debug() {
     let db = Database::default();
     let input = MyInput::new(&db, 3, 4);
     let actual = format!("{:?}", input.debug(&db));
-    let expected = expect![[r#"MyInput { [salsa id]: 0, id_field: 4 }"#]];
+    let expected = expect!["MyInput { [salsa id]: 0, field: 3, id_field: 4 }"];
     expected.assert_eq(&actual);
 }

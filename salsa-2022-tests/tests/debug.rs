@@ -4,7 +4,7 @@ use expect_test::expect;
 use salsa::DebugWithDb;
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, ComplexStruct);
+struct Jar(MyInput, ComplexStruct, leak_debug_string);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
@@ -44,15 +44,38 @@ fn input() {
     };
     let complex_struct = ComplexStruct::new(&db, input, not_salsa);
 
-    // default debug only includes identity fields
+    // debug includes all fields
     let actual = format!("{:?}", complex_struct.debug(&db));
-    let expected = expect!["ComplexStruct { [salsa id]: 0 }"];
-    expected.assert_eq(&actual);
-
-    // all fields
-    let actual = format!("{:?}", complex_struct.debug_all(&db));
     let expected = expect![[
         r#"ComplexStruct { [salsa id]: 0, my_input: MyInput { [salsa id]: 0, field: 22 }, not_salsa: NotSalsa { field: "it's salsa time" } }"#
     ]];
     expected.assert_eq(&actual);
+}
+
+#[salsa::tracked]
+fn leak_debug_string(db: &dyn Db, input: MyInput) -> String {
+    format!("{:?}", input.debug(db))
+}
+
+/// Test that field reads that occur as part of `Debug` are not tracked.
+/// Intentionally leaks the debug string.
+/// Don't try this at home, kids.
+#[test]
+fn untracked_dependencies() {
+    let mut db = Database::default();
+
+    let input = MyInput::new(&db, 22);
+
+    let s = leak_debug_string(&db, input);
+    expect![[r#"
+        "MyInput { [salsa id]: 0, field: 22 }"
+    "#]]
+    .assert_debug_eq(&s);
+
+    input.set_field(&mut db).to(23);
+
+    // check that we reuse the cached result for debug string
+    // even though the dependency changed.
+    let s = leak_debug_string(&db, input);
+    assert!(s.contains(", field: 22 }"));
 }
