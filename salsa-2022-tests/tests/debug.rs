@@ -4,7 +4,13 @@ use expect_test::expect;
 use salsa::DebugWithDb;
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, ComplexStruct, leak_debug_string);
+struct Jar(
+    MyInput,
+    ComplexStruct,
+    leak_debug_string,
+    DerivedCustom,
+    leak_derived_custom,
+);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
@@ -78,4 +84,41 @@ fn untracked_dependencies() {
     // even though the dependency changed.
     let s = leak_debug_string(&db, input);
     assert!(s.contains(", field: 22 }"));
+}
+
+#[salsa::tracked]
+#[customize(DebugWithDb)]
+struct DerivedCustom {
+    my_input: MyInput,
+    value: u32,
+}
+
+impl DebugWithDb<dyn Db + '_> for DerivedCustom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &dyn Db) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?} / {:?}",
+            self.my_input(db).debug(db),
+            self.value(db)
+        )
+    }
+}
+
+#[salsa::tracked]
+fn leak_derived_custom(db: &dyn Db, input: MyInput, value: u32) -> String {
+    let c = DerivedCustom::new(db, input, value);
+    format!("{:?}", c.debug(db))
+}
+
+#[test]
+fn custom_debug_impl() {
+    let db = Database::default();
+
+    let input = MyInput::new(&db, 22);
+
+    let s = leak_derived_custom(&db, input, 23);
+    expect![[r#"
+        "MyInput { [salsa id]: 0, field: 22 } / 23"
+    "#]]
+    .assert_debug_eq(&s);
 }
