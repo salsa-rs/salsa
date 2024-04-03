@@ -73,6 +73,8 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             .iter()
             .map(|attr| {
                 if attr.path.is_ident("customize") {
+                    // FIXME: this should be a comma separated list but I couldn't
+                    // be bothered to remember how syn does this.
                     let args: syn::Ident = attr.parse_args()?;
                     if args.to_string() == "DebugWithDb" {
                         Ok(vec![Customization::DebugWithDb])
