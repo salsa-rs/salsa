@@ -9,6 +9,7 @@ edition = "2021"
 derive-new = "0.5.9"
 salsa = { path = "../../components/salsa-2022", package = "salsa-2022" }
 ordered-float = "3.0"
+test-log = { version = "0.2.15", features = ["trace"] }
 
 [dev-dependencies]
 expect-test = "1.4.0"

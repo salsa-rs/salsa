@@ -221,11 +221,7 @@ pub mod helper {
     use std::{fmt, marker::PhantomData};
 
     pub trait Fallback<T: fmt::Debug, Db: ?Sized> {
-        fn salsa_debug<'a, 'b>(
-            a: &'a T,
-            _db: &'b Db,
-            _include_all_fields: bool,
-        ) -> &'a dyn fmt::Debug {
+        fn salsa_debug<'a>(a: &'a T, _db: &Db, _include_all_fields: bool) -> &'a dyn fmt::Debug {
             a
         }
     }

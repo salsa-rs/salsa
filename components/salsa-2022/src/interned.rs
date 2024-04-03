@@ -8,6 +8,7 @@ use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::{fmt_index, IngredientRequiresReset};
 use crate::key::DependencyIndex;
+use crate::plumbing::transmute_lifetime;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
 use crate::DatabaseKeyIndex;
@@ -76,7 +77,12 @@ where
         }
     }
 
-    pub fn intern(&self, runtime: &Runtime, data: Data) -> Id {
+    /// Intern `data` and return `(id, b`) where
+    ///
+    /// * `id` is the interned id
+    /// * `b` is a boolean, `true` indicates this fn call added `data` to the interning table;
+    ///   `false` indicates it was already present
+    pub(crate) fn intern_full(&self, runtime: &Runtime, data: Data) -> (Id, bool) {
         runtime.report_tracked_read(
             DependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
@@ -86,12 +92,12 @@ where
         // Optimisation to only get read lock on the map if the data has already
         // been interned.
         if let Some(id) = self.key_map.get(&data) {
-            return *id;
+            return (*id, false);
         }
 
         match self.key_map.entry(data.clone()) {
             // Data has been interned by a racing call, use that ID instead
-            dashmap::mapref::entry::Entry::Occupied(entry) => *entry.get(),
+            dashmap::mapref::entry::Entry::Occupied(entry) => (*entry.get(), false),
             // We won any races so should intern the data
             dashmap::mapref::entry::Entry::Vacant(entry) => {
                 let next_id = self.counter.fetch_add(1);
@@ -102,9 +108,13 @@ where
                     "next_id is guaranteed to be unique, bar overflow"
                 );
                 entry.insert(next_id);
-                next_id
+                (next_id, true)
             }
         }
+    }
+
+    pub fn intern(&self, runtime: &Runtime, data: Data) -> Id {
+        self.intern_full(runtime, data).0
     }
 
     pub(crate) fn reset_at(&self) -> Revision {
@@ -181,19 +191,15 @@ where
     }
 }
 
-// Returns `u` but with the lifetime of `t`.
-//
-// Safe if you know that data at `u` will remain shared
-// until the reference `t` expires.
-unsafe fn transmute_lifetime<'t, 'u, T, U>(_t: &'t T, u: &'u U) -> &'t U {
-    std::mem::transmute(u)
-}
-
 impl<DB: ?Sized, Id, Data> Ingredient<DB> for InternedIngredient<Id, Data>
 where
     Id: InternedId,
     Data: InternedData,
 {
+    fn ingredient_index(&self) -> IngredientIndex {
+        self.ingredient_index
+    }
+
     fn maybe_changed_after(&self, _db: &DB, _input: DependencyIndex, revision: Revision) -> bool {
         revision < self.reset_at
     }

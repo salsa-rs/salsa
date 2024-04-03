@@ -35,14 +35,6 @@ If you want to permit accessing your database from multiple threads at once, the
 {{#include ../../../examples-2022/calc/src/db.rs:par_db_impl}}
 ```
 
-## Implementing the `Default` trait
-
-It's not required, but implementing the `Default` trait is often a convenient way to let users instantiate your database:
-
-```rust
-{{#include ../../../examples-2022/calc/src/db.rs:default_impl}}
-```
-
 ## Implementing the traits for each jar
 
 The `Database` struct also needs to implement the [database traits for each jar](./jar.md#database-trait-for-the-jar).

@@ -213,6 +213,10 @@ where
     DB: ?Sized + DbWithJar<C::Jar>,
     C: Configuration,
 {
+    fn ingredient_index(&self) -> IngredientIndex {
+        self.index
+    }
+
     fn maybe_changed_after(&self, db: &DB, input: DependencyIndex, revision: Revision) -> bool {
         let key = C::key_from_id(input.key_index.unwrap());
         let db = db.as_jar_db();

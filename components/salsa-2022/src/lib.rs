@@ -22,7 +22,6 @@ pub mod runtime;
 pub mod salsa_struct;
 pub mod setter;
 pub mod storage;
-#[doc(hidden)]
 pub mod tracked_struct;
 
 pub use self::cancelled::Cancelled;
@@ -43,8 +42,6 @@ pub use self::routes::IngredientIndex;
 pub use self::runtime::Runtime;
 pub use self::storage::DbWithJar;
 pub use self::storage::Storage;
-pub use self::tracked_struct::TrackedStructData;
-pub use self::tracked_struct::TrackedStructId;
 pub use salsa_2022_macros::accumulator;
 pub use salsa_2022_macros::db;
 pub use salsa_2022_macros::input;

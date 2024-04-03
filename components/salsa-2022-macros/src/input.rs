@@ -115,15 +115,16 @@ impl InputStruct {
             .zip(&set_field_names)
             .zip(&field_vises)
             .zip(&field_tys)
-            .map(|(((field_index, set_field_name), field_vis), field_ty)| {
-            parse_quote! {
-                #field_vis fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty) -> salsa::setter::Setter<'db, #ident, #field_ty>
-                {
-                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
-                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient_mut(__jar);
-                    salsa::setter::Setter::new(__runtime, self, &mut __ingredients.#field_index)
-                }
-            }
+            .filter_map(|(((field_index, &set_field_name), field_vis), field_ty)| {
+                let set_field_name = set_field_name?;
+                Some(parse_quote! {
+                    #field_vis fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty) -> salsa::setter::Setter<'db, #ident, #field_ty>
+                    {
+                        let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
+                        let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient_mut(__jar);
+                        salsa::setter::Setter::new(__runtime, self, &mut __ingredients.#field_index)
+                    }
+                })
         })
         .collect();
 
@@ -385,12 +386,13 @@ impl InputStruct {
             .collect()
     }
 
-    /// Names of setters of all fields
-    /// setters are not created for fields with #[id] tag so they'll be safe to include in debug formatting
-    pub(crate) fn all_set_field_names(&self) -> Vec<&syn::Ident> {
+    /// Names of setters of all fields that should be generated. Returns an optional Ident for the field name
+    /// that is None when the field should not generate a setter.
+    ///
+    /// Setters are not created for fields with #[id] tag so they'll be safe to include in debug formatting
+    pub(crate) fn all_set_field_names(&self) -> Vec<Option<&syn::Ident>> {
         self.all_fields()
-            .filter(|&field| !field.has_id_attr)
-            .map(|ef| ef.set_name())
+            .map(|ef| (!ef.has_id_attr).then(|| ef.set_name()))
             .collect()
     }
 

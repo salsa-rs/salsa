@@ -19,10 +19,7 @@ pub struct Storage<DB: HasJars> {
     /// Data shared across all databases. This contains the ingredients needed by each jar.
     /// See the ["jars and ingredients" chapter](https://salsa-rs.github.io/salsa/plumbing/jars_and_ingredients.html)
     /// for more detailed description.
-    ///
-    /// Even though this struct is stored in an `Arc`, we sometimes get mutable access to it
-    /// by using `Arc::get_mut`. This is only possible when all parallel snapshots have been dropped.
-    shared: Arc<Shared<DB>>,
+    shared: Shared<DB>,
 
     /// The "ingredients" structure stores the information about how to find each ingredient in the database.
     /// It allows us to take the [`IngredientIndex`] assigned to a particular ingredient
@@ -43,11 +40,17 @@ struct Shared<DB: HasJars> {
     /// Contains the data for each jar in the database.
     /// Each jar stores its own structs in there that ultimately contain ingredients
     /// (types that implement the [`Ingredient`] trait, like [`crate::function::FunctionIngredient`]).
-    jars: DB::Jars,
+    ///
+    /// Even though these jars are stored in an `Arc`, we sometimes get mutable access to them
+    /// by using `Arc::get_mut`. This is only possible when all parallel snapshots have been dropped.
+    jars: Option<Arc<DB::Jars>>,
 
     /// Conditional variable that is used to coordinate cancellation.
     /// When the main thread writes to the database, it blocks until each of the snapshots can be cancelled.
-    cvar: Condvar,
+    cvar: Arc<Condvar>,
+
+    /// Mutex that is used to protect the `jars` field when waiting for snapshots to be dropped.
+    noti_lock: Arc<parking_lot::Mutex<()>>,
 }
 
 // ANCHOR: default
@@ -59,10 +62,11 @@ where
         let mut routes = Routes::new();
         let jars = DB::create_jars(&mut routes);
         Self {
-            shared: Arc::new(Shared {
-                jars,
-                cvar: Default::default(),
-            }),
+            shared: Shared {
+                jars: Some(Arc::from(jars)),
+                cvar: Arc::new(Default::default()),
+                noti_lock: Arc::new(parking_lot::Mutex::new(())),
+            },
             routes: Arc::new(routes),
             runtime: Runtime::default(),
         }
@@ -86,7 +90,7 @@ where
     }
 
     pub fn jars(&self) -> (&DB::Jars, &Runtime) {
-        (&self.shared.jars, &self.runtime)
+        (self.shared.jars.as_ref().unwrap(), &self.runtime)
     }
 
     pub fn runtime(&self) -> &Runtime {
@@ -111,17 +115,17 @@ where
 
         // Acquire `&mut` access to `self.shared` -- this is only possible because
         // the snapshots have all been dropped, so we hold the only handle to the `Arc`.
-        let shared = Arc::get_mut(&mut self.shared).unwrap();
+        let jars = Arc::get_mut(self.shared.jars.as_mut().unwrap()).unwrap();
 
         // Inform other ingredients that a new revision has begun.
         // This gives them a chance to free resources that were being held until the next revision.
         let routes = self.routes.clone();
         for route in routes.reset_routes() {
-            route(&mut shared.jars).reset_for_new_revision();
+            route(jars).reset_for_new_revision();
         }
 
         // Return mut ref to jars + runtime.
-        (&mut shared.jars, &mut self.runtime)
+        (jars, &mut self.runtime)
     }
     // ANCHOR_END: jars_mut
 
@@ -135,19 +139,23 @@ where
         loop {
             self.runtime.set_cancellation_flag();
 
+            // Acquire lock before we check if we have unique access to the jars.
+            // If we do not yet have unique access, we will go to sleep and wait for
+            // the snapshots to be dropped, which will signal the cond var associated
+            // with this lock.
+            //
+            // NB: We have to acquire the lock first to ensure that we can check for
+            // unique access and go to sleep waiting on the condvar atomically,
+            // as described in PR #474.
+            let mut guard = self.shared.noti_lock.lock();
             // If we have unique access to the jars, we are done.
-            if Arc::get_mut(&mut self.shared).is_some() {
+            if Arc::get_mut(self.shared.jars.as_mut().unwrap()).is_some() {
                 return;
             }
 
             // Otherwise, wait until some other storage entities have dropped.
-            // We create a mutex here because the cvar api requires it, but we
-            // don't really need one as the data being protected is actually
-            // the jars above.
             //
             // The cvar `self.shared.cvar` is notified by the `Drop` impl.
-            let mutex = parking_lot::Mutex::new(());
-            let mut guard = mutex.lock();
             self.shared.cvar.wait(&mut guard);
         }
     }
@@ -155,16 +163,33 @@ where
 
     pub fn ingredient(&self, ingredient_index: IngredientIndex) -> &dyn Ingredient<DB> {
         let route = self.routes.route(ingredient_index);
-        route(&self.shared.jars)
+        route(self.shared.jars.as_ref().unwrap())
     }
 }
 
-impl<DB> Drop for Shared<DB>
+impl<DB> Clone for Shared<DB>
+where
+    DB: HasJars,
+{
+    fn clone(&self) -> Self {
+        Self {
+            jars: self.jars.clone(),
+            cvar: self.cvar.clone(),
+            noti_lock: self.noti_lock.clone(),
+        }
+    }
+}
+
+impl<DB> Drop for Storage<DB>
 where
     DB: HasJars,
 {
     fn drop(&mut self) {
-        self.cvar.notify_all();
+        // Drop the Arc reference before the cvar is notified,
+        // since other threads are sleeping, waiting for it to reach 1.
+        let _guard = self.shared.noti_lock.lock();
+        drop(self.shared.jars.take());
+        self.shared.cvar.notify_all();
     }
 }
 
@@ -177,7 +202,7 @@ pub trait HasJars: HasJarsDyn + Sized {
     /// and it will also cancel any ongoing work in the current revision.
     fn jars_mut(&mut self) -> (&mut Self::Jars, &mut Runtime);
 
-    fn create_jars(routes: &mut Routes<Self>) -> Self::Jars;
+    fn create_jars(routes: &mut Routes<Self>) -> Box<Self::Jars>;
 }
 
 pub trait DbWithJar<J>: HasJar<J> + Database {

@@ -57,16 +57,11 @@ impl<T> WithValue<T> for Cell<T> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum CancellationFlag {
+    #[default]
     Down,
     Panic,
-}
-
-impl Default for CancellationFlag {
-    fn default() -> CancellationFlag {
-        CancellationFlag::Down
-    }
 }
 
 /// Various "knobs" that can be used to customize how the queries

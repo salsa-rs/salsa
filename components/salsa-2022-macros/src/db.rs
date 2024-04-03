@@ -1,5 +1,5 @@
 use proc_macro2::Literal;
-use syn::Token;
+use syn::{spanned::Spanned, Token};
 
 // Source:
 //
@@ -84,6 +84,12 @@ fn as_salsa_database_impl(input: &syn::ItemStruct) -> syn::ItemImpl {
 
 fn has_jars_impl(args: &Args, input: &syn::ItemStruct, storage: &syn::Ident) -> syn::ItemImpl {
     let jar_paths: Vec<&syn::Path> = args.jar_paths.iter().collect();
+    let jar_field_names: Vec<_> = args
+        .jar_paths
+        .iter()
+        .zip(0..)
+        .map(|(p, i)| syn::LitInt::new(&format!("{}", i), p.span()))
+        .collect();
     let db = &input.ident;
     parse_quote! {
         // ANCHOR: HasJars
@@ -100,12 +106,17 @@ fn has_jars_impl(args: &Args, input: &syn::ItemStruct, storage: &syn::Ident) -> 
             }
 
             // ANCHOR: create_jars
-            fn create_jars(routes: &mut salsa::routes::Routes<Self>) -> Self::Jars {
-                (
-                    #(
-                        <#jar_paths as salsa::jar::Jar>::create_jar(routes),
-                    )*
-                )
+            fn create_jars(routes: &mut salsa::routes::Routes<Self>) -> Box<Self::Jars> {
+                unsafe {
+                    salsa::plumbing::create_jars_inplace::<#db>(|jars| {
+                        #(
+                            unsafe {
+                                let place = std::ptr::addr_of_mut!((*jars).#jar_field_names);
+                                <#jar_paths as salsa::jar::Jar>::init_jar(place, routes);
+                            }
+                        )*
+                    })
+                }
             }
             // ANCHOR_END: create_jars
         }

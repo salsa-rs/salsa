@@ -103,6 +103,10 @@ where
     DB: crate::Database,
     Data: Clone,
 {
+    fn ingredient_index(&self) -> IngredientIndex {
+        self.index
+    }
+
     fn maybe_changed_after(&self, _db: &DB, _input: DependencyIndex, _revision: Revision) -> bool {
         panic!("nothing should ever depend on an accumulator directly")
     }

@@ -31,7 +31,7 @@ impl salsa::Database for Database {}
 impl Db for Database {}
 
 #[test]
-#[should_panic(expected = "`execute` method for field")]
+#[should_panic(expected = "access to tracked struct from previous revision")]
 fn execute() {
     let mut db = Database::default();
 

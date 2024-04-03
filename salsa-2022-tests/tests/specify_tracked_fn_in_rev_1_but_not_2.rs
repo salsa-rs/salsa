@@ -147,7 +147,6 @@ fn test_run_10() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: maybe_specified(0) } }",
             "maybe_specified(MyTracked(Id { value: 1 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);
 }
 
@@ -171,7 +170,6 @@ fn test_run_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: maybe_specified(0) } }",
             "maybe_specified(MyTracked(Id { value: 1 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);
 }
 
@@ -209,7 +207,6 @@ fn test_run_0_then_5_then_20() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: input(0) } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
             "create_tracked(MyInput(Id { value: 1 }))",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
@@ -229,7 +226,6 @@ fn test_run_0_then_5_then_20() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: input(0) } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
             "create_tracked(MyInput(Id { value: 1 }))",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillDiscardStaleOutput { execute_key: create_tracked(0), output_key: maybe_specified(0) } }",
@@ -237,7 +233,6 @@ fn test_run_0_then_5_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: maybe_specified(0) } }",
             "maybe_specified(MyTracked(Id { value: 1 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
             "read_maybe_specified(MyTracked(Id { value: 1 }))",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
@@ -282,7 +277,6 @@ fn test_run_0_then_5_then_10_then_20() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: input(0) } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
             "create_tracked(MyInput(Id { value: 1 }))",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
@@ -302,7 +296,6 @@ fn test_run_0_then_5_then_10_then_20() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: input(0) } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
             "create_tracked(MyInput(Id { value: 1 }))",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillDiscardStaleOutput { execute_key: create_tracked(0), output_key: maybe_specified(0) } }",
@@ -310,7 +303,6 @@ fn test_run_0_then_5_then_10_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: maybe_specified(0) } }",
             "maybe_specified(MyTracked(Id { value: 1 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: read_maybe_specified(0) } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: final_result(0) } }",
         ]"#]]);
@@ -324,15 +316,12 @@ fn test_run_0_then_5_then_10_then_20() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: input(0) } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
             "create_tracked(MyInput(Id { value: 1 }))",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: maybe_specified(0) } }",
             "maybe_specified(MyTracked(Id { value: 1 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
             "read_maybe_specified(MyTracked(Id { value: 1 }))",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
@@ -369,7 +358,6 @@ fn test_run_5_then_20() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: input(0) } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
             "create_tracked(MyInput(Id { value: 1 }))",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillDiscardStaleOutput { execute_key: create_tracked(0), output_key: maybe_specified(0) } }",
@@ -377,7 +365,6 @@ fn test_run_5_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: maybe_specified(0) } }",
             "maybe_specified(MyTracked(Id { value: 1 }))",
-            "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
             "read_maybe_specified(MyTracked(Id { value: 1 }))",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",

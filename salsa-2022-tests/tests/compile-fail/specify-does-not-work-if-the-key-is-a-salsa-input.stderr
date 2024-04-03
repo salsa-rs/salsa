@@ -1,14 +1,16 @@
 error[E0277]: the trait bound `MyInput: TrackedStructInDb<dyn Db>` is not satisfied
-  --> tests/compile-fail/specify-does-not-work-if-the-key-is-a-salsa-input.rs:21:28
+  --> tests/compile-fail/specify-does-not-work-if-the-key-is-a-salsa-input.rs:20:1
    |
 20 | #[salsa::tracked(jar = Jar, specify)]
-   | ------------------------------------- required by a bound introduced by this call
-21 | fn tracked_fn(db: &dyn Db, input: MyInput) -> MyTracked {
-   |                            ^^^^^ the trait `TrackedStructInDb<dyn Db>` is not implemented for `MyInput`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `TrackedStructInDb<dyn Db>` is not implemented for `MyInput`
    |
    = help: the trait `TrackedStructInDb<DB>` is implemented for `MyTracked`
 note: required by a bound in `function::specify::<impl FunctionIngredient<C>>::specify_and_record`
   --> $WORKSPACE/components/salsa-2022/src/function/specify.rs
    |
+   |     pub fn specify_and_record<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
+   |            ------------------ required by a bound in this associated function
+   |     where
    |         C::Key: TrackedStructInDb<DynDb<'db, C>>,
    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `function::specify::<impl FunctionIngredient<C>>::specify_and_record`
+   = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)

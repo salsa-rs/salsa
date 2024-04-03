@@ -38,6 +38,7 @@ impl Database {
 // ANCHOR: db_impl
 impl salsa::Database for Database {
     fn salsa_event(&self, event: salsa::Event) {
+        eprintln!("Event: {event:?}");
         // Log interesting events, if logging is enabled
         if let Some(logs) = &self.logs {
             // don't log boring events

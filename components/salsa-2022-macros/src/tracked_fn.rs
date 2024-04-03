@@ -105,6 +105,7 @@ pub(crate) fn tracked_impl(
         ),
         None => format!("{}", self_type_name),
     };
+    #[allow(clippy::manual_try_fold)] // we accumulate errors
     let extra_impls = item_impl
         .items
         .iter_mut()
@@ -233,6 +234,12 @@ fn tracked_method(
     item_fn.sig.inputs = inputs;
 
     let (config_ty, fn_struct) = crate::tracked_fn::fn_struct(&args, &item_fn)?;
+
+    // we generate a `'db` lifetime that clippy
+    // sometimes doesn't like
+    item_method
+        .attrs
+        .push(syn::parse_quote! {#[allow(clippy::needless_lifetimes)]});
 
     item_method.block = getter_fn(
         &args,
@@ -734,7 +741,7 @@ fn specify_fn(
 /// Given a function def tagged with `#[return_ref]`, modifies `fn_sig` so that
 /// it returns an `&Value` instead of `Value`. May introduce a name for the
 /// database lifetime if required.
-fn make_fn_return_ref(mut fn_sig: &mut syn::Signature) -> syn::Result<()> {
+fn make_fn_return_ref(fn_sig: &mut syn::Signature) -> syn::Result<()> {
     // An input should be a `&dyn Db`.
     // We need to ensure it has a named lifetime parameter.
     let (db_lifetime, _) = db_lifetime_and_ty(fn_sig)?;

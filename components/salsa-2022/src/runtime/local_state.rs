@@ -290,12 +290,26 @@ impl LocalState {
     }
 
     #[track_caller]
-    pub(crate) fn disambiguate(&self, data_hash: u64) -> (DatabaseKeyIndex, Disambiguator) {
-        assert!(self.query_in_progress());
+    pub(crate) fn disambiguate(
+        &self,
+        data_hash: u64,
+    ) -> (DatabaseKeyIndex, StampedValue<()>, Disambiguator) {
+        assert!(
+            self.query_in_progress(),
+            "cannot create a tracked struct disambiguator outside of a tracked function"
+        );
         self.with_query_stack(|stack| {
             let top_query = stack.last_mut().unwrap();
             let disambiguator = top_query.disambiguate(data_hash);
-            (top_query.database_key_index, disambiguator)
+            (
+                top_query.database_key_index,
+                StampedValue {
+                    value: (),
+                    durability: top_query.durability,
+                    changed_at: top_query.changed_at,
+                },
+                disambiguator,
+            )
         })
     }
 }
