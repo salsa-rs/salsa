@@ -14,7 +14,28 @@ use crate::database::AsSalsaDatabase;
 /// Implementations are automatically provided for `#[salsa::tracked]`
 /// items, though you can opt-out from that if you wish to provide a manual
 /// implementation.
+///
+/// # WARNING: Intended for debug use only!
+///
+/// Debug print-outs of tracked structs include the value of all their fields,
+/// but the reads of those fields are ignored by salsa. This avoids creating
+/// spurious dependencies from debugging code, but if you use the resulting
+/// string to influence the outputs (return value, accumulators, etc) from your
+/// query, salsa's dependency tracking will be undermined.
+///
+/// If for some reason you *want* to incorporate dependency output into
+/// your query, do not use the `debug` or `into_debug` helpers and instead
+/// invoke `fmt` manually.
 pub trait DebugWithDb<Db: ?Sized + AsSalsaDatabase> {
+    /// Creates a wrapper type that implements `Debug` but which
+    /// uses the `DebugWithDb::fmt`.
+    ///
+    /// # WARNING: Intended for debug use only!
+    ///
+    /// The wrapper type Debug impl will access the value of all
+    /// fields but those accesses are ignored by salsa. This is only
+    /// suitable for debug output. See [`DebugWithDb`][] trait comment
+    /// for more details.
     fn debug<'me, 'db>(&'me self, db: &'me Db) -> DebugWith<'me, Db>
     where
         Self: Sized + 'me,
@@ -25,6 +46,15 @@ pub trait DebugWithDb<Db: ?Sized + AsSalsaDatabase> {
         }
     }
 
+    /// Creates a wrapper type that implements `Debug` but which
+    /// uses the `DebugWithDb::fmt`.
+    ///
+    /// # WARNING: Intended for debug use only!
+    ///
+    /// The wrapper type Debug impl will access the value of all
+    /// fields but those accesses are ignored by salsa. This is only
+    /// suitable for debug output. See [`DebugWithDb`][] trait comment
+    /// for more details.
     fn into_debug<'me, 'db>(self, db: &'me Db) -> DebugWith<'me, Db>
     where
         Self: Sized + 'me,
@@ -37,12 +67,25 @@ pub trait DebugWithDb<Db: ?Sized + AsSalsaDatabase> {
 
     /// Format `self` given the database `db`.
     ///
-    /// Note: when invoked from `DebugWith`,
-    /// accesses to fields that occur within this method will be
-    /// disregarded as dependencies from the current query.
+    /// # Dependency tracking
+    ///
+    /// When invoked manually, field accesses that occur
+    /// within this method are tracked by salsa. But when invoked
+    /// the [`DebugWith`][] value returned by the [`debug`](`Self::debug`)
+    /// and [`into_debug`][`Self::into_debug`] methods,
+    /// those accesses are ignored.
     fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db) -> fmt::Result;
 }
 
+/// Helper type for the [`DebugWithDb`][] trait that
+/// wraps a value and implements [`std::fmt::Debug`][],
+/// redirecting calls to the `fmt` method from [`DebugWithDb`][].
+///
+/// # WARNING: Intended for debug use only!
+///
+/// This type intentionally ignores salsa dependencies used
+/// to generate the debug output. See the [`DebugWithDb`][] trait
+/// for more notes on this.
 pub struct DebugWith<'me, Db: ?Sized + AsSalsaDatabase> {
     value: BoxRef<'me, dyn DebugWithDb<Db> + 'me>,
     db: &'me Db,
