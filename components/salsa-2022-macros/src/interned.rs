@@ -94,7 +94,7 @@ impl InternedStruct {
                 let field_vis = field.vis();
                 let field_get_name = field.get_name();
                 if field.is_clone_field() {
-                    parse_quote! {
+                    parse_quote_spanned! { field_get_name.span() =>
                         #field_vis fn #field_get_name(self, db: &#db_dyn_ty) -> #field_ty {
                             let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                             let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #id_ident >>::ingredient(jar);
@@ -102,7 +102,7 @@ impl InternedStruct {
                         }
                     }
                 } else {
-                    parse_quote! {
+                    parse_quote_spanned! { field_get_name.span() =>
                         #field_vis fn #field_get_name<'db>(self, db: &'db #db_dyn_ty) -> &'db #field_ty {
                             let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                             let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #id_ident >>::ingredient(jar);
@@ -117,7 +117,7 @@ impl InternedStruct {
         let field_tys = self.all_field_tys();
         let data_ident = self.data_ident();
         let constructor_name = self.constructor_name();
-        let new_method: syn::ImplItemMethod = parse_quote! {
+        let new_method: syn::ImplItemMethod = parse_quote_spanned! { constructor_name.span() =>
             #vis fn #constructor_name(
                 db: &#db_dyn_ty,
                 #(#field_names: #field_tys,)*
@@ -131,6 +131,7 @@ impl InternedStruct {
         };
 
         parse_quote! {
+            #[allow(dead_code)]
             impl #id_ident {
                 #(#field_getters)*
 

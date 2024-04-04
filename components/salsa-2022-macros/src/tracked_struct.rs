@@ -168,7 +168,7 @@ impl TrackedStruct {
         let field_clones: Vec<_> = self.all_fields().map(SalsaField::is_clone_field).collect();
         let field_getters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&field_get_names).zip(&field_tys).zip(&field_vises).zip(&field_clones).map(|((((field_index, field_get_name), field_ty), field_vis), is_clone_field)|
             if !*is_clone_field {
-                parse_quote! {
+                parse_quote_spanned! { field_get_name.span() =>
                     #field_vis fn #field_get_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
@@ -177,7 +177,7 @@ impl TrackedStruct {
                     }
                 }
             } else {
-                parse_quote! {
+                parse_quote_spanned! { field_get_name.span() =>
                     #field_vis fn #field_get_name<'db>(self, __db: &'db #db_dyn_ty) -> #field_ty
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);

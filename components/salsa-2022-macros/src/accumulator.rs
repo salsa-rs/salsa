@@ -1,4 +1,4 @@
-use syn::ItemStruct;
+use syn::{spanned::Spanned, ItemStruct};
 
 // #[salsa::accumulator(jar = Jar0)]
 // struct Accumulator(DataType);
@@ -86,7 +86,7 @@ fn struct_item_out(
     data_ty: &syn::Type,
 ) -> syn::ItemStruct {
     let mut struct_item_out = struct_item.clone();
-    struct_item_out.fields = syn::Fields::Unnamed(parse_quote! {
+    struct_item_out.fields = syn::Fields::Unnamed(parse_quote_spanned! { data_ty.span() =>
             (std::marker::PhantomData<#data_ty>)
     });
     struct_item_out
@@ -94,7 +94,7 @@ fn struct_item_out(
 
 fn inherent_impl(args: &Args, struct_ty: &syn::Type, data_ty: &syn::Type) -> syn::ItemImpl {
     let jar_ty = args.jar_ty();
-    parse_quote! {
+    parse_quote_spanned! { struct_ty.span() =>
         impl #struct_ty {
             pub fn push<DB: ?Sized>(db: &DB, data: #data_ty)
             where
@@ -115,7 +115,7 @@ fn ingredients_for_impl(
 ) -> syn::ItemImpl {
     let jar_ty = args.jar_ty();
     let debug_name = crate::literal(struct_name);
-    parse_quote! {
+    parse_quote_spanned! { struct_name.span() =>
         impl salsa::storage::IngredientsFor for #struct_name {
             type Ingredients = salsa::accumulator::AccumulatorIngredient<#data_ty>;
             type Jar = #jar_ty;
@@ -142,7 +142,7 @@ fn ingredients_for_impl(
 
 fn accumulator_impl(args: &Args, struct_ty: &syn::Type, data_ty: &syn::Type) -> syn::ItemImpl {
     let jar_ty = args.jar_ty();
-    parse_quote! {
+    parse_quote_spanned! { struct_ty.span() =>
         impl salsa::accumulator::Accumulator for #struct_ty {
             type Data = #data_ty;
             type Jar = #jar_ty;

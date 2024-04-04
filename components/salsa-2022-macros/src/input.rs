@@ -81,7 +81,7 @@ impl InputStruct {
         let get_field_names: Vec<_> = self.all_get_field_names();
         let field_getters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&get_field_names).zip(&field_vises).zip(&field_tys).zip(&field_clones).map(|((((field_index, get_field_name), field_vis), field_ty), is_clone_field)|
             if !*is_clone_field {
-                parse_quote! {
+                parse_quote_spanned! { get_field_name.span() =>
                     #field_vis fn #get_field_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
@@ -90,7 +90,7 @@ impl InputStruct {
                     }
                 }
             } else {
-                parse_quote! {
+                parse_quote_spanned! { get_field_name.span() =>
                     #field_vis fn #get_field_name<'db>(self, __db: &'db #db_dyn_ty) -> #field_ty
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
@@ -110,7 +110,7 @@ impl InputStruct {
             .zip(&field_tys)
             .filter_map(|(((field_index, &set_field_name), field_vis), field_ty)| {
                 let set_field_name = set_field_name?;
-                Some(parse_quote! {
+                Some(parse_quote_spanned! { set_field_name.span() =>
                     #field_vis fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty) -> salsa::setter::Setter<'db, #ident, #field_ty>
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
@@ -125,7 +125,7 @@ impl InputStruct {
         let singleton = self.0.is_isingleton();
 
         let constructor: syn::ImplItemMethod = if singleton {
-            parse_quote! {
+            parse_quote_spanned! { constructor_name.span() =>
                 /// Creates a new singleton input
                 ///
                 /// # Panics
@@ -143,7 +143,7 @@ impl InputStruct {
                 }
             }
         } else {
-            parse_quote! {
+            parse_quote_spanned! { constructor_name.span() =>
                 pub fn #constructor_name(__db: &#db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
@@ -177,6 +177,7 @@ impl InputStruct {
             };
 
             parse_quote! {
+                #[allow(dead_code)]
                 impl #ident {
                     #constructor
 
@@ -191,6 +192,7 @@ impl InputStruct {
             }
         } else {
             parse_quote! {
+                #[allow(dead_code)]
                 impl #ident {
                     #constructor
 

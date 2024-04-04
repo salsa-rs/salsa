@@ -188,7 +188,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             .filter(|attr| !attr.path.is_ident("customize"))
             .collect();
 
-        parse_quote! {
+        parse_quote_spanned! { ident.span() =>
             #(#attrs)*
             #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Debug)]
             #visibility struct #ident(salsa::Id);
@@ -206,7 +206,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         let visibility = self.visibility();
         let all_field_names = self.all_field_names();
         let all_field_tys = self.all_field_tys();
-        parse_quote! {
+        parse_quote_spanned! { ident.span() =>
             /// Internal struct used for interned item
             #[derive(Eq, PartialEq, Hash, Clone)]
             #visibility struct #ident {
@@ -226,14 +226,14 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     pub(crate) fn constructor_name(&self) -> syn::Ident {
         match self.args.constructor_name.clone() {
             Some(name) => name,
-            None => Ident::new("new", Span::call_site()),
+            None => Ident::new("new", self.id_ident().span()),
         }
     }
 
     /// Generate `impl salsa::AsId for Foo`
     pub(crate) fn as_id_impl(&self) -> syn::ItemImpl {
         let ident = self.id_ident();
-        parse_quote! {
+        parse_quote_spanned! { ident.span() =>
             impl salsa::AsId for #ident {
                 fn as_id(self) -> salsa::Id {
                     self.0
@@ -352,8 +352,8 @@ impl SalsaField {
             ));
         }
 
-        let get_name = Ident::new(&field_name_str, Span::call_site());
-        let set_name = Ident::new(&format!("set_{}", field_name_str), Span::call_site());
+        let get_name = Ident::new(&field_name_str, field_name.span());
+        let set_name = Ident::new(&format!("set_{}", field_name_str), field_name.span());
         let mut result = SalsaField {
             field: field.clone(),
             has_id_attr: false,

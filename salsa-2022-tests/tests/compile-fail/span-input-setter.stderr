@@ -1,0 +1,18 @@
+error[E0308]: mismatched types
+  --> tests/compile-fail/span-input-setter.rs:26:21
+   |
+26 |     input.set_field(22);
+   |           --------- ^^ expected `&mut dyn Db`, found integer
+   |           |
+   |           arguments to this method are incorrect
+   |
+   = note: expected mutable reference `&mut dyn Db`
+                           found type `{integer}`
+note: method defined here
+  --> tests/compile-fail/span-input-setter.rs:18:5
+   |
+16 | #[salsa::input]
+   | ---------------
+17 | pub struct MyInput {
+18 |     field: u32,
+   |     ^^^^^
