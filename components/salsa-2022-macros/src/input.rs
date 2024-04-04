@@ -1,4 +1,4 @@
-use crate::salsa_struct::{SalsaField, SalsaStruct, SalsaStructKind};
+use crate::salsa_struct::{SalsaField, SalsaStruct};
 use proc_macro2::{Literal, TokenStream};
 
 /// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
@@ -10,9 +10,7 @@ pub(crate) fn input(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    match SalsaStruct::new(SalsaStructKind::Input, args, input)
-        .and_then(|el| InputStruct(el).generate_input())
-    {
+    match SalsaStruct::new(args, input).and_then(|el| InputStruct(el).generate_input()) {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }

@@ -29,50 +29,72 @@ use crate::options::{AllowedOptions, Options};
 use proc_macro2::{Ident, Span, TokenStream};
 use syn::spanned::Spanned;
 
-pub(crate) enum SalsaStructKind {
-    Input,
-    Tracked,
-    Interned,
-}
-
 pub(crate) struct SalsaStruct<A: AllowedOptions> {
-    kind: SalsaStructKind,
     args: Options<A>,
     struct_item: syn::ItemStruct,
+    customizations: Vec<Customization>,
     fields: Vec<SalsaField>,
+}
+
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+pub enum Customization {
+    DebugWithDb,
 }
 
 const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 
 impl<A: AllowedOptions> SalsaStruct<A> {
     pub(crate) fn new(
-        kind: SalsaStructKind,
         args: proc_macro::TokenStream,
         input: proc_macro::TokenStream,
     ) -> syn::Result<Self> {
         let struct_item = syn::parse(input)?;
-        Self::with_struct(kind, args, struct_item)
+        Self::with_struct(args, struct_item)
     }
 
     pub(crate) fn with_struct(
-        kind: SalsaStructKind,
         args: proc_macro::TokenStream,
         struct_item: syn::ItemStruct,
     ) -> syn::Result<Self> {
         let args: Options<A> = syn::parse(args)?;
-        let fields = Self::extract_options(&struct_item)?;
+        let customizations = Self::extract_customizations(&struct_item)?;
+        let fields = Self::extract_fields(&struct_item)?;
         Ok(Self {
-            kind,
             args,
             struct_item,
+            customizations,
             fields,
         })
+    }
+
+    fn extract_customizations(struct_item: &syn::ItemStruct) -> syn::Result<Vec<Customization>> {
+        Ok(struct_item
+            .attrs
+            .iter()
+            .map(|attr| {
+                if attr.path.is_ident("customize") {
+                    // FIXME: this should be a comma separated list but I couldn't
+                    // be bothered to remember how syn does this.
+                    let args: syn::Ident = attr.parse_args()?;
+                    if args.to_string() == "DebugWithDb" {
+                        Ok(vec![Customization::DebugWithDb])
+                    } else {
+                        Err(syn::Error::new_spanned(args, "unrecognized customization"))
+                    }
+                } else {
+                    Ok(vec![])
+                }
+            })
+            .collect::<Result<Vec<Vec<_>>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 
     /// Extract out the fields and their options:
     /// If this is a struct, it must use named fields, so we can define field accessors.
     /// If it is an enum, then this is not necessary.
-    pub(crate) fn extract_options(struct_item: &syn::ItemStruct) -> syn::Result<Vec<SalsaField>> {
+    fn extract_fields(struct_item: &syn::ItemStruct) -> syn::Result<Vec<SalsaField>> {
         match &struct_item.fields {
             syn::Fields::Named(n) => Ok(n
                 .named
@@ -91,13 +113,6 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     /// If this is an enum, empty iterator.
     pub(crate) fn all_fields(&self) -> impl Iterator<Item = &SalsaField> {
         self.fields.iter()
-    }
-
-    pub(crate) fn is_identity_field(&self, field: &SalsaField) -> bool {
-        match self.kind {
-            SalsaStructKind::Input | SalsaStructKind::Tracked => field.has_id_attr,
-            SalsaStructKind::Interned => true,
-        }
     }
 
     /// Names of all fields (id and value).
@@ -163,12 +178,14 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         let ident = self.id_ident();
         let visibility = &self.struct_item.vis;
 
-        // Extract the attributes the user gave, but screen out derive, since we are adding our own.
+        // Extract the attributes the user gave, but screen out derive, since we are adding our own,
+        // and the customize attribute that we use for our own purposes.
         let attrs: Vec<_> = self
             .struct_item
             .attrs
             .iter()
             .filter(|attr| !attr.path.is_ident("derive"))
+            .filter(|attr| !attr.path.is_ident("customize"))
             .collect();
 
         parse_quote! {
@@ -231,13 +248,17 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     }
 
     /// Generate `impl salsa::DebugWithDb for Foo`
-    pub(crate) fn as_debug_with_db_impl(&self) -> syn::ItemImpl {
+    pub(crate) fn as_debug_with_db_impl(&self) -> Option<syn::ItemImpl> {
+        if self.customizations.contains(&Customization::DebugWithDb) {
+            return None;
+        }
+
         let ident = self.id_ident();
 
         let db_type = self.db_dyn_ty();
         let ident_string = ident.to_string();
 
-        // `::salsa::debug::helper::SalsaDebug` will use `DebugWithDb` or fallbak to `Debug`
+        // `::salsa::debug::helper::SalsaDebug` will use `DebugWithDb` or fallback to `Debug`
         let fields = self
             .all_fields()
             .map(|field| -> TokenStream {
@@ -245,36 +266,23 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                 let field_getter = field.get_name();
                 let field_ty = field.ty();
 
-                let field_debug = quote_spanned! { field.field.span() =>
+                quote_spanned! { field.field.span() =>
                     debug_struct = debug_struct.field(
                         #field_name_string,
                         &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
                             #[allow(clippy::needless_borrow)]
                             &self.#field_getter(_db),
                             _db,
-                            _include_all_fields
                         )
                     );
-                };
-
-                if self.is_identity_field(field) {
-                    quote_spanned! { field.field.span() =>
-                        #field_debug
-                    }
-                } else {
-                    quote_spanned! { field.field.span() =>
-                        if _include_all_fields {
-                            #field_debug
-                        }
-                    }
                 }
             })
             .collect::<TokenStream>();
 
         // `use ::salsa::debug::helper::Fallback` is needed for the fallback to `Debug` impl
-        parse_quote_spanned! {ident.span()=>
+        Some(parse_quote_spanned! {ident.span()=>
             impl ::salsa::DebugWithDb<#db_type> for #ident {
-                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type, _include_all_fields: bool) -> ::std::fmt::Result {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type) -> ::std::fmt::Result {
                     #[allow(unused_imports)]
                     use ::salsa::debug::helper::Fallback;
                     let mut debug_struct = &mut f.debug_struct(#ident_string);
@@ -283,7 +291,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                     debug_struct.finish()
                 }
             }
-        }
+        })
     }
 
     /// Disallow `#[id]` attributes on the fields of this struct.

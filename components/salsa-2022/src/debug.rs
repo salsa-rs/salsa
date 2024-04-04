@@ -5,7 +5,37 @@ use std::{
     sync::Arc,
 };
 
-pub trait DebugWithDb<Db: ?Sized> {
+use crate::database::AsSalsaDatabase;
+
+/// `DebugWithDb` is a version of the traditional [`Debug`](`std::fmt::Debug`)
+/// trait that gives access to the salsa database, allowing tracked
+/// structs to print the values of their fields. It is typically not used
+/// directly, instead you should write (e.g.) `format!("{:?}", foo.debug(db))`.
+/// Implementations are automatically provided for `#[salsa::tracked]`
+/// items, though you can opt-out from that if you wish to provide a manual
+/// implementation.
+///
+/// # WARNING: Intended for debug use only!
+///
+/// Debug print-outs of tracked structs include the value of all their fields,
+/// but the reads of those fields are ignored by salsa. This avoids creating
+/// spurious dependencies from debugging code, but if you use the resulting
+/// string to influence the outputs (return value, accumulators, etc) from your
+/// query, salsa's dependency tracking will be undermined.
+///
+/// If for some reason you *want* to incorporate dependency output into
+/// your query, do not use the `debug` or `into_debug` helpers and instead
+/// invoke `fmt` manually.
+pub trait DebugWithDb<Db: ?Sized + AsSalsaDatabase> {
+    /// Creates a wrapper type that implements `Debug` but which
+    /// uses the `DebugWithDb::fmt`.
+    ///
+    /// # WARNING: Intended for debug use only!
+    ///
+    /// The wrapper type Debug impl will access the value of all
+    /// fields but those accesses are ignored by salsa. This is only
+    /// suitable for debug output. See [`DebugWithDb`][] trait comment
+    /// for more details.
     fn debug<'me, 'db>(&'me self, db: &'me Db) -> DebugWith<'me, Db>
     where
         Self: Sized + 'me,
@@ -13,35 +43,18 @@ pub trait DebugWithDb<Db: ?Sized> {
         DebugWith {
             value: BoxRef::Ref(self),
             db,
-            include_all_fields: false,
         }
     }
 
-    fn debug_with<'me, 'db>(&'me self, db: &'me Db, include_all_fields: bool) -> DebugWith<'me, Db>
-    where
-        Self: Sized + 'me,
-    {
-        DebugWith {
-            value: BoxRef::Ref(self),
-            db,
-            include_all_fields,
-        }
-    }
-
-    /// Be careful when using this method inside a tracked function,
-    /// because the default macro generated implementation will read all fields,
-    /// maybe introducing undesired dependencies.
-    fn debug_all<'me, 'db>(&'me self, db: &'me Db) -> DebugWith<'me, Db>
-    where
-        Self: Sized + 'me,
-    {
-        DebugWith {
-            value: BoxRef::Ref(self),
-            db,
-            include_all_fields: true,
-        }
-    }
-
+    /// Creates a wrapper type that implements `Debug` but which
+    /// uses the `DebugWithDb::fmt`.
+    ///
+    /// # WARNING: Intended for debug use only!
+    ///
+    /// The wrapper type Debug impl will access the value of all
+    /// fields but those accesses are ignored by salsa. This is only
+    /// suitable for debug output. See [`DebugWithDb`][] trait comment
+    /// for more details.
     fn into_debug<'me, 'db>(self, db: &'me Db) -> DebugWith<'me, Db>
     where
         Self: Sized + 'me,
@@ -49,35 +62,33 @@ pub trait DebugWithDb<Db: ?Sized> {
         DebugWith {
             value: BoxRef::Box(Box::new(self)),
             db,
-            include_all_fields: false,
         }
     }
 
-    /// Be careful when using this method inside a tracked function,
-    /// because the default macro generated implementation will read all fields,
-    /// maybe introducing undesired dependencies.
-    fn into_debug_all<'me, 'db>(self, db: &'me Db) -> DebugWith<'me, Db>
-    where
-        Self: Sized + 'me,
-    {
-        DebugWith {
-            value: BoxRef::Box(Box::new(self)),
-            db,
-            include_all_fields: true,
-        }
-    }
-
-    /// if `include_all_fields` is `false` only identity fields should be read, which means:
-    ///     - for [#\[salsa::input\]](salsa_2022_macros::input) no fields
-    ///     - for [#\[salsa::tracked\]](salsa_2022_macros::tracked) only fields with `#[id]` attribute
-    ///     - for [#\[salsa::interned\]](salsa_2022_macros::interned) any field
-    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result;
+    /// Format `self` given the database `db`.
+    ///
+    /// # Dependency tracking
+    ///
+    /// When invoked manually, field accesses that occur
+    /// within this method are tracked by salsa. But when invoked
+    /// the [`DebugWith`][] value returned by the [`debug`](`Self::debug`)
+    /// and [`into_debug`][`Self::into_debug`] methods,
+    /// those accesses are ignored.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db) -> fmt::Result;
 }
 
-pub struct DebugWith<'me, Db: ?Sized> {
+/// Helper type for the [`DebugWithDb`][] trait that
+/// wraps a value and implements [`std::fmt::Debug`][],
+/// redirecting calls to the `fmt` method from [`DebugWithDb`][].
+///
+/// # WARNING: Intended for debug use only!
+///
+/// This type intentionally ignores salsa dependencies used
+/// to generate the debug output. See the [`DebugWithDb`][] trait
+/// for more notes on this.
+pub struct DebugWith<'me, Db: ?Sized + AsSalsaDatabase> {
     value: BoxRef<'me, dyn DebugWithDb<Db> + 'me>,
     db: &'me Db,
-    include_all_fields: bool,
 }
 
 enum BoxRef<'me, T: ?Sized> {
@@ -96,54 +107,64 @@ impl<T: ?Sized> std::ops::Deref for BoxRef<'_, T> {
     }
 }
 
-impl<D: ?Sized> fmt::Debug for DebugWith<'_, D> {
+impl<Db: ?Sized> fmt::Debug for DebugWith<'_, Db>
+where
+    Db: AsSalsaDatabase,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        DebugWithDb::fmt(&*self.value, f, self.db, self.include_all_fields)
+        let db = self.db.as_salsa_database();
+        db.runtime()
+            .debug_probe(|| DebugWithDb::fmt(&*self.value, f, self.db))
     }
 }
 
 impl<Db: ?Sized, T: ?Sized> DebugWithDb<Db> for &T
 where
     T: DebugWithDb<Db>,
+    Db: AsSalsaDatabase,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
-        T::fmt(self, f, db, include_all_fields)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db) -> fmt::Result {
+        T::fmt(self, f, db)
     }
 }
 
 impl<Db: ?Sized, T: ?Sized> DebugWithDb<Db> for Box<T>
 where
     T: DebugWithDb<Db>,
+    Db: AsSalsaDatabase,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
-        T::fmt(self, f, db, include_all_fields)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db) -> fmt::Result {
+        T::fmt(self, f, db)
     }
 }
 
 impl<Db: ?Sized, T> DebugWithDb<Db> for Rc<T>
 where
     T: DebugWithDb<Db>,
+    Db: AsSalsaDatabase,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
-        T::fmt(self, f, db, include_all_fields)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db) -> fmt::Result {
+        T::fmt(self, f, db)
     }
 }
 
 impl<Db: ?Sized, T: ?Sized> DebugWithDb<Db> for Arc<T>
 where
     T: DebugWithDb<Db>,
+    Db: AsSalsaDatabase,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
-        T::fmt(self, f, db, include_all_fields)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db) -> fmt::Result {
+        T::fmt(self, f, db)
     }
 }
 
 impl<Db: ?Sized, T> DebugWithDb<Db> for Vec<T>
 where
     T: DebugWithDb<Db>,
+    Db: AsSalsaDatabase,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
-        let elements = self.iter().map(|e| e.debug_with(db, include_all_fields));
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db) -> fmt::Result {
+        let elements = self.iter().map(|e| e.debug(db));
         f.debug_list().entries(elements).finish()
     }
 }
@@ -151,9 +172,10 @@ where
 impl<Db: ?Sized, T> DebugWithDb<Db> for Option<T>
 where
     T: DebugWithDb<Db>,
+    Db: AsSalsaDatabase,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
-        let me = self.as_ref().map(|v| v.debug_with(db, include_all_fields));
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db) -> fmt::Result {
+        let me = self.as_ref().map(|v| v.debug(db));
         fmt::Debug::fmt(&me, f)
     }
 }
@@ -162,14 +184,10 @@ impl<Db: ?Sized, K, V, S> DebugWithDb<Db> for HashMap<K, V, S>
 where
     K: DebugWithDb<Db>,
     V: DebugWithDb<Db>,
+    Db: AsSalsaDatabase,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
-        let elements = self.iter().map(|(k, v)| {
-            (
-                k.debug_with(db, include_all_fields),
-                v.debug_with(db, include_all_fields),
-            )
-        });
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db) -> fmt::Result {
+        let elements = self.iter().map(|(k, v)| (k.debug(db), v.debug(db)));
         f.debug_map().entries(elements).finish()
     }
 }
@@ -178,11 +196,12 @@ impl<Db: ?Sized, A, B> DebugWithDb<Db> for (A, B)
 where
     A: DebugWithDb<Db>,
     B: DebugWithDb<Db>,
+    Db: AsSalsaDatabase,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db) -> fmt::Result {
         f.debug_tuple("")
-            .field(&self.0.debug_with(db, include_all_fields))
-            .field(&self.1.debug_with(db, include_all_fields))
+            .field(&self.0.debug(db))
+            .field(&self.1.debug(db))
             .finish()
     }
 }
@@ -192,12 +211,13 @@ where
     A: DebugWithDb<Db>,
     B: DebugWithDb<Db>,
     C: DebugWithDb<Db>,
+    Db: AsSalsaDatabase,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db) -> fmt::Result {
         f.debug_tuple("")
-            .field(&self.0.debug_with(db, include_all_fields))
-            .field(&self.1.debug_with(db, include_all_fields))
-            .field(&self.2.debug_with(db, include_all_fields))
+            .field(&self.0.debug(db))
+            .field(&self.1.debug(db))
+            .field(&self.2.debug(db))
             .finish()
     }
 }
@@ -205,9 +225,10 @@ where
 impl<Db: ?Sized, V, S> DebugWithDb<Db> for HashSet<V, S>
 where
     V: DebugWithDb<Db>,
+    Db: AsSalsaDatabase,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db, include_all_fields: bool) -> fmt::Result {
-        let elements = self.iter().map(|e| e.debug_with(db, include_all_fields));
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, db: &Db) -> fmt::Result {
+        let elements = self.iter().map(|e| e.debug(db));
         f.debug_list().entries(elements).finish()
     }
 }
@@ -217,27 +238,27 @@ where
 /// That's the "has impl" trick (https://github.com/nvzqz/impls#how-it-works)
 #[doc(hidden)]
 pub mod helper {
-    use super::{DebugWith, DebugWithDb};
+    use super::{AsSalsaDatabase, DebugWith, DebugWithDb};
     use std::{fmt, marker::PhantomData};
 
     pub trait Fallback<T: fmt::Debug, Db: ?Sized> {
-        fn salsa_debug<'a>(a: &'a T, _db: &Db, _include_all_fields: bool) -> &'a dyn fmt::Debug {
+        fn salsa_debug<'a>(a: &'a T, _db: &Db) -> &'a dyn fmt::Debug {
             a
         }
     }
 
+    impl<Everything, Db: ?Sized, T: fmt::Debug> Fallback<T, Db> for Everything {}
+
     pub struct SalsaDebug<T, Db: ?Sized>(PhantomData<T>, PhantomData<Db>);
 
-    impl<T: DebugWithDb<Db>, Db: ?Sized> SalsaDebug<T, Db> {
+    impl<T, Db: ?Sized> SalsaDebug<T, Db>
+    where
+        T: DebugWithDb<Db>,
+        Db: AsSalsaDatabase,
+    {
         #[allow(dead_code)]
-        pub fn salsa_debug<'a, 'b: 'a>(
-            a: &'a T,
-            db: &'b Db,
-            include_all_fields: bool,
-        ) -> DebugWith<'a, Db> {
-            a.debug_with(db, include_all_fields)
+        pub fn salsa_debug<'a, 'b: 'a>(a: &'a T, db: &'b Db) -> DebugWith<'a, Db> {
+            a.debug(db)
         }
     }
-
-    impl<Everything, Db: ?Sized, T: fmt::Debug> Fallback<T, Db> for Everything {}
 }

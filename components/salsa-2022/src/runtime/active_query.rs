@@ -40,6 +40,26 @@ pub(super) struct ActiveQuery {
     pub(super) disambiguator_map: FxIndexMap<u64, Disambiguator>,
 }
 
+pub(super) struct SavedQueryState {
+    database_key_index: DatabaseKeyIndex,
+    durability: Durability,
+    changed_at: Revision,
+    input_outputs_len: usize,
+    untracked_read: bool,
+}
+
+impl SavedQueryState {
+    fn new(query: &ActiveQuery) -> Self {
+        Self {
+            database_key_index: query.database_key_index,
+            durability: query.durability,
+            changed_at: query.changed_at,
+            input_outputs_len: query.input_outputs.len(),
+            untracked_read: query.untracked_read,
+        }
+    }
+}
+
 impl ActiveQuery {
     pub(super) fn new(database_key_index: DatabaseKeyIndex) -> Self {
         ActiveQuery {
@@ -51,6 +71,26 @@ impl ActiveQuery {
             cycle: None,
             disambiguator_map: Default::default(),
         }
+    }
+
+    pub(super) fn save_query_state(&self) -> SavedQueryState {
+        SavedQueryState::new(self)
+    }
+
+    pub(super) fn restore_query_state(&mut self, state: SavedQueryState) {
+        assert_eq!(self.database_key_index, state.database_key_index);
+
+        assert!(self.durability <= state.durability);
+        self.durability = state.durability;
+
+        assert!(self.changed_at >= state.changed_at);
+        self.changed_at = state.changed_at;
+
+        assert!(self.input_outputs.len() >= state.input_outputs_len);
+        self.input_outputs.truncate(state.input_outputs_len);
+
+        assert!(self.untracked_read >= state.untracked_read);
+        self.untracked_read = state.untracked_read;
     }
 
     pub(super) fn add_read(
