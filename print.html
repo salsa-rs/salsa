@@ -1131,7 +1131,7 @@ fn parse_string(source_text: &amp;str) -&gt; String {
     let accumulated = parse_statements::accumulated::&lt;Diagnostics&gt;(&amp;db, source_program);
 
     // Format the result as a string and return it
-    format!(&quot;{:#?}&quot;, (statements.debug_all(&amp;db), accumulated))
+    format!(&quot;{:#?}&quot;, (statements.debug(&amp;db), accumulated))
 }
 <span class="boring">}
 </span></code></pre></pre>
