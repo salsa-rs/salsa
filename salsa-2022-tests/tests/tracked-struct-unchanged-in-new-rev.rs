@@ -43,5 +43,6 @@ fn execute() {
     input1.set_field(&mut db).to(24);
     let tracked2 = tracked_fn(&db, input2);
 
+    // this should not panic
     tracked2.field(&db);
 }
