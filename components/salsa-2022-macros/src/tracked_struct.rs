@@ -194,7 +194,7 @@ impl TrackedStruct {
         let constructor_name = self.constructor_name();
 
         parse_quote! {
-            #[allow(clippy::too_many_arguments)]
+            #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
             impl #ident {
                 pub fn #constructor_name(__db: &#db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
                 {
