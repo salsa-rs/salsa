@@ -192,7 +192,7 @@ impl InputStruct {
             }
         } else {
             parse_quote! {
-                #[allow(dead_code)]
+                #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
                 impl #ident {
                     #constructor
 

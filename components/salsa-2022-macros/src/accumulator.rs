@@ -95,6 +95,7 @@ fn struct_item_out(
 fn inherent_impl(args: &Args, struct_ty: &syn::Type, data_ty: &syn::Type) -> syn::ItemImpl {
     let jar_ty = args.jar_ty();
     parse_quote_spanned! { struct_ty.span() =>
+        #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
         impl #struct_ty {
             pub fn push<DB: ?Sized>(db: &DB, data: #data_ty)
             where
@@ -116,6 +117,7 @@ fn ingredients_for_impl(
     let jar_ty = args.jar_ty();
     let debug_name = crate::literal(struct_name);
     parse_quote_spanned! { struct_name.span() =>
+        #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
         impl salsa::storage::IngredientsFor for #struct_name {
             type Ingredients = salsa::accumulator::AccumulatorIngredient<#data_ty>;
             type Jar = #jar_ty;
@@ -143,6 +145,7 @@ fn ingredients_for_impl(
 fn accumulator_impl(args: &Args, struct_ty: &syn::Type, data_ty: &syn::Type) -> syn::ItemImpl {
     let jar_ty = args.jar_ty();
     parse_quote_spanned! { struct_ty.span() =>
+        #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
         impl salsa::accumulator::Accumulator for #struct_ty {
             type Data = #data_ty;
             type Jar = #jar_ty;
