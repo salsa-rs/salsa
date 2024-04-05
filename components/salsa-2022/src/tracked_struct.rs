@@ -287,11 +287,14 @@ where
 
     fn mark_validated_output(
         &self,
-        _db: &DB,
+        db: &DB,
         _executor: DatabaseKeyIndex,
-        _output_key: Option<crate::Id>,
+        output_key: Option<crate::Id>,
     ) {
-        // FIXME
+        let output_key = output_key.unwrap();
+        let output_key: C::Id = <C::Id>::from_id(output_key);
+        let mut entity = self.entity_data.get_mut(&output_key).unwrap();
+        entity.created_at = db.runtime().current_revision();
     }
 
     fn remove_stale_output(
