@@ -16,6 +16,7 @@
   - [Defining the checker](./tutorial/checker.md)
   - [Defining the interpreter](./tutorial/interpreter.md)
 - [Reference](./reference.md)
+  - [Durability](./reference/durability.md)
   - [Algorithm](./reference/algorithm.md)
 - [Common patterns](./common_patterns.md)
   - [Selection](./common_patterns/selection.md)
