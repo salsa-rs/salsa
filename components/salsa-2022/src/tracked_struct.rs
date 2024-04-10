@@ -47,16 +47,32 @@ pub trait Configuration {
     /// Create a new value revision array where each element is set to `current_revision`.
     fn new_revisions(current_revision: Revision) -> Self::Revisions;
 
-    /// Update an existing value revision array `revisions`,
-    /// given the tuple of the old values (`old_value`)
-    /// and the tuple of the values (`new_value`).
-    /// If a value has changed, then its element is
-    /// updated to `current_revision`.
-    fn update_revisions(
+    /// Update the field data and, if the value has changed,
+    /// the appropriate entry in the `revisions` array.
+    ///
+    /// # Safety requirements and conditions
+    ///
+    /// Requires the same conditions as the `maybe_update`
+    /// method on [the `Update` trait](`crate::update::Update`).
+    ///
+    /// In short, requires that `old_fields` be a pointer into
+    /// storage from a previous revision.
+    /// It must meet its validity invariant.
+    /// Owned content must meet safety invariant.
+    /// `*mut` here is not strictly needed;
+    /// it is used to signal that the content
+    /// is not guaranteed to recursively meet
+    /// its safety invariant and
+    /// hence this must be dereferenced with caution.
+    ///
+    /// Ensures that `old_fields` is fully updated and valid
+    /// after it returns and that `revisions` has been updated
+    /// for any field that changed.
+    unsafe fn update_fields(
         current_revision: Revision,
-        old_value: &Self::Fields,
-        new_value: &Self::Fields,
         revisions: &mut Self::Revisions,
+        old_fields: *mut Self::Fields,
+        new_fields: Self::Fields,
     );
 }
 // ANCHOR_END: Configuration
@@ -210,19 +226,25 @@ where
         } else {
             let mut data = self.entity_data.get_mut(&id).unwrap();
             let data = &mut *data;
+
+            // SAFETY: We assert that the pointer to `data.revisions`
+            // is a pointer into the database referencing a value
+            // from a previous revision. As such, it continues to meet
+            // its validity invariant and any owned content also continues
+            // to meet its safety invariant.
+            unsafe {
+                C::update_fields(
+                    current_revision,
+                    &mut data.revisions,
+                    std::ptr::addr_of_mut!(data.fields),
+                    fields,
+                );
+            }
             if current_deps.durability < data.durability {
                 data.revisions = C::new_revisions(current_revision);
-            } else {
-                C::update_revisions(current_revision, &data.fields, &fields, &mut data.revisions);
             }
             data.created_at = current_revision;
             data.durability = current_deps.durability;
-
-            // Subtle but important: we *always* update the values of the fields,
-            // even if they are `==` to the old values. This is because the `==`
-            // operation might not mean tha tthe fields are bitwise equal, and we
-            // want to take the new value.
-            data.fields = fields;
         }
 
         id

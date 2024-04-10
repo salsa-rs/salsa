@@ -100,24 +100,33 @@ impl TrackedStruct {
         // Create the function body that will update the revisions for each field.
         // If a field is a "backdate field" (the default), then we first check if
         // the new value is `==` to the old value. If so, we leave the revision unchanged.
-        let old_value = syn::Ident::new("old_value_", Span::call_site());
-        let new_value = syn::Ident::new("new_value_", Span::call_site());
+        let old_fields = syn::Ident::new("old_fields_", Span::call_site());
+        let new_fields = syn::Ident::new("new_fields_", Span::call_site());
         let revisions = syn::Ident::new("revisions_", Span::call_site());
         let current_revision = syn::Ident::new("current_revision_", Span::call_site());
-        let update_revisions: TokenStream = self
+        let update_fields: TokenStream = self
             .all_fields()
             .zip(0..)
             .map(|(field, i)| {
+                let field_ty = field.ty();
                 let field_index = Literal::u32_unsuffixed(i);
                 if field.is_backdate_field() {
                     quote_spanned! { field.span() =>
-                        if #old_value.#field_index != #new_value.#field_index {
+                        if salsa::update::helper::Dispatch::<#field_ty>::maybe_update(
+                            std::ptr::addr_of_mut!((*#old_fields).#field_index),
+                            #new_fields.#field_index,
+                        ) {
                             #revisions[#field_index] = #current_revision;
                         }
                     }
                 } else {
                     quote_spanned! { field.span() =>
-                        #revisions[#field_index] = #current_revision;
+                        salsa::update::always_update(
+                            &mut #revisions[#field_index],
+                            #current_revision,
+                            unsafe { &mut (*#old_fields).#field_index },
+                            #new_fields.#field_index,
+                        );
                     }
                 }
             })
@@ -142,13 +151,14 @@ impl TrackedStruct {
                     [current_revision; #arity]
                 }
 
-                fn update_revisions(
+                unsafe fn update_fields(
                     #current_revision: salsa::Revision,
-                    #old_value: &Self::Fields,
-                    #new_value: &Self::Fields,
                     #revisions: &mut Self::Revisions,
+                    #old_fields: *mut Self::Fields,
+                    #new_fields: Self::Fields,
                 ) {
-                    #update_revisions
+                    use salsa::update::helper::Fallback as _;
+                    #update_fields
                 }
             }
         }
