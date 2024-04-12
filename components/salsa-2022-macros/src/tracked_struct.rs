@@ -57,6 +57,7 @@ impl TrackedStruct {
         let ingredients_for_impl = self.tracked_struct_ingredients(&config_struct);
         let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
         let tracked_struct_in_db_impl = self.tracked_struct_in_db_impl();
+        let update_impl = self.update_impl();
         let as_id_impl = self.as_id_impl();
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
         Ok(quote! {
@@ -67,6 +68,7 @@ impl TrackedStruct {
             #ingredients_for_impl
             #salsa_struct_in_db_impl
             #tracked_struct_in_db_impl
+            #update_impl
             #as_id_impl
             #as_debug_with_db_impl
         })
@@ -210,11 +212,11 @@ impl TrackedStruct {
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                    let __id = __ingredients.0.new_struct(
+                    let __data = __ingredients.0.new_struct(
                         __runtime,
                         (#(#field_names,)*),
                     );
-                    __id
+                    __data.id()
                 }
 
                 #(#field_getters)*
@@ -332,6 +334,22 @@ impl TrackedStruct {
         }
     }
 
+    /// Implementation of `Update`.
+    fn update_impl(&self) -> syn::ItemImpl {
+        let ident = self.id_ident();
+        parse_quote! {
+            unsafe impl salsa::update::Update for #ident {
+                unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+                    if unsafe { *old_pointer } != new_value {
+                        unsafe { *old_pointer = new_value };
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+        }
+    }
     /// The index of the tracked struct ingredient in the ingredient tuple.
     fn tracked_struct_ingredient_index(&self) -> Literal {
         Literal::usize_unsuffixed(0)

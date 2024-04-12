@@ -10,6 +10,7 @@ use crate::{
     ingredient_list::IngredientList,
     interned::{InternedId, InternedIngredient},
     key::{DatabaseKeyIndex, DependencyIndex},
+    plumbing::transmute_lifetime,
     runtime::{local_state::QueryOrigin, Runtime},
     salsa_struct::SalsaStructInDb,
     Database, Durability, Event, IngredientIndex, Revision,
@@ -125,10 +126,13 @@ struct TrackedStructKey {
 
 // ANCHOR: TrackedStructValue
 #[derive(Debug)]
-struct TrackedStructValue<C>
+pub struct TrackedStructValue<C>
 where
     C: Configuration,
 {
+    /// The id of this struct in the ingredient.
+    id: C::Id,
+
     /// The durability minimum durability of all inputs consumed
     /// by the creator query prior to creating this tracked struct.
     /// If any of those inputs changes, then the creator query may
@@ -154,6 +158,16 @@ where
     revisions: C::Revisions,
 }
 // ANCHOR_END: TrackedStructValue
+
+impl<C> TrackedStructValue<C>
+where
+    C: Configuration,
+{
+    /// The id of this struct in the ingredient.
+    pub fn id(&self) -> C::Id {
+        self.id
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
 pub struct Disambiguator(pub u32);
@@ -194,7 +208,7 @@ where
         }
     }
 
-    pub fn new_struct(&self, runtime: &Runtime, fields: C::Fields) -> C::Id {
+    pub fn new_struct(&self, runtime: &Runtime, fields: C::Fields) -> &TrackedStructValue<C> {
         let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
         let (query_key, current_deps, disambiguator) = runtime.disambiguate_entity(
@@ -211,21 +225,28 @@ where
         let (id, new_id) = self.interned.intern_full(runtime, entity_key);
         runtime.add_output(self.database_key_index(id).into());
 
+        let pointer: *const TrackedStructValue<C>;
         let current_revision = runtime.current_revision();
         if new_id {
-            let old_value = self.entity_data.insert(
+            let data = Box::new(TrackedStructValue {
                 id,
-                Box::new(TrackedStructValue {
-                    created_at: current_revision,
-                    durability: current_deps.durability,
-                    fields,
-                    revisions: C::new_revisions(current_deps.changed_at),
-                }),
-            );
+                created_at: current_revision,
+                durability: current_deps.durability,
+                fields,
+                revisions: C::new_revisions(current_deps.changed_at),
+            });
+
+            // Keep a pointer into the box for later
+            pointer = &*data;
+
+            let old_value = self.entity_data.insert(id, data);
             assert!(old_value.is_none());
         } else {
             let mut data = self.entity_data.get_mut(&id).unwrap();
             let data = &mut *data;
+
+            // Keep a pointer into the box for later
+            pointer = &**data;
 
             // SAFETY: We assert that the pointer to `data.revisions`
             // is a pointer into the database referencing a value
@@ -247,7 +268,13 @@ where
             data.durability = current_deps.durability;
         }
 
-        id
+        // Unsafety clause:
+        //
+        // * The box is owned by self and, although the box has been moved,
+        //   the pointer is to the contents of the box, which have a stable
+        //   address.
+        // * Values are only removed or altered when we have `&mut self`.
+        unsafe { transmute_lifetime(self, &*pointer) }
     }
 
     /// Deletes the given entities. This is used after a query `Q` executes and we can compare

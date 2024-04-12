@@ -126,20 +126,6 @@ pub unsafe trait Update {
     unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool;
 }
 
-unsafe impl<T> Update for &T {
-    unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
-        let old_value: *const T = unsafe { *old_pointer };
-        if old_value != (new_value as *const T) {
-            unsafe {
-                *old_pointer = new_value;
-            }
-            true
-        } else {
-            false
-        }
-    }
-}
-
 unsafe impl<T> Update for Vec<T>
 where
     T: Update,
