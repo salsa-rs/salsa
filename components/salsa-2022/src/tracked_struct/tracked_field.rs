@@ -88,7 +88,6 @@ where
         revision: crate::Revision,
     ) -> bool {
         let id = <C::Id>::from_id(input.key_index.unwrap());
-        eprintln!("maybe_changed_after({id:?}, {revision:?})");
         match self.entity_data.get(&id) {
             Some(data) => {
                 let field_changed_at = C::revision(&data.revisions, self.field_index);
