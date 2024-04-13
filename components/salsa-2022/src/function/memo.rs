@@ -126,8 +126,13 @@ impl<V> Memo<V> {
         });
 
         self.verified_at.store(runtime.current_revision());
+    }
 
-        // Also mark the outputs as verified
+    pub(super) fn mark_outputs_as_verified(
+        &self,
+        db: &dyn crate::Database,
+        database_key_index: DatabaseKeyIndex,
+    ) {
         for output in self.revisions.origin.outputs() {
             db.mark_validated_output(database_key_index, output);
         }

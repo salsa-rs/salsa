@@ -127,7 +127,9 @@ where
 
         if memo.check_durability(runtime) {
             // No input of the suitable durability has changed since last verified.
-            memo.mark_as_verified(db.as_salsa_database(), runtime, database_key_index);
+            let db = db.as_salsa_database();
+            memo.mark_as_verified(db, runtime, database_key_index);
+            memo.mark_outputs_as_verified(db, database_key_index);
             return true;
         }
 
