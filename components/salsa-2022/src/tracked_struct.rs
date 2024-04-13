@@ -1,23 +1,21 @@
-use std::{fmt, hash::Hash, sync::Arc};
-
-use crossbeam::queue::SegQueue;
+use std::{fmt, hash::Hash};
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    hash::FxDashMap,
     id::AsId,
     ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
     ingredient_list::IngredientList,
     interned::{InternedId, InternedIngredient},
     key::{DatabaseKeyIndex, DependencyIndex},
-    plumbing::transmute_lifetime,
     runtime::{local_state::QueryOrigin, Runtime},
     salsa_struct::SalsaStructInDb,
     Database, Durability, Event, IngredientIndex, Revision,
 };
 
+use self::struct_map::{StructMap, Update};
 pub use self::tracked_field::TrackedFieldIngredient;
 
+mod struct_map;
 mod tracked_field;
 
 // ANCHOR: Configuration
@@ -97,7 +95,7 @@ where
 {
     interned: InternedIngredient<C::Id, TrackedStructKey>,
 
-    entity_data: Arc<FxDashMap<C::Id, Box<TrackedStructValue<C>>>>,
+    struct_map: struct_map::StructMap<C>,
 
     /// A list of each tracked function `f` whose key is this
     /// tracked struct.
@@ -106,13 +104,6 @@ where
     /// each of these functions will be notified
     /// so they can remove any data tied to that instance.
     dependent_fns: IngredientList,
-
-    /// When specific entities are deleted, their data is added
-    /// to this vector rather than being immediately freed. This is because we may` have
-    /// references to that data floating about that are tied to the lifetime of some
-    /// `&db` reference. This queue itself is not freed until we have an `&mut db` reference,
-    /// guaranteeing that there are no more references to it.
-    deleted_entries: SegQueue<Box<TrackedStructValue<C>>>,
 
     debug_name: &'static str,
 }
@@ -159,16 +150,6 @@ where
 }
 // ANCHOR_END: TrackedStructValue
 
-impl<C> TrackedStructValue<C>
-where
-    C: Configuration,
-{
-    /// The id of this struct in the ingredient.
-    pub fn id(&self) -> C::Id {
-        self.id
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
 pub struct Disambiguator(pub u32);
 
@@ -179,9 +160,8 @@ where
     pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
             interned: InternedIngredient::new(index, debug_name),
-            entity_data: Default::default(),
+            struct_map: StructMap::new(),
             dependent_fns: IngredientList::new(),
-            deleted_entries: SegQueue::default(),
             debug_name,
         }
     }
@@ -195,7 +175,7 @@ where
         TrackedFieldIngredient {
             ingredient_index: field_ingredient_index,
             field_index,
-            entity_data: self.entity_data.clone(),
+            struct_map: self.struct_map.view(),
             struct_debug_name: self.debug_name,
             field_debug_name,
         }
@@ -208,7 +188,11 @@ where
         }
     }
 
-    pub fn new_struct(&self, runtime: &Runtime, fields: C::Fields) -> &TrackedStructValue<C> {
+    pub fn new_struct<'db>(
+        &'db self,
+        runtime: &'db Runtime,
+        fields: C::Fields,
+    ) -> &'db TrackedStructValue<C> {
         let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
         let (query_key, current_deps, disambiguator) = runtime.disambiguate_entity(
@@ -225,56 +209,56 @@ where
         let (id, new_id) = self.interned.intern_full(runtime, entity_key);
         runtime.add_output(self.database_key_index(id).into());
 
-        let pointer: *const TrackedStructValue<C>;
         let current_revision = runtime.current_revision();
         if new_id {
-            let data = Box::new(TrackedStructValue {
-                id,
-                created_at: current_revision,
-                durability: current_deps.durability,
-                fields,
-                revisions: C::new_revisions(current_deps.changed_at),
-            });
-
-            // Keep a pointer into the box for later
-            pointer = &*data;
-
-            let old_value = self.entity_data.insert(id, data);
-            assert!(old_value.is_none());
-        } else {
-            let mut data = self.entity_data.get_mut(&id).unwrap();
-            let data = &mut *data;
-
-            // Keep a pointer into the box for later
-            pointer = &**data;
-
-            // SAFETY: We assert that the pointer to `data.revisions`
-            // is a pointer into the database referencing a value
-            // from a previous revision. As such, it continues to meet
-            // its validity invariant and any owned content also continues
-            // to meet its safety invariant.
-            unsafe {
-                C::update_fields(
-                    current_revision,
-                    &mut data.revisions,
-                    std::ptr::addr_of_mut!(data.fields),
+            self.struct_map.insert(
+                runtime,
+                TrackedStructValue {
+                    id,
+                    created_at: current_revision,
+                    durability: current_deps.durability,
                     fields,
-                );
-            }
-            if current_deps.durability < data.durability {
-                data.revisions = C::new_revisions(current_revision);
-            }
-            data.created_at = current_revision;
-            data.durability = current_deps.durability;
-        }
+                    revisions: C::new_revisions(current_deps.changed_at),
+                },
+            )
+        } else {
+            match self.struct_map.update(runtime, id) {
+                Update::Current(r) => {
+                    // All inputs up to this point were previously
+                    // observed to be green and this struct was already
+                    // verified. Therefore, the durability ought not to have
+                    // changed (nor the field values, but the user could've
+                    // done something stupid, so we can't *assert* this is true).
+                    assert!(r.durability == current_deps.durability);
 
-        // Unsafety clause:
-        //
-        // * The box is owned by self and, although the box has been moved,
-        //   the pointer is to the contents of the box, which have a stable
-        //   address.
-        // * Values are only removed or altered when we have `&mut self`.
-        unsafe { transmute_lifetime(self, &*pointer) }
+                    r
+                }
+                Update::Outdated(mut data_ref) => {
+                    let data = &mut *data_ref;
+
+                    // SAFETY: We assert that the pointer to `data.revisions`
+                    // is a pointer into the database referencing a value
+                    // from a previous revision. As such, it continues to meet
+                    // its validity invariant and any owned content also continues
+                    // to meet its safety invariant.
+                    unsafe {
+                        C::update_fields(
+                            current_revision,
+                            &mut data.revisions,
+                            std::ptr::addr_of_mut!(data.fields),
+                            fields,
+                        );
+                    }
+                    if current_deps.durability < data.durability {
+                        data.revisions = C::new_revisions(current_revision);
+                    }
+                    data.created_at = current_revision;
+                    data.durability = current_deps.durability;
+
+                    data_ref.freeze()
+                }
+            }
+        }
     }
 
     /// Deletes the given entities. This is used after a query `Q` executes and we can compare
@@ -296,9 +280,7 @@ where
         });
 
         self.interned.delete_index(id);
-        if let Some((_, data)) = self.entity_data.remove(&id) {
-            self.deleted_entries.push(data);
-        }
+        self.struct_map.delete(id);
 
         for dependent_fn in self.dependent_fns.iter() {
             db.salsa_struct_deleted(dependent_fn, id.as_id());
@@ -334,16 +316,16 @@ where
         None
     }
 
-    fn mark_validated_output(
-        &self,
-        db: &DB,
+    fn mark_validated_output<'db>(
+        &'db self,
+        db: &'db DB,
         _executor: DatabaseKeyIndex,
         output_key: Option<crate::Id>,
     ) {
+        let runtime = db.runtime();
         let output_key = output_key.unwrap();
         let output_key: C::Id = <C::Id>::from_id(output_key);
-        let mut entity = self.entity_data.get_mut(&output_key).unwrap();
-        entity.created_at = db.runtime().current_revision();
+        self.struct_map.validate(runtime, output_key);
     }
 
     fn remove_stale_output(
@@ -362,7 +344,7 @@ where
 
     fn reset_for_new_revision(&mut self) {
         self.interned.clear_deleted_indices();
-        std::mem::take(&mut self.deleted_entries);
+        self.struct_map.drop_deleted_entries();
     }
 
     fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
@@ -379,4 +361,14 @@ where
     C: Configuration,
 {
     const RESET_ON_NEW_REVISION: bool = true;
+}
+
+impl<C> TrackedStructValue<C>
+where
+    C: Configuration,
+{
+    /// The id of this struct in the ingredient.
+    pub fn id(&self) -> C::Id {
+        self.id
+    }
 }
