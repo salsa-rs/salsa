@@ -50,8 +50,8 @@ impl TrackedStruct {
     fn generate_tracked(&self) -> syn::Result<TokenStream> {
         self.validate_tracked()?;
 
-        let id_struct = self.id_struct();
         let config_struct = self.config_struct();
+        let the_struct = self.id_or_ptr_struct(&config_struct.ident)?;
         let config_impl = self.config_impl(&config_struct);
         let inherent_impl = self.tracked_inherent_impl();
         let ingredients_for_impl = self.tracked_struct_ingredients(&config_struct);
@@ -63,7 +63,7 @@ impl TrackedStruct {
         Ok(quote! {
             #config_struct
             #config_impl
-            #id_struct
+            #the_struct
             #inherent_impl
             #ingredients_for_impl
             #salsa_struct_in_db_impl
@@ -168,7 +168,8 @@ impl TrackedStruct {
 
     /// Generate an inherent impl with methods on the tracked type.
     fn tracked_inherent_impl(&self) -> syn::ItemImpl {
-        let ident = self.id_ident();
+        let (ident, _, impl_generics, type_generics, where_clause) = self.id_ident_and_generics();
+
         let jar_ty = self.jar_ty();
         let db_dyn_ty = self.db_dyn_ty();
         let tracked_field_ingredients: Literal = self.tracked_field_ingredients_index();
@@ -207,7 +208,8 @@ impl TrackedStruct {
 
         parse_quote! {
             #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
-            impl #ident {
+            impl #impl_generics #ident #type_generics
+            #where_clause {
                 pub fn #constructor_name(__db: &#db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
@@ -230,7 +232,7 @@ impl TrackedStruct {
     /// function ingredient for each of the value fields.
     fn tracked_struct_ingredients(&self, config_struct: &syn::ItemStruct) -> syn::ItemImpl {
         use crate::literal;
-        let ident = self.id_ident();
+        let (ident, _, impl_generics, type_generics, where_clause) = self.id_ident_and_generics();
         let jar_ty = self.jar_ty();
         let config_struct_name = &config_struct.ident;
         let field_indices: Vec<Literal> = self.all_field_indices();
@@ -241,7 +243,8 @@ impl TrackedStruct {
         let debug_name_fields: Vec<_> = self.all_field_names().into_iter().map(literal).collect();
 
         parse_quote! {
-            impl salsa::storage::IngredientsFor for #ident {
+            impl #impl_generics salsa::storage::IngredientsFor for #ident #type_generics
+            #where_clause {
                 type Jar = #jar_ty;
                 type Ingredients = (
                     salsa::tracked_struct::TrackedStructIngredient<#config_struct_name>,
@@ -298,15 +301,17 @@ impl TrackedStruct {
 
     /// Implementation of `SalsaStructInDb`.
     fn salsa_struct_in_db_impl(&self) -> syn::ItemImpl {
-        let ident = self.id_ident();
+        let (ident, parameters, _, type_generics, where_clause) = self.id_ident_and_generics();
+        let db = syn::Ident::new("DB", ident.span());
         let jar_ty = self.jar_ty();
         let tracked_struct_ingredient = self.tracked_struct_ingredient_index();
         parse_quote! {
-            impl<DB> salsa::salsa_struct::SalsaStructInDb<DB> for #ident
+            impl<#db, #parameters> salsa::salsa_struct::SalsaStructInDb<#db> for #ident #type_generics
             where
-                DB: ?Sized + salsa::DbWithJar<#jar_ty>,
+                #db: ?Sized + salsa::DbWithJar<#jar_ty>,
+                #where_clause
             {
-                fn register_dependent_fn(db: &DB, index: salsa::routes::IngredientIndex) {
+                fn register_dependent_fn(db: & #db, index: salsa::routes::IngredientIndex) {
                     let (jar, _) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                     let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident>>::ingredient(jar);
                     ingredients.#tracked_struct_ingredient.register_dependent_fn(index)
@@ -317,15 +322,17 @@ impl TrackedStruct {
 
     /// Implementation of `TrackedStructInDb`.
     fn tracked_struct_in_db_impl(&self) -> syn::ItemImpl {
-        let ident = self.id_ident();
+        let (ident, parameters, _, type_generics, where_clause) = self.id_ident_and_generics();
+        let db = syn::Ident::new("DB", ident.span());
         let jar_ty = self.jar_ty();
         let tracked_struct_ingredient = self.tracked_struct_ingredient_index();
         parse_quote! {
-            impl<DB> salsa::tracked_struct::TrackedStructInDb<DB> for #ident
+            impl<#db, #parameters> salsa::tracked_struct::TrackedStructInDb<#db> for #ident #type_generics
             where
-                DB: ?Sized + salsa::DbWithJar<#jar_ty>,
+                #db: ?Sized + salsa::DbWithJar<#jar_ty>,
+                #where_clause
             {
-                fn database_key_index(self, db: &DB) -> salsa::DatabaseKeyIndex {
+                fn database_key_index(self, db: &#db) -> salsa::DatabaseKeyIndex {
                     let (jar, _) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                     let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident>>::ingredient(jar);
                     ingredients.#tracked_struct_ingredient.database_key_index(self)
