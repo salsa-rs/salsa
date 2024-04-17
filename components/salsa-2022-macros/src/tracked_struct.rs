@@ -257,7 +257,7 @@ impl TrackedStruct {
                 where
                     DB: salsa::DbWithJar<Self::Jar> + salsa::storage::JarFromJars<Self::Jar>,
                 {
-                    let struct_ingredient =                         {
+                    let struct_ingredient = {
                         let index = routes.push(
                             |jars| {
                                 let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);

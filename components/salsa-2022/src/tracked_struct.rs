@@ -121,6 +121,10 @@ pub struct TrackedStructValue<C>
 where
     C: Configuration,
 {
+    /// Index of the struct ingredient.
+    #[allow(dead_code)]
+    struct_ingredient_index: IngredientIndex,
+
     /// The id of this struct in the ingredient.
     id: C::Id,
 
@@ -166,12 +170,21 @@ where
         }
     }
 
+    fn struct_ingredient_index(&self) -> IngredientIndex {
+        self.interned.ingredient_index()
+    }
+
     pub fn new_field_ingredient(
         &self,
         field_ingredient_index: IngredientIndex,
         field_index: u32,
         field_debug_name: &'static str,
     ) -> TrackedFieldIngredient<C> {
+        assert_eq!(
+            field_ingredient_index.as_u32() - self.struct_ingredient_index().as_u32() - 1,
+            field_index,
+        );
+
         TrackedFieldIngredient {
             ingredient_index: field_ingredient_index,
             field_index,
@@ -215,6 +228,7 @@ where
                 runtime,
                 TrackedStructValue {
                     id,
+                    struct_ingredient_index: self.struct_ingredient_index(),
                     created_at: current_revision,
                     durability: current_deps.durability,
                     fields,
