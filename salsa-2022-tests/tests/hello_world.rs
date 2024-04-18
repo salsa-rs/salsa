@@ -7,7 +7,12 @@ use expect_test::expect;
 use test_log::test;
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked, final_result, intermediate_result);
+struct Jar(
+    MyInput,
+    MyTracked<'static>,
+    final_result,
+    intermediate_result,
+);
 
 trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
@@ -23,12 +28,12 @@ fn final_result(db: &dyn Db, input: MyInput) -> u32 {
 }
 
 #[salsa::tracked(jar = Jar)]
-struct MyTracked {
+struct MyTracked<'db> {
     field: u32,
 }
 
 #[salsa::tracked(jar = Jar)]
-fn intermediate_result(db: &dyn Db, input: MyInput) -> MyTracked {
+fn intermediate_result<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     db.push_log(format!("intermediate_result({:?})", input));
     MyTracked::new(db, input.field(db) / 2)
 }

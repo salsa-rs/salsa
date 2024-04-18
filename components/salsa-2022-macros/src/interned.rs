@@ -54,7 +54,7 @@ impl crate::options::AllowedOptions for InternedStruct {
 impl InternedStruct {
     fn generate_interned(&self) -> syn::Result<TokenStream> {
         self.validate_interned()?;
-        let id_struct = self.id_struct();
+        let id_struct = self.the_struct_id();
         let data_struct = self.data_struct();
         let ingredients_for_impl = self.ingredients_for_impl();
         let as_id_impl = self.as_id_impl();
@@ -82,7 +82,7 @@ impl InternedStruct {
     /// as well as a `new` method.
     fn inherent_impl_for_named_fields(&self) -> syn::ItemImpl {
         let vis = self.visibility();
-        let id_ident = self.id_ident();
+        let id_ident = self.the_ident();
         let db_dyn_ty = self.db_dyn_ty();
         let jar_ty = self.jar_ty();
 
@@ -144,7 +144,7 @@ impl InternedStruct {
     ///
     /// For a memoized type, the only ingredient is an `InternedIngredient`.
     fn ingredients_for_impl(&self) -> syn::ItemImpl {
-        let id_ident = self.id_ident();
+        let id_ident = self.the_ident();
         let debug_name = crate::literal(id_ident);
         let jar_ty = self.jar_ty();
         let data_ident = self.data_ident();
@@ -177,7 +177,7 @@ impl InternedStruct {
 
     /// Implementation of `SalsaStructInDb`.
     fn salsa_struct_in_db_impl(&self) -> syn::ItemImpl {
-        let ident = self.id_ident();
+        let ident = self.the_ident();
         let jar_ty = self.jar_ty();
         parse_quote! {
             impl<DB> salsa::salsa_struct::SalsaStructInDb<DB> for #ident

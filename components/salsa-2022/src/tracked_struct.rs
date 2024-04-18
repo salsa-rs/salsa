@@ -122,7 +122,6 @@ where
     C: Configuration,
 {
     /// Index of the struct ingredient.
-    #[allow(dead_code)]
     struct_ingredient_index: IngredientIndex,
 
     /// The id of this struct in the ingredient.
@@ -384,5 +383,25 @@ where
     /// The id of this struct in the ingredient.
     pub fn id(&self) -> C::Id {
         self.id
+    }
+
+    /// Access to this value field.
+    /// Note that this function returns the entire tuple of value fields.
+    /// The caller is responible for selecting the appropriate element.
+    pub fn field<'db>(&'db self, runtime: &'db Runtime, field_index: u32) -> &'db C::Fields {
+        let field_ingredient_index =
+            IngredientIndex::from(self.struct_ingredient_index.as_usize() + field_index as usize);
+        let changed_at = C::revision(&self.revisions, field_index);
+
+        runtime.report_tracked_read(
+            DependencyIndex {
+                ingredient_index: field_ingredient_index,
+                key_index: Some(self.id.as_id()),
+            },
+            self.durability,
+            changed_at,
+        );
+
+        &self.fields
     }
 }

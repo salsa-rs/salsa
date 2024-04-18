@@ -89,7 +89,7 @@ pub trait Configuration {
     type Key: AsId;
 
     /// The value computed by the function.
-    type Value: fmt::Debug;
+    type Value<'db>: fmt::Debug;
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
@@ -101,13 +101,13 @@ pub trait Configuration {
     /// even though it was recomputed).
     ///
     /// This invokes user's code in form of the `Eq` impl.
-    fn should_backdate_value(old_value: &Self::Value, new_value: &Self::Value) -> bool;
+    fn should_backdate_value(old_value: &Self::Value<'_>, new_value: &Self::Value<'_>) -> bool;
 
     /// Invoked when we need to compute the value for the given key, either because we've never
     /// computed it before or because the old one relied on inputs that have changed.
     ///
     /// This invokes the function the user wrote.
-    fn execute(db: &DynDb<Self>, key: Self::Key) -> Self::Value;
+    fn execute<'db>(db: &'db DynDb<Self>, key: Self::Key) -> Self::Value<'db>;
 
     /// If the cycle strategy is `Recover`, then invoked when `key` is a participant
     /// in a cycle to find out what value it should have.
