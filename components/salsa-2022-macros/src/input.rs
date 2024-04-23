@@ -49,7 +49,7 @@ impl crate::options::AllowedOptions for InputStruct {
 
 impl InputStruct {
     fn generate_input(&self) -> syn::Result<TokenStream> {
-        let id_struct = self.the_struct_id();
+        let id_struct = self.id_struct();
         let inherent_impl = self.input_inherent_impl();
         let ingredients_for_impl = self.input_ingredients();
         let as_id_impl = self.as_id_impl();
@@ -68,7 +68,7 @@ impl InputStruct {
 
     /// Generate an inherent impl with methods on the entity type.
     fn input_inherent_impl(&self) -> syn::ItemImpl {
-        let ident = self.the_ident();
+        let ident = self.id_ident();
         let jar_ty = self.jar_ty();
         let db_dyn_ty = self.db_dyn_ty();
         let input_index = self.input_index();
@@ -212,12 +212,12 @@ impl InputStruct {
     /// function ingredient for each of the value fields.
     fn input_ingredients(&self) -> syn::ItemImpl {
         use crate::literal;
-        let ident = self.the_ident();
+        let ident = self.id_ident();
         let field_ty = self.all_field_tys();
         let jar_ty = self.jar_ty();
         let all_field_indices: Vec<Literal> = self.all_field_indices();
         let input_index: Literal = self.input_index();
-        let debug_name_struct = literal(self.the_ident());
+        let debug_name_struct = literal(self.id_ident());
         let debug_name_fields: Vec<_> = self.all_field_names().into_iter().map(literal).collect();
 
         parse_quote! {
@@ -304,7 +304,7 @@ impl InputStruct {
 
     /// Implementation of `SalsaStructInDb`.
     fn salsa_struct_in_db_impl(&self) -> syn::ItemImpl {
-        let ident = self.the_ident();
+        let ident = self.id_ident();
         let jar_ty = self.jar_ty();
         parse_quote! {
             impl<DB> salsa::salsa_struct::SalsaStructInDb<DB> for #ident

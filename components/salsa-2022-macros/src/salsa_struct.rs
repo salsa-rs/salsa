@@ -46,17 +46,6 @@ pub enum Customization {
 
 const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 
-/// Classifies the kind of field stored in this salsa
-/// struct.
-#[derive(Debug, PartialEq, Eq)]
-pub enum TheStructKind {
-    /// Stores an "id"
-    Id,
-
-    /// Stores a "pointer"
-    Pointer,
-}
-
 impl<A: AllowedOptions> SalsaStruct<A> {
     pub(crate) fn new(
         args: proc_macro::TokenStream,
@@ -79,14 +68,6 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             customizations,
             fields,
         })
-    }
-
-    pub(crate) fn the_struct_kind(&self) -> TheStructKind {
-        if self.struct_item.generics.params.is_empty() {
-            TheStructKind::Id
-        } else {
-            TheStructKind::Pointer
-        }
     }
 
     fn extract_customizations(struct_item: &syn::ItemStruct) -> syn::Result<Vec<Customization>> {
@@ -161,8 +142,8 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         self.all_fields().map(|ef| ef.ty()).collect()
     }
 
-    /// The name of "the struct" (this is the name the user gave, e.g., `Foo`).
-    pub(crate) fn the_ident(&self) -> &syn::Ident {
+    /// The name of the "identity" struct (this is the name the user gave, e.g., `Foo`).
+    pub(crate) fn id_ident(&self) -> &syn::Ident {
         &self.struct_item.ident
     }
 
@@ -170,7 +151,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     ///
     /// * its list of generic parameters
     /// * the generics "split for impl".
-    pub(crate) fn the_ident_and_generics(
+    pub(crate) fn id_ident_and_generics(
         &self,
     ) -> (
         &syn::Ident,
@@ -214,31 +195,17 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         match &self.args.data {
             Some(d) => d.clone(),
             None => syn::Ident::new(
-                &format!("__{}Data", self.the_ident()),
-                self.the_ident().span(),
+                &format!("__{}Data", self.id_ident()),
+                self.id_ident().span(),
             ),
         }
     }
 
-    /// The type used for `id` values -- this is sometimes
-    /// the struct type or sometimes `salsa::Id`.
-    pub(crate) fn id_ty(&self) -> syn::Type {
-        match self.the_struct_kind() {
-            TheStructKind::Pointer => parse_quote!(salsa::Id),
-            TheStructKind::Id => {
-                let ident = &self.struct_item.ident;
-                parse_quote!(#ident)
-            }
-        }
-    }
-
-    /// Create "the struct" whose field is an id.
+    /// Create a struct that wraps the id.
     /// This is the struct the user will refernece, but only if there
     /// are no lifetimes.
-    pub(crate) fn the_struct_id(&self) -> syn::ItemStruct {
-        assert_eq!(self.the_struct_kind(), TheStructKind::Id);
-
-        let ident = self.the_ident();
+    pub(crate) fn id_struct(&self) -> syn::ItemStruct {
+        let ident = self.id_ident();
         let visibility = &self.struct_item.vis;
 
         // Extract the attributes the user gave, but screen out derive, since we are adding our own,
@@ -260,11 +227,14 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
     /// Create the struct that the user will reference.
     /// If
-    pub(crate) fn the_struct(&self, config_ident: &syn::Ident) -> syn::Result<syn::ItemStruct> {
+    pub(crate) fn id_or_ptr_struct(
+        &self,
+        config_ident: &syn::Ident,
+    ) -> syn::Result<syn::ItemStruct> {
         if self.struct_item.generics.params.is_empty() {
-            Ok(self.the_struct_id())
+            Ok(self.id_struct())
         } else {
-            let ident = self.the_ident();
+            let ident = self.id_ident();
             let visibility = &self.struct_item.vis;
 
             let generics = &self.struct_item.generics;
@@ -329,43 +299,38 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     pub(crate) fn constructor_name(&self) -> syn::Ident {
         match self.args.constructor_name.clone() {
             Some(name) => name,
-            None => Ident::new("new", self.the_ident().span()),
+            None => Ident::new("new", self.id_ident().span()),
         }
     }
 
     /// Generate `impl salsa::AsId for Foo`
-    pub(crate) fn as_id_impl(&self) -> Option<syn::ItemImpl> {
-        match self.the_struct_kind() {
-            TheStructKind::Id => {
-                let ident = self.the_ident();
-                let (impl_generics, type_generics, where_clause) =
-                    self.struct_item.generics.split_for_impl();
-                Some(parse_quote_spanned! { ident.span() =>
-                    impl #impl_generics salsa::AsId for #ident #type_generics
-                    #where_clause
-                    {
-                        fn as_id(self) -> salsa::Id {
-                            self.0
-                        }
+    pub(crate) fn as_id_impl(&self) -> syn::ItemImpl {
+        let ident = self.id_ident();
+        let (impl_generics, type_generics, where_clause) =
+            self.struct_item.generics.split_for_impl();
+        parse_quote_spanned! { ident.span() =>
+            impl #impl_generics salsa::AsId for #ident #type_generics
+            #where_clause
+            {
+                fn as_id(self) -> salsa::Id {
+                    self.0
+                }
 
-                        fn from_id(id: salsa::Id) -> Self {
-                            #ident(id)
-                        }
-                    }
-
-                })
+                fn from_id(id: salsa::Id) -> Self {
+                    #ident(id)
+                }
             }
-            TheStructKind::Pointer => None,
+
         }
     }
 
-    /// Generate `impl salsa::DebugWithDb for Foo`, but only if this is an id struct.
+    /// Generate `impl salsa::DebugWithDb for Foo`
     pub(crate) fn as_debug_with_db_impl(&self) -> Option<syn::ItemImpl> {
         if self.customizations.contains(&Customization::DebugWithDb) {
             return None;
         }
 
-        let ident = self.the_ident();
+        let ident = self.id_ident();
         let (impl_generics, type_generics, where_clause) =
             self.struct_item.generics.split_for_impl();
 
@@ -402,7 +367,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                     #[allow(unused_imports)]
                     use ::salsa::debug::helper::Fallback;
                     let mut debug_struct = &mut f.debug_struct(#ident_string);
-                    // debug_struct = debug_struct.field("[salsa id]", &self.0.as_u32());
+                    debug_struct = debug_struct.field("[salsa id]", &self.0.as_u32());
                     #fields
                     debug_struct.finish()
                 }
