@@ -157,10 +157,8 @@
 ) -&gt; MyResultValue
 <span class="boring">}
 </span></code></pre></pre>
-<p>The <code>db</code> and <code>cycle</code> argument can be used to prepare a useful error message for your users. </p>
+<p>The <code>db</code> and <code>cycle</code> argument can be used to prepare a useful error message for your users.</p>
 <p><strong>Important:</strong> Although the recovery function is given a <code>db</code> handle, you should be careful to avoid creating a cycle from within recovery or invoking queries that may be participating in the current cycle. Attempting to do so can result in inconsistent results.</p>
-<h2 id="figuring-out-why-recovery-did-not-work"><a class="header" href="#figuring-out-why-recovery-did-not-work">Figuring out why recovery did not work</a></h2>
-<p>If a cycle occurs and <em>some</em> of the participant queries have <code>#[salsa::cycle]</code> annotations and others do not, then the query will be treated as irrecoverable and will simply panic. You can use the <code>Cycle::unexpected_participants</code> method to figure out why recovery did not succeed and add the appropriate <code>#[salsa::cycle]</code> annotations.</p>
 
                     </main>
 
