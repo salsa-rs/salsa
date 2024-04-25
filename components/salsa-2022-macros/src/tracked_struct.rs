@@ -93,7 +93,6 @@ impl TrackedStruct {
     }
 
     fn config_impl(&self, config_struct: &syn::ItemStruct) -> syn::ItemImpl {
-        let id_ident = self.id_ident();
         let config_ident = &config_struct.ident;
         let field_tys: Vec<_> = self.all_fields().map(SalsaField::ty).collect();
         let id_field_indices = self.id_field_indices();
@@ -136,7 +135,6 @@ impl TrackedStruct {
 
         parse_quote! {
             impl salsa::tracked_struct::Configuration for #config_ident {
-                type Id = #id_ident;
                 type Fields = ( #(#field_tys,)* );
                 type Revisions = [salsa::Revision; #arity];
 
@@ -186,7 +184,7 @@ impl TrackedStruct {
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                        &__ingredients.#tracked_field_ingredients[#field_index].field(__runtime, self).#field_index
+                        &__ingredients.#tracked_field_ingredients[#field_index].field(__runtime, self.0).#field_index
                     }
                 }
             } else {
@@ -195,7 +193,7 @@ impl TrackedStruct {
                     {
                         let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                         let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                        __ingredients.#tracked_field_ingredients[#field_index].field(__runtime, self).#field_index.clone()
+                        __ingredients.#tracked_field_ingredients[#field_index].field(__runtime, self.0).#field_index.clone()
                     }
                 }
             }
@@ -218,7 +216,7 @@ impl TrackedStruct {
                         __runtime,
                         (#(#field_names,)*),
                     );
-                    __data.id()
+                    Self(__data.id())
                 }
 
                 #(#field_getters)*
@@ -335,7 +333,7 @@ impl TrackedStruct {
                 fn database_key_index(self, db: &#db) -> salsa::DatabaseKeyIndex {
                     let (jar, _) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                     let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident>>::ingredient(jar);
-                    ingredients.#tracked_struct_ingredient.database_key_index(self)
+                    ingredients.#tracked_struct_ingredient.database_key_index(self.0)
                 }
             }
         }

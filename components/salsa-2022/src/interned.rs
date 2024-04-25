@@ -11,15 +11,12 @@ use crate::key::DependencyIndex;
 use crate::plumbing::transmute_lifetime;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
-use crate::DatabaseKeyIndex;
+use crate::{DatabaseKeyIndex, Id};
 
 use super::hash::FxDashMap;
 use super::ingredient::Ingredient;
 use super::routes::IngredientIndex;
 use super::Revision;
-
-pub trait InternedId: AsId {}
-impl<T: AsId> InternedId for T {}
 
 pub trait InternedData: Sized + Eq + Hash + Clone {}
 impl<T: Eq + Hash + Clone> InternedData for T {}
@@ -27,7 +24,7 @@ impl<T: Eq + Hash + Clone> InternedData for T {}
 /// The interned ingredient has the job of hashing values of type `Data` to produce an `Id`.
 /// It used to store interned structs but also to store the id fields of a tracked struct.
 /// Interned values endure until they are explicitly removed in some way.
-pub struct InternedIngredient<Id: InternedId, Data: InternedData> {
+pub struct InternedIngredient<Data: InternedData> {
     /// Index of this ingredient in the database (used to construct database-ids, etc).
     ingredient_index: IngredientIndex,
 
@@ -60,9 +57,8 @@ pub struct InternedIngredient<Id: InternedId, Data: InternedData> {
     debug_name: &'static str,
 }
 
-impl<Id, Data> InternedIngredient<Id, Data>
+impl<Data> InternedIngredient<Data>
 where
-    Id: InternedId,
     Data: InternedData,
 {
     pub fn new(ingredient_index: IngredientIndex, debug_name: &'static str) -> Self {
@@ -191,9 +187,8 @@ where
     }
 }
 
-impl<DB: ?Sized, Id, Data> Ingredient<DB> for InternedIngredient<Id, Data>
+impl<DB: ?Sized, Data> Ingredient<DB> for InternedIngredient<Data>
 where
-    Id: InternedId,
     Data: InternedData,
 {
     fn ingredient_index(&self) -> IngredientIndex {
@@ -252,9 +247,8 @@ where
     }
 }
 
-impl<Id, Data> IngredientRequiresReset for InternedIngredient<Id, Data>
+impl<Data> IngredientRequiresReset for InternedIngredient<Data>
 where
-    Id: InternedId,
     Data: InternedData,
 {
     const RESET_ON_NEW_REVISION: bool = false;

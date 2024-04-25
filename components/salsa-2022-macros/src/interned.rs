@@ -98,7 +98,7 @@ impl InternedStruct {
                         #field_vis fn #field_get_name(self, db: &#db_dyn_ty) -> #field_ty {
                             let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                             let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #id_ident >>::ingredient(jar);
-                            std::clone::Clone::clone(&ingredients.data(runtime, self).#field_name)
+                            std::clone::Clone::clone(&ingredients.data(runtime, self.0).#field_name)
                         }
                     }
                 } else {
@@ -106,7 +106,7 @@ impl InternedStruct {
                         #field_vis fn #field_get_name<'db>(self, db: &'db #db_dyn_ty) -> &'db #field_ty {
                             let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                             let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #id_ident >>::ingredient(jar);
-                            &ingredients.data(runtime, self).#field_name
+                            &ingredients.data(runtime, self.0).#field_name
                         }
                     }
                 }
@@ -124,9 +124,9 @@ impl InternedStruct {
             ) -> Self {
                 let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                 let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #id_ident >>::ingredient(jar);
-                ingredients.intern(runtime, #data_ident {
+                Self(ingredients.intern(runtime, #data_ident {
                     #(#field_names,)*
-                })
+                }))
             }
         };
 
@@ -151,7 +151,7 @@ impl InternedStruct {
         parse_quote! {
             impl salsa::storage::IngredientsFor for #id_ident {
                 type Jar = #jar_ty;
-                type Ingredients = salsa::interned::InternedIngredient<#id_ident, #data_ident>;
+                type Ingredients = salsa::interned::InternedIngredient<#data_ident>;
 
                 fn create_ingredients<DB>(
                     routes: &mut salsa::routes::Routes<DB>,

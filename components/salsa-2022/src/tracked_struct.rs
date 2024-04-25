@@ -5,11 +5,11 @@ use crate::{
     id::AsId,
     ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
     ingredient_list::IngredientList,
-    interned::{InternedId, InternedIngredient},
+    interned::InternedIngredient,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryOrigin, Runtime},
     salsa_struct::SalsaStructInDb,
-    Database, Durability, Event, IngredientIndex, Revision,
+    Database, Durability, Event, Id, IngredientIndex, Revision,
 };
 
 use self::struct_map::{StructMap, Update};
@@ -23,11 +23,6 @@ mod tracked_field;
 /// Implemented by the `#[salsa::tracked]` macro when applied
 /// to a struct.
 pub trait Configuration {
-    /// The id type used to define instances of this struct.
-    /// The [`TrackedStructIngredient`][] contains the interner
-    /// that will create the id values.
-    type Id: InternedId;
-
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields;
 
@@ -93,7 +88,7 @@ pub struct TrackedStructIngredient<C>
 where
     C: Configuration,
 {
-    interned: InternedIngredient<C::Id, TrackedStructKey>,
+    interned: InternedIngredient<TrackedStructKey>,
 
     struct_map: struct_map::StructMap<C>,
 
@@ -126,7 +121,7 @@ where
     struct_ingredient_index: IngredientIndex,
 
     /// The id of this struct in the ingredient.
-    id: C::Id,
+    id: Id,
 
     /// The durability minimum durability of all inputs consumed
     /// by the creator query prior to creating this tracked struct.
@@ -185,7 +180,7 @@ where
             field_index,
         );
 
-        TrackedFieldIngredient {
+        TrackedFieldIngredient::<C> {
             ingredient_index: field_ingredient_index,
             field_index,
             struct_map: self.struct_map.view(),
@@ -194,7 +189,7 @@ where
         }
     }
 
-    pub fn database_key_index(&self, id: C::Id) -> DatabaseKeyIndex {
+    pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
         DatabaseKeyIndex {
             ingredient_index: self.interned.ingredient_index(),
             key_index: id.as_id(),
@@ -285,7 +280,7 @@ where
     /// Using this method on an entity id that MAY be used in the current revision will lead to
     /// unspecified results (but not UB). See [`InternedIngredient::delete_index`] for more
     /// discussion and important considerations.
-    pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: C::Id) {
+    pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id) {
         db.salsa_event(Event {
             runtime_id: db.runtime().id(),
             kind: crate::EventKind::DidDiscard {
@@ -338,7 +333,6 @@ where
     ) {
         let runtime = db.runtime();
         let output_key = output_key.unwrap();
-        let output_key: C::Id = <C::Id>::from_id(output_key);
         self.struct_map.validate(runtime, output_key);
     }
 
@@ -352,8 +346,7 @@ where
         // `executor` creates a tracked struct `salsa_output_key`,
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
-        let stale_output_key: C::Id = <C::Id>::from_id(stale_output_key.unwrap());
-        self.delete_entity(db.as_salsa_database(), stale_output_key);
+        self.delete_entity(db.as_salsa_database(), stale_output_key.unwrap());
     }
 
     fn reset_for_new_revision(&mut self) {
@@ -382,7 +375,7 @@ where
     C: Configuration,
 {
     /// The id of this struct in the ingredient.
-    pub fn id(&self) -> C::Id {
+    pub fn id(&self) -> Id {
         self.id
     }
 }

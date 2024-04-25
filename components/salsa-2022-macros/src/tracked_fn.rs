@@ -329,7 +329,7 @@ fn configuration_struct(item_fn: &syn::ItemFn) -> syn::ItemStruct {
         }
         FunctionType::RequiresInterning => {
             let key_ty = key_tuple_ty(item_fn);
-            parse_quote! { salsa::interned::InternedIngredient<salsa::Id, #key_ty> }
+            parse_quote! { salsa::interned::InternedIngredient<#key_ty> }
         }
     };
 

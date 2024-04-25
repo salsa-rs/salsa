@@ -2,7 +2,7 @@ use crate::{
     id::AsId,
     ingredient::{Ingredient, IngredientRequiresReset},
     key::DependencyIndex,
-    Database, IngredientIndex, Runtime,
+    Database, Id, IngredientIndex, Runtime,
 };
 
 use super::{struct_map::StructMapView, Configuration};
@@ -34,7 +34,7 @@ where
     /// Access to this value field.
     /// Note that this function returns the entire tuple of value fields.
     /// The caller is responible for selecting the appropriate element.
-    pub fn field<'db>(&'db self, runtime: &'db Runtime, id: C::Id) -> &'db C::Fields {
+    pub fn field<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db C::Fields {
         let data = self.struct_map.get(runtime, id);
 
         let changed_at = C::revision(&data.revisions, self.field_index);
@@ -72,7 +72,7 @@ where
         revision: crate::Revision,
     ) -> bool {
         let runtime = db.runtime();
-        let id = <C::Id>::from_id(input.key_index.unwrap());
+        let id = input.key_index.unwrap();
         let data = self.struct_map.get(runtime, id);
         let field_changed_at = C::revision(&data.revisions, self.field_index);
         field_changed_at > revision

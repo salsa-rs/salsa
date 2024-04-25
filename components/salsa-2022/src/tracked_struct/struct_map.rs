@@ -9,7 +9,7 @@ use dashmap::mapref::one::RefMut;
 use crate::{
     hash::{FxDashMap, FxHasher},
     plumbing::transmute_lifetime,
-    Runtime,
+    Id, Runtime,
 };
 
 use super::{Configuration, TrackedStructValue};
@@ -18,7 +18,7 @@ pub(crate) struct StructMap<C>
 where
     C: Configuration,
 {
-    map: Arc<FxDashMap<C::Id, Box<TrackedStructValue<C>>>>,
+    map: Arc<FxDashMap<Id, Box<TrackedStructValue<C>>>>,
 
     /// When specific entities are deleted, their data is added
     /// to this vector rather than being immediately freed. This is because we may` have
@@ -32,7 +32,7 @@ pub(crate) struct StructMapView<C>
 where
     C: Configuration,
 {
-    map: Arc<FxDashMap<C::Id, Box<TrackedStructValue<C>>>>,
+    map: Arc<FxDashMap<Id, Box<TrackedStructValue<C>>>>,
 }
 
 /// Return value for [`StructMap`][]'s `update` method.
@@ -98,7 +98,7 @@ where
         unsafe { transmute_lifetime(self, &*pointer) }
     }
 
-    pub fn validate<'db>(&'db self, runtime: &'db Runtime, id: C::Id) {
+    pub fn validate<'db>(&'db self, runtime: &'db Runtime, id: Id) {
         let mut data = self.map.get_mut(&id).unwrap();
 
         // Never update a struct twice in the same revision.
@@ -114,7 +114,7 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value is already updated in this revision.
-    pub fn update<'db>(&'db self, runtime: &'db Runtime, id: C::Id) -> Update<'db, C> {
+    pub fn update<'db>(&'db self, runtime: &'db Runtime, id: Id) -> Update<'db, C> {
         let mut data = self.map.get_mut(&id).unwrap();
 
         // Never update a struct twice in the same revision.
@@ -159,9 +159,9 @@ where
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
     fn get_from_map<'db>(
-        map: &'db FxDashMap<C::Id, Box<TrackedStructValue<C>>>,
+        map: &'db FxDashMap<Id, Box<TrackedStructValue<C>>>,
         runtime: &'db Runtime,
-        id: C::Id,
+        id: Id,
     ) -> &'db TrackedStructValue<C> {
         let data = map.get(&id).unwrap();
         let data: &TrackedStructValue<C> = &**data;
@@ -186,7 +186,7 @@ where
     /// Remove the entry for `id` from the map.
     ///
     /// NB. the data won't actually be freed until `drop_deleted_entries` is called.
-    pub fn delete(&self, id: C::Id) {
+    pub fn delete(&self, id: Id) {
         if let Some((_, data)) = self.map.remove(&id) {
             self.deleted_entries.push(data);
         }
@@ -208,7 +208,7 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
-    pub fn get<'db>(&'db self, runtime: &'db Runtime, id: C::Id) -> &'db TrackedStructValue<C> {
+    pub fn get<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db TrackedStructValue<C> {
         StructMap::get_from_map(&self.map, runtime, id)
     }
 }
@@ -220,7 +220,7 @@ pub(crate) struct UpdateRef<'db, C>
 where
     C: Configuration,
 {
-    guard: RefMut<'db, C::Id, Box<TrackedStructValue<C>>, FxHasher>,
+    guard: RefMut<'db, Id, Box<TrackedStructValue<C>>, FxHasher>,
 }
 
 impl<'db, C> UpdateRef<'db, C>
