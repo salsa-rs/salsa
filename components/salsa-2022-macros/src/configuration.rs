@@ -1,7 +1,7 @@
 pub(crate) struct Configuration {
     pub(crate) jar_ty: syn::Type,
     pub(crate) salsa_struct_ty: syn::Type,
-    pub(crate) key_ty: syn::Type,
+    pub(crate) input_ty: syn::Type,
     pub(crate) value_ty: syn::Type,
     pub(crate) cycle_strategy: CycleRecoveryStrategy,
     pub(crate) backdate_fn: syn::ImplItemMethod,
@@ -14,7 +14,7 @@ impl Configuration {
         let Configuration {
             jar_ty,
             salsa_struct_ty,
-            key_ty,
+            input_ty,
             value_ty,
             cycle_strategy,
             backdate_fn,
@@ -25,7 +25,7 @@ impl Configuration {
             impl salsa::function::Configuration for #self_ty {
                 type Jar = #jar_ty;
                 type SalsaStruct = #salsa_struct_ty;
-                type Key = #key_ty;
+                type Input = #input_ty;
                 type Value = #value_ty;
                 const CYCLE_STRATEGY: salsa::cycle::CycleRecoveryStrategy = #cycle_strategy;
                 #backdate_fn
@@ -79,7 +79,7 @@ pub(crate) fn panic_cycle_recovery_fn() -> syn::ImplItemMethod {
         fn recover_from_cycle(
             _db: &salsa::function::DynDb<Self>,
             _cycle: &salsa::Cycle,
-            _key: Self::Key,
+            _key: salsa::Id,
         ) -> Self::Value {
             panic!()
         }

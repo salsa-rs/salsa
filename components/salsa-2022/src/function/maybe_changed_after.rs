@@ -9,7 +9,7 @@ use crate::{
         StampedValue,
     },
     storage::HasJarsDyn,
-    Revision, Runtime,
+    Id, Revision, Runtime,
 };
 
 use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
@@ -18,12 +18,7 @@ impl<C> FunctionIngredient<C>
 where
     C: Configuration,
 {
-    pub(super) fn maybe_changed_after(
-        &self,
-        db: &DynDb<C>,
-        key: C::Key,
-        revision: Revision,
-    ) -> bool {
+    pub(super) fn maybe_changed_after(&self, db: &DynDb<C>, key: Id, revision: Revision) -> bool {
         let runtime = db.runtime();
         runtime.unwind_if_revision_cancelled(db);
 
@@ -58,7 +53,7 @@ where
     fn maybe_changed_after_cold(
         &self,
         db: &DynDb<C>,
-        key_index: C::Key,
+        key_index: Id,
         revision: Revision,
     ) -> Option<bool> {
         let runtime = db.runtime();

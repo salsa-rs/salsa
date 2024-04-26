@@ -330,10 +330,10 @@ impl TrackedStruct {
                 #db: ?Sized + salsa::DbWithJar<#jar_ty>,
                 #where_clause
             {
-                fn database_key_index(self, db: &#db) -> salsa::DatabaseKeyIndex {
+                fn database_key_index(db: &#db, id: salsa::Id) -> salsa::DatabaseKeyIndex {
                     let (jar, _) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                     let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident>>::ingredient(jar);
-                    ingredients.#tracked_struct_ingredient.database_key_index(self.0)
+                    ingredients.#tracked_struct_ingredient.database_key_index(id)
                 }
             }
         }

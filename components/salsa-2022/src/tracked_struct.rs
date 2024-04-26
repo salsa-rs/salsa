@@ -73,7 +73,7 @@ pub trait Configuration {
 
 pub trait TrackedStructInDb<DB: ?Sized + Database>: SalsaStructInDb<DB> {
     /// Converts the identifier for this tracked struct into a `DatabaseKeyIndex`.
-    fn database_key_index(self, db: &DB) -> DatabaseKeyIndex;
+    fn database_key_index(db: &DB, id: Id) -> DatabaseKeyIndex;
 }
 
 /// Created for each tracked struct.

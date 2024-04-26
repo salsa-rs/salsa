@@ -264,11 +264,11 @@ impl<Id: AsId> IdentityInterner<Id> {
         IdentityInterner { data: PhantomData }
     }
 
-    pub fn intern(&self, _runtime: &Runtime, id: Id) -> Id {
-        id
+    pub fn intern(&self, _runtime: &Runtime, id: Id) -> crate::Id {
+        id.as_id()
     }
 
-    pub fn data(&self, _runtime: &Runtime, id: Id) -> (Id,) {
-        (id,)
+    pub fn data(&self, _runtime: &Runtime, id: crate::Id) -> (Id,) {
+        (Id::from_id(id),)
     }
 }

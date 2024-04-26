@@ -5,7 +5,7 @@ use crossbeam::atomic::AtomicCell;
 use crate::{
     durability::Durability,
     runtime::local_state::{QueryOrigin, QueryRevisions},
-    Runtime,
+    Id, Runtime,
 };
 
 use super::{memo::Memo, Configuration, FunctionIngredient};
@@ -17,7 +17,7 @@ where
     pub fn store(
         &mut self,
         runtime: &mut Runtime,
-        key: C::Key,
+        key: Id,
         value: C::Value,
         durability: Durability,
     ) {

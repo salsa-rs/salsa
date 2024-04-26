@@ -44,7 +44,7 @@ where
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
         let database_key_index = active_query.database_key_index;
-        let key = C::key_from_id(database_key_index.key_index);
+        let key = database_key_index.key_index;
         let value = match Cycle::catch(|| C::execute(db, key)) {
             Ok(v) => v,
             Err(cycle) => {

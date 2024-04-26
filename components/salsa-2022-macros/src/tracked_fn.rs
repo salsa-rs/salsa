@@ -391,7 +391,7 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
         let cycle_strategy = CycleRecoveryStrategy::Fallback;
 
         let cycle_fullback = parse_quote! {
-            fn recover_from_cycle(__db: &salsa::function::DynDb<Self>, __cycle: &salsa::Cycle, __id: Self::Key) -> Self::Value {
+            fn recover_from_cycle(__db: &salsa::function::DynDb<Self>, __cycle: &salsa::Cycle, __id: salsa::Id) -> Self::Value {
                 let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                 let __ingredients =
                     <_ as salsa::storage::HasIngredientsFor<#fn_ty>>::ingredient(__jar);
@@ -422,7 +422,7 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
     // keys and then (b) invokes the function itself (which we embed within).
     let indices = (0..item_fn.sig.inputs.len() - 1).map(Literal::usize_unsuffixed);
     let execute_fn = parse_quote! {
-        fn execute(__db: &salsa::function::DynDb<Self>, __id: Self::Key) -> Self::Value {
+        fn execute(__db: &salsa::function::DynDb<Self>, __id: salsa::Id) -> Self::Value {
             #inner_fn
 
             let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
@@ -436,7 +436,7 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
     Configuration {
         jar_ty,
         salsa_struct_ty,
-        key_ty,
+        input_ty: key_ty,
         value_ty,
         cycle_strategy,
         backdate_fn,
@@ -733,7 +733,8 @@ fn specify_fn(
 
                 let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(#db_var);
                 let __ingredients = <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient(__jar);
-                __ingredients.function.specify_and_record(#db_var, #(#arg_names,)* #value_arg)
+                let __key = __ingredients.intern_map.intern(__runtime, (#(#arg_names),*));
+                __ingredients.function.specify_and_record(#db_var, __key, #value_arg)
             }
         },
     }))

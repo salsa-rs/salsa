@@ -1,6 +1,6 @@
 use arc_swap::Guard;
 
-use crate::{database::AsSalsaDatabase, runtime::StampedValue, storage::HasJarsDyn, AsId};
+use crate::{database::AsSalsaDatabase, runtime::StampedValue, storage::HasJarsDyn, AsId, Id};
 
 use super::{Configuration, DynDb, FunctionIngredient};
 
@@ -8,7 +8,7 @@ impl<C> FunctionIngredient<C>
 where
     C: Configuration,
 {
-    pub fn fetch(&self, db: &DynDb<C>, key: C::Key) -> &C::Value {
+    pub fn fetch(&self, db: &DynDb<C>, key: Id) -> &C::Value {
         let runtime = db.runtime();
 
         runtime.unwind_if_revision_cancelled(db);
@@ -33,7 +33,7 @@ where
     }
 
     #[inline]
-    fn compute_value(&self, db: &DynDb<C>, key: C::Key) -> StampedValue<&C::Value> {
+    fn compute_value(&self, db: &DynDb<C>, key: Id) -> StampedValue<&C::Value> {
         loop {
             if let Some(value) = self.fetch_hot(db, key).or_else(|| self.fetch_cold(db, key)) {
                 return value;
@@ -42,7 +42,7 @@ where
     }
 
     #[inline]
-    fn fetch_hot(&self, db: &DynDb<C>, key: C::Key) -> Option<StampedValue<&C::Value>> {
+    fn fetch_hot(&self, db: &DynDb<C>, key: Id) -> Option<StampedValue<&C::Value>> {
         let memo_guard = self.memo_map.get(key);
         if let Some(memo) = &memo_guard {
             if memo.value.is_some() {
@@ -59,7 +59,7 @@ where
         None
     }
 
-    fn fetch_cold(&self, db: &DynDb<C>, key: C::Key) -> Option<StampedValue<&C::Value>> {
+    fn fetch_cold(&self, db: &DynDb<C>, key: Id) -> Option<StampedValue<&C::Value>> {
         let runtime = db.runtime();
         let database_key_index = self.database_key_index(key);
 
@@ -87,7 +87,7 @@ where
         Some(self.execute(db, active_query, opt_old_memo))
     }
 
-    fn evict(&self, key: C::Key) {
+    fn evict(&self, key: Id) {
         self.memo_map.evict(key);
     }
 }

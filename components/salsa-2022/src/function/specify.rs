@@ -5,7 +5,7 @@ use crate::{
     runtime::local_state::{QueryOrigin, QueryRevisions},
     storage::HasJarsDyn,
     tracked_struct::TrackedStructInDb,
-    DatabaseKeyIndex, DebugWithDb,
+    DatabaseKeyIndex, DebugWithDb, Id,
 };
 
 use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
@@ -17,14 +17,14 @@ where
     /// Specifies the value of the function for the given key.
     /// This is a way to imperatively set the value of a function.
     /// It only works if the key is a tracked struct created in the current query.
-    pub(crate) fn specify<'db>(
+    fn specify<'db>(
         &self,
         db: &'db DynDb<'db, C>,
-        key: C::Key,
+        key: Id,
         value: C::Value,
         origin: impl Fn(DatabaseKeyIndex) -> QueryOrigin,
     ) where
-        C::Key: TrackedStructInDb<DynDb<'db, C>>,
+        C::Input: TrackedStructInDb<DynDb<'db, C>>,
     {
         let runtime = db.runtime();
 
@@ -45,7 +45,7 @@ where
         // * Q4 invokes Q2 and then Q1
         //
         // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
-        let database_key_index = key.database_key_index(db);
+        let database_key_index = <C::Input>::database_key_index(db, key);
         let dependency_index = database_key_index.into();
         if !runtime.is_output_of_active_query(dependency_index) {
             panic!("can only use `specfiy` on entities created during current query");
@@ -94,9 +94,9 @@ where
 
     /// Specify the value for `key` *and* record that we did so.
     /// Used for explicit calls to `specify`, but not needed for pre-declared tracked struct fields.
-    pub fn specify_and_record<'db>(&self, db: &'db DynDb<'db, C>, key: C::Key, value: C::Value)
+    pub fn specify_and_record<'db>(&self, db: &'db DynDb<'db, C>, key: Id, value: C::Value)
     where
-        C::Key: TrackedStructInDb<DynDb<'db, C>>,
+        C::Input: TrackedStructInDb<DynDb<'db, C>>,
     {
         self.specify(db, key, value, |database_key_index| {
             QueryOrigin::Assigned(database_key_index)
@@ -115,7 +115,7 @@ where
         &self,
         db: &DynDb<'_, C>,
         executor: DatabaseKeyIndex,
-        key: C::Key,
+        key: Id,
     ) {
         let runtime = db.runtime();
 
