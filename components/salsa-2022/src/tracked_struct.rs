@@ -117,7 +117,6 @@ where
     C: Configuration,
 {
     /// Index of the struct ingredient.
-    #[allow(dead_code)]
     struct_ingredient_index: IngredientIndex,
 
     /// The id of this struct in the ingredient.
@@ -271,7 +270,6 @@ where
                     }
                     data.created_at = current_revision;
                     data.durability = current_deps.durability;
-
                     data_ref.freeze()
                 }
             }
@@ -385,5 +383,30 @@ where
     /// The id of this struct in the ingredient.
     pub fn id(&self) -> Id {
         self.id
+    }
+
+    /// Access to this value field.
+    /// Note that this function returns the entire tuple of value fields.
+    /// The caller is responible for selecting the appropriate element.
+    pub fn field<'db>(&'db self, runtime: &'db Runtime, field_index: u32) -> &'db C::Fields<'db> {
+        let field_ingredient_index = IngredientIndex::from(
+            self.struct_ingredient_index.as_usize() + field_index as usize + 1,
+        );
+        let changed_at = C::revision(&self.revisions, field_index);
+
+        runtime.report_tracked_read(
+            DependencyIndex {
+                ingredient_index: field_ingredient_index,
+                key_index: Some(self.id.as_id()),
+            },
+            self.durability,
+            changed_at,
+        );
+
+        unsafe { self.to_self_ref(&self.fields) }
+    }
+
+    unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Fields<'static>) -> &'db C::Fields<'db> {
+        unsafe { std::mem::transmute(fields) }
     }
 }

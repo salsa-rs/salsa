@@ -87,9 +87,7 @@ pub fn always_update<T>(
     new_revision: Revision,
     old_pointer: &mut T,
     new_value: T,
-) where
-    T: 'static,
-{
+) {
     *old_revision = new_revision;
     *old_pointer = new_value;
 }
