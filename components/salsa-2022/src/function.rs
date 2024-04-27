@@ -1,7 +1,6 @@
 use std::{fmt, sync::Arc};
 
-use arc_swap::ArcSwap;
-use crossbeam::{atomic::AtomicCell, queue::SegQueue};
+use crossbeam::atomic::AtomicCell;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
@@ -12,6 +11,8 @@ use crate::{
     salsa_struct::SalsaStructInDb,
     Cycle, DbWithJar, Event, EventKind, Id, Revision,
 };
+
+use self::delete::DeletedEntries;
 
 use super::{ingredient::Ingredient, routes::IngredientIndex, AsId};
 
@@ -45,7 +46,7 @@ pub struct FunctionIngredient<C: Configuration> {
     index: IngredientIndex,
 
     /// Tracks the keys for which we have memoized values.
-    memo_map: memo::MemoMap<Id, C::Value>,
+    memo_map: memo::MemoMap<C>,
 
     /// Tracks the keys that are currently being processed; used to coordinate between
     /// worker threads.
@@ -66,7 +67,7 @@ pub struct FunctionIngredient<C: Configuration> {
     /// current revision: you would be right, but we are being defensive, because
     /// we don't know that we can trust the database to give us the same runtime
     /// everytime and so forth.
-    deleted_entries: SegQueue<ArcSwap<memo::Memo<C::Value>>>,
+    deleted_entries: DeletedEntries<C>,
 
     /// Set to true once we invoke `register_dependent_fn` for `C::SalsaStruct`.
     /// Prevents us from registering more than once.
@@ -84,10 +85,10 @@ pub trait Configuration {
     type SalsaStruct: for<'db> SalsaStructInDb<DynDb<'db, Self>>;
 
     /// The input to the function
-    type Input;
+    type Input<'db>;
 
     /// The value computed by the function.
-    type Value: fmt::Debug;
+    type Value<'db>: fmt::Debug;
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
@@ -99,19 +100,19 @@ pub trait Configuration {
     /// even though it was recomputed).
     ///
     /// This invokes user's code in form of the `Eq` impl.
-    fn should_backdate_value(old_value: &Self::Value, new_value: &Self::Value) -> bool;
+    fn should_backdate_value(old_value: &Self::Value<'_>, new_value: &Self::Value<'_>) -> bool;
 
     /// Invoked when we need to compute the value for the given key, either because we've never
     /// computed it before or because the old one relied on inputs that have changed.
     ///
     /// This invokes the function the user wrote.
-    fn execute(db: &DynDb<Self>, key: Id) -> Self::Value;
+    fn execute<'db>(db: &'db DynDb<Self>, key: Id) -> Self::Value<'db>;
 
     /// If the cycle strategy is `Recover`, then invoked when `key` is a participant
     /// in a cycle to find out what value it should have.
     ///
     /// This invokes the recovery function given by the user.
-    fn recover_from_cycle(db: &DynDb<Self>, cycle: &Cycle, key: Id) -> Self::Value;
+    fn recover_from_cycle<'db>(db: &'db DynDb<Self>, cycle: &Cycle, key: Id) -> Self::Value<'db>;
 }
 
 /// True if `old_value == new_value`. Invoked by the generated
@@ -163,18 +164,18 @@ where
     /// only cleared with `&mut self`.
     unsafe fn extend_memo_lifetime<'this, 'memo>(
         &'this self,
-        memo: &'memo memo::Memo<C::Value>,
-    ) -> Option<&'this C::Value> {
-        let memo_value: Option<&'memo C::Value> = memo.value.as_ref();
+        memo: &'memo memo::Memo<C::Value<'this>>,
+    ) -> Option<&'this C::Value<'this>> {
+        let memo_value: Option<&'memo C::Value<'this>> = memo.value.as_ref();
         std::mem::transmute(memo_value)
     }
 
-    fn insert_memo(
-        &self,
-        db: &DynDb<'_, C>,
+    fn insert_memo<'db>(
+        &'db self,
+        db: &'db DynDb<'db, C>,
         key: Id,
-        memo: memo::Memo<C::Value>,
-    ) -> Option<&C::Value> {
+        memo: memo::Memo<C::Value<'db>>,
+    ) -> Option<&C::Value<'db>> {
         self.register(db);
         let memo = Arc::new(memo);
         let value = unsafe {

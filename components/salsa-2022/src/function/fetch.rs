@@ -8,7 +8,7 @@ impl<C> FunctionIngredient<C>
 where
     C: Configuration,
 {
-    pub fn fetch(&self, db: &DynDb<C>, key: Id) -> &C::Value {
+    pub fn fetch<'db>(&'db self, db: &'db DynDb<'db, C>, key: Id) -> &C::Value<'db> {
         let runtime = db.runtime();
 
         runtime.unwind_if_revision_cancelled(db);
@@ -33,7 +33,11 @@ where
     }
 
     #[inline]
-    fn compute_value(&self, db: &DynDb<C>, key: Id) -> StampedValue<&C::Value> {
+    fn compute_value<'db>(
+        &'db self,
+        db: &'db DynDb<'db, C>,
+        key: Id,
+    ) -> StampedValue<&'db C::Value<'db>> {
         loop {
             if let Some(value) = self.fetch_hot(db, key).or_else(|| self.fetch_cold(db, key)) {
                 return value;
@@ -42,7 +46,11 @@ where
     }
 
     #[inline]
-    fn fetch_hot(&self, db: &DynDb<C>, key: Id) -> Option<StampedValue<&C::Value>> {
+    fn fetch_hot<'db>(
+        &'db self,
+        db: &'db DynDb<'db, C>,
+        key: Id,
+    ) -> Option<StampedValue<&'db C::Value<'db>>> {
         let memo_guard = self.memo_map.get(key);
         if let Some(memo) = &memo_guard {
             if memo.value.is_some() {
@@ -59,7 +67,11 @@ where
         None
     }
 
-    fn fetch_cold(&self, db: &DynDb<C>, key: Id) -> Option<StampedValue<&C::Value>> {
+    fn fetch_cold<'db>(
+        &'db self,
+        db: &'db DynDb<'db, C>,
+        key: Id,
+    ) -> Option<StampedValue<&'db C::Value<'db>>> {
         let runtime = db.runtime();
         let database_key_index = self.database_key_index(key);
 

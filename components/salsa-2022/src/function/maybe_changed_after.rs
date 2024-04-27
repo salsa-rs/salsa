@@ -18,7 +18,12 @@ impl<C> FunctionIngredient<C>
 where
     C: Configuration,
 {
-    pub(super) fn maybe_changed_after(&self, db: &DynDb<C>, key: Id, revision: Revision) -> bool {
+    pub(super) fn maybe_changed_after<'db>(
+        &'db self,
+        db: &'db DynDb<'db, C>,
+        key: Id,
+        revision: Revision,
+    ) -> bool {
         let runtime = db.runtime();
         runtime.unwind_if_revision_cancelled(db);
 
@@ -50,9 +55,9 @@ where
         }
     }
 
-    fn maybe_changed_after_cold(
-        &self,
-        db: &DynDb<C>,
+    fn maybe_changed_after_cold<'db>(
+        &'db self,
+        db: &'db DynDb<'db, C>,
         key_index: Id,
         revision: Revision,
     ) -> Option<bool> {
@@ -104,7 +109,7 @@ where
         db: &DynDb<C>,
         runtime: &Runtime,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Value>,
+        memo: &Memo<C::Value<'_>>,
     ) -> bool {
         let verified_at = memo.verified_at.load();
         let revision_now = runtime.current_revision();
@@ -142,7 +147,7 @@ where
     pub(super) fn deep_verify_memo(
         &self,
         db: &DynDb<C>,
-        old_memo: &Memo<C::Value>,
+        old_memo: &Memo<C::Value<'_>>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> bool {
         let runtime = db.runtime();

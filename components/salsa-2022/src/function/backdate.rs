@@ -11,9 +11,9 @@ where
     /// on an old memo when a new memo has been produced to check whether there have been changed.
     pub(super) fn backdate_if_appropriate(
         &self,
-        old_memo: &Memo<C::Value>,
+        old_memo: &Memo<C::Value<'_>>,
         revisions: &mut QueryRevisions,
-        value: &C::Value,
+        value: &C::Value<'_>,
     ) {
         if let Some(old_value) = &old_memo.value {
             // Careful: if the value became less durable than it

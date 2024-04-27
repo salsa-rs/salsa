@@ -14,11 +14,11 @@ impl<C> FunctionIngredient<C>
 where
     C: Configuration,
 {
-    pub fn store(
-        &mut self,
+    pub fn store<'db>(
+        &'db mut self,
         runtime: &mut Runtime,
         key: Id,
-        value: C::Value,
+        value: C::Value<'db>,
         durability: Durability,
     ) {
         let revision = runtime.current_revision();

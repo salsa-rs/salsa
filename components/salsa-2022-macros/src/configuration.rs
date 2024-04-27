@@ -25,8 +25,8 @@ impl Configuration {
             impl salsa::function::Configuration for #self_ty {
                 type Jar = #jar_ty;
                 type SalsaStruct = #salsa_struct_ty;
-                type Input = #input_ty;
-                type Value = #value_ty;
+                type Input<'db> = #input_ty;
+                type Value<'db> = #value_ty;
                 const CYCLE_STRATEGY: salsa::cycle::CycleRecoveryStrategy = #cycle_strategy;
                 #backdate_fn
                 #execute_fn
@@ -59,13 +59,13 @@ impl quote::ToTokens for CycleRecoveryStrategy {
 pub(crate) fn should_backdate_value_fn(should_backdate: bool) -> syn::ImplItemMethod {
     if should_backdate {
         parse_quote! {
-            fn should_backdate_value(v1: &Self::Value, v2: &Self::Value) -> bool {
+            fn should_backdate_value(v1: &Self::Value<'_>, v2: &Self::Value<'_>) -> bool {
                 salsa::function::should_backdate_value(v1, v2)
             }
         }
     } else {
         parse_quote! {
-            fn should_backdate_value(_v1: &Self::Value, _v2: &Self::Value) -> bool {
+            fn should_backdate_value(_v1: &Self::Value<'_>, _v2: &Self::Value<'_>) -> bool {
                 false
             }
         }
@@ -76,11 +76,11 @@ pub(crate) fn should_backdate_value_fn(should_backdate: bool) -> syn::ImplItemMe
 /// the cycle recovery is panic.
 pub(crate) fn panic_cycle_recovery_fn() -> syn::ImplItemMethod {
     parse_quote! {
-        fn recover_from_cycle(
-            _db: &salsa::function::DynDb<Self>,
+        fn recover_from_cycle<'db>(
+            _db: &'db salsa::function::DynDb<'db, Self>,
             _cycle: &salsa::Cycle,
             _key: salsa::Id,
-        ) -> Self::Value {
+        ) -> Self::Value<'db> {
             panic!()
         }
     }

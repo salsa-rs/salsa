@@ -391,7 +391,7 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
         let cycle_strategy = CycleRecoveryStrategy::Fallback;
 
         let cycle_fullback = parse_quote! {
-            fn recover_from_cycle(__db: &salsa::function::DynDb<Self>, __cycle: &salsa::Cycle, __id: salsa::Id) -> Self::Value {
+            fn recover_from_cycle<'db>(__db: &'db salsa::function::DynDb<'db, Self>, __cycle: &salsa::Cycle, __id: salsa::Id) -> Self::Value<'db> {
                 let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                 let __ingredients =
                     <_ as salsa::storage::HasIngredientsFor<#fn_ty>>::ingredient(__jar);
@@ -422,7 +422,7 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
     // keys and then (b) invokes the function itself (which we embed within).
     let indices = (0..item_fn.sig.inputs.len() - 1).map(Literal::usize_unsuffixed);
     let execute_fn = parse_quote! {
-        fn execute(__db: &salsa::function::DynDb<Self>, __id: salsa::Id) -> Self::Value {
+        fn execute<'db>(__db: &'db salsa::function::DynDb<'db, Self>, __id: salsa::Id) -> Self::Value<'db> {
             #inner_fn
 
             let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);

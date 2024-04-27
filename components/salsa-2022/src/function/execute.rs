@@ -22,12 +22,12 @@ where
     /// * `db`, the database.
     /// * `active_query`, the active stack frame for the query to execute.
     /// * `opt_old_memo`, the older memo, if any existed. Used for backdated.
-    pub(super) fn execute(
-        &self,
-        db: &DynDb<C>,
+    pub(super) fn execute<'db>(
+        &'db self,
+        db: &'db DynDb<'db, C>,
         active_query: ActiveQueryGuard<'_>,
-        opt_old_memo: Option<Arc<Memo<C::Value>>>,
-    ) -> StampedValue<&C::Value> {
+        opt_old_memo: Option<Arc<Memo<C::Value<'_>>>>,
+    ) -> StampedValue<&C::Value<'db>> {
         let runtime = db.runtime();
         let revision_now = runtime.current_revision();
         let database_key_index = active_query.database_key_index;

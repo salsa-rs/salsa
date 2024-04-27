@@ -15,7 +15,7 @@ where
         &self,
         db: &DynDb<'_, C>,
         key: DatabaseKeyIndex,
-        old_memo: &Memo<C::Value>,
+        old_memo: &Memo<C::Value<'_>>,
         revisions: &QueryRevisions,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset
