@@ -135,11 +135,11 @@ impl TrackedStruct {
 
         parse_quote! {
             impl salsa::tracked_struct::Configuration for #config_ident {
-                type Fields = ( #(#field_tys,)* );
+                type Fields<'db> = ( #(#field_tys,)* );
                 type Revisions = [salsa::Revision; #arity];
 
                 #[allow(clippy::unused_unit)]
-                fn id_fields(fields: &Self::Fields) -> impl std::hash::Hash {
+                fn id_fields(fields: &Self::Fields<'_>) -> impl std::hash::Hash {
                     ( #( &fields.#id_field_indices ),* )
                 }
 
@@ -151,11 +151,11 @@ impl TrackedStruct {
                     [current_revision; #arity]
                 }
 
-                unsafe fn update_fields(
+                unsafe fn update_fields<'db>(
                     #current_revision: salsa::Revision,
                     #revisions: &mut Self::Revisions,
-                    #old_fields: *mut Self::Fields,
-                    #new_fields: Self::Fields,
+                    #old_fields: *mut Self::Fields<'db>,
+                    #new_fields: Self::Fields<'db>,
                 ) {
                     use salsa::update::helper::Fallback as _;
                     #update_fields

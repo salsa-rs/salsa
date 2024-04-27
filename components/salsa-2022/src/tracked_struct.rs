@@ -24,7 +24,7 @@ mod tracked_field;
 /// to a struct.
 pub trait Configuration {
     /// A (possibly empty) tuple of the fields for this struct.
-    type Fields;
+    type Fields<'db>;
 
     /// A array of [`Revision`][] values, one per each of the value fields.
     /// When a struct is re-recreated in a new revision, the corresponding
@@ -32,7 +32,7 @@ pub trait Configuration {
     /// values have changed (or if the field is marked as `#[no_eq]`).
     type Revisions;
 
-    fn id_fields(fields: &Self::Fields) -> impl Hash;
+    fn id_fields(fields: &Self::Fields<'_>) -> impl Hash;
 
     /// Access the revision of a given value field.
     /// `field_index` will be between 0 and the number of value fields.
@@ -62,11 +62,11 @@ pub trait Configuration {
     /// Ensures that `old_fields` is fully updated and valid
     /// after it returns and that `revisions` has been updated
     /// for any field that changed.
-    unsafe fn update_fields(
+    unsafe fn update_fields<'db>(
         current_revision: Revision,
         revisions: &mut Self::Revisions,
-        old_fields: *mut Self::Fields,
-        new_fields: Self::Fields,
+        old_fields: *mut Self::Fields<'db>,
+        new_fields: Self::Fields<'db>,
     );
 }
 // ANCHOR_END: Configuration
@@ -140,7 +140,7 @@ where
 
     /// Fields of this tracked struct. They can change across revisions,
     /// but they do not change within a particular revision.
-    fields: C::Fields,
+    fields: C::Fields<'static>,
 
     /// The revision information for each field: when did this field last change.
     /// When tracked structs are re-created, this revision may be updated to the
@@ -156,6 +156,14 @@ impl<C> TrackedStructIngredient<C>
 where
     C: Configuration,
 {
+    unsafe fn to_static<'db>(&'db self, fields: C::Fields<'db>) -> C::Fields<'static> {
+        unsafe { std::mem::transmute(fields) }
+    }
+
+    unsafe fn to_self_ptr<'db>(&'db self, fields: *mut C::Fields<'static>) -> *mut C::Fields<'db> {
+        unsafe { std::mem::transmute(fields) }
+    }
+
     pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
             interned: InternedIngredient::new(index, debug_name),
@@ -199,7 +207,7 @@ where
     pub fn new_struct<'db>(
         &'db self,
         runtime: &'db Runtime,
-        fields: C::Fields,
+        fields: C::Fields<'db>,
     ) -> &'db TrackedStructValue<C> {
         let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
@@ -226,7 +234,7 @@ where
                     struct_ingredient_index: self.struct_ingredient_index(),
                     created_at: current_revision,
                     durability: current_deps.durability,
-                    fields,
+                    fields: unsafe { self.to_static(fields) },
                     revisions: C::new_revisions(current_deps.changed_at),
                 },
             )
@@ -254,7 +262,7 @@ where
                         C::update_fields(
                             current_revision,
                             &mut data.revisions,
-                            std::ptr::addr_of_mut!(data.fields),
+                            self.to_self_ptr(std::ptr::addr_of_mut!(data.fields)),
                             fields,
                         );
                     }

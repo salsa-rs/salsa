@@ -31,10 +31,14 @@ impl<C> TrackedFieldIngredient<C>
 where
     C: Configuration,
 {
+    unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Fields<'static>) -> &'db C::Fields<'db> {
+        unsafe { std::mem::transmute(fields) }
+    }
+
     /// Access to this value field.
     /// Note that this function returns the entire tuple of value fields.
     /// The caller is responible for selecting the appropriate element.
-    pub fn field<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db C::Fields {
+    pub fn field<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db C::Fields<'db> {
         let data = self.struct_map.get(runtime, id);
 
         let changed_at = C::revision(&data.revisions, self.field_index);
@@ -48,7 +52,7 @@ where
             changed_at,
         );
 
-        &data.fields
+        unsafe { self.to_self_ref(&data.fields) }
     }
 }
 
