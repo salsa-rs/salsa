@@ -47,6 +47,7 @@ mod salsa_struct;
 mod tracked;
 mod tracked_fn;
 mod tracked_struct;
+mod xform;
 
 #[proc_macro_attribute]
 pub fn accumulator(args: TokenStream, input: TokenStream) -> TokenStream {

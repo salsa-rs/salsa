@@ -25,7 +25,10 @@
 //! * data method `impl Foo { fn data(&self, db: &dyn crate::Db) -> FooData { FooData { f: self.f(db), ... } } }`
 //!     * this could be optimized, particularly for interned fields
 
-use crate::options::{AllowedOptions, Options};
+use crate::{
+    options::{AllowedOptions, Options},
+    xform::ChangeLt,
+};
 use proc_macro2::{Ident, Span, TokenStream};
 use syn::{
     punctuated::Punctuated, spanned::Spanned, token::Comma, GenericParam, ImplGenerics,
@@ -53,8 +56,8 @@ pub enum TheStructKind {
     /// Stores an "id"
     Id,
 
-    /// Stores a "pointer"
-    Pointer,
+    /// Stores a "pointer" with the given lifetime
+    Pointer(syn::Lifetime),
 }
 
 impl<A: AllowedOptions> SalsaStruct<A> {
@@ -81,11 +84,50 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         })
     }
 
+    pub(crate) fn require_no_generics(&self) -> syn::Result<()> {
+        if let Some(param) = self.struct_item.generics.params.iter().next() {
+            return Err(syn::Error::new_spanned(
+                param,
+                "generic parameters not allowed here",
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn require_db_lifetime(&self) -> syn::Result<()> {
+        let generics = &self.struct_item.generics;
+
+        if generics.params.len() == 0 {
+            return Ok(());
+        }
+
+        for (param, index) in generics.params.iter().zip(0..) {
+            let error = match param {
+                syn::GenericParam::Lifetime(_) => index > 0,
+                syn::GenericParam::Type(_) | syn::GenericParam::Const(_) => true,
+            };
+
+            if error {
+                return Err(syn::Error::new_spanned(
+                    param,
+                    "only a single lifetime parameter is accepted",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn the_struct_kind(&self) -> TheStructKind {
         if self.struct_item.generics.params.is_empty() {
             TheStructKind::Id
         } else {
-            TheStructKind::Pointer
+            if let Some(lt) = self.struct_item.generics.lifetimes().next() {
+                TheStructKind::Pointer(lt.lifetime.clone())
+            } else {
+                TheStructKind::Pointer(self.default_db_lifetime())
+            }
         }
     }
 
@@ -203,8 +245,9 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
     pub(crate) fn db_dyn_ty(&self) -> syn::Type {
         let jar_ty = self.jar_ty();
+        let lt_db = self.maybe_elided_db_lifetime();
         parse_quote! {
-            <#jar_ty as salsa::jar::Jar<'_>>::DynDb
+            <#jar_ty as salsa::jar::Jar< #lt_db >>::DynDb
         }
     }
 
@@ -321,6 +364,40 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         }
     }
 
+    /// Returns the lifetime to use for `'db`. This is normally whatever lifetime
+    /// parameter the user put on the struct, but it might be a generated default
+    /// if there is no such parameter. Using the name the user gave is important
+    /// because it may appear in field types and the like.
+    pub(crate) fn named_db_lifetime(&self) -> syn::Lifetime {
+        match self.the_struct_kind() {
+            TheStructKind::Id => self.default_db_lifetime(),
+            TheStructKind::Pointer(db) => db,
+        }
+    }
+
+    /// Returns lifetime to use for `'db`, substituting `'_` if there is no name required.
+    /// This is convenient in function signatures where `'db` may not be in scope.
+    pub(crate) fn maybe_elided_db_lifetime(&self) -> syn::Lifetime {
+        match self.the_struct_kind() {
+            TheStructKind::Id => syn::Lifetime {
+                apostrophe: self.struct_item.ident.span(),
+                ident: syn::Ident::new("_", self.struct_item.ident.span()),
+            },
+            TheStructKind::Pointer(db) => db,
+        }
+    }
+
+    /// Normally we try to use whatever lifetime parameter the use gave us
+    /// to represent `'db`; but if they didn't give us one, we need to use a default
+    /// name. We choose `'db`.
+    fn default_db_lifetime(&self) -> syn::Lifetime {
+        let span = self.struct_item.ident.span();
+        syn::Lifetime {
+            apostrophe: span,
+            ident: syn::Ident::new("db", span),
+        }
+    }
+
     /// Generate `impl salsa::AsId for Foo`
     pub(crate) fn as_id_impl(&self) -> Option<syn::ItemImpl> {
         match self.the_struct_kind() {
@@ -343,7 +420,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
                 })
             }
-            TheStructKind::Pointer => None,
+            TheStructKind::Pointer(_) => None,
         }
     }
 
@@ -366,7 +443,8 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             .map(|field| -> TokenStream {
                 let field_name_string = field.name().to_string();
                 let field_getter = field.get_name();
-                let field_ty = field.ty();
+                let field_ty = ChangeLt::to_elided().in_type(field.ty());
+                let db_type = ChangeLt::to_elided().in_type(&db_type);
 
                 quote_spanned! { field.field.span() =>
                     debug_struct = debug_struct.field(
@@ -386,7 +464,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             impl #impl_generics ::salsa::DebugWithDb<#db_type> for #ident #type_generics
             #where_clause
             {
-                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type) -> ::std::fmt::Result {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: & #db_type) -> ::std::fmt::Result {
                     #[allow(unused_imports)]
                     use ::salsa::debug::helper::Fallback;
                     #[allow(unused_mut)]

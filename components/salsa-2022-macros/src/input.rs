@@ -49,6 +49,8 @@ impl crate::options::AllowedOptions for InputStruct {
 
 impl InputStruct {
     fn generate_input(&self) -> syn::Result<TokenStream> {
+        self.require_no_generics()?;
+
         let id_struct = self.the_struct_id();
         let inherent_impl = self.input_inherent_impl();
         let ingredients_for_impl = self.input_ingredients();

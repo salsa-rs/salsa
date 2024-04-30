@@ -11,8 +11,16 @@ pub(crate) fn tracked(
     args: proc_macro::TokenStream,
     struct_item: syn::ItemStruct,
 ) -> syn::Result<TokenStream> {
+    let struct_name = struct_item.ident.clone();
+
     let tokens = SalsaStruct::with_struct(args, struct_item)
         .and_then(|el| TrackedStruct(el).generate_tracked())?;
+
+    if let Ok(name) = std::env::var("NDM") {
+        if name == "*" || name == &struct_name.to_string()[..] {
+            eprintln!("{}", tokens);
+        }
+    }
 
     Ok(tokens)
 }
@@ -51,7 +59,7 @@ impl crate::options::AllowedOptions for TrackedStruct {
 
 impl TrackedStruct {
     fn generate_tracked(&self) -> syn::Result<TokenStream> {
-        self.validate_tracked()?;
+        self.require_db_lifetime()?;
 
         let config_struct = self.config_struct();
         let the_struct = self.the_struct(&config_struct.ident)?;
@@ -75,11 +83,7 @@ impl TrackedStruct {
             #as_id_impl
             #as_debug_with_db_impl
         })
-    }
-
-    fn validate_tracked(&self) -> syn::Result<()> {
-        Ok(())
-    }
+    }   
 
     fn config_struct(&self) -> syn::ItemStruct {
         let config_ident = syn::Ident::new(
@@ -100,6 +104,7 @@ impl TrackedStruct {
         let field_tys: Vec<_> = self.all_fields().map(SalsaField::ty).collect();
         let id_field_indices = self.id_field_indices();
         let arity = self.all_field_count();
+        let lt_db = &self.named_db_lifetime();
 
         // Create the function body that will update the revisions for each field.
         // If a field is a "backdate field" (the default), then we first check if
@@ -138,7 +143,7 @@ impl TrackedStruct {
 
         parse_quote! {
             impl salsa::tracked_struct::Configuration for #config_ident {
-                type Fields<'db> = ( #(#field_tys,)* );
+                type Fields<#lt_db> = ( #(#field_tys,)* );
                 type Revisions = [salsa::Revision; #arity];
 
                 #[allow(clippy::unused_unit)]
@@ -154,11 +159,11 @@ impl TrackedStruct {
                     [current_revision; #arity]
                 }
 
-                unsafe fn update_fields<'db>(
+                unsafe fn update_fields<#lt_db>(
                     #current_revision: salsa::Revision,
                     #revisions: &mut Self::Revisions,
-                    #old_fields: *mut Self::Fields<'db>,
-                    #new_fields: Self::Fields<'db>,
+                    #old_fields: *mut Self::Fields<#lt_db>,
+                    #new_fields: Self::Fields<#lt_db>,
                 ) {
                     use salsa::update::helper::Fallback as _;
                     #update_fields
@@ -169,9 +174,9 @@ impl TrackedStruct {
 
     /// Generate an inherent impl with methods on the tracked type.
     fn tracked_inherent_impl(&self) -> syn::ItemImpl {
-        let (ident, parameters, impl_generics, type_generics, where_clause) = self.the_ident_and_generics();
+        let (ident, _, impl_generics, type_generics, where_clause) = self.the_ident_and_generics();
 
-        let lt_db = parameters.iter().next();
+        let the_kind = &self.the_struct_kind();
 
         let jar_ty = self.jar_ty();
         let db_dyn_ty = self.db_dyn_ty();
@@ -183,7 +188,7 @@ impl TrackedStruct {
         let field_get_names: Vec<_> = self.all_fields().map(SalsaField::get_name).collect();
         let field_clones: Vec<_> = self.all_fields().map(SalsaField::is_clone_field).collect();
         let field_getters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&field_get_names).zip(&field_tys).zip(&field_vises).zip(&field_clones).map(|((((field_index, field_get_name), field_ty), field_vis), is_clone_field)|
-        match self.the_struct_kind() {
+            match the_kind {
                 TheStructKind::Id => {
                     if !*is_clone_field {
                         parse_quote_spanned! { field_get_name.span() =>
@@ -206,9 +211,7 @@ impl TrackedStruct {
                     }
                 }
     
-                TheStructKind::Pointer => {
-                    let lt_db = lt_db.unwrap();
-
+                TheStructKind::Pointer(lt_db) => {
                     if !*is_clone_field {
                         parse_quote_spanned! { field_get_name.span() =>
                             #field_vis fn #field_get_name(self, __db: & #lt_db #db_dyn_ty) -> & #lt_db #field_ty
@@ -229,7 +232,7 @@ impl TrackedStruct {
                         }
                     }
                 }
-        }
+            }
         )
         .collect();
 
@@ -239,21 +242,22 @@ impl TrackedStruct {
 
         let data = syn::Ident::new("__data", Span::call_site());
 
-        let salsa_id = match self.the_struct_kind() {
+        let salsa_id = match the_kind {
             TheStructKind::Id => quote!(self.0),
-            TheStructKind::Pointer => quote!(unsafe { &*self.0 }.id()),
+            TheStructKind::Pointer(_) => quote!(unsafe { &*self.0 }.id()),
         };
 
-        let ctor = match self.the_struct_kind() {
+        let ctor = match the_kind {
             TheStructKind::Id => quote!(salsa::AsId::from_id(#data.id())),
-            TheStructKind::Pointer => quote!(Self(#data, std::marker::PhantomData)),
+            TheStructKind::Pointer(_) => quote!(Self(#data, std::marker::PhantomData)),
         };
 
+        let lt_db = self.maybe_elided_db_lifetime();
         parse_quote! {
             #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
             impl #impl_generics #ident #type_generics
             #where_clause {
-                pub fn #constructor_name(__db: &#db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
+                pub fn #constructor_name(__db: &#lt_db #db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< Self >>::ingredient(__jar);

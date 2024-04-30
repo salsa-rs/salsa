@@ -5,6 +5,7 @@ use syn::visit_mut::VisitMut;
 use syn::{Field, FieldsUnnamed, Ident, ItemStruct, Path, Token};
 
 use crate::options::Options;
+use crate::xform::ChangeLt;
 
 // Source:
 //
@@ -149,7 +150,7 @@ fn generate_fields(input: &ItemStruct) -> FieldsUnnamed {
         field.ident = None;
 
         // Convert ty to reference static and not `'_`
-        ChangeToStatic.visit_type_mut(&mut field.ty);
+        ChangeLt::elided_to_static().visit_type_mut(&mut field.ty);
 
         let field_ty = &field.ty;
         field.ty =
@@ -172,15 +173,5 @@ fn generate_fields(input: &ItemStruct) -> FieldsUnnamed {
     FieldsUnnamed {
         paren_token,
         unnamed: output_fields,
-    }
-}
-
-struct ChangeToStatic;
-
-impl syn::visit_mut::VisitMut for ChangeToStatic {
-    fn visit_lifetime_mut(&mut self, i: &mut syn::Lifetime) {
-        if i.ident == "_" {
-            i.ident = syn::Ident::new("static", i.ident.span());
-        }
     }
 }

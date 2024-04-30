@@ -75,6 +75,7 @@ impl InternedStruct {
 
     fn validate_interned(&self) -> syn::Result<()> {
         self.disallow_id_fields("interned")?;
+        self.require_no_generics()?;
         Ok(())
     }
 

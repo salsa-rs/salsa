@@ -257,7 +257,7 @@ pub mod helper {
         Db: AsSalsaDatabase,
     {
         #[allow(dead_code)]
-        pub fn salsa_debug<'a, 'b: 'a>(a: &'a T, db: &'b Db) -> DebugWith<'a, Db> {
+        pub fn salsa_debug<'a>(a: &'a T, db: &'a Db) -> DebugWith<'a, Db> {
             a.debug(db)
         }
     }
