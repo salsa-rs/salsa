@@ -39,6 +39,7 @@ pub(crate) fn literal(ident: &proc_macro2::Ident) -> proc_macro2::Literal {
 mod accumulator;
 mod configuration;
 mod db;
+mod debug;
 mod input;
 mod interned;
 mod jar;

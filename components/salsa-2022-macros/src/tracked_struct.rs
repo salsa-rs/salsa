@@ -16,13 +16,7 @@ pub(crate) fn tracked(
     let tokens = SalsaStruct::with_struct(args, struct_item)
         .and_then(|el| TrackedStruct(el).generate_tracked())?;
 
-    if let Ok(name) = std::env::var("NDM") {
-        if name == "*" || name == &struct_name.to_string()[..] {
-            eprintln!("{}", tokens);
-        }
-    }
-
-    Ok(tokens)
+    Ok(crate::debug::dump_tokens(&struct_name, tokens))
 }
 
 struct TrackedStruct(SalsaStruct<Self>);

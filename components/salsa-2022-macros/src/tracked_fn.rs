@@ -10,6 +10,8 @@ pub(crate) fn tracked_fn(
     args: proc_macro::TokenStream,
     mut item_fn: syn::ItemFn,
 ) -> syn::Result<TokenStream> {
+    let fn_ident = item_fn.sig.ident.clone();
+
     let args: FnArgs = syn::parse(args)?;
     if item_fn.sig.inputs.is_empty() {
         return Err(syn::Error::new(
@@ -44,14 +46,17 @@ pub(crate) fn tracked_fn(
     let (config_ty, fn_struct) = fn_struct(&args, &item_fn)?;
     *item_fn.block = getter_fn(&args, &mut item_fn.sig, item_fn.block.span(), &config_ty)?;
 
-    Ok(quote! {
-        #fn_struct
+    Ok(crate::debug::dump_tokens(
+        &fn_ident,
+        quote! {
+            #fn_struct
 
-        // we generate a `'db` lifetime that clippy
-        // sometimes doesn't like
-        #[allow(clippy::needless_lifetimes)]
-        #item_fn
-    })
+            // we generate a `'db` lifetime that clippy
+            // sometimes doesn't like
+            #[allow(clippy::needless_lifetimes)]
+            #item_fn
+        },
+    ))
 }
 
 type FnArgs = Options<TrackedFn>;
