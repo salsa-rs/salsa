@@ -79,6 +79,40 @@ impl InternedStruct {
         Ok(())
     }
 
+    /// The name of the "data" struct (this comes from the `data = Foo` option or,
+    /// if that is not provided, by concatenating `Data` to the name of the struct).
+    fn data_ident(&self) -> syn::Ident {
+        match &self.args().data {
+            Some(d) => d.clone(),
+            None => syn::Ident::new(
+                &format!("__{}Data", self.the_ident()),
+                self.the_ident().span(),
+            ),
+        }
+    }
+
+    /// Generates the `struct FooData` struct (or enum).
+    /// This type inherits all the attributes written by the user.
+    ///
+    /// When using named fields, we synthesize the struct and field names.
+    ///
+    /// When no named fields are available, copy the existing type.
+    fn data_struct(&self) -> syn::ItemStruct {
+        let ident = self.data_ident();
+        let visibility = self.visibility();
+        let all_field_names = self.all_field_names();
+        let all_field_tys = self.all_field_tys();
+        parse_quote_spanned! { ident.span() =>
+            /// Internal struct used for interned item
+            #[derive(Eq, PartialEq, Hash, Clone)]
+            #visibility struct #ident {
+                #(
+                    #all_field_names: #all_field_tys,
+                )*
+            }
+        }
+    }
+
     /// If this is an interned struct, then generate methods to access each field,
     /// as well as a `new` method.
     fn inherent_impl_for_named_fields(&self) -> syn::ItemImpl {

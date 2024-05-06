@@ -84,6 +84,10 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         })
     }
 
+    pub(crate) fn args(&self) -> &Options<A> {
+        &self.args
+    }
+
     pub(crate) fn require_no_generics(&self) -> syn::Result<()> {
         if let Some(param) = self.struct_item.generics.params.iter().next() {
             return Err(syn::Error::new_spanned(
@@ -268,18 +272,6 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         }
     }
 
-    /// The name of the "data" struct (this comes from the `data = Foo` option or,
-    /// if that is not provided, by concatenating `Data` to the name of the struct).
-    pub(crate) fn data_ident(&self) -> syn::Ident {
-        match &self.args.data {
-            Some(d) => d.clone(),
-            None => syn::Ident::new(
-                &format!("__{}Data", self.the_ident()),
-                self.the_ident().span(),
-            ),
-        }
-    }
-
     /// Create "the struct" whose field is an id.
     /// This is the struct the user will refernece, but only if there
     /// are no lifetimes.
@@ -343,28 +335,6 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                     std::marker::PhantomData < & #lifetime salsa::tracked_struct::TrackedStructValue < #config_ident > >
                 );
             })
-        }
-    }
-
-    /// Generates the `struct FooData` struct (or enum).
-    /// This type inherits all the attributes written by the user.
-    ///
-    /// When using named fields, we synthesize the struct and field names.
-    ///
-    /// When no named fields are available, copy the existing type.
-    pub(crate) fn data_struct(&self) -> syn::ItemStruct {
-        let ident = self.data_ident();
-        let visibility = self.visibility();
-        let all_field_names = self.all_field_names();
-        let all_field_tys = self.all_field_tys();
-        parse_quote_spanned! { ident.span() =>
-            /// Internal struct used for interned item
-            #[derive(Eq, PartialEq, Hash, Clone)]
-            #visibility struct #ident {
-                #(
-                    #all_field_names: #all_field_tys,
-                )*
-            }
         }
     }
 
