@@ -293,6 +293,7 @@ fn fn_struct(args: &FnArgs, item_fn: &syn::ItemFn) -> syn::Result<(syn::Type, To
     let struct_item_ident = &struct_item.ident;
     let config_ty: syn::Type = parse_quote!(#struct_item_ident);
     let configuration_impl = configuration.to_impl(&config_ty);
+    let interned_configuration_impl = interned_configuration_impl(item_fn, &config_ty);
     let ingredients_for_impl = ingredients_for_impl(args, item_fn, &config_ty);
     let item_impl = setter_impl(args, item_fn, &config_ty)?;
 
@@ -301,22 +302,27 @@ fn fn_struct(args: &FnArgs, item_fn: &syn::ItemFn) -> syn::Result<(syn::Type, To
         quote! {
             #struct_item
             #configuration_impl
+            #interned_configuration_impl
             #ingredients_for_impl
             #item_impl
         },
     ))
 }
 
-/// Returns the key type for this tracked function.
-/// This is a tuple of all the argument types (apart from the database).
-fn key_tuple_ty(item_fn: &syn::ItemFn) -> syn::Type {
+fn interned_configuration_impl(item_fn: &syn::ItemFn, config_ty: &syn::Type) -> syn::ItemImpl {
     let arg_tys = item_fn.sig.inputs.iter().skip(1).map(|arg| match arg {
         syn::FnArg::Receiver(_) => unreachable!(),
         syn::FnArg::Typed(pat_ty) => pat_ty.ty.clone(),
     });
 
+    let intern_data_ty: syn::Type = parse_quote!(
+        (#(#arg_tys),*)
+    );
+
     parse_quote!(
-        (#(#arg_tys,)*)
+        impl salsa::interned::Configuration for #config_ty {
+            type Data = #intern_data_ty;
+        }
     )
 }
 
@@ -324,17 +330,15 @@ fn configuration_struct(item_fn: &syn::ItemFn) -> syn::ItemStruct {
     let fn_name = item_fn.sig.ident.clone();
     let visibility = &item_fn.vis;
 
-    let salsa_struct_ty = salsa_struct_ty(item_fn);
     let intern_map: syn::Type = match function_type(item_fn) {
         FunctionType::Constant => {
-            parse_quote! { salsa::interned::IdentityInterner<()> }
+            parse_quote! { salsa::interned::IdentityInterner<Self> }
         }
         FunctionType::SalsaStruct => {
-            parse_quote! { salsa::interned::IdentityInterner<#salsa_struct_ty> }
+            parse_quote! { salsa::interned::IdentityInterner<Self> }
         }
         FunctionType::RequiresInterning => {
-            let key_ty = key_tuple_ty(item_fn);
-            parse_quote! { salsa::interned::InternedIngredient<#key_ty> }
+            parse_quote! { salsa::interned::InternedIngredient<Self> }
         }
     };
 
@@ -389,7 +393,24 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
 
     let fn_ty = item_fn.sig.ident.clone();
 
-    let indices = (0..item_fn.sig.inputs.len() - 1).map(Literal::usize_unsuffixed);
+    // During recovery or execution, we are invoked with a `salsa::Id`
+    // that represents the interned value. We convert it back to a key
+    // which is either a single value (if there is one argument)
+    // or a tuple of values (if multiple arugments). `key_var` is the variable
+    // name that will store this result, and `key_splat` is a set of tokens
+    // that will convert it into one or multiple arguments (e.g., `key_var` if there
+    // is one argument or `key_var.0, key_var.1` if 2) that can be pasted into a function call.
+    let key_var = syn::Ident::new("__key", item_fn.span());
+    let key_fields = item_fn.sig.inputs.len() - 1;
+    let key_splat = if key_fields == 1 {
+        quote!(#key_var)
+    } else {
+        let indices = (0..key_fields)
+            .map(Literal::usize_unsuffixed)
+            .collect::<Vec<_>>();
+        quote!(#(__key.#indices),*)
+    };
+
     let (cycle_strategy, recover_fn) = if let Some(recovery_fn) = &args.recovery_fn {
         // Create the `recover_from_cycle` function, which (a) maps from the interned id to the actual
         // keys and then (b) invokes the recover function itself.
@@ -400,8 +421,8 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
                 let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                 let __ingredients =
                     <_ as salsa::storage::HasIngredientsFor<#fn_ty>>::ingredient(__jar);
-                let __key = __ingredients.intern_map.data(__runtime, __id).clone();
-                #recovery_fn(__db, __cycle, #(__key.#indices),*)
+                let #key_var = __ingredients.intern_map.data(__runtime, __id).clone();
+                #recovery_fn(__db, __cycle, #key_splat)
             }
         };
         (cycle_strategy, cycle_fullback)
@@ -425,7 +446,6 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
 
     // Create the `execute` function, which (a) maps from the interned id to the actual
     // keys and then (b) invokes the function itself (which we embed within).
-    let indices = (0..item_fn.sig.inputs.len() - 1).map(Literal::usize_unsuffixed);
     let execute_fn = parse_quote! {
         fn execute<'db>(__db: &'db salsa::function::DynDb<'db, Self>, __id: salsa::Id) -> Self::Value<'db> {
             #inner_fn
@@ -433,8 +453,8 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
             let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
             let __ingredients =
                 <_ as salsa::storage::HasIngredientsFor<#fn_ty>>::ingredient(__jar);
-            let __key = __ingredients.intern_map.data(__runtime, __id).clone();
-            #inner_fn_name(__db, #(__key.#indices),*)
+            let #key_var = __ingredients.intern_map.data(__runtime, __id).clone();
+            #inner_fn_name(__db, #key_splat)
         }
     };
 

@@ -18,25 +18,29 @@ use super::ingredient::Ingredient;
 use super::routes::IngredientIndex;
 use super::Revision;
 
+pub trait Configuration {
+    type Data: InternedData;
+}
+
 pub trait InternedData: Sized + Eq + Hash + Clone {}
 impl<T: Eq + Hash + Clone> InternedData for T {}
 
 /// The interned ingredient has the job of hashing values of type `Data` to produce an `Id`.
 /// It used to store interned structs but also to store the id fields of a tracked struct.
 /// Interned values endure until they are explicitly removed in some way.
-pub struct InternedIngredient<Data: InternedData> {
+pub struct InternedIngredient<C: Configuration> {
     /// Index of this ingredient in the database (used to construct database-ids, etc).
     ingredient_index: IngredientIndex,
 
     /// Maps from data to the existing interned id for that data.
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
-    key_map: FxDashMap<Data, Id>,
+    key_map: FxDashMap<C::Data, Id>,
 
     /// Maps from an interned id to its data.
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
-    value_map: FxDashMap<Id, Box<Data>>,
+    value_map: FxDashMap<Id, Box<C::Data>>,
 
     /// counter for the next id.
     counter: AtomicCell<u32>,
@@ -52,14 +56,14 @@ pub struct InternedIngredient<Data: InternedData> {
     /// references to that data floating about that are tied to the lifetime of some
     /// `&db` reference. This queue itself is not freed until we have an `&mut db` reference,
     /// guaranteeing that there are no more references to it.
-    deleted_entries: SegQueue<Box<Data>>,
+    deleted_entries: SegQueue<Box<C::Data>>,
 
     debug_name: &'static str,
 }
 
-impl<Data> InternedIngredient<Data>
+impl<C> InternedIngredient<C>
 where
-    Data: InternedData,
+    C: Configuration,
 {
     pub fn new(ingredient_index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
@@ -78,7 +82,7 @@ where
     /// * `id` is the interned id
     /// * `b` is a boolean, `true` indicates this fn call added `data` to the interning table;
     ///   `false` indicates it was already present
-    pub(crate) fn intern_full(&self, runtime: &Runtime, data: Data) -> (Id, bool) {
+    pub(crate) fn intern_full(&self, runtime: &Runtime, data: C::Data) -> (Id, bool) {
         runtime.report_tracked_read(
             DependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
@@ -109,7 +113,7 @@ where
         }
     }
 
-    pub fn intern(&self, runtime: &Runtime, data: Data) -> Id {
+    pub fn intern(&self, runtime: &Runtime, data: C::Data) -> Id {
         self.intern_full(runtime, data).0
     }
 
@@ -125,7 +129,7 @@ where
     }
 
     #[track_caller]
-    pub fn data<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db Data {
+    pub fn data<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db C::Data {
         runtime.report_tracked_read(
             DependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
@@ -187,9 +191,9 @@ where
     }
 }
 
-impl<DB: ?Sized, Data> Ingredient<DB> for InternedIngredient<Data>
+impl<DB: ?Sized, C> Ingredient<DB> for InternedIngredient<C>
 where
-    Data: InternedData,
+    C: Configuration,
 {
     fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
@@ -247,28 +251,36 @@ where
     }
 }
 
-impl<Data> IngredientRequiresReset for InternedIngredient<Data>
+impl<C> IngredientRequiresReset for InternedIngredient<C>
 where
-    Data: InternedData,
+    C: Configuration,
 {
     const RESET_ON_NEW_REVISION: bool = false;
 }
 
-pub struct IdentityInterner<Id: AsId> {
-    data: PhantomData<Id>,
+pub struct IdentityInterner<C>
+where
+    C: Configuration,
+    C::Data: AsId,
+{
+    data: PhantomData<C>,
 }
 
-impl<Id: AsId> IdentityInterner<Id> {
+impl<C> IdentityInterner<C>
+where
+    C: Configuration,
+    C::Data: AsId,
+{
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         IdentityInterner { data: PhantomData }
     }
 
-    pub fn intern(&self, _runtime: &Runtime, id: Id) -> crate::Id {
+    pub fn intern(&self, _runtime: &Runtime, id: C::Data) -> crate::Id {
         id.as_id()
     }
 
-    pub fn data(&self, _runtime: &Runtime, id: crate::Id) -> (Id,) {
-        (Id::from_id(id),)
+    pub fn data(&self, _runtime: &Runtime, id: crate::Id) -> C::Data {
+        <C::Data>::from_id(id)
     }
 }

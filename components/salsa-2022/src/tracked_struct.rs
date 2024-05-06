@@ -110,6 +110,10 @@ struct TrackedStructKey {
     data_hash: u64,
 }
 
+impl crate::interned::Configuration for TrackedStructKey {
+    type Data = TrackedStructKey;
+}
+
 // ANCHOR: TrackedStructValue
 #[derive(Debug)]
 pub struct TrackedStructValue<C>

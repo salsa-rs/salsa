@@ -55,8 +55,10 @@ impl InternedStruct {
     fn generate_interned(&self) -> syn::Result<TokenStream> {
         self.validate_interned()?;
         let id_struct = self.the_struct_id();
+        let config_struct = self.config_struct();
         let data_struct = self.data_struct();
-        let ingredients_for_impl = self.ingredients_for_impl();
+        let configuration_impl = self.configuration_impl(&data_struct.ident, &config_struct.ident);
+        let ingredients_for_impl = self.ingredients_for_impl(&config_struct.ident);
         let as_id_impl = self.as_id_impl();
         let named_fields_impl = self.inherent_impl_for_named_fields();
         let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
@@ -64,6 +66,8 @@ impl InternedStruct {
 
         Ok(quote! {
             #id_struct
+            #config_struct
+            #configuration_impl
             #data_struct
             #ingredients_for_impl
             #as_id_impl
@@ -111,6 +115,20 @@ impl InternedStruct {
                 )*
             }
         }
+    }
+
+    fn configuration_impl(
+        &self,
+        data_struct: &syn::Ident,
+        config_struct: &syn::Ident,
+    ) -> syn::ItemImpl {
+        parse_quote_spanned!(
+            config_struct.span() =>
+
+            impl salsa::interned::Configuration for #config_struct {
+                type Data = #data_struct;
+            }
+        )
     }
 
     /// If this is an interned struct, then generate methods to access each field,
@@ -186,15 +204,14 @@ impl InternedStruct {
     /// Generates an impl of `salsa::storage::IngredientsFor`.
     ///
     /// For a memoized type, the only ingredient is an `InternedIngredient`.
-    fn ingredients_for_impl(&self) -> syn::ItemImpl {
+    fn ingredients_for_impl(&self, config_struct: &syn::Ident) -> syn::ItemImpl {
         let id_ident = self.the_ident();
         let debug_name = crate::literal(id_ident);
         let jar_ty = self.jar_ty();
-        let data_ident = self.data_ident();
         parse_quote! {
             impl salsa::storage::IngredientsFor for #id_ident {
                 type Jar = #jar_ty;
-                type Ingredients = salsa::interned::InternedIngredient<#data_ident>;
+                type Ingredients = salsa::interned::InternedIngredient<#config_struct>;
 
                 fn create_ingredients<DB>(
                     routes: &mut salsa::routes::Routes<DB>,
