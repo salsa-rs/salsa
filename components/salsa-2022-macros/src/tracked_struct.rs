@@ -79,20 +79,6 @@ impl TrackedStruct {
         })
     }   
 
-    fn config_struct(&self) -> syn::ItemStruct {
-        let config_ident = syn::Ident::new(
-            &format!("__{}Config", self.the_ident()),
-            self.the_ident().span(),
-        );
-        let visibility = self.visibility();
-
-        parse_quote! {
-            #visibility struct #config_ident {
-                _uninhabited: std::convert::Infallible,
-            }
-        }
-    }
-
     fn config_impl(&self, config_struct: &syn::ItemStruct) -> syn::ItemImpl {
         let config_ident = &config_struct.ident;
         let field_tys: Vec<_> = self.all_fields().map(SalsaField::ty).collect();

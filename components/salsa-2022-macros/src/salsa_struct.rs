@@ -119,6 +119,23 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         Ok(())
     }
 
+    /// Some salsa structs require a "Configuration" struct
+    /// because they make use of GATs. This function
+    /// synthesizes a name and generates the struct declaration.
+    pub(crate) fn config_struct(&self) -> syn::ItemStruct {
+        let config_ident = syn::Ident::new(
+            &format!("__{}Config", self.the_ident()),
+            self.the_ident().span(),
+        );
+        let visibility = self.visibility();
+
+        parse_quote! {
+            #visibility struct #config_ident {
+                _uninhabited: std::convert::Infallible,
+            }
+        }
+    }
+
     pub(crate) fn the_struct_kind(&self) -> TheStructKind {
         if self.struct_item.generics.params.is_empty() {
             TheStructKind::Id
