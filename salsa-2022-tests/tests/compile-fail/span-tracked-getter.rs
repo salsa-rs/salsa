@@ -25,6 +25,6 @@ fn my_fn(db: &dyn crate::Db) {
 }
 
 fn main() {
-    let mut db = Database::default();
+    let db = Database::default();
     my_fn(&db);
 }
