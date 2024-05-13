@@ -26,6 +26,7 @@
 //!     * this could be optimized, particularly for interned fields
 
 use crate::{
+    db_lifetime::{self, db_lifetime, default_db_lifetime},
     options::{AllowedOptions, Options},
     xform::ChangeLt,
 };
@@ -99,28 +100,9 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         Ok(())
     }
 
+    /// Require that either there are no generics or exactly one lifetime parameter.
     pub(crate) fn require_db_lifetime(&self) -> syn::Result<()> {
-        let generics = &self.struct_item.generics;
-
-        if generics.params.len() == 0 {
-            return Ok(());
-        }
-
-        for (param, index) in generics.params.iter().zip(0..) {
-            let error = match param {
-                syn::GenericParam::Lifetime(_) => index > 0,
-                syn::GenericParam::Type(_) | syn::GenericParam::Const(_) => true,
-            };
-
-            if error {
-                return Err(syn::Error::new_spanned(
-                    param,
-                    "only a single lifetime parameter is accepted",
-                ));
-            }
-        }
-
-        Ok(())
+        db_lifetime::require_db_lifetime(&self.struct_item.generics)
     }
 
     /// Some salsa structs require a "Configuration" struct
@@ -144,11 +126,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         if self.struct_item.generics.params.is_empty() {
             TheStructKind::Id
         } else {
-            if let Some(lt) = self.struct_item.generics.lifetimes().next() {
-                TheStructKind::Pointer(lt.lifetime.clone())
-            } else {
-                TheStructKind::Pointer(self.default_db_lifetime())
-            }
+            TheStructKind::Pointer(db_lifetime(&self.struct_item.generics))
         }
     }
 
@@ -378,11 +356,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     /// to represent `'db`; but if they didn't give us one, we need to use a default
     /// name. We choose `'db`.
     fn default_db_lifetime(&self) -> syn::Lifetime {
-        let span = self.struct_item.ident.span();
-        syn::Lifetime {
-            apostrophe: span,
-            ident: syn::Ident::new("db", span),
-        }
+        default_db_lifetime(self.struct_item.generics.span())
     }
 
     /// Generate `impl salsa::AsId for Foo`
