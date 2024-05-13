@@ -4,6 +4,7 @@ use syn::visit_mut::VisitMut;
 use syn::{ReturnType, Token};
 
 use crate::configuration::{self, Configuration, CycleRecoveryStrategy};
+use crate::db_lifetime::{db_lifetime, require_db_lifetime};
 use crate::options::Options;
 
 pub(crate) fn tracked_fn(
@@ -288,12 +289,14 @@ fn rename_self_in_block(mut block: syn::Block) -> syn::Result<syn::Block> {
 ///
 /// This returns the name of the constructed type and the code defining everything.
 fn fn_struct(args: &FnArgs, item_fn: &syn::ItemFn) -> syn::Result<(syn::Type, TokenStream)> {
+    require_db_lifetime(&item_fn.sig.generics)?;
+    let db_lt = &db_lifetime(&item_fn.sig.generics);
     let struct_item = configuration_struct(item_fn);
     let configuration = fn_configuration(args, item_fn);
     let struct_item_ident = &struct_item.ident;
     let config_ty: syn::Type = parse_quote!(#struct_item_ident);
     let configuration_impl = configuration.to_impl(&config_ty);
-    let interned_configuration_impl = interned_configuration_impl(item_fn, &config_ty);
+    let interned_configuration_impl = interned_configuration_impl(db_lt, item_fn, &config_ty);
     let ingredients_for_impl = ingredients_for_impl(args, item_fn, &config_ty);
     let item_impl = setter_impl(args, item_fn, &config_ty)?;
 
@@ -309,7 +312,11 @@ fn fn_struct(args: &FnArgs, item_fn: &syn::ItemFn) -> syn::Result<(syn::Type, To
     ))
 }
 
-fn interned_configuration_impl(item_fn: &syn::ItemFn, config_ty: &syn::Type) -> syn::ItemImpl {
+fn interned_configuration_impl(
+    db_lt: &syn::Lifetime,
+    item_fn: &syn::ItemFn,
+    config_ty: &syn::Type,
+) -> syn::ItemImpl {
     let arg_tys = item_fn.sig.inputs.iter().skip(1).map(|arg| match arg {
         syn::FnArg::Receiver(_) => unreachable!(),
         syn::FnArg::Typed(pat_ty) => pat_ty.ty.clone(),
@@ -321,7 +328,7 @@ fn interned_configuration_impl(item_fn: &syn::ItemFn, config_ty: &syn::Type) -> 
 
     parse_quote!(
         impl salsa::interned::Configuration for #config_ty {
-            type Data = #intern_data_ty;
+            type Data<#db_lt> = #intern_data_ty;
         }
     )
 }

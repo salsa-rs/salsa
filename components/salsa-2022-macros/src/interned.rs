@@ -54,8 +54,8 @@ impl crate::options::AllowedOptions for InternedStruct {
 impl InternedStruct {
     fn generate_interned(&self) -> syn::Result<TokenStream> {
         self.validate_interned()?;
-        let id_struct = self.the_struct_id();
         let config_struct = self.config_struct();
+        let the_struct = self.the_struct(&config_struct.ident)?;
         let data_struct = self.data_struct();
         let configuration_impl = self.configuration_impl(&data_struct.ident, &config_struct.ident);
         let ingredients_for_impl = self.ingredients_for_impl(&config_struct.ident);
@@ -65,7 +65,7 @@ impl InternedStruct {
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
 
         Ok(quote! {
-            #id_struct
+            #the_struct
             #config_struct
             #configuration_impl
             #data_struct
@@ -79,7 +79,7 @@ impl InternedStruct {
 
     fn validate_interned(&self) -> syn::Result<()> {
         self.disallow_id_fields("interned")?;
-        self.require_no_generics()?;
+        self.require_db_lifetime()?;
         Ok(())
     }
 
@@ -102,14 +102,19 @@ impl InternedStruct {
     ///
     /// When no named fields are available, copy the existing type.
     fn data_struct(&self) -> syn::ItemStruct {
-        let ident = self.data_ident();
+        let data_ident = self.data_ident();
+        let (_, _, impl_generics, _, where_clause) = self.the_ident_and_generics();
+
         let visibility = self.visibility();
         let all_field_names = self.all_field_names();
         let all_field_tys = self.all_field_tys();
-        parse_quote_spanned! { ident.span() =>
+        parse_quote_spanned! { data_ident.span() =>
             /// Internal struct used for interned item
             #[derive(Eq, PartialEq, Hash, Clone)]
-            #visibility struct #ident {
+            #visibility struct #data_ident #impl_generics
+            where
+                #where_clause
+            {
                 #(
                     #all_field_names: #all_field_tys,
                 )*
@@ -119,14 +124,16 @@ impl InternedStruct {
 
     fn configuration_impl(
         &self,
-        data_struct: &syn::Ident,
-        config_struct: &syn::Ident,
+        data_ident: &syn::Ident,
+        config_ident: &syn::Ident,
     ) -> syn::ItemImpl {
+        let lt_db = &self.named_db_lifetime();
+        let (_, _, _, type_generics, _) = self.the_ident_and_generics();
         parse_quote_spanned!(
-            config_struct.span() =>
+            config_ident.span() =>
 
-            impl salsa::interned::Configuration for #config_struct {
-                type Data = #data_struct;
+            impl salsa::interned::Configuration for #config_ident {
+                type Data<#lt_db> = #data_ident #type_generics;
             }
         )
     }
@@ -134,8 +141,9 @@ impl InternedStruct {
     /// If this is an interned struct, then generate methods to access each field,
     /// as well as a `new` method.
     fn inherent_impl_for_named_fields(&self) -> syn::ItemImpl {
-        let vis = self.visibility();
-        let id_ident = self.the_ident();
+        let vis: &syn::Visibility = self.visibility();
+        let (the_ident, _, impl_generics, type_generics, where_clause) =
+            self.the_ident_and_generics();
         let db_dyn_ty = self.db_dyn_ty();
         let jar_ty = self.jar_ty();
 
@@ -150,7 +158,7 @@ impl InternedStruct {
                     parse_quote_spanned! { field_get_name.span() =>
                         #field_vis fn #field_get_name(self, db: &#db_dyn_ty) -> #field_ty {
                             let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
-                            let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #id_ident >>::ingredient(jar);
+                            let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #the_ident #type_generics >>::ingredient(jar);
                             std::clone::Clone::clone(&ingredients.data(runtime, self.0).#field_name)
                         }
                     }
@@ -158,7 +166,7 @@ impl InternedStruct {
                     parse_quote_spanned! { field_get_name.span() =>
                         #field_vis fn #field_get_name<'db>(self, db: &'db #db_dyn_ty) -> &'db #field_ty {
                             let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
-                            let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #id_ident >>::ingredient(jar);
+                            let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #the_ident #type_generics >>::ingredient(jar);
                             &ingredients.data(runtime, self.0).#field_name
                         }
                     }
@@ -176,7 +184,7 @@ impl InternedStruct {
                 #(#field_names: #field_tys,)*
             ) -> Self {
                 let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
-                let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #id_ident >>::ingredient(jar);
+                let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #the_ident #type_generics >>::ingredient(jar);
                 Self(ingredients.intern(runtime, #data_ident {
                     #(#field_names,)*
                 }))
@@ -191,7 +199,10 @@ impl InternedStruct {
 
         parse_quote! {
             #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
-            impl #id_ident {
+            impl #impl_generics #the_ident #type_generics
+            where
+                #where_clause
+            {
                 #(#field_getters)*
 
                 #new_method
@@ -204,14 +215,18 @@ impl InternedStruct {
     /// Generates an impl of `salsa::storage::IngredientsFor`.
     ///
     /// For a memoized type, the only ingredient is an `InternedIngredient`.
-    fn ingredients_for_impl(&self, config_struct: &syn::Ident) -> syn::ItemImpl {
-        let id_ident = self.the_ident();
-        let debug_name = crate::literal(id_ident);
+    fn ingredients_for_impl(&self, config_ident: &syn::Ident) -> syn::ItemImpl {
+        let (the_ident, _, impl_generics, type_generics, where_clause) =
+            self.the_ident_and_generics();
+        let debug_name = crate::literal(the_ident);
         let jar_ty = self.jar_ty();
         parse_quote! {
-            impl salsa::storage::IngredientsFor for #id_ident {
+            impl #impl_generics salsa::storage::IngredientsFor for #the_ident #type_generics
+            where
+                #where_clause
+            {
                 type Jar = #jar_ty;
-                type Ingredients = salsa::interned::InternedIngredient<#config_struct>;
+                type Ingredients = salsa::interned::InternedIngredient<#config_ident>;
 
                 fn create_ingredients<DB>(
                     routes: &mut salsa::routes::Routes<DB>,
@@ -237,14 +252,17 @@ impl InternedStruct {
 
     /// Implementation of `SalsaStructInDb`.
     fn salsa_struct_in_db_impl(&self) -> syn::ItemImpl {
-        let ident = self.the_ident();
+        let (the_ident, parameters, _, type_generics, where_clause) = self.the_ident_and_generics();
+        #[allow(non_snake_case)]
+        let DB = syn::Ident::new("DB", the_ident.span());
         let jar_ty = self.jar_ty();
         parse_quote! {
-            impl<DB> salsa::salsa_struct::SalsaStructInDb<DB> for #ident
+            impl<#DB, #parameters> salsa::salsa_struct::SalsaStructInDb<DB> for #the_ident #type_generics
             where
-                DB: ?Sized + salsa::DbWithJar<#jar_ty>,
+                #DB: ?Sized + salsa::DbWithJar<#jar_ty>,
+                #where_clause
             {
-                fn register_dependent_fn(_db: &DB, _index: salsa::routes::IngredientIndex) {
+                fn register_dependent_fn(_db: &#DB, _index: salsa::routes::IngredientIndex) {
                     // Do nothing here, at least for now.
                     // If/when we add ability to delete inputs, this would become relevant.
                 }

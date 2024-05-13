@@ -111,7 +111,7 @@ struct TrackedStructKey {
 }
 
 impl crate::interned::Configuration for TrackedStructKey {
-    type Data = TrackedStructKey;
+    type Data<'db> = TrackedStructKey;
 }
 
 // ANCHOR: TrackedStructValue

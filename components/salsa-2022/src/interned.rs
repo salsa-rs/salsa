@@ -8,7 +8,6 @@ use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::{fmt_index, IngredientRequiresReset};
 use crate::key::DependencyIndex;
-use crate::plumbing::transmute_lifetime;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
 use crate::{DatabaseKeyIndex, Id};
@@ -19,7 +18,7 @@ use super::routes::IngredientIndex;
 use super::Revision;
 
 pub trait Configuration {
-    type Data: InternedData;
+    type Data<'db>: InternedData;
 }
 
 pub trait InternedData: Sized + Eq + Hash + Clone {}
@@ -35,12 +34,12 @@ pub struct InternedIngredient<C: Configuration> {
     /// Maps from data to the existing interned id for that data.
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
-    key_map: FxDashMap<C::Data, Id>,
+    key_map: FxDashMap<C::Data<'static>, Id>,
 
     /// Maps from an interned id to its data.
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
-    value_map: FxDashMap<Id, Box<C::Data>>,
+    value_map: FxDashMap<Id, Box<C::Data<'static>>>,
 
     /// counter for the next id.
     counter: AtomicCell<u32>,
@@ -56,7 +55,7 @@ pub struct InternedIngredient<C: Configuration> {
     /// references to that data floating about that are tied to the lifetime of some
     /// `&db` reference. This queue itself is not freed until we have an `&mut db` reference,
     /// guaranteeing that there are no more references to it.
-    deleted_entries: SegQueue<Box<C::Data>>,
+    deleted_entries: SegQueue<Box<C::Data<'static>>>,
 
     debug_name: &'static str,
 }
@@ -77,12 +76,24 @@ where
         }
     }
 
+    unsafe fn to_internal_data<'db>(&'db self, data: C::Data<'db>) -> C::Data<'static> {
+        unsafe { std::mem::transmute(data) }
+    }
+
+    unsafe fn from_internal_data<'db>(&'db self, data: &C::Data<'static>) -> &'db C::Data<'db> {
+        unsafe { std::mem::transmute(data) }
+    }
+
     /// Intern `data` and return `(id, b`) where
     ///
     /// * `id` is the interned id
     /// * `b` is a boolean, `true` indicates this fn call added `data` to the interning table;
     ///   `false` indicates it was already present
-    pub(crate) fn intern_full(&self, runtime: &Runtime, data: C::Data) -> (Id, bool) {
+    pub(crate) fn intern_full<'db>(
+        &'db self,
+        runtime: &'db Runtime,
+        data: C::Data<'db>,
+    ) -> (Id, bool) {
         runtime.report_tracked_read(
             DependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
@@ -91,18 +102,19 @@ where
 
         // Optimisation to only get read lock on the map if the data has already
         // been interned.
-        if let Some(id) = self.key_map.get(&data) {
+        let internal_data = unsafe { self.to_internal_data(data) };
+        if let Some(id) = self.key_map.get(&internal_data) {
             return (*id, false);
         }
 
-        match self.key_map.entry(data.clone()) {
+        match self.key_map.entry(internal_data.clone()) {
             // Data has been interned by a racing call, use that ID instead
             dashmap::mapref::entry::Entry::Occupied(entry) => (*entry.get(), false),
             // We won any races so should intern the data
             dashmap::mapref::entry::Entry::Vacant(entry) => {
                 let next_id = self.counter.fetch_add(1);
                 let next_id = Id::from_id(crate::id::Id::from_u32(next_id));
-                let old_value = self.value_map.insert(next_id, Box::new(data));
+                let old_value = self.value_map.insert(next_id, Box::new(internal_data));
                 assert!(
                     old_value.is_none(),
                     "next_id is guaranteed to be unique, bar overflow"
@@ -113,7 +125,7 @@ where
         }
     }
 
-    pub fn intern(&self, runtime: &Runtime, data: C::Data) -> Id {
+    pub fn intern<'db>(&'db self, runtime: &'db Runtime, data: C::Data<'db>) -> Id {
         self.intern_full(runtime, data).0
     }
 
@@ -129,7 +141,7 @@ where
     }
 
     #[track_caller]
-    pub fn data<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db C::Data {
+    pub fn data<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db C::Data<'db> {
         runtime.report_tracked_read(
             DependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
@@ -146,7 +158,7 @@ where
         // Unsafety clause:
         //
         // * Values are only removed or altered when we have `&mut self`
-        unsafe { transmute_lifetime(self, &**data) }
+        unsafe { self.from_internal_data(&data) }
     }
 
     /// Get the ingredient index for this table.
@@ -261,7 +273,7 @@ where
 pub struct IdentityInterner<C>
 where
     C: Configuration,
-    C::Data: AsId,
+    for<'db> C::Data<'db>: AsId,
 {
     data: PhantomData<C>,
 }
@@ -269,18 +281,18 @@ where
 impl<C> IdentityInterner<C>
 where
     C: Configuration,
-    C::Data: AsId,
+    for<'db> C::Data<'db>: AsId,
 {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         IdentityInterner { data: PhantomData }
     }
 
-    pub fn intern(&self, _runtime: &Runtime, id: C::Data) -> crate::Id {
+    pub fn intern<'db>(&'db self, _runtime: &'db Runtime, id: C::Data<'db>) -> crate::Id {
         id.as_id()
     }
 
-    pub fn data(&self, _runtime: &Runtime, id: crate::Id) -> C::Data {
-        <C::Data>::from_id(id)
+    pub fn data<'db>(&'db self, _runtime: &'db Runtime, id: crate::Id) -> C::Data<'db> {
+        <C::Data<'db>>::from_id(id)
     }
 }
