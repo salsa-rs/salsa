@@ -64,17 +64,20 @@ impl InternedStruct {
         let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
 
-        Ok(quote! {
-            #the_struct
-            #config_struct
-            #configuration_impl
-            #data_struct
-            #ingredients_for_impl
-            #as_id_impl
-            #named_fields_impl
-            #salsa_struct_in_db_impl
-            #as_debug_with_db_impl
-        })
+        Ok(crate::debug::dump_tokens(
+            self.the_ident(),
+            quote! {
+                #the_struct
+                #config_struct
+                #configuration_impl
+                #data_struct
+                #ingredients_for_impl
+                #as_id_impl
+                #named_fields_impl
+                #salsa_struct_in_db_impl
+                #as_debug_with_db_impl
+            },
+        ))
     }
 
     fn validate_interned(&self) -> syn::Result<()> {
