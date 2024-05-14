@@ -12,7 +12,7 @@ use crate::{
     Id, Runtime,
 };
 
-use super::{Configuration, TrackedStructValue};
+use super::{Configuration, TrackedStructKey, TrackedStructValue};
 
 pub(crate) struct StructMap<C>
 where
@@ -186,9 +186,13 @@ where
     /// Remove the entry for `id` from the map.
     ///
     /// NB. the data won't actually be freed until `drop_deleted_entries` is called.
-    pub fn delete(&self, id: Id) {
+    pub fn delete(&self, id: Id) -> Option<TrackedStructKey> {
         if let Some((_, data)) = self.map.remove(&id) {
+            let key = data.key;
             self.deleted_entries.push(data);
+            Some(key)
+        } else {
+            None
         }
     }
 
