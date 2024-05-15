@@ -428,7 +428,7 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
                 let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                 let __ingredients =
                     <_ as salsa::storage::HasIngredientsFor<#fn_ty>>::ingredient(__jar);
-                let #key_var = __ingredients.intern_map.data(__runtime, __id).clone();
+                let #key_var = __ingredients.intern_map.data(__id).clone();
                 #recovery_fn(__db, __cycle, #key_splat)
             }
         };
@@ -460,7 +460,7 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
             let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
             let __ingredients =
                 <_ as salsa::storage::HasIngredientsFor<#fn_ty>>::ingredient(__jar);
-            let #key_var = __ingredients.intern_map.data(__runtime, __id).clone();
+            let #key_var = __ingredients.intern_map.data(__id).clone();
             #inner_fn_name(__db, #key_splat)
         }
     };
@@ -652,7 +652,7 @@ fn ref_getter_fn(
         {
             let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(#db_var);
             let __ingredients = <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient(__jar);
-            let __key = __ingredients.intern_map.intern(__runtime, (#(#arg_names),*));
+            let __key = __ingredients.intern_map.intern_id(__runtime, (#(#arg_names),*));
             __ingredients.function.fetch(#db_var, __key)
         }
     };
@@ -696,7 +696,7 @@ fn setter_fn(
             {
                 let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(#db_var);
                 let __ingredients = <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient_mut(__jar);
-                let __key = __ingredients.intern_map.intern(__runtime, (#(#arg_names),*));
+                let __key = __ingredients.intern_map.intern_id(__runtime, (#(#arg_names),*));
                 __ingredients.function.store(__runtime, __key, #value_arg, salsa::Durability::LOW)
             }
         },
@@ -765,7 +765,7 @@ fn specify_fn(
 
                 let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(#db_var);
                 let __ingredients = <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient(__jar);
-                let __key = __ingredients.intern_map.intern(__runtime, (#(#arg_names),*));
+                let __key = __ingredients.intern_map.intern_id(__runtime, (#(#arg_names),*));
                 __ingredients.function.specify_and_record(#db_var, __key, #value_arg)
             }
         },
@@ -877,7 +877,7 @@ fn accumulated_fn(
         {
             let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(#db_var);
             let __ingredients = <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient(__jar);
-            let __key = __ingredients.intern_map.intern(__runtime, (#(#arg_names),*));
+            let __key = __ingredients.intern_map.intern_id(__runtime, (#(#arg_names),*));
             __ingredients.function.accumulated::<__A>(#db_var, __key)
         }
     };

@@ -7,6 +7,7 @@ use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::{fmt_index, IngredientRequiresReset};
 use crate::key::DependencyIndex;
+use crate::plumbing::transmute_lifetime;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
 use crate::{DatabaseKeyIndex, Id};
@@ -38,7 +39,7 @@ pub struct InternedIngredient<C: Configuration> {
     /// Maps from an interned id to its data.
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
-    value_map: FxDashMap<Id, Box<C::Data<'static>>>,
+    value_map: FxDashMap<Id, Box<InternedValue<C>>>,
 
     /// counter for the next id.
     counter: AtomicCell<u32>,
@@ -50,6 +51,15 @@ pub struct InternedIngredient<C: Configuration> {
     reset_at: Revision,
 
     debug_name: &'static str,
+}
+
+/// Struct storing the interned fields.
+pub struct InternedValue<C>
+where
+    C: Configuration,
+{
+    id: Id,
+    fields: C::Data<'static>,
 }
 
 impl<C> InternedIngredient<C>
@@ -71,12 +81,16 @@ where
         unsafe { std::mem::transmute(data) }
     }
 
-    unsafe fn from_internal_data<'db>(&'db self, data: &C::Data<'static>) -> &'db C::Data<'db> {
-        unsafe { std::mem::transmute(data) }
+    pub fn intern_id<'db>(&'db self, runtime: &'db Runtime, data: C::Data<'db>) -> crate::Id {
+        self.intern(runtime, data).salsa_id()
     }
 
-    /// Intern data to a unique id.
-    pub fn intern<'db>(&'db self, runtime: &'db Runtime, data: C::Data<'db>) -> Id {
+    /// Intern data to a unique reference.
+    pub fn intern<'db>(
+        &'db self,
+        runtime: &'db Runtime,
+        data: C::Data<'db>,
+    ) -> &'db InternedValue<C> {
         runtime.report_tracked_read(
             DependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
@@ -86,27 +100,49 @@ where
         // Optimisation to only get read lock on the map if the data has already
         // been interned.
         let internal_data = unsafe { self.to_internal_data(data) };
-        if let Some(id) = self.key_map.get(&internal_data) {
-            return *id;
+        if let Some(guard) = self.key_map.get(&internal_data) {
+            let id = *guard;
+            drop(guard);
+            return self.interned_value(id);
         }
 
         match self.key_map.entry(internal_data.clone()) {
             // Data has been interned by a racing call, use that ID instead
-            dashmap::mapref::entry::Entry::Occupied(entry) => *entry.get(),
+            dashmap::mapref::entry::Entry::Occupied(entry) => {
+                let id = *entry.get();
+                drop(entry);
+                self.interned_value(id)
+            }
 
             // We won any races so should intern the data
             dashmap::mapref::entry::Entry::Vacant(entry) => {
                 let next_id = self.counter.fetch_add(1);
                 let next_id = Id::from_id(crate::id::Id::from_u32(next_id));
-                let old_value = self.value_map.insert(next_id, Box::new(internal_data));
-                assert!(
-                    old_value.is_none(),
-                    "next_id is guaranteed to be unique, bar overflow"
-                );
+                let value = self
+                    .value_map
+                    .entry(next_id)
+                    .or_insert(Box::new(InternedValue {
+                        id: next_id,
+                        fields: internal_data,
+                    }));
+                // SAFETY: Items are only removed from the `value_map` with an `&mut self` reference.
+                let value_ref = unsafe { transmute_lifetime(self, &**value) };
+                drop(value);
                 entry.insert(next_id);
-                next_id
+                value_ref
             }
         }
+    }
+
+    pub fn interned_value<'db>(&'db self, id: Id) -> &'db InternedValue<C> {
+        let r = self.value_map.get(&id).unwrap();
+
+        // SAFETY: Items are only removed from the `value_map` with an `&mut self` reference.
+        unsafe { transmute_lifetime(self, &**r) }
+    }
+
+    pub fn data<'db>(&'db self, id: Id) -> &'db C::Data<'db> {
+        self.interned_value(id).data()
     }
 
     pub fn reset(&mut self, revision: Revision) {
@@ -114,27 +150,6 @@ where
         self.reset_at = revision;
         self.key_map.clear();
         self.value_map.clear();
-    }
-
-    #[track_caller]
-    pub fn data<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db C::Data<'db> {
-        runtime.report_tracked_read(
-            DependencyIndex::for_table(self.ingredient_index),
-            Durability::MAX,
-            self.reset_at,
-        );
-
-        let data = match self.value_map.get(&id) {
-            Some(d) => d,
-            None => {
-                panic!("no data found for id `{:?}`", id)
-            }
-        };
-
-        // Unsafety clause:
-        //
-        // * Values are only removed or altered when we have `&mut self`
-        unsafe { self.from_internal_data(&data) }
     }
 }
 
@@ -223,11 +238,28 @@ where
         IdentityInterner { data: PhantomData }
     }
 
-    pub fn intern<'db>(&'db self, _runtime: &'db Runtime, id: C::Data<'db>) -> crate::Id {
+    pub fn intern_id<'db>(&'db self, _runtime: &'db Runtime, id: C::Data<'db>) -> crate::Id {
         id.as_id()
     }
 
-    pub fn data<'db>(&'db self, _runtime: &'db Runtime, id: crate::Id) -> C::Data<'db> {
+    pub fn data<'db>(&'db self, id: crate::Id) -> C::Data<'db> {
         <C::Data<'db>>::from_id(id)
+    }
+}
+
+impl<C> InternedValue<C>
+where
+    C: Configuration,
+{
+    pub fn salsa_id(&self) -> Id {
+        self.id
+    }
+
+    pub fn data<'db>(&'db self) -> &'db C::Data<'db> {
+        unsafe { self.to_self_ref(&self.fields) }
+    }
+
+    unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Data<'static>) -> &'db C::Data<'db> {
+        unsafe { std::mem::transmute(fields) }
     }
 }

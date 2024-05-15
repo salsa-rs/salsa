@@ -82,7 +82,7 @@ impl InternedStruct {
 
     fn validate_interned(&self) -> syn::Result<()> {
         self.disallow_id_fields("interned")?;
-        self.require_db_lifetime()?;
+        self.require_no_generics()?;
         Ok(())
     }
 
@@ -160,17 +160,17 @@ impl InternedStruct {
                 if field.is_clone_field() {
                     parse_quote_spanned! { field_get_name.span() =>
                         #field_vis fn #field_get_name(self, db: &#db_dyn_ty) -> #field_ty {
-                            let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
+                            let (jar, _runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                             let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #the_ident #type_generics >>::ingredient(jar);
-                            std::clone::Clone::clone(&ingredients.data(runtime, self.0).#field_name)
+                            std::clone::Clone::clone(&ingredients.data(self.0).#field_name)
                         }
                     }
                 } else {
                     parse_quote_spanned! { field_get_name.span() =>
                         #field_vis fn #field_get_name<'db>(self, db: &'db #db_dyn_ty) -> &'db #field_ty {
-                            let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
+                            let (jar, _runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                             let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #the_ident #type_generics >>::ingredient(jar);
-                            &ingredients.data(runtime, self.0).#field_name
+                            &ingredients.data(self.0).#field_name
                         }
                     }
                 }
@@ -190,7 +190,7 @@ impl InternedStruct {
                 let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #the_ident #type_generics >>::ingredient(jar);
                 Self(ingredients.intern(runtime, #data_ident {
                     #(#field_names,)*
-                }))
+                }).salsa_id())
             }
         };
 
