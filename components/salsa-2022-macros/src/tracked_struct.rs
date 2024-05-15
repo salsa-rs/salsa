@@ -222,10 +222,7 @@ impl TrackedStruct {
 
         let data = syn::Ident::new("__data", Span::call_site());
 
-        let salsa_id = match the_kind {
-            TheStructKind::Id => quote!(self.0),
-            TheStructKind::Pointer(_) => quote!(unsafe { &*self.0 }.id()),
-        };
+        let salsa_id = self.access_salsa_id_from_self();
 
         let ctor = match the_kind {
             TheStructKind::Id => quote!(salsa::AsId::from_id(#data.id())),

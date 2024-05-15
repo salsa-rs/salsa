@@ -316,6 +316,14 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         }
     }
 
+    /// Generate code to access a `salsa::Id` from `self`
+    pub(crate) fn access_salsa_id_from_self(&self) -> syn::Expr {
+        match self.the_struct_kind() {
+            TheStructKind::Id => parse_quote!(self.0),
+            TheStructKind::Pointer(_) => parse_quote!(unsafe { &*self.0 }.id()),
+        }
+    }
+
     /// Returns the visibility of this item
     pub(crate) fn visibility(&self) -> &syn::Visibility {
         &self.struct_item.vis
