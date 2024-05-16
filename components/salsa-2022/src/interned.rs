@@ -39,7 +39,7 @@ pub struct InternedIngredient<C: Configuration> {
     /// Maps from an interned id to its data.
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
-    value_map: FxDashMap<Id, Box<InternedValue<C>>>,
+    value_map: FxDashMap<Id, Box<ValueStruct<C>>>,
 
     /// counter for the next id.
     counter: AtomicCell<u32>,
@@ -54,7 +54,7 @@ pub struct InternedIngredient<C: Configuration> {
 }
 
 /// Struct storing the interned fields.
-pub struct InternedValue<C>
+pub struct ValueStruct<C>
 where
     C: Configuration,
 {
@@ -90,7 +90,7 @@ where
         &'db self,
         runtime: &'db Runtime,
         data: C::Data<'db>,
-    ) -> &'db InternedValue<C> {
+    ) -> &'db ValueStruct<C> {
         runtime.report_tracked_read(
             DependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
@@ -121,7 +121,7 @@ where
                 let value = self
                     .value_map
                     .entry(next_id)
-                    .or_insert(Box::new(InternedValue {
+                    .or_insert(Box::new(ValueStruct {
                         id: next_id,
                         fields: internal_data,
                     }));
@@ -134,7 +134,7 @@ where
         }
     }
 
-    pub fn interned_value<'db>(&'db self, id: Id) -> &'db InternedValue<C> {
+    pub fn interned_value<'db>(&'db self, id: Id) -> &'db ValueStruct<C> {
         let r = self.value_map.get(&id).unwrap();
 
         // SAFETY: Items are only removed from the `value_map` with an `&mut self` reference.
@@ -247,7 +247,7 @@ where
     }
 }
 
-impl<C> InternedValue<C>
+impl<C> ValueStruct<C>
 where
     C: Configuration,
 {
@@ -256,6 +256,8 @@ where
     }
 
     pub fn data<'db>(&'db self) -> &'db C::Data<'db> {
+        // SAFETY: The lifetime of `self` is tied to the interning ingredient;
+        // we never remove data without an `&mut self` access to the interning ingredient.
         unsafe { self.to_self_ref(&self.fields) }
     }
 

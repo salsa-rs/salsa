@@ -1,4 +1,4 @@
-use crate::salsa_struct::SalsaStruct;
+use crate::salsa_struct::{SalsaStruct, TheStructKind};
 use proc_macro2::TokenStream;
 
 // #[salsa::interned(jar = Jar0, data = TyData0)]
@@ -84,7 +84,7 @@ impl InternedStruct {
 
     fn validate_interned(&self) -> syn::Result<()> {
         self.disallow_id_fields("interned")?;
-        self.require_no_generics()?;
+        self.require_db_lifetime()?;
         Ok(())
     }
 
@@ -113,16 +113,34 @@ impl InternedStruct {
         let visibility = self.visibility();
         let all_field_names = self.all_field_names();
         let all_field_tys = self.all_field_tys();
-        parse_quote_spanned! { data_ident.span() =>
-            /// Internal struct used for interned item
-            #[derive(Eq, PartialEq, Hash, Clone)]
-            #visibility struct #data_ident #impl_generics
-            where
-                #where_clause
-            {
-                #(
-                    #all_field_names: #all_field_tys,
-                )*
+
+        match self.the_struct_kind() {
+            TheStructKind::Id => {
+                parse_quote_spanned! { data_ident.span() =>
+                    #[derive(Eq, PartialEq, Hash, Clone)]
+                    #visibility struct #data_ident #impl_generics
+                    where
+                        #where_clause
+                    {
+                        #(
+                            #all_field_names: #all_field_tys,
+                        )*
+                    }
+                }
+            }
+            TheStructKind::Pointer(db_lt) => {
+                parse_quote_spanned! { data_ident.span() =>
+                    #[derive(Eq, PartialEq, Hash, Clone)]
+                    #visibility struct #data_ident #impl_generics
+                    where
+                        #where_clause
+                    {
+                        #(
+                            #all_field_names: #all_field_tys,
+                        )*
+                        __phantom: std::marker::PhantomData<& #db_lt ()>,
+                    }
+                }
             }
         }
     }
@@ -146,6 +164,89 @@ impl InternedStruct {
     /// If this is an interned struct, then generate methods to access each field,
     /// as well as a `new` method.
     fn inherent_impl_for_named_fields(&self) -> syn::ItemImpl {
+        match self.the_struct_kind() {
+            TheStructKind::Id => self.inherent_impl_for_named_fields_id(),
+            TheStructKind::Pointer(db_lt) => self.inherent_impl_for_named_fields_lt(&db_lt),
+        }
+    }
+
+    /// If this is an interned struct, then generate methods to access each field,
+    /// as well as a `new` method.
+    fn inherent_impl_for_named_fields_lt(&self, db_lt: &syn::Lifetime) -> syn::ItemImpl {
+        let vis: &syn::Visibility = self.visibility();
+        let (the_ident, _, impl_generics, type_generics, where_clause) =
+            self.the_ident_and_generics();
+        let db_dyn_ty = self.db_dyn_ty();
+        let jar_ty = self.jar_ty();
+
+        let field_getters: Vec<syn::ImplItemMethod> = self
+            .all_fields()
+            .map(|field| {
+                let field_name = field.name();
+                let field_ty = field.ty();
+                let field_vis = field.vis();
+                let field_get_name = field.get_name();
+                if field.is_clone_field() {
+                    parse_quote_spanned! { field_get_name.span() =>
+                        #field_vis fn #field_get_name(self, _db: & #db_lt #db_dyn_ty) -> #field_ty {
+                            std::clone::Clone::clone(&unsafe { &*self.0 }.data().#field_name)
+                        }
+                    }
+                } else {
+                    parse_quote_spanned! { field_get_name.span() =>
+                        #field_vis fn #field_get_name(self, _db: & #db_lt #db_dyn_ty) -> & #db_lt #field_ty {
+                            &unsafe { &*self.0 }.data().#field_name
+                        }
+                    }
+                }
+            })
+            .collect();
+
+        let field_names = self.all_field_names();
+        let field_tys = self.all_field_tys();
+        let data_ident = self.data_ident();
+        let constructor_name = self.constructor_name();
+        let new_method: syn::ImplItemMethod = parse_quote_spanned! { constructor_name.span() =>
+            #vis fn #constructor_name(
+                db: &#db_dyn_ty,
+                #(#field_names: #field_tys,)*
+            ) -> Self {
+                let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
+                let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #the_ident #type_generics >>::ingredient(jar);
+                Self(
+                    ingredients.intern(runtime, #data_ident {
+                        #(#field_names,)*
+                        __phantom: std::marker::PhantomData,
+                    }),
+                    std::marker::PhantomData,
+                )
+            }
+        };
+
+        let salsa_id = quote!(
+            pub fn salsa_id(&self) -> salsa::Id {
+                unsafe { &*self.0 }.salsa_id()
+            }
+        );
+
+        parse_quote! {
+            #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
+            impl #impl_generics #the_ident #type_generics
+            where
+                #where_clause
+            {
+                #(#field_getters)*
+
+                #new_method
+
+                #salsa_id
+            }
+        }
+    }
+
+    /// If this is an interned struct, then generate methods to access each field,
+    /// as well as a `new` method.
+    fn inherent_impl_for_named_fields_id(&self) -> syn::ItemImpl {
         let vis: &syn::Visibility = self.visibility();
         let (the_ident, _, impl_generics, type_generics, where_clause) =
             self.the_ident_and_generics();
