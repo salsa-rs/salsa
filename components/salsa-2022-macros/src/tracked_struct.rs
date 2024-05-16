@@ -13,7 +13,7 @@ pub(crate) fn tracked(
 ) -> syn::Result<TokenStream> {
     let struct_name = struct_item.ident.clone();
 
-    let tokens = SalsaStruct::with_struct(args, struct_item)
+    let tokens = SalsaStruct::with_struct(args, struct_item, "tracked_struct")
         .and_then(|el| TrackedStruct(el).generate_tracked())?;
 
     Ok(crate::debug::dump_tokens(&struct_name, tokens))

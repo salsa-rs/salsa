@@ -13,7 +13,9 @@ pub(crate) fn interned(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    match SalsaStruct::new(args, input).and_then(|el| InternedStruct(el).generate_interned()) {
+    match SalsaStruct::new(args, input, "interned")
+        .and_then(|el| InternedStruct(el).generate_interned())
+    {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }

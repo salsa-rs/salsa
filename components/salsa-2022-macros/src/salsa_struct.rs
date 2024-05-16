@@ -41,6 +41,7 @@ pub(crate) struct SalsaStruct<A: AllowedOptions> {
     struct_item: syn::ItemStruct,
     customizations: Vec<Customization>,
     fields: Vec<SalsaField>,
+    module: syn::Ident,
 }
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
@@ -65,15 +66,18 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     pub(crate) fn new(
         args: proc_macro::TokenStream,
         input: proc_macro::TokenStream,
+        module: &str,
     ) -> syn::Result<Self> {
         let struct_item = syn::parse(input)?;
-        Self::with_struct(args, struct_item)
+        Self::with_struct(args, struct_item, module)
     }
 
     pub(crate) fn with_struct(
         args: proc_macro::TokenStream,
         struct_item: syn::ItemStruct,
+        module: &str,
     ) -> syn::Result<Self> {
+        let module = syn::Ident::new(module, struct_item.ident.span());
         let args: Options<A> = syn::parse(args)?;
         let customizations = Self::extract_customizations(&struct_item)?;
         let fields = Self::extract_fields(&struct_item)?;
@@ -82,6 +86,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             struct_item,
             customizations,
             fields,
+            module,
         })
     }
 
@@ -305,12 +310,14 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                 .filter(|attr| !attr.path.is_ident("customize"))
                 .collect();
 
+            let module = &self.module;
+
             Ok(parse_quote_spanned! { ident.span() =>
                 #(#attrs)*
                 #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Debug)]
                 #visibility struct #ident #generics (
-                    *const salsa::tracked_struct::ValueStruct < #config_ident >,
-                    std::marker::PhantomData < & #lifetime salsa::tracked_struct::ValueStruct < #config_ident > >
+                    *const salsa::#module::ValueStruct < #config_ident >,
+                    std::marker::PhantomData < & #lifetime salsa::#module::ValueStruct < #config_ident > >
                 );
             })
         }
