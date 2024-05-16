@@ -10,12 +10,12 @@ For a single tracked struct we create multiple ingredients.
 The **tracked struct ingredient** is the ingredient created first.
 It offers methods to create new instances of the struct and therefore
 has unique access to the interner and hashtables used to create the struct id.
-It also shares access to a hashtable that stores the `TrackedStructValue` that
+It also shares access to a hashtable that stores the `ValueStruct` that
 contains the field data.
 
 For each field, we create a **tracked field ingredient** that moderates access
 to a particular field. All of these ingredients use that same shared hashtable
-to access the `TrackedStructValue` instance for a given id. The `TrackedStructValue`
+to access the `ValueStruct` instance for a given id. The `ValueStruct`
 contains both the field values but also the revisions when they last changed value.
 
 ## Each tracked struct has a globally unique id
@@ -26,13 +26,13 @@ This will begin by creating a *globally unique, 32-bit id* for the tracked struc
 * a u64 hash of the `#[id]` fields;
 * a *disambiguator* that makes this hash unique within the current query. i.e., when a query starts executing, it creates an empty map, and the first time a tracked struct with a given hash is created, it gets disambiguator 0. The next one will be given 1, etc.
 
-## Each tracked struct has a `TrackedStructValue` storing its data
+## Each tracked struct has a `ValueStruct` storing its data
 
 The struct and field ingredients share access to a hashmap that maps
 each field id to a value struct:
 
 ```rust,ignore
-{{#include ../../../components/salsa-2022/src/tracked_struct.rs:TrackedStructValue}}
+{{#include ../../../components/salsa-2022/src/tracked_struct.rs:ValueStruct}}
 ```
 
 The value struct stores the values of the fields but also the revisions when 

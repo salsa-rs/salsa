@@ -98,7 +98,7 @@ where
     /// Entries are added to this map when a new struct is created.
     /// They are removed when that struct is deleted
     /// (i.e., a query completes without having recreated the struct).
-    keys: FxDashMap<TrackedStructKey, Id>,
+    keys: FxDashMap<KeyStruct, Id>,
 
     /// The number of tracked structs created.
     counter: AtomicCell<u32>,
@@ -119,7 +119,7 @@ where
 
 /// Defines the identity of a tracked struct.
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
-struct TrackedStructKey {
+struct KeyStruct {
     /// The active query (i.e., tracked function) that created this tracked struct.
     query_key: DatabaseKeyIndex,
 
@@ -132,13 +132,13 @@ struct TrackedStructKey {
     disambiguator: Disambiguator,
 }
 
-impl crate::interned::Configuration for TrackedStructKey {
-    type Data<'db> = TrackedStructKey;
+impl crate::interned::Configuration for KeyStruct {
+    type Data<'db> = KeyStruct;
 }
 
-// ANCHOR: TrackedStructValue
+// ANCHOR: ValueStruct
 #[derive(Debug)]
-pub struct TrackedStructValue<C>
+pub struct ValueStruct<C>
 where
     C: Configuration,
 {
@@ -149,7 +149,7 @@ where
     id: Id,
 
     /// The key used to create the id.
-    key: TrackedStructKey,
+    key: KeyStruct,
 
     /// The durability minimum durability of all inputs consumed
     /// by the creator query prior to creating this tracked struct.
@@ -175,7 +175,7 @@ where
     /// current revision if the value is different.
     revisions: C::Revisions,
 }
-// ANCHOR_END: TrackedStructValue
+// ANCHOR_END: ValueStruct
 
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
 pub struct Disambiguator(pub u32);
@@ -241,7 +241,7 @@ where
 
     /// Intern a tracked struct key to get a unique tracked struct id.
     /// Also returns a bool indicating whether this id was newly created or whether it already existed.
-    fn intern(&self, key: TrackedStructKey) -> (Id, bool) {
+    fn intern(&self, key: KeyStruct) -> (Id, bool) {
         let (id, new_id) = if let Some(g) = self.keys.get(&key) {
             (*g.value(), false)
         } else {
@@ -262,13 +262,13 @@ where
         &'db self,
         runtime: &'db Runtime,
         fields: C::Fields<'db>,
-    ) -> &'db TrackedStructValue<C> {
+    ) -> &'db ValueStruct<C> {
         let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
         let (query_key, current_deps, disambiguator) =
             runtime.disambiguate_entity(self.ingredient_index, Revision::start(), data_hash);
 
-        let entity_key = TrackedStructKey {
+        let entity_key = KeyStruct {
             query_key,
             disambiguator,
             data_hash,
@@ -283,7 +283,7 @@ where
 
             self.struct_map.insert(
                 runtime,
-                TrackedStructValue {
+                ValueStruct {
                     id,
                     key: entity_key,
                     struct_ingredient_index: self.ingredient_index,
@@ -441,7 +441,7 @@ where
     const RESET_ON_NEW_REVISION: bool = true;
 }
 
-impl<C> TrackedStructValue<C>
+impl<C> ValueStruct<C>
 where
     C: Configuration,
 {

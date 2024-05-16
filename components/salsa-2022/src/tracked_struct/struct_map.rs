@@ -12,27 +12,27 @@ use crate::{
     Id, Runtime,
 };
 
-use super::{Configuration, TrackedStructKey, TrackedStructValue};
+use super::{Configuration, KeyStruct, ValueStruct};
 
 pub(crate) struct StructMap<C>
 where
     C: Configuration,
 {
-    map: Arc<FxDashMap<Id, Box<TrackedStructValue<C>>>>,
+    map: Arc<FxDashMap<Id, Box<ValueStruct<C>>>>,
 
     /// When specific entities are deleted, their data is added
     /// to this vector rather than being immediately freed. This is because we may` have
     /// references to that data floating about that are tied to the lifetime of some
     /// `&db` reference. This queue itself is not freed until we have an `&mut db` reference,
     /// guaranteeing that there are no more references to it.
-    deleted_entries: SegQueue<Box<TrackedStructValue<C>>>,
+    deleted_entries: SegQueue<Box<ValueStruct<C>>>,
 }
 
 pub(crate) struct StructMapView<C>
 where
     C: Configuration,
 {
-    map: Arc<FxDashMap<Id, Box<TrackedStructValue<C>>>>,
+    map: Arc<FxDashMap<Id, Box<ValueStruct<C>>>>,
 }
 
 /// Return value for [`StructMap`][]'s `update` method.
@@ -49,7 +49,7 @@ where
     /// to this struct creation were up-to-date, and therefore the field contents
     /// ought not to have changed (barring user error). Returns a shared reference
     /// because caller cannot safely modify fields at this point.
-    Current(&'db TrackedStructValue<C>),
+    Current(&'db ValueStruct<C>),
 }
 
 impl<C> StructMap<C>
@@ -76,11 +76,7 @@ where
     ///
     /// * If value with same `value.id` is already present in the map.
     /// * If value not created in current revision.
-    pub fn insert<'db>(
-        &'db self,
-        runtime: &'db Runtime,
-        value: TrackedStructValue<C>,
-    ) -> &TrackedStructValue<C> {
+    pub fn insert<'db>(&'db self, runtime: &'db Runtime, value: ValueStruct<C>) -> &ValueStruct<C> {
         assert_eq!(value.created_at, runtime.current_revision());
 
         let boxed_value = Box::new(value);
@@ -159,12 +155,12 @@ where
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
     fn get_from_map<'db>(
-        map: &'db FxDashMap<Id, Box<TrackedStructValue<C>>>,
+        map: &'db FxDashMap<Id, Box<ValueStruct<C>>>,
         runtime: &'db Runtime,
         id: Id,
-    ) -> &'db TrackedStructValue<C> {
+    ) -> &'db ValueStruct<C> {
         let data = map.get(&id).unwrap();
-        let data: &TrackedStructValue<C> = &**data;
+        let data: &ValueStruct<C> = &**data;
 
         // Before we drop the lock, check that the value has
         // been updated in this revision. This is what allows us to return a ``
@@ -186,7 +182,7 @@ where
     /// Remove the entry for `id` from the map.
     ///
     /// NB. the data won't actually be freed until `drop_deleted_entries` is called.
-    pub fn delete(&self, id: Id) -> Option<TrackedStructKey> {
+    pub fn delete(&self, id: Id) -> Option<KeyStruct> {
         if let Some((_, data)) = self.map.remove(&id) {
             let key = data.key;
             self.deleted_entries.push(data);
@@ -212,7 +208,7 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
-    pub fn get<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db TrackedStructValue<C> {
+    pub fn get<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db ValueStruct<C> {
         StructMap::get_from_map(&self.map, runtime, id)
     }
 }
@@ -224,7 +220,7 @@ pub(crate) struct UpdateRef<'db, C>
 where
     C: Configuration,
 {
-    guard: RefMut<'db, Id, Box<TrackedStructValue<C>>, FxHasher>,
+    guard: RefMut<'db, Id, Box<ValueStruct<C>>, FxHasher>,
 }
 
 impl<'db, C> UpdateRef<'db, C>
@@ -232,11 +228,11 @@ where
     C: Configuration,
 {
     /// Finalize this update, freezing the value for the rest of the revision.
-    pub fn freeze(self) -> &'db TrackedStructValue<C> {
+    pub fn freeze(self) -> &'db ValueStruct<C> {
         // Unsafety clause:
         //
         // see `get` above
-        let data: &TrackedStructValue<C> = &*self.guard;
+        let data: &ValueStruct<C> = &*self.guard;
         let dummy: &'db () = &();
         unsafe { transmute_lifetime(dummy, data) }
     }
@@ -246,7 +242,7 @@ impl<C> Deref for UpdateRef<'_, C>
 where
     C: Configuration,
 {
-    type Target = TrackedStructValue<C>;
+    type Target = ValueStruct<C>;
 
     fn deref(&self) -> &Self::Target {
         &self.guard

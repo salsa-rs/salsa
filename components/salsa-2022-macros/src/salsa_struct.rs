@@ -309,8 +309,8 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                 #(#attrs)*
                 #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Debug)]
                 #visibility struct #ident #generics (
-                    *const salsa::tracked_struct::TrackedStructValue < #config_ident >,
-                    std::marker::PhantomData < & #lifetime salsa::tracked_struct::TrackedStructValue < #config_ident > >
+                    *const salsa::tracked_struct::ValueStruct < #config_ident >,
+                    std::marker::PhantomData < & #lifetime salsa::tracked_struct::ValueStruct < #config_ident > >
                 );
             })
         }
