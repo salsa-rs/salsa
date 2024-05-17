@@ -82,7 +82,7 @@ pub trait Configuration {
     /// The "salsa struct type" that this function is associated with.
     /// This can be just `salsa::Id` for functions that intern their arguments
     /// and are not clearly associated with any one salsa struct.
-    type SalsaStruct: for<'db> SalsaStructInDb<DynDb<'db, Self>>;
+    type SalsaStruct<'db>: SalsaStructInDb<DynDb<'db, Self>>;
 
     /// The input to the function
     type Input<'db>;
@@ -194,9 +194,9 @@ where
     /// Register this function as a dependent fn of the given salsa struct.
     /// When instances of that salsa struct are deleted, we'll get a callback
     /// so we can remove any data keyed by them.
-    fn register(&self, db: &DynDb<'_, C>) {
+    fn register<'db>(&self, db: &'db DynDb<'db, C>) {
         if !self.registered.fetch_or(true) {
-            <C::SalsaStruct as SalsaStructInDb<_>>::register_dependent_fn(db, self.index)
+            <C::SalsaStruct<'db> as SalsaStructInDb<_>>::register_dependent_fn(db, self.index)
         }
     }
 }

@@ -1,4 +1,5 @@
 pub(crate) struct Configuration {
+    pub(crate) db_lt: syn::Lifetime,
     pub(crate) jar_ty: syn::Type,
     pub(crate) salsa_struct_ty: syn::Type,
     pub(crate) input_ty: syn::Type,
@@ -12,6 +13,7 @@ pub(crate) struct Configuration {
 impl Configuration {
     pub(crate) fn to_impl(&self, self_ty: &syn::Type) -> syn::ItemImpl {
         let Configuration {
+            db_lt,
             jar_ty,
             salsa_struct_ty,
             input_ty,
@@ -24,9 +26,9 @@ impl Configuration {
         parse_quote! {
             impl salsa::function::Configuration for #self_ty {
                 type Jar = #jar_ty;
-                type SalsaStruct = #salsa_struct_ty;
-                type Input<'db> = #input_ty;
-                type Value<'db> = #value_ty;
+                type SalsaStruct<#db_lt> = #salsa_struct_ty;
+                type Input<#db_lt> = #input_ty;
+                type Value<#db_lt> = #value_ty;
                 const CYCLE_STRATEGY: salsa::cycle::CycleRecoveryStrategy = #cycle_strategy;
                 #backdate_fn
                 #execute_fn

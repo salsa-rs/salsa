@@ -4,13 +4,15 @@ use syn::visit_mut::VisitMut;
 use syn::{ReturnType, Token};
 
 use crate::configuration::{self, Configuration, CycleRecoveryStrategy};
-use crate::db_lifetime::{db_lifetime, require_db_lifetime};
+use crate::db_lifetime::{self, db_lifetime, require_db_lifetime};
 use crate::options::Options;
 
 pub(crate) fn tracked_fn(
     args: proc_macro::TokenStream,
     mut item_fn: syn::ItemFn,
 ) -> syn::Result<TokenStream> {
+    db_lifetime::require_db_lifetime(&item_fn.sig.generics)?;
+
     let fn_ident = item_fn.sig.ident.clone();
 
     let args: FnArgs = syn::parse(args)?;
@@ -390,6 +392,7 @@ fn salsa_struct_ty(item_fn: &syn::ItemFn) -> syn::Type {
 
 fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
     let jar_ty = args.jar_ty();
+    let db_lt = db_lifetime(&item_fn.sig.generics);
     let salsa_struct_ty = salsa_struct_ty(item_fn);
     let key_ty = match function_type(item_fn) {
         FunctionType::Constant => parse_quote!(()),
@@ -466,6 +469,7 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
     };
 
     Configuration {
+        db_lt,
         jar_ty,
         salsa_struct_ty,
         input_ty: key_ty,
