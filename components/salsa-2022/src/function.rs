@@ -14,7 +14,7 @@ use crate::{
 
 use self::delete::DeletedEntries;
 
-use super::{ingredient::Ingredient, routes::IngredientIndex, AsId};
+use super::{ingredient::Ingredient, routes::IngredientIndex};
 
 mod accumulated;
 mod backdate;
@@ -147,7 +147,7 @@ where
     fn database_key_index(&self, k: Id) -> DatabaseKeyIndex {
         DatabaseKeyIndex {
             ingredient_index: self.index,
-            key_index: k.as_id(),
+            key_index: k,
         }
     }
 

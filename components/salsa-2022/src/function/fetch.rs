@@ -1,6 +1,6 @@
 use arc_swap::Guard;
 
-use crate::{database::AsSalsaDatabase, runtime::StampedValue, storage::HasJarsDyn, AsId, Id};
+use crate::{database::AsSalsaDatabase, runtime::StampedValue, storage::HasJarsDyn, Id};
 
 use super::{Configuration, DynDb, FunctionIngredient};
 
@@ -19,8 +19,8 @@ where
             changed_at,
         } = self.compute_value(db, key);
 
-        if let Some(evicted) = self.lru.record_use(key.as_id()) {
-            self.evict(AsId::from_id(evicted));
+        if let Some(evicted) = self.lru.record_use(key) {
+            self.evict(evicted);
         }
 
         db.runtime().report_tracked_read(
