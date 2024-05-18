@@ -431,7 +431,7 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
                 let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                 let __ingredients =
                     <_ as salsa::storage::HasIngredientsFor<#fn_ty>>::ingredient(__jar);
-                let #key_var = __ingredients.intern_map.data(__id).clone();
+                let #key_var = __ingredients.intern_map.data_with_db(__id, __db).clone();
                 #recovery_fn(__db, __cycle, #key_splat)
             }
         };
@@ -463,7 +463,7 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
             let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
             let __ingredients =
                 <_ as salsa::storage::HasIngredientsFor<#fn_ty>>::ingredient(__jar);
-            let #key_var = __ingredients.intern_map.data(__id).clone();
+            let #key_var = __ingredients.intern_map.data_with_db(__id, __db).clone();
             #inner_fn_name(__db, #key_splat)
         }
     };

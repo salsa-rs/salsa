@@ -4,7 +4,7 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 
 use crate::durability::Durability;
-use crate::id::AsId;
+use crate::id::{AsId, LookupId};
 use crate::ingredient::{fmt_index, IngredientRequiresReset};
 use crate::key::DependencyIndex;
 use crate::plumbing::transmute_lifetime;
@@ -141,8 +141,18 @@ where
         unsafe { transmute_lifetime(self, &**r) }
     }
 
+    /// Lookup the data for an interned value based on its id.
+    /// Rarely used since end-users generally carry a struct with a pointer directly
+    /// to the interned item.
     pub fn data<'db>(&'db self, id: Id) -> &'db C::Data<'db> {
         self.interned_value(id).data()
+    }
+
+    /// Variant of `data` that takes a (unnecessary) database argument.
+    /// This exists because tracked functions sometimes use true interning and sometimes use
+    /// [`IdentityInterner`][], which requires the database argument.
+    pub fn data_with_db<'db, DB: ?Sized>(&'db self, id: Id, _db: &'db DB) -> &'db C::Data<'db> {
+        self.data(id)
     }
 
     pub fn reset(&mut self, revision: Revision) {
@@ -242,8 +252,12 @@ where
         id.as_id()
     }
 
-    pub fn data<'db>(&'db self, id: crate::Id) -> C::Data<'db> {
-        <C::Data<'db>>::from_id(id)
+    pub fn data_with_db<'db, DB>(&'db self, id: crate::Id, db: &'db DB) -> C::Data<'db>
+    where
+        DB: ?Sized,
+        C::Data<'db>: LookupId<&'db DB>,
+    {
+        <C::Data<'db>>::lookup_id(id, db)
     }
 }
 
