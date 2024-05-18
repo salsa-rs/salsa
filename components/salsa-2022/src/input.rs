@@ -5,14 +5,15 @@ use std::{
 
 use crate::{
     cycle::CycleRecoveryStrategy,
+    id::FromId,
     ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryOrigin, Runtime},
-    AsId, IngredientIndex, Revision,
+    IngredientIndex, Revision,
 };
 
-pub trait InputId: AsId {}
-impl<T: AsId> InputId for T {}
+pub trait InputId: FromId {}
+impl<T: FromId> InputId for T {}
 
 pub struct InputIngredient<Id>
 where

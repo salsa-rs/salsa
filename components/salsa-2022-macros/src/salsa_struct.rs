@@ -327,7 +327,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     pub(crate) fn access_salsa_id_from_self(&self) -> syn::Expr {
         match self.the_struct_kind() {
             TheStructKind::Id => parse_quote!(self.0),
-            TheStructKind::Pointer(_) => parse_quote!(unsafe { &*self.0 }.id()),
+            TheStructKind::Pointer(_) => parse_quote!(salsa::id::AsId::as_id(unsafe { &*self.0 })),
         }
     }
 
@@ -374,21 +374,53 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         default_db_lifetime(self.struct_item.generics.span())
     }
 
-    /// Generate `impl salsa::AsId for Foo`
-    pub(crate) fn as_id_impl(&self) -> Option<syn::ItemImpl> {
+    /// Generate `impl salsa::id::AsId for Foo`
+    pub(crate) fn as_id_impl(&self) -> syn::ItemImpl {
+        match self.the_struct_kind() {
+            TheStructKind::Id => {
+                let ident = self.the_ident();
+                let (impl_generics, type_generics, where_clause) =
+                    self.struct_item.generics.split_for_impl();
+                parse_quote_spanned! { ident.span() =>
+                    impl #impl_generics salsa::id::AsId for #ident #type_generics
+                    #where_clause
+                    {
+                        fn as_id(&self) -> salsa::Id {
+                            self.0
+                        }
+                    }
+
+                }
+            }
+            TheStructKind::Pointer(_) => {
+                let ident = self.the_ident();
+                let (impl_generics, type_generics, where_clause) =
+                    self.struct_item.generics.split_for_impl();
+                parse_quote_spanned! { ident.span() =>
+                    impl #impl_generics salsa::id::AsId for #ident #type_generics
+                    #where_clause
+                    {
+                        fn as_id(&self) -> salsa::Id {
+                            salsa::id::AsId::as_id(unsafe { &*self.0 })
+                        }
+                    }
+
+                }
+            }
+        }
+    }
+
+    /// Generate `impl salsa::id::AsId for Foo`
+    pub(crate) fn from_id_impl(&self) -> Option<syn::ItemImpl> {
         match self.the_struct_kind() {
             TheStructKind::Id => {
                 let ident = self.the_ident();
                 let (impl_generics, type_generics, where_clause) =
                     self.struct_item.generics.split_for_impl();
                 Some(parse_quote_spanned! { ident.span() =>
-                    impl #impl_generics salsa::AsId for #ident #type_generics
+                    impl #impl_generics salsa::id::FromId for #ident #type_generics
                     #where_clause
                     {
-                        fn as_id(self) -> salsa::Id {
-                            self.0
-                        }
-
                         fn from_id(id: salsa::Id) -> Self {
                             #ident(id)
                         }

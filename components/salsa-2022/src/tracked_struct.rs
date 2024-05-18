@@ -455,11 +455,6 @@ impl<C> ValueStruct<C>
 where
     C: Configuration,
 {
-    /// The id of this struct in the ingredient.
-    pub fn id(&self) -> Id {
-        self.id
-    }
-
     /// Access to this value field.
     /// Note that this function returns the entire tuple of value fields.
     /// The caller is responible for selecting the appropriate element.
@@ -483,5 +478,14 @@ where
 
     unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Fields<'static>) -> &'db C::Fields<'db> {
         unsafe { std::mem::transmute(fields) }
+    }
+}
+
+impl<C> AsId for ValueStruct<C>
+where
+    C: Configuration,
+{
+    fn as_id(&self) -> Id {
+        self.id
     }
 }

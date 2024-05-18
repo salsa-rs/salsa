@@ -82,7 +82,7 @@ where
     }
 
     pub fn intern_id<'db>(&'db self, runtime: &'db Runtime, data: C::Data<'db>) -> crate::Id {
-        self.intern(runtime, data).salsa_id()
+        self.intern(runtime, data).as_id()
     }
 
     /// Intern data to a unique reference.
@@ -117,7 +117,7 @@ where
             // We won any races so should intern the data
             dashmap::mapref::entry::Entry::Vacant(entry) => {
                 let next_id = self.counter.fetch_add(1);
-                let next_id = Id::from_id(crate::id::Id::from_u32(next_id));
+                let next_id = crate::id::Id::from_u32(next_id);
                 let value = self
                     .value_map
                     .entry(next_id)
@@ -233,7 +233,6 @@ where
 pub struct IdentityInterner<C>
 where
     C: Configuration,
-    for<'db> C::Data<'db>: AsId,
 {
     data: PhantomData<C>,
 }
@@ -241,14 +240,16 @@ where
 impl<C> IdentityInterner<C>
 where
     C: Configuration,
-    for<'db> C::Data<'db>: AsId,
 {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         IdentityInterner { data: PhantomData }
     }
 
-    pub fn intern_id<'db>(&'db self, _runtime: &'db Runtime, id: C::Data<'db>) -> crate::Id {
+    pub fn intern_id<'db>(&'db self, _runtime: &'db Runtime, id: C::Data<'db>) -> crate::Id
+    where
+        C::Data<'db>: AsId,
+    {
         id.as_id()
     }
 
@@ -265,10 +266,6 @@ impl<C> ValueStruct<C>
 where
     C: Configuration,
 {
-    pub fn salsa_id(&self) -> Id {
-        self.id
-    }
-
     pub fn data<'db>(&'db self) -> &'db C::Data<'db> {
         // SAFETY: The lifetime of `self` is tied to the interning ingredient;
         // we never remove data without an `&mut self` access to the interning ingredient.
@@ -277,5 +274,14 @@ where
 
     unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Data<'static>) -> &'db C::Data<'db> {
         unsafe { std::mem::transmute(fields) }
+    }
+}
+
+impl<C> AsId for ValueStruct<C>
+where
+    C: Configuration,
+{
+    fn as_id(&self) -> Id {
+        self.id
     }
 }

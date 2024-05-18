@@ -64,6 +64,7 @@ impl TrackedStruct {
         let tracked_struct_in_db_impl = self.tracked_struct_in_db_impl();
         let update_impl = self.update_impl();
         let as_id_impl = self.as_id_impl();
+        let from_id_impl = self.from_id_impl();
         let lookup_id_impl = self.lookup_id_impl();
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
         Ok(quote! {
@@ -76,6 +77,7 @@ impl TrackedStruct {
             #tracked_struct_in_db_impl
             #update_impl
             #as_id_impl
+            #from_id_impl
             #lookup_id_impl
             #as_debug_with_db_impl
         })
@@ -227,7 +229,7 @@ impl TrackedStruct {
         let salsa_id = self.access_salsa_id_from_self();
 
         let ctor = match the_kind {
-            TheStructKind::Id => quote!(salsa::AsId::from_id(#data.id())),
+            TheStructKind::Id => quote!(salsa::id::FromId::from_as_id(#data)),
             TheStructKind::Pointer(_) => quote!(Self(#data, std::marker::PhantomData)),
         };
 
@@ -345,10 +347,6 @@ impl TrackedStruct {
                         #db: ?Sized + salsa::DbWithJar<#jar_ty>,
                         #where_clause
                     {
-                        fn into_id(self) -> salsa::Id {
-                            unsafe { &*self.0 }.id()
-                        }
-
                         fn lookup_id(id: salsa::Id, db: & #db_lt DB) -> Self {
                             let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                             let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident #type_generics>>::ingredient(jar);

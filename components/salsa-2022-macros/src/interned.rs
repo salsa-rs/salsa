@@ -62,6 +62,7 @@ impl InternedStruct {
         let configuration_impl = self.configuration_impl(&data_struct.ident, &config_struct.ident);
         let ingredients_for_impl = self.ingredients_for_impl(&config_struct.ident);
         let as_id_impl = self.as_id_impl();
+        let from_id_impl = self.from_id_impl();
         let lookup_id_impl = self.lookup_id_impl();
         let named_fields_impl = self.inherent_impl_for_named_fields();
         let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
@@ -76,6 +77,7 @@ impl InternedStruct {
                 #data_struct
                 #ingredients_for_impl
                 #as_id_impl
+                #from_id_impl
                 #lookup_id_impl
                 #named_fields_impl
                 #salsa_struct_in_db_impl
@@ -227,7 +229,7 @@ impl InternedStruct {
 
         let salsa_id = quote!(
             pub fn salsa_id(&self) -> salsa::Id {
-                unsafe { &*self.0 }.salsa_id()
+                salsa::id::AsId::as_id(unsafe { &*self })
             }
         );
 
@@ -293,9 +295,9 @@ impl InternedStruct {
             ) -> Self {
                 let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                 let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #the_ident #type_generics >>::ingredient(jar);
-                Self(ingredients.intern(runtime, #data_ident {
+                salsa::id::FromId::from_as_id(ingredients.intern(runtime, #data_ident {
                     #(#field_names,)*
-                }).salsa_id())
+                }))
             }
         };
 
@@ -373,10 +375,6 @@ impl InternedStruct {
                         #db: ?Sized + salsa::DbWithJar<#jar_ty>,
                         #where_clause
                     {
-                        fn into_id(self) -> salsa::Id {
-                            unsafe { &*self.0 }.salsa_id()
-                        }
-
                         fn lookup_id(id: salsa::Id, db: & #db_lt DB) -> Self {
                             let (jar, _) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                             let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident #type_generics>>::ingredient(jar);

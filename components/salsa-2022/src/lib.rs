@@ -35,7 +35,6 @@ pub use self::debug::DebugWithDb;
 pub use self::durability::Durability;
 pub use self::event::Event;
 pub use self::event::EventKind;
-pub use self::id::AsId;
 pub use self::id::Id;
 pub use self::key::DatabaseKeyIndex;
 pub use self::revision::Revision;
