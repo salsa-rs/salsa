@@ -65,7 +65,7 @@ impl From<Id> for usize {
     }
 }
 
-/// Trait for types that can be interconverted to a salsa Id;
+/// Internal Salsa trait for types that can be interconverted to a salsa Id;
 pub trait AsId: Sized + Copy + Eq + Hash + Debug {
     fn as_id(self) -> Id;
     fn from_id(id: Id) -> Self;
@@ -90,5 +90,40 @@ impl AsId for () {
 
     fn from_id(id: Id) -> Self {
         assert_eq!(0, id.as_u32());
+    }
+}
+
+/// Internal Salsa trait for types that have a salsa id but require looking
+/// up in the database to find it. This is different from
+/// [`AsId`][] where what we have is literally a *newtype*
+/// for an `Id`.
+pub trait IdLookup<DB> {
+    /// Convert to an `Id`
+    fn into_id(self) -> Id;
+
+    /// Lookup from an `Id` to get an instance of the type.
+    ///
+    /// # Panics
+    ///
+    /// This fn may panic if the value with this id has not been
+    /// produced in this revision already (e.g., for a tracked
+    /// struct, the function will panic if the tracked struct
+    /// has not yet been created in this revision). Salsa's
+    /// dependency tracking typically ensures this does not
+    /// occur, but it is possible for a user to violate this
+    /// rule.
+    fn lookup_id(id: Id, db: DB) -> Self;
+}
+
+impl<DB, ID> IdLookup<DB> for ID
+where
+    ID: AsId,
+{
+    fn into_id(self) -> Id {
+        self.as_id()
+    }
+
+    fn lookup_id(id: Id, _db: DB) -> Self {
+        Self::from_id(id)
     }
 }

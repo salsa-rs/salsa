@@ -64,6 +64,7 @@ impl TrackedStruct {
         let tracked_struct_in_db_impl = self.tracked_struct_in_db_impl();
         let update_impl = self.update_impl();
         let as_id_impl = self.as_id_impl();
+        let id_lookup_impl = self.id_lookup_impl();
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
         Ok(quote! {
             #config_struct
@@ -75,6 +76,7 @@ impl TrackedStruct {
             #tracked_struct_in_db_impl
             #update_impl
             #as_id_impl
+            #id_lookup_impl
             #as_debug_with_db_impl
         })
     }   
@@ -323,6 +325,37 @@ impl TrackedStruct {
 
                     (struct_ingredient, field_ingredients)
                 }
+            }
+        }
+    }
+
+    /// Implementation of `IdLookup`.
+    pub(crate) fn id_lookup_impl(&self) -> Option<syn::ItemImpl> {
+        match self.the_struct_kind() {
+            TheStructKind::Id => None,
+            TheStructKind::Pointer(db_lt) => {
+                let (ident, parameters, _, type_generics, where_clause) =
+                    self.the_ident_and_generics();
+                let db = syn::Ident::new("DB", ident.span());
+                let jar_ty = self.jar_ty();
+                let tracked_struct_ingredient = self.tracked_struct_ingredient_index();
+                Some(parse_quote_spanned! { ident.span() =>
+                    impl<#db, #parameters> salsa::id::IdLookup<& #db_lt #db> for #ident #type_generics
+                    where
+                        #db: ?Sized + salsa::DbWithJar<#jar_ty>,
+                        #where_clause
+                    {
+                        fn into_id(self) -> salsa::Id {
+                            unsafe { &*self.0 }.id()
+                        }
+
+                        fn lookup_id(id: salsa::Id, db: & #db_lt DB) -> Self {
+                            let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
+                            let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident #type_generics>>::ingredient(jar);
+                            Self(ingredients.#tracked_struct_ingredient.lookup_struct(runtime, id), std::marker::PhantomData)
+                        }
+                    }
+                })
             }
         }
     }

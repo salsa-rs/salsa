@@ -341,6 +341,16 @@ where
         }
     }
 
+    /// Given the id of a tracked struct created in this revision,
+    /// returns a pointer to the struct.
+    ///
+    /// # Panics
+    ///
+    /// If the struct has not been created in this revision.
+    pub fn lookup_struct<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db ValueStruct<C> {
+        self.struct_map.get(runtime, id)
+    }
+
     /// Deletes the given entities. This is used after a query `Q` executes and we can compare
     /// the entities `E_now` that it produced in this revision vs the entities
     /// `E_prev` it produced in the last revision. Any missing entities `E_prev - E_new` can be

@@ -148,6 +148,16 @@ where
         Update::Outdated(UpdateRef { guard: data })
     }
 
+    /// Lookup an existing tracked struct from the map.
+    ///
+    /// # Panics
+    ///
+    /// * If the value is not present in the map.
+    /// * If the value has not been updated in this revision.
+    pub fn get<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db ValueStruct<C> {
+        Self::get_from_map(&self.map, runtime, id)
+    }
+
     /// Helper function, provides shared functionality for [`StructMapView`][]
     ///
     /// # Panics
