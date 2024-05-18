@@ -62,6 +62,7 @@ impl InternedStruct {
         let configuration_impl = self.configuration_impl(&data_struct.ident, &config_struct.ident);
         let ingredients_for_impl = self.ingredients_for_impl(&config_struct.ident);
         let as_id_impl = self.as_id_impl();
+        let lookup_id_impl = self.lookup_id_impl();
         let named_fields_impl = self.inherent_impl_for_named_fields();
         let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
@@ -75,6 +76,7 @@ impl InternedStruct {
                 #data_struct
                 #ingredients_for_impl
                 #as_id_impl
+                #lookup_id_impl
                 #named_fields_impl
                 #salsa_struct_in_db_impl
                 #as_debug_with_db_impl
@@ -352,6 +354,36 @@ impl InternedStruct {
                     );
                     salsa::interned::InternedIngredient::new(index, #debug_name)
                 }
+            }
+        }
+    }
+
+    /// Implementation of `LookupId`.
+    fn lookup_id_impl(&self) -> Option<syn::ItemImpl> {
+        match self.the_struct_kind() {
+            TheStructKind::Id => None,
+            TheStructKind::Pointer(db_lt) => {
+                let (ident, parameters, _, type_generics, where_clause) =
+                    self.the_ident_and_generics();
+                let db = syn::Ident::new("DB", ident.span());
+                let jar_ty = self.jar_ty();
+                Some(parse_quote_spanned! { ident.span() =>
+                    impl<#db, #parameters> salsa::id::LookupId<& #db_lt #db> for #ident #type_generics
+                    where
+                        #db: ?Sized + salsa::DbWithJar<#jar_ty>,
+                        #where_clause
+                    {
+                        fn into_id(self) -> salsa::Id {
+                            unsafe { &*self.0 }.salsa_id()
+                        }
+
+                        fn lookup_id(id: salsa::Id, db: & #db_lt DB) -> Self {
+                            let (jar, _) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
+                            let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident #type_generics>>::ingredient(jar);
+                            Self(ingredients.interned_value(id), std::marker::PhantomData)
+                        }
+                    }
+                })
             }
         }
     }

@@ -97,7 +97,7 @@ impl AsId for () {
 /// up in the database to find it. This is different from
 /// [`AsId`][] where what we have is literally a *newtype*
 /// for an `Id`.
-pub trait IdLookup<DB> {
+pub trait LookupId<DB> {
     /// Convert to an `Id`
     fn into_id(self) -> Id;
 
@@ -115,7 +115,7 @@ pub trait IdLookup<DB> {
     fn lookup_id(id: Id, db: DB) -> Self;
 }
 
-impl<DB, ID> IdLookup<DB> for ID
+impl<DB, ID> LookupId<DB> for ID
 where
     ID: AsId,
 {

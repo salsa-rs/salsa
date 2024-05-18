@@ -64,7 +64,7 @@ impl TrackedStruct {
         let tracked_struct_in_db_impl = self.tracked_struct_in_db_impl();
         let update_impl = self.update_impl();
         let as_id_impl = self.as_id_impl();
-        let id_lookup_impl = self.id_lookup_impl();
+        let lookup_id_impl = self.lookup_id_impl();
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
         Ok(quote! {
             #config_struct
@@ -76,7 +76,7 @@ impl TrackedStruct {
             #tracked_struct_in_db_impl
             #update_impl
             #as_id_impl
-            #id_lookup_impl
+            #lookup_id_impl
             #as_debug_with_db_impl
         })
     }   
@@ -329,8 +329,8 @@ impl TrackedStruct {
         }
     }
 
-    /// Implementation of `IdLookup`.
-    pub(crate) fn id_lookup_impl(&self) -> Option<syn::ItemImpl> {
+    /// Implementation of `LookupId`.
+    fn lookup_id_impl(&self) -> Option<syn::ItemImpl> {
         match self.the_struct_kind() {
             TheStructKind::Id => None,
             TheStructKind::Pointer(db_lt) => {
@@ -340,7 +340,7 @@ impl TrackedStruct {
                 let jar_ty = self.jar_ty();
                 let tracked_struct_ingredient = self.tracked_struct_ingredient_index();
                 Some(parse_quote_spanned! { ident.span() =>
-                    impl<#db, #parameters> salsa::id::IdLookup<& #db_lt #db> for #ident #type_generics
+                    impl<#db, #parameters> salsa::id::LookupId<& #db_lt #db> for #ident #type_generics
                     where
                         #db: ?Sized + salsa::DbWithJar<#jar_ty>,
                         #where_clause
