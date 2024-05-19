@@ -64,6 +64,7 @@ impl TrackedStruct {
         let tracked_struct_in_db_impl = self.tracked_struct_in_db_impl();
         let update_impl = self.update_impl();
         let as_id_impl = self.as_id_impl();
+        let send_sync_impls = self.send_sync_impls();
         let from_id_impl = self.from_id_impl();
         let lookup_id_impl = self.lookup_id_impl();
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
@@ -78,6 +79,7 @@ impl TrackedStruct {
             #update_impl
             #as_id_impl
             #from_id_impl
+            #(#send_sync_impls)*
             #lookup_id_impl
             #as_debug_with_db_impl
         })
@@ -400,24 +402,6 @@ impl TrackedStruct {
         }
     }
 
-    /// Implementation of `Update`.
-    fn update_impl(&self) -> syn::ItemImpl {
-        let (ident, _, impl_generics, type_generics, where_clause) = self.the_ident_and_generics();
-        parse_quote! {
-            unsafe impl #impl_generics salsa::update::Update for #ident #type_generics 
-            #where_clause
-            {
-                unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
-                    if unsafe { *old_pointer } != new_value {
-                        unsafe { *old_pointer = new_value };
-                        true
-                    } else {
-                        false
-                    }
-                }
-            }
-        }
-    }
     /// The index of the tracked struct ingredient in the ingredient tuple.
     fn tracked_struct_ingredient_index(&self) -> Literal {
         Literal::usize_unsuffixed(0)

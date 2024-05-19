@@ -110,6 +110,30 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         db_lifetime::require_db_lifetime(&self.struct_item.generics)
     }
 
+    pub(crate) fn send_sync_impls(&self) -> Vec<syn::ItemImpl> {
+        match self.the_struct_kind() {
+            TheStructKind::Id => vec![],
+            TheStructKind::Pointer(_db) => {
+                let (the_ident, _, impl_generics, type_generics, where_clauses) =
+                    self.the_ident_and_generics();
+                vec![
+                    parse_quote! {
+                        unsafe impl #impl_generics std::marker::Send for #the_ident #type_generics
+                        where
+                            #where_clauses
+                        {}
+                    },
+                    parse_quote! {
+                        unsafe impl #impl_generics std::marker::Sync for #the_ident #type_generics
+                        where
+                            #where_clauses
+                        {}
+                    },
+                ]
+            }
+        }
+    }
+
     /// Some salsa structs require a "Configuration" struct
     /// because they make use of GATs. This function
     /// synthesizes a name and generates the struct declaration.
@@ -483,6 +507,25 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                 }
             }
         })
+    }
+
+    /// Implementation of `salsa::update::Update`.
+    pub(crate) fn update_impl(&self) -> syn::ItemImpl {
+        let (ident, _, impl_generics, type_generics, where_clause) = self.the_ident_and_generics();
+        parse_quote! {
+            unsafe impl #impl_generics salsa::update::Update for #ident #type_generics
+            #where_clause
+            {
+                unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+                    if unsafe { *old_pointer } != new_value {
+                        unsafe { *old_pointer = new_value };
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+        }
     }
 
     /// Disallow `#[id]` attributes on the fields of this struct.
