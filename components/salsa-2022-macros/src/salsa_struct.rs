@@ -53,13 +53,22 @@ const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 
 /// Classifies the kind of field stored in this salsa
 /// struct.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum TheStructKind {
     /// Stores an "id"
     Id,
 
     /// Stores a "pointer" with the given lifetime
     Pointer(syn::Lifetime),
+}
+
+impl std::fmt::Debug for TheStructKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TheStructKind::Id => write!(f, "Id"),
+            TheStructKind::Pointer(lt) => write!(f, "Pointer({lt})"),
+        }
+    }
 }
 
 impl<A: AllowedOptions> SalsaStruct<A> {
@@ -164,7 +173,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             .attrs
             .iter()
             .map(|attr| {
-                if attr.path.is_ident("customize") {
+                if attr.path().is_ident("customize") {
                     // FIXME: this should be a comma separated list but I couldn't
                     // be bothered to remember how syn does this.
                     let args: syn::Ident = attr.parse_args()?;
@@ -294,8 +303,8 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             .struct_item
             .attrs
             .iter()
-            .filter(|attr| !attr.path.is_ident("derive"))
-            .filter(|attr| !attr.path.is_ident("customize"))
+            .filter(|attr| !attr.path().is_ident("derive"))
+            .filter(|attr| !attr.path().is_ident("customize"))
             .collect();
 
         parse_quote_spanned! { ident.span() =>
@@ -330,8 +339,8 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                 .struct_item
                 .attrs
                 .iter()
-                .filter(|attr| !attr.path.is_ident("derive"))
-                .filter(|attr| !attr.path.is_ident("customize"))
+                .filter(|attr| !attr.path().is_ident("derive"))
+                .filter(|attr| !attr.path().is_ident("customize"))
                 .collect();
 
             let module = &self.module;
@@ -600,7 +609,7 @@ impl SalsaField {
         // Scan the attributes and look for the salsa attributes:
         for attr in &field.attrs {
             for (fa, func) in FIELD_OPTION_ATTRIBUTES {
-                if attr.path.is_ident(fa) {
+                if attr.path().is_ident(fa) {
                     func(attr, &mut result);
                 }
             }

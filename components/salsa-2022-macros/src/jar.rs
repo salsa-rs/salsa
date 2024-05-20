@@ -1,4 +1,5 @@
-use proc_macro2::Literal;
+use proc_macro2::extra::DelimSpan;
+use proc_macro2::{Delimiter, Group, Literal, TokenStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::visit_mut::VisitMut;
@@ -166,7 +167,7 @@ fn generate_fields(input: &ItemStruct) -> FieldsUnnamed {
         },
         syn::Fields::Unnamed(f) => f.paren_token,
         syn::Fields::Unit => syn::token::Paren {
-            span: input.ident.span(),
+            span: to_delim_span(input),
         },
     };
 
@@ -174,4 +175,10 @@ fn generate_fields(input: &ItemStruct) -> FieldsUnnamed {
         paren_token,
         unnamed: output_fields,
     }
+}
+
+fn to_delim_span(s: &impl Spanned) -> DelimSpan {
+    let mut group = Group::new(Delimiter::None, TokenStream::new());
+    group.set_span(s.span());
+    group.delim_span()
 }

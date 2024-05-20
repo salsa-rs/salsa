@@ -5,9 +5,9 @@ pub(crate) struct Configuration {
     pub(crate) input_ty: syn::Type,
     pub(crate) value_ty: syn::Type,
     pub(crate) cycle_strategy: CycleRecoveryStrategy,
-    pub(crate) backdate_fn: syn::ImplItemMethod,
-    pub(crate) execute_fn: syn::ImplItemMethod,
-    pub(crate) recover_fn: syn::ImplItemMethod,
+    pub(crate) backdate_fn: syn::ImplItemFn,
+    pub(crate) execute_fn: syn::ImplItemFn,
+    pub(crate) recover_fn: syn::ImplItemFn,
 }
 
 impl Configuration {
@@ -58,7 +58,7 @@ impl quote::ToTokens for CycleRecoveryStrategy {
 
 /// Returns an appropriate definition for `should_backdate_value` depending on
 /// whether this value is memoized or not.
-pub(crate) fn should_backdate_value_fn(should_backdate: bool) -> syn::ImplItemMethod {
+pub(crate) fn should_backdate_value_fn(should_backdate: bool) -> syn::ImplItemFn {
     if should_backdate {
         parse_quote! {
             fn should_backdate_value(v1: &Self::Value<'_>, v2: &Self::Value<'_>) -> bool {
@@ -76,7 +76,7 @@ pub(crate) fn should_backdate_value_fn(should_backdate: bool) -> syn::ImplItemMe
 
 /// Returns an appropriate definition for `recover_from_cycle` for cases where
 /// the cycle recovery is panic.
-pub(crate) fn panic_cycle_recovery_fn() -> syn::ImplItemMethod {
+pub(crate) fn panic_cycle_recovery_fn() -> syn::ImplItemFn {
     parse_quote! {
         fn recover_from_cycle<'db>(
             _db: &'db salsa::function::DynDb<'db, Self>,

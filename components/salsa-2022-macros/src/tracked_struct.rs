@@ -173,7 +173,7 @@ impl TrackedStruct {
         let field_tys: Vec<_> = self.all_fields().map(SalsaField::ty).collect();
         let field_get_names: Vec<_> = self.all_fields().map(SalsaField::get_name).collect();
         let field_clones: Vec<_> = self.all_fields().map(SalsaField::is_clone_field).collect();
-        let field_getters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&field_get_names).zip(&field_tys).zip(&field_vises).zip(&field_clones).map(|((((field_index, field_get_name), field_ty), field_vis), is_clone_field)|
+        let field_getters: Vec<syn::ImplItemFn> = field_indices.iter().zip(&field_get_names).zip(&field_tys).zip(&field_vises).zip(&field_clones).map(|((((field_index, field_get_name), field_ty), field_vis), is_clone_field)|
             match the_kind {
                 TheStructKind::Id => {
                     if !*is_clone_field {
