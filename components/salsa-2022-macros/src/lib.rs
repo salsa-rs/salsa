@@ -49,6 +49,7 @@ mod salsa_struct;
 mod tracked;
 mod tracked_fn;
 mod tracked_struct;
+mod update;
 mod xform;
 
 #[proc_macro_attribute]
@@ -79,4 +80,13 @@ pub fn input(args: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
     tracked::tracked(args, input)
+}
+
+#[proc_macro_derive(Update)]
+pub fn update(input: TokenStream) -> TokenStream {
+    let item = syn::parse_macro_input!(input as syn::DeriveInput);
+    match update::update_derive(item) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
 }
