@@ -30,7 +30,7 @@ struct MyTracked<'db> {
     next: MyList<'db>,
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, salsa::Update)]
+#[derive(PartialEq, Eq, Clone, Debug, salsa::Update, salsa::DebugWithDb)]
 enum MyList<'db> {
     None,
     Next(MyTracked<'db>),
@@ -59,9 +59,15 @@ fn execute() {
             next: Next(
                 MyTracked {
                     [salsa id]: 0,
+                    data: MyInput {
+                        [salsa id]: 0,
+                        field: "foo",
+                    },
+                    next: None,
                 },
             ),
         }
-    "#]].assert_debug_eq(&t0.debug(&db));
+    "#]]
+    .assert_debug_eq(&t0.debug(&db));
     assert_eq!(t0, t1);
 }

@@ -48,4 +48,5 @@ pub use salsa_2022_macros::input;
 pub use salsa_2022_macros::interned;
 pub use salsa_2022_macros::jar;
 pub use salsa_2022_macros::tracked;
+pub use salsa_2022_macros::DebugWithDb;
 pub use salsa_2022_macros::Update;

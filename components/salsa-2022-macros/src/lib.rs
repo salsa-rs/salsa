@@ -41,6 +41,7 @@ mod configuration;
 mod db;
 mod db_lifetime;
 mod debug;
+mod debug_with_db;
 mod input;
 mod interned;
 mod jar;
@@ -86,6 +87,15 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn update(input: TokenStream) -> TokenStream {
     let item = syn::parse_macro_input!(input as syn::DeriveInput);
     match update::update_derive(item) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+#[proc_macro_derive(DebugWithDb)]
+pub fn debug(input: TokenStream) -> TokenStream {
+    let item = syn::parse_macro_input!(input as syn::DeriveInput);
+    match debug_with_db::debug_with_db(item) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }
