@@ -67,6 +67,7 @@ impl TrackedStruct {
         let send_sync_impls = self.send_sync_impls();
         let from_id_impl = self.from_id_impl();
         let lookup_id_impl = self.lookup_id_impl();
+        let debug_impl = self.debug_impl();
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
         Ok(quote! {
             #config_struct
@@ -82,6 +83,7 @@ impl TrackedStruct {
             #(#send_sync_impls)*
             #lookup_id_impl
             #as_debug_with_db_impl
+            #debug_impl
         })
     }   
 

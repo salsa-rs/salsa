@@ -309,7 +309,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
         parse_quote_spanned! { ident.span() =>
             #(#attrs)*
-            #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Debug)]
+            #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
             #visibility struct #ident(salsa::Id);
         }
     }
@@ -347,7 +347,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
             Ok(parse_quote_spanned! { ident.span() =>
                 #(#attrs)*
-                #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Debug)]
+                #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
                 #visibility struct #ident #generics (
                     *const salsa::#module::ValueStruct < #config_ident >,
                     std::marker::PhantomData < & #lifetime salsa::#module::ValueStruct < #config_ident > >
@@ -462,6 +462,27 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                 })
             }
             TheStructKind::Pointer(_) => None,
+        }
+    }
+
+    /// Generate `impl salsa::DebugWithDb for Foo`, but only if this is an id struct.
+    pub(crate) fn debug_impl(&self) -> syn::ItemImpl {
+        let ident = self.the_ident();
+        let (impl_generics, type_generics, where_clause) =
+            self.struct_item.generics.split_for_impl();
+        let ident_string = ident.to_string();
+
+        // `use ::salsa::debug::helper::Fallback` is needed for the fallback to `Debug` impl
+        parse_quote_spanned! {ident.span()=>
+            impl #impl_generics ::std::fmt::Debug for #ident #type_generics
+            #where_clause
+            {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                    f.debug_struct(#ident_string)
+                        .field("[salsa id]", &self.salsa_id().as_u32())
+                        .finish()
+                }
+            }
         }
     }
 

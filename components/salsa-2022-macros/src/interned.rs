@@ -68,6 +68,7 @@ impl InternedStruct {
         let named_fields_impl = self.inherent_impl_for_named_fields();
         let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
+        let debug_impl = self.debug_impl();
         let update_impl = self.update_impl();
 
         Ok(crate::debug::dump_tokens(
@@ -86,6 +87,7 @@ impl InternedStruct {
                 #salsa_struct_in_db_impl
                 #as_debug_with_db_impl
                 #update_impl
+                #debug_impl
             },
         ))
     }

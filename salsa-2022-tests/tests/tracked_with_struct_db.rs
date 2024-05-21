@@ -57,10 +57,9 @@ fn execute() {
                 field: "foo",
             },
             next: Next(
-                MyTracked(
-                    0x00007fc15c011010,
-                    PhantomData<&salsa_2022::tracked_struct::ValueStruct<tracked_with_struct_db::__MyTrackedConfig>>,
-                ),
+                MyTracked {
+                    [salsa id]: 0,
+                },
             ),
         }
     "#]].assert_debug_eq(&t0.debug(&db));

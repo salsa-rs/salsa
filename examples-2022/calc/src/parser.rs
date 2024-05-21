@@ -381,25 +381,19 @@ fn parse_print() {
                 [salsa id]: 0,
                 statements: [
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 5,
-                            },
-                        ),
+                        span: Span {
+                            [salsa id]: 4,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 4,
-                                    },
-                                ),
+                                span: Span {
+                                    [salsa id]: 3,
+                                },
                                 data: Op(
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 1,
-                                            },
-                                        ),
+                                        span: Span {
+                                            [salsa id]: 0,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 1.0,
@@ -408,11 +402,9 @@ fn parse_print() {
                                     },
                                     Add,
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 3,
-                                            },
-                                        ),
+                                        span: Span {
+                                            [salsa id]: 2,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 2.0,
@@ -448,59 +440,43 @@ fn parse_example() {
                 [salsa id]: 0,
                 statements: [
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 10,
-                            },
-                        ),
+                        span: Span {
+                            [salsa id]: 9,
+                        },
                         data: Function(
-                            Function(
-                                Id {
-                                    value: 1,
-                                },
-                            ),
+                            Function {
+                                [salsa id]: 0,
+                            },
                         ),
                     },
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 22,
-                            },
-                        ),
+                        span: Span {
+                            [salsa id]: 21,
+                        },
                         data: Function(
-                            Function(
-                                Id {
-                                    value: 2,
-                                },
-                            ),
+                            Function {
+                                [salsa id]: 1,
+                            },
                         ),
                     },
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 29,
-                            },
-                        ),
+                        span: Span {
+                            [salsa id]: 28,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 28,
-                                    },
-                                ),
+                                span: Span {
+                                    [salsa id]: 27,
+                                },
                                 data: Call(
-                                    FunctionId(
-                                        Id {
-                                            value: 1,
-                                        },
-                                    ),
+                                    FunctionId {
+                                        [salsa id]: 0,
+                                    },
                                     [
                                         Expression {
-                                            span: Span(
-                                                Id {
-                                                    value: 24,
-                                                },
-                                            ),
+                                            span: Span {
+                                                [salsa id]: 23,
+                                            },
                                             data: Number(
                                                 OrderedFloat(
                                                     3.0,
@@ -508,11 +484,9 @@ fn parse_example() {
                                             ),
                                         },
                                         Expression {
-                                            span: Span(
-                                                Id {
-                                                    value: 26,
-                                                },
-                                            ),
+                                            span: Span {
+                                                [salsa id]: 25,
+                                            },
                                             data: Number(
                                                 OrderedFloat(
                                                     4.0,
@@ -525,31 +499,23 @@ fn parse_example() {
                         ),
                     },
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 34,
-                            },
-                        ),
+                        span: Span {
+                            [salsa id]: 33,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 33,
-                                    },
-                                ),
+                                span: Span {
+                                    [salsa id]: 32,
+                                },
                                 data: Call(
-                                    FunctionId(
-                                        Id {
-                                            value: 2,
-                                        },
-                                    ),
+                                    FunctionId {
+                                        [salsa id]: 1,
+                                    },
                                     [
                                         Expression {
-                                            span: Span(
-                                                Id {
-                                                    value: 31,
-                                                },
-                                            ),
+                                            span: Span {
+                                                [salsa id]: 30,
+                                            },
                                             data: Number(
                                                 OrderedFloat(
                                                     1.0,
@@ -562,25 +528,19 @@ fn parse_example() {
                         ),
                     },
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 39,
-                            },
-                        ),
+                        span: Span {
+                            [salsa id]: 38,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 38,
-                                    },
-                                ),
+                                span: Span {
+                                    [salsa id]: 37,
+                                },
                                 data: Op(
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 35,
-                                            },
-                                        ),
+                                        span: Span {
+                                            [salsa id]: 34,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 11.0,
@@ -589,11 +549,9 @@ fn parse_example() {
                                     },
                                     Multiply,
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 37,
-                                            },
-                                        ),
+                                        span: Span {
+                                            [salsa id]: 36,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 2.0,
@@ -644,32 +602,24 @@ fn parse_precedence() {
                 [salsa id]: 0,
                 statements: [
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 11,
-                            },
-                        ),
+                        span: Span {
+                            [salsa id]: 10,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 10,
-                                    },
-                                ),
+                                span: Span {
+                                    [salsa id]: 9,
+                                },
                                 data: Op(
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 7,
-                                            },
-                                        ),
+                                        span: Span {
+                                            [salsa id]: 6,
+                                        },
                                         data: Op(
                                             Expression {
-                                                span: Span(
-                                                    Id {
-                                                        value: 1,
-                                                    },
-                                                ),
+                                                span: Span {
+                                                    [salsa id]: 0,
+                                                },
                                                 data: Number(
                                                     OrderedFloat(
                                                         1.0,
@@ -678,18 +628,14 @@ fn parse_precedence() {
                                             },
                                             Add,
                                             Expression {
-                                                span: Span(
-                                                    Id {
-                                                        value: 6,
-                                                    },
-                                                ),
+                                                span: Span {
+                                                    [salsa id]: 5,
+                                                },
                                                 data: Op(
                                                     Expression {
-                                                        span: Span(
-                                                            Id {
-                                                                value: 3,
-                                                            },
-                                                        ),
+                                                        span: Span {
+                                                            [salsa id]: 2,
+                                                        },
                                                         data: Number(
                                                             OrderedFloat(
                                                                 2.0,
@@ -698,11 +644,9 @@ fn parse_precedence() {
                                                     },
                                                     Multiply,
                                                     Expression {
-                                                        span: Span(
-                                                            Id {
-                                                                value: 5,
-                                                            },
-                                                        ),
+                                                        span: Span {
+                                                            [salsa id]: 4,
+                                                        },
                                                         data: Number(
                                                             OrderedFloat(
                                                                 3.0,
@@ -715,11 +659,9 @@ fn parse_precedence() {
                                     },
                                     Add,
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 9,
-                                            },
-                                        ),
+                                        span: Span {
+                                            [salsa id]: 8,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 4.0,
