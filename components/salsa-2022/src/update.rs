@@ -146,6 +146,17 @@ where
     }
 }
 
+unsafe impl<T> Update for Box<T>
+where
+    T: Update,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_box: Self) -> bool {
+        let old_box: &mut Box<T> = unsafe { &mut *old_pointer };
+
+        T::maybe_update(&mut **old_box, *new_box)
+    }
+}
+
 unsafe impl<T, const N: usize> Update for [T; N]
 where
     T: Update,

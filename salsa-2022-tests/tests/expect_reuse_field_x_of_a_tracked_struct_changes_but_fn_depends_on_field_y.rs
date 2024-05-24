@@ -10,7 +10,7 @@ use expect_test::expect;
 #[salsa::jar(db = Db)]
 struct Jar(
     MyInput,
-    MyTracked,
+    MyTracked<'_>,
     final_result_depends_on_x,
     final_result_depends_on_y,
     intermediate_result,
@@ -36,13 +36,13 @@ fn final_result_depends_on_y(db: &dyn Db, input: MyInput) -> u32 {
 }
 
 #[salsa::tracked(jar = Jar)]
-struct MyTracked {
+struct MyTracked<'db> {
     x: u32,
     y: u32,
 }
 
 #[salsa::tracked(jar = Jar)]
-fn intermediate_result(db: &dyn Db, input: MyInput) -> MyTracked {
+fn intermediate_result<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     MyTracked::new(db, (input.field(db) + 1) / 2, input.field(db) / 2)
 }
 

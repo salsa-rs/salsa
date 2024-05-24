@@ -13,6 +13,6 @@ note: method defined here
    |
 16 | #[salsa::tracked]
    | -----------------
-17 | pub struct MyTracked {
+17 | pub struct MyTracked<'db> {
 18 |     field: u32,
    |     ^^^^^

@@ -2,7 +2,7 @@
 //! compiles and executes successfully.
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked, tracked_fn);
+struct Jar(MyInput, MyTracked<'_>, tracked_fn);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
@@ -12,12 +12,12 @@ struct MyInput {
 }
 
 #[salsa::tracked(jar = Jar)]
-struct MyTracked {
+struct MyTracked<'db> {
     field: u32,
 }
 
 #[salsa::tracked(jar = Jar)]
-fn tracked_fn(db: &dyn Db, input: MyInput) -> MyTracked {
+fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     MyTracked::new(db, input.field(db) * 2)
 }
 

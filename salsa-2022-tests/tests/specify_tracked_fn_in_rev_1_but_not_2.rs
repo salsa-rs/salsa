@@ -9,7 +9,7 @@ use test_log::test;
 #[salsa::jar(db = Db)]
 struct Jar(
     MyInput,
-    MyTracked,
+    MyTracked<'_>,
     maybe_specified,
     read_maybe_specified,
     create_tracked,
@@ -24,14 +24,14 @@ struct MyInput {
 }
 
 #[salsa::tracked]
-struct MyTracked {
+struct MyTracked<'db> {
     input: MyInput,
 }
 
 /// If the input is in the range 0..10, this is specified to return 10.
 /// Otherwise, the default occurs, and it returns the input.
 #[salsa::tracked(specify)]
-fn maybe_specified(db: &dyn Db, tracked: MyTracked) -> u32 {
+fn maybe_specified<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> u32 {
     db.push_log(format!("maybe_specified({:?})", tracked));
     tracked.input(db).field(db)
 }
@@ -40,7 +40,7 @@ fn maybe_specified(db: &dyn Db, tracked: MyTracked) -> u32 {
 /// This is here to show whether we can detect when `maybe_specified` has changed
 /// and control down-stream work accordingly.
 #[salsa::tracked]
-fn read_maybe_specified(db: &dyn Db, tracked: MyTracked) -> u32 {
+fn read_maybe_specified<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> u32 {
     db.push_log(format!("read_maybe_specified({:?})", tracked));
     maybe_specified(db, tracked) * 10
 }
@@ -48,7 +48,7 @@ fn read_maybe_specified(db: &dyn Db, tracked: MyTracked) -> u32 {
 /// Create a tracked value and *maybe* specify a value for
 /// `maybe_specified`
 #[salsa::tracked(jar = Jar)]
-fn create_tracked(db: &dyn Db, input: MyInput) -> MyTracked {
+fn create_tracked<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     db.push_log(format!("create_tracked({:?})", input));
     let tracked = MyTracked::new(db, input);
     if input.field(db) < 10 {

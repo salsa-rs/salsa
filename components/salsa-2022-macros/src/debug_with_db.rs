@@ -83,6 +83,7 @@ pub(crate) fn debug_with_db(input: syn::DeriveInput) -> syn::Result<proc_macro2:
     let tokens = structure.gen_impl(quote! {
         gen impl ::salsa::debug::DebugWithDb<#DB> for @Self {
             fn fmt(&self, #fmt: &mut std::fmt::Formatter<'_>, #db: & #DB) -> std::fmt::Result {
+                use ::salsa::debug::helper::Fallback as _;
                 match self {
                     #fields
                 }

@@ -5,7 +5,7 @@
 #[salsa::jar(db = Db)]
 struct Jar(
     MyInput,
-    MyTracked,
+    MyTracked<'_>,
     tracked_fn,
     tracked_fn_extra,
     tracked_struct_created_in_another_query,
@@ -19,17 +19,17 @@ struct MyInput {
 }
 
 #[salsa::tracked(jar = Jar)]
-struct MyTracked {
+struct MyTracked<'db> {
     field: u32,
 }
 
 #[salsa::tracked(jar = Jar)]
-fn tracked_struct_created_in_another_query(db: &dyn Db, input: MyInput) -> MyTracked {
+fn tracked_struct_created_in_another_query<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     MyTracked::new(db, input.field(db) * 2)
 }
 
 #[salsa::tracked(jar = Jar)]
-fn tracked_fn(db: &dyn Db, input: MyInput) -> MyTracked {
+fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     let t = tracked_struct_created_in_another_query(db, input);
     if input.field(db) != 0 {
         tracked_fn_extra::specify(db, t, 2222);
@@ -38,7 +38,7 @@ fn tracked_fn(db: &dyn Db, input: MyInput) -> MyTracked {
 }
 
 #[salsa::tracked(jar = Jar, specify)]
-fn tracked_fn_extra(_db: &dyn Db, _input: MyTracked) -> u32 {
+fn tracked_fn_extra<'db>(_db: &'db dyn Db, _input: MyTracked<'db>) -> u32 {
     0
 }
 

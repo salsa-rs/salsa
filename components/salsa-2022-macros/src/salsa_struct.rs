@@ -467,7 +467,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
     /// Generate `impl salsa::DebugWithDb for Foo`, but only if this is an id struct.
     pub(crate) fn debug_impl(&self) -> syn::ItemImpl {
-        let ident = self.the_ident();
+        let ident: &Ident = self.the_ident();
         let (impl_generics, type_generics, where_clause) =
             self.struct_item.generics.split_for_impl();
         let ident_string = ident.to_string();

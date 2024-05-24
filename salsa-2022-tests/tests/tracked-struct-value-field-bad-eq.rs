@@ -10,7 +10,7 @@ use test_log::test;
 #[salsa::jar(db = Db)]
 struct Jar(
     MyInput,
-    MyTracked,
+    MyTracked<'_>,
     the_fn,
     make_tracked_struct,
     read_tracked_struct,
@@ -42,7 +42,7 @@ impl From<bool> for BadEq {
 }
 
 #[salsa::tracked]
-struct MyTracked {
+struct MyTracked<'db> {
     field: BadEq,
 }
 
@@ -53,12 +53,12 @@ fn the_fn(db: &dyn Db, input: MyInput) -> bool {
 }
 
 #[salsa::tracked]
-fn make_tracked_struct(db: &dyn Db, input: MyInput) -> MyTracked {
+fn make_tracked_struct<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     MyTracked::new(db, BadEq::from(input.field(db)))
 }
 
 #[salsa::tracked]
-fn read_tracked_struct(db: &dyn Db, tracked: MyTracked) -> bool {
+fn read_tracked_struct<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> bool {
     tracked.field(db).field
 }
 

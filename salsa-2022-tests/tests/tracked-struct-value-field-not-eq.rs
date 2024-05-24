@@ -5,7 +5,7 @@
 use test_log::test;
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked, the_fn);
+struct Jar(MyInput, MyTracked<'_>, the_fn);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
@@ -26,7 +26,7 @@ impl From<bool> for NotEq {
 }
 
 #[salsa::tracked]
-struct MyTracked {
+struct MyTracked<'db> {
     #[no_eq]
     field: NotEq,
 }

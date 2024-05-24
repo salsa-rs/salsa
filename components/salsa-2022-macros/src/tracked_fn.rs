@@ -4,14 +4,14 @@ use syn::visit_mut::VisitMut;
 use syn::{ReturnType, Token};
 
 use crate::configuration::{self, Configuration, CycleRecoveryStrategy};
-use crate::db_lifetime::{self, db_lifetime, require_db_lifetime};
+use crate::db_lifetime::{self, db_lifetime, require_optional_db_lifetime};
 use crate::options::Options;
 
 pub(crate) fn tracked_fn(
     args: proc_macro::TokenStream,
     mut item_fn: syn::ItemFn,
 ) -> syn::Result<TokenStream> {
-    db_lifetime::require_db_lifetime(&item_fn.sig.generics)?;
+    db_lifetime::require_optional_db_lifetime(&item_fn.sig.generics)?;
 
     let fn_ident = item_fn.sig.ident.clone();
 
@@ -303,7 +303,7 @@ fn rename_self_in_block(mut block: syn::Block) -> syn::Result<syn::Block> {
 ///
 /// This returns the name of the constructed type and the code defining everything.
 fn fn_struct(args: &FnArgs, item_fn: &syn::ItemFn) -> syn::Result<(syn::Type, TokenStream)> {
-    require_db_lifetime(&item_fn.sig.generics)?;
+    require_optional_db_lifetime(&item_fn.sig.generics)?;
     let db_lt = &db_lifetime(&item_fn.sig.generics);
     let struct_item = configuration_struct(item_fn);
     let configuration = fn_configuration(args, item_fn);

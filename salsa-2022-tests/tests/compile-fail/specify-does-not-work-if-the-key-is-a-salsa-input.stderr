@@ -4,7 +4,7 @@ error[E0277]: the trait bound `MyInput: TrackedStructInDb<dyn Db>` is not satisf
 20 | #[salsa::tracked(jar = Jar, specify)]
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `TrackedStructInDb<dyn Db>` is not implemented for `MyInput`
    |
-   = help: the trait `TrackedStructInDb<DB>` is implemented for `MyTracked`
+   = help: the trait `TrackedStructInDb<DB>` is implemented for `MyTracked<'db>`
 note: required by a bound in `function::specify::<impl FunctionIngredient<C>>::specify_and_record`
   --> $WORKSPACE/components/salsa-2022/src/function/specify.rs
    |

@@ -3,23 +3,22 @@
 #![allow(warnings)]
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInterned, MyTracked, tracked_fn);
+struct Jar(MyInterned<'_>, MyTracked<'_>, tracked_fn);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
 #[salsa::interned(jar = Jar)]
-struct MyInterned {
+struct MyInterned<'db> {
     field: u32,
 }
 
 #[salsa::tracked(jar = Jar)]
-struct MyTracked {
+struct MyTracked<'db> {
     field: u32,
 }
 
-
 #[salsa::tracked(jar = Jar, specify)]
-fn tracked_fn(db: &dyn Db, input: MyInterned) -> MyTracked {
+fn tracked_fn<'db>(db: &'db dyn Db, input: MyInterned<'db>) -> MyTracked<'db> {
     MyTracked::new(db, input.field(db) * 2)
 }
 

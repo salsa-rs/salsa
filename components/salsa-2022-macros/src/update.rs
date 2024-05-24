@@ -74,6 +74,7 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
     let tokens = quote! {
         unsafe impl #impl_generics salsa::update::Update for #ident #ty_generics #where_clause {
             unsafe fn maybe_update(#old_pointer: *mut Self, #new_value: Self) -> bool {
+                use ::salsa::update::helper::Fallback as _;
                 let old_pointer = unsafe { &mut *#old_pointer };
                 match #old_pointer {
                     #fields

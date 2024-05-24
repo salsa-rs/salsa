@@ -10,7 +10,7 @@ use test_log::test;
 
 // ANCHOR: parse_statements
 #[salsa::tracked]
-pub fn type_check_program(db: &dyn crate::Db, program: Program) {
+pub fn type_check_program<'db>(db: &'db dyn crate::Db, program: Program<'db>) {
     for statement in program.statements(db) {
         match &statement.data {
             StatementData::Function(f) => type_check_function(db, *f, program),
@@ -20,12 +20,20 @@ pub fn type_check_program(db: &dyn crate::Db, program: Program) {
 }
 
 #[salsa::tracked]
-pub fn type_check_function(db: &dyn crate::Db, function: Function, program: Program) {
+pub fn type_check_function<'db>(
+    db: &'db dyn crate::Db,
+    function: Function<'db>,
+    program: Program<'db>,
+) {
     CheckExpression::new(db, program, function.args(db)).check(function.body(db))
 }
 
 #[salsa::tracked]
-pub fn find_function(db: &dyn crate::Db, program: Program, name: FunctionId) -> Option<Function> {
+pub fn find_function<'db>(
+    db: &'db dyn crate::Db,
+    program: Program<'db>,
+    name: FunctionId<'db>,
+) -> Option<Function<'db>> {
     program
         .statements(db)
         .iter()
@@ -37,14 +45,14 @@ pub fn find_function(db: &dyn crate::Db, program: Program, name: FunctionId) -> 
 }
 
 #[derive(new)]
-struct CheckExpression<'w> {
-    db: &'w dyn crate::Db,
-    program: Program,
-    names_in_scope: &'w [VariableId],
+struct CheckExpression<'input, 'db> {
+    db: &'db dyn crate::Db,
+    program: Program<'db>,
+    names_in_scope: &'input [VariableId<'db>],
 }
 
-impl CheckExpression<'_> {
-    fn check(&self, expression: &Expression) {
+impl<'db> CheckExpression<'_, 'db> {
+    fn check(&self, expression: &Expression<'db>) {
         match &expression.data {
             crate::ir::ExpressionData::Op(left, _, right) => {
                 self.check(left);
@@ -73,7 +81,7 @@ impl CheckExpression<'_> {
         }
     }
 
-    fn find_function(&self, f: FunctionId) -> Option<Function> {
+    fn find_function(&self, f: FunctionId<'db>) -> Option<Function<'db>> {
         find_function(self.db, self.program, f)
     }
 

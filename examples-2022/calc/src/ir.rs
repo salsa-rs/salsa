@@ -13,13 +13,13 @@ pub struct SourceProgram {
 
 // ANCHOR: interned_ids
 #[salsa::interned]
-pub struct VariableId {
+pub struct VariableId<'db> {
     #[return_ref]
     pub text: String,
 }
 
 #[salsa::interned]
-pub struct FunctionId {
+pub struct FunctionId<'db> {
     #[return_ref]
     pub text: String,
 }
@@ -27,44 +27,44 @@ pub struct FunctionId {
 
 // ANCHOR: program
 #[salsa::tracked]
-pub struct Program {
+pub struct Program<'db> {
     #[return_ref]
-    pub statements: Vec<Statement>,
+    pub statements: Vec<Statement<'db>>,
 }
 // ANCHOR_END: program
 
 // ANCHOR: statements_and_expressions
-#[derive(Eq, PartialEq, Debug, Hash, new)]
-pub struct Statement {
-    pub span: Span,
+#[derive(Eq, PartialEq, Debug, Hash, new, salsa::Update, salsa::DebugWithDb)]
+pub struct Statement<'db> {
+    pub span: Span<'db>,
 
-    pub data: StatementData,
+    pub data: StatementData<'db>,
 }
 
-#[derive(Eq, PartialEq, Debug, Hash)]
-pub enum StatementData {
+#[derive(Eq, PartialEq, Debug, Hash, salsa::Update, salsa::DebugWithDb)]
+pub enum StatementData<'db> {
     /// Defines `fn <name>(<args>) = <body>`
-    Function(Function),
+    Function(Function<'db>),
     /// Defines `print <expr>`
-    Print(Expression),
+    Print(Expression<'db>),
 }
 
-#[derive(Eq, PartialEq, Debug, Hash, new)]
-pub struct Expression {
-    pub span: Span,
+#[derive(Eq, PartialEq, Debug, Hash, new, salsa::Update, salsa::DebugWithDb)]
+pub struct Expression<'db> {
+    pub span: Span<'db>,
 
-    pub data: ExpressionData,
+    pub data: ExpressionData<'db>,
 }
 
-#[derive(Eq, PartialEq, Debug, Hash)]
-pub enum ExpressionData {
-    Op(Box<Expression>, Op, Box<Expression>),
+#[derive(Eq, PartialEq, Debug, Hash, salsa::Update, salsa::DebugWithDb)]
+pub enum ExpressionData<'db> {
+    Op(Box<Expression<'db>>, Op, Box<Expression<'db>>),
     Number(OrderedFloat<f64>),
-    Variable(VariableId),
-    Call(FunctionId, Vec<Expression>),
+    Variable(VariableId<'db>),
+    Call(FunctionId<'db>, Vec<Expression<'db>>),
 }
 
-#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug, salsa::Update, salsa::DebugWithDb)]
 pub enum Op {
     Add,
     Subtract,
@@ -75,22 +75,22 @@ pub enum Op {
 
 // ANCHOR: functions
 #[salsa::tracked]
-pub struct Function {
+pub struct Function<'db> {
     #[id]
-    pub name: FunctionId,
+    pub name: FunctionId<'db>,
 
-    name_span: Span,
-
-    #[return_ref]
-    pub args: Vec<VariableId>,
+    name_span: Span<'db>,
 
     #[return_ref]
-    pub body: Expression,
+    pub args: Vec<VariableId<'db>>,
+
+    #[return_ref]
+    pub body: Expression<'db>,
 }
 // ANCHOR_END: functions
 
 #[salsa::tracked]
-pub struct Span {
+pub struct Span<'db> {
     pub start: usize,
     pub end: usize,
 }

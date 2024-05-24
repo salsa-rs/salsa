@@ -13,7 +13,7 @@ thread_local! {
 }
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked, function);
+struct Jar(MyInput, MyTracked<'_>, function);
 
 trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
@@ -45,7 +45,7 @@ struct MyInput {
 }
 
 #[salsa::tracked]
-struct MyTracked {
+struct MyTracked<'db> {
     counter: usize,
 }
 

@@ -6,7 +6,7 @@
 use std::fmt::Display;
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyInterned, MyTracked);
+struct Jar(MyInput, MyInterned<'_>, MyTracked<'_>);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
@@ -32,34 +32,34 @@ impl MyInput {
 }
 
 #[salsa::interned(constructor = from_string)]
-struct MyInterned {
+struct MyInterned<'db> {
     #[get(text)]
     #[return_ref]
     field: String,
 }
 
-impl MyInterned {
-    pub fn new(db: &dyn Db, s: impl Display) -> MyInterned {
+impl<'db> MyInterned<'db> {
+    pub fn new(db: &'db dyn Db, s: impl Display) -> MyInterned<'db> {
         MyInterned::from_string(db, s.to_string())
     }
 
-    pub fn field(self, db: &dyn Db) -> &str {
+    pub fn field(self, db: &'db dyn Db) -> &str {
         &self.text(db)
     }
 }
 
 #[salsa::tracked(constructor = from_string)]
-struct MyTracked {
+struct MyTracked<'db> {
     #[get(text)]
     field: String,
 }
 
-impl MyTracked {
-    pub fn new(db: &dyn Db, s: impl Display) -> MyTracked {
+impl<'db> MyTracked<'db> {
+    pub fn new(db: &'db dyn Db, s: impl Display) -> MyTracked<'db> {
         MyTracked::from_string(db, s.to_string())
     }
 
-    pub fn field(self, db: &dyn Db) -> String {
+    pub fn field(self, db: &'db dyn Db) -> String {
         self.text(db)
     }
 }

@@ -1,53 +1,53 @@
 error: `return_ref` option not allowed here
-  --> tests/compile-fail/tracked_impl_incompatibles.rs:10:18
-   |
-10 | #[salsa::tracked(return_ref)]
-   |                  ^^^^^^^^^^
+ --> tests/compile-fail/tracked_impl_incompatibles.rs:9:18
+  |
+9 | #[salsa::tracked(return_ref)]
+  |                  ^^^^^^^^^^
 
 error: `specify` option not allowed here
-  --> tests/compile-fail/tracked_impl_incompatibles.rs:16:18
+  --> tests/compile-fail/tracked_impl_incompatibles.rs:13:18
    |
-16 | #[salsa::tracked(specify)]
+13 | #[salsa::tracked(specify)]
    |                  ^^^^^^^
 
 error: `no_eq` option not allowed here
-  --> tests/compile-fail/tracked_impl_incompatibles.rs:23:18
+  --> tests/compile-fail/tracked_impl_incompatibles.rs:18:18
    |
-23 | #[salsa::tracked(no_eq)]
+18 | #[salsa::tracked(no_eq)]
    |                  ^^^^^
 
 error: `data` option not allowed here
-  --> tests/compile-fail/tracked_impl_incompatibles.rs:30:18
+  --> tests/compile-fail/tracked_impl_incompatibles.rs:23:18
    |
-30 | #[salsa::tracked(data = Data)]
+23 | #[salsa::tracked(data = Data)]
    |                  ^^^^
 
 error: `db` option not allowed here
-  --> tests/compile-fail/tracked_impl_incompatibles.rs:37:18
+  --> tests/compile-fail/tracked_impl_incompatibles.rs:28:18
    |
-37 | #[salsa::tracked(db = Db)]
+28 | #[salsa::tracked(db = Db)]
    |                  ^^
 
 error: unrecognized option `recover_fn`
-  --> tests/compile-fail/tracked_impl_incompatibles.rs:44:18
+  --> tests/compile-fail/tracked_impl_incompatibles.rs:33:18
    |
-44 | #[salsa::tracked(recover_fn = recover)]
+33 | #[salsa::tracked(recover_fn = recover)]
    |                  ^^^^^^^^^^
 
 error: `lru` option not allowed here
-  --> tests/compile-fail/tracked_impl_incompatibles.rs:51:18
+  --> tests/compile-fail/tracked_impl_incompatibles.rs:38:18
    |
-51 | #[salsa::tracked(lru = 32)]
+38 | #[salsa::tracked(lru = 32)]
    |                  ^^^
 
 error: `constructor` option not allowed here
-  --> tests/compile-fail/tracked_impl_incompatibles.rs:58:18
+  --> tests/compile-fail/tracked_impl_incompatibles.rs:43:18
    |
-58 | #[salsa::tracked(constructor = Constructor)]
+43 | #[salsa::tracked(constructor = Constructor)]
    |                  ^^^^^^^^^^^
 
 error: #[salsa::tracked] can only be applied to salsa structs
-  --> tests/compile-fail/tracked_impl_incompatibles.rs:65:32
+  --> tests/compile-fail/tracked_impl_incompatibles.rs:48:37
    |
-65 | impl std::default::Default for [MyTracked; 12] {
-   |                                ^^^^^^^^^^^^^^^
+48 | impl<'db> std::default::Default for [MyTracked<'db>; 12] {
+   |                                     ^^^^^^^^^^^^^^^^^^^^
