@@ -142,6 +142,7 @@ pub(crate) fn tracked_impl(
             };
             let name = format!("{}_{}", name_prefix, item_method.sig.ident);
             Some(tracked_method(
+                &item_impl.generics,
                 &args,
                 inner_args,
                 item_method,
@@ -160,11 +161,14 @@ pub(crate) fn tracked_impl(
             acc
         })?;
 
-    Ok(quote! {
-        #item_impl
+    Ok(crate::debug::dump_tokens(
+        self_type_name,
+        quote! {
+            #item_impl
 
-        #(#extra_impls)*
-    })
+            #(#extra_impls)*
+        },
+    ))
 }
 
 struct TrackedImpl;
@@ -192,6 +196,7 @@ impl crate::options::AllowedOptions for TrackedImpl {
 }
 
 fn tracked_method(
+    impl_generics: &syn::Generics,
     outer_args: &ImplArgs,
     mut args: FnArgs,
     item_method: &mut syn::ImplItemFn,
@@ -214,6 +219,12 @@ fn tracked_method(
         block: Box::new(rename_self_in_block(item_method.block.clone())?),
     };
     item_fn.sig.ident = syn::Ident::new(name, item_fn.sig.ident.span());
+
+    // Insert the generics from impl at the start of the fn generics
+    for parameter in impl_generics.params.iter().rev() {
+        item_fn.sig.generics.params.insert(0, parameter.clone());
+    }
+
     // Flip the first and second arguments as the rest of the code expects the
     // database to come first and the struct to come second. We also need to
     // change the self argument to a normal typed argument called __salsa_self.
@@ -222,6 +233,7 @@ fn tracked_method(
         syn::FnArg::Receiver(r) if r.reference.is_none() => r,
         arg => return Err(syn::Error::new(arg.span(), "first argument must be self")),
     };
+
     let db_param = original_inputs.next().unwrap().into_value();
     let mut inputs = syn::punctuated::Punctuated::new();
     inputs.push(db_param);
