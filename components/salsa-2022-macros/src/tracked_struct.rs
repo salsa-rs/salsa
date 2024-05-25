@@ -85,7 +85,7 @@ impl TrackedStruct {
             #as_debug_with_db_impl
             #debug_impl
         })
-    }   
+    }
 
     fn config_impl(&self, config_struct: &syn::ItemStruct) -> syn::ItemImpl {
         let config_ident = &config_struct.ident;
@@ -198,7 +198,7 @@ impl TrackedStruct {
                         }
                     }
                 }
-    
+
                 TheStructKind::Pointer(lt_db) => {
                     if !*is_clone_field {
                         parse_quote_spanned! { field_get_name.span() =>
