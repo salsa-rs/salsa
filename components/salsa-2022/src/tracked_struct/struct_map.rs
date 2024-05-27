@@ -7,6 +7,7 @@ use crossbeam::queue::SegQueue;
 use dashmap::mapref::one::RefMut;
 
 use crate::{
+    alloc::Alloc,
     hash::{FxDashMap, FxHasher},
     plumbing::transmute_lifetime,
     Id, Runtime,
@@ -18,21 +19,21 @@ pub(crate) struct StructMap<C>
 where
     C: Configuration,
 {
-    map: Arc<FxDashMap<Id, Box<ValueStruct<C>>>>,
+    map: Arc<FxDashMap<Id, Alloc<ValueStruct<C>>>>,
 
     /// When specific entities are deleted, their data is added
     /// to this vector rather than being immediately freed. This is because we may` have
     /// references to that data floating about that are tied to the lifetime of some
     /// `&db` reference. This queue itself is not freed until we have an `&mut db` reference,
     /// guaranteeing that there are no more references to it.
-    deleted_entries: SegQueue<Box<ValueStruct<C>>>,
+    deleted_entries: SegQueue<Alloc<ValueStruct<C>>>,
 }
 
 pub(crate) struct StructMapView<C>
 where
     C: Configuration,
 {
-    map: Arc<FxDashMap<Id, Box<ValueStruct<C>>>>,
+    map: Arc<FxDashMap<Id, Alloc<ValueStruct<C>>>>,
 }
 
 /// Return value for [`StructMap`][]'s `update` method.
@@ -79,7 +80,7 @@ where
     pub fn insert<'db>(&'db self, runtime: &'db Runtime, value: ValueStruct<C>) -> &ValueStruct<C> {
         assert_eq!(value.created_at, runtime.current_revision());
 
-        let boxed_value = Box::new(value);
+        let boxed_value = Alloc::new(value);
         let pointer = std::ptr::addr_of!(*boxed_value);
 
         let old_value = self.map.insert(boxed_value.id, boxed_value);
@@ -165,7 +166,7 @@ where
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
     fn get_from_map<'db>(
-        map: &'db FxDashMap<Id, Box<ValueStruct<C>>>,
+        map: &'db FxDashMap<Id, Alloc<ValueStruct<C>>>,
         runtime: &'db Runtime,
         id: Id,
     ) -> &'db ValueStruct<C> {
@@ -230,7 +231,7 @@ pub(crate) struct UpdateRef<'db, C>
 where
     C: Configuration,
 {
-    guard: RefMut<'db, Id, Box<ValueStruct<C>>, FxHasher>,
+    guard: RefMut<'db, Id, Alloc<ValueStruct<C>>, FxHasher>,
 }
 
 impl<'db, C> UpdateRef<'db, C>

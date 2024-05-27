@@ -3,6 +3,7 @@ use std::fmt;
 use std::hash::Hash;
 use std::marker::PhantomData;
 
+use crate::alloc::Alloc;
 use crate::durability::Durability;
 use crate::id::{AsId, LookupId};
 use crate::ingredient::{fmt_index, IngredientRequiresReset};
@@ -39,7 +40,7 @@ pub struct InternedIngredient<C: Configuration> {
     /// Maps from an interned id to its data.
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
-    value_map: FxDashMap<Id, Box<ValueStruct<C>>>,
+    value_map: FxDashMap<Id, Alloc<ValueStruct<C>>>,
 
     /// counter for the next id.
     counter: AtomicCell<u32>,
@@ -121,7 +122,7 @@ where
                 let value = self
                     .value_map
                     .entry(next_id)
-                    .or_insert(Box::new(ValueStruct {
+                    .or_insert(Alloc::new(ValueStruct {
                         id: next_id,
                         fields: internal_data,
                     }));

@@ -1,4 +1,5 @@
 pub mod accumulator;
+mod alloc;
 pub mod cancelled;
 pub mod cycle;
 pub mod database;
