@@ -1,7 +1,7 @@
 use proc_macro2::{Literal, Span, TokenStream};
 use syn::spanned::Spanned;
 use syn::visit_mut::VisitMut;
-use syn::{ReturnType, Token};
+use syn::ReturnType;
 
 use crate::configuration::{self, Configuration, CycleRecoveryStrategy};
 use crate::db_lifetime::{self, db_lifetime, require_optional_db_lifetime};
@@ -593,7 +593,6 @@ fn setter_impl(
 ) -> syn::Result<syn::ItemImpl> {
     let ref_getter_fn = ref_getter_fn(args, item_fn, config_ty)?;
     let accumulated_fn = accumulated_fn(args, item_fn, config_ty)?;
-    let setter_fn = setter_fn(args, item_fn, config_ty)?;
     let specify_fn = specify_fn(args, item_fn, config_ty)?.map(|f| quote! { #f });
     let set_lru_fn = set_lru_capacity_fn(args, config_ty)?.map(|f| quote! { #f });
 
@@ -601,9 +600,6 @@ fn setter_impl(
         impl #config_ty {
             #[allow(dead_code, clippy::needless_lifetimes)]
             #ref_getter_fn
-
-            #[allow(dead_code, clippy::needless_lifetimes)]
-            #setter_fn
 
             #[allow(dead_code, clippy::needless_lifetimes)]
             #accumulated_fn
@@ -688,59 +684,6 @@ fn ref_getter_fn(
     };
 
     Ok(ref_getter_fn)
-}
-
-/// Creates a `set` associated function that can be used to set (given an `&mut db`)
-/// the value for this function for some inputs.
-fn setter_fn(
-    args: &FnArgs,
-    item_fn: &syn::ItemFn,
-    config_ty: &syn::Type,
-) -> syn::Result<syn::ImplItemFn> {
-    let mut setter_sig = item_fn.sig.clone();
-
-    require_optional_db_lifetime(&item_fn.sig.generics)?;
-    let db_lt = &db_lifetime(&item_fn.sig.generics);
-    match setter_sig.generics.lifetimes().count() {
-        0 => setter_sig.generics.params.push(parse_quote!(#db_lt)),
-        1 => (),
-        _ => panic!("unreachable -- would have generated an error earlier"),
-    };
-
-    // The setter has *always* the same signature as the original:
-    // but it takes a value arg and has no return type.
-    let jar_ty = args.jar_ty();
-    let (db_var, arg_names) = fn_args(item_fn)?;
-    let value_ty = configuration::value_ty(db_lt, &item_fn.sig);
-    setter_sig.ident = syn::Ident::new("set", item_fn.sig.ident.span());
-    match &mut setter_sig.inputs[0] {
-        // change from `&dyn ...` to `&mut dyn...`
-        syn::FnArg::Receiver(_) => unreachable!(), // early fns should have detected
-        syn::FnArg::Typed(pat_ty) => match &mut *pat_ty.ty {
-            syn::Type::Reference(ty) => {
-                ty.mutability = Some(Token![mut](ty.and_token.span()));
-                ty.lifetime = Some(db_lt.clone());
-            }
-            _ => unreachable!(), // early fns should have detected
-        },
-    }
-    let value_arg = syn::Ident::new("__value", item_fn.sig.output.span());
-    setter_sig.inputs.push(parse_quote!(#value_arg: #value_ty));
-    setter_sig.output = ReturnType::Default;
-    Ok(syn::ImplItemFn {
-        attrs: vec![],
-        vis: item_fn.vis.clone(),
-        defaultness: None,
-        sig: setter_sig,
-        block: parse_quote! {
-            {
-                let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(#db_var);
-                let __ingredients = <_ as salsa::storage::HasIngredientsFor<#config_ty>>::ingredient_mut(__jar);
-                let __key = __ingredients.intern_map.intern_id(__runtime, (#(#arg_names),*));
-                __ingredients.function.store(__runtime, __key, #value_arg, salsa::Durability::LOW)
-            }
-        },
-    })
 }
 
 /// Create a `set_lru_capacity` associated function that can be used to change LRU
