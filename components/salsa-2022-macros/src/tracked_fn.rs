@@ -6,6 +6,7 @@ use syn::{ReturnType, Token};
 use crate::configuration::{self, Configuration, CycleRecoveryStrategy};
 use crate::db_lifetime::{self, db_lifetime, require_optional_db_lifetime};
 use crate::options::Options;
+use crate::xform::ChangeLt;
 
 pub(crate) fn tracked_fn(
     args: proc_macro::TokenStream,
@@ -340,6 +341,8 @@ fn interned_configuration_impl(
         (#(#arg_tys),*)
     );
 
+    let intern_data_ty = ChangeLt::elided_to(db_lt).in_type(&intern_data_ty);
+
     parse_quote!(
         impl salsa::interned::Configuration for #config_ty {
             type Data<#db_lt> = #intern_data_ty;
@@ -421,7 +424,8 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
         FunctionType::SalsaStruct => salsa_struct_ty.clone(),
         FunctionType::RequiresInterning => parse_quote!(salsa::id::Id),
     };
-    let value_ty = configuration::value_ty(&item_fn.sig);
+    let key_ty = ChangeLt::elided_to(&db_lt).in_type(&key_ty);
+    let value_ty = configuration::value_ty(&db_lt, &item_fn.sig);
 
     let fn_ty = item_fn.sig.ident.clone();
 
@@ -693,12 +697,21 @@ fn setter_fn(
     item_fn: &syn::ItemFn,
     config_ty: &syn::Type,
 ) -> syn::Result<syn::ImplItemFn> {
+    let mut setter_sig = item_fn.sig.clone();
+
+    require_optional_db_lifetime(&item_fn.sig.generics)?;
+    let db_lt = &db_lifetime(&item_fn.sig.generics);
+    match setter_sig.generics.lifetimes().count() {
+        0 => setter_sig.generics.params.push(parse_quote!(#db_lt)),
+        1 => (),
+        _ => panic!("unreachable -- would have generated an error earlier"),
+    };
+
     // The setter has *always* the same signature as the original:
     // but it takes a value arg and has no return type.
     let jar_ty = args.jar_ty();
     let (db_var, arg_names) = fn_args(item_fn)?;
-    let mut setter_sig = item_fn.sig.clone();
-    let value_ty = configuration::value_ty(&item_fn.sig);
+    let value_ty = configuration::value_ty(db_lt, &item_fn.sig);
     setter_sig.ident = syn::Ident::new("set", item_fn.sig.ident.span());
     match &mut setter_sig.inputs[0] {
         // change from `&dyn ...` to `&mut dyn...`
@@ -706,6 +719,7 @@ fn setter_fn(
         syn::FnArg::Typed(pat_ty) => match &mut *pat_ty.ty {
             syn::Type::Reference(ty) => {
                 ty.mutability = Some(Token![mut](ty.and_token.span()));
+                ty.lifetime = Some(db_lt.clone());
             }
             _ => unreachable!(), // early fns should have detected
         },
@@ -771,12 +785,21 @@ fn specify_fn(
         return Ok(None);
     }
 
+    let mut setter_sig = item_fn.sig.clone();
+
+    require_optional_db_lifetime(&item_fn.sig.generics)?;
+    let db_lt = &db_lifetime(&item_fn.sig.generics);
+    match setter_sig.generics.lifetimes().count() {
+        0 => setter_sig.generics.params.push(parse_quote!(#db_lt)),
+        1 => (),
+        _ => panic!("unreachable -- would have generated an error earlier"),
+    };
+
     // `specify` has the same signature as the original,
     // but it takes a value arg and has no return type.
     let jar_ty = args.jar_ty();
     let (db_var, arg_names) = fn_args(item_fn)?;
-    let mut setter_sig = item_fn.sig.clone();
-    let value_ty = configuration::value_ty(&item_fn.sig);
+    let value_ty = configuration::value_ty(db_lt, &item_fn.sig);
     setter_sig.ident = syn::Ident::new("specify", item_fn.sig.ident.span());
     let value_arg = syn::Ident::new("__value", item_fn.sig.output.span());
     setter_sig.inputs.push(parse_quote!(#value_arg: #value_ty));

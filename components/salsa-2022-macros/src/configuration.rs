@@ -1,3 +1,5 @@
+use crate::xform::ChangeLt;
+
 pub(crate) struct Configuration {
     pub(crate) db_lt: syn::Lifetime,
     pub(crate) jar_ty: syn::Type,
@@ -88,9 +90,9 @@ pub(crate) fn panic_cycle_recovery_fn() -> syn::ImplItemFn {
     }
 }
 
-pub(crate) fn value_ty(sig: &syn::Signature) -> syn::Type {
+pub(crate) fn value_ty(db_lt: &syn::Lifetime, sig: &syn::Signature) -> syn::Type {
     match &sig.output {
         syn::ReturnType::Default => parse_quote!(()),
-        syn::ReturnType::Type(_, ty) => syn::Type::clone(ty),
+        syn::ReturnType::Type(_, ty) => ChangeLt::elided_to(db_lt).in_type(ty),
     }
 }
