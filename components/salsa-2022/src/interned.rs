@@ -2,6 +2,7 @@ use crossbeam::atomic::AtomicCell;
 use std::fmt;
 use std::hash::Hash;
 use std::marker::PhantomData;
+use std::ptr::NonNull;
 
 use crate::alloc::Alloc;
 use crate::durability::Durability;
@@ -18,8 +19,28 @@ use super::ingredient::Ingredient;
 use super::routes::IngredientIndex;
 use super::Revision;
 
-pub trait Configuration {
+pub trait Configuration: Sized {
     type Data<'db>: InternedData;
+    type Struct<'db>: Copy;
+
+    /// Create an end-user struct from the underlying raw pointer.
+    ///
+    /// This call is an "end-step" to the tracked struct lookup/creation
+    /// process in a given revision: it occurs only when the struct is newly
+    /// created or, if a struct is being reused, after we have updated its
+    /// fields (or confirmed it is green and no updates are required).
+    ///
+    /// # Unsafety
+    ///
+    /// Requires that `ptr` represents a "confirmed" value in this revision,
+    /// which means that it will remain valid and immutable for the remainder of this
+    /// revision, represented by the lifetime `'db`.
+    unsafe fn struct_from_raw<'db>(ptr: NonNull<ValueStruct<Self>>) -> Self::Struct<'db>;
+
+    /// Deref the struct to yield the underlying value struct.
+    /// Since we are still part of the `'db` lifetime in which the struct was created,
+    /// this deref is safe, and the value-struct fields are immutable and verified.
+    fn deref_struct<'db>(s: Self::Struct<'db>) -> &'db ValueStruct<Self>;
 }
 
 pub trait InternedData: Sized + Eq + Hash + Clone {}
@@ -83,15 +104,11 @@ where
     }
 
     pub fn intern_id<'db>(&'db self, runtime: &'db Runtime, data: C::Data<'db>) -> crate::Id {
-        self.intern(runtime, data).as_id()
+        C::deref_struct(self.intern(runtime, data)).as_id()
     }
 
     /// Intern data to a unique reference.
-    pub fn intern<'db>(
-        &'db self,
-        runtime: &'db Runtime,
-        data: C::Data<'db>,
-    ) -> &'db ValueStruct<C> {
+    pub fn intern<'db>(&'db self, runtime: &'db Runtime, data: C::Data<'db>) -> C::Struct<'db> {
         runtime.report_tracked_read(
             DependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
@@ -126,27 +143,27 @@ where
                         id: next_id,
                         fields: internal_data,
                     }));
-                // SAFETY: Items are only removed from the `value_map` with an `&mut self` reference.
-                let value_ref = unsafe { transmute_lifetime(self, &**value) };
+                let value_raw = value.as_raw();
                 drop(value);
                 entry.insert(next_id);
-                value_ref
+                // SAFETY: Items are only removed from the `value_map` with an `&mut self` reference.
+                unsafe { C::struct_from_raw(value_raw) }
             }
         }
     }
 
-    pub fn interned_value<'db>(&'db self, id: Id) -> &'db ValueStruct<C> {
+    pub fn interned_value<'db>(&'db self, id: Id) -> C::Struct<'db> {
         let r = self.value_map.get(&id).unwrap();
 
         // SAFETY: Items are only removed from the `value_map` with an `&mut self` reference.
-        unsafe { transmute_lifetime(self, &**r) }
+        unsafe { C::struct_from_raw(r.as_raw()) }
     }
 
     /// Lookup the data for an interned value based on its id.
     /// Rarely used since end-users generally carry a struct with a pointer directly
     /// to the interned item.
     pub fn data<'db>(&'db self, id: Id) -> &'db C::Data<'db> {
-        self.interned_value(id).data()
+        C::deref_struct(self.interned_value(id)).data()
     }
 
     /// Variant of `data` that takes a (unnecessary) database argument.

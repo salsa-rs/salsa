@@ -349,7 +349,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                 #(#attrs)*
                 #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
                 #visibility struct #ident #generics (
-                    *const salsa::#module::ValueStruct < #config_ident >,
+                    std::ptr::NonNull<salsa::#module::ValueStruct < #config_ident >>,
                     std::marker::PhantomData < & #lifetime salsa::#module::ValueStruct < #config_ident > >
                 );
             })
@@ -360,7 +360,9 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     pub(crate) fn access_salsa_id_from_self(&self) -> syn::Expr {
         match self.the_struct_kind() {
             TheStructKind::Id => parse_quote!(self.0),
-            TheStructKind::Pointer(_) => parse_quote!(salsa::id::AsId::as_id(unsafe { &*self.0 })),
+            TheStructKind::Pointer(_) => {
+                parse_quote!(salsa::id::AsId::as_id(unsafe { self.0.as_ref() }))
+            }
         }
     }
 
@@ -434,7 +436,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                     #where_clause
                     {
                         fn as_id(&self) -> salsa::Id {
-                            salsa::id::AsId::as_id(unsafe { &*self.0 })
+                            salsa::id::AsId::as_id(unsafe { self.0.as_ref() })
                         }
                     }
 

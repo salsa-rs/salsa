@@ -50,7 +50,7 @@ where
     /// to this struct creation were up-to-date, and therefore the field contents
     /// ought not to have changed (barring user error). Returns a shared reference
     /// because caller cannot safely modify fields at this point.
-    Current(&'db ValueStruct<C>),
+    Current(C::Struct<'db>),
 }
 
 impl<C> StructMap<C>
@@ -77,13 +77,14 @@ where
     ///
     /// * If value with same `value.id` is already present in the map.
     /// * If value not created in current revision.
-    pub fn insert<'db>(&'db self, runtime: &'db Runtime, value: ValueStruct<C>) -> &ValueStruct<C> {
+    pub fn insert<'db>(&'db self, runtime: &'db Runtime, value: ValueStruct<C>) -> C::Struct<'db> {
         assert_eq!(value.created_at, runtime.current_revision());
 
+        let id = value.id;
         let boxed_value = Alloc::new(value);
-        let pointer = std::ptr::addr_of!(*boxed_value);
+        let pointer = boxed_value.as_raw();
 
-        let old_value = self.map.insert(boxed_value.id, boxed_value);
+        let old_value = self.map.insert(id, boxed_value);
         assert!(old_value.is_none()); // ...strictly speaking we probably need to abort here
 
         // Unsafety clause:
@@ -92,11 +93,15 @@ where
         //   the pointer is to the contents of the box, which have a stable
         //   address.
         // * Values are only removed or altered when we have `&mut self`.
-        unsafe { transmute_lifetime(self, &*pointer) }
+        unsafe { C::struct_from_raw(pointer) }
     }
 
     pub fn validate<'db>(&'db self, runtime: &'db Runtime, id: Id) {
         let mut data = self.map.get_mut(&id).unwrap();
+
+        // UNSAFE: We never permit `&`-access in the current revision until data.created_at
+        // has been updated to the current revision (which we check below).
+        let data = unsafe { data.as_mut() };
 
         // Never update a struct twice in the same revision.
         let current_revision = runtime.current_revision();
@@ -116,6 +121,10 @@ where
 
         // Never update a struct twice in the same revision.
         let current_revision = runtime.current_revision();
+
+        // UNSAFE: We never permit `&`-access in the current revision until data.created_at
+        // has been updated to the current revision (which we check below).
+        let data_ref = unsafe { data.as_mut() };
 
         // Subtle: it's possible that this struct was already validated
         // in this revision. What can happen (e.g., in the test
@@ -140,12 +149,12 @@ where
         //
         // For this reason, we just return `None` in this case, ensuring that the calling
         // code cannot violate that `&`-reference.
-        if data.created_at == current_revision {
+        if data_ref.created_at == current_revision {
             drop(data);
-            return Update::Current(&Self::get_from_map(&self.map, runtime, id));
+            return Update::Current(Self::get_from_map(&self.map, runtime, id));
         }
 
-        data.created_at = current_revision;
+        data_ref.created_at = current_revision;
         Update::Outdated(UpdateRef { guard: data })
     }
 
@@ -155,7 +164,7 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
-    pub fn get<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db ValueStruct<C> {
+    pub fn get<'db>(&'db self, runtime: &'db Runtime, id: Id) -> C::Struct<'db> {
         Self::get_from_map(&self.map, runtime, id)
     }
 
@@ -169,14 +178,17 @@ where
         map: &'db FxDashMap<Id, Alloc<ValueStruct<C>>>,
         runtime: &'db Runtime,
         id: Id,
-    ) -> &'db ValueStruct<C> {
+    ) -> C::Struct<'db> {
         let data = map.get(&id).unwrap();
-        let data: &ValueStruct<C> = &**data;
+
+        // UNSAFE: We permit `&`-access in the current revision once data.created_at
+        // has been updated to the current revision (which we check below).
+        let data_ref: &ValueStruct<C> = unsafe { data.as_ref() };
 
         // Before we drop the lock, check that the value has
         // been updated in this revision. This is what allows us to return a ``
         let current_revision = runtime.current_revision();
-        let created_at = data.created_at;
+        let created_at = data_ref.created_at;
         assert!(
             created_at == current_revision,
             "access to tracked struct from previous revision"
@@ -187,7 +199,7 @@ where
         // * Value will not be updated again in this revision,
         //   and revision will not change so long as runtime is shared
         // * We only remove values from the map when we have `&mut self`
-        unsafe { transmute_lifetime(map, data) }
+        unsafe { C::struct_from_raw(data.as_raw()) }
     }
 
     /// Remove the entry for `id` from the map.
@@ -195,7 +207,8 @@ where
     /// NB. the data won't actually be freed until `drop_deleted_entries` is called.
     pub fn delete(&self, id: Id) -> Option<KeyStruct> {
         if let Some((_, data)) = self.map.remove(&id) {
-            let key = data.key;
+            // UNSAFE: The `key` field is immutable once `ValueStruct` is created.
+            let key = unsafe { data.as_ref() }.key;
             self.deleted_entries.push(data);
             Some(key)
         } else {
@@ -219,7 +232,7 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
-    pub fn get<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db ValueStruct<C> {
+    pub fn get<'db>(&'db self, runtime: &'db Runtime, id: Id) -> C::Struct<'db> {
         StructMap::get_from_map(&self.map, runtime, id)
     }
 }
@@ -239,13 +252,12 @@ where
     C: Configuration,
 {
     /// Finalize this update, freezing the value for the rest of the revision.
-    pub fn freeze(self) -> &'db ValueStruct<C> {
+    pub fn freeze(self) -> C::Struct<'db> {
         // Unsafety clause:
         //
         // see `get` above
-        let data: &ValueStruct<C> = &*self.guard;
-        let dummy: &'db () = &();
-        unsafe { transmute_lifetime(dummy, data) }
+        let data = self.guard.as_raw();
+        unsafe { C::struct_from_raw(data) }
     }
 }
 
@@ -256,7 +268,7 @@ where
     type Target = ValueStruct<C>;
 
     fn deref(&self) -> &Self::Target {
-        &self.guard
+        unsafe { self.guard.as_ref() }
     }
 }
 
@@ -265,6 +277,6 @@ where
     C: Configuration,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.guard
+        unsafe { self.guard.as_mut() }
     }
 }

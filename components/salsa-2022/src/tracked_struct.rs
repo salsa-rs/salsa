@@ -1,4 +1,4 @@
-use std::{fmt, hash::Hash};
+use std::{fmt, hash::Hash, ptr::NonNull};
 
 use crossbeam::atomic::AtomicCell;
 use dashmap::mapref::entry::Entry;
@@ -25,7 +25,7 @@ mod tracked_field;
 /// Trait that defines the key properties of a tracked struct.
 /// Implemented by the `#[salsa::tracked]` macro when applied
 /// to a struct.
-pub trait Configuration {
+pub trait Configuration: Sized {
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields<'db>;
 
@@ -34,6 +34,27 @@ pub trait Configuration {
     /// entries for each field are updated to the new revision if their
     /// values have changed (or if the field is marked as `#[no_eq]`).
     type Revisions;
+
+    type Struct<'db>: Copy;
+
+    /// Create an end-user struct from the underlying raw pointer.
+    ///
+    /// This call is an "end-step" to the tracked struct lookup/creation
+    /// process in a given revision: it occurs only when the struct is newly
+    /// created or, if a struct is being reused, after we have updated its
+    /// fields (or confirmed it is green and no updates are required).
+    ///
+    /// # Unsafety
+    ///
+    /// Requires that `ptr` represents a "confirmed" value in this revision,
+    /// which means that it will remain valid and immutable for the remainder of this
+    /// revision, represented by the lifetime `'db`.
+    unsafe fn struct_from_raw<'db>(ptr: NonNull<ValueStruct<Self>>) -> Self::Struct<'db>;
+
+    /// Deref the struct to yield the underlying value struct.
+    /// Since we are still part of the `'db` lifetime in which the struct was created,
+    /// this deref is safe, and the value-struct fields are immutable and verified.
+    fn deref_struct<'db>(s: Self::Struct<'db>) -> &'db ValueStruct<Self>;
 
     fn id_fields(fields: &Self::Fields<'_>) -> impl Hash;
 
@@ -130,10 +151,6 @@ struct KeyStruct {
     /// The unique disambiguator assigned within the active query
     /// to distinguish distinct tracked structs with the same hash.
     disambiguator: Disambiguator,
-}
-
-impl crate::interned::Configuration for KeyStruct {
-    type Data<'db> = KeyStruct;
 }
 
 // ANCHOR: ValueStruct
@@ -262,7 +279,7 @@ where
         &'db self,
         runtime: &'db Runtime,
         fields: C::Fields<'db>,
-    ) -> &'db ValueStruct<C> {
+    ) -> C::Struct<'db> {
         let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
         let (query_key, current_deps, disambiguator) =
@@ -310,7 +327,7 @@ where
                     // verified. Therefore, the durability ought not to have
                     // changed (nor the field values, but the user could've
                     // done something stupid, so we can't *assert* this is true).
-                    assert!(r.durability == current_deps.durability);
+                    assert!(C::deref_struct(r).durability == current_deps.durability);
 
                     r
                 }
@@ -333,8 +350,8 @@ where
                     if current_deps.durability < data.durability {
                         data.revisions = C::new_revisions(current_revision);
                     }
-                    data.created_at = current_revision;
                     data.durability = current_deps.durability;
+                    data.created_at = current_revision;
                     data_ref.freeze()
                 }
             }
@@ -347,7 +364,7 @@ where
     /// # Panics
     ///
     /// If the struct has not been created in this revision.
-    pub fn lookup_struct<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db ValueStruct<C> {
+    pub fn lookup_struct<'db>(&'db self, runtime: &'db Runtime, id: Id) -> C::Struct<'db> {
         self.struct_map.get(runtime, id)
     }
 

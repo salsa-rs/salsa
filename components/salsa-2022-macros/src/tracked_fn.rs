@@ -343,6 +343,16 @@ fn interned_configuration_impl(
     parse_quote!(
         impl salsa::interned::Configuration for #config_ty {
             type Data<#db_lt> = #intern_data_ty;
+
+            type Struct<#db_lt> = & #db_lt salsa::interned::ValueStruct<Self>;
+
+            unsafe fn struct_from_raw<'db>(ptr: std::ptr::NonNull<salsa::interned::ValueStruct<Self>>) -> Self::Struct<'db> {
+                unsafe { ptr.as_ref() }
+            }
+
+            fn deref_struct<'db>(s: Self::Struct<'db>) -> &'db salsa::interned::ValueStruct<Self> {
+                s
+            }
         }
     )
 }

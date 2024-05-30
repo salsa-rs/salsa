@@ -40,6 +40,7 @@ where
     /// The caller is responible for selecting the appropriate element.
     pub fn field<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db C::Fields<'db> {
         let data = self.struct_map.get(runtime, id);
+        let data = C::deref_struct(data);
 
         let changed_at = C::revision(&data.revisions, self.field_index);
 
@@ -78,6 +79,7 @@ where
         let runtime = db.runtime();
         let id = input.key_index.unwrap();
         let data = self.struct_map.get(runtime, id);
+        let data = C::deref_struct(data);
         let field_changed_at = C::revision(&data.revisions, self.field_index);
         field_changed_at > revision
     }

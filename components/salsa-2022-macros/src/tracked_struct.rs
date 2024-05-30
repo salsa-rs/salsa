@@ -92,6 +92,7 @@ impl TrackedStruct {
         let field_tys: Vec<_> = self.all_fields().map(SalsaField::ty).collect();
         let id_field_indices = self.id_field_indices();
         let arity = self.all_field_count();
+        let the_ident = self.the_ident();
         let lt_db = &self.named_db_lifetime();
 
         // Create the function body that will update the revisions for each field.
@@ -132,7 +133,18 @@ impl TrackedStruct {
         parse_quote! {
             impl salsa::tracked_struct::Configuration for #config_ident {
                 type Fields<#lt_db> = ( #(#field_tys,)* );
+
+                type Struct<#lt_db> = #the_ident<#lt_db>;
+
                 type Revisions = [salsa::Revision; #arity];
+
+                unsafe fn struct_from_raw<'db>(ptr: std::ptr::NonNull<salsa::tracked_struct::ValueStruct<Self>>) -> Self::Struct<'db> {
+                    #the_ident(ptr, std::marker::PhantomData)
+                }
+
+                fn deref_struct<'db>(s: Self::Struct<'db>) -> &'db salsa::tracked_struct::ValueStruct<Self> {
+                    unsafe { s.0.as_ref() }
+                }
 
                 #[allow(clippy::unused_unit)]
                 fn id_fields(fields: &Self::Fields<'_>) -> impl std::hash::Hash {
@@ -205,7 +217,7 @@ impl TrackedStruct {
                             #field_vis fn #field_get_name(self, __db: & #lt_db #db_dyn_ty) -> & #lt_db #field_ty
                             {
                                 let (_, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
-                                let fields = unsafe { &*self.0 }.field(__runtime, #field_index);
+                                let fields = unsafe { self.0.as_ref() }.field(__runtime, #field_index);
                                 &fields.#field_index
                             }
                         }
@@ -214,7 +226,7 @@ impl TrackedStruct {
                             #field_vis fn #field_get_name(self, __db: & #lt_db #db_dyn_ty) -> #field_ty
                             {
                                 let (_, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
-                                let fields = unsafe { &*self.0 }.field(__runtime, #field_index);
+                                let fields = unsafe { self.0.as_ref() }.field(__runtime, #field_index);
                                 fields.#field_index.clone()
                             }
                         }
@@ -232,11 +244,6 @@ impl TrackedStruct {
 
         let salsa_id = self.access_salsa_id_from_self();
 
-        let ctor = match the_kind {
-            TheStructKind::Id => quote!(salsa::id::FromId::from_as_id(#data)),
-            TheStructKind::Pointer(_) => quote!(Self(#data, std::marker::PhantomData)),
-        };
-
         let lt_db = self.maybe_elided_db_lifetime();
         parse_quote! {
             #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
@@ -246,11 +253,10 @@ impl TrackedStruct {
                 {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                     let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< Self >>::ingredient(__jar);
-                    let #data = __ingredients.0.new_struct(
+                    __ingredients.0.new_struct(
                         __runtime,
                         (#(#field_names,)*),
-                    );
-                    #ctor
+                    )
                 }
 
                 pub fn salsa_id(&self) -> salsa::Id {
@@ -354,7 +360,7 @@ impl TrackedStruct {
                         fn lookup_id(id: salsa::Id, db: & #db_lt DB) -> Self {
                             let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                             let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident #type_generics>>::ingredient(jar);
-                            Self(ingredients.#tracked_struct_ingredient.lookup_struct(runtime, id), std::marker::PhantomData)
+                            ingredients.#tracked_struct_ingredient.lookup_struct(runtime, id)
                         }
                     }
                 })

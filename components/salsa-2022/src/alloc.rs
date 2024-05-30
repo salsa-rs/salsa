@@ -13,6 +13,18 @@ impl<T> Alloc<T> {
             data: unsafe { NonNull::new_unchecked(data) },
         }
     }
+
+    pub fn as_raw(&self) -> NonNull<T> {
+        self.data
+    }
+
+    pub unsafe fn as_ref(&self) -> &T {
+        unsafe { self.data.as_ref() }
+    }
+
+    pub unsafe fn as_mut(&mut self) -> &mut T {
+        unsafe { self.data.as_mut() }
+    }
 }
 
 impl<T> Drop for Alloc<T> {
@@ -20,20 +32,6 @@ impl<T> Drop for Alloc<T> {
         let data: *mut T = self.data.as_ptr();
         let data: Box<T> = unsafe { Box::from_raw(data) };
         drop(data);
-    }
-}
-
-impl<T> std::ops::Deref for Alloc<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { self.data.as_ref() }
-    }
-}
-
-impl<T> std::ops::DerefMut for Alloc<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.data.as_mut() }
     }
 }
 

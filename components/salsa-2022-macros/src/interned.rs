@@ -160,6 +160,7 @@ impl InternedStruct {
         data_ident: &syn::Ident,
         config_ident: &syn::Ident,
     ) -> syn::ItemImpl {
+        let the_ident = self.the_ident();
         let lt_db = &self.named_db_lifetime();
         let (_, _, _, type_generics, _) = self.the_ident_and_generics();
         parse_quote_spanned!(
@@ -167,6 +168,16 @@ impl InternedStruct {
 
             impl salsa::interned::Configuration for #config_ident {
                 type Data<#lt_db> = #data_ident #type_generics;
+
+                type Struct<#lt_db> = #the_ident < #lt_db >;
+
+                unsafe fn struct_from_raw<'db>(ptr: std::ptr::NonNull<salsa::interned::ValueStruct<Self>>) -> Self::Struct<'db> {
+                    #the_ident(ptr, std::marker::PhantomData)
+                }
+
+                fn deref_struct<'db>(s: Self::Struct<'db>) -> &'db salsa::interned::ValueStruct<Self> {
+                    unsafe { s.0.as_ref() }
+                }
             }
         )
     }
@@ -191,7 +202,7 @@ impl InternedStruct {
 
         let field_getters: Vec<syn::ImplItemFn> = self
             .all_fields()
-            .map(|field| {
+            .map(|field: &crate::salsa_struct::SalsaField| {
                 let field_name = field.name();
                 let field_ty = field.ty();
                 let field_vis = field.vis();
@@ -199,13 +210,13 @@ impl InternedStruct {
                 if field.is_clone_field() {
                     parse_quote_spanned! { field_get_name.span() =>
                         #field_vis fn #field_get_name(self, _db: & #db_lt #db_dyn_ty) -> #field_ty {
-                            std::clone::Clone::clone(&unsafe { &*self.0 }.data().#field_name)
+                            std::clone::Clone::clone(&unsafe { self.0.as_ref() }.data().#field_name)
                         }
                     }
                 } else {
                     parse_quote_spanned! { field_get_name.span() =>
                         #field_vis fn #field_get_name(self, _db: & #db_lt #db_dyn_ty) -> & #db_lt #field_ty {
-                            &unsafe { &*self.0 }.data().#field_name
+                            &unsafe { self.0.as_ref() }.data().#field_name
                         }
                     }
                 }
@@ -218,18 +229,15 @@ impl InternedStruct {
         let constructor_name = self.constructor_name();
         let new_method: syn::ImplItemFn = parse_quote_spanned! { constructor_name.span() =>
             #vis fn #constructor_name(
-                db: &#db_dyn_ty,
+                db: &#db_lt #db_dyn_ty,
                 #(#field_names: #field_tys,)*
             ) -> Self {
                 let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                 let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #the_ident #type_generics >>::ingredient(jar);
-                Self(
-                    ingredients.intern(runtime, #data_ident {
-                        #(#field_names,)*
-                        __phantom: std::marker::PhantomData,
-                    }),
-                    std::marker::PhantomData,
-                )
+                ingredients.intern(runtime, #data_ident {
+                    #(#field_names,)*
+                    __phantom: std::marker::PhantomData,
+                })
             }
         };
 
@@ -262,6 +270,7 @@ impl InternedStruct {
             self.the_ident_and_generics();
         let db_dyn_ty = self.db_dyn_ty();
         let jar_ty = self.jar_ty();
+        let db_lt = self.named_db_lifetime();
 
         let field_getters: Vec<syn::ImplItemFn> = self
             .all_fields()
@@ -296,7 +305,7 @@ impl InternedStruct {
         let constructor_name = self.constructor_name();
         let new_method: syn::ImplItemFn = parse_quote_spanned! { constructor_name.span() =>
             #vis fn #constructor_name(
-                db: &#db_dyn_ty,
+                db: & #db_lt #db_lt #db_dyn_ty,
                 #(#field_names: #field_tys,)*
             ) -> Self {
                 let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
@@ -384,7 +393,7 @@ impl InternedStruct {
                         fn lookup_id(id: salsa::Id, db: & #db_lt DB) -> Self {
                             let (jar, _) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
                             let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident #type_generics>>::ingredient(jar);
-                            Self(ingredients.interned_value(id), std::marker::PhantomData)
+                            ingredients.interned_value(id)
                         }
                     }
                 })
