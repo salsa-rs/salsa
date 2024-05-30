@@ -16,7 +16,7 @@ pub(crate) fn tracked(
     let tokens = SalsaStruct::with_struct(args, struct_item, "tracked_struct")
         .and_then(|el| TrackedStruct(el).generate_tracked())?;
 
-    Ok(crate::debug::dump_tokens(&struct_name, tokens))
+    Ok(crate::debug::dump_tokens(struct_name, tokens))
 }
 
 struct TrackedStruct(SalsaStruct<Self>);
@@ -65,7 +65,7 @@ impl TrackedStruct {
         let update_impl = self.update_impl();
         let as_id_impl = self.as_id_impl();
         let send_sync_impls = self.send_sync_impls();
-        let from_id_impl = self.from_id_impl();
+        let from_id_impl = self.impl_of_from_id();
         let lookup_id_impl = self.lookup_id_impl();
         let debug_impl = self.debug_impl();
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
@@ -249,8 +249,6 @@ impl TrackedStruct {
         let field_names = self.all_field_names();
         let field_tys = self.all_field_tys();
         let constructor_name = self.constructor_name();
-
-        let data = syn::Ident::new("__data", Span::call_site());
 
         let salsa_id = self.access_salsa_id_from_self();
 

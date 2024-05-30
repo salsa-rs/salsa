@@ -62,7 +62,7 @@ pub(crate) fn debug_with_db(input: syn::DeriveInput) -> syn::Result<proc_macro2:
                     |tokens, binding| {
                         let binding_name =
                             Literal::string(&binding.ast().ident.as_ref().unwrap().to_string());
-                        let binding_data = binding_tokens(&binding);
+                        let binding_data = binding_tokens(binding);
                         quote!(#tokens . field(#binding_name, #binding_data))
                     },
                 ),
@@ -70,7 +70,7 @@ pub(crate) fn debug_with_db(input: syn::DeriveInput) -> syn::Result<proc_macro2:
                 syn::Fields::Unnamed(_) | syn::Fields::Unit => variant.fold(
                     quote!(#fmt.debug_tuple(#variant_name)),
                     |tokens, binding| {
-                        let binding_data = binding_tokens(&binding);
+                        let binding_data = binding_tokens(binding);
                         quote!(#tokens . field(#binding_data))
                     },
                 ),

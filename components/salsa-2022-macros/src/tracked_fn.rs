@@ -50,7 +50,7 @@ pub(crate) fn tracked_fn(
     *item_fn.block = getter_fn(&args, &mut item_fn.sig, item_fn.block.span(), &config_ty)?;
 
     Ok(crate::debug::dump_tokens(
-        &fn_ident,
+        fn_ident,
         quote! {
             #fn_struct
 

@@ -9,7 +9,6 @@ use crate::durability::Durability;
 use crate::id::{AsId, LookupId};
 use crate::ingredient::{fmt_index, IngredientRequiresReset};
 use crate::key::DependencyIndex;
-use crate::plumbing::transmute_lifetime;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
 use crate::{DatabaseKeyIndex, Id};
@@ -30,7 +29,7 @@ pub trait Configuration: Sized {
     /// created or, if a struct is being reused, after we have updated its
     /// fields (or confirmed it is green and no updates are required).
     ///
-    /// # Unsafety
+    /// # Safety
     ///
     /// Requires that `ptr` represents a "confirmed" value in this revision,
     /// which means that it will remain valid and immutable for the remainder of this
@@ -40,7 +39,7 @@ pub trait Configuration: Sized {
     /// Deref the struct to yield the underlying value struct.
     /// Since we are still part of the `'db` lifetime in which the struct was created,
     /// this deref is safe, and the value-struct fields are immutable and verified.
-    fn deref_struct<'db>(s: Self::Struct<'db>) -> &'db ValueStruct<Self>;
+    fn deref_struct(s: Self::Struct<'_>) -> &ValueStruct<Self>;
 }
 
 pub trait InternedData: Sized + Eq + Hash + Clone {}
@@ -152,7 +151,7 @@ where
         }
     }
 
-    pub fn interned_value<'db>(&'db self, id: Id) -> C::Struct<'db> {
+    pub fn interned_value(&self, id: Id) -> C::Struct<'_> {
         let r = self.value_map.get(&id).unwrap();
 
         // SAFETY: Items are only removed from the `value_map` with an `&mut self` reference.
@@ -162,7 +161,7 @@ where
     /// Lookup the data for an interned value based on its id.
     /// Rarely used since end-users generally carry a struct with a pointer directly
     /// to the interned item.
-    pub fn data<'db>(&'db self, id: Id) -> &'db C::Data<'db> {
+    pub fn data(&self, id: Id) -> &C::Data<'_> {
         C::deref_struct(self.interned_value(id)).data()
     }
 
@@ -284,7 +283,7 @@ impl<C> ValueStruct<C>
 where
     C: Configuration,
 {
-    pub fn data<'db>(&'db self) -> &'db C::Data<'db> {
+    pub fn data(&self) -> &C::Data<'_> {
         // SAFETY: The lifetime of `self` is tied to the interning ingredient;
         // we never remove data without an `&mut self` access to the interning ingredient.
         unsafe { self.to_self_ref(&self.fields) }

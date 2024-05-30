@@ -31,8 +31,7 @@ pub(crate) fn dump_tokens(input_name: impl ToString, tokens: TokenStream) -> Tok
                     .unwrap()
                     .write_all(token_string.as_bytes())?;
                 rustfmt.wait_with_output()
-            })
-            .and_then(|output| Ok(eprintln!("{}", String::from_utf8_lossy(&output.stdout))))
+            }).map(|output| eprintln!("{}", String::from_utf8_lossy(&output.stdout)))
             .or_else(|_| Ok(eprintln!("{token_string}")));
     }
 

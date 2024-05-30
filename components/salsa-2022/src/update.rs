@@ -23,6 +23,12 @@ pub mod helper {
 
     pub struct Dispatch<D>(PhantomData<D>);
 
+    impl<D> Default for Dispatch<D> {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl<D> Dispatch<D> {
         pub fn new() -> Self {
             Dispatch(PhantomData)
@@ -33,11 +39,17 @@ pub mod helper {
     where
         D: Update,
     {
+        /// # Safety
+        ///
+        /// See the `maybe_update` method in the [`Update`][] trait.
         pub unsafe fn maybe_update(old_pointer: *mut D, new_value: D) -> bool {
             unsafe { D::maybe_update(old_pointer, new_value) }
         }
     }
 
+    /// # Safety
+    ///
+    /// Impl will fulfill the postconditions of `maybe_update`
     pub unsafe trait Fallback<T> {
         /// Same safety conditions as `Update::maybe_update`
         unsafe fn maybe_update(old_pointer: *mut T, new_value: T) -> bool;
@@ -92,6 +104,8 @@ pub fn always_update<T>(
     *old_pointer = new_value;
 }
 
+/// # Safety
+///
 /// The `unsafe` on the trait is to assert that `maybe_update` ensures
 /// the properties it is intended to ensure.
 pub unsafe trait Update {
@@ -99,7 +113,7 @@ pub unsafe trait Update {
     ///
     /// True if the value should be considered to have changed in the new revision.
     ///
-    /// # Unsafe contract
+    /// # Safety
     ///
     /// ## Requires
     ///

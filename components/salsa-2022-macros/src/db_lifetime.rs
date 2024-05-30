@@ -16,7 +16,7 @@ pub(crate) fn default_db_lifetime(span: Span) -> syn::Lifetime {
 
 /// Require that either there are no generics or exactly one lifetime parameter.
 pub(crate) fn require_optional_db_lifetime(generics: &syn::Generics) -> syn::Result<()> {
-    if generics.params.len() == 0 {
+    if generics.params.is_empty() {
         return Ok(());
     }
 
@@ -27,7 +27,7 @@ pub(crate) fn require_optional_db_lifetime(generics: &syn::Generics) -> syn::Res
 
 /// Require that either there is exactly one lifetime parameter.
 pub(crate) fn require_db_lifetime(generics: &syn::Generics) -> syn::Result<()> {
-    if generics.params.len() == 0 {
+    if generics.params.is_empty() {
         return Err(syn::Error::new_spanned(
             generics,
             "this definition must have a `'db` lifetime",

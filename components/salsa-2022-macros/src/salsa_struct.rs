@@ -177,7 +177,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                     // FIXME: this should be a comma separated list but I couldn't
                     // be bothered to remember how syn does this.
                     let args: syn::Ident = attr.parse_args()?;
-                    if args.to_string() == "DebugWithDb" {
+                    if args == "DebugWithDb" {
                         Ok(vec![Customization::DebugWithDb])
                     } else {
                         Err(syn::Error::new_spanned(args, "unrecognized customization"))
@@ -446,7 +446,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     }
 
     /// Generate `impl salsa::id::AsId for Foo`
-    pub(crate) fn from_id_impl(&self) -> Option<syn::ItemImpl> {
+    pub(crate) fn impl_of_from_id(&self) -> Option<syn::ItemImpl> {
         match self.the_struct_kind() {
             TheStructKind::Id => {
                 let ident = self.the_ident();

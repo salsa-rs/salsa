@@ -9,7 +9,7 @@ use salsa_2022_tests::{HasLogger, Logger};
 use test_log::test;
 
 thread_local! {
-    static COUNTER: Cell<usize> = Cell::new(0);
+    static COUNTER: Cell<usize> = const { Cell::new(0) };
 }
 
 #[salsa::jar(db = Db)]

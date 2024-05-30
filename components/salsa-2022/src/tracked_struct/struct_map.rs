@@ -9,7 +9,6 @@ use dashmap::mapref::one::RefMut;
 use crate::{
     alloc::Alloc,
     hash::{FxDashMap, FxHasher},
-    plumbing::transmute_lifetime,
     Id, Runtime,
 };
 

@@ -44,7 +44,7 @@ pub trait Configuration: Sized {
     /// created or, if a struct is being reused, after we have updated its
     /// fields (or confirmed it is green and no updates are required).
     ///
-    /// # Unsafety
+    /// # Safety
     ///
     /// Requires that `ptr` represents a "confirmed" value in this revision,
     /// which means that it will remain valid and immutable for the remainder of this
@@ -54,7 +54,7 @@ pub trait Configuration: Sized {
     /// Deref the struct to yield the underlying value struct.
     /// Since we are still part of the `'db` lifetime in which the struct was created,
     /// this deref is safe, and the value-struct fields are immutable and verified.
-    fn deref_struct<'db>(s: Self::Struct<'db>) -> &'db ValueStruct<Self>;
+    fn deref_struct(s: Self::Struct<'_>) -> &ValueStruct<Self>;
 
     fn id_fields(fields: &Self::Fields<'_>) -> impl Hash;
 
@@ -68,7 +68,7 @@ pub trait Configuration: Sized {
     /// Update the field data and, if the value has changed,
     /// the appropriate entry in the `revisions` array.
     ///
-    /// # Safety requirements and conditions
+    /// # Safety
     ///
     /// Requires the same conditions as the `maybe_update`
     /// method on [the `Update` trait](`crate::update::Update`).

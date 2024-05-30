@@ -62,7 +62,7 @@ impl InternedStruct {
         let configuration_impl = self.configuration_impl(&data_struct.ident, &config_struct.ident);
         let ingredients_for_impl = self.ingredients_for_impl(&config_struct.ident);
         let as_id_impl = self.as_id_impl();
-        let from_id_impl = self.from_id_impl();
+        let from_id_impl = self.impl_of_from_id();
         let lookup_id_impl = self.lookup_id_impl();
         let send_sync_impls = self.send_sync_impls();
         let named_fields_impl = self.inherent_impl_for_named_fields();

@@ -58,7 +58,7 @@ impl<C: Configuration> MemoMap<C> {
 
     /// Removes any existing memo for the given key.
     #[must_use]
-    pub(super) fn remove<'db>(&'db self, key: Id) -> Option<ArcSwap<Memo<C::Value<'db>>>> {
+    pub(super) fn remove(&self, key: Id) -> Option<ArcSwap<Memo<C::Value<'_>>>> {
         unsafe { self.map.remove(&key).map(|o| self.to_self(o.1)) }
     }
 

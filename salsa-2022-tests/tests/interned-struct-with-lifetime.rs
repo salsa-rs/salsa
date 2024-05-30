@@ -23,8 +23,8 @@ struct InternedPair<'db> {
 
 #[salsa::tracked]
 fn intern_stuff(db: &dyn Db) -> String {
-    let s1 = InternedString::new(db, format!("Hello, "));
-    let s2 = InternedString::new(db, format!("World, "));
+    let s1 = InternedString::new(db, "Hello, ".to_string());
+    let s2 = InternedString::new(db, "World, ".to_string());
     let s3 = InternedPair::new(db, (s1, s2));
     format!("{:?}", s3.debug(db))
 }
