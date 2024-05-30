@@ -70,20 +70,31 @@ impl TrackedStruct {
         let debug_impl = self.debug_impl();
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
         Ok(quote! {
-            #config_struct
-            #config_impl
             #the_struct
-            #inherent_impl
-            #ingredients_for_impl
-            #salsa_struct_in_db_impl
-            #tracked_struct_in_db_impl
-            #update_impl
-            #as_id_impl
-            #from_id_impl
-            #(#send_sync_impls)*
-            #lookup_id_impl
-            #as_debug_with_db_impl
-            #debug_impl
+
+            // It'd be nice if this struct definition
+            // could be moved into the `const _: () = {}` so that it doesn't
+            // pollute the user's namespace. The reason it cannot is that it appears
+            // in the field types within `#the_struct`. This seems solveable but it
+            // would take another trait or indirection (e.g., replacing
+            // with `<X as SalsaType>::Config`).
+            #config_struct
+
+            #[allow(clippy::all, dead_code, warnings)]
+            const _: () = {
+                #config_impl
+                #inherent_impl
+                #ingredients_for_impl
+                #salsa_struct_in_db_impl
+                #tracked_struct_in_db_impl
+                #update_impl
+                #as_id_impl
+                #from_id_impl
+                #(#send_sync_impls)*
+                #lookup_id_impl
+                #as_debug_with_db_impl
+                #debug_impl
+            };
         })
     }
 
@@ -146,7 +157,6 @@ impl TrackedStruct {
                     unsafe { s.0.as_ref() }
                 }
 
-                #[allow(clippy::unused_unit)]
                 fn id_fields(fields: &Self::Fields<'_>) -> impl std::hash::Hash {
                     ( #( &fields.#id_field_indices ),* )
                 }
@@ -246,7 +256,6 @@ impl TrackedStruct {
 
         let lt_db = self.maybe_elided_db_lifetime();
         parse_quote! {
-            #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
             impl #impl_generics #ident #type_generics
             #where_clause {
                 pub fn #constructor_name(__db: &#lt_db #db_dyn_ty, #(#field_names: #field_tys,)*) -> Self

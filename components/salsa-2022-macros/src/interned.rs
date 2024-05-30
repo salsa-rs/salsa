@@ -76,18 +76,22 @@ impl InternedStruct {
             quote! {
                 #the_struct
                 #config_struct
-                #configuration_impl
                 #data_struct
-                #ingredients_for_impl
-                #as_id_impl
-                #from_id_impl
-                #lookup_id_impl
-                #(#send_sync_impls)*
-                #named_fields_impl
-                #salsa_struct_in_db_impl
-                #as_debug_with_db_impl
-                #update_impl
-                #debug_impl
+
+                #[allow(warnings, clippy::all)]
+                const _: () = {
+                    #configuration_impl
+                    #ingredients_for_impl
+                    #as_id_impl
+                    #from_id_impl
+                    #lookup_id_impl
+                    #(#send_sync_impls)*
+                    #named_fields_impl
+                    #salsa_struct_in_db_impl
+                    #as_debug_with_db_impl
+                    #update_impl
+                    #debug_impl
+                };
             },
         ))
     }
