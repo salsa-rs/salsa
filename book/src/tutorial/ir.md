@@ -39,11 +39,12 @@ In our compiler, we have just one simple input, the `SourceProgram`, which has a
 ### The data lives in the database
 
 Although they are declared like other Rust structs, Salsa structs are implemented quite differently.
-The values of their fields are stored in the Salsa database, and the struct itself just contains a numeric identifier.
+The values of their fields are stored in the Salsa database and the struct themselves just reference it.
 This means that the struct instances are copy (no matter what fields they contain).
 Creating instances of the struct and accessing fields is done by invoking methods like `new` as well as getters and setters.
 
-More concretely, the `#[salsa::input]` annotation will generate a struct for `SourceProgram` like this:
+In the case of `#[salsa::input]`, the struct contains a `salsa::Id`, which is a non-zero integrated.
+So the generated `SourceProgram` struct looks something like this:
 
 ```rust
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -82,7 +83,8 @@ In this case, the parser is going to take in the `SourceProgram` struct that we 
 
 Like with an input, the fields of a tracked struct are also stored in the database.
 Unlike an input, those fields are immutable (they cannot be "set"), and Salsa compares them across revisions to know when they have changed.
-In this case, if parsing the input produced the same `Program` result (e.g., because the only change to the input was some trailing whitespace, perhaps),
+In this case, if parsing the input produced the same `Program` result
+(e.g., because the only change to the input was some trailing whitespace, perhaps),
 then subsequent parts of the computation won't need to re-execute.
 (We'll revisit the role of tracked structs in reuse more in future parts of the IR.)
 
@@ -91,6 +93,19 @@ Apart from the fields being immutable, the API for working with a tracked struct
 * You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Program::new(&db, some_staements)`)
 * You use a getter to read the value of a field, just like with an input (e.g., `my_func.statements(db)` to read the `statements` field).
     * In this case, the field is tagged as `#[return_ref]`, which means that the getter will return a `&Vec<Statement>`, instead of cloning the vector.
+
+### The `'db` lifetime
+
+Unlike inputs, tracked structs carry a `'db` lifetime.
+This lifetime is tied to the `&db` used to create them and
+ensures that, so long as you are using the struct,
+the database remains immutable:
+in other words, you cannot change the values of a `salsa::Input`.
+
+The `'db` lifetime also allows tracked structs to be implemented
+using a pointer (versus the numeric id found in `salsa::input` structs).
+This doesn't really effect you as a user except that it allows accessing fields from tracked structs,
+which is very common, to be optimized.
 
 ## Representing functions
 
@@ -122,7 +137,7 @@ For more details, see the [algorithm](../reference/algorithm.md) page of the ref
 ## Interned structs
 
 The final kind of Salsa struct are *interned structs*.
-As with input and tracked structs, the data for an interned struct is stored in the database, and you just pass around a single integer.
+As with input and tracked structs, the data for an interned struct is stored in the database.
 Unlike those structs, if you intern the same data twice, you get back the **same integer**.
 
 A classic use of interning is for small strings like function names and variables.
@@ -143,15 +158,14 @@ let f2 = FunctionId::new(&db, "my_string".to_string());
 assert_eq!(f1, f2);
 ```
 
-### Interned ids are guaranteed to be consistent within a revision, but not across revisions (but you don't have to care)
+### Interned values carry a `'db` lifetime
 
-Interned ids are guaranteed not to change within a single revision, so you can intern things from all over your program and get back consistent results.
-When you change the inputs, however, Salsa may opt to clear some of the interned values and choose different integers.
-However, if this happens, it will also be sure to re-execute every function that interned that value, so all of them still see a consistent value,
-just a different one than they saw in a previous revision.
-
-In other words, within a Salsa computation, you can assume that interning produces a single consistent integer, and you don't have to think about it.
-If, however, you export interned identifiers outside the computation, and then change the inputs, they may no longer be valid or may refer to different values.
+Like tracked structs, interned values carry a `'db` lifetime that prevents them from being used across salsa revisions.
+It also permits them to be implemented using a pointer "under the hood", permitting efficient field access.
+Interned values are guaranteed to be consistent within a single revision.
+Across revisions, they may be cleared, reallocated, or reassigned -- but you cannot generally observe this,
+since the `'db` lifetime prevents you from changing inputs (and hence creating a new revision)
+while an interned value is in active use.
 
 ### Expressions and statements
 
