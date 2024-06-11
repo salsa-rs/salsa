@@ -127,34 +127,18 @@ impl InternedStruct {
         let visibility = self.visibility();
         let all_field_names = self.all_field_names();
         let all_field_tys = self.all_field_tys();
+        let db_lt = self.db_lt();
 
-        match self.the_struct_kind() {
-            TheStructKind::Id => {
-                parse_quote_spanned! { data_ident.span() =>
-                    #[derive(Eq, PartialEq, Hash, Clone)]
-                    #visibility struct #data_ident #impl_generics
-                    where
-                        #where_clause
-                    {
-                        #(
-                            #all_field_names: #all_field_tys,
-                        )*
-                    }
-                }
-            }
-            TheStructKind::Pointer(db_lt) => {
-                parse_quote_spanned! { data_ident.span() =>
-                    #[derive(Eq, PartialEq, Hash, Clone)]
-                    #visibility struct #data_ident #impl_generics
-                    where
-                        #where_clause
-                    {
-                        #(
-                            #all_field_names: #all_field_tys,
-                        )*
-                        __phantom: std::marker::PhantomData<& #db_lt ()>,
-                    }
-                }
+        parse_quote_spanned! { data_ident.span() =>
+            #[derive(Eq, PartialEq, Hash, Clone)]
+            #visibility struct #data_ident #impl_generics
+            where
+                #where_clause
+            {
+                #(
+                    #all_field_names: #all_field_tys,
+                )*
+                __phantom: std::marker::PhantomData<& #db_lt ()>,
             }
         }
     }
@@ -189,15 +173,7 @@ impl InternedStruct {
     /// If this is an interned struct, then generate methods to access each field,
     /// as well as a `new` method.
     fn inherent_impl_for_named_fields(&self) -> syn::ItemImpl {
-        match self.the_struct_kind() {
-            TheStructKind::Id => self.inherent_impl_for_named_fields_id(),
-            TheStructKind::Pointer(db_lt) => self.inherent_impl_for_named_fields_lt(&db_lt),
-        }
-    }
-
-    /// If this is an interned struct, then generate methods to access each field,
-    /// as well as a `new` method.
-    fn inherent_impl_for_named_fields_lt(&self, db_lt: &syn::Lifetime) -> syn::ItemImpl {
+        let db_lt = self.db_lt();
         let vis: &syn::Visibility = self.visibility();
         let (the_ident, _, impl_generics, type_generics, where_clause) =
             self.the_ident_and_generics();
@@ -266,81 +242,6 @@ impl InternedStruct {
         }
     }
 
-    /// If this is an interned struct, then generate methods to access each field,
-    /// as well as a `new` method.
-    fn inherent_impl_for_named_fields_id(&self) -> syn::ItemImpl {
-        let vis: &syn::Visibility = self.visibility();
-        let (the_ident, _, impl_generics, type_generics, where_clause) =
-            self.the_ident_and_generics();
-        let db_dyn_ty = self.db_dyn_ty();
-        let jar_ty = self.jar_ty();
-        let db_lt = self.named_db_lifetime();
-
-        let field_getters: Vec<syn::ImplItemFn> = self
-            .all_fields()
-            .map(|field| {
-                let field_name = field.name();
-                let field_ty = field.ty();
-                let field_vis = field.vis();
-                let field_get_name = field.get_name();
-                if field.is_clone_field() {
-                    parse_quote_spanned! { field_get_name.span() =>
-                        #field_vis fn #field_get_name(self, db: &#db_dyn_ty) -> #field_ty {
-                            let (jar, _runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
-                            let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #the_ident #type_generics >>::ingredient(jar);
-                            std::clone::Clone::clone(&ingredients.data(self.0).#field_name)
-                        }
-                    }
-                } else {
-                    parse_quote_spanned! { field_get_name.span() =>
-                        #field_vis fn #field_get_name<'db>(self, db: &'db #db_dyn_ty) -> &'db #field_ty {
-                            let (jar, _runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
-                            let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #the_ident #type_generics >>::ingredient(jar);
-                            &ingredients.data(self.0).#field_name
-                        }
-                    }
-                }
-            })
-            .collect();
-
-        let field_names = self.all_field_names();
-        let field_tys = self.all_field_tys();
-        let data_ident = self.data_ident();
-        let constructor_name = self.constructor_name();
-        let new_method: syn::ImplItemFn = parse_quote_spanned! { constructor_name.span() =>
-            #vis fn #constructor_name(
-                db: & #db_lt #db_lt #db_dyn_ty,
-                #(#field_names: #field_tys,)*
-            ) -> Self {
-                let (jar, runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
-                let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #the_ident #type_generics >>::ingredient(jar);
-                salsa::id::FromId::from_as_id(ingredients.intern(runtime, #data_ident {
-                    #(#field_names,)*
-                }))
-            }
-        };
-
-        let salsa_id = quote!(
-            pub fn salsa_id(&self) -> salsa::Id {
-                self.0
-            }
-        );
-
-        parse_quote! {
-            #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
-            impl #impl_generics #the_ident #type_generics
-            where
-                #where_clause
-            {
-                #(#field_getters)*
-
-                #new_method
-
-                #salsa_id
-            }
-        }
-    }
-
     /// Generates an impl of `salsa::storage::IngredientsFor`.
     ///
     /// For a memoized type, the only ingredient is an `InternedIngredient`.
@@ -379,28 +280,34 @@ impl InternedStruct {
         }
     }
 
-    /// Implementation of `LookupId`.
-    fn lookup_id_impl(&self) -> Option<syn::ItemImpl> {
+    fn db_lt(&self) -> syn::Lifetime {
         match self.the_struct_kind() {
-            TheStructKind::Id => None,
-            TheStructKind::Pointer(db_lt) => {
-                let (ident, parameters, _, type_generics, where_clause) =
-                    self.the_ident_and_generics();
-                let db = syn::Ident::new("DB", ident.span());
-                let jar_ty = self.jar_ty();
-                Some(parse_quote_spanned! { ident.span() =>
-                    impl<#db, #parameters> salsa::id::LookupId<& #db_lt #db> for #ident #type_generics
-                    where
-                        #db: ?Sized + salsa::DbWithJar<#jar_ty>,
-                        #where_clause
-                    {
-                        fn lookup_id(id: salsa::Id, db: & #db_lt DB) -> Self {
-                            let (jar, _) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
-                            let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident #type_generics>>::ingredient(jar);
-                            ingredients.interned_value(id)
-                        }
-                    }
-                })
+            TheStructKind::Pointer(db_lt) => db_lt,
+            TheStructKind::Id => {
+                // This should be impossible due to the conditions enforced
+                // in `validate_interned()`.
+                panic!("interned structs must have `'db` lifetimes");
+            }
+        }
+    }
+
+    /// Implementation of `LookupId`.
+    fn lookup_id_impl(&self) -> syn::ItemImpl {
+        let db_lt = self.db_lt();
+        let (ident, parameters, _, type_generics, where_clause) = self.the_ident_and_generics();
+        let db = syn::Ident::new("DB", ident.span());
+        let jar_ty = self.jar_ty();
+        parse_quote_spanned! { ident.span() =>
+            impl<#db, #parameters> salsa::id::LookupId<& #db_lt #db> for #ident #type_generics
+            where
+                #db: ?Sized + salsa::DbWithJar<#jar_ty>,
+                #where_clause
+            {
+                fn lookup_id(id: salsa::Id, db: & #db_lt DB) -> Self {
+                    let (jar, _) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(db);
+                    let ingredients = <#jar_ty as salsa::storage::HasIngredientsFor<#ident #type_generics>>::ingredient(jar);
+                    ingredients.interned_value(id)
+                }
             }
         }
     }
