@@ -108,6 +108,13 @@ pub fn always_update<T>(
 ///
 /// The `unsafe` on the trait is to assert that `maybe_update` ensures
 /// the properties it is intended to ensure.
+///
+/// `Update` must NEVER be implemented for any `&'db T` value
+/// (i.e., any Rust reference tied to the database).
+/// This is because update methods are invoked across revisions.
+/// The `'db` lifetimes are only valid within a single revision.
+/// Therefore any use of that reference in a new revision will violate
+/// stacked borrows.
 pub unsafe trait Update {
     /// # Returns
     ///
