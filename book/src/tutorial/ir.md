@@ -43,8 +43,8 @@ The values of their fields are stored in the Salsa database and the struct thems
 This means that the struct instances are copy (no matter what fields they contain).
 Creating instances of the struct and accessing fields is done by invoking methods like `new` as well as getters and setters.
 
-In the case of `#[salsa::input]`, the struct contains a `salsa::Id`, which is a non-zero integrated.
-So the generated `SourceProgram` struct looks something like this:
+In the case of `#[salsa::input]`, the struct contains a `salsa::Id`, which is a non-zero integer.
+Therefore, the generated `SourceProgram` struct looks something like this:
 
 ```rust
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -104,8 +104,8 @@ in other words, you cannot change the values of a `salsa::Input`.
 
 The `'db` lifetime also allows tracked structs to be implemented
 using a pointer (versus the numeric id found in `salsa::input` structs).
-This doesn't really effect you as a user except that it allows accessing fields from tracked structs,
-which is very common, to be optimized.
+This doesn't really effect you as a user except that it allows accessing fields from tracked structs—
+a very common operation—to be optimized.
 
 ## Representing functions
 

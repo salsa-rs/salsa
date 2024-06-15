@@ -4,7 +4,7 @@
 use proc_macro2::Span;
 use syn::spanned::Spanned;
 
-/// Normally we try to use whatever lifetime parameter the use gave us
+/// Normally we try to use whatever lifetime parameter the user gave us
 /// to represent `'db`; but if they didn't give us one, we need to use a default
 /// name. We choose `'db`.
 pub(crate) fn default_db_lifetime(span: Span) -> syn::Lifetime {
@@ -51,7 +51,7 @@ pub(crate) fn require_db_lifetime(generics: &syn::Generics) -> syn::Result<()> {
     Ok(())
 }
 
-/// Return the `'db` lifetime given be the user, or a default.
+/// Return the `'db` lifetime given by the user, or a default.
 /// The generics ought to have been checked with `require_db_lifetime` already.
 pub(crate) fn db_lifetime(generics: &syn::Generics) -> syn::Lifetime {
     if let Some(lt) = generics.lifetimes().next() {

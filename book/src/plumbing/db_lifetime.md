@@ -27,7 +27,7 @@ Here is a typical sequence of operations for a tracked struct along with the use
 * The tracked function `f` does not re-execute in R1.
 * The value of the field `field` is accessed on the tracked struct instance `ts` by invoking the method `ts.field(db)`
     * *Unsafe:* This accesses the raw pointer to `alloc`.* A new revision R2 begins.
-* The tracked function `f` does reexecute in R1 and it again creates a tracked struct with key `K` and with (Some) distinct field values.
+* The tracked function `f` does reexecute in R2 and it again creates a tracked struct with key `K` and with (Some) distinct field values.
     * The fields for `ts` are updated.
 * The value of the field `field` is accessed on the tracked struct instance `ts` by invoking the method `ts.field(db)`
     * *Unsafe:* This accesses the raw pointer to `alloc`.

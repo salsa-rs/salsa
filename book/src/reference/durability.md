@@ -1,7 +1,7 @@
 # Durability
 
 "Durability" is an optimization that can greatly improve the performance of your salsa programs.
-Durability specifies the probably that an input's value will change.
+Durability specifies the probability that an input's value will change.
 The default is "low durability".
 But when you set the value of an input, you can manually specify a higher durability,
 typically `Durability::HIGH`.
