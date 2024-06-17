@@ -114,8 +114,11 @@ Finally, you can also modify the value of an input field by using the setter met
 Since this is modifying the input, the setter takes an `&mut`-reference to the database:
 
 ```rust
-file.set_contents(&mut db, String::from("fn foo() { /* add a comment */ }"));
+file.set_contents(&mut db).to(String::from("fn foo() { /* add a comment */ }"));
 ```
+
+Note that the setter method `set_contents` returns a "builder".
+This gives the ability to set the [durability](./reference/durability.md) and other advanced concepts.
 
 ## Tracked functions
 
@@ -147,12 +150,13 @@ Tracked functions can return any clone-able type. A clone is required since, whe
 
 **Tracked structs** are intermediate structs created during your computation.
 Like inputs, their fields are stored inside the database, and the struct itself just wraps an id.
-Unlike inputs, they can only be created inside a tracked function, and their fields can never change once they are created.
-Getter methods are provided to read the fields, but there are no setter methods[^specify]. Example:
+Unlike inputs, they can only be created inside a tracked function, and their fields can never change once they are created (until the next revision, at least).
+Getter methods are provided to read the fields, but there are no setter methods. 
+Example:
 
 ```rust
 #[salsa::tracked]
-struct Ast {
+struct Ast<'db> {
     #[return_ref]
     top_level_items: Vec<Item>,
 }

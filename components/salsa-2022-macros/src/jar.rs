@@ -1,9 +1,12 @@
-use proc_macro2::Literal;
+use proc_macro2::extra::DelimSpan;
+use proc_macro2::{Delimiter, Group, Literal, TokenStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
+use syn::visit_mut::VisitMut;
 use syn::{Field, FieldsUnnamed, Ident, ItemStruct, Path, Token};
 
 use crate::options::Options;
+use crate::xform::ChangeLt;
 
 // Source:
 //
@@ -147,6 +150,9 @@ fn generate_fields(input: &ItemStruct) -> FieldsUnnamed {
         // Convert to anonymous fields
         field.ident = None;
 
+        // Convert ty to reference static and not `'_`
+        ChangeLt::elided_to_static().visit_type_mut(&mut field.ty);
+
         let field_ty = &field.ty;
         field.ty =
             syn::parse2(quote!(< #field_ty as salsa::storage::IngredientsFor >::Ingredients))
@@ -161,7 +167,7 @@ fn generate_fields(input: &ItemStruct) -> FieldsUnnamed {
         },
         syn::Fields::Unnamed(f) => f.paren_token,
         syn::Fields::Unit => syn::token::Paren {
-            span: input.ident.span(),
+            span: to_delim_span(input),
         },
     };
 
@@ -169,4 +175,10 @@ fn generate_fields(input: &ItemStruct) -> FieldsUnnamed {
         paren_token,
         unnamed: output_fields,
     }
+}
+
+fn to_delim_span(s: &impl Spanned) -> DelimSpan {
+    let mut group = Group::new(Delimiter::None, TokenStream::new());
+    group.set_span(s.span());
+    group.delim_span()
 }

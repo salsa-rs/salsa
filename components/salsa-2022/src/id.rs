@@ -65,17 +65,46 @@ impl From<Id> for usize {
     }
 }
 
-/// Trait for types that can be interconverted to a salsa Id;
-pub trait AsId: Sized + Copy + Eq + Hash + Debug {
-    fn as_id(self) -> Id;
+/// Internal salsa trait for types that can be represented as a salsa id.
+pub trait AsId: Sized {
+    fn as_id(&self) -> Id;
+}
+
+/// Internal Salsa trait for types that have a salsa id but require looking
+/// up in the database to find it. This is different from
+/// [`AsId`][] where what we have is literally a *newtype*
+/// for an `Id`.
+pub trait LookupId<DB>: AsId {
+    /// Lookup from an `Id` to get an instance of the type.
+    ///
+    /// # Panics
+    ///
+    /// This fn may panic if the value with this id has not been
+    /// produced in this revision already (e.g., for a tracked
+    /// struct, the function will panic if the tracked struct
+    /// has not yet been created in this revision). Salsa's
+    /// dependency tracking typically ensures this does not
+    /// occur, but it is possible for a user to violate this
+    /// rule.
+    fn lookup_id(id: Id, db: DB) -> Self;
+}
+
+/// Internal Salsa trait for types that are just a newtype'd [`Id`][].
+pub trait FromId: AsId + Copy + Eq + Hash + Debug {
     fn from_id(id: Id) -> Self;
+
+    fn from_as_id(id: &impl AsId) -> Self {
+        Self::from_id(id.as_id())
+    }
 }
 
 impl AsId for Id {
-    fn as_id(self) -> Id {
-        self
+    fn as_id(&self) -> Id {
+        *self
     }
+}
 
+impl FromId for Id {
     fn from_id(id: Id) -> Self {
         id
     }
@@ -84,11 +113,22 @@ impl AsId for Id {
 /// As a special case, we permit `()` to be converted to an `Id`.
 /// This is useful for declaring functions with no arguments.
 impl AsId for () {
-    fn as_id(self) -> Id {
+    fn as_id(&self) -> Id {
         Id::from_u32(0)
     }
+}
 
+impl FromId for () {
     fn from_id(id: Id) -> Self {
         assert_eq!(0, id.as_u32());
+    }
+}
+
+impl<DB, ID> LookupId<DB> for ID
+where
+    ID: FromId,
+{
+    fn lookup_id(id: Id, _db: DB) -> Self {
+        Self::from_id(id)
     }
 }

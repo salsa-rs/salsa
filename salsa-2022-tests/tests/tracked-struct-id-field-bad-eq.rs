@@ -1,11 +1,9 @@
-//! Test a field whose `PartialEq` impl is always true.
-//! This can our "last changed" data to be wrong
-//! but we *should* always reflect the final values.
+//! Test an id field whose `PartialEq` impl is always true.
 
 use test_log::test;
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked, the_fn);
+struct Jar(MyInput, MyTracked<'_>, the_fn);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
@@ -33,7 +31,7 @@ impl From<bool> for BadEq {
 }
 
 #[salsa::tracked]
-struct MyTracked {
+struct MyTracked<'db> {
     #[id]
     field: BadEq,
 }

@@ -5,7 +5,7 @@ use crossbeam::atomic::AtomicCell;
 use crate::{
     durability::Durability,
     runtime::local_state::{QueryOrigin, QueryRevisions},
-    Runtime,
+    Id, Runtime,
 };
 
 use super::{memo::Memo, Configuration, FunctionIngredient};
@@ -14,11 +14,11 @@ impl<C> FunctionIngredient<C>
 where
     C: Configuration,
 {
-    pub fn store(
-        &mut self,
+    pub fn store<'db>(
+        &'db mut self,
         runtime: &mut Runtime,
-        key: C::Key,
-        value: C::Value,
+        key: Id,
+        value: C::Value<'db>,
         durability: Durability,
     ) {
         let revision = runtime.current_revision();

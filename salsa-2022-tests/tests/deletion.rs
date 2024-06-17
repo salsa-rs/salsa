@@ -11,7 +11,7 @@ use test_log::test;
 #[salsa::jar(db = Db)]
 struct Jar(
     MyInput,
-    MyTracked,
+    MyTracked<'_>,
     final_result,
     create_tracked_structs,
     contribution_from_struct,
@@ -35,12 +35,12 @@ fn final_result(db: &dyn Db, input: MyInput) -> u32 {
 }
 
 #[salsa::tracked]
-struct MyTracked {
+struct MyTracked<'db> {
     field: u32,
 }
 
 #[salsa::tracked]
-fn create_tracked_structs(db: &dyn Db, input: MyInput) -> Vec<MyTracked> {
+fn create_tracked_structs<'db>(db: &'db dyn Db, input: MyInput) -> Vec<MyTracked<'db>> {
     db.push_log(format!("intermediate_result({:?})", input));
     (0..input.field(db))
         .map(|i| MyTracked::new(db, i))
@@ -48,7 +48,7 @@ fn create_tracked_structs(db: &dyn Db, input: MyInput) -> Vec<MyTracked> {
 }
 
 #[salsa::tracked]
-fn contribution_from_struct(db: &dyn Db, tracked: MyTracked) -> u32 {
+fn contribution_from_struct<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> u32 {
     tracked.field(db) * 2
 }
 
@@ -88,8 +88,8 @@ fn basic() {
     assert_eq!(final_result(&db, input), 2 * 2 + 2);
     db.assert_logs(expect![[r#"
         [
-            "final_result(MyInput(Id { value: 1 }))",
-            "intermediate_result(MyInput(Id { value: 1 }))",
+            "final_result(MyInput { [salsa id]: 0 })",
+            "intermediate_result(MyInput { [salsa id]: 0 })",
         ]"#]]);
 
     // Creates only 2 tracked structs in this revision, should delete 1
@@ -103,10 +103,10 @@ fn basic() {
     assert_eq!(final_result(&db, input), 2);
     db.assert_logs(expect![[r#"
         [
-            "intermediate_result(MyInput(Id { value: 1 }))",
+            "intermediate_result(MyInput { [salsa id]: 0 })",
             "salsa_event(WillDiscardStaleOutput { execute_key: create_tracked_structs(0), output_key: MyTracked(2) })",
             "salsa_event(DidDiscard { key: MyTracked(2) })",
             "salsa_event(DidDiscard { key: contribution_from_struct(2) })",
-            "final_result(MyInput(Id { value: 1 }))",
+            "final_result(MyInput { [salsa id]: 0 })",
         ]"#]]);
 }

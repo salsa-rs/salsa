@@ -10,7 +10,7 @@ pub(crate) fn input(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    match SalsaStruct::new(args, input).and_then(|el| InputStruct(el).generate_input()) {
+    match SalsaStruct::new(args, input, "input").and_then(|el| InputStruct(el).generate_input()) {
         Ok(s) => s.into(),
         Err(err) => err.into_compile_error().into(),
     }
@@ -49,26 +49,32 @@ impl crate::options::AllowedOptions for InputStruct {
 
 impl InputStruct {
     fn generate_input(&self) -> syn::Result<TokenStream> {
-        let id_struct = self.id_struct();
+        self.require_no_generics()?;
+
+        let id_struct = self.the_struct_id();
         let inherent_impl = self.input_inherent_impl();
         let ingredients_for_impl = self.input_ingredients();
         let as_id_impl = self.as_id_impl();
+        let from_id_impl = self.impl_of_from_id();
         let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
         let as_debug_with_db_impl = self.as_debug_with_db_impl();
+        let debug_impl = self.debug_impl();
 
         Ok(quote! {
             #id_struct
             #inherent_impl
             #ingredients_for_impl
             #as_id_impl
+            #from_id_impl
             #as_debug_with_db_impl
             #salsa_struct_in_db_impl
+            #debug_impl
         })
     }
 
     /// Generate an inherent impl with methods on the entity type.
     fn input_inherent_impl(&self) -> syn::ItemImpl {
-        let ident = self.id_ident();
+        let ident = self.the_ident();
         let jar_ty = self.jar_ty();
         let db_dyn_ty = self.db_dyn_ty();
         let input_index = self.input_index();
@@ -79,7 +85,7 @@ impl InputStruct {
         let field_tys: Vec<_> = self.all_field_tys();
         let field_clones: Vec<_> = self.all_fields().map(SalsaField::is_clone_field).collect();
         let get_field_names: Vec<_> = self.all_get_field_names();
-        let field_getters: Vec<syn::ImplItemMethod> = field_indices.iter().zip(&get_field_names).zip(&field_vises).zip(&field_tys).zip(&field_clones).map(|((((field_index, get_field_name), field_vis), field_ty), is_clone_field)|
+        let field_getters: Vec<syn::ImplItemFn> = field_indices.iter().zip(&get_field_names).zip(&field_vises).zip(&field_tys).zip(&field_clones).map(|((((field_index, get_field_name), field_vis), field_ty), is_clone_field)|
             if !*is_clone_field {
                 parse_quote_spanned! { get_field_name.span() =>
                     #field_vis fn #get_field_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty
@@ -104,7 +110,7 @@ impl InputStruct {
 
         // setters
         let set_field_names = self.all_set_field_names();
-        let field_setters: Vec<syn::ImplItemMethod> = field_indices.iter()
+        let field_setters: Vec<syn::ImplItemFn> = field_indices.iter()
             .zip(&set_field_names)
             .zip(&field_vises)
             .zip(&field_tys)
@@ -124,7 +130,7 @@ impl InputStruct {
         let constructor_name = self.constructor_name();
         let singleton = self.0.is_isingleton();
 
-        let constructor: syn::ImplItemMethod = if singleton {
+        let constructor: syn::ImplItemFn = if singleton {
             parse_quote_spanned! { constructor_name.span() =>
                 /// Creates a new singleton input
                 ///
@@ -157,8 +163,14 @@ impl InputStruct {
             }
         };
 
+        let salsa_id = quote!(
+            pub fn salsa_id(&self) -> salsa::Id {
+                self.0
+            }
+        );
+
         if singleton {
-            let get: syn::ImplItemMethod = parse_quote! {
+            let get: syn::ImplItemFn = parse_quote! {
                 #[track_caller]
                 pub fn get(__db: &#db_dyn_ty) -> Self {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
@@ -167,7 +179,7 @@ impl InputStruct {
                 }
             };
 
-            let try_get: syn::ImplItemMethod = parse_quote! {
+            let try_get: syn::ImplItemFn = parse_quote! {
                 #[track_caller]
                 pub fn try_get(__db: &#db_dyn_ty) -> Option<Self> {
                     let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
@@ -188,6 +200,8 @@ impl InputStruct {
                     #(#field_getters)*
 
                     #(#field_setters)*
+
+                    #salsa_id
                 }
             }
         } else {
@@ -199,6 +213,8 @@ impl InputStruct {
                     #(#field_getters)*
 
                     #(#field_setters)*
+
+                    #salsa_id
                 }
             }
         }
@@ -212,12 +228,12 @@ impl InputStruct {
     /// function ingredient for each of the value fields.
     fn input_ingredients(&self) -> syn::ItemImpl {
         use crate::literal;
-        let ident = self.id_ident();
+        let ident = self.the_ident();
         let field_ty = self.all_field_tys();
         let jar_ty = self.jar_ty();
         let all_field_indices: Vec<Literal> = self.all_field_indices();
         let input_index: Literal = self.input_index();
-        let debug_name_struct = literal(self.id_ident());
+        let debug_name_struct = literal(self.the_ident());
         let debug_name_fields: Vec<_> = self.all_field_names().into_iter().map(literal).collect();
 
         parse_quote! {
@@ -304,7 +320,7 @@ impl InputStruct {
 
     /// Implementation of `SalsaStructInDb`.
     fn salsa_struct_in_db_impl(&self) -> syn::ItemImpl {
-        let ident = self.id_ident();
+        let ident = self.the_ident();
         let jar_ty = self.jar_ty();
         parse_quote! {
             impl<DB> salsa::salsa_struct::SalsaStructInDb<DB> for #ident

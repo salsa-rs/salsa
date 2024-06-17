@@ -25,15 +25,23 @@
 //! * data method `impl Foo { fn data(&self, db: &dyn crate::Db) -> FooData { FooData { f: self.f(db), ... } } }`
 //!     * this could be optimized, particularly for interned fields
 
-use crate::options::{AllowedOptions, Options};
+use crate::{
+    db_lifetime::{self, db_lifetime, default_db_lifetime},
+    options::{AllowedOptions, Options},
+    xform::ChangeLt,
+};
 use proc_macro2::{Ident, Span, TokenStream};
-use syn::spanned::Spanned;
+use syn::{
+    punctuated::Punctuated, spanned::Spanned, token::Comma, GenericParam, ImplGenerics,
+    TypeGenerics, WhereClause,
+};
 
 pub(crate) struct SalsaStruct<A: AllowedOptions> {
     args: Options<A>,
     struct_item: syn::ItemStruct,
     customizations: Vec<Customization>,
     fields: Vec<SalsaField>,
+    module: syn::Ident,
 }
 
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
@@ -43,19 +51,42 @@ pub enum Customization {
 
 const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 
+/// Classifies the kind of field stored in this salsa
+/// struct.
+#[derive(PartialEq, Eq)]
+pub enum TheStructKind {
+    /// Stores an "id"
+    Id,
+
+    /// Stores a "pointer" with the given lifetime
+    Pointer(syn::Lifetime),
+}
+
+impl std::fmt::Debug for TheStructKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TheStructKind::Id => write!(f, "Id"),
+            TheStructKind::Pointer(lt) => write!(f, "Pointer({lt})"),
+        }
+    }
+}
+
 impl<A: AllowedOptions> SalsaStruct<A> {
     pub(crate) fn new(
         args: proc_macro::TokenStream,
         input: proc_macro::TokenStream,
+        module: &str,
     ) -> syn::Result<Self> {
         let struct_item = syn::parse(input)?;
-        Self::with_struct(args, struct_item)
+        Self::with_struct(args, struct_item, module)
     }
 
     pub(crate) fn with_struct(
         args: proc_macro::TokenStream,
         struct_item: syn::ItemStruct,
+        module: &str,
     ) -> syn::Result<Self> {
+        let module = syn::Ident::new(module, struct_item.ident.span());
         let args: Options<A> = syn::parse(args)?;
         let customizations = Self::extract_customizations(&struct_item)?;
         let fields = Self::extract_fields(&struct_item)?;
@@ -64,7 +95,77 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             struct_item,
             customizations,
             fields,
+            module,
         })
+    }
+
+    pub(crate) fn args(&self) -> &Options<A> {
+        &self.args
+    }
+
+    pub(crate) fn require_no_generics(&self) -> syn::Result<()> {
+        if let Some(param) = self.struct_item.generics.params.iter().next() {
+            return Err(syn::Error::new_spanned(
+                param,
+                "generic parameters not allowed here",
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Require that either there are no generics or exactly one lifetime parameter.
+    pub(crate) fn require_db_lifetime(&self) -> syn::Result<()> {
+        db_lifetime::require_db_lifetime(&self.struct_item.generics)
+    }
+
+    pub(crate) fn send_sync_impls(&self) -> Vec<syn::ItemImpl> {
+        match self.the_struct_kind() {
+            TheStructKind::Id => vec![],
+            TheStructKind::Pointer(_db) => {
+                let (the_ident, _, impl_generics, type_generics, where_clauses) =
+                    self.the_ident_and_generics();
+                vec![
+                    parse_quote! {
+                        unsafe impl #impl_generics std::marker::Send for #the_ident #type_generics
+                        where
+                            #where_clauses
+                        {}
+                    },
+                    parse_quote! {
+                        unsafe impl #impl_generics std::marker::Sync for #the_ident #type_generics
+                        where
+                            #where_clauses
+                        {}
+                    },
+                ]
+            }
+        }
+    }
+
+    /// Some salsa structs require a "Configuration" struct
+    /// because they make use of GATs. This function
+    /// synthesizes a name and generates the struct declaration.
+    pub(crate) fn config_struct(&self) -> syn::ItemStruct {
+        let config_ident = syn::Ident::new(
+            &format!("__{}Config", self.the_ident()),
+            self.the_ident().span(),
+        );
+        let visibility = self.visibility();
+
+        parse_quote! {
+            #visibility struct #config_ident {
+                _uninhabited: std::convert::Infallible,
+            }
+        }
+    }
+
+    pub(crate) fn the_struct_kind(&self) -> TheStructKind {
+        if self.struct_item.generics.params.is_empty() {
+            TheStructKind::Id
+        } else {
+            TheStructKind::Pointer(db_lifetime(&self.struct_item.generics))
+        }
     }
 
     fn extract_customizations(struct_item: &syn::ItemStruct) -> syn::Result<Vec<Customization>> {
@@ -72,11 +173,11 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             .attrs
             .iter()
             .map(|attr| {
-                if attr.path.is_ident("customize") {
+                if attr.path().is_ident("customize") {
                     // FIXME: this should be a comma separated list but I couldn't
                     // be bothered to remember how syn does this.
                     let args: syn::Ident = attr.parse_args()?;
-                    if args.to_string() == "DebugWithDb" {
+                    if args == "DebugWithDb" {
                         Ok(vec![Customization::DebugWithDb])
                     } else {
                         Err(syn::Error::new_spanned(args, "unrecognized customization"))
@@ -139,9 +240,34 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         self.all_fields().map(|ef| ef.ty()).collect()
     }
 
-    /// The name of the "identity" struct (this is the name the user gave, e.g., `Foo`).
-    pub(crate) fn id_ident(&self) -> &syn::Ident {
+    /// The name of "the struct" (this is the name the user gave, e.g., `Foo`).
+    pub(crate) fn the_ident(&self) -> &syn::Ident {
         &self.struct_item.ident
+    }
+
+    /// Name of the struct the user gave plus:
+    ///
+    /// * its list of generic parameters
+    /// * the generics "split for impl".
+    pub(crate) fn the_ident_and_generics(
+        &self,
+    ) -> (
+        &syn::Ident,
+        &Punctuated<GenericParam, Comma>,
+        ImplGenerics<'_>,
+        TypeGenerics<'_>,
+        Option<&WhereClause>,
+    ) {
+        let ident = &self.struct_item.ident;
+        let (impl_generics, type_generics, where_clause) =
+            self.struct_item.generics.split_for_impl();
+        (
+            ident,
+            &self.struct_item.generics.params,
+            impl_generics,
+            type_generics,
+            where_clause,
+        )
     }
 
     /// Type of the jar for this struct
@@ -156,26 +282,19 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
     pub(crate) fn db_dyn_ty(&self) -> syn::Type {
         let jar_ty = self.jar_ty();
+        let lt_db = self.maybe_elided_db_lifetime();
         parse_quote! {
-            <#jar_ty as salsa::jar::Jar<'_>>::DynDb
+            <#jar_ty as salsa::jar::Jar< #lt_db >>::DynDb
         }
     }
 
-    /// The name of the "data" struct (this comes from the `data = Foo` option or,
-    /// if that is not provided, by concatenating `Data` to the name of the struct).
-    pub(crate) fn data_ident(&self) -> syn::Ident {
-        match &self.args.data {
-            Some(d) => d.clone(),
-            None => syn::Ident::new(
-                &format!("__{}Data", self.id_ident()),
-                self.id_ident().span(),
-            ),
-        }
-    }
+    /// Create "the struct" whose field is an id.
+    /// This is the struct the user will refernece, but only if there
+    /// are no lifetimes.
+    pub(crate) fn the_struct_id(&self) -> syn::ItemStruct {
+        assert_eq!(self.the_struct_kind(), TheStructKind::Id);
 
-    /// Generate `struct Foo(Id)`
-    pub(crate) fn id_struct(&self) -> syn::ItemStruct {
-        let ident = self.id_ident();
+        let ident = self.the_ident();
         let visibility = &self.struct_item.vis;
 
         // Extract the attributes the user gave, but screen out derive, since we are adding our own,
@@ -184,35 +303,65 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             .struct_item
             .attrs
             .iter()
-            .filter(|attr| !attr.path.is_ident("derive"))
-            .filter(|attr| !attr.path.is_ident("customize"))
+            .filter(|attr| !attr.path().is_ident("derive"))
+            .filter(|attr| !attr.path().is_ident("customize"))
             .collect();
 
         parse_quote_spanned! { ident.span() =>
             #(#attrs)*
-            #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Debug)]
+            #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
             #visibility struct #ident(salsa::Id);
         }
     }
 
-    /// Generates the `struct FooData` struct (or enum).
-    /// This type inherits all the attributes written by the user.
-    ///
-    /// When using named fields, we synthesize the struct and field names.
-    ///
-    /// When no named fields are available, copy the existing type.
-    pub(crate) fn data_struct(&self) -> syn::ItemStruct {
-        let ident = self.data_ident();
-        let visibility = self.visibility();
-        let all_field_names = self.all_field_names();
-        let all_field_tys = self.all_field_tys();
-        parse_quote_spanned! { ident.span() =>
-            /// Internal struct used for interned item
-            #[derive(Eq, PartialEq, Hash, Clone)]
-            #visibility struct #ident {
-                #(
-                    #all_field_names: #all_field_tys,
-                )*
+    /// Create the struct that the user will reference.
+    /// If
+    pub(crate) fn the_struct(&self, config_ident: &syn::Ident) -> syn::Result<syn::ItemStruct> {
+        if self.struct_item.generics.params.is_empty() {
+            Ok(self.the_struct_id())
+        } else {
+            let ident = self.the_ident();
+            let visibility = &self.struct_item.vis;
+
+            let generics = &self.struct_item.generics;
+            if generics.params.len() != 1 || generics.lifetimes().count() != 1 {
+                return Err(syn::Error::new_spanned(
+                    &self.struct_item.generics,
+                    "must have exactly one lifetime parameter",
+                ));
+            }
+
+            let lifetime = generics.lifetimes().next().unwrap();
+
+            // Extract the attributes the user gave, but screen out derive, since we are adding our own,
+            // and the customize attribute that we use for our own purposes.
+            let attrs: Vec<_> = self
+                .struct_item
+                .attrs
+                .iter()
+                .filter(|attr| !attr.path().is_ident("derive"))
+                .filter(|attr| !attr.path().is_ident("customize"))
+                .collect();
+
+            let module = &self.module;
+
+            Ok(parse_quote_spanned! { ident.span() =>
+                #(#attrs)*
+                #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+                #visibility struct #ident #generics (
+                    std::ptr::NonNull<salsa::#module::ValueStruct < #config_ident >>,
+                    std::marker::PhantomData < & #lifetime salsa::#module::ValueStruct < #config_ident > >
+                );
+            })
+        }
+    }
+
+    /// Generate code to access a `salsa::Id` from `self`
+    pub(crate) fn access_salsa_id_from_self(&self) -> syn::Expr {
+        match self.the_struct_kind() {
+            TheStructKind::Id => parse_quote!(self.0),
+            TheStructKind::Pointer(_) => {
+                parse_quote!(salsa::id::AsId::as_id(unsafe { self.0.as_ref() }))
             }
         }
     }
@@ -226,34 +375,128 @@ impl<A: AllowedOptions> SalsaStruct<A> {
     pub(crate) fn constructor_name(&self) -> syn::Ident {
         match self.args.constructor_name.clone() {
             Some(name) => name,
-            None => Ident::new("new", self.id_ident().span()),
+            None => Ident::new("new", self.the_ident().span()),
         }
     }
 
-    /// Generate `impl salsa::AsId for Foo`
-    pub(crate) fn as_id_impl(&self) -> syn::ItemImpl {
-        let ident = self.id_ident();
-        parse_quote_spanned! { ident.span() =>
-            impl salsa::AsId for #ident {
-                fn as_id(self) -> salsa::Id {
-                    self.0
-                }
+    /// Returns the lifetime to use for `'db`. This is normally whatever lifetime
+    /// parameter the user put on the struct, but it might be a generated default
+    /// if there is no such parameter. Using the name the user gave is important
+    /// because it may appear in field types and the like.
+    pub(crate) fn named_db_lifetime(&self) -> syn::Lifetime {
+        match self.the_struct_kind() {
+            TheStructKind::Id => self.default_db_lifetime(),
+            TheStructKind::Pointer(db) => db,
+        }
+    }
 
-                fn from_id(id: salsa::Id) -> Self {
-                    #ident(id)
+    /// Returns lifetime to use for `'db`, substituting `'_` if there is no name required.
+    /// This is convenient in function signatures where `'db` may not be in scope.
+    pub(crate) fn maybe_elided_db_lifetime(&self) -> syn::Lifetime {
+        match self.the_struct_kind() {
+            TheStructKind::Id => syn::Lifetime {
+                apostrophe: self.struct_item.ident.span(),
+                ident: syn::Ident::new("_", self.struct_item.ident.span()),
+            },
+            TheStructKind::Pointer(db) => db,
+        }
+    }
+
+    /// Normally we try to use whatever lifetime parameter the use gave us
+    /// to represent `'db`; but if they didn't give us one, we need to use a default
+    /// name. We choose `'db`.
+    fn default_db_lifetime(&self) -> syn::Lifetime {
+        default_db_lifetime(self.struct_item.generics.span())
+    }
+
+    /// Generate `impl salsa::id::AsId for Foo`
+    pub(crate) fn as_id_impl(&self) -> syn::ItemImpl {
+        match self.the_struct_kind() {
+            TheStructKind::Id => {
+                let ident = self.the_ident();
+                let (impl_generics, type_generics, where_clause) =
+                    self.struct_item.generics.split_for_impl();
+                parse_quote_spanned! { ident.span() =>
+                    impl #impl_generics salsa::id::AsId for #ident #type_generics
+                    #where_clause
+                    {
+                        fn as_id(&self) -> salsa::Id {
+                            self.0
+                        }
+                    }
+
                 }
             }
+            TheStructKind::Pointer(_) => {
+                let ident = self.the_ident();
+                let (impl_generics, type_generics, where_clause) =
+                    self.struct_item.generics.split_for_impl();
+                parse_quote_spanned! { ident.span() =>
+                    impl #impl_generics salsa::id::AsId for #ident #type_generics
+                    #where_clause
+                    {
+                        fn as_id(&self) -> salsa::Id {
+                            salsa::id::AsId::as_id(unsafe { self.0.as_ref() })
+                        }
+                    }
 
+                }
+            }
         }
     }
 
-    /// Generate `impl salsa::DebugWithDb for Foo`
+    /// Generate `impl salsa::id::AsId for Foo`
+    pub(crate) fn impl_of_from_id(&self) -> Option<syn::ItemImpl> {
+        match self.the_struct_kind() {
+            TheStructKind::Id => {
+                let ident = self.the_ident();
+                let (impl_generics, type_generics, where_clause) =
+                    self.struct_item.generics.split_for_impl();
+                Some(parse_quote_spanned! { ident.span() =>
+                    impl #impl_generics salsa::id::FromId for #ident #type_generics
+                    #where_clause
+                    {
+                        fn from_id(id: salsa::Id) -> Self {
+                            #ident(id)
+                        }
+                    }
+
+                })
+            }
+            TheStructKind::Pointer(_) => None,
+        }
+    }
+
+    /// Generate `impl salsa::DebugWithDb for Foo`, but only if this is an id struct.
+    pub(crate) fn debug_impl(&self) -> syn::ItemImpl {
+        let ident: &Ident = self.the_ident();
+        let (impl_generics, type_generics, where_clause) =
+            self.struct_item.generics.split_for_impl();
+        let ident_string = ident.to_string();
+
+        // `use ::salsa::debug::helper::Fallback` is needed for the fallback to `Debug` impl
+        parse_quote_spanned! {ident.span()=>
+            impl #impl_generics ::std::fmt::Debug for #ident #type_generics
+            #where_clause
+            {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                    f.debug_struct(#ident_string)
+                        .field("[salsa id]", &self.salsa_id().as_u32())
+                        .finish()
+                }
+            }
+        }
+    }
+
+    /// Generate `impl salsa::DebugWithDb for Foo`, but only if this is an id struct.
     pub(crate) fn as_debug_with_db_impl(&self) -> Option<syn::ItemImpl> {
         if self.customizations.contains(&Customization::DebugWithDb) {
             return None;
         }
 
-        let ident = self.id_ident();
+        let ident = self.the_ident();
+        let (impl_generics, type_generics, where_clause) =
+            self.struct_item.generics.split_for_impl();
 
         let db_type = self.db_dyn_ty();
         let ident_string = ident.to_string();
@@ -264,7 +507,8 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             .map(|field| -> TokenStream {
                 let field_name_string = field.name().to_string();
                 let field_getter = field.get_name();
-                let field_ty = field.ty();
+                let field_ty = ChangeLt::to_elided().in_type(field.ty());
+                let db_type = ChangeLt::to_elided().in_type(&db_type);
 
                 quote_spanned! { field.field.span() =>
                     debug_struct = debug_struct.field(
@@ -281,17 +525,39 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
         // `use ::salsa::debug::helper::Fallback` is needed for the fallback to `Debug` impl
         Some(parse_quote_spanned! {ident.span()=>
-            impl ::salsa::DebugWithDb<#db_type> for #ident {
-                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &#db_type) -> ::std::fmt::Result {
+            impl #impl_generics ::salsa::DebugWithDb<#db_type> for #ident #type_generics
+            #where_clause
+            {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: & #db_type) -> ::std::fmt::Result {
                     #[allow(unused_imports)]
                     use ::salsa::debug::helper::Fallback;
+                    #[allow(unused_mut)]
                     let mut debug_struct = &mut f.debug_struct(#ident_string);
-                    debug_struct = debug_struct.field("[salsa id]", &self.0.as_u32());
+                    debug_struct = debug_struct.field("[salsa id]", &self.salsa_id().as_u32());
                     #fields
                     debug_struct.finish()
                 }
             }
         })
+    }
+
+    /// Implementation of `salsa::update::Update`.
+    pub(crate) fn update_impl(&self) -> syn::ItemImpl {
+        let (ident, _, impl_generics, type_generics, where_clause) = self.the_ident_and_generics();
+        parse_quote! {
+            unsafe impl #impl_generics salsa::update::Update for #ident #type_generics
+            #where_clause
+            {
+                unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+                    if unsafe { *old_pointer } != new_value {
+                        unsafe { *old_pointer = new_value };
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+        }
     }
 
     /// Disallow `#[id]` attributes on the fields of this struct.
@@ -366,7 +632,7 @@ impl SalsaField {
         // Scan the attributes and look for the salsa attributes:
         for attr in &field.attrs {
             for (fa, func) in FIELD_OPTION_ATTRIBUTES {
-                if attr.path.is_ident(fa) {
+                if attr.path().is_ident(fa) {
                     func(attr, &mut result);
                 }
             }

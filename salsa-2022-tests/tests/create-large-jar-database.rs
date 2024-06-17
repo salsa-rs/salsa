@@ -34,14 +34,14 @@ macro_rules! make_jarX {
     ($jarX:ident, $JarX:ident) => {
         mod $jarX {
             #[salsa::jar(db = Db)]
-            pub(crate) struct $JarX(T1);
+            pub(crate) struct $JarX(T1<'_>);
 
             pub(crate) trait Db: salsa::DbWithJar<$JarX> {}
 
             impl<DB> Db for DB where DB: salsa::DbWithJar<$JarX> {}
 
             #[salsa::tracked(jar = $JarX)]
-            struct T1 {
+            struct T1<'db> {
                 a0: String,
                 a1: String,
                 a2: String,

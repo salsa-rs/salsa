@@ -1,7 +1,6 @@
 use std::{fmt, sync::Arc};
 
-use arc_swap::ArcSwap;
-use crossbeam::{atomic::AtomicCell, queue::SegQueue};
+use crossbeam::atomic::AtomicCell;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
@@ -13,7 +12,9 @@ use crate::{
     Cycle, DbWithJar, Event, EventKind, Id, Revision,
 };
 
-use super::{ingredient::Ingredient, routes::IngredientIndex, AsId};
+use self::delete::DeletedEntries;
+
+use super::{ingredient::Ingredient, routes::IngredientIndex};
 
 mod accumulated;
 mod backdate;
@@ -45,7 +46,7 @@ pub struct FunctionIngredient<C: Configuration> {
     index: IngredientIndex,
 
     /// Tracks the keys for which we have memoized values.
-    memo_map: memo::MemoMap<C::Key, C::Value>,
+    memo_map: memo::MemoMap<C>,
 
     /// Tracks the keys that are currently being processed; used to coordinate between
     /// worker threads.
@@ -66,7 +67,7 @@ pub struct FunctionIngredient<C: Configuration> {
     /// current revision: you would be right, but we are being defensive, because
     /// we don't know that we can trust the database to give us the same runtime
     /// everytime and so forth.
-    deleted_entries: SegQueue<ArcSwap<memo::Memo<C::Value>>>,
+    deleted_entries: DeletedEntries<C>,
 
     /// Set to true once we invoke `register_dependent_fn` for `C::SalsaStruct`.
     /// Prevents us from registering more than once.
@@ -81,15 +82,13 @@ pub trait Configuration {
     /// The "salsa struct type" that this function is associated with.
     /// This can be just `salsa::Id` for functions that intern their arguments
     /// and are not clearly associated with any one salsa struct.
-    type SalsaStruct: for<'db> SalsaStructInDb<DynDb<'db, Self>>;
+    type SalsaStruct<'db>: SalsaStructInDb<DynDb<'db, Self>>;
 
-    /// What key is used to index the memo. Typically a salsa struct id,
-    /// but if this memoized function has multiple arguments it will be a `salsa::Id`
-    /// that results from interning those arguments.
-    type Key: AsId;
+    /// The input to the function
+    type Input<'db>;
 
     /// The value computed by the function.
-    type Value: fmt::Debug;
+    type Value<'db>: fmt::Debug;
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
@@ -101,25 +100,19 @@ pub trait Configuration {
     /// even though it was recomputed).
     ///
     /// This invokes user's code in form of the `Eq` impl.
-    fn should_backdate_value(old_value: &Self::Value, new_value: &Self::Value) -> bool;
+    fn should_backdate_value(old_value: &Self::Value<'_>, new_value: &Self::Value<'_>) -> bool;
 
     /// Invoked when we need to compute the value for the given key, either because we've never
     /// computed it before or because the old one relied on inputs that have changed.
     ///
     /// This invokes the function the user wrote.
-    fn execute(db: &DynDb<Self>, key: Self::Key) -> Self::Value;
+    fn execute<'db>(db: &'db DynDb<Self>, key: Id) -> Self::Value<'db>;
 
     /// If the cycle strategy is `Recover`, then invoked when `key` is a participant
     /// in a cycle to find out what value it should have.
     ///
     /// This invokes the recovery function given by the user.
-    fn recover_from_cycle(db: &DynDb<Self>, cycle: &Cycle, key: Self::Key) -> Self::Value;
-
-    /// Given a salsa Id, returns the key. Convenience function to avoid
-    /// having to type `<C::Key as AsId>::from_id`.
-    fn key_from_id(id: Id) -> Self::Key {
-        AsId::from_id(id)
-    }
+    fn recover_from_cycle<'db>(db: &'db DynDb<Self>, cycle: &Cycle, key: Id) -> Self::Value<'db>;
 }
 
 /// True if `old_value == new_value`. Invoked by the generated
@@ -151,10 +144,10 @@ where
         }
     }
 
-    fn database_key_index(&self, k: C::Key) -> DatabaseKeyIndex {
+    fn database_key_index(&self, k: Id) -> DatabaseKeyIndex {
         DatabaseKeyIndex {
             ingredient_index: self.index,
-            key_index: k.as_id(),
+            key_index: k,
         }
     }
 
@@ -171,18 +164,18 @@ where
     /// only cleared with `&mut self`.
     unsafe fn extend_memo_lifetime<'this, 'memo>(
         &'this self,
-        memo: &'memo memo::Memo<C::Value>,
-    ) -> Option<&'this C::Value> {
-        let memo_value: Option<&'memo C::Value> = memo.value.as_ref();
+        memo: &'memo memo::Memo<C::Value<'this>>,
+    ) -> Option<&'this C::Value<'this>> {
+        let memo_value: Option<&'memo C::Value<'this>> = memo.value.as_ref();
         std::mem::transmute(memo_value)
     }
 
-    fn insert_memo(
-        &self,
-        db: &DynDb<'_, C>,
-        key: C::Key,
-        memo: memo::Memo<C::Value>,
-    ) -> Option<&C::Value> {
+    fn insert_memo<'db>(
+        &'db self,
+        db: &'db DynDb<'db, C>,
+        key: Id,
+        memo: memo::Memo<C::Value<'db>>,
+    ) -> Option<&C::Value<'db>> {
         self.register(db);
         let memo = Arc::new(memo);
         let value = unsafe {
@@ -201,9 +194,9 @@ where
     /// Register this function as a dependent fn of the given salsa struct.
     /// When instances of that salsa struct are deleted, we'll get a callback
     /// so we can remove any data keyed by them.
-    fn register(&self, db: &DynDb<'_, C>) {
+    fn register<'db>(&self, db: &'db DynDb<'db, C>) {
         if !self.registered.fetch_or(true) {
-            <C::SalsaStruct as SalsaStructInDb<_>>::register_dependent_fn(db, self.index)
+            <C::SalsaStruct<'db> as SalsaStructInDb<_>>::register_dependent_fn(db, self.index)
         }
     }
 }
@@ -218,7 +211,7 @@ where
     }
 
     fn maybe_changed_after(&self, db: &DB, input: DependencyIndex, revision: Revision) -> bool {
-        let key = C::key_from_id(input.key_index.unwrap());
+        let key = input.key_index.unwrap();
         let db = db.as_jar_db();
         self.maybe_changed_after(db, key, revision)
     }
@@ -227,8 +220,7 @@ where
         C::CYCLE_STRATEGY
     }
 
-    fn origin(&self, key_index: Id) -> Option<QueryOrigin> {
-        let key = C::key_from_id(key_index);
+    fn origin(&self, key: Id) -> Option<QueryOrigin> {
         self.origin(key)
     }
 
@@ -238,7 +230,7 @@ where
         executor: DatabaseKeyIndex,
         output_key: Option<crate::Id>,
     ) {
-        let output_key = C::key_from_id(output_key.unwrap());
+        let output_key = output_key.unwrap();
         self.validate_specified_value(db.as_jar_db(), executor, output_key);
     }
 
@@ -257,11 +249,10 @@ where
         std::mem::take(&mut self.deleted_entries);
     }
 
-    fn salsa_struct_deleted(&self, db: &DB, id: crate::Id) {
+    fn salsa_struct_deleted(&self, db: &DB, id: Id) {
         // Remove any data keyed by `id`, since `id` no longer
         // exists in this revision.
 
-        let id: C::Key = C::key_from_id(id);
         if let Some(origin) = self.delete_memo(id) {
             let key = self.database_key_index(id);
             db.salsa_event(Event {

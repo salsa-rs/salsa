@@ -1,4 +1,5 @@
 pub mod accumulator;
+mod alloc;
 pub mod cancelled;
 pub mod cycle;
 pub mod database;
@@ -23,6 +24,7 @@ pub mod salsa_struct;
 pub mod setter;
 pub mod storage;
 pub mod tracked_struct;
+pub mod update;
 
 pub use self::cancelled::Cancelled;
 pub use self::cycle::Cycle;
@@ -34,7 +36,6 @@ pub use self::debug::DebugWithDb;
 pub use self::durability::Durability;
 pub use self::event::Event;
 pub use self::event::EventKind;
-pub use self::id::AsId;
 pub use self::id::Id;
 pub use self::key::DatabaseKeyIndex;
 pub use self::revision::Revision;
@@ -48,3 +49,5 @@ pub use salsa_2022_macros::input;
 pub use salsa_2022_macros::interned;
 pub use salsa_2022_macros::jar;
 pub use salsa_2022_macros::tracked;
+pub use salsa_2022_macros::DebugWithDb;
+pub use salsa_2022_macros::Update;

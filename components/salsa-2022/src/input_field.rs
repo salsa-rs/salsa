@@ -1,10 +1,11 @@
 use crate::cycle::CycleRecoveryStrategy;
+use crate::id::{AsId, FromId};
 use crate::ingredient::{fmt_index, Ingredient, IngredientRequiresReset};
 use crate::key::DependencyIndex;
 use crate::plumbing::transmute_lifetime;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::StampedValue;
-use crate::{AsId, DatabaseKeyIndex, Durability, Id, IngredientIndex, Revision, Runtime};
+use crate::{DatabaseKeyIndex, Durability, Id, IngredientIndex, Revision, Runtime};
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use std::fmt;
@@ -107,7 +108,7 @@ where
 
 impl<DB: ?Sized, K, F> Ingredient<DB> for InputFieldIngredient<K, F>
 where
-    K: AsId,
+    K: FromId,
 {
     fn ingredient_index(&self) -> IngredientIndex {
         self.index

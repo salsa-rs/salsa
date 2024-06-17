@@ -8,7 +8,7 @@
 use test_log::test;
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked, the_fn);
+struct Jar(MyInput, MyTracked<'_>, the_fn);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
@@ -35,7 +35,7 @@ impl std::hash::Hash for BadHash {
 }
 
 #[salsa::tracked]
-struct MyTracked {
+struct MyTracked<'db> {
     #[id]
     field: BadHash,
 }

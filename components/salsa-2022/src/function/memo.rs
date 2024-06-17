@@ -4,18 +4,23 @@ use arc_swap::{ArcSwap, Guard};
 use crossbeam_utils::atomic::AtomicCell;
 
 use crate::{
-    hash::FxDashMap, key::DatabaseKeyIndex, runtime::local_state::QueryRevisions, AsId, Event,
-    EventKind, Revision, Runtime,
+    hash::FxDashMap, key::DatabaseKeyIndex, runtime::local_state::QueryRevisions, Event, EventKind,
+    Id, Revision, Runtime,
 };
+
+use super::Configuration;
 
 /// The memo map maps from a key of type `K` to the memoized value for that `K`.
 /// The memoized value is a `Memo<V>` which contains, in addition to the value `V`,
 /// dependency information.
-pub(super) struct MemoMap<K: AsId, V> {
-    map: FxDashMap<K, ArcSwap<Memo<V>>>,
+pub(super) struct MemoMap<C: Configuration> {
+    map: FxDashMap<Id, ArcMemo<'static, C>>,
 }
 
-impl<K: AsId, V> Default for MemoMap<K, V> {
+#[allow(type_alias_bounds)]
+type ArcMemo<'lt, C: Configuration> = ArcSwap<Memo<<C as Configuration>::Value<'lt>>>;
+
+impl<C: Configuration> Default for MemoMap<C> {
     fn default() -> Self {
         Self {
             map: Default::default(),
@@ -23,30 +28,56 @@ impl<K: AsId, V> Default for MemoMap<K, V> {
     }
 }
 
-impl<K: AsId, V> MemoMap<K, V> {
+impl<C: Configuration> MemoMap<C> {
+    /// Memos have to be stored internally using `'static` as the database lifetime.
+    /// This (unsafe) function call converts from something tied to self to static.
+    /// Values transmuted this way have to be transmuted back to being tied to self
+    /// when they are returned to the user.
+    unsafe fn to_static<'db>(&'db self, value: ArcMemo<'db, C>) -> ArcMemo<'static, C> {
+        unsafe { std::mem::transmute(value) }
+    }
+
+    /// Convert from an internal memo (which uses statis) to one tied to self
+    /// so it can be publicly released.
+    unsafe fn to_self<'db>(&'db self, value: ArcMemo<'static, C>) -> ArcMemo<'db, C> {
+        unsafe { std::mem::transmute(value) }
+    }
     /// Inserts the memo for the given key; (atomically) overwrites any previously existing memo.-
     #[must_use]
-    pub(super) fn insert(&self, key: K, memo: Arc<Memo<V>>) -> Option<ArcSwap<Memo<V>>> {
-        self.map.insert(key, ArcSwap::from(memo))
+    pub(super) fn insert<'db>(
+        &'db self,
+        key: Id,
+        memo: Arc<Memo<C::Value<'db>>>,
+    ) -> Option<ArcSwap<Memo<C::Value<'db>>>> {
+        unsafe {
+            let value = ArcSwap::from(memo);
+            let old_value = self.map.insert(key, self.to_static(value))?;
+            Some(self.to_self(old_value))
+        }
     }
 
     /// Removes any existing memo for the given key.
     #[must_use]
-    pub(super) fn remove(&self, key: K) -> Option<ArcSwap<Memo<V>>> {
-        self.map.remove(&key).map(|o| o.1)
+    pub(super) fn remove(&self, key: Id) -> Option<ArcSwap<Memo<C::Value<'_>>>> {
+        unsafe { self.map.remove(&key).map(|o| self.to_self(o.1)) }
     }
 
     /// Loads the current memo for `key_index`. This does not hold any sort of
     /// lock on the `memo_map` once it returns, so this memo could immediately
     /// become outdated if other threads store into the `memo_map`.
-    pub(super) fn get(&self, key: K) -> Option<Guard<Arc<Memo<V>>>> {
-        self.map.get(&key).map(|v| v.load())
+    pub(super) fn get<'db>(&self, key: Id) -> Option<Guard<Arc<Memo<C::Value<'db>>>>> {
+        self.map.get(&key).map(|v| unsafe {
+            std::mem::transmute::<
+                Guard<Arc<Memo<C::Value<'static>>>>,
+                Guard<Arc<Memo<C::Value<'db>>>>,
+            >(v.load())
+        })
     }
 
     /// Evicts the existing memo for the given key, replacing it
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
-    pub(super) fn evict(&self, key: K) {
+    pub(super) fn evict(&self, key: Id) {
         use crate::runtime::local_state::QueryOrigin;
         use dashmap::mapref::entry::Entry::*;
 
@@ -64,7 +95,7 @@ impl<K: AsId, V> MemoMap<K, V> {
 
                 QueryOrigin::Derived(_) => {
                     let memo_evicted = Arc::new(Memo::new(
-                        None::<V>,
+                        None::<C::Value<'_>>,
                         memo.verified_at.load(),
                         memo.revisions.clone(),
                     ));
@@ -126,8 +157,13 @@ impl<V> Memo<V> {
         });
 
         self.verified_at.store(runtime.current_revision());
+    }
 
-        // Also mark the outputs as verified
+    pub(super) fn mark_outputs_as_verified(
+        &self,
+        db: &dyn crate::Database,
+        database_key_index: DatabaseKeyIndex,
+    ) {
         for output in self.revisions.origin.outputs() {
             db.mark_validated_output(database_key_index, output);
         }

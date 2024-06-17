@@ -1,5 +1,5 @@
 #[salsa::jar(db = Db)]
-pub struct Jar(MyTracked, my_fn);
+pub struct Jar(MyTracked<'_>, my_fn);
 
 pub trait Db: salsa::DbWithJar<Jar> {}
 
@@ -14,7 +14,7 @@ impl salsa::Database for Database {}
 impl Db for Database {}
 
 #[salsa::tracked]
-pub struct MyTracked {
+pub struct MyTracked<'db> {
     field: u32,
 }
 
@@ -25,6 +25,6 @@ fn my_fn(db: &dyn crate::Db) {
 }
 
 fn main() {
-    let mut db = Database::default();
+    let db = Database::default();
     my_fn(&db);
 }

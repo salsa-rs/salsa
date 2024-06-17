@@ -119,9 +119,9 @@ pub struct Event {
 impl Event {
     /// Returns a type that gives a user-readable debug output.
     /// Use like `println!("{:?}", index.debug(db))`.
-    pub fn debug<'me, D: ?Sized>(&'me self, db: &'me D) -> impl std::fmt::Debug + 'me
+    pub fn debug<'me, D>(&'me self, db: &'me D) -> impl std::fmt::Debug + 'me
     where
-        D: plumbing::DatabaseOps,
+        D: ?Sized + plumbing::DatabaseOps,
     {
         EventDebug { event: self, db }
     }
@@ -201,9 +201,9 @@ pub enum EventKind {
 impl EventKind {
     /// Returns a type that gives a user-readable debug output.
     /// Use like `println!("{:?}", index.debug(db))`.
-    pub fn debug<'me, D: ?Sized>(&'me self, db: &'me D) -> impl std::fmt::Debug + 'me
+    pub fn debug<'me, D>(&'me self, db: &'me D) -> impl std::fmt::Debug + 'me
     where
-        D: plumbing::DatabaseOps,
+        D: ?Sized + plumbing::DatabaseOps,
     {
         EventKindDebug { kind: self, db }
     }
@@ -402,9 +402,9 @@ impl DatabaseKeyIndex {
 
     /// Returns a type that gives a user-readable debug output.
     /// Use like `println!("{:?}", index.debug(db))`.
-    pub fn debug<D: ?Sized>(self, db: &D) -> impl std::fmt::Debug + '_
+    pub fn debug<D>(self, db: &D) -> impl std::fmt::Debug + '_
     where
-        D: plumbing::DatabaseOps,
+        D: ?Sized + plumbing::DatabaseOps,
     {
         DatabaseKeyIndexDebug { index: self, db }
     }

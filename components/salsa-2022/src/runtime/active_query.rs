@@ -172,7 +172,7 @@ impl ActiveQuery {
     pub(crate) fn take_inputs_from(&mut self, cycle_query: &ActiveQuery) {
         self.changed_at = cycle_query.changed_at;
         self.durability = cycle_query.durability;
-        self.input_outputs = cycle_query.input_outputs.clone();
+        self.input_outputs.clone_from(&cycle_query.input_outputs);
     }
 
     pub(super) fn disambiguate(&mut self, hash: u64) -> Disambiguator {

@@ -7,7 +7,7 @@ use expect_test::expect;
 use test_log::test;
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked, final_result, intermediate_result);
+struct Jar(MyInput, MyTracked<'_>, final_result, intermediate_result);
 
 trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
@@ -23,12 +23,12 @@ fn final_result(db: &dyn Db, input: MyInput) -> u32 {
 }
 
 #[salsa::tracked(jar = Jar)]
-struct MyTracked {
+struct MyTracked<'db> {
     field: u32,
 }
 
 #[salsa::tracked(jar = Jar)]
-fn intermediate_result(db: &dyn Db, input: MyInput) -> MyTracked {
+fn intermediate_result<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     db.push_log(format!("intermediate_result({:?})", input));
     MyTracked::new(db, input.field(db) / 2)
 }
@@ -58,8 +58,8 @@ fn execute() {
     assert_eq!(final_result(&db, input), 22);
     db.assert_logs(expect![[r#"
         [
-            "final_result(MyInput(Id { value: 1 }))",
-            "intermediate_result(MyInput(Id { value: 1 }))",
+            "final_result(MyInput { [salsa id]: 0 })",
+            "intermediate_result(MyInput { [salsa id]: 0 })",
         ]"#]]);
 
     // Intermediate result is the same, so final result does
@@ -68,15 +68,15 @@ fn execute() {
     assert_eq!(final_result(&db, input), 22);
     db.assert_logs(expect![[r#"
         [
-            "intermediate_result(MyInput(Id { value: 1 }))",
+            "intermediate_result(MyInput { [salsa id]: 0 })",
         ]"#]]);
 
     input.set_field(&mut db).to(24);
     assert_eq!(final_result(&db, input), 24);
     db.assert_logs(expect![[r#"
         [
-            "intermediate_result(MyInput(Id { value: 1 }))",
-            "final_result(MyInput(Id { value: 1 }))",
+            "intermediate_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0 })",
         ]"#]]);
 }
 
@@ -89,8 +89,8 @@ fn red_herring() {
     assert_eq!(final_result(&db, input), 22);
     db.assert_logs(expect![[r#"
         [
-            "final_result(MyInput(Id { value: 1 }))",
-            "intermediate_result(MyInput(Id { value: 1 }))",
+            "final_result(MyInput { [salsa id]: 0 })",
+            "intermediate_result(MyInput { [salsa id]: 0 })",
         ]"#]]);
 
     // Create a distinct input and mutate it.

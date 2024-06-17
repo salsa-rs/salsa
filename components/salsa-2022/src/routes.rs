@@ -10,13 +10,17 @@ pub struct IngredientIndex(u32);
 
 impl IngredientIndex {
     /// Create an ingredient index from a usize.
-    fn from(v: usize) -> Self {
+    pub(crate) fn from(v: usize) -> Self {
         assert!(v < (std::u32::MAX as usize));
         Self(v as u32)
     }
 
+    pub(crate) fn as_u32(self) -> u32 {
+        self.0
+    }
+
     /// Convert the ingredient index back into a usize.
-    fn as_usize(self) -> usize {
+    pub(crate) fn as_usize(self) -> usize {
         self.0 as usize
     }
 }

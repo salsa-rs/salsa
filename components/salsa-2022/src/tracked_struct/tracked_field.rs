@@ -1,16 +1,11 @@
-use std::sync::Arc;
-
 use crate::{
-    hash::FxDashMap,
     id::AsId,
     ingredient::{Ingredient, IngredientRequiresReset},
     key::DependencyIndex,
-    plumbing::transmute_lifetime,
-    tracked_struct::TrackedStructValue,
-    IngredientIndex, Runtime,
+    Database, Id, IngredientIndex, Runtime,
 };
 
-use super::Configuration;
+use super::{struct_map::StructMapView, Configuration};
 
 /// Created for each tracked struct.
 /// This ingredient only stores the "id" fields.
@@ -27,7 +22,7 @@ where
     /// Index of this ingredient in the database (used to construct database-ids, etc).
     pub(super) ingredient_index: IngredientIndex,
     pub(super) field_index: u32,
-    pub(super) entity_data: Arc<FxDashMap<C::Id, Box<TrackedStructValue<C>>>>,
+    pub(super) struct_map: StructMapView<C>,
     pub(super) struct_debug_name: &'static str,
     pub(super) field_debug_name: &'static str,
 }
@@ -36,20 +31,16 @@ impl<C> TrackedFieldIngredient<C>
 where
     C: Configuration,
 {
+    unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Fields<'static>) -> &'db C::Fields<'db> {
+        unsafe { std::mem::transmute(fields) }
+    }
+
     /// Access to this value field.
     /// Note that this function returns the entire tuple of value fields.
     /// The caller is responible for selecting the appropriate element.
-    pub fn field<'db>(&'db self, runtime: &'db Runtime, id: C::Id) -> &'db C::Fields {
-        let Some(data) = self.entity_data.get(&id) else {
-            panic!("no data found for entity id {id:?}");
-        };
-
-        let current_revision = runtime.current_revision();
-        let created_at = data.created_at;
-        assert!(
-            created_at == current_revision,
-            "access to tracked struct from previous revision"
-        );
+    pub fn field<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db C::Fields<'db> {
+        let data = self.struct_map.get(runtime, id);
+        let data = C::deref_struct(data);
 
         let changed_at = C::revision(&data.revisions, self.field_index);
 
@@ -62,15 +53,13 @@ where
             changed_at,
         );
 
-        // Unsafety clause:
-        //
-        // * Values are only removed or altered when we have `&mut self`
-        unsafe { transmute_lifetime(self, &data.fields) }
+        unsafe { self.to_self_ref(&data.fields) }
     }
 }
 
 impl<DB: ?Sized, C> Ingredient<DB> for TrackedFieldIngredient<C>
 where
+    DB: Database,
     C: Configuration,
 {
     fn ingredient_index(&self) -> IngredientIndex {
@@ -81,22 +70,18 @@ where
         crate::cycle::CycleRecoveryStrategy::Panic
     }
 
-    fn maybe_changed_after(
-        &self,
-        _db: &DB,
+    fn maybe_changed_after<'db>(
+        &'db self,
+        db: &'db DB,
         input: crate::key::DependencyIndex,
         revision: crate::Revision,
     ) -> bool {
-        let id = <C::Id>::from_id(input.key_index.unwrap());
-        match self.entity_data.get(&id) {
-            Some(data) => {
-                let field_changed_at = C::revision(&data.revisions, self.field_index);
-                field_changed_at > revision
-            }
-            None => {
-                panic!("no data found for field `{id:?}`");
-            }
-        }
+        let runtime = db.runtime();
+        let id = input.key_index.unwrap();
+        let data = self.struct_map.get(runtime, id);
+        let data = C::deref_struct(data);
+        let field_changed_at = C::revision(&data.revisions, self.field_index);
+        field_changed_at > revision
     }
 
     fn origin(&self, _key_index: crate::Id) -> Option<crate::runtime::local_state::QueryOrigin> {

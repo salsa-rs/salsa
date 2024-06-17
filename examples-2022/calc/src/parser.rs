@@ -7,7 +7,7 @@ use crate::ir::{
 
 // ANCHOR: parse_statements
 #[salsa::tracked]
-pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program {
+pub fn parse_statements<'db>(db: &'db dyn crate::Db, source: SourceProgram) -> Program<'db> {
     // Get the source text from the database
     let source_text = source.text(db);
 
@@ -58,13 +58,13 @@ pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program {
 /// or [`Parser::word`]). These methods guarantee that, when they return `None`, the position
 /// is not changed apart from consuming whitespace. This allows them to be used to probe ahead
 /// and test the next token.
-struct Parser<'p> {
-    db: &'p dyn crate::Db,
-    source_text: &'p str,
+struct Parser<'source, 'db> {
+    db: &'db dyn crate::Db,
+    source_text: &'source str,
     position: usize,
 }
 
-impl Parser<'_> {
+impl<'db> Parser<'_, 'db> {
     // Invoke `f` and, if it returns `None`, then restore the parsing position.
     fn probe<T: std::fmt::Debug>(&mut self, f: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
         let p = self.position;
@@ -99,7 +99,7 @@ impl Parser<'_> {
     }
 
     // Returns a span ranging from `start_position` until the current position (exclusive)
-    fn span_from(&self, start_position: usize) -> Span {
+    fn span_from(&self, start_position: usize) -> Span<'db> {
         Span::new(self.db, start_position, self.position)
     }
 
@@ -121,7 +121,7 @@ impl Parser<'_> {
     }
 
     // ANCHOR: parse_statement
-    fn parse_statement(&mut self) -> Option<Statement> {
+    fn parse_statement(&mut self) -> Option<Statement<'db>> {
         let start_position = self.skip_whitespace();
         let word = self.word()?;
         if word == "fn" {
@@ -143,7 +143,7 @@ impl Parser<'_> {
     // ANCHOR_END: parse_statement
 
     // ANCHOR: parse_function
-    fn parse_function(&mut self) -> Option<Function> {
+    fn parse_function(&mut self) -> Option<Function<'db>> {
         let start_position = self.skip_whitespace();
         let name = self.word()?;
         let name_span = self.span_from(start_position);
@@ -161,7 +161,7 @@ impl Parser<'_> {
     }
     // ANCHOR_END: parse_function
 
-    fn parse_expression(&mut self) -> Option<Expression> {
+    fn parse_expression(&mut self) -> Option<Expression<'db>> {
         self.parse_op_expression(Self::parse_expression1, Self::low_op)
     }
 
@@ -178,7 +178,7 @@ impl Parser<'_> {
     /// Parses a high-precedence expression (times, div).
     ///
     /// On failure, skips arbitrary tokens.
-    fn parse_expression1(&mut self) -> Option<Expression> {
+    fn parse_expression1(&mut self) -> Option<Expression<'db>> {
         self.parse_op_expression(Self::parse_expression2, Self::high_op)
     }
 
@@ -194,9 +194,9 @@ impl Parser<'_> {
 
     fn parse_op_expression(
         &mut self,
-        mut parse_expr: impl FnMut(&mut Self) -> Option<Expression>,
+        mut parse_expr: impl FnMut(&mut Self) -> Option<Expression<'db>>,
         mut op: impl FnMut(&mut Self) -> Option<Op>,
-    ) -> Option<Expression> {
+    ) -> Option<Expression<'db>> {
         let start_position = self.skip_whitespace();
         let mut expr1 = parse_expr(self)?;
 
@@ -214,7 +214,7 @@ impl Parser<'_> {
     /// Parses a "base expression" (no operators).
     ///
     /// On failure, skips arbitrary tokens.
-    fn parse_expression2(&mut self) -> Option<Expression> {
+    fn parse_expression2(&mut self) -> Option<Expression<'db>> {
         let start_position = self.skip_whitespace();
         if let Some(w) = self.word() {
             if self.ch('(').is_some() {
@@ -246,7 +246,7 @@ impl Parser<'_> {
         }
     }
 
-    fn parse_expressions(&mut self) -> Option<Vec<Expression>> {
+    fn parse_expressions(&mut self) -> Option<Vec<Expression<'db>>> {
         let mut r = vec![];
         loop {
             let expr = self.parse_expression()?;
@@ -261,7 +261,7 @@ impl Parser<'_> {
     /// No trailing commas because I am lazy.
     ///
     /// On failure, skips arbitrary tokens.
-    fn parameters(&mut self) -> Option<Vec<VariableId>> {
+    fn parameters(&mut self) -> Option<Vec<VariableId<'db>>> {
         let mut r = vec![];
         loop {
             let name = self.word()?;
@@ -277,7 +277,7 @@ impl Parser<'_> {
     /// Parses a single character.
     ///
     /// Even on failure, only skips whitespace.
-    fn ch(&mut self, c: char) -> Option<Span> {
+    fn ch(&mut self, c: char) -> Option<Span<'db>> {
         let start_position = self.skip_whitespace();
         match self.peek() {
             Some(p) if c == p => {
@@ -381,25 +381,25 @@ fn parse_print() {
                 [salsa id]: 0,
                 statements: [
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 5,
-                            },
-                        ),
+                        span: Span {
+                            [salsa id]: 4,
+                            start: 0,
+                            end: 11,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 4,
-                                    },
-                                ),
+                                span: Span {
+                                    [salsa id]: 3,
+                                    start: 6,
+                                    end: 11,
+                                },
                                 data: Op(
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 1,
-                                            },
-                                        ),
+                                        span: Span {
+                                            [salsa id]: 0,
+                                            start: 6,
+                                            end: 7,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 1.0,
@@ -408,11 +408,11 @@ fn parse_print() {
                                     },
                                     Add,
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 3,
-                                            },
-                                        ),
+                                        span: Span {
+                                            [salsa id]: 2,
+                                            start: 10,
+                                            end: 11,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 2.0,
@@ -448,59 +448,182 @@ fn parse_example() {
                 [salsa id]: 0,
                 statements: [
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 10,
-                            },
-                        ),
+                        span: Span {
+                            [salsa id]: 9,
+                            start: 13,
+                            end: 57,
+                        },
                         data: Function(
-                            Function(
-                                Id {
-                                    value: 1,
+                            Function {
+                                [salsa id]: 0,
+                                name: FunctionId {
+                                    [salsa id]: 0,
+                                    text: "area_rectangle",
                                 },
-                            ),
-                        ),
-                    },
-                    Statement {
-                        span: Span(
-                            Id {
-                                value: 22,
-                            },
-                        ),
-                        data: Function(
-                            Function(
-                                Id {
-                                    value: 2,
+                                name_span: Span {
+                                    [salsa id]: 0,
+                                    start: 16,
+                                    end: 30,
                                 },
-                            ),
-                        ),
-                    },
-                    Statement {
-                        span: Span(
-                            Id {
-                                value: 29,
-                            },
-                        ),
-                        data: Print(
-                            Expression {
-                                span: Span(
-                                    Id {
-                                        value: 28,
+                                args: [
+                                    VariableId {
+                                        [salsa id]: 0,
+                                        text: "w",
                                     },
-                                ),
-                                data: Call(
-                                    FunctionId(
-                                        Id {
-                                            value: 1,
-                                        },
-                                    ),
-                                    [
+                                    VariableId {
+                                        [salsa id]: 1,
+                                        text: "h",
+                                    },
+                                ],
+                                body: Expression {
+                                    span: Span {
+                                        [salsa id]: 8,
+                                        start: 39,
+                                        end: 57,
+                                    },
+                                    data: Op(
                                         Expression {
-                                            span: Span(
-                                                Id {
-                                                    value: 24,
+                                            span: Span {
+                                                [salsa id]: 5,
+                                                start: 39,
+                                                end: 41,
+                                            },
+                                            data: Variable(
+                                                VariableId {
+                                                    [salsa id]: 0,
+                                                    text: "w",
                                                 },
                                             ),
+                                        },
+                                        Multiply,
+                                        Expression {
+                                            span: Span {
+                                                [salsa id]: 7,
+                                                start: 43,
+                                                end: 57,
+                                            },
+                                            data: Variable(
+                                                VariableId {
+                                                    [salsa id]: 1,
+                                                    text: "h",
+                                                },
+                                            ),
+                                        },
+                                    ),
+                                },
+                            },
+                        ),
+                    },
+                    Statement {
+                        span: Span {
+                            [salsa id]: 21,
+                            start: 57,
+                            end: 102,
+                        },
+                        data: Function(
+                            Function {
+                                [salsa id]: 1,
+                                name: FunctionId {
+                                    [salsa id]: 1,
+                                    text: "area_circle",
+                                },
+                                name_span: Span {
+                                    [salsa id]: 10,
+                                    start: 60,
+                                    end: 71,
+                                },
+                                args: [
+                                    VariableId {
+                                        [salsa id]: 2,
+                                        text: "r",
+                                    },
+                                ],
+                                body: Expression {
+                                    span: Span {
+                                        [salsa id]: 20,
+                                        start: 77,
+                                        end: 102,
+                                    },
+                                    data: Op(
+                                        Expression {
+                                            span: Span {
+                                                [salsa id]: 17,
+                                                start: 77,
+                                                end: 86,
+                                            },
+                                            data: Op(
+                                                Expression {
+                                                    span: Span {
+                                                        [salsa id]: 14,
+                                                        start: 77,
+                                                        end: 81,
+                                                    },
+                                                    data: Number(
+                                                        OrderedFloat(
+                                                            3.14,
+                                                        ),
+                                                    ),
+                                                },
+                                                Multiply,
+                                                Expression {
+                                                    span: Span {
+                                                        [salsa id]: 16,
+                                                        start: 84,
+                                                        end: 86,
+                                                    },
+                                                    data: Variable(
+                                                        VariableId {
+                                                            [salsa id]: 2,
+                                                            text: "r",
+                                                        },
+                                                    ),
+                                                },
+                                            ),
+                                        },
+                                        Multiply,
+                                        Expression {
+                                            span: Span {
+                                                [salsa id]: 19,
+                                                start: 88,
+                                                end: 102,
+                                            },
+                                            data: Variable(
+                                                VariableId {
+                                                    [salsa id]: 2,
+                                                    text: "r",
+                                                },
+                                            ),
+                                        },
+                                    ),
+                                },
+                            },
+                        ),
+                    },
+                    Statement {
+                        span: Span {
+                            [salsa id]: 28,
+                            start: 102,
+                            end: 141,
+                        },
+                        data: Print(
+                            Expression {
+                                span: Span {
+                                    [salsa id]: 27,
+                                    start: 108,
+                                    end: 128,
+                                },
+                                data: Call(
+                                    FunctionId {
+                                        [salsa id]: 0,
+                                        text: "area_rectangle",
+                                    },
+                                    [
+                                        Expression {
+                                            span: Span {
+                                                [salsa id]: 23,
+                                                start: 123,
+                                                end: 124,
+                                            },
                                             data: Number(
                                                 OrderedFloat(
                                                     3.0,
@@ -508,11 +631,11 @@ fn parse_example() {
                                             ),
                                         },
                                         Expression {
-                                            span: Span(
-                                                Id {
-                                                    value: 26,
-                                                },
-                                            ),
+                                            span: Span {
+                                                [salsa id]: 25,
+                                                start: 126,
+                                                end: 127,
+                                            },
                                             data: Number(
                                                 OrderedFloat(
                                                     4.0,
@@ -525,31 +648,30 @@ fn parse_example() {
                         ),
                     },
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 34,
-                            },
-                        ),
+                        span: Span {
+                            [salsa id]: 33,
+                            start: 141,
+                            end: 174,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 33,
-                                    },
-                                ),
+                                span: Span {
+                                    [salsa id]: 32,
+                                    start: 147,
+                                    end: 161,
+                                },
                                 data: Call(
-                                    FunctionId(
-                                        Id {
-                                            value: 2,
-                                        },
-                                    ),
+                                    FunctionId {
+                                        [salsa id]: 1,
+                                        text: "area_circle",
+                                    },
                                     [
                                         Expression {
-                                            span: Span(
-                                                Id {
-                                                    value: 31,
-                                                },
-                                            ),
+                                            span: Span {
+                                                [salsa id]: 30,
+                                                start: 159,
+                                                end: 160,
+                                            },
                                             data: Number(
                                                 OrderedFloat(
                                                     1.0,
@@ -562,25 +684,25 @@ fn parse_example() {
                         ),
                     },
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 39,
-                            },
-                        ),
+                        span: Span {
+                            [salsa id]: 38,
+                            start: 174,
+                            end: 195,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 38,
-                                    },
-                                ),
+                                span: Span {
+                                    [salsa id]: 37,
+                                    start: 180,
+                                    end: 186,
+                                },
                                 data: Op(
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 35,
-                                            },
-                                        ),
+                                        span: Span {
+                                            [salsa id]: 34,
+                                            start: 180,
+                                            end: 182,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 11.0,
@@ -589,11 +711,11 @@ fn parse_example() {
                                     },
                                     Multiply,
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 37,
-                                            },
-                                        ),
+                                        span: Span {
+                                            [salsa id]: 36,
+                                            start: 185,
+                                            end: 186,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 2.0,
@@ -644,32 +766,32 @@ fn parse_precedence() {
                 [salsa id]: 0,
                 statements: [
                     Statement {
-                        span: Span(
-                            Id {
-                                value: 11,
-                            },
-                        ),
+                        span: Span {
+                            [salsa id]: 10,
+                            start: 0,
+                            end: 19,
+                        },
                         data: Print(
                             Expression {
-                                span: Span(
-                                    Id {
-                                        value: 10,
-                                    },
-                                ),
+                                span: Span {
+                                    [salsa id]: 9,
+                                    start: 6,
+                                    end: 19,
+                                },
                                 data: Op(
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 7,
-                                            },
-                                        ),
+                                        span: Span {
+                                            [salsa id]: 6,
+                                            start: 6,
+                                            end: 16,
+                                        },
                                         data: Op(
                                             Expression {
-                                                span: Span(
-                                                    Id {
-                                                        value: 1,
-                                                    },
-                                                ),
+                                                span: Span {
+                                                    [salsa id]: 0,
+                                                    start: 6,
+                                                    end: 7,
+                                                },
                                                 data: Number(
                                                     OrderedFloat(
                                                         1.0,
@@ -678,18 +800,18 @@ fn parse_precedence() {
                                             },
                                             Add,
                                             Expression {
-                                                span: Span(
-                                                    Id {
-                                                        value: 6,
-                                                    },
-                                                ),
+                                                span: Span {
+                                                    [salsa id]: 5,
+                                                    start: 10,
+                                                    end: 15,
+                                                },
                                                 data: Op(
                                                     Expression {
-                                                        span: Span(
-                                                            Id {
-                                                                value: 3,
-                                                            },
-                                                        ),
+                                                        span: Span {
+                                                            [salsa id]: 2,
+                                                            start: 10,
+                                                            end: 11,
+                                                        },
                                                         data: Number(
                                                             OrderedFloat(
                                                                 2.0,
@@ -698,11 +820,11 @@ fn parse_precedence() {
                                                     },
                                                     Multiply,
                                                     Expression {
-                                                        span: Span(
-                                                            Id {
-                                                                value: 5,
-                                                            },
-                                                        ),
+                                                        span: Span {
+                                                            [salsa id]: 4,
+                                                            start: 14,
+                                                            end: 15,
+                                                        },
                                                         data: Number(
                                                             OrderedFloat(
                                                                 3.0,
@@ -715,11 +837,11 @@ fn parse_precedence() {
                                     },
                                     Add,
                                     Expression {
-                                        span: Span(
-                                            Id {
-                                                value: 9,
-                                            },
-                                        ),
+                                        span: Span {
+                                            [salsa id]: 8,
+                                            start: 18,
+                                            end: 19,
+                                        },
                                         data: Number(
                                             OrderedFloat(
                                                 4.0,

@@ -1,0 +1,5 @@
+error[E0601]: `main` function not found in crate `$CRATE`
+  --> tests/compile-fail/panic-when-reading-fields-of-tracked-structs-from-older-revisions.rs:46:2
+   |
+46 | }
+   |  ^ consider adding a `main` function to `$DIR/tests/compile-fail/panic-when-reading-fields-of-tracked-structs-from-older-revisions.rs`

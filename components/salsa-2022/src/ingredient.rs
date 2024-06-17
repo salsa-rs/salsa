@@ -26,7 +26,12 @@ pub trait Ingredient<DB: ?Sized> {
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy;
 
     /// Has the value for `input` in this ingredient changed after `revision`?
-    fn maybe_changed_after(&self, db: &DB, input: DependencyIndex, revision: Revision) -> bool;
+    fn maybe_changed_after<'db>(
+        &'db self,
+        db: &'db DB,
+        input: DependencyIndex,
+        revision: Revision,
+    ) -> bool;
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
     fn origin(&self, key_index: Id) -> Option<QueryOrigin>;
@@ -34,7 +39,12 @@ pub trait Ingredient<DB: ?Sized> {
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
     /// This occurs because the value for `executor`, which generated it, was marked as valid
     /// in the current revision.
-    fn mark_validated_output(&self, db: &DB, executor: DatabaseKeyIndex, output_key: Option<Id>);
+    fn mark_validated_output<'db>(
+        &'db self,
+        db: &'db DB,
+        executor: DatabaseKeyIndex,
+        output_key: Option<Id>,
+    );
 
     /// Invoked when the value `stale_output` was output by `executor` in a previous
     /// revision, but was NOT output in the current revision.

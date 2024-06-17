@@ -8,7 +8,7 @@ struct Jar(
     MyInput,
     ComplexStruct,
     leak_debug_string,
-    DerivedCustom,
+    DerivedCustom<'_>,
     leak_derived_custom,
 );
 
@@ -88,13 +88,13 @@ fn untracked_dependencies() {
 
 #[salsa::tracked]
 #[customize(DebugWithDb)]
-struct DerivedCustom {
+struct DerivedCustom<'db> {
     my_input: MyInput,
     value: u32,
 }
 
-impl DebugWithDb<dyn Db + '_> for DerivedCustom {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &dyn Db) -> std::fmt::Result {
+impl<'db> DebugWithDb<dyn Db + 'db> for DerivedCustom<'db> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &(dyn Db + 'db)) -> std::fmt::Result {
         write!(
             f,
             "{:?} / {:?}",

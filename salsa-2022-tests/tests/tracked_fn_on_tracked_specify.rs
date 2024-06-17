@@ -3,7 +3,7 @@
 #![allow(warnings)]
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked, tracked_fn, tracked_fn_extra);
+struct Jar(MyInput, MyTracked<'_>, tracked_fn, tracked_fn_extra);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
@@ -13,12 +13,12 @@ struct MyInput {
 }
 
 #[salsa::tracked(jar = Jar)]
-struct MyTracked {
+struct MyTracked<'db> {
     field: u32,
 }
 
 #[salsa::tracked(jar = Jar)]
-fn tracked_fn(db: &dyn Db, input: MyInput) -> MyTracked {
+fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     let t = MyTracked::new(db, input.field(db) * 2);
     if input.field(db) != 0 {
         tracked_fn_extra::specify(db, t, 2222);
@@ -27,7 +27,7 @@ fn tracked_fn(db: &dyn Db, input: MyInput) -> MyTracked {
 }
 
 #[salsa::tracked(jar = Jar, specify)]
-fn tracked_fn_extra(_db: &dyn Db, _input: MyTracked) -> u32 {
+fn tracked_fn_extra<'db>(_db: &'db dyn Db, _input: MyTracked<'db>) -> u32 {
     0
 }
 

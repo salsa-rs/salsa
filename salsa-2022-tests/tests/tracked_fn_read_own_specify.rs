@@ -3,7 +3,7 @@ use salsa::{Database as SalsaDatabase, DebugWithDb};
 use salsa_2022_tests::{HasLogger, Logger};
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked, tracked_fn, tracked_fn_extra);
+struct Jar(MyInput, MyTracked<'_>, tracked_fn, tracked_fn_extra);
 
 trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
@@ -13,12 +13,12 @@ struct MyInput {
 }
 
 #[salsa::tracked(jar = Jar)]
-struct MyTracked {
+struct MyTracked<'db> {
     field: u32,
 }
 
 #[salsa::tracked(jar = Jar)]
-fn tracked_fn(db: &dyn Db, input: MyInput) -> u32 {
+fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> u32 {
     db.push_log(format!("tracked_fn({:?})", input.debug(db)));
     let t = MyTracked::new(db, input.field(db) * 2);
     tracked_fn_extra::specify(db, t, 2222);
@@ -26,7 +26,7 @@ fn tracked_fn(db: &dyn Db, input: MyInput) -> u32 {
 }
 
 #[salsa::tracked(jar = Jar, specify)]
-fn tracked_fn_extra(db: &dyn Db, input: MyTracked) -> u32 {
+fn tracked_fn_extra<'db>(db: &dyn Db, input: MyTracked<'db>) -> u32 {
     db.push_log(format!("tracked_fn_extra({:?})", input.debug(db)));
     0
 }

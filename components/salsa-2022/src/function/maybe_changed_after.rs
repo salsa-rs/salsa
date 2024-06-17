@@ -9,7 +9,7 @@ use crate::{
         StampedValue,
     },
     storage::HasJarsDyn,
-    Revision, Runtime,
+    Id, Revision, Runtime,
 };
 
 use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
@@ -18,10 +18,10 @@ impl<C> FunctionIngredient<C>
 where
     C: Configuration,
 {
-    pub(super) fn maybe_changed_after(
-        &self,
-        db: &DynDb<C>,
-        key: C::Key,
+    pub(super) fn maybe_changed_after<'db>(
+        &'db self,
+        db: &'db DynDb<'db, C>,
+        key: Id,
         revision: Revision,
     ) -> bool {
         let runtime = db.runtime();
@@ -55,10 +55,10 @@ where
         }
     }
 
-    fn maybe_changed_after_cold(
-        &self,
-        db: &DynDb<C>,
-        key_index: C::Key,
+    fn maybe_changed_after_cold<'db>(
+        &'db self,
+        db: &'db DynDb<'db, C>,
+        key_index: Id,
         revision: Revision,
     ) -> Option<bool> {
         let runtime = db.runtime();
@@ -109,7 +109,7 @@ where
         db: &DynDb<C>,
         runtime: &Runtime,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Value>,
+        memo: &Memo<C::Value<'_>>,
     ) -> bool {
         let verified_at = memo.verified_at.load();
         let revision_now = runtime.current_revision();
@@ -127,7 +127,9 @@ where
 
         if memo.check_durability(runtime) {
             // No input of the suitable durability has changed since last verified.
-            memo.mark_as_verified(db.as_salsa_database(), runtime, database_key_index);
+            let db = db.as_salsa_database();
+            memo.mark_as_verified(db, runtime, database_key_index);
+            memo.mark_outputs_as_verified(db, database_key_index);
             return true;
         }
 
@@ -145,7 +147,7 @@ where
     pub(super) fn deep_verify_memo(
         &self,
         db: &DynDb<C>,
-        old_memo: &Memo<C::Value>,
+        old_memo: &Memo<C::Value<'_>>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> bool {
         let runtime = db.runtime();

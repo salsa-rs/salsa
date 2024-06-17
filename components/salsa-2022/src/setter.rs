@@ -1,5 +1,6 @@
+use crate::id::AsId;
 use crate::input_field::InputFieldIngredient;
-use crate::{AsId, Durability, Runtime};
+use crate::{Durability, Runtime};
 use std::hash::Hash;
 
 #[must_use]
