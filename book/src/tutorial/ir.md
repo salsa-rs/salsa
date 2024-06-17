@@ -52,10 +52,10 @@ pub struct SourceProgram(salsa::Id);
 ```
 
 It will also generate a method `new` that lets you create a `SourceProgram` in the database.
-For an input, a `&mut db` reference is required, along with the values for each field:
+For an input, a `&db` reference is required, along with the values for each field:
 
 ```rust
-let source = SourceProgram::new(&mut db, "print 11 + 11".to_string());
+let source = SourceProgram::new(&db, "print 11 + 11".to_string());
 ```
 
 You can read the value of the field with `source.text(&db)`, 
@@ -90,7 +90,7 @@ then subsequent parts of the computation won't need to re-execute.
 
 Apart from the fields being immutable, the API for working with a tracked struct is quite similar to an input:
 
-* You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Program::new(&db, some_staements)`)
+* You can create a new value by using `new`: e.g., `Program::new(&db, some_statements)`
 * You use a getter to read the value of a field, just like with an input (e.g., `my_func.statements(db)` to read the `statements` field).
     * In this case, the field is tagged as `#[return_ref]`, which means that the getter will return a `&Vec<Statement>`, instead of cloning the vector.
 
@@ -123,7 +123,7 @@ This would mean that we have to re-execute those parts of the code that depended
 
 Apart from the fields being immutable, the API for working with a tracked struct is quite similar to an input:
 
-* You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Function::new(&db, some_name, some_args, some_body)`)
+* You can create a new value by using `new`: e.g., `Function::new(&db, some_name, some_args, some_body)`
 * You use a getter to read the value of a field, just like with an input (e.g., `my_func.args(db)` to read the `args` field).
 
 ### id fields

@@ -56,15 +56,17 @@ pub struct ProgramFile {
 ```
 
 You create an input by using the `new` method.
-Because the values of input fields are stored in the database, you also give an `&mut`-reference to the database:
+Because the values of input fields are stored in the database, you also give an `&`-reference to the database:
 
 ```rust
 let file: ProgramFile = ProgramFile::new(
-    &mut db,
+    &db,
     PathBuf::from("some_path.txt"),
     String::from("fn foo() { }"),
 );
 ```
+
+Mutable access is not needed since creating a new input cannot affect existing tracked data in the database.
 
 ### Salsa structs are just integers
 
@@ -111,7 +113,8 @@ file.data(&db)
 ### Writing input fields
 
 Finally, you can also modify the value of an input field by using the setter method.
-Since this is modifying the input, the setter takes an `&mut`-reference to the database:
+Since this is modifying the input, and potentially invalidating data derived from it,
+the setter takes an `&mut`-reference to the database:
 
 ```rust
 file.set_contents(&mut db).to(String::from("fn foo() { /* add a comment */ }"));
@@ -140,7 +143,7 @@ The algorithm Salsa uses to decide when a tracked function needs to be re-execut
 Tracked functions have to follow a particular structure:
 
 - They must take a `&`-reference to the database as their first argument.
-  - Note that because this is an `&`-reference, it is not possible to create or modify inputs during a tracked function!
+  - Note that because this is an `&`-reference, it is not possible to modify inputs during a tracked function!
 - They must take a "Salsa struct" as the second argument -- in our example, this is an input struct, but there are other kinds of Salsa structs we'll describe shortly.
 - They _can_ take additional arguments, but it's faster and better if they don't.
 
