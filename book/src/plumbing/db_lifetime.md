@@ -169,7 +169,7 @@ The reason we use a raw pointer in the struct is because instances of this struc
 
 ```rust
 let mut db = MyDatabase::default();
-let input = MyInput::new(&mut db, ...);
+let input = MyInput::new(&db, ...);
 
 // Revision 1:
 let result1 = tracked_fn(&db, input);
