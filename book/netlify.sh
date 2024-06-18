@@ -15,3 +15,5 @@ unzip mdbook-linkcheck.v$MDBOOK_LINKCHECK_VERSION.x86_64-unknown-linux-gnu.zip -
 chmod +x ~/.cargo/bin/mdbook-linkcheck
 
 mdbook build
+mkdir versions
+mv book/html/* versions
