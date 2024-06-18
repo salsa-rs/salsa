@@ -1,13 +1,14 @@
-//! Compile Singleton struct test: 
+//! Compile Singleton struct test:
 //!
 //! Singleton flags are only allowed for input structs. If applied on any other Salsa struct compilation must fail
 
-use salsa_2022_tests::{HasLogger, Logger};
+mod common;
+use common::{HasLogger, Logger};
 
 use test_log::test;
 
 #[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked, Integers, create_tracked_structs );
+struct Jar(MyInput, MyTracked, Integers, create_tracked_structs);
 
 trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
@@ -16,12 +17,10 @@ struct MyInput {
     field: u32,
 }
 
-
 #[salsa::tracked(singleton)]
 struct MyTracked {
     field: u32,
 }
-
 
 #[salsa::tracked(singleton)]
 fn create_tracked_structs(db: &dyn Db, input: MyInput) -> Vec<MyTracked> {
@@ -32,7 +31,6 @@ fn create_tracked_structs(db: &dyn Db, input: MyInput) -> Vec<MyTracked> {
 
 #[salsa::accumulator(singleton)]
 struct Integers(u32);
-
 
 #[salsa::db(Jar)]
 #[derive(Default)]
@@ -50,6 +48,5 @@ impl HasLogger for Database {
         &self.logger
     }
 }
-
 
 fn main() {}

@@ -9,9 +9,9 @@ now we are going to define them for real.
 In addition to regular Rust types, we will make use of various **Salsa structs**.
 A Salsa struct is a struct that has been annotated with one of the Salsa annotations:
 
-* [`#[salsa::input]`](#input-structs), which designates the "base inputs" to your computation;
-* [`#[salsa::tracked]`](#tracked-structs), which designate intermediate values created during your computation;
-* [`#[salsa::interned]`](#interned-structs), which designate small values that are easy to compare for equality.
+- [`#[salsa::input]`](#input-structs), which designates the "base inputs" to your computation;
+- [`#[salsa::tracked]`](#tracked-structs), which designate intermediate values created during your computation;
+- [`#[salsa::interned]`](#interned-structs), which designate small values that are easy to compare for equality.
 
 All Salsa structs store the actual values of their fields in the Salsa database.
 This permits us to track when the values of those fields change to figure out what work will need to be re-executed.
@@ -23,7 +23,7 @@ You must also list the struct in the jar definition itself, or you will get erro
 
 ## Input structs
 
-The first thing we will define is our **input**. 
+The first thing we will define is our **input**.
 Every Salsa program has some basic inputs that drive the rest of the computation.
 The rest of the program must be some deterministic function of those base inputs,
 such that when those inputs change, we can try to efficiently recompute the new result of that function.
@@ -31,7 +31,7 @@ such that when those inputs change, we can try to efficiently recompute the new 
 Inputs are defined as Rust structs with a `#[salsa::input]` annotation:
 
 ```rust
-{{#include ../../../examples-2022/calc/src/ir.rs:input}}
+{{#include ../../../examples/calc/ir.rs:input}}
 ```
 
 In our compiler, we have just one simple input, the `SourceProgram`, which has a `text` field (the string).
@@ -58,12 +58,12 @@ For an input, a `&mut db` reference is required, along with the values for each 
 let source = SourceProgram::new(&mut db, "print 11 + 11".to_string());
 ```
 
-You can read the value of the field with `source.text(&db)`, 
+You can read the value of the field with `source.text(&db)`,
 and you can set the value of the field with `source.set_text(&mut db, "print 11 * 2".to_string())`.
 
 ### Database revisions
 
-Whenever a function takes an `&mut` reference to the database, 
+Whenever a function takes an `&mut` reference to the database,
 that means that it can only be invoked from outside the incrementalized part of your program,
 as explained in [the overview](../overview.md#goal-of-salsa).
 When you change the value of an input field, that increments a 'revision counter' in the database,
@@ -73,12 +73,12 @@ When we talk about a "revision" of the database, we are referring to the state o
 ### Representing the parsed program
 
 Next we will define a **tracked struct**.
-Whereas inputs represent the *start* of a computation, tracked structs represent intermediate values created during your computation.
+Whereas inputs represent the _start_ of a computation, tracked structs represent intermediate values created during your computation.
 
 In this case, the parser is going to take in the `SourceProgram` struct that we saw and return a `Program` that represents the fully parsed program:
 
 ```rust
-{{#include ../../../examples-2022/calc/src/ir.rs:program}}
+{{#include ../../../examples/calc/ir.rs:program}}
 ```
 
 Like with an input, the fields of a tracked struct are also stored in the database.
@@ -90,9 +90,9 @@ then subsequent parts of the computation won't need to re-execute.
 
 Apart from the fields being immutable, the API for working with a tracked struct is quite similar to an input:
 
-* You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Program::new(&db, some_staements)`)
-* You use a getter to read the value of a field, just like with an input (e.g., `my_func.statements(db)` to read the `statements` field).
-    * In this case, the field is tagged as `#[return_ref]`, which means that the getter will return a `&Vec<Statement>`, instead of cloning the vector.
+- You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Program::new(&db, some_staements)`)
+- You use a getter to read the value of a field, just like with an input (e.g., `my_func.statements(db)` to read the `statements` field).
+  - In this case, the field is tagged as `#[return_ref]`, which means that the getter will return a `&Vec<Statement>`, instead of cloning the vector.
 
 ### The `'db` lifetime
 
@@ -113,18 +113,18 @@ We will also use a tracked struct to represent each function:
 The `Function` struct is going to be created by the parser to represent each of the functions defined by the user:
 
 ```rust
-{{#include ../../../examples-2022/calc/src/ir.rs:functions}}
+{{#include ../../../examples/calc/ir.rs:functions}}
 ```
 
 If we had created some `Function` instance `f`, for example, we might find that `the f.body` field changes
 because the user changed the definition of `f`.
 This would mean that we have to re-execute those parts of the code that depended on `f.body`
-(but not those parts of the code that depended on the body of *other* functions).
+(but not those parts of the code that depended on the body of _other_ functions).
 
 Apart from the fields being immutable, the API for working with a tracked struct is quite similar to an input:
 
-* You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Function::new(&db, some_name, some_args, some_body)`)
-* You use a getter to read the value of a field, just like with an input (e.g., `my_func.args(db)` to read the `args` field).
+- You can create a new value by using `new`, but with a tracked struct, you only need an `&dyn` database, not `&mut` (e.g., `Function::new(&db, some_name, some_args, some_body)`)
+- You use a getter to read the value of a field, just like with an input (e.g., `my_func.args(db)` to read the `args` field).
 
 ### id fields
 
@@ -136,7 +136,7 @@ For more details, see the [algorithm](../reference/algorithm.md) page of the ref
 
 ## Interned structs
 
-The final kind of Salsa struct are *interned structs*.
+The final kind of Salsa struct are _interned structs_.
 As with input and tracked structs, the data for an interned struct is stored in the database.
 Unlike those structs, if you intern the same data twice, you get back the **same integer**.
 
@@ -146,7 +146,7 @@ it's also inefficient to have to compare them for equality via string comparison
 Therefore, we define two interned structs, `FunctionId` and `VariableId`, each with a single field that stores the string:
 
 ```rust
-{{#include ../../../examples-2022/calc/src/ir.rs:interned_ids}}
+{{#include ../../../examples/calc/ir.rs:interned_ids}}
 ```
 
 When you invoke e.g. `FunctionId::new(&db, "my_string".to_string())`, you will get back a `FunctionId` that is just a newtype'd integer.
@@ -172,7 +172,7 @@ while an interned value is in active use.
 We won't use any special "Salsa structs" for expressions and statements:
 
 ```rust
-{{#include ../../../examples-2022/calc/src/ir.rs:statements_and_expressions}}
+{{#include ../../../examples/calc/ir.rs:statements_and_expressions}}
 ```
 
 Since statements and expressions are not tracked, this implies that we are only attempting to get incremental re-use at the granularity of functions --
