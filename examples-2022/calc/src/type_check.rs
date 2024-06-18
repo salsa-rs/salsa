@@ -68,11 +68,24 @@ impl<'db> CheckExpression<'_, 'db> {
                 }
             }
             crate::ir::ExpressionData::Call(f, args) => {
-                if self.find_function(*f).is_none() {
-                    self.report_error(
+                match self.find_function(*f) {
+                    Some(func) => {
+                        let expected_arity = func.args(self.db).len();
+                        let actual_arity = args.len();
+                        if actual_arity != expected_arity {
+                            self.report_error(
+                                expression.span,
+                                format!(
+                                    "the function `{}` expects {expected_arity} argument(s), only {actual_arity} provided",
+                                    f.text(self.db)
+                                ),
+                            );
+                        }
+                    }
+                    None => self.report_error(
                         expression.span,
                         format!("the function `{}` is not declared", f.text(self.db)),
-                    );
+                    ),
                 }
                 for arg in args {
                     self.check(arg);
@@ -261,5 +274,25 @@ fn fix_bad_variable_in_function() {
                 ]
             "#]],
         )],
+    );
+}
+
+#[test]
+fn fix_bad_function_arity() {
+    check_string(
+        "
+            fn double(a) = a + a
+            print double(1, 2)
+        ",
+        expect![[r#"
+            [
+                Diagnostic {
+                    start: 52,
+                    end: 64,
+                    message: "the function `double` expects 1 argument(s), only 2 provided",
+                },
+            ]
+        "#]],
+        &[],
     );
 }
