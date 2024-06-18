@@ -1,0 +1,32 @@
+[package]
+name = "salsa"
+version = "0.18.0"
+authors = ["Salsa developers"]
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/salsa-rs/salsa"
+description = "A generic framework for on-demand, incrementalized computation (experimental)"
+
+[dependencies]
+crossbeam = "0.8.1"
+dashmap = "5.3.4"
+rustc-hash = "1.1.0"
+indexmap = "2"
+hashlink = "0.8.0"
+arc-swap = "1.6.0"
+crossbeam-utils = { version = "0.8", default-features = false }
+log = "0.4.5"
+parking_lot = "0.12.1"
+smallvec = "1.0.0"
+salsa-macros = { path = "components/salsa-macros" }
+
+[dev-dependencies]
+expect-test = "1.4.0"
+parking_lot = "0.12.1"
+test-log = "0.2.11"
+env_logger = "*"
+trybuild = "1.0"
+rustversion = "1.0"
+
+[workspace]
+members = ["components/salsa-macros"]
