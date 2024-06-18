@@ -1,7 +1,5 @@
 # On-Demand (Lazy) Inputs
 
-{{#include ../caveat.md}}
-
 Salsa inputs work best if you can easily provide all of the inputs upfront.
 However sometimes the set of inputs is not known beforehand.
 

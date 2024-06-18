@@ -1,7 +1,5 @@
 # Salsa overview
 
-{{#include caveat.md}}
-
 This page contains a brief overview of the pieces of a Salsa program.
 For a more detailed look, check out the [tutorial](./tutorial.md), which walks through the creation of an entire project end-to-end.
 
@@ -151,7 +149,7 @@ Tracked functions can return any clone-able type. A clone is required since, whe
 **Tracked structs** are intermediate structs created during your computation.
 Like inputs, their fields are stored inside the database, and the struct itself just wraps an id.
 Unlike inputs, they can only be created inside a tracked function, and their fields can never change once they are created (until the next revision, at least).
-Getter methods are provided to read the fields, but there are no setter methods. 
+Getter methods are provided to read the fields, but there are no setter methods.
 Example:
 
 ```rust
