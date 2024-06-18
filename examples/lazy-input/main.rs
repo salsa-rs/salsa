@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::Mutex, time::Duration};
 
-use crossbeam_channel::{unbounded, Sender};
+use crossbeam::channel::{unbounded, Sender};
 use dashmap::{mapref::entry::Entry, DashMap};
 use eyre::{eyre, Context, Report, Result};
 use notify_debouncer_mini::{
