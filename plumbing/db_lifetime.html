@@ -304,7 +304,7 @@ struct MyTrackedStruct&lt;'db&gt; {
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>let mut db = MyDatabase::default();
-let input = MyInput::new(&amp;mut db, ...);
+let input = MyInput::new(&amp;db, ...);
 
 // Revision 1:
 let result1 = tracked_fn(&amp;db, input);
