@@ -55,6 +55,8 @@ pub mod helper {
     ///
     /// Impl will fulfill the postconditions of `maybe_update`
     pub unsafe trait Fallback<T> {
+        /// # Safety
+        ///
         /// Same safety conditions as `Update::maybe_update`
         unsafe fn maybe_update(old_pointer: *mut T, new_value: T) -> bool;
     }
