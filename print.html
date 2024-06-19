@@ -84,7 +84,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded affix "><li class="part-title">How to use Salsa</li><li class="chapter-item expanded "><a href="overview.html"><strong aria-hidden="true">2.</strong> Overview</a></li><li class="chapter-item expanded "><a href="tutorial.html"><strong aria-hidden="true">3.</strong> Tutorial: calc language</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="tutorial/structure.html"><strong aria-hidden="true">3.1.</strong> Basic structure</a></li><li class="chapter-item expanded "><a href="tutorial/jar.html"><strong aria-hidden="true">3.2.</strong> Jars and databases</a></li><li class="chapter-item expanded "><a href="tutorial/db.html"><strong aria-hidden="true">3.3.</strong> Defining the database struct</a></li><li class="chapter-item expanded "><a href="tutorial/ir.html"><strong aria-hidden="true">3.4.</strong> Defining the IR: the various &quot;salsa structs&quot;</a></li><li class="chapter-item expanded "><a href="tutorial/parser.html"><strong aria-hidden="true">3.5.</strong> Defining the parser: memoized functions and inputs</a></li><li class="chapter-item expanded "><a href="tutorial/accumulators.html"><strong aria-hidden="true">3.6.</strong> Defining the parser: reporting errors</a></li><li class="chapter-item expanded "><a href="tutorial/debug.html"><strong aria-hidden="true">3.7.</strong> Defining the parser: debug impls and testing</a></li><li class="chapter-item expanded "><a href="tutorial/checker.html"><strong aria-hidden="true">3.8.</strong> Defining the checker</a></li><li class="chapter-item expanded "><a href="tutorial/interpreter.html"><strong aria-hidden="true">3.9.</strong> Defining the interpreter</a></li></ol></li><li class="chapter-item expanded "><a href="reference.html"><strong aria-hidden="true">4.</strong> Reference</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="reference/durability.html"><strong aria-hidden="true">4.1.</strong> Durability</a></li><li class="chapter-item expanded "><a href="reference/algorithm.html"><strong aria-hidden="true">4.2.</strong> Algorithm</a></li></ol></li><li class="chapter-item expanded "><a href="common_patterns.html"><strong aria-hidden="true">5.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="common_patterns/selection.html"><strong aria-hidden="true">5.1.</strong> Selection</a></li><li class="chapter-item expanded "><a href="common_patterns/on_demand_inputs.html"><strong aria-hidden="true">5.2.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="tuning.html"><strong aria-hidden="true">6.</strong> Tuning</a></li><li class="chapter-item expanded "><a href="cycles.html"><strong aria-hidden="true">7.</strong> Cycle handling</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="cycles/fallback.html"><strong aria-hidden="true">7.1.</strong> Recovering via fallback</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">How Salsa works internally</li><li class="chapter-item expanded "><a href="how_salsa_works.html"><strong aria-hidden="true">8.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="videos.html"><strong aria-hidden="true">9.</strong> Videos</a></li><li class="chapter-item expanded "><a href="plumbing.html"><strong aria-hidden="true">10.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="plumbing/jars_and_ingredients.html"><strong aria-hidden="true">10.1.</strong> Jars and ingredients</a></li><li class="chapter-item expanded "><a href="plumbing/database_and_runtime.html"><strong aria-hidden="true">10.2.</strong> Databases and runtime</a></li><li class="chapter-item expanded "><a href="plumbing/db_lifetime.html"><strong aria-hidden="true">10.3.</strong> The db lifetime on tracked/interned structs</a></li><li class="chapter-item expanded "><a href="plumbing/tracked_structs.html"><strong aria-hidden="true">10.4.</strong> Tracked structures</a></li><li class="chapter-item expanded "><a href="plumbing/query_ops.html"><strong aria-hidden="true">10.5.</strong> Query operations</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="plumbing/maybe_changed_after.html"><strong aria-hidden="true">10.5.1.</strong> maybe changed after</a></li><li class="chapter-item expanded "><a href="plumbing/fetch.html"><strong aria-hidden="true">10.5.2.</strong> Fetch</a></li><li class="chapter-item expanded "><a href="plumbing/derived_flowchart.html"><strong aria-hidden="true">10.5.3.</strong> Derived queries flowchart</a></li><li class="chapter-item expanded "><a href="plumbing/cycles.html"><strong aria-hidden="true">10.5.4.</strong> Cycle handling</a></li></ol></li><li class="chapter-item expanded "><a href="plumbing/terminology.html"><strong aria-hidden="true">10.6.</strong> Terminology</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="plumbing/terminology/backdate.html"><strong aria-hidden="true">10.6.1.</strong> Backdate</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/changed_at.html"><strong aria-hidden="true">10.6.2.</strong> Changed at</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/dependency.html"><strong aria-hidden="true">10.6.3.</strong> Dependency</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/derived_query.html"><strong aria-hidden="true">10.6.4.</strong> Derived query</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/durability.html"><strong aria-hidden="true">10.6.5.</strong> Durability</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/input_query.html"><strong aria-hidden="true">10.6.6.</strong> Input query</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/ingredient.html"><strong aria-hidden="true">10.6.7.</strong> Ingredient</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/LRU.html"><strong aria-hidden="true">10.6.8.</strong> LRU</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/memo.html"><strong aria-hidden="true">10.6.9.</strong> Memo</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/query.html"><strong aria-hidden="true">10.6.10.</strong> Query</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/query_function.html"><strong aria-hidden="true">10.6.11.</strong> Query function</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/revision.html"><strong aria-hidden="true">10.6.12.</strong> Revision</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/salsa_item.html"><strong aria-hidden="true">10.6.13.</strong> Salsa item</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/salsa_struct.html"><strong aria-hidden="true">10.6.14.</strong> Salsa struct</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/untracked.html"><strong aria-hidden="true">10.6.15.</strong> Untracked dependency</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/verified.html"><strong aria-hidden="true">10.6.16.</strong> Verified</a></li></ol></li></ol></li><li class="chapter-item expanded "><li class="part-title">Appendices</li><li class="chapter-item expanded "><a href="meta.html"><strong aria-hidden="true">11.</strong> Meta: about the book itself</a></li></ol>            </div>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="about_salsa.html"><strong aria-hidden="true">1.</strong> About salsa</a></li><li class="chapter-item expanded affix "><li class="part-title">How to use Salsa</li><li class="chapter-item expanded "><a href="overview.html"><strong aria-hidden="true">2.</strong> Overview</a></li><li class="chapter-item expanded "><a href="tutorial.html"><strong aria-hidden="true">3.</strong> Tutorial: calc language</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="tutorial/structure.html"><strong aria-hidden="true">3.1.</strong> Basic structure</a></li><li class="chapter-item expanded "><a href="tutorial/jar.html"><strong aria-hidden="true">3.2.</strong> Jars and databases</a></li><li class="chapter-item expanded "><a href="tutorial/db.html"><strong aria-hidden="true">3.3.</strong> Defining the database struct</a></li><li class="chapter-item expanded "><a href="tutorial/ir.html"><strong aria-hidden="true">3.4.</strong> Defining the IR: the various &quot;salsa structs&quot;</a></li><li class="chapter-item expanded "><a href="tutorial/parser.html"><strong aria-hidden="true">3.5.</strong> Defining the parser: memoized functions and inputs</a></li><li class="chapter-item expanded "><a href="tutorial/accumulators.html"><strong aria-hidden="true">3.6.</strong> Defining the parser: reporting errors</a></li><li class="chapter-item expanded "><a href="tutorial/debug.html"><strong aria-hidden="true">3.7.</strong> Defining the parser: debug impls and testing</a></li><li class="chapter-item expanded "><a href="tutorial/checker.html"><strong aria-hidden="true">3.8.</strong> Defining the checker</a></li><li class="chapter-item expanded "><a href="tutorial/interpreter.html"><strong aria-hidden="true">3.9.</strong> Defining the interpreter</a></li></ol></li><li class="chapter-item expanded "><a href="reference.html"><strong aria-hidden="true">4.</strong> Reference</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="reference/durability.html"><strong aria-hidden="true">4.1.</strong> Durability</a></li><li class="chapter-item expanded "><a href="reference/algorithm.html"><strong aria-hidden="true">4.2.</strong> Algorithm</a></li></ol></li><li class="chapter-item expanded "><a href="common_patterns.html"><strong aria-hidden="true">5.</strong> Common patterns</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="common_patterns/on_demand_inputs.html"><strong aria-hidden="true">5.1.</strong> On-demand (Lazy) inputs</a></li></ol></li><li class="chapter-item expanded "><a href="tuning.html"><strong aria-hidden="true">6.</strong> Tuning</a></li><li class="chapter-item expanded "><a href="cycles.html"><strong aria-hidden="true">7.</strong> Cycle handling</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="cycles/fallback.html"><strong aria-hidden="true">7.1.</strong> Recovering via fallback</a></li></ol></li><li class="chapter-item expanded "><li class="part-title">How Salsa works internally</li><li class="chapter-item expanded "><a href="how_salsa_works.html"><strong aria-hidden="true">8.</strong> How Salsa works</a></li><li class="chapter-item expanded "><a href="videos.html"><strong aria-hidden="true">9.</strong> Videos</a></li><li class="chapter-item expanded "><a href="plumbing.html"><strong aria-hidden="true">10.</strong> Plumbing</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="plumbing/jars_and_ingredients.html"><strong aria-hidden="true">10.1.</strong> Jars and ingredients</a></li><li class="chapter-item expanded "><a href="plumbing/database_and_runtime.html"><strong aria-hidden="true">10.2.</strong> Databases and runtime</a></li><li class="chapter-item expanded "><a href="plumbing/db_lifetime.html"><strong aria-hidden="true">10.3.</strong> The db lifetime on tracked/interned structs</a></li><li class="chapter-item expanded "><a href="plumbing/tracked_structs.html"><strong aria-hidden="true">10.4.</strong> Tracked structures</a></li><li class="chapter-item expanded "><a href="plumbing/query_ops.html"><strong aria-hidden="true">10.5.</strong> Query operations</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="plumbing/maybe_changed_after.html"><strong aria-hidden="true">10.5.1.</strong> maybe changed after</a></li><li class="chapter-item expanded "><a href="plumbing/fetch.html"><strong aria-hidden="true">10.5.2.</strong> Fetch</a></li><li class="chapter-item expanded "><a href="plumbing/derived_flowchart.html"><strong aria-hidden="true">10.5.3.</strong> Derived queries flowchart</a></li><li class="chapter-item expanded "><a href="plumbing/cycles.html"><strong aria-hidden="true">10.5.4.</strong> Cycle handling</a></li></ol></li><li class="chapter-item expanded "><a href="plumbing/terminology.html"><strong aria-hidden="true">10.6.</strong> Terminology</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="plumbing/terminology/backdate.html"><strong aria-hidden="true">10.6.1.</strong> Backdate</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/changed_at.html"><strong aria-hidden="true">10.6.2.</strong> Changed at</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/dependency.html"><strong aria-hidden="true">10.6.3.</strong> Dependency</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/derived_query.html"><strong aria-hidden="true">10.6.4.</strong> Derived query</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/durability.html"><strong aria-hidden="true">10.6.5.</strong> Durability</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/input_query.html"><strong aria-hidden="true">10.6.6.</strong> Input query</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/ingredient.html"><strong aria-hidden="true">10.6.7.</strong> Ingredient</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/LRU.html"><strong aria-hidden="true">10.6.8.</strong> LRU</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/memo.html"><strong aria-hidden="true">10.6.9.</strong> Memo</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/query.html"><strong aria-hidden="true">10.6.10.</strong> Query</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/query_function.html"><strong aria-hidden="true">10.6.11.</strong> Query function</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/revision.html"><strong aria-hidden="true">10.6.12.</strong> Revision</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/salsa_item.html"><strong aria-hidden="true">10.6.13.</strong> Salsa item</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/salsa_struct.html"><strong aria-hidden="true">10.6.14.</strong> Salsa struct</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/untracked.html"><strong aria-hidden="true">10.6.15.</strong> Untracked dependency</a></li><li class="chapter-item expanded "><a href="plumbing/terminology/verified.html"><strong aria-hidden="true">10.6.16.</strong> Verified</a></li></ol></li></ol></li><li class="chapter-item expanded "><li class="part-title">Appendices</li><li class="chapter-item expanded "><a href="meta.html"><strong aria-hidden="true">11.</strong> Meta: about the book itself</a></li></ol>            </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
 
@@ -162,11 +162,6 @@ other similar tooling.</p>
 contribute, please jump on to our Zulip instance at
 <a href="https://salsa.zulipchat.com/">salsa.zulipchat.com</a>.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="salsa-overview"><a class="header" href="#salsa-overview">Salsa overview</a></h1>
-<blockquote>
-<p>⚠️ <strong>IN-PROGRESS VERSION OF SALSA.</strong> ⚠️</p>
-<p>This page describes the unreleased &quot;Salsa 2022&quot; version, which is a major departure from older versions of salsa. The code here works but is only available on github and from the <code>salsa-2022</code> crate.</p>
-<p>If you are looking for the older version of salsa, simply visit <a href="https://salsa-rs.netlify.app/salsa">this link</a></p>
-</blockquote>
 <p>This page contains a brief overview of the pieces of a Salsa program.
 For a more detailed look, check out the <a href="./tutorial.html">tutorial</a>, which walks through the creation of an entire project end-to-end.</p>
 <h2 id="goal-of-salsa"><a class="header" href="#goal-of-salsa">Goal of Salsa</a></h2>
@@ -312,7 +307,7 @@ The algorithm Salsa uses to decide when a tracked function needs to be re-execut
 <p><strong>Tracked structs</strong> are intermediate structs created during your computation.
 Like inputs, their fields are stored inside the database, and the struct itself just wraps an id.
 Unlike inputs, they can only be created inside a tracked function, and their fields can never change once they are created (until the next revision, at least).
-Getter methods are provided to read the fields, but there are no setter methods. 
+Getter methods are provided to read the fields, but there are no setter methods.
 Example:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
@@ -465,11 +460,6 @@ fn type_check(db: &amp;dyn Db, item: Item) {
 <span class="boring">}
 </span></code></pre></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="tutorial-calc"><a class="header" href="#tutorial-calc">Tutorial: calc</a></h1>
-<blockquote>
-<p>⚠️ <strong>IN-PROGRESS VERSION OF SALSA.</strong> ⚠️</p>
-<p>This page describes the unreleased &quot;Salsa 2022&quot; version, which is a major departure from older versions of salsa. The code here works but is only available on github and from the <code>salsa-2022</code> crate.</p>
-<p>If you are looking for the older version of salsa, simply visit <a href="https://salsa-rs.netlify.app/salsa">this link</a></p>
-</blockquote>
 <p>This tutorial walks through an end-to-end example of using Salsa.
 It does not assume you know anything about salsa,
 but reading the <a href="./overview.html">overview</a> first is probably a good idea to get familiar with the basic concepts.</p>
@@ -598,10 +588,10 @@ pub struct Jar(
 <span class="boring">}
 </span></code></pre></pre>
 <p>Although it's not required, it's highly recommended to put the <code>jar</code> struct at the root of your crate, so that it can be referred to as <code>crate::Jar</code>.
-All of the other Salsa annotations reference a jar struct, and they all default to the path <code>crate::Jar</code>. 
+All of the other Salsa annotations reference a jar struct, and they all default to the path <code>crate::Jar</code>.
 If you put the jar somewhere else, you will have to override that default.</p>
 <h2 id="defining-the-database-trait"><a class="header" href="#defining-the-database-trait">Defining the database trait</a></h2>
-<p>The <code>#[salsa::jar]</code> annotation also includes a <code>db = Db</code> field. 
+<p>The <code>#[salsa::jar]</code> annotation also includes a <code>db = Db</code> field.
 The value of this field (normally <code>Db</code>) is the name of a trait that represents the database.
 Salsa programs never refer <em>directly</em> to the database; instead, they take a <code>&amp;dyn Db</code> argument.
 This allows for separate compilation, where you have a database that contains the data for two jars, but those jars don't depend on one another.</p>
@@ -652,7 +642,7 @@ and that's what we do here:</p>
 The database struct is where all the jars come together.
 Typically it is only used by the &quot;driver&quot; of your application;
 the one which starts up the program, supplies the inputs, and relays the outputs.</p>
-<p>In <code>calc</code>, the database struct is in the <a href="https://github.com/salsa-rs/salsa/blob/master/examples-2022/calc/src/db.rs"><code>db</code></a> module, and it looks like this:</p>
+<p>In <code>calc</code>, the database struct is in the <a href="https://github.com/salsa-rs/salsa/blob/master/examples/calc/db.rs"><code>db</code></a> module, and it looks like this:</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -732,7 +722,7 @@ This code must be connected to some <a href="tutorial/./jar.html">jar</a>.
 By default, this is <code>crate::Jar</code>, but you can specify a different jar with the <code>jar=</code> attribute (e.g., <code>#[salsa::input(jar = MyJar)]</code>).
 You must also list the struct in the jar definition itself, or you will get errors.</p>
 <h2 id="input-structs"><a class="header" href="#input-structs">Input structs</a></h2>
-<p>The first thing we will define is our <strong>input</strong>. 
+<p>The first thing we will define is our <strong>input</strong>.
 Every Salsa program has some basic inputs that drive the rest of the computation.
 The rest of the program must be some deterministic function of those base inputs,
 such that when those inputs change, we can try to efficiently recompute the new result of that function.</p>
@@ -770,10 +760,10 @@ For an input, a <code>&amp;db</code> reference is required, along with the value
 </span>let source = SourceProgram::new(&amp;db, &quot;print 11 + 11&quot;.to_string());
 <span class="boring">}
 </span></code></pre></pre>
-<p>You can read the value of the field with <code>source.text(&amp;db)</code>, 
+<p>You can read the value of the field with <code>source.text(&amp;db)</code>,
 and you can set the value of the field with <code>source.set_text(&amp;mut db, &quot;print 11 * 2&quot;.to_string())</code>.</p>
 <h3 id="database-revisions"><a class="header" href="#database-revisions">Database revisions</a></h3>
-<p>Whenever a function takes an <code>&amp;mut</code> reference to the database, 
+<p>Whenever a function takes an <code>&amp;mut</code> reference to the database,
 that means that it can only be invoked from outside the incrementalized part of your program,
 as explained in <a href="tutorial/../overview.html#goal-of-salsa">the overview</a>.
 When you change the value of an input field, that increments a 'revision counter' in the database,
@@ -1014,7 +1004,7 @@ This means that if the input changes, we will always re-parse the entire input a
 We'll see later that this <em>doesn't</em> mean we will always re-run the type checker and other parts of the compiler.</p>
 <p>This trade-off makes sense because (a) parsing is very cheap, so the overhead of tracking and enabling finer-grained reuse doesn't pay off
 and because (b) since strings are just a big blob-o-bytes without any structure, it's rather hard to identify which parts of the IR need to be reparsed.
-Some systems do choose to do more granular reparsing, often by doing a &quot;first pass&quot; over the string to give it a bit of structure, 
+Some systems do choose to do more granular reparsing, often by doing a &quot;first pass&quot; over the string to give it a bit of structure,
 e.g. to identify the functions,
 but deferring the parsing of the body of each function until later.
 Setting up a scheme like this is relatively easy in Salsa and uses the same principles that we will use later to avoid re-executing the type checker.</p>
@@ -1029,12 +1019,12 @@ which should be a <code>dyn Trait</code> value for the database trait associated
 Functions that take additional arguments are less efficient and flexible.
 It's generally better to structure tracked functions as functions of a single Salsa struct if possible.</p>
 <h3 id="the-return_ref-annotation"><a class="header" href="#the-return_ref-annotation">The <code>return_ref</code> annotation</a></h3>
-<p>You may have noticed that <code>parse_statements</code> is tagged with <code>#[salsa::tracked(return_ref)]</code>. 
+<p>You may have noticed that <code>parse_statements</code> is tagged with <code>#[salsa::tracked(return_ref)]</code>.
 Ordinarily, when you call a tracked function, the result you get back is cloned out of the database.
 The <code>return_ref</code> attribute means that a reference into the database is returned instead.
 So, when called, <code>parse_statements</code> will return an <code>&amp;Vec&lt;Statement&gt;</code> rather than cloning the <code>Vec</code>.
 This is useful as a performance optimization.
-(You may recall the <code>return_ref</code> annotation from the <a href="tutorial/./ir.html">ir</a> section of the tutorial, 
+(You may recall the <code>return_ref</code> annotation from the <a href="tutorial/./ir.html">ir</a> section of the tutorial,
 where it was placed on struct fields, with roughly the same meaning.)</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="defining-the-parser-reporting-errors"><a class="header" href="#defining-the-parser-reporting-errors">Defining the parser: reporting errors</a></h1>
 <p>The last interesting case in the parser is how to handle a parse error.
@@ -1308,110 +1298,7 @@ fn type_check(db: &amp;dyn Db, module: Module) {
 <p>For each durability, we track the revision in which <em>some input</em> with that durability changed. If a tracked function depends (transitively) only on high durability inputs, and you change a low durability input, then we can very easily determine that the tracked function result is still valid, avoiding the need to traverse the input edges one by one.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="common-patterns"><a class="header" href="#common-patterns">Common patterns</a></h1>
 <p>This section documents patterns for using Salsa.</p>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="selection"><a class="header" href="#selection">Selection</a></h1>
-<p>The &quot;selection&quot; (or &quot;firewall&quot;) pattern is when you have a query Qsel that reads from some
-other Qbase and extracts some small bit of information from Qbase that it returns.
-In particular, Qsel does not combine values from other queries. In some sense,
-then, Qsel is redundant -- you could have just extracted the information
-the information from Qbase yourself, and done without the salsa machinery. But
-Qsel serves a role in that it limits the amount of re-execution that is required
-when Qbase changes.</p>
-<h2 id="example-the-base-query"><a class="header" href="#example-the-base-query">Example: the base query</a></h2>
-<p>For example, imagine that you have a query <code>parse</code> that parses the input text of a request
-and returns a <code>ParsedResult</code>, which contains a header and a body:</p>
-<pre><code class="language-rust ignore">#[derive(Clone, Debug, PartialEq, Eq)]
-struct ParsedResult {
-    header: Vec&lt;ParsedHeader&gt;,
-    body: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct ParsedHeader {
-    key: String,
-    value: String,
-}
-
-#[salsa::query_group(Request)]
-trait RequestParser {
-    /// The base text of the request.
-    #[salsa::input]
-    fn request_text(&amp;self) -&gt; String;
-
-    /// The parsed form of the request.
-    fn parse(&amp;self) -&gt; ParsedResult;
-} 
-</code></pre>
-<h2 id="example-a-selecting-query"><a class="header" href="#example-a-selecting-query">Example: a selecting query</a></h2>
-<p>And now you have a number of derived queries that only look at the header.
-For example, one might extract the &quot;content-type' header:</p>
-<pre><code class="language-rust ignore">#[salsa::query_group(Request)]
-trait RequestUtil: RequestParser {
-    fn content_type(&amp;self) -&gt; Option&lt;String&gt;;
-}
-
-fn content_type(db: &amp;dyn RequestUtil) -&gt; Option&lt;String&gt; {
-    db.parse()
-        .header
-        .iter()
-        .find(|header| header.key == &quot;content-type&quot;)
-        .map(|header| header.value.clone())
-} 
-</code></pre>
-<h2 id="why-prefer-a-selecting-query"><a class="header" href="#why-prefer-a-selecting-query">Why prefer a selecting query?</a></h2>
-<p>This <code>content_type</code> query is an instance of the <em>selection</em> pattern. It only
-&quot;selects&quot; a small bit of information from the <code>ParsedResult</code>. You might not have
-made it a query at all, but instead made it a method on <code>ParsedResult</code>.</p>
-<p>But using a query for <code>content_type</code> has an advantage: now if there are downstream
-queries that only depend on the <code>content_type</code> (or perhaps on other headers extracted
-via a similar pattern), those queries will not have to be re-executed when the request
-changes <em>unless</em> the content-type header changes. Consider the dependency graph:</p>
-<pre><code class="language-text">request_text  --&gt;  parse  --&gt;  content_type  --&gt;  (other queries)
-</code></pre>
-<p>When the <code>request_text</code> changes, we are always going to have to re-execute <code>parse</code>.
-If that produces a new parsed result, we are <em>also</em> going to re-execute <code>content_type</code>.
-But if the result of <code>content_type</code> has not changed, then we will <em>not</em> re-execute
-the other queries.</p>
-<h2 id="more-levels-of-selection"><a class="header" href="#more-levels-of-selection">More levels of selection</a></h2>
-<p>In fact, in our example we might consider introducing another level of selection.
-Instead of having <code>content_type</code> directly access the results of <code>parse</code>, it might be better
-to insert a selecting query that just extracts the header:</p>
-<pre><code class="language-rust ignore">#[salsa::query_group(Request)]
-trait RequestUtil: RequestParser {
-    fn header(&amp;self) -&gt; Vec&lt;ParsedHeader&gt;;
-    fn content_type(&amp;self) -&gt; Option&lt;String&gt;;
-}
-
-fn header(db: &amp;dyn RequestUtil) -&gt; Vec&lt;ParsedHeader&gt; {
-    db.parse().header
-}
-
-fn content_type(db: &amp;dyn RequestUtil) -&gt; Option&lt;String&gt; {
-    db.header()
-        .iter()
-        .find(|header| header.key == &quot;content-type&quot;)
-        .map(|header| header.value.clone())
-} 
-</code></pre>
-<p>This will result in a dependency graph like so:</p>
-<pre><code class="language-text">request_text  --&gt;  parse  --&gt;  header --&gt;  content_type  --&gt;  (other queries)
-</code></pre>
-<p>The advantage of this is that changes that only effect the &quot;body&quot; or
-only consume small parts of the request will
-not require us to re-execute <code>content_type</code> at all. This would be particularly
-valuable if there are a lot of dependent headers.</p>
-<h2 id="a-note-on-cloning-and-efficiency"><a class="header" href="#a-note-on-cloning-and-efficiency">A note on cloning and efficiency</a></h2>
-<p>In this example, we used common Rust types like <code>Vec</code> and <code>String</code>,
-and we cloned them quite frequently. This will work just fine in Salsa,
-but it may not be the most efficient choice. This is because each clone
-is going to produce a deep copy of the result. As a simple fix, you
-might convert your data structures to use <code>Arc</code> (e.g., <code>Arc&lt;Vec&lt;ParsedHeader&gt;&gt;</code>),
-which makes cloning cheap.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="on-demand-lazy-inputs"><a class="header" href="#on-demand-lazy-inputs">On-Demand (Lazy) Inputs</a></h1>
-<blockquote>
-<p>⚠️ <strong>IN-PROGRESS VERSION OF SALSA.</strong> ⚠️</p>
-<p>This page describes the unreleased &quot;Salsa 2022&quot; version, which is a major departure from older versions of salsa. The code here works but is only available on github and from the <code>salsa-2022</code> crate.</p>
-<p>If you are looking for the older version of salsa, simply visit <a href="https://salsa-rs.netlify.app/salsa">this link</a></p>
-</blockquote>
 <p>Salsa inputs work best if you can easily provide all of the inputs upfront.
 However sometimes the set of inputs is not known beforehand.</p>
 <p>A typical example is reading files from disk.
@@ -1423,7 +1310,7 @@ That is, when a query requests the text of a file for the first time:</p>
 <li>Update the cached file when the watcher sends a change notification.</li>
 </ol>
 <p>This is possible to achieve in salsa, by caching the inputs in your database structs and adding a method to the database trait to retrieve them out of this cache.</p>
-<p>A complete, runnable file-watching example can be found in <a href="https://github.com/salsa-rs/salsa/tree/master/examples-2022/lazy-input">the lazy-input example</a>.</p>
+<p>A complete, runnable file-watching example can be found in <a href="https://github.com/salsa-rs/salsa/tree/master/examples/lazy-input">the lazy-input example</a>.</p>
 <p>The setup looks roughly like this:</p>
 <pre><code class="language-rust ignore">#[salsa::input]
 struct File {
@@ -1560,12 +1447,6 @@ tree-like data structures.</p>
 <li>The <a href="https://github.com/salsa-rs/salsa/blob/master/examples/compiler/main.rs"><code>compiler</code> example</a>,
 which uses interning.</li>
 </ul>
-<h2 id="granularity-of-incrementality"><a class="header" href="#granularity-of-incrementality">Granularity of Incrementality</a></h2>
-<p>See:</p>
-<ul>
-<li><a href="./common_patterns/selection.html">common patterns: selection</a> and</li>
-<li>The <a href="https://github.com/salsa-rs/salsa/blob/master/examples/selection/main.rs"><code>selection</code> example</a></li>
-</ul>
 <h2 id="cancellation"><a class="header" href="#cancellation">Cancellation</a></h2>
 <p>Queries that are no longer needed due to concurrent writes or changes in dependencies are cancelled
 by Salsa. Each access of an intermediate query is a potential cancellation point. Cancellation is
@@ -1655,11 +1536,6 @@ implemented.</li>
 <a href="https://www.bilibili.com/video/BV1AM4y1G7E4/">Salsa In More Depth</a>.</p>
 </blockquote>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="plumbing"><a class="header" href="#plumbing">Plumbing</a></h1>
-<blockquote>
-<p>⚠️ <strong>IN-PROGRESS VERSION OF SALSA.</strong> ⚠️</p>
-<p>This page describes the unreleased &quot;Salsa 2022&quot; version, which is a major departure from older versions of salsa. The code here works but is only available on github and from the <code>salsa-2022</code> crate.</p>
-<p>If you are looking for the older version of salsa, simply visit <a href="https://salsa-rs.netlify.app/salsa">this link</a></p>
-</blockquote>
 <p>This chapter documents the code that salsa generates and its &quot;inner workings&quot;.
 We refer to this as the &quot;plumbing&quot;.</p>
 <h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
@@ -1678,11 +1554,6 @@ We refer to this as the &quot;plumbing&quot;.</p>
 <li>The <a href="./plumbing/terminology.html">terminology</a> section describes various words that appear throughout.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="jars-and-ingredients"><a class="header" href="#jars-and-ingredients">Jars and ingredients</a></h1>
-<blockquote>
-<p>⚠️ <strong>IN-PROGRESS VERSION OF SALSA.</strong> ⚠️</p>
-<p>This page describes the unreleased &quot;Salsa 2022&quot; version, which is a major departure from older versions of salsa. The code here works but is only available on github and from the <code>salsa-2022</code> crate.</p>
-<p>If you are looking for the older version of salsa, simply visit <a href="https://salsa-rs.netlify.app/salsa">this link</a></p>
-</blockquote>
 <p>This page covers how data is organized in Salsa and how links between Salsa items (e.g., dependency tracking) work.</p>
 <h2 id="salsa-items-and-ingredients"><a class="header" href="#salsa-items-and-ingredients">Salsa items and ingredients</a></h2>
 <p>A <strong>Salsa item</strong> is some item annotated with a Salsa annotation that can be included in a jar.
@@ -1801,7 +1672,7 @@ pub struct DatabaseKeyIndex {
 This is used when we sometimes wish to refer to the ingredient as a whole, and not any specific value within the ingredient.</p>
 <p>These kinds of indices are used to store connetions between ingredients.
 For example, each memoized value has to track its inputs.
-Those inputs are stored as dependency indices. 
+Those inputs are stored as dependency indices.
 We can then do things like ask, &quot;did this input change since revision R?&quot; by</p>
 <ul>
 <li>using the ingredient index to find the route and get a <code>&amp;dyn Ingredient&lt;DB&gt;</code></li>
@@ -1959,7 +1830,7 @@ Each of the snapshots however onlys another handle on the <code>Arc</code> in <c
 <p>Whenever the user attempts to do an <code>&amp;mut</code>-operation, such as modifying an input field, that needs to
 first cancel any parallel snapshots and wait for those parallel threads to finish.
 Once the snapshots have completed, we can use <code>Arc::get_mut</code> to get an <code>&amp;mut</code> reference to the ingredient data.
-This allows us to get <code>&amp;mut</code> access without any unsafe code and 
+This allows us to get <code>&amp;mut</code> access without any unsafe code and
 guarantees that we have successfully managed to cancel the other worker threads
 (or gotten ourselves into a deadlock).</p>
 <p>The code to acquire <code>&amp;mut</code> access to the database is the <code>jars_mut</code> method:</p>
@@ -2305,7 +2176,7 @@ where
     revisions: C::Revisions,
 }
 </code></pre>
-<p>The value struct stores the values of the fields but also the revisions when 
+<p>The value struct stores the values of the fields but also the revisions when
 that field last changed. Each time the struct is recreated in a new revision,
 the old and new values for its fields are compared and a new revision is created.</p>
 <h2 id="the-macro-generates-the-tracked-struct-configuration"><a class="header" href="#the-macro-generates-the-tracked-struct-configuration">The macro generates the tracked struct <code>Configuration</code></a></h2>
@@ -2386,11 +2257,7 @@ pub trait Configuration: Sized {
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="query-operations"><a class="header" href="#query-operations">Query operations</a></h1>
 <p>Each of the query storage struct implements the <code>QueryStorageOps</code> trait found in the <a href="https://github.com/salsa-rs/salsa/blob/master/src/plumbing.rs"><code>plumbing</code></a> module:</p>
-<pre><code class="language-rust no_run noplayground">pub trait QueryStorageOps&lt;Q&gt;
-where
-    Self: QueryStorageMassOps,
-    Q: Query,
-{
+<pre><code class="language-rust no_run noplayground">
 </code></pre>
 <p>which defines the basic operations that all queries support. The most important are these two:</p>
 <ul>
@@ -2398,17 +2265,7 @@ where
 <li><a href="plumbing/./fetch.html">Fetch</a>: Returns the up-to-date value for the given K (or an error in the case of an &quot;unrecovered&quot; cycle).</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="maybe-changed-after"><a class="header" href="#maybe-changed-after">Maybe changed after</a></h1>
-<pre><code class="language-rust no_run noplayground">    /// True if the value of `input`, which must be from this query, may have
-    /// changed after the given revision ended.
-    ///
-    /// This function should only be invoked with a revision less than the current
-    /// revision.
-    fn maybe_changed_after(
-        &amp;self,
-        db: &amp;&lt;Q as QueryDb&lt;'_&gt;&gt;::DynDb,
-        input: DatabaseKeyIndex,
-        revision: Revision,
-    ) -&gt; bool;
+<pre><code class="language-rust no_run noplayground">
 </code></pre>
 <p>The <code>maybe_changed_after</code> operation computes whether a query's value <em>may have changed</em> <strong>after</strong> the given revision. In other words, <code>Q.maybe_change_since(R)</code> is true if the value of the query <code>Q</code> may have changed in the revisions <code>(R+1)..R_now</code>, where <code>R_now</code> is the current revision. Note that it doesn't make sense to ask <code>maybe_changed_after(R_now)</code>.</p>
 <h2 id="input-queries"><a class="header" href="#input-queries">Input queries</a></h2>
@@ -2438,14 +2295,7 @@ where
 </li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="fetch"><a class="header" href="#fetch">Fetch</a></h1>
-<pre><code class="language-rust no_run noplayground">    /// Execute the query, returning the result (often, the result
-    /// will be memoized).  This is the &quot;main method&quot; for
-    /// queries.
-    ///
-    /// Returns `Err` in the event of a cycle, meaning that computing
-    /// the value for this `key` is recursively attempting to fetch
-    /// itself.
-    fn fetch(&amp;self, db: &amp;&lt;Q as QueryDb&lt;'_&gt;&gt;::DynDb, key: &amp;Q::Key) -&gt; Q::Value;
+<pre><code class="language-rust no_run noplayground">
 </code></pre>
 <p>The <code>fetch</code> operation computes the value of a query. It prefers to reuse memoized values when it can.</p>
 <h2 id="input-queries-1"><a class="header" href="#input-queries-1">Input queries</a></h2>
