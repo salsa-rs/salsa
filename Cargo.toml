@@ -10,7 +10,6 @@ description = "A generic framework for on-demand, incrementalized computation (e
 [dependencies]
 arc-swap = "1.6.0"
 crossbeam = "0.8.1"
-crossbeam-utils = { version = "0.8", default-features = false }
 dashmap = "5.3.4"
 hashlink = "0.8.0"
 indexmap = "2"
@@ -27,7 +26,6 @@ expect-test = "1.4.0"
 eyre = "0.6.8"
 notify-debouncer-mini = "0.2.1"
 ordered-float = "3.0"
-parking_lot = "0.12.1"
 rustversion = "1.0"
 test-log = "0.2.11"
 trybuild = "1.0"
