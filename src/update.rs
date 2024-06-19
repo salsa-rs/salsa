@@ -1,4 +1,8 @@
-use std::path::PathBuf;
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    hash::{BuildHasher, Hash},
+    path::PathBuf,
+};
 
 use crate::Revision;
 
@@ -106,15 +110,21 @@ pub fn always_update<T>(
 
 /// # Safety
 ///
-/// The `unsafe` on the trait is to assert that `maybe_update` ensures
-/// the properties it is intended to ensure.
+/// Implementing this trait requires the implementor to verify:
 ///
-/// `Update` must NEVER be implemented for any `&'db T` value
-/// (i.e., any Rust reference tied to the database).
-/// This is because update methods are invoked across revisions.
-/// The `'db` lifetimes are only valid within a single revision.
-/// Therefore any use of that reference in a new revision will violate
-/// stacked borrows.
+/// * `maybe_update` ensures the properties it is intended to ensure.
+/// * If the value implements `Eq`, it is safe to compare an instance
+///   of the value from an older revision with one from the newer
+///   revision. If the value compares as equal, no update is needed to
+///   bring it into the newer revision.
+///
+/// NB: The second point implies that `Update` cannot be implemented for any
+/// `&'db T` -- (i.e., any Rust reference tied to the database).
+/// Such a value could refer to memory that was freed in some
+/// earlier revision. Even if the memory is still valid, it could also
+/// have been part of a tracked struct whose values were mutated,
+/// thus invalidating the `'db` lifetime (from a stacked borrows perspective).
+/// Either way, the `Eq` implementation would be invalid.
 pub unsafe trait Update {
     /// # Returns
     ///
@@ -164,6 +174,98 @@ where
         }
 
         changed
+    }
+}
+
+macro_rules! maybe_update_set {
+    ($old_pointer: expr, $new_set: expr) => {{
+        let old_pointer = $old_pointer;
+        let new_set = $new_set;
+
+        let old_set: &mut Self = unsafe { &mut *old_pointer };
+
+        if *old_set == new_set {
+            false
+        } else {
+            old_set.clear();
+            old_set.extend(new_set);
+            return true;
+        }
+    }};
+}
+
+unsafe impl<K, S> Update for HashSet<K, S>
+where
+    K: Update + Eq + Hash,
+    S: BuildHasher,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_set: Self) -> bool {
+        maybe_update_set!(old_pointer, new_set)
+    }
+}
+
+unsafe impl<K> Update for BTreeSet<K>
+where
+    K: Update + Eq + Ord,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_set: Self) -> bool {
+        maybe_update_set!(old_pointer, new_set)
+    }
+}
+
+// Duck typing FTW, it was too annoying to make a proper function out of this.
+macro_rules! maybe_update_map {
+    ($old_pointer: expr, $new_map: expr) => {
+        'function: {
+            let old_pointer = $old_pointer;
+            let new_map = $new_map;
+            let old_map: &mut Self = unsafe { &mut *old_pointer };
+
+            // To be considered "equal", the set of keys
+            // must be the same between the two maps.
+            let same_keys =
+                old_map.len() == new_map.len() && old_map.keys().all(|k| new_map.contains_key(k));
+
+            // If the set of keys has changed, then just pull in the new values
+            // from new_map and discard the old ones.
+            if !same_keys {
+                old_map.clear();
+                old_map.extend(new_map);
+                break 'function true;
+            }
+
+            // Otherwise, recursively descend to the values.
+            // We do not invoke `K::update` because we assume
+            // that if the values are `Eq` they must not need
+            // updating (see the trait criteria).
+            let mut changed = false;
+            for (key, new_value) in new_map.into_iter() {
+                let old_value = old_map.get_mut(&key).unwrap();
+                changed |= V::maybe_update(old_value, new_value);
+            }
+            changed
+        }
+    };
+}
+
+unsafe impl<K, V, S> Update for HashMap<K, V, S>
+where
+    K: Update + Eq + Hash,
+    V: Update,
+    S: BuildHasher,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_map: Self) -> bool {
+        maybe_update_map!(old_pointer, new_map)
+    }
+}
+
+unsafe impl<K, V> Update for BTreeMap<K, V>
+where
+    K: Update + Eq + Ord,
+    V: Update,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_map: Self) -> bool {
+        maybe_update_map!(old_pointer, new_map)
     }
 }
 
