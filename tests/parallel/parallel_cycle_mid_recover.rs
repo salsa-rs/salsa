@@ -2,9 +2,68 @@
 //! See `../cycles.rs` for a complete listing of cycle tests,
 //! both intra and cross thread.
 
-use crate::setup::{Knobs, ParDatabaseImpl};
+use crate::setup::Database;
+use crate::setup::Knobs;
 use salsa::ParallelDatabase;
-use test_log::test;
+
+pub(crate) trait Db: salsa::DbWithJar<Jar> + Knobs {}
+
+impl<T: salsa::DbWithJar<Jar> + Knobs> Db for T {}
+
+#[salsa::jar(db = Db)]
+pub(crate) struct Jar(MyInput, a1, a2, b1, b2, b3);
+
+#[salsa::input(jar = Jar)]
+pub(crate) struct MyInput {
+    field: i32,
+}
+
+#[salsa::tracked(jar = Jar)]
+pub(crate) fn a1(db: &dyn Db, input: MyInput) -> i32 {
+    // tell thread b we have started
+    db.signal(1);
+
+    // wait for thread b to block on a1
+    db.wait_for(2);
+
+    a2(db, input)
+}
+#[salsa::tracked(jar = Jar)]
+pub(crate) fn a2(db: &dyn Db, input: MyInput) -> i32 {
+    // create the cycle
+    b1(db, input)
+}
+
+#[salsa::tracked(jar = Jar, recovery_fn=recover_b1)]
+pub(crate) fn b1(db: &dyn Db, input: MyInput) -> i32 {
+    // wait for thread a to have started
+    db.wait_for(1);
+    b2(db, input)
+}
+
+fn recover_b1(db: &dyn Db, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
+    dbg!("recover_b1");
+    key.field(db) * 20 + 2
+}
+
+#[salsa::tracked(jar = Jar)]
+pub(crate) fn b2(db: &dyn Db, input: MyInput) -> i32 {
+    // will encounter a cycle but recover
+    b3(db, input);
+    b1(db, input); // hasn't recovered yet
+    0
+}
+
+#[salsa::tracked(jar = Jar, recovery_fn=recover_b3)]
+pub(crate) fn b3(db: &dyn Db, input: MyInput) -> i32 {
+    // will block on thread a, signaling stage 2
+    a1(db, input)
+}
+
+fn recover_b3(db: &dyn Db, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
+    dbg!("recover_b3");
+    key.field(db) * 200 + 2
+}
 
 // Recover cycle test:
 //
@@ -24,21 +83,23 @@ use test_log::test;
 // a2 (cycle detected)        |
 //                            b3 recovers
 //                            b2 resumes
-//                            b1 panics because bug
+//                            b1 recovers
 
 #[test]
-fn parallel_cycle_mid_recovers() {
-    let db = ParDatabaseImpl::default();
-    db.knobs().signal_on_will_block.set(2);
+fn execute() {
+    let db = Database::default();
+    db.knobs().signal_on_will_block.set(3);
+
+    let input = MyInput::new(&db, 1);
 
     let thread_a = std::thread::spawn({
         let db = db.snapshot();
-        move || db.a1(1)
+        move || a1(&*db, input)
     });
 
     let thread_b = std::thread::spawn({
         let db = db.snapshot();
-        move || db.b1(1)
+        move || b1(&*db, input)
     });
 
     // We expect that the recovery function yields
@@ -46,65 +107,4 @@ fn parallel_cycle_mid_recovers() {
     // to b1, and from there to a2 and a1.
     assert_eq!(thread_a.join().unwrap(), 22);
     assert_eq!(thread_b.join().unwrap(), 22);
-}
-
-#[salsa::query_group(ParallelCycleMidRecovers)]
-pub(crate) trait TestDatabase: Knobs {
-    fn a1(&self, key: i32) -> i32;
-
-    fn a2(&self, key: i32) -> i32;
-
-    #[salsa::cycle(recover_b1)]
-    fn b1(&self, key: i32) -> i32;
-
-    fn b2(&self, key: i32) -> i32;
-
-    #[salsa::cycle(recover_b3)]
-    fn b3(&self, key: i32) -> i32;
-}
-
-fn recover_b1(_db: &dyn TestDatabase, _cycle: &salsa::Cycle, key: &i32) -> i32 {
-    log::debug!("recover_b1");
-    key * 20 + 2
-}
-
-fn recover_b3(_db: &dyn TestDatabase, _cycle: &salsa::Cycle, key: &i32) -> i32 {
-    log::debug!("recover_b1");
-    key * 200 + 2
-}
-
-fn a1(db: &dyn TestDatabase, key: i32) -> i32 {
-    // tell thread b we have started
-    db.signal(1);
-
-    // wait for thread b to block on a1
-    db.wait_for(2);
-
-    db.a2(key)
-}
-
-fn a2(db: &dyn TestDatabase, key: i32) -> i32 {
-    // create the cycle
-    db.b1(key)
-}
-
-fn b1(db: &dyn TestDatabase, key: i32) -> i32 {
-    // wait for thread a to have started
-    db.wait_for(1);
-
-    db.b2(key);
-
-    0
-}
-
-fn b2(db: &dyn TestDatabase, key: i32) -> i32 {
-    // will encounter a cycle but recover
-    db.b3(key);
-    db.b1(key); // hasn't recovered yet
-    0
-}
-
-fn b3(db: &dyn TestDatabase, key: i32) -> i32 {
-    // will block on thread a, signaling stage 2
-    db.a1(key)
 }

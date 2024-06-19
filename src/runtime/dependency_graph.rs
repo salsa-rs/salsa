@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use crate::{DatabaseKeyIndex, RuntimeId};
+use crate::key::DatabaseKeyIndex;
 use parking_lot::{Condvar, MutexGuard};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
-use super::{ActiveQuery, WaitResult};
+use super::{active_query::ActiveQuery, RuntimeId, WaitResult};
 
 type QueryStack = Vec<ActiveQuery>;
 

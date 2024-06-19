@@ -20,11 +20,11 @@ contains both the field values but also the revisions when they last changed val
 
 ## Each tracked struct has a globally unique id
 
-This will begin by creating a *globally unique, 32-bit id* for the tracked struct. It is created by interning a combination of
+This will begin by creating a _globally unique, 32-bit id_ for the tracked struct. It is created by interning a combination of
 
-* the currently executing query;
-* a u64 hash of the `#[id]` fields;
-* a *disambiguator* that makes this hash unique within the current query. i.e., when a query starts executing, it creates an empty map, and the first time a tracked struct with a given hash is created, it gets disambiguator 0. The next one will be given 1, etc.
+- the currently executing query;
+- a u64 hash of the `#[id]` fields;
+- a _disambiguator_ that makes this hash unique within the current query. i.e., when a query starts executing, it creates an empty map, and the first time a tracked struct with a given hash is created, it gets disambiguator 0. The next one will be given 1, etc.
 
 ## Each tracked struct has a `ValueStruct` storing its data
 
@@ -32,10 +32,10 @@ The struct and field ingredients share access to a hashmap that maps
 each field id to a value struct:
 
 ```rust,ignore
-{{#include ../../../components/salsa-2022/src/tracked_struct.rs:ValueStruct}}
+{{#include ../../../src/tracked_struct.rs:ValueStruct}}
 ```
 
-The value struct stores the values of the fields but also the revisions when 
+The value struct stores the values of the fields but also the revisions when
 that field last changed. Each time the struct is recreated in a new revision,
 the old and new values for its fields are compared and a new revision is created.
 
@@ -46,5 +46,5 @@ but also various important operations such as extracting the hashable id fields
 and updating the "revisions" to track when a field last changed:
 
 ```rust,ignore
-{{#include ../../../components/salsa-2022/src/tracked_struct.rs:Configuration}}
+{{#include ../../../src/tracked_struct.rs:Configuration}}
 ```

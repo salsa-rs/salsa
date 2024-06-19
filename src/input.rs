@@ -1,337 +1,134 @@
-use crate::debug::TableEntry;
-use crate::durability::Durability;
-use crate::hash::FxIndexMap;
-use crate::plumbing::CycleRecoveryStrategy;
-use crate::plumbing::InputQueryStorageOps;
-use crate::plumbing::QueryStorageMassOps;
-use crate::plumbing::QueryStorageOps;
-use crate::revision::Revision;
-use crate::runtime::StampedValue;
-use crate::Database;
-use crate::Query;
-use crate::Runtime;
-use crate::{DatabaseKeyIndex, QueryDb};
-use indexmap::map::Entry;
-use log::debug;
-use parking_lot::RwLock;
-use std::convert::TryFrom;
+use std::{
+    fmt,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
-/// Input queries store the result plus a list of the other queries
-/// that they invoked. This means we can avoid recomputing them when
-/// none of those inputs have changed.
-pub struct InputStorage<Q>
+use crate::{
+    cycle::CycleRecoveryStrategy,
+    id::FromId,
+    ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
+    key::{DatabaseKeyIndex, DependencyIndex},
+    runtime::{local_state::QueryOrigin, Runtime},
+    IngredientIndex, Revision,
+};
+
+pub trait InputId: FromId {}
+impl<T: FromId> InputId for T {}
+
+pub struct InputIngredient<Id>
 where
-    Q: Query,
+    Id: InputId,
 {
-    group_index: u16,
-    slots: RwLock<FxIndexMap<Q::Key, Slot<Q>>>,
+    ingredient_index: IngredientIndex,
+    counter: AtomicU32,
+    debug_name: &'static str,
+    _phantom: std::marker::PhantomData<Id>,
 }
 
-struct Slot<Q>
+impl<Id> InputIngredient<Id>
 where
-    Q: Query,
+    Id: InputId,
 {
-    key: Q::Key,
-    database_key_index: DatabaseKeyIndex,
-
-    /// Value for this input: initially, it is `Some`.
-    ///
-    /// If it is `None`, then the value was removed
-    /// using `remove_input`.
-    ///
-    /// Note that the slot is *never* removed, so as to preserve
-    /// the `DatabaseKeyIndex` values.
-    ///
-    /// Impl note: We store an `Option<StampedValue<V>>`
-    /// instead of a `StampedValue<Option<V>>` for two reasons.
-    /// One, it corresponds to "data never existed in the first place",
-    /// and two, it's more efficient, since the compiler can make
-    /// use of the revisions in the `StampedValue` as a niche to avoid
-    /// an extra word. (See the `assert_size_of` test below.)
-    stamped_value: RwLock<Option<StampedValue<Q::Value>>>,
-}
-
-#[test]
-fn assert_size_of() {
-    assert_eq!(
-        std::mem::size_of::<RwLock<Option<StampedValue<u32>>>>(),
-        std::mem::size_of::<RwLock<StampedValue<u32>>>(),
-    );
-}
-
-impl<Q> std::panic::RefUnwindSafe for InputStorage<Q>
-where
-    Q: Query,
-    Q::Key: std::panic::RefUnwindSafe,
-    Q::Value: std::panic::RefUnwindSafe,
-{
-}
-
-impl<Q> QueryStorageOps<Q> for InputStorage<Q>
-where
-    Q: Query,
-{
-    const CYCLE_STRATEGY: crate::plumbing::CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
-
-    fn new(group_index: u16) -> Self {
-        InputStorage {
-            group_index,
-            slots: Default::default(),
+    pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
+        Self {
+            ingredient_index: index,
+            counter: Default::default(),
+            debug_name,
+            _phantom: std::marker::PhantomData,
         }
     }
 
-    fn fmt_index(
+    pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
+        DatabaseKeyIndex {
+            ingredient_index: self.ingredient_index,
+            key_index: id.as_id(),
+        }
+    }
+
+    pub fn new_input(&self, _runtime: &Runtime) -> Id {
+        let next_id = self.counter.fetch_add(1, Ordering::Relaxed);
+        Id::from_id(crate::Id::from_u32(next_id))
+    }
+
+    pub fn new_singleton_input(&self, _runtime: &Runtime) -> Id {
+        // when one exists already, panic
+        if self.counter.load(Ordering::Relaxed) >= 1 {
+            panic!("singleton struct may not be duplicated");
+        }
+        // fresh new ingredient
+        self.counter.store(1, Ordering::Relaxed);
+        Id::from_id(crate::Id::from_u32(0))
+    }
+
+    pub fn get_singleton_input(&self, _runtime: &Runtime) -> Option<Id> {
+        (self.counter.load(Ordering::Relaxed) > 0).then(|| Id::from_id(crate::Id::from_u32(0)))
+    }
+}
+
+impl<DB: ?Sized, Id> Ingredient<DB> for InputIngredient<Id>
+where
+    Id: InputId,
+{
+    fn ingredient_index(&self) -> IngredientIndex {
+        self.ingredient_index
+    }
+
+    fn maybe_changed_after(&self, _db: &DB, _input: DependencyIndex, _revision: Revision) -> bool {
+        // Input ingredients are just a counter, they store no data, they are immortal.
+        // Their *fields* are stored in function ingredients elsewhere.
+        false
+    }
+
+    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
+        CycleRecoveryStrategy::Panic
+    }
+
+    fn origin(&self, _key_index: crate::Id) -> Option<QueryOrigin> {
+        None
+    }
+
+    fn mark_validated_output(
         &self,
-        _db: &<Q as QueryDb<'_>>::DynDb,
-        index: DatabaseKeyIndex,
-        fmt: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        assert_eq!(index.group_index, self.group_index);
-        assert_eq!(index.query_index, Q::QUERY_INDEX);
-        let slot_map = self.slots.read();
-        let key = slot_map.get_index(index.key_index as usize).unwrap().0;
-        write!(fmt, "{}({:?})", Q::QUERY_NAME, key)
+        _db: &DB,
+        executor: DatabaseKeyIndex,
+        output_key: Option<crate::Id>,
+    ) {
+        unreachable!(
+            "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
+            executor, output_key
+        );
     }
 
-    fn maybe_changed_after(
+    fn remove_stale_output(
         &self,
-        db: &<Q as QueryDb<'_>>::DynDb,
-        input: DatabaseKeyIndex,
-        revision: Revision,
-    ) -> bool {
-        assert_eq!(input.group_index, self.group_index);
-        assert_eq!(input.query_index, Q::QUERY_INDEX);
-        debug_assert!(revision < db.salsa_runtime().current_revision());
-        let slots = self.slots.read();
-        let (_, slot) = slots.get_index(input.key_index as usize).unwrap();
-        slot.maybe_changed_after(db, revision)
-    }
-
-    fn fetch(&self, db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Q::Value {
-        db.unwind_if_cancelled();
-
-        let slots = self.slots.read();
-        let slot = slots
-            .get(key)
-            .unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key));
-
-        let value = slot.stamped_value.read().clone();
-        match value {
-            Some(StampedValue {
-                value,
-                durability,
-                changed_at,
-            }) => {
-                db.salsa_runtime()
-                    .report_query_read_and_unwind_if_cycle_resulted(
-                        slot.database_key_index,
-                        durability,
-                        changed_at,
-                    );
-
-                value
-            }
-
-            None => {
-                panic!("value removed for {:?}({:?})", Q::default(), key)
-            }
-        }
-    }
-
-    fn durability(&self, _db: &<Q as QueryDb<'_>>::DynDb, key: &Q::Key) -> Durability {
-        let slots = self.slots.read();
-        match slots.get(key) {
-            Some(slot) => match &*slot.stamped_value.read() {
-                Some(v) => v.durability,
-                None => Durability::LOW, // removed
-            },
-            None => panic!("no value set for {:?}({:?})", Q::default(), key),
-        }
-    }
-
-    fn entries<C>(&self, _db: &<Q as QueryDb<'_>>::DynDb) -> C
-    where
-        C: std::iter::FromIterator<TableEntry<Q::Key, Q::Value>>,
-    {
-        let slots = self.slots.read();
-        slots
-            .values()
-            .map(|slot| {
-                let value = (*slot.stamped_value.read())
-                    .as_ref()
-                    .map(|stamped_value| stamped_value.value.clone());
-                TableEntry::new(slot.key.clone(), value)
-            })
-            .collect()
-    }
-}
-
-impl<Q> Slot<Q>
-where
-    Q: Query,
-{
-    fn maybe_changed_after(&self, _db: &<Q as QueryDb<'_>>::DynDb, revision: Revision) -> bool {
-        debug!(
-            "maybe_changed_after(slot={:?}, revision={:?})",
-            self, revision,
+        _db: &DB,
+        executor: DatabaseKeyIndex,
+        stale_output_key: Option<crate::Id>,
+    ) {
+        unreachable!(
+            "remove_stale_output({:?}, {:?}): input cannot be the output of a tracked function",
+            executor, stale_output_key
         );
-
-        match &*self.stamped_value.read() {
-            Some(stamped_value) => {
-                let changed_at = stamped_value.changed_at;
-
-                debug!("maybe_changed_after: changed_at = {:?}", changed_at);
-
-                changed_at > revision
-            }
-
-            None => {
-                // treat a removed input as always having changed
-                true
-            }
-        }
     }
-}
 
-impl<Q> QueryStorageMassOps for InputStorage<Q>
-where
-    Q: Query,
-{
-    fn purge(&self) {
-        *self.slots.write() = Default::default();
+    fn reset_for_new_revision(&mut self) {
+        panic!("unexpected call to `reset_for_new_revision`")
     }
-}
 
-impl<Q> InputQueryStorageOps<Q> for InputStorage<Q>
-where
-    Q: Query,
-{
-    fn set(&self, runtime: &mut Runtime, key: &Q::Key, value: Q::Value, durability: Durability) {
-        log::debug!(
-            "{:?}({:?}) = {:?} ({:?})",
-            Q::default(),
-            key,
-            value,
-            durability
+    fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
+        panic!(
+            "unexpected call: input ingredients do not register for salsa struct deletion events"
         );
-
-        // The value is changing, so we need a new revision (*). We also
-        // need to update the 'last changed' revision by invoking
-        // `guard.mark_durability_as_changed`.
-        //
-        // CAREFUL: This will block until the global revision lock can
-        // be acquired. If there are still queries executing, they may
-        // need to read from this input. Therefore, we wait to acquire
-        // the lock on `map` until we also hold the global query write
-        // lock.
-        //
-        // (*) Technically, since you can't presently access an input
-        // for a non-existent key, and you can't enumerate the set of
-        // keys, we only need a new revision if the key used to
-        // exist. But we may add such methods in the future and this
-        // case doesn't generally seem worth optimizing for.
-        runtime.with_incremented_revision(|next_revision| {
-            let mut slots = self.slots.write();
-
-            // Do this *after* we acquire the lock, so that we are not
-            // racing with somebody else to modify this same cell.
-            // (Otherwise, someone else might write a *newer* revision
-            // into the same cell while we block on the lock.)
-            let stamped_value = StampedValue {
-                value,
-                durability,
-                changed_at: next_revision,
-            };
-
-            match slots.entry(key.clone()) {
-                Entry::Occupied(entry) => {
-                    let mut slot_stamped_value = entry.get().stamped_value.write();
-                    match &mut *slot_stamped_value {
-                        Some(slot_stamped_value) => {
-                            // Modifying an existing value that has not been removed.
-                            let old_durability = slot_stamped_value.durability;
-                            *slot_stamped_value = stamped_value;
-                            Some(old_durability)
-                        }
-
-                        None => {
-                            // Overwriting a removed value: this is the same as inserting a new value,
-                            // it doesn't modify any existing data (the remove did that).
-                            *slot_stamped_value = Some(stamped_value);
-                            None
-                        }
-                    }
-                }
-
-                Entry::Vacant(entry) => {
-                    let key_index = u32::try_from(entry.index()).unwrap();
-                    let database_key_index = DatabaseKeyIndex {
-                        group_index: self.group_index,
-                        query_index: Q::QUERY_INDEX,
-                        key_index,
-                    };
-                    entry.insert(Slot {
-                        key: key.clone(),
-                        database_key_index,
-                        stamped_value: RwLock::new(Some(stamped_value)),
-                    });
-                    None
-                }
-            }
-        });
     }
 
-    fn remove(&self, runtime: &mut Runtime, key: &<Q as Query>::Key) -> <Q as Query>::Value {
-        let mut value = None;
-        runtime.with_incremented_revision(&mut |_| {
-            let mut slots = self.slots.write();
-            let slot = slots.get_mut(key)?;
-
-            if let Some(slot_stamped_value) = slot.stamped_value.get_mut().take() {
-                value = Some(slot_stamped_value.value);
-                Some(slot_stamped_value.durability)
-            } else {
-                None
-            }
-        });
-
-        value.unwrap_or_else(|| panic!("no value set for {:?}({:?})", Q::default(), key))
+    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_index(self.debug_name, index, fmt)
     }
 }
 
-/// Check that `Slot<Q, MP>: Send + Sync` as long as
-/// `DB::DatabaseData: Send + Sync`, which in turn implies that
-/// `Q::Key: Send + Sync`, `Q::Value: Send + Sync`.
-#[allow(dead_code)]
-fn check_send_sync<Q>()
+impl<Id> IngredientRequiresReset for InputIngredient<Id>
 where
-    Q: Query,
-    Q::Key: Send + Sync,
-    Q::Value: Send + Sync,
+    Id: InputId,
 {
-    fn is_send_sync<T: Send + Sync>() {}
-    is_send_sync::<Slot<Q>>();
-}
-
-/// Check that `Slot<Q, MP>: 'static` as long as
-/// `DB::DatabaseData: 'static`, which in turn implies that
-/// `Q::Key: 'static`, `Q::Value: 'static`.
-#[allow(dead_code)]
-fn check_static<Q>()
-where
-    Q: Query + 'static,
-    Q::Key: 'static,
-    Q::Value: 'static,
-{
-    fn is_static<T: 'static>() {}
-    is_static::<Slot<Q>>();
-}
-
-impl<Q> std::fmt::Debug for Slot<Q>
-where
-    Q: Query,
-{
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(fmt, "{:?}({:?})", Q::default(), self.key)
-    }
+    const RESET_ON_NEW_REVISION: bool = false;
 }

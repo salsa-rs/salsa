@@ -1,7 +1,5 @@
 # On-Demand (Lazy) Inputs
 
-{{#include ../caveat.md}}
-
 Salsa inputs work best if you can easily provide all of the inputs upfront.
 However sometimes the set of inputs is not known beforehand.
 
@@ -15,12 +13,12 @@ That is, when a query requests the text of a file for the first time:
 
 This is possible to achieve in salsa, by caching the inputs in your database structs and adding a method to the database trait to retrieve them out of this cache.
 
-A complete, runnable file-watching example can be found in [the lazy-input example](https://github.com/salsa-rs/salsa/tree/master/examples-2022/lazy-input).
+A complete, runnable file-watching example can be found in [the lazy-input example](https://github.com/salsa-rs/salsa/tree/master/examples/lazy-input).
 
 The setup looks roughly like this:
 
 ```rust,ignore
-{{#include ../../../examples-2022/lazy-input/src/main.rs:db}}
+{{#include ../../../examples/lazy-input/main.rs:db}}
 ```
 
 - We declare a method on the `Db` trait that gives us a `File` input on-demand (it only requires a `&dyn Db` not a `&mut dyn Db`).
@@ -33,5 +31,5 @@ Here we implement a simple driving loop, that recompiles the code whenever a fil
 You can use the logs to check that only the queries that could have changed are re-evaluated.
 
 ```rust,ignore
-{{#include ../../../examples-2022/lazy-input/src/main.rs:main}}
+{{#include ../../../examples/lazy-input/main.rs:main}}
 ```

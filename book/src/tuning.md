@@ -25,14 +25,9 @@ Interning is especially useful for queries that involve nested,
 tree-like data structures.
 
 See:
+
 - The [`compiler` example](https://github.com/salsa-rs/salsa/blob/master/examples/compiler/main.rs),
-which uses interning.
-
-## Granularity of Incrementality
-
-See:
-- [common patterns: selection](./common_patterns/selection.md) and
-- The [`selection` example](https://github.com/salsa-rs/salsa/blob/master/examples/selection/main.rs)
+  which uses interning.
 
 ## Cancellation
 
@@ -45,4 +40,3 @@ salsa won't be able to cancel it automatically. You may wish to check for cancel
 by invoking `db.unwind_if_cancelled()`.
 
 For more details on cancellation, see the tests for cancellation behavior in the Salsa repo.
-

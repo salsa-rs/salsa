@@ -1,13 +1,16 @@
 use log::debug;
 
 use crate::durability::Durability;
-use crate::runtime::ActiveQuery;
+use crate::key::DatabaseKeyIndex;
+use crate::key::DependencyIndex;
 use crate::runtime::Revision;
+use crate::tracked_struct::Disambiguator;
 use crate::Cycle;
-use crate::DatabaseKeyIndex;
+use crate::Runtime;
 use std::cell::RefCell;
 use std::sync::Arc;
 
+use super::active_query::ActiveQuery;
 use super::StampedValue;
 
 /// State that is specific to a single execution thread.
@@ -36,8 +39,8 @@ pub(crate) struct QueryRevisions {
     /// Minimum durability of the inputs to this query.
     pub(crate) durability: Durability,
 
-    /// The inputs that went into our query, if we are tracking them.
-    pub(crate) inputs: QueryInputs,
+    /// How was this query computed?
+    pub(crate) origin: QueryOrigin,
 }
 
 impl QueryRevisions {
@@ -50,17 +53,92 @@ impl QueryRevisions {
     }
 }
 
-/// Every input.
+/// Tracks the way that a memoized value for a query was created.
 #[derive(Debug, Clone)]
-pub(crate) enum QueryInputs {
-    /// Non-empty set of inputs, fully known
-    Tracked { inputs: Arc<[DatabaseKeyIndex]> },
+pub enum QueryOrigin {
+    /// The value was assigned as the output of another query (e.g., using `specify`).
+    /// The `DatabaseKeyIndex` is the identity of the assigning query.
+    Assigned(DatabaseKeyIndex),
 
-    /// Empty set of inputs, fully known.
-    NoInputs,
+    /// This value was set as a base input to the computation.
+    BaseInput,
 
-    /// Unknown quantity of inputs
-    Untracked,
+    /// The value was derived by executing a function
+    /// and we were able to track ALL of that function's inputs.
+    /// Those inputs are described in [`QueryEdges`].
+    Derived(QueryEdges),
+
+    /// The value was derived by executing a function
+    /// but that function also reported that it read untracked inputs.
+    /// The [`QueryEdges`] argument contains a listing of all the inputs we saw
+    /// (but we know there were more).
+    DerivedUntracked(QueryEdges),
+}
+
+impl QueryOrigin {
+    /// Indices for queries *written* by this query (or `vec![]` if its value was assigned).
+    pub(crate) fn outputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
+        let opt_edges = match self {
+            QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
+            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => None,
+        };
+        opt_edges.into_iter().flat_map(|edges| edges.outputs())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum EdgeKind {
+    Input,
+    Output,
+}
+
+/// The edges between a memoized value and other queries in the dependency graph.
+/// These edges include both dependency edges
+/// e.g., when creating the memoized value for Q0 executed another function Q1)
+/// and output edges
+/// (e.g., when Q0 specified the value for another query Q2).
+#[derive(Debug, Clone)]
+pub struct QueryEdges {
+    /// The list of outgoing edges from this node.
+    /// This list combines *both* inputs and outputs.
+    ///
+    /// Note that we always track input dependencies even when there are untracked reads.
+    /// Untracked reads mean that we can't verify values, so we don't use the list of inputs for that,
+    /// but we still use it for finding the transitive inputs to an accumulator.
+    ///
+    /// You can access the input/output list via the methods [`inputs`] and [`outputs`] respectively.
+    ///
+    /// Important:
+    ///
+    /// * The inputs must be in **execution order** for the red-green algorithm to work.
+    pub input_outputs: Arc<[(EdgeKind, DependencyIndex)]>,
+}
+
+impl QueryEdges {
+    /// Returns the (tracked) inputs that were executed in computing this memoized value.
+    ///
+    /// These will always be in execution order.
+    pub(crate) fn inputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
+        self.input_outputs
+            .iter()
+            .filter(|(edge_kind, _)| *edge_kind == EdgeKind::Input)
+            .map(|(_, dependency_index)| *dependency_index)
+    }
+
+    /// Returns the (tracked) outputs that were executed in computing this memoized value.
+    ///
+    /// These will always be in execution order.
+    pub(crate) fn outputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
+        self.input_outputs
+            .iter()
+            .filter(|(edge_kind, _)| *edge_kind == EdgeKind::Output)
+            .map(|(_, dependency_index)| *dependency_index)
+    }
+
+    /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.
+    pub(crate) fn new(input_outputs: Arc<[(EdgeKind, DependencyIndex)]>) -> Self {
+        Self { input_outputs }
+    }
 }
 
 impl Default for LocalState {
@@ -96,17 +174,63 @@ impl LocalState {
         self.with_query_stack(|stack| !stack.is_empty())
     }
 
-    pub(super) fn active_query(&self) -> Option<DatabaseKeyIndex> {
+    /// Dangerous operation: executes `op` but ignores its effect on
+    /// the query dependencies. Useful for debugging statements, but
+    /// otherwise not to be toyed with!
+    pub(super) fn debug_probe<R>(&self, op: impl FnOnce() -> R) -> R {
+        let saved_state: Option<_> =
+            self.with_query_stack(|stack| Some(stack.last()?.save_query_state()));
+
+        let result = op();
+
+        if let Some(saved_state) = saved_state {
+            self.with_query_stack(|stack| {
+                let active_query = stack.last_mut().expect("query stack not empty");
+                active_query.restore_query_state(saved_state);
+            });
+        }
+
+        result
+    }
+
+    /// Returns the index of the active query along with its *current* durability/changed-at
+    /// information. As the query continues to execute, naturally, that information may change.
+    pub(super) fn active_query(&self) -> Option<(DatabaseKeyIndex, StampedValue<()>)> {
         self.with_query_stack(|stack| {
-            stack
-                .last()
-                .map(|active_query| active_query.database_key_index)
+            stack.last().map(|active_query| {
+                (
+                    active_query.database_key_index,
+                    StampedValue {
+                        value: (),
+                        durability: active_query.durability,
+                        changed_at: active_query.changed_at,
+                    },
+                )
+            })
         })
     }
 
-    pub(super) fn report_query_read_and_unwind_if_cycle_resulted(
+    pub(super) fn add_output(&self, entity: DependencyIndex) {
+        self.with_query_stack(|stack| {
+            if let Some(top_query) = stack.last_mut() {
+                top_query.add_output(entity)
+            }
+        })
+    }
+
+    pub(super) fn is_output(&self, entity: DependencyIndex) -> bool {
+        self.with_query_stack(|stack| {
+            if let Some(top_query) = stack.last_mut() {
+                top_query.is_output(entity)
+            } else {
+                false
+            }
+        })
+    }
+
+    pub(super) fn report_tracked_read(
         &self,
-        input: DatabaseKeyIndex,
+        input: DependencyIndex,
         durability: Durability,
         changed_at: Revision,
     ) {
@@ -156,6 +280,8 @@ impl LocalState {
 
     /// Update the top query on the stack to act as though it read a value
     /// of durability `durability` which changed in `revision`.
+    // FIXME: Use or remove this.
+    #[allow(dead_code)]
     pub(super) fn report_synthetic_read(&self, durability: Durability, revision: Revision) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
@@ -180,6 +306,30 @@ impl LocalState {
     pub(super) fn restore_query_stack(&self, stack: Vec<ActiveQuery>) {
         assert!(self.query_stack.borrow().is_none(), "query stack not taken");
         self.query_stack.replace(Some(stack));
+    }
+
+    #[track_caller]
+    pub(crate) fn disambiguate(
+        &self,
+        data_hash: u64,
+    ) -> (DatabaseKeyIndex, StampedValue<()>, Disambiguator) {
+        assert!(
+            self.query_in_progress(),
+            "cannot create a tracked struct disambiguator outside of a tracked function"
+        );
+        self.with_query_stack(|stack| {
+            let top_query = stack.last_mut().unwrap();
+            let disambiguator = top_query.disambiguate(data_hash);
+            (
+                top_query.database_key_index,
+                StampedValue {
+                    value: (),
+                    durability: top_query.durability,
+                    changed_at: top_query.changed_at,
+                },
+                disambiguator,
+            )
+        })
     }
 }
 
@@ -219,14 +369,14 @@ impl ActiveQueryGuard<'_> {
     /// which summarizes the other queries that were accessed during this
     /// query's execution.
     #[inline]
-    pub(crate) fn pop(self) -> QueryRevisions {
+    pub(crate) fn pop(self, runtime: &Runtime) -> QueryRevisions {
         // Extract accumulated inputs.
         let popped_query = self.complete();
 
         // If this frame were a cycle participant, it would have unwound.
         assert!(popped_query.cycle.is_none());
 
-        popped_query.revisions()
+        popped_query.revisions(runtime)
     }
 
     /// If the active query is registered as a cycle participant, remove and

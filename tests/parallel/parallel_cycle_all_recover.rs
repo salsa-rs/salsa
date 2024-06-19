@@ -2,9 +2,71 @@
 //! See `../cycles.rs` for a complete listing of cycle tests,
 //! both intra and cross thread.
 
-use crate::setup::{Knobs, ParDatabaseImpl};
+use crate::setup::Database;
+use crate::setup::Knobs;
 use salsa::ParallelDatabase;
-use test_log::test;
+
+pub(crate) trait Db: salsa::DbWithJar<Jar> + Knobs {}
+
+impl<T: salsa::DbWithJar<Jar> + Knobs> Db for T {}
+
+#[salsa::jar(db = Db)]
+pub(crate) struct Jar(MyInput, a1, a2, b1, b2);
+
+#[salsa::input(jar = Jar)]
+pub(crate) struct MyInput {
+    field: i32,
+}
+
+#[salsa::tracked(jar = Jar, recovery_fn=recover_a1)]
+pub(crate) fn a1(db: &dyn Db, input: MyInput) -> i32 {
+    // Wait to create the cycle until both threads have entered
+    db.signal(1);
+    db.wait_for(2);
+
+    a2(db, input)
+}
+
+fn recover_a1(db: &dyn Db, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
+    dbg!("recover_a1");
+    key.field(db) * 10 + 1
+}
+
+#[salsa::tracked(jar = Jar, recovery_fn=recover_a2)]
+pub(crate) fn a2(db: &dyn Db, input: MyInput) -> i32 {
+    b1(db, input)
+}
+
+fn recover_a2(db: &dyn Db, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
+    dbg!("recover_a2");
+    key.field(db) * 10 + 2
+}
+
+#[salsa::tracked(jar = Jar, recovery_fn=recover_b1)]
+pub(crate) fn b1(db: &dyn Db, input: MyInput) -> i32 {
+    // Wait to create the cycle until both threads have entered
+    db.wait_for(1);
+    db.signal(2);
+
+    // Wait for thread A to block on this thread
+    db.wait_for(3);
+    b2(db, input)
+}
+
+fn recover_b1(db: &dyn Db, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
+    dbg!("recover_b1");
+    key.field(db) * 20 + 1
+}
+
+#[salsa::tracked(jar = Jar, recovery_fn=recover_b2)]
+pub(crate) fn b2(db: &dyn Db, input: MyInput) -> i32 {
+    a1(db, input)
+}
+
+fn recover_b2(db: &dyn Db, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
+    dbg!("recover_b2");
+    key.field(db) * 20 + 2
+}
 
 // Recover cycle test:
 //
@@ -29,82 +91,22 @@ use test_log::test;
 // a1 completes, recovers
 
 #[test]
-fn parallel_cycle_all_recover() {
-    let db = ParDatabaseImpl::default();
+fn execute() {
+    let db = Database::default();
     db.knobs().signal_on_will_block.set(3);
+
+    let input = MyInput::new(&db, 1);
 
     let thread_a = std::thread::spawn({
         let db = db.snapshot();
-        move || db.a1(1)
+        move || a1(&*db, input)
     });
 
     let thread_b = std::thread::spawn({
         let db = db.snapshot();
-        move || db.b1(1)
+        move || b1(&*db, input)
     });
 
     assert_eq!(thread_a.join().unwrap(), 11);
     assert_eq!(thread_b.join().unwrap(), 21);
-}
-
-#[salsa::query_group(ParallelCycleAllRecover)]
-pub(crate) trait TestDatabase: Knobs {
-    #[salsa::cycle(recover_a1)]
-    fn a1(&self, key: i32) -> i32;
-
-    #[salsa::cycle(recover_a2)]
-    fn a2(&self, key: i32) -> i32;
-
-    #[salsa::cycle(recover_b1)]
-    fn b1(&self, key: i32) -> i32;
-
-    #[salsa::cycle(recover_b2)]
-    fn b2(&self, key: i32) -> i32;
-}
-
-fn recover_a1(_db: &dyn TestDatabase, _cycle: &salsa::Cycle, key: &i32) -> i32 {
-    log::debug!("recover_a1");
-    key * 10 + 1
-}
-
-fn recover_a2(_db: &dyn TestDatabase, _cycle: &salsa::Cycle, key: &i32) -> i32 {
-    log::debug!("recover_a2");
-    key * 10 + 2
-}
-
-fn recover_b1(_db: &dyn TestDatabase, _cycle: &salsa::Cycle, key: &i32) -> i32 {
-    log::debug!("recover_b1");
-    key * 20 + 1
-}
-
-fn recover_b2(_db: &dyn TestDatabase, _cycle: &salsa::Cycle, key: &i32) -> i32 {
-    log::debug!("recover_b2");
-    key * 20 + 2
-}
-
-fn a1(db: &dyn TestDatabase, key: i32) -> i32 {
-    // Wait to create the cycle until both threads have entered
-    db.signal(1);
-    db.wait_for(2);
-
-    db.a2(key)
-}
-
-fn a2(db: &dyn TestDatabase, key: i32) -> i32 {
-    db.b1(key)
-}
-
-fn b1(db: &dyn TestDatabase, key: i32) -> i32 {
-    // Wait to create the cycle until both threads have entered
-    db.wait_for(1);
-    db.signal(2);
-
-    // Wait for thread A to block on this thread
-    db.wait_for(3);
-
-    db.b2(key)
-}
-
-fn b2(db: &dyn TestDatabase, key: i32) -> i32 {
-    db.a1(key)
 }

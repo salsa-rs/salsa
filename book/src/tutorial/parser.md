@@ -17,12 +17,12 @@ We're going to focus only on the Salsa-related aspects.
 The starting point for the parser is the `parse_statements` function:
 
 ```rust
-{{#include ../../../examples-2022/calc/src/parser.rs:parse_statements}}
+{{#include ../../../examples/calc/parser.rs:parse_statements}}
 ```
 
 This function is annotated as `#[salsa::tracked]`.
 That means that, when it is called, Salsa will track what inputs it reads as well as what value it returns.
-The return value is *memoized*,
+The return value is _memoized_,
 which means that if you call this function again without changing the inputs,
 Salsa will just clone the result rather than re-execute it.
 
@@ -38,11 +38,11 @@ In the case of `parse_statements`, it directly reads `ProgramSource::text`, so i
 By choosing which functions to mark as `#[tracked]`, you control how much reuse you get.
 In our case, we're opting to mark the outermost parsing function as tracked, but not the inner ones.
 This means that if the input changes, we will always re-parse the entire input and re-create the resulting statements and so forth.
-We'll see later that this *doesn't* mean we will always re-run the type checker and other parts of the compiler.
+We'll see later that this _doesn't_ mean we will always re-run the type checker and other parts of the compiler.
 
 This trade-off makes sense because (a) parsing is very cheap, so the overhead of tracking and enabling finer-grained reuse doesn't pay off
 and because (b) since strings are just a big blob-o-bytes without any structure, it's rather hard to identify which parts of the IR need to be reparsed.
-Some systems do choose to do more granular reparsing, often by doing a "first pass" over the string to give it a bit of structure, 
+Some systems do choose to do more granular reparsing, often by doing a "first pass" over the string to give it a bit of structure,
 e.g. to identify the functions,
 but deferring the parsing of the body of each function until later.
 Setting up a scheme like this is relatively easy in Salsa and uses the same principles that we will use later to avoid re-executing the type checker.
@@ -63,11 +63,10 @@ It's generally better to structure tracked functions as functions of a single Sa
 
 ### The `return_ref` annotation
 
-You may have noticed that `parse_statements` is tagged with `#[salsa::tracked(return_ref)]`. 
+You may have noticed that `parse_statements` is tagged with `#[salsa::tracked(return_ref)]`.
 Ordinarily, when you call a tracked function, the result you get back is cloned out of the database.
 The `return_ref` attribute means that a reference into the database is returned instead.
 So, when called, `parse_statements` will return an `&Vec<Statement>` rather than cloning the `Vec`.
 This is useful as a performance optimization.
-(You may recall the `return_ref` annotation from the [ir](./ir.md) section of the tutorial, 
+(You may recall the `return_ref` annotation from the [ir](./ir.md) section of the tutorial,
 where it was placed on struct fields, with roughly the same meaning.)
-

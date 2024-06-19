@@ -8,7 +8,7 @@ pub(crate) struct Signal {
 
 impl Signal {
     pub(crate) fn signal(&self, stage: usize) {
-        log::debug!("signal({})", stage);
+        dbg!(format!("signal({})", stage));
 
         // This check avoids acquiring the lock for things that will
         // clearly be a no-op. Not *necessary* but helps to ensure we
@@ -27,7 +27,7 @@ impl Signal {
     /// Waits until the given condition is true; the fn is invoked
     /// with the current stage.
     pub(crate) fn wait_for(&self, stage: usize) {
-        log::debug!("wait_for({})", stage);
+        dbg!(format!("wait_for({})", stage));
 
         // As above, avoid lock if clearly a no-op.
         if stage > 0 {

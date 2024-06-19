@@ -1,41 +1,36 @@
 [package]
 name = "salsa"
-version = "0.17.0-pre.2" # CHECK salsa-macros version
+version = "0.18.0"
 authors = ["Salsa developers"]
-edition = "2018"
+edition = "2021"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/salsa-rs/salsa"
 description = "A generic framework for on-demand, incrementalized computation (experimental)"
 
 [dependencies]
-arc-swap = "1.4.0"
+arc-swap = "1.6.0"
+crossbeam = "0.8.1"
 crossbeam-utils = { version = "0.8", default-features = false }
 dashmap = "5.3.4"
 hashlink = "0.8.0"
 indexmap = "2"
-lock_api = "0.4.7"
 log = "0.4.5"
 parking_lot = "0.12.1"
-rustc-hash = "1.0"
+rustc-hash = "1.1.0"
+salsa-macros = { path = "components/salsa-macros" }
 smallvec = "1.0.0"
-oorandom = "11"
-salsa-macros = { version = "0.17.0-pre.2", path = "components/salsa-macros" }
 
 [dev-dependencies]
-diff = "0.1.0"
-env_logger = "0.9"
-linked-hash-map = "0.5.2"
-rand = "0.8"
-rand_distr = "0.4.3"
+derive-new = "0.5.9"
+env_logger = "*"
+expect-test = "1.4.0"
+eyre = "0.6.8"
+notify-debouncer-mini = "0.2.1"
+ordered-float = "3.0"
+parking_lot = "0.12.1"
+rustversion = "1.0"
 test-log = "0.2.11"
-insta = "1.8.0"
+trybuild = "1.0"
 
 [workspace]
-members = [
-    "components/salsa-macros",
-    "components/salsa-2022",
-    "components/salsa-2022-macros",
-    "examples-2022/calc",
-    "examples-2022/lazy-input",
-    "salsa-2022-tests",
-]
+members = ["components/salsa-macros"]

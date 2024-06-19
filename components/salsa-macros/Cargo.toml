@@ -1,8 +1,8 @@
 [package]
 name = "salsa-macros"
-version = "0.17.0-pre.2"
+version = "0.18.0"
 authors = ["Salsa developers"]
-edition = "2018"
+edition = "2021"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/salsa-rs/salsa"
 description = "Procedural macros for the salsa crate"
@@ -11,7 +11,9 @@ description = "Procedural macros for the salsa crate"
 proc-macro = true
 
 [dependencies]
+eyre = "0.6.5"
 heck = "0.4"
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = { version = "1.0", features = ["full", "extra-traits"] }
+syn = { version = "2.0.64", features = ["full", "visit-mut"] }
+synstructure = "0.13.1"

@@ -1,0 +1,63 @@
+error[E0583]: file not found for module `common`
+ --> tests/compile-fail/singleton_only_for_input.rs:5:1
+  |
+5 | mod common;
+  | ^^^^^^^^^^^
+  |
+  = help: to create the module `common`, create file "$DIR/tests/compile-fail/common.rs" or "$DIR/tests/compile-fail/common/mod.rs"
+  = note: if there is a `mod common` elsewhere in the crate already, import it with `use crate::...` instead
+
+error: `singleton` option not allowed here
+  --> tests/compile-fail/singleton_only_for_input.rs:20:18
+   |
+20 | #[salsa::tracked(singleton)]
+   |                  ^^^^^^^^^
+
+error: `singleton` option not allowed here
+  --> tests/compile-fail/singleton_only_for_input.rs:25:18
+   |
+25 | #[salsa::tracked(singleton)]
+   |                  ^^^^^^^^^
+
+error: `singleton` option not allowed here
+  --> tests/compile-fail/singleton_only_for_input.rs:32:22
+   |
+32 | #[salsa::accumulator(singleton)]
+   |                      ^^^^^^^^^
+
+error[E0432]: unresolved imports `common::HasLogger`, `common::Logger`
+ --> tests/compile-fail/singleton_only_for_input.rs:6:14
+  |
+6 | use common::{HasLogger, Logger};
+  |              ^^^^^^^^^  ^^^^^^ no `Logger` in `common`
+  |              |
+  |              no `HasLogger` in `common`
+  |
+  = help: consider importing this struct instead:
+          env_logger::Logger
+
+error[E0412]: cannot find type `MyTracked` in this scope
+  --> tests/compile-fail/singleton_only_for_input.rs:11:21
+   |
+11 | struct Jar(MyInput, MyTracked, Integers, create_tracked_structs);
+   |                     ^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `Integers` in this scope
+  --> tests/compile-fail/singleton_only_for_input.rs:11:32
+   |
+11 | struct Jar(MyInput, MyTracked, Integers, create_tracked_structs);
+   |                                ^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `create_tracked_structs` in this scope
+  --> tests/compile-fail/singleton_only_for_input.rs:11:42
+   |
+11 | struct Jar(MyInput, MyTracked, Integers, create_tracked_structs);
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+warning: unused import: `test_log::test`
+ --> tests/compile-fail/singleton_only_for_input.rs:8:5
+  |
+8 | use test_log::test;
+  |     ^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default

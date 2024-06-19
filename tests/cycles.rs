@@ -1,7 +1,9 @@
-use std::panic::UnwindSafe;
+#![allow(warnings)]
 
-use salsa::{Durability, ParallelDatabase, Snapshot};
-use test_log::test;
+use std::panic::{RefUnwindSafe, UnwindSafe};
+
+use expect_test::expect;
+use salsa::Durability;
 
 // Axes:
 //
@@ -41,28 +43,69 @@ use test_log::test;
 // | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears_durability |
 // | Intra  | Mixed    | N/A      | Tracked   | direct   | cycle_mixed_1 |
 // | Intra  | Mixed    | N/A      | Tracked   | direct   | cycle_mixed_2 |
-// | Cross  | Fallback | N/A      | Tracked   | both     | parallel/cycles.rs: recover_parallel_cycle |
-// | Cross  | Panic    | N/A      | Tracked   | both     | parallel/cycles.rs: panic_parallel_cycle |
+// | Cross  | Panic    | N/A      | Tracked   | both     | parallel/parallel_cycle_none_recover.rs |
+// | Cross  | Fallback | N/A      | Tracked   | both     | parallel/parallel_cycle_one_recover.rs |
+// | Cross  | Fallback | N/A      | Tracked   | both     | parallel/parallel_cycle_mid_recover.rs |
+// | Cross  | Fallback | N/A      | Tracked   | both     | parallel/parallel_cycle_all_recover.rs |
+
+// TODO: The following test is not yet ported.
+// | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears_durability |
 
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 struct Error {
     cycle: Vec<String>,
 }
 
+#[salsa::jar(db = Db)]
+struct Jar(
+    MyInput,
+    memoized_a,
+    memoized_b,
+    volatile_a,
+    volatile_b,
+    ABC,
+    cycle_a,
+    cycle_b,
+    cycle_c,
+);
+
+trait Db: salsa::DbWithJar<Jar> {}
+
+#[salsa::db(Jar)]
 #[derive(Default)]
-#[salsa::database(GroupStruct)]
-struct DatabaseImpl {
+struct Database {
     storage: salsa::Storage<Self>,
 }
 
-impl salsa::Database for DatabaseImpl {}
+impl Db for Database {}
 
-impl ParallelDatabase for DatabaseImpl {
-    fn snapshot(&self) -> Snapshot<Self> {
-        Snapshot::new(DatabaseImpl {
-            storage: self.storage.snapshot(),
-        })
-    }
+impl salsa::Database for Database {}
+
+impl RefUnwindSafe for Database {}
+
+#[salsa::input(jar = Jar)]
+struct MyInput {}
+
+#[salsa::tracked(jar = Jar)]
+fn memoized_a(db: &dyn Db, input: MyInput) {
+    memoized_b(db, input)
+}
+
+#[salsa::tracked(jar = Jar)]
+fn memoized_b(db: &dyn Db, input: MyInput) {
+    memoized_a(db, input)
+}
+
+#[salsa::tracked(jar = Jar)]
+fn volatile_a(db: &dyn Db, input: MyInput) {
+    db.report_untracked_read();
+    volatile_b(db, input)
+}
+
+#[salsa::tracked(jar = Jar)]
+fn volatile_b(db: &dyn Db, input: MyInput) {
+    db.report_untracked_read();
+    volatile_a(db, input)
 }
 
 /// The queries A, B, and C in `Database` can be configured
@@ -77,90 +120,53 @@ enum CycleQuery {
     AthenC,
 }
 
-#[salsa::query_group(GroupStruct)]
-trait Database: salsa::Database {
-    // `a` and `b` depend on each other and form a cycle
-    fn memoized_a(&self) -> ();
-    fn memoized_b(&self) -> ();
-    fn volatile_a(&self) -> ();
-    fn volatile_b(&self) -> ();
-
-    #[salsa::input]
-    fn a_invokes(&self) -> CycleQuery;
-
-    #[salsa::input]
-    fn b_invokes(&self) -> CycleQuery;
-
-    #[salsa::input]
-    fn c_invokes(&self) -> CycleQuery;
-
-    #[salsa::cycle(recover_a)]
-    fn cycle_a(&self) -> Result<(), Error>;
-
-    #[salsa::cycle(recover_b)]
-    fn cycle_b(&self) -> Result<(), Error>;
-
-    fn cycle_c(&self) -> Result<(), Error>;
-}
-
-fn recover_a(db: &dyn Database, cycle: &salsa::Cycle) -> Result<(), Error> {
-    Err(Error {
-        cycle: cycle.all_participants(db),
-    })
-}
-
-fn recover_b(db: &dyn Database, cycle: &salsa::Cycle) -> Result<(), Error> {
-    Err(Error {
-        cycle: cycle.all_participants(db),
-    })
-}
-
-fn memoized_a(db: &dyn Database) {
-    db.memoized_b()
-}
-
-fn memoized_b(db: &dyn Database) {
-    db.memoized_a()
-}
-
-fn volatile_a(db: &dyn Database) {
-    db.salsa_runtime().report_untracked_read();
-    db.volatile_b()
-}
-
-fn volatile_b(db: &dyn Database) {
-    db.salsa_runtime().report_untracked_read();
-    db.volatile_a()
+#[salsa::input(jar = Jar)]
+struct ABC {
+    a: CycleQuery,
+    b: CycleQuery,
+    c: CycleQuery,
 }
 
 impl CycleQuery {
-    fn invoke(self, db: &dyn Database) -> Result<(), Error> {
+    fn invoke(self, db: &dyn Db, abc: ABC) -> Result<(), Error> {
         match self {
-            CycleQuery::A => db.cycle_a(),
-            CycleQuery::B => db.cycle_b(),
-            CycleQuery::C => db.cycle_c(),
+            CycleQuery::A => cycle_a(db, abc),
+            CycleQuery::B => cycle_b(db, abc),
+            CycleQuery::C => cycle_c(db, abc),
             CycleQuery::AthenC => {
-                let _ = db.cycle_a();
-                db.cycle_c()
+                let _ = cycle_a(db, abc);
+                cycle_c(db, abc)
             }
             CycleQuery::None => Ok(()),
         }
     }
 }
 
-fn cycle_a(db: &dyn Database) -> Result<(), Error> {
-    dbg!("cycle_a");
-    db.a_invokes().invoke(db)
+#[salsa::tracked(jar = Jar, recovery_fn=recover_a)]
+fn cycle_a(db: &dyn Db, abc: ABC) -> Result<(), Error> {
+    abc.a(db).invoke(db, abc)
 }
 
-fn cycle_b(db: &dyn Database) -> Result<(), Error> {
-    dbg!("cycle_b");
-    db.b_invokes().invoke(db)
+fn recover_a(db: &dyn Db, cycle: &salsa::Cycle, abc: ABC) -> Result<(), Error> {
+    Err(Error {
+        cycle: cycle.all_participants(db),
+    })
 }
 
-fn cycle_c(db: &dyn Database) -> Result<(), Error> {
-    dbg!("cycle_c");
-    db.c_invokes().invoke(db)
+#[salsa::tracked(jar = Jar, recovery_fn=recover_b)]
+fn cycle_b(db: &dyn Db, abc: ABC) -> Result<(), Error> {
+    abc.b(db).invoke(db, abc)
+}
+
+fn recover_b(db: &dyn Db, cycle: &salsa::Cycle, abc: ABC) -> Result<(), Error> {
+    Err(Error {
+        cycle: cycle.all_participants(db),
+    })
+}
+
+#[salsa::tracked(jar = Jar)]
+fn cycle_c(db: &dyn Db, abc: ABC) -> Result<(), Error> {
+    abc.c(db).invoke(db, abc)
 }
 
 #[track_caller]
@@ -176,151 +182,137 @@ fn extract_cycle(f: impl FnOnce() + UnwindSafe) -> salsa::Cycle {
 
 #[test]
 fn cycle_memoized() {
-    let db = DatabaseImpl::default();
-    let cycle = extract_cycle(|| db.memoized_a());
-    insta::assert_debug_snapshot!(cycle.unexpected_participants(&db), @r###"
-    [
-        "memoized_a(())",
-        "memoized_b(())",
-    ]
-    "###);
+    let mut db = Database::default();
+    let input = MyInput::new(&db);
+    let cycle = extract_cycle(|| memoized_a(&db, input));
+    let expected = expect![[r#"
+        [
+            "memoized_a(0)",
+            "memoized_b(0)",
+        ]
+    "#]];
+    expected.assert_debug_eq(&cycle.all_participants(&db));
 }
 
 #[test]
 fn cycle_volatile() {
-    let db = DatabaseImpl::default();
-    let cycle = extract_cycle(|| db.volatile_a());
-    insta::assert_debug_snapshot!(cycle.unexpected_participants(&db), @r###"
-            [
-                "volatile_a(())",
-                "volatile_b(())",
-            ]
-            "###);
+    let mut db = Database::default();
+    let input = MyInput::new(&db);
+    let cycle = extract_cycle(|| volatile_a(&db, input));
+    let expected = expect![[r#"
+        [
+            "volatile_a(0)",
+            "volatile_b(0)",
+        ]
+    "#]];
+    expected.assert_debug_eq(&cycle.all_participants(&db));
 }
 
 #[test]
-fn cycle_cycle() {
-    let mut query = DatabaseImpl::default();
-
+fn expect_cycle() {
     //     A --> B
     //     ^     |
     //     +-----+
 
-    query.set_a_invokes(CycleQuery::B);
-    query.set_b_invokes(CycleQuery::A);
-
-    assert!(query.cycle_a().is_err());
+    let mut db = Database::default();
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
+    assert!(cycle_a(&db, abc).is_err());
 }
 
 #[test]
 fn inner_cycle() {
-    let mut query = DatabaseImpl::default();
-
     //     A --> B <-- C
     //     ^     |
     //     +-----+
-
-    query.set_a_invokes(CycleQuery::B);
-    query.set_b_invokes(CycleQuery::A);
-    query.set_c_invokes(CycleQuery::B);
-
-    let err = query.cycle_c();
+    let mut db = Database::default();
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::B);
+    let err = cycle_c(&db, abc);
     assert!(err.is_err());
-    let cycle = err.unwrap_err().cycle;
-    insta::assert_debug_snapshot!(cycle, @r###"
-    [
-        "cycle_a(())",
-        "cycle_b(())",
-    ]
-    "###);
+    let expected = expect![[r#"
+        [
+            "cycle_a(0)",
+            "cycle_b(0)",
+        ]
+    "#]];
+    expected.assert_debug_eq(&err.unwrap_err().cycle);
 }
 
 #[test]
 fn cycle_revalidate() {
-    let mut db = DatabaseImpl::default();
-
     //     A --> B
     //     ^     |
     //     +-----+
-    db.set_a_invokes(CycleQuery::B);
-    db.set_b_invokes(CycleQuery::A);
-
-    assert!(db.cycle_a().is_err());
-    db.set_b_invokes(CycleQuery::A); // same value as default
-    assert!(db.cycle_a().is_err());
+    let mut db = Database::default();
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
+    assert!(cycle_a(&db, abc).is_err());
+    abc.set_b(&mut db).to(CycleQuery::A); // same value as default
+    assert!(cycle_a(&db, abc).is_err());
 }
 
 #[test]
-fn cycle_revalidate_unchanged_twice() {
-    let mut db = DatabaseImpl::default();
-
+fn cycle_recovery_unchanged_twice() {
     //     A --> B
     //     ^     |
     //     +-----+
-    db.set_a_invokes(CycleQuery::B);
-    db.set_b_invokes(CycleQuery::A);
+    let mut db = Database::default();
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
+    assert!(cycle_a(&db, abc).is_err());
 
-    assert!(db.cycle_a().is_err());
-    db.set_c_invokes(CycleQuery::A); // force new revisi5on
-
-    // on this run
-    insta::assert_debug_snapshot!(db.cycle_a(), @r###"
-    Err(
-        Error {
-            cycle: [
-                "cycle_a(())",
-                "cycle_b(())",
-            ],
-        },
-    )
-    "###);
+    abc.set_c(&mut db).to(CycleQuery::A); // force new revision
+    assert!(cycle_a(&db, abc).is_err());
 }
 
 #[test]
 fn cycle_appears() {
-    let mut db = DatabaseImpl::default();
+    let mut db = Database::default();
 
     //     A --> B
-    db.set_a_invokes(CycleQuery::B);
-    db.set_b_invokes(CycleQuery::None);
-    assert!(db.cycle_a().is_ok());
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::None, CycleQuery::None);
+    assert!(cycle_a(&db, abc).is_ok());
 
     //     A --> B
     //     ^     |
     //     +-----+
-    db.set_b_invokes(CycleQuery::A);
-    log::debug!("Set Cycle Leaf");
-    assert!(db.cycle_a().is_err());
+    abc.set_b(&mut db).to(CycleQuery::A);
+    assert!(cycle_a(&db, abc).is_err());
 }
 
 #[test]
 fn cycle_disappears() {
-    let mut db = DatabaseImpl::default();
+    let mut db = Database::default();
 
     //     A --> B
     //     ^     |
     //     +-----+
-    db.set_a_invokes(CycleQuery::B);
-    db.set_b_invokes(CycleQuery::A);
-    assert!(db.cycle_a().is_err());
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
+    assert!(cycle_a(&db, abc).is_err());
 
     //     A --> B
-    db.set_b_invokes(CycleQuery::None);
-    assert!(db.cycle_a().is_ok());
+    abc.set_b(&mut db).to(CycleQuery::None);
+    assert!(cycle_a(&db, abc).is_ok());
 }
 
 /// A variant on `cycle_disappears` in which the values of
-/// `a_invokes` and `b_invokes` are set with durability values.
+/// `a` and `b` are set with durability values.
 /// If we are not careful, this could cause us to overlook
 /// the fact that the cycle will no longer occur.
 #[test]
 fn cycle_disappears_durability() {
-    let mut db = DatabaseImpl::default();
-    db.set_a_invokes_with_durability(CycleQuery::B, Durability::LOW);
-    db.set_b_invokes_with_durability(CycleQuery::A, Durability::HIGH);
+    let mut db = Database::default();
+    let abc = ABC::new(
+        &mut db,
+        CycleQuery::None,
+        CycleQuery::None,
+        CycleQuery::None,
+    );
+    abc.set_a(&mut db)
+        .with_durability(Durability::LOW)
+        .to(CycleQuery::B);
+    abc.set_b(&mut db)
+        .with_durability(Durability::HIGH)
+        .to(CycleQuery::A);
 
-    let res = db.cycle_a();
-    assert!(res.is_err());
+    assert!(cycle_a(&db, abc).is_err());
 
     // At this point, `a` read `LOW` input, and `b` read `HIGH` input. However,
     // because `b` participates in the same cycle as `a`, its final durability
@@ -328,102 +320,86 @@ fn cycle_disappears_durability() {
     //
     // Check that setting a `LOW` input causes us to re-execute `b` query, and
     // observe that the cycle goes away.
-    db.set_a_invokes_with_durability(CycleQuery::None, Durability::LOW);
+    abc.set_a(&mut db)
+        .with_durability(Durability::LOW)
+        .to(CycleQuery::None);
 
-    let res = db.cycle_b();
-    assert!(res.is_ok());
+    assert!(cycle_b(&mut db, abc).is_ok());
 }
 
 #[test]
 fn cycle_mixed_1() {
-    let mut db = DatabaseImpl::default();
+    let mut db = Database::default();
+
     //     A --> B <-- C
     //           |     ^
     //           +-----+
-    db.set_a_invokes(CycleQuery::B);
-    db.set_b_invokes(CycleQuery::C);
-    db.set_c_invokes(CycleQuery::B);
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::C, CycleQuery::B);
 
-    let u = db.cycle_c();
-    insta::assert_debug_snapshot!(u, @r###"
-    Err(
-        Error {
-            cycle: [
-                "cycle_b(())",
-                "cycle_c(())",
-            ],
-        },
-    )
-    "###);
+    let expected = expect![[r#"
+        [
+            "cycle_b(0)",
+            "cycle_c(0)",
+        ]
+    "#]];
+    expected.assert_debug_eq(&cycle_c(&db, abc).unwrap_err().cycle);
 }
 
 #[test]
 fn cycle_mixed_2() {
-    let mut db = DatabaseImpl::default();
+    let mut db = Database::default();
 
     // Configuration:
     //
     //     A --> B --> C
     //     ^           |
     //     +-----------+
-    db.set_a_invokes(CycleQuery::B);
-    db.set_b_invokes(CycleQuery::C);
-    db.set_c_invokes(CycleQuery::A);
-
-    let u = db.cycle_a();
-    insta::assert_debug_snapshot!(u, @r###"
-    Err(
-        Error {
-            cycle: [
-                "cycle_a(())",
-                "cycle_b(())",
-                "cycle_c(())",
-            ],
-        },
-    )
-    "###);
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::C, CycleQuery::A);
+    let expected = expect![[r#"
+        [
+            "cycle_a(0)",
+            "cycle_b(0)",
+            "cycle_c(0)",
+        ]
+    "#]];
+    expected.assert_debug_eq(&cycle_a(&db, abc).unwrap_err().cycle);
 }
 
 #[test]
 fn cycle_deterministic_order() {
     // No matter whether we start from A or B, we get the same set of participants:
-    let db = || {
-        let mut db = DatabaseImpl::default();
+    let f = || {
+        let mut db = Database::default();
+
         //     A --> B
         //     ^     |
         //     +-----+
-        db.set_a_invokes(CycleQuery::B);
-        db.set_b_invokes(CycleQuery::A);
-        db
+        let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
+        (db, abc)
     };
-    let a = db().cycle_a();
-    let b = db().cycle_b();
-    insta::assert_debug_snapshot!((a, b), @r###"
-    (
-        Err(
-            Error {
-                cycle: [
-                    "cycle_a(())",
-                    "cycle_b(())",
-                ],
-            },
-        ),
-        Err(
-            Error {
-                cycle: [
-                    "cycle_a(())",
-                    "cycle_b(())",
-                ],
-            },
-        ),
-    )
-    "###);
+    let (db, abc) = f();
+    let a = cycle_a(&db, abc);
+    let (db, abc) = f();
+    let b = cycle_b(&db, abc);
+    let expected = expect![[r#"
+        (
+            [
+                "cycle_a(0)",
+                "cycle_b(0)",
+            ],
+            [
+                "cycle_a(0)",
+                "cycle_b(0)",
+            ],
+        )
+    "#]];
+    expected.assert_debug_eq(&(a.unwrap_err().cycle, b.unwrap_err().cycle));
 }
 
 #[test]
 fn cycle_multiple() {
     // No matter whether we start from A or B, we get the same set of participants:
-    let mut db = DatabaseImpl::default();
+    let mut db = Database::default();
 
     // Configuration:
     //
@@ -435,58 +411,49 @@ fn cycle_multiple() {
     //
     // Here, conceptually, B encounters a cycle with A and then
     // recovers.
-    db.set_a_invokes(CycleQuery::B);
-    db.set_b_invokes(CycleQuery::AthenC);
-    db.set_c_invokes(CycleQuery::B);
+    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::AthenC, CycleQuery::A);
 
-    let c = db.cycle_c();
-    let b = db.cycle_b();
-    let a = db.cycle_a();
-    insta::assert_debug_snapshot!((a, b, c), @r###"
-    (
-        Err(
-            Error {
-                cycle: [
-                    "cycle_a(())",
-                    "cycle_b(())",
-                ],
-            },
-        ),
-        Err(
-            Error {
-                cycle: [
-                    "cycle_a(())",
-                    "cycle_b(())",
-                ],
-            },
-        ),
-        Err(
-            Error {
-                cycle: [
-                    "cycle_a(())",
-                    "cycle_b(())",
-                ],
-            },
-        ),
-    )
-    "###);
+    let c = cycle_c(&db, abc);
+    let b = cycle_b(&db, abc);
+    let a = cycle_a(&db, abc);
+    let expected = expect![[r#"
+        (
+            [
+                "cycle_a(0)",
+                "cycle_b(0)",
+            ],
+            [
+                "cycle_a(0)",
+                "cycle_b(0)",
+            ],
+            [
+                "cycle_a(0)",
+                "cycle_b(0)",
+            ],
+        )
+    "#]];
+    expected.assert_debug_eq(&(
+        c.unwrap_err().cycle,
+        b.unwrap_err().cycle,
+        a.unwrap_err().cycle,
+    ));
 }
 
 #[test]
 fn cycle_recovery_set_but_not_participating() {
-    let mut db = DatabaseImpl::default();
+    let mut db = Database::default();
 
     //     A --> C -+
     //           ^  |
     //           +--+
-    db.set_a_invokes(CycleQuery::C);
-    db.set_c_invokes(CycleQuery::C);
+    let abc = ABC::new(&db, CycleQuery::C, CycleQuery::None, CycleQuery::C);
 
     // Here we expect C to panic and A not to recover:
-    let r = extract_cycle(|| drop(db.cycle_a()));
-    insta::assert_debug_snapshot!(r.all_participants(&db), @r###"
-    [
-        "cycle_c(())",
-    ]
-    "###);
+    let r = extract_cycle(|| drop(cycle_a(&db, abc)));
+    let expected = expect![[r#"
+        [
+            "cycle_c(0)",
+        ]
+    "#]];
+    expected.assert_debug_eq(&r.all_participants(&db));
 }
