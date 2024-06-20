@@ -467,14 +467,13 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         }
     }
 
-    /// Generate `impl salsa::DebugWithDb for Foo`, but only if this is an id struct.
+    /// Generate `impl std::fmt::Debug for Foo`, but only if this is an id struct.
     pub(crate) fn debug_impl(&self) -> syn::ItemImpl {
         let ident: &Ident = self.the_ident();
         let (impl_generics, type_generics, where_clause) =
             self.struct_item.generics.split_for_impl();
         let ident_string = ident.to_string();
 
-        // `use ::salsa::debug::helper::Fallback` is needed for the fallback to `Debug` impl
         parse_quote_spanned! {ident.span()=>
             impl #impl_generics ::std::fmt::Debug for #ident #type_generics
             #where_clause
@@ -494,11 +493,15 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             return None;
         }
 
+        let jar_ty = self.jar_ty();
         let ident = self.the_ident();
-        let (impl_generics, type_generics, where_clause) =
-            self.struct_item.generics.split_for_impl();
+        let (_, type_generics, where_clause) = self.struct_item.generics.split_for_impl();
+        let mut local_generics = self.struct_item.generics.clone();
+        local_generics
+            .params
+            .push(parse_quote_spanned!(ident.span() => DB: ?Sized + crate::__salsa_crate_Db));
+        let (impl_generics, _, _) = local_generics.split_for_impl();
 
-        let db_type = self.db_dyn_ty();
         let ident_string = ident.to_string();
 
         // `::salsa::debug::helper::SalsaDebug` will use `DebugWithDb` or fallback to `Debug`
@@ -508,14 +511,13 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                 let field_name_string = field.name().to_string();
                 let field_getter = field.get_name();
                 let field_ty = ChangeLt::to_elided().in_type(field.ty());
-                let db_type = ChangeLt::to_elided().in_type(&db_type);
 
                 quote_spanned! { field.field.span() =>
                     debug_struct = debug_struct.field(
                         #field_name_string,
-                        &::salsa::debug::helper::SalsaDebug::<#field_ty, #db_type>::salsa_debug(
+                        &::salsa::debug::helper::SalsaDebug::<#field_ty, DB>::salsa_debug(
                             #[allow(clippy::needless_borrow)]
-                            &self.#field_getter(_db),
+                            &self.#field_getter(_jar_db),
                             _db,
                         )
                     );
@@ -525,15 +527,16 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
         // `use ::salsa::debug::helper::Fallback` is needed for the fallback to `Debug` impl
         Some(parse_quote_spanned! {ident.span()=>
-            impl #impl_generics ::salsa::DebugWithDb<#db_type> for #ident #type_generics
+            impl #impl_generics ::salsa::debug::DebugWithDb<DB> for #ident #type_generics
             #where_clause
             {
-                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: & #db_type) -> ::std::fmt::Result {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>, _db: &DB) -> ::std::fmt::Result {
                     #[allow(unused_imports)]
                     use ::salsa::debug::helper::Fallback;
                     #[allow(unused_mut)]
                     let mut debug_struct = &mut f.debug_struct(#ident_string);
                     debug_struct = debug_struct.field("[salsa id]", &self.salsa_id().as_u32());
+                    let _jar_db = <_ as salsa::storage::DbWithJar<#jar_ty>>::as_jar_db(_db);
                     #fields
                     debug_struct.finish()
                 }

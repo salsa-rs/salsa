@@ -1,10 +1,6 @@
 use proc_macro2::{Literal, Span, TokenStream};
 
 pub(crate) fn debug_with_db(input: syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
-    // Figure out the lifetime to use for the `dyn Db` that we will expect.
-    // We allow structs to have at most one lifetime -- if a lifetime parameter is present,
-    // it should be `'db`. We may want to generalize this later.
-
     let num_lifetimes = input.generics.lifetimes().count();
     if num_lifetimes > 1 {
         return syn::Result::Err(syn::Error::new(
@@ -12,19 +8,6 @@ pub(crate) fn debug_with_db(input: syn::DeriveInput) -> syn::Result<proc_macro2:
             "only one lifetime is supported",
         ));
     }
-
-    let db_lt = match input.generics.lifetimes().next() {
-        Some(lt) => lt.lifetime.clone(),
-        None => syn::Lifetime::new("'_", Span::call_site()),
-    };
-
-    // Generate the type of database we expect. This hardcodes the convention of using `jar::Jar`.
-    // That's not great and should be fixed but we'd have to add a custom attribute and I am too lazy.
-
-    #[allow(non_snake_case)]
-    let DB: syn::Type = parse_quote! {
-        <crate::Jar as salsa::jar::Jar< #db_lt >>::DynDb
-    };
 
     let structure: synstructure::Structure = synstructure::Structure::new(&input);
 
@@ -46,7 +29,7 @@ pub(crate) fn debug_with_db(input: syn::DeriveInput) -> syn::Result<proc_macro2:
             let binding_tokens = |binding: &synstructure::BindingInfo| {
                 let field_ty = &binding.ast().ty;
                 quote!(
-                    &::salsa::debug::helper::SalsaDebug::<#field_ty, #DB>::salsa_debug(
+                    &::salsa::debug::helper::SalsaDebug::<#field_ty, DB>::salsa_debug(
                         #binding,
                         #db,
                     )
@@ -81,8 +64,8 @@ pub(crate) fn debug_with_db(input: syn::DeriveInput) -> syn::Result<proc_macro2:
         .collect();
 
     let tokens = structure.gen_impl(quote! {
-        gen impl ::salsa::debug::DebugWithDb<#DB> for @Self {
-            fn fmt(&self, #fmt: &mut std::fmt::Formatter<'_>, #db: & #DB) -> std::fmt::Result {
+        gen impl<DB: ?Sized + crate::__salsa_crate_Db> ::salsa::debug::DebugWithDb<DB> for @Self {
+            fn fmt(&self, #fmt: &mut std::fmt::Formatter<'_>, #db: &DB) -> std::fmt::Result {
                 use ::salsa::debug::helper::Fallback as _;
                 match self {
                     #fields
