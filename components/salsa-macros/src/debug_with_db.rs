@@ -9,6 +9,12 @@ pub(crate) fn debug_with_db(input: syn::DeriveInput) -> syn::Result<proc_macro2:
         ));
     }
 
+    // This hardcodes the convention of placing the Jar at the crate root (since that's what generates
+    // the re-export __salsa_crate_Db).
+    // That's not great and should be fixed but we'd have to add a custom attribute and I am too lazy.
+    #[allow(non_snake_case)]
+    let DbTrait: syn::Path = parse_quote!(crate::__salsa_crate_Db);
+
     let structure: synstructure::Structure = synstructure::Structure::new(&input);
 
     let fmt = syn::Ident::new("fmt", Span::call_site());
@@ -64,7 +70,7 @@ pub(crate) fn debug_with_db(input: syn::DeriveInput) -> syn::Result<proc_macro2:
         .collect();
 
     let tokens = structure.gen_impl(quote! {
-        gen impl<DB: ?Sized + crate::__salsa_crate_Db> ::salsa::debug::DebugWithDb<DB> for @Self {
+        gen impl<DB: ?Sized + #DbTrait> ::salsa::debug::DebugWithDb<DB> for @Self {
             fn fmt(&self, #fmt: &mut std::fmt::Formatter<'_>, #db: &DB) -> std::fmt::Result {
                 use ::salsa::debug::helper::Fallback as _;
                 match self {

@@ -275,6 +275,10 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         self.args.jar_ty()
     }
 
+    pub(crate) fn jar_mod(&self) -> syn::Path {
+        self.args.jar_mod()
+    }
+
     /// checks if the "singleton" flag was set
     pub(crate) fn is_isingleton(&self) -> bool {
         self.args.singleton.is_some()
@@ -494,12 +498,13 @@ impl<A: AllowedOptions> SalsaStruct<A> {
         }
 
         let jar_ty = self.jar_ty();
+        let jar_mod = self.jar_mod();
         let ident = self.the_ident();
         let (_, type_generics, where_clause) = self.struct_item.generics.split_for_impl();
         let mut local_generics = self.struct_item.generics.clone();
         local_generics
             .params
-            .push(parse_quote_spanned!(ident.span() => DB: ?Sized + crate::__salsa_crate_Db));
+            .push(parse_quote_spanned!(ident.span() => DB: ?Sized + #jar_mod::__salsa_crate_Db));
         let (impl_generics, _, _) = local_generics.split_for_impl();
 
         let ident_string = ident.to_string();
