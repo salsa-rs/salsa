@@ -21,7 +21,6 @@ smallvec = "1.0.0"
 
 [dev-dependencies]
 derive-new = "0.5.9"
-env_logger = "*"
 expect-test = "1.4.0"
 eyre = "0.6.8"
 notify-debouncer-mini = "0.2.1"
