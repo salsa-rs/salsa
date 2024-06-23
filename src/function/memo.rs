@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arc_swap::{ArcSwap, Guard};
-use crossbeam_utils::atomic::AtomicCell;
+use crossbeam::atomic::AtomicCell;
 
 use crate::{
     hash::FxDashMap, key::DatabaseKeyIndex, runtime::local_state::QueryRevisions, Event, EventKind,

@@ -32,9 +32,6 @@ error[E0432]: unresolved imports `common::HasLogger`, `common::Logger`
   |              ^^^^^^^^^  ^^^^^^ no `Logger` in `common`
   |              |
   |              no `HasLogger` in `common`
-  |
-  = help: consider importing this struct instead:
-          env_logger::Logger
 
 error[E0412]: cannot find type `MyTracked` in this scope
   --> tests/compile-fail/singleton_only_for_input.rs:11:21

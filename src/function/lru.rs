@@ -1,6 +1,6 @@
 use crate::{hash::FxLinkedHashSet, Id};
 
-use crossbeam_utils::atomic::AtomicCell;
+use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 
 #[derive(Default)]
