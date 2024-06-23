@@ -20,7 +20,7 @@ salsa-macros = { path = "components/salsa-macros" }
 smallvec = "1.0.0"
 
 [dev-dependencies]
-derive-new = "0.5.9"
+derive-new = "0.6"
 expect-test = "1.4.0"
 eyre = "0.6.8"
 notify-debouncer-mini = "0.2.1"
