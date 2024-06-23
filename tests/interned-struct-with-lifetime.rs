@@ -52,7 +52,7 @@ fn execute() {
     let mut db = Database::default();
 
     expect![[r#"
-        "InternedPair { [salsa id]: 0, data: (InternedString { [salsa id]: 0, data: \"Hello, \" }, InternedString { [salsa id]: 1, data: \"World, \" }) }"
+        "InternedPair { [salsa id]: Id(0), data: (InternedString { [salsa id]: Id(0), data: \"Hello, \" }, InternedString { [salsa id]: Id(1), data: \"World, \" }) }"
     "#]].assert_debug_eq(&intern_stuff(&db));
     db.assert_logs(expect!["[]"]);
 }
