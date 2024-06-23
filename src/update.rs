@@ -360,3 +360,20 @@ tuple_impl!(A, B, C, D, E, F, G, H, I; a, b, c, d, e, f, g, h, i);
 tuple_impl!(A, B, C, D, E, F, G, H, I, J; a, b, c, d, e, f, g, h, i, j);
 tuple_impl!(A, B, C, D, E, F, G, H, I, J, K; a, b, c, d, e, f, g, h, i, j, k);
 tuple_impl!(A, B, C, D, E, F, G, H, I, J, K, L; a, b, c, d, e, f, g, h, i, j, k, l);
+
+unsafe impl<T> Update for Option<T>
+where
+    T: Update,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+        let old_value = unsafe { &mut *old_pointer };
+        match (old_value, new_value) {
+            (Some(old), Some(new)) => T::maybe_update(old, new),
+            (None, None) => false,
+            (old_value, new_value) => {
+                *old_value = new_value;
+                true
+            }
+        }
+    }
+}
