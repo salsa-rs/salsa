@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - master
-      - staging
-      - trying
   pull_request:
     paths:
       - "**.rs"
       - "**/Cargo.*"
-      - ".github/workflows/**.yml"
+      - ".github/workflows/test.yml"
       - "tests/compile-fail/**.stderr"
   merge_group:
 
@@ -31,51 +29,62 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Setup Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
+        id: rust-toolchain
         with:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
-          default: true
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-
+            ${{ runner.os }}-cargo-
       - name: Format
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: -- --check
+        run: cargo fmt -- --check
       - name: Clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-features --all-targets --workspace
+        run: cargo clippy --workspace --all-features --all-targets
       - name: Test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features --all-targets --workspace
+        run: cargo test --workspace --all-features --all-targets
       - name: Test docs
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --doc
+        run: cargo test --workspace --all-features --doc
       - name: Check (without default features)
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --no-default-features
+        run: cargo check --workspace --no-default-features
 
   miri:
     name: Miri
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Install Miri
-        run: |
-          rustup toolchain install nightly --component miri
-          rustup override set nightly
-          cargo miri setup
+        uses: dtolnay/rust-toolchain@miri
+        id: rust-toolchain
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-miri-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-miri-
+            ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-
+            ${{ runner.os }}-cargo-
+      - name: Setup Miri
+        run: cargo miri setup
       - name: Test with Miri
-        run: cargo miri test --no-fail-fast
+        run: cargo miri test --no-fail-fast --all-features
       - name: Run examples with Miri
         run: |
           cargo miri run --example calc

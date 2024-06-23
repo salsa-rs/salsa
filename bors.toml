@@ -1,6 +1,0 @@
-status = [
-    "Test (stable, false)",
-    "Book"
-]
-delete_merged_branches = true
-timeout_sec = 1200 # 20 min
