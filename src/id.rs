@@ -42,7 +42,7 @@ impl Id {
 
 impl std::fmt::Debug for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.as_u32().fmt(f)
+        f.debug_tuple("Id").field(&self.as_u32()).finish()
     }
 }
 

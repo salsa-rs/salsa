@@ -76,9 +76,9 @@ fn test1() {
     assert_eq!(compute(&db, l2), 2);
     db.assert_logs(expect![[r#"
         [
-            "compute(List { [salsa id]: 1 })",
-            "accumulated(List { [salsa id]: 0 })",
-            "compute(List { [salsa id]: 0 })",
+            "compute(List { [salsa id]: Id(1) })",
+            "accumulated(List { [salsa id]: Id(0) })",
+            "compute(List { [salsa id]: Id(0) })",
         ]"#]]);
 
     // When we mutate `l1`, we should re-execute `compute` for `l1`,
@@ -88,7 +88,7 @@ fn test1() {
     assert_eq!(compute(&db, l2), 2);
     db.assert_logs(expect![[r#"
         [
-            "accumulated(List { [salsa id]: 0 })",
-            "compute(List { [salsa id]: 0 })",
+            "accumulated(List { [salsa id]: Id(0) })",
+            "compute(List { [salsa id]: Id(0) })",
         ]"#]]);
 }
