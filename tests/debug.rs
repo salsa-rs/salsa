@@ -53,7 +53,7 @@ fn input() {
     // debug includes all fields
     let actual = format!("{:?}", complex_struct.debug(&db));
     let expected = expect![[
-        r#"ComplexStruct { [salsa id]: 0, my_input: MyInput { [salsa id]: 0, field: 22 }, not_salsa: NotSalsa { field: "it's salsa time" } }"#
+        r#"ComplexStruct { [salsa id]: Id(0), my_input: MyInput { [salsa id]: Id(0), field: 22 }, not_salsa: NotSalsa { field: "it's salsa time" } }"#
     ]];
     expected.assert_eq(&actual);
 }
@@ -74,7 +74,7 @@ fn untracked_dependencies() {
 
     let s = leak_debug_string(&db, input);
     expect![[r#"
-        "MyInput { [salsa id]: 0, field: 22 }"
+        "MyInput { [salsa id]: Id(0), field: 22 }"
     "#]]
     .assert_debug_eq(&s);
 
@@ -118,7 +118,7 @@ fn custom_debug_impl() {
 
     let s = leak_derived_custom(&db, input, 23);
     expect![[r#"
-        "MyInput { [salsa id]: 0, field: 22 } / 23"
+        "MyInput { [salsa id]: Id(0), field: 22 } / 23"
     "#]]
     .assert_debug_eq(&s);
 }

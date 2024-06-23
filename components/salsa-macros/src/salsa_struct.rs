@@ -481,7 +481,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
             {
                 fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                     f.debug_struct(#ident_string)
-                        .field("[salsa id]", &self.salsa_id().as_u32())
+                        .field("[salsa id]", &self.salsa_id())
                         .finish()
                 }
             }
@@ -533,7 +533,7 @@ impl<A: AllowedOptions> SalsaStruct<A> {
                     use ::salsa::debug::helper::Fallback;
                     #[allow(unused_mut)]
                     let mut debug_struct = &mut f.debug_struct(#ident_string);
-                    debug_struct = debug_struct.field("[salsa id]", &self.salsa_id().as_u32());
+                    debug_struct = debug_struct.field("[salsa id]", &self.salsa_id());
                     #fields
                     debug_struct.finish()
                 }
