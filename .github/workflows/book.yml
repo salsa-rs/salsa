@@ -40,6 +40,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: book
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    concurrency:
+      group: github-pages
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
