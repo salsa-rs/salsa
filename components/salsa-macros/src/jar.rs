@@ -59,6 +59,7 @@ pub(crate) fn jar_struct_and_friends(
     let output_struct = jar_struct(input);
 
     let jar_struct = &input.ident;
+    let vis = &input.vis;
 
     // for each field, we need to generate an impl of `HasIngredientsFor`
     let has_ingredients_for_impls: Vec<_> = input
@@ -72,6 +73,9 @@ pub(crate) fn jar_struct_and_friends(
 
     quote! {
         #output_struct
+
+        #[doc(hidden)]
+        #vis use #jar_trait as __salsa_crate_Db;
 
         #(#has_ingredients_for_impls)*
 

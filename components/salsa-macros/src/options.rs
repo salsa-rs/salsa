@@ -111,6 +111,28 @@ impl<A: AllowedOptions> Options<A> {
         parse_quote! {crate::Jar}
     }
 
+    /// Returns the module containing the [`Self::jar_ty`].
+    pub(crate) fn jar_mod(&self) -> syn::Path {
+        let ty = self.jar_ty();
+        let syn::Type::Path(qpath) = ty else {
+            panic!("unexpected jar type (only plain paths allowed)")
+        };
+        let syn::TypePath {
+            qself: None,
+            mut path,
+        } = qpath
+        else {
+            panic!("unexpected jar type (no assoc types allowed)")
+        };
+        path.segments.pop();
+        path.segments.pop_punct();
+        if path.segments.is_empty() {
+            parse_quote!(self)
+        } else {
+            path
+        }
+    }
+
     pub(crate) fn should_backdate(&self) -> bool {
         self.no_eq.is_none()
     }

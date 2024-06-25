@@ -1,17 +1,17 @@
 error[E0624]: method `field` is private
-  --> tests/compile-fail/get-set-on-private-field.rs:29:11
+  --> tests/compile-fail/get-set-on-private-field.rs:27:11
    |
-9  |         field: u32,
+7  |         field: u32,
    |         ---------- private method defined here
 ...
-29 |     input.field(&db);
+27 |     input.field(&db);
    |           ^^^^^ private method
 
 error[E0624]: method `set_field` is private
-  --> tests/compile-fail/get-set-on-private-field.rs:30:11
+  --> tests/compile-fail/get-set-on-private-field.rs:28:11
    |
-9  |         field: u32,
+7  |         field: u32,
    |         ----- private method defined here
 ...
-30 |     input.set_field(&mut db).to(23);
+28 |     input.set_field(&mut db).to(23);
    |           ^^^^^^^^^ private method
