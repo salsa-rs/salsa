@@ -1,10 +1,17 @@
-error[E0405]: cannot find trait `__salsa_crate_Db` in module `self`
- --> tests/compile-fail/get-set-on-private-field.rs:8:16
-  |
-8 |     pub struct MyInput {
-  |                ^^^^^^^ not found in `self`
-  |
-help: consider importing this trait through its public re-export
-  |
-5 +     use crate::__salsa_crate_Db;
-  |
+error[E0624]: method `field` is private
+  --> tests/compile-fail/get-set-on-private-field.rs:27:11
+   |
+7  |         field: u32,
+   |         ---------- private method defined here
+...
+27 |     input.field(&db);
+   |           ^^^^^ private method
+
+error[E0624]: method `set_field` is private
+  --> tests/compile-fail/get-set-on-private-field.rs:28:11
+   |
+7  |         field: u32,
+   |         ----- private method defined here
+...
+28 |     input.set_field(&mut db).to(23);
+   |           ^^^^^^^^^ private method
