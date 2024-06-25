@@ -337,6 +337,7 @@ macro_rules! tuple_impl {
                 let ($($t,)*) = new_value;
                 let ($($u,)*) = unsafe { &mut *old_pointer };
 
+                #[allow(unused_mut)]
                 let mut changed = false;
                 $(
                     unsafe { changed |= Update::maybe_update($u, $t); }
@@ -348,6 +349,7 @@ macro_rules! tuple_impl {
 }
 
 // Create implementations for tuples up to arity 12
+tuple_impl!(;);
 tuple_impl!(A; a);
 tuple_impl!(A, B; a, b);
 tuple_impl!(A, B, C; a, b, c);
