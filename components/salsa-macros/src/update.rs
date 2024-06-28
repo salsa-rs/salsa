@@ -73,6 +73,7 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let tokens = quote! {
         unsafe impl #impl_generics salsa::update::Update for #ident #ty_generics #where_clause {
+            #[allow(clippy::unused_unit)]
             unsafe fn maybe_update(#old_pointer: *mut Self, #new_value: Self) -> bool {
                 use ::salsa::update::helper::Fallback as _;
                 let old_pointer = unsafe { &mut *#old_pointer };
