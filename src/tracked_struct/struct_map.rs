@@ -6,11 +6,7 @@ use std::{
 use crossbeam::queue::SegQueue;
 use dashmap::mapref::one::RefMut;
 
-use crate::{
-    alloc::Alloc,
-    hash::{FxDashMap, FxHasher},
-    Id, Runtime,
-};
+use crate::{alloc::Alloc, hash::FxDashMap, Id, Runtime};
 
 use super::{Configuration, KeyStruct, ValueStruct};
 
@@ -243,7 +239,7 @@ pub(crate) struct UpdateRef<'db, C>
 where
     C: Configuration,
 {
-    guard: RefMut<'db, Id, Alloc<ValueStruct<C>>, FxHasher>,
+    guard: RefMut<'db, Id, Alloc<ValueStruct<C>>>,
 }
 
 impl<'db, C> UpdateRef<'db, C>
