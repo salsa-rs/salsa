@@ -343,8 +343,12 @@ fn interned_configuration_impl(
 
     let intern_data_ty = ChangeLt::elided_to(db_lt).in_type(&intern_data_ty);
 
+    let debug_name = crate::literal(&item_fn.sig.ident);
+
     parse_quote!(
         impl salsa::interned::Configuration for #config_ty {
+            const DEBUG_NAME: &'static str = #debug_name;
+
             type Data<#db_lt> = #intern_data_ty;
 
             type Struct<#db_lt> = & #db_lt salsa::interned::ValueStruct<Self>;
@@ -513,7 +517,6 @@ fn ingredients_for_impl(
     config_ty: &syn::Type,
 ) -> syn::ItemImpl {
     let jar_ty = args.jar_ty();
-    let debug_name = crate::literal(&item_fn.sig.ident);
 
     let intern_map: syn::Expr = match function_type(item_fn) {
         FunctionType::Constant | FunctionType::SalsaStruct => {
@@ -538,7 +541,7 @@ fn ingredients_for_impl(
                             &mut ingredients.intern_map
                         }
                     );
-                    salsa::interned::InternedIngredient::new(index, #debug_name)
+                    salsa::interned::InternedIngredient::new(index)
                 }
             }
         }

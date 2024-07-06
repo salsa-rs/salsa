@@ -19,7 +19,10 @@ use super::routes::IngredientIndex;
 use super::Revision;
 
 pub trait Configuration: Sized + 'static {
+    const DEBUG_NAME: &'static str;
+
     type Data<'db>: InternedData;
+
     type Struct<'db>: Copy;
 
     /// Create an end-user struct from the underlying raw pointer.
@@ -70,8 +73,6 @@ pub struct InternedIngredient<C: Configuration> {
     /// but that will make anything dependent on those entries dirty and in need
     /// of being recomputed.
     reset_at: Revision,
-
-    debug_name: &'static str,
 }
 
 /// Struct storing the interned fields.
@@ -87,14 +88,13 @@ impl<C> InternedIngredient<C>
 where
     C: Configuration,
 {
-    pub fn new(ingredient_index: IngredientIndex, debug_name: &'static str) -> Self {
+    pub fn new(ingredient_index: IngredientIndex) -> Self {
         Self {
             ingredient_index,
             key_map: Default::default(),
             value_map: Default::default(),
             counter: AtomicCell::default(),
             reset_at: Revision::start(),
-            debug_name,
         }
     }
 
@@ -236,7 +236,7 @@ where
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_index(self.debug_name, index, fmt)
+        fmt_index(C::DEBUG_NAME, index, fmt)
     }
 }
 

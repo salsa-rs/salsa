@@ -151,10 +151,13 @@ impl InternedStruct {
         let the_ident = self.the_ident();
         let lt_db = &self.named_db_lifetime();
         let (_, _, _, type_generics, _) = self.the_ident_and_generics();
+        let debug_name = crate::literal(the_ident);
         parse_quote_spanned!(
             config_ident.span() =>
 
             impl salsa::interned::Configuration for #config_ident {
+                const DEBUG_NAME: &'static str = #debug_name;
+
                 type Data<#lt_db> = #data_ident #type_generics;
 
                 type Struct<#lt_db> = #the_ident < #lt_db >;
@@ -248,7 +251,6 @@ impl InternedStruct {
     fn ingredients_for_impl(&self, config_ident: &syn::Ident) -> syn::ItemImpl {
         let (the_ident, _, impl_generics, type_generics, where_clause) =
             self.the_ident_and_generics();
-        let debug_name = crate::literal(the_ident);
         let jar_ty = self.jar_ty();
         parse_quote! {
             impl #impl_generics salsa::storage::IngredientsFor for #the_ident #type_generics
@@ -274,7 +276,7 @@ impl InternedStruct {
                             <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient_mut(jar)
                         },
                     );
-                    salsa::interned::InternedIngredient::new(index, #debug_name)
+                    salsa::interned::InternedIngredient::new(index)
                 }
             }
         }
