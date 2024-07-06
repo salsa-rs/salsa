@@ -72,11 +72,11 @@ pub struct FunctionIngredient<C: Configuration> {
     /// Set to true once we invoke `register_dependent_fn` for `C::SalsaStruct`.
     /// Prevents us from registering more than once.
     registered: AtomicCell<bool>,
-
-    debug_name: &'static str,
 }
 
 pub trait Configuration: 'static {
+    const DEBUG_NAME: &'static str;
+
     type Jar: Jar;
 
     /// The "salsa struct type" that this function is associated with.
@@ -132,7 +132,7 @@ impl<C> FunctionIngredient<C>
 where
     C: Configuration,
 {
-    pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
+    pub fn new(index: IngredientIndex) -> Self {
         Self {
             index,
             memo_map: memo::MemoMap::default(),
@@ -140,7 +140,6 @@ where
             sync_map: Default::default(),
             deleted_entries: Default::default(),
             registered: Default::default(),
-            debug_name,
         }
     }
 
@@ -269,7 +268,7 @@ where
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_index(self.debug_name, index, fmt)
+        fmt_index(C::DEBUG_NAME, index, fmt)
     }
 }
 
