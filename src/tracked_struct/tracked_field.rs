@@ -23,7 +23,6 @@ where
     pub(super) ingredient_index: IngredientIndex,
     pub(super) field_index: u32,
     pub(super) struct_map: StructMapView<C>,
-    pub(super) struct_debug_name: &'static str,
     pub(super) field_debug_name: &'static str,
 }
 
@@ -122,7 +121,7 @@ where
         write!(
             fmt,
             "{}.{}({:?})",
-            self.struct_debug_name,
+            C::DEBUG_NAME,
             self.field_debug_name,
             index.unwrap()
         )

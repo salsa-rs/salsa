@@ -1,6 +1,9 @@
 use proc_macro2::{Literal, Span, TokenStream};
 
-use crate::salsa_struct::{SalsaField, SalsaStruct, TheStructKind};
+use crate::{
+    literal,
+    salsa_struct::{SalsaField, SalsaStruct, TheStructKind},
+};
 
 /// For an tracked struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///
@@ -105,6 +108,7 @@ impl TrackedStruct {
         let arity = self.all_field_count();
         let the_ident = self.the_ident();
         let lt_db = &self.named_db_lifetime();
+        let debug_name_struct = literal(self.the_ident());
 
         // Create the function body that will update the revisions for each field.
         // If a field is a "backdate field" (the default), then we first check if
@@ -143,6 +147,8 @@ impl TrackedStruct {
 
         parse_quote! {
             impl salsa::tracked_struct::Configuration for #config_ident {
+                const DEBUG_NAME: &'static str = #debug_name_struct;
+
                 type Fields<#lt_db> = ( #(#field_tys,)* );
 
                 type Struct<#lt_db> = #the_ident<#lt_db>;
@@ -263,7 +269,6 @@ impl TrackedStruct {
         let arity = self.all_field_count();
         let tracked_struct_ingredient: Literal = self.tracked_struct_ingredient_index();
         let tracked_fields_ingredients: Literal = self.tracked_field_ingredients_index();
-        let debug_name_struct = literal(self.the_ident());
         let debug_name_fields: Vec<_> = self.all_field_names().into_iter().map(literal).collect();
 
         parse_quote! {
@@ -294,7 +299,7 @@ impl TrackedStruct {
                                 &mut ingredients.#tracked_struct_ingredient
                             },
                         );
-                        salsa::tracked_struct::TrackedStructIngredient::new(index, #debug_name_struct)
+                        salsa::tracked_struct::TrackedStructIngredient::new(index)
                     };
 
                     let field_ingredients = [
