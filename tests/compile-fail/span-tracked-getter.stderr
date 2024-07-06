@@ -6,7 +6,7 @@ error[E0308]: mismatched types
    |       |
    |       arguments to this method are incorrect
    |
-   = note: expected reference `&dyn Db`
+   = note: expected reference `&(dyn Db + 'static)`
                    found type `{integer}`
 note: method defined here
   --> tests/compile-fail/span-tracked-getter.rs:18:5

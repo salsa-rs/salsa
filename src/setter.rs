@@ -13,7 +13,8 @@ pub struct Setter<'setter, K, F> {
 
 impl<'setter, K, F> Setter<'setter, K, F>
 where
-    K: Eq + Hash + AsId,
+    K: Eq + Hash + AsId + 'static,
+    F: 'static,
 {
     pub fn new(
         runtime: &'setter mut Runtime,

@@ -206,9 +206,9 @@ pub trait HasJars: HasJarsDyn + Sized {
 }
 
 pub trait DbWithJar<J>: HasJar<J> + Database {
-    fn as_jar_db<'db>(&'db self) -> &<J as Jar<'db>>::DynDb
+    fn as_jar_db<'db>(&'db self) -> &'db <J as Jar>::DynDb
     where
-        J: Jar<'db>;
+        J: Jar;
 }
 
 pub trait JarFromJars<J>: HasJars {
@@ -225,7 +225,7 @@ pub trait HasJar<J> {
 
 // ANCHOR: HasJarsDyn
 /// Dyn friendly subset of HasJars
-pub trait HasJarsDyn {
+pub trait HasJarsDyn: 'static {
     fn runtime(&self) -> &Runtime;
 
     fn runtime_mut(&mut self) -> &mut Runtime;

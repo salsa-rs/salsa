@@ -453,7 +453,7 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
         let cycle_strategy = CycleRecoveryStrategy::Fallback;
 
         let cycle_fullback = parse_quote! {
-            fn recover_from_cycle<'db>(__db: &'db salsa::function::DynDb<'db, Self>, __cycle: &salsa::Cycle, __id: salsa::Id) -> Self::Value<'db> {
+            fn recover_from_cycle<'db>(__db: &'db salsa::function::DynDb<Self>, __cycle: &salsa::Cycle, __id: salsa::Id) -> Self::Value<'db> {
                 let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
                 let __ingredients =
                     <_ as salsa::storage::HasIngredientsFor<#fn_ty>>::ingredient(__jar);
@@ -483,7 +483,7 @@ fn fn_configuration(args: &FnArgs, item_fn: &syn::ItemFn) -> Configuration {
     // Create the `execute` function, which (a) maps from the interned id to the actual
     // keys and then (b) invokes the function itself (which we embed within).
     let execute_fn = parse_quote! {
-        fn execute<'db>(__db: &'db salsa::function::DynDb<'db, Self>, __id: salsa::Id) -> Self::Value<'db> {
+        fn execute<'db>(__db: &'db salsa::function::DynDb<Self>, __id: salsa::Id) -> Self::Value<'db> {
             #inner_fn
 
             let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
@@ -858,8 +858,7 @@ fn accumulated_fn(
         -> Vec<<__A as salsa::accumulator::Accumulator>::Data>
     };
 
-    let (db_lifetime, _) = db_lifetime_and_ty(&mut accumulated_fn.sig)?;
-    let predicate: syn::WherePredicate = parse_quote!(<#jar_ty as salsa::jar::Jar<#db_lifetime>>::DynDb: salsa::storage::HasJar<<__A as salsa::accumulator::Accumulator>::Jar>);
+    let predicate: syn::WherePredicate = parse_quote!(<#jar_ty as salsa::jar::Jar>::DynDb: salsa::storage::HasJar<<__A as salsa::accumulator::Accumulator>::Jar>);
 
     if let Some(where_clause) = &mut accumulated_fn.sig.generics.where_clause {
         where_clause.predicates.push(predicate);

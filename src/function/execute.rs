@@ -24,7 +24,7 @@ where
     /// * `opt_old_memo`, the older memo, if any existed. Used for backdated.
     pub(super) fn execute<'db>(
         &'db self,
-        db: &'db DynDb<'db, C>,
+        db: &'db DynDb<C>,
         active_query: ActiveQueryGuard<'_>,
         opt_old_memo: Option<Arc<Memo<C::Value<'_>>>>,
     ) -> StampedValue<&C::Value<'db>> {

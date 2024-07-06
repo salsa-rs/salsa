@@ -6,7 +6,7 @@ error[E0308]: mismatched types
    |           |
    |           arguments to this method are incorrect
    |
-   = note: expected mutable reference `&mut dyn Db`
+   = note: expected mutable reference `&mut (dyn Db + 'static)`
                            found type `{integer}`
 note: method defined here
   --> tests/compile-fail/span-input-setter.rs:18:5

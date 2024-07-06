@@ -76,13 +76,13 @@ pub struct FunctionIngredient<C: Configuration> {
     debug_name: &'static str,
 }
 
-pub trait Configuration {
-    type Jar: for<'db> Jar<'db>;
+pub trait Configuration: 'static {
+    type Jar: Jar;
 
     /// The "salsa struct type" that this function is associated with.
     /// This can be just `salsa::Id` for functions that intern their arguments
     /// and are not clearly associated with any one salsa struct.
-    type SalsaStruct<'db>: SalsaStructInDb<DynDb<'db, Self>>;
+    type SalsaStruct<'db>: SalsaStructInDb<DynDb<Self>>;
 
     /// The input to the function
     type Input<'db>;
@@ -122,7 +122,7 @@ pub fn should_backdate_value<V: Eq>(old_value: &V, new_value: &V) -> bool {
     old_value == new_value
 }
 
-pub type DynDb<'bound, C> = <<C as Configuration>::Jar as Jar<'bound>>::DynDb;
+pub type DynDb<C> = <<C as Configuration>::Jar as Jar>::DynDb;
 
 /// This type is used to make configuration types for the functions in entities;
 /// e.g. you can do `Config<X, 0>` and `Config<X, 1>`.
@@ -172,7 +172,7 @@ where
 
     fn insert_memo<'db>(
         &'db self,
-        db: &'db DynDb<'db, C>,
+        db: &'db DynDb<C>,
         key: Id,
         memo: memo::Memo<C::Value<'db>>,
     ) -> Option<&C::Value<'db>> {
@@ -194,7 +194,7 @@ where
     /// Register this function as a dependent fn of the given salsa struct.
     /// When instances of that salsa struct are deleted, we'll get a callback
     /// so we can remove any data keyed by them.
-    fn register<'db>(&self, db: &'db DynDb<'db, C>) {
+    fn register<'db>(&self, db: &'db DynDb<C>) {
         if !self.registered.fetch_or(true) {
             <C::SalsaStruct<'db> as SalsaStructInDb<_>>::register_dependent_fn(db, self.index)
         }

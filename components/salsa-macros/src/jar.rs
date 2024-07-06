@@ -113,8 +113,8 @@ pub(crate) fn jar_impl(
         .collect();
     // ANCHOR: init_jar
     quote! {
-        unsafe impl<'salsa_db> salsa::jar::Jar<'salsa_db> for #jar_struct {
-            type DynDb = dyn #jar_trait + 'salsa_db;
+        unsafe impl salsa::jar::Jar for #jar_struct {
+            type DynDb = dyn #jar_trait;
 
             unsafe fn init_jar<DB>(place: *mut Self, routes: &mut salsa::routes::Routes<DB>)
             where

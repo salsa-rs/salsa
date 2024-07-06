@@ -18,7 +18,7 @@ use super::ingredient::Ingredient;
 use super::routes::IngredientIndex;
 use super::Revision;
 
-pub trait Configuration: Sized {
+pub trait Configuration: Sized + 'static {
     type Data<'db>: InternedData;
     type Struct<'db>: Copy;
 

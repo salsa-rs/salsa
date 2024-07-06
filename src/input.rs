@@ -12,8 +12,8 @@ use crate::{
     IngredientIndex, Revision,
 };
 
-pub trait InputId: FromId {}
-impl<T: FromId> InputId for T {}
+pub trait InputId: FromId + 'static {}
+impl<T: FromId + 'static> InputId for T {}
 
 pub struct InputIngredient<Id>
 where

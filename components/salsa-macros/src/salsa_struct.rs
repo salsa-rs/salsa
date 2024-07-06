@@ -282,9 +282,8 @@ impl<A: AllowedOptions> SalsaStruct<A> {
 
     pub(crate) fn db_dyn_ty(&self) -> syn::Type {
         let jar_ty = self.jar_ty();
-        let lt_db = self.maybe_elided_db_lifetime();
         parse_quote! {
-            <#jar_ty as salsa::jar::Jar< #lt_db >>::DynDb
+            <#jar_ty as salsa::jar::Jar>::DynDb
         }
     }
 

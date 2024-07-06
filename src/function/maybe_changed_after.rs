@@ -20,7 +20,7 @@ where
 {
     pub(super) fn maybe_changed_after<'db>(
         &'db self,
-        db: &'db DynDb<'db, C>,
+        db: &'db DynDb<C>,
         key: Id,
         revision: Revision,
     ) -> bool {
@@ -57,7 +57,7 @@ where
 
     fn maybe_changed_after_cold<'db>(
         &'db self,
-        db: &'db DynDb<'db, C>,
+        db: &'db DynDb<C>,
         key_index: Id,
         revision: Revision,
     ) -> Option<bool> {

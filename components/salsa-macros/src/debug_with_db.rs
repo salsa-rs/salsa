@@ -13,17 +13,12 @@ pub(crate) fn debug_with_db(input: syn::DeriveInput) -> syn::Result<proc_macro2:
         ));
     }
 
-    let db_lt = match input.generics.lifetimes().next() {
-        Some(lt) => lt.lifetime.clone(),
-        None => syn::Lifetime::new("'_", Span::call_site()),
-    };
-
     // Generate the type of database we expect. This hardcodes the convention of using `jar::Jar`.
     // That's not great and should be fixed but we'd have to add a custom attribute and I am too lazy.
 
     #[allow(non_snake_case)]
     let DB: syn::Type = parse_quote! {
-        <crate::Jar as salsa::jar::Jar< #db_lt >>::DynDb
+        <crate::Jar as salsa::jar::Jar>::DynDb
     };
 
     let structure: synstructure::Structure = synstructure::Structure::new(&input);

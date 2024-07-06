@@ -13,7 +13,7 @@ where
     /// for each output that was generated before but is not generated now.
     pub(super) fn diff_outputs(
         &self,
-        db: &DynDb<'_, C>,
+        db: &DynDb<C>,
         key: DatabaseKeyIndex,
         old_memo: &Memo<C::Value<'_>>,
         revisions: &QueryRevisions,
@@ -37,7 +37,7 @@ where
         }
     }
 
-    fn report_stale_output(db: &DynDb<'_, C>, key: DatabaseKeyIndex, output: DependencyIndex) {
+    fn report_stale_output(db: &DynDb<C>, key: DatabaseKeyIndex, output: DependencyIndex) {
         let runtime_id = db.runtime().id();
         db.salsa_event(Event {
             runtime_id,

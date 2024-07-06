@@ -25,7 +25,7 @@ mod tracked_field;
 /// Trait that defines the key properties of a tracked struct.
 /// Implemented by the `#[salsa::tracked]` macro when applied
 /// to a struct.
-pub trait Configuration: Sized {
+pub trait Configuration: Sized + 'static {
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields<'db>;
 

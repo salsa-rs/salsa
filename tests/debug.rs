@@ -93,8 +93,8 @@ struct DerivedCustom<'db> {
     value: u32,
 }
 
-impl<'db> DebugWithDb<dyn Db + 'db> for DerivedCustom<'db> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &(dyn Db + 'db)) -> std::fmt::Result {
+impl<'db> DebugWithDb<dyn Db> for DerivedCustom<'db> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &dyn Db) -> std::fmt::Result {
         write!(
             f,
             "{:?} / {:?}",

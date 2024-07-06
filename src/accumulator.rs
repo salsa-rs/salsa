@@ -101,7 +101,7 @@ impl<Data: Clone> AccumulatorIngredient<Data> {
 impl<DB: ?Sized, Data> Ingredient<DB> for AccumulatorIngredient<Data>
 where
     DB: crate::Database,
-    Data: Clone,
+    Data: Clone + 'static,
 {
     fn ingredient_index(&self) -> IngredientIndex {
         self.index

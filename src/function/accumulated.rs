@@ -14,9 +14,9 @@ where
 {
     /// Returns all the values accumulated into `accumulator` by this query and its
     /// transitive inputs.
-    pub fn accumulated<'db, A>(&'db self, db: &'db DynDb<'db, C>, key: Id) -> Vec<A::Data>
+    pub fn accumulated<'db, A>(&'db self, db: &'db DynDb<C>, key: Id) -> Vec<A::Data>
     where
-        DynDb<'db, C>: HasJar<A::Jar>,
+        DynDb<C>: HasJar<A::Jar>,
         A: Accumulator,
     {
         // To start, ensure that the value is up to date:

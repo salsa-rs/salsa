@@ -28,7 +28,8 @@ pub struct InputFieldIngredient<K, F> {
 
 impl<K, F> InputFieldIngredient<K, F>
 where
-    K: Eq + Hash + AsId,
+    K: Eq + Hash + AsId + 'static,
+    F: 'static,
 {
     pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
@@ -108,7 +109,8 @@ where
 
 impl<DB: ?Sized, K, F> Ingredient<DB> for InputFieldIngredient<K, F>
 where
-    K: FromId,
+    K: FromId + 'static,
+    F: 'static,
 {
     fn ingredient_index(&self) -> IngredientIndex {
         self.index

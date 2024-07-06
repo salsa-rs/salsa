@@ -10,8 +10,8 @@ use super::routes::Routes;
 /// # Safety
 ///
 /// `init_jar` must fully initialize the jar
-pub unsafe trait Jar<'db>: Sized {
-    type DynDb: ?Sized + HasJar<Self> + Database + 'db;
+pub unsafe trait Jar: Sized {
+    type DynDb: ?Sized + HasJar<Self> + Database;
 
     /// Initializes the jar at `place`
     ///

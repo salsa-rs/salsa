@@ -193,15 +193,12 @@ fn per_jar_impls(args: &Args, input: &syn::ItemStruct, storage: &syn::Ident) -> 
             vec![
                 parse_quote! {
                     impl salsa::storage::DbWithJar<#jar_path> for #db {
-                        fn as_jar_db<'db>(&'db self) -> &'db <#jar_path as salsa::jar::Jar<'db>>::DynDb
-                        where
-                            'db: 'db,
+                        fn as_jar_db<'db>(&'db self) -> &'db <#jar_path as salsa::jar::Jar>::DynDb
                         {
-                            self as &'db <#jar_path as salsa::jar::Jar<'db>>::DynDb
+                            self as &'db <#jar_path as salsa::jar::Jar>::DynDb
                         }
                     }
                 },
-
                 parse_quote! {
                     impl salsa::storage::HasJar<#jar_path> for #db {
                         fn jar(&self) -> (&#jar_path, &salsa::Runtime) {
@@ -215,7 +212,6 @@ fn per_jar_impls(args: &Args, input: &syn::ItemStruct, storage: &syn::Ident) -> 
                         }
                     }
                 },
-
                 parse_quote! {
                     impl salsa::storage::JarFromJars<#jar_path> for #db {
                         fn jar_from_jars<'db>(jars: &Self::Jars) -> &#jar_path {
@@ -226,7 +222,7 @@ fn per_jar_impls(args: &Args, input: &syn::ItemStruct, storage: &syn::Ident) -> 
                             &mut jars.#jar_index
                         }
                     }
-                }
+                },
             ]
         })
         .collect()
