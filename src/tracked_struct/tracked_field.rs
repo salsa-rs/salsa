@@ -2,7 +2,8 @@ use crate::{
     id::AsId,
     ingredient::{Ingredient, IngredientRequiresReset},
     key::DependencyIndex,
-    Database, Id, IngredientIndex, Runtime,
+    storage::IngredientIndex,
+    Database, Id, Runtime,
 };
 
 use super::{struct_map::StructMapView, Configuration};
@@ -20,16 +21,27 @@ where
     C: Configuration,
 {
     /// Index of this ingredient in the database (used to construct database-ids, etc).
-    pub(super) ingredient_index: IngredientIndex,
-    pub(super) field_index: u32,
-    pub(super) struct_map: StructMapView<C>,
-    pub(super) field_debug_name: &'static str,
+    ingredient_index: IngredientIndex,
+    field_index: u32,
+    struct_map: StructMapView<C>,
 }
 
 impl<C> TrackedFieldIngredient<C>
 where
     C: Configuration,
 {
+    pub(super) fn new(
+        struct_index: IngredientIndex,
+        field_index: u32,
+        struct_map: &StructMapView<C>,
+    ) -> Self {
+        Self {
+            ingredient_index: struct_index + field_index,
+            field_index,
+            struct_map: struct_map.clone(),
+        }
+    }
+
     unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Fields<'static>) -> &'db C::Fields<'db> {
         unsafe { std::mem::transmute(fields) }
     }
@@ -56,11 +68,12 @@ where
     }
 }
 
-impl<DB: ?Sized, C> Ingredient<DB> for TrackedFieldIngredient<C>
+impl<C> Ingredient for TrackedFieldIngredient<C>
 where
-    DB: Database,
     C: Configuration,
 {
+    type DbView = dyn Database;
+
     fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
     }
@@ -71,7 +84,7 @@ where
 
     fn maybe_changed_after<'db>(
         &'db self,
-        db: &'db DB,
+        db: &'db Self::DbView,
         input: crate::key::DependencyIndex,
         revision: crate::Revision,
     ) -> bool {
@@ -89,7 +102,7 @@ where
 
     fn mark_validated_output(
         &self,
-        _db: &DB,
+        _db: &Self::DbView,
         _executor: crate::DatabaseKeyIndex,
         _output_key: Option<crate::Id>,
     ) {
@@ -98,14 +111,14 @@ where
 
     fn remove_stale_output(
         &self,
-        _db: &DB,
+        _db: &Self::DbView,
         _executor: crate::DatabaseKeyIndex,
         _stale_output_key: Option<crate::Id>,
     ) {
         panic!("tracked field ingredients have no outputs")
     }
 
-    fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
+    fn salsa_struct_deleted(&self, _db: &Self::DbView, _id: crate::Id) {
         panic!("tracked field ingredients are not registered as dependent")
     }
 
@@ -122,9 +135,17 @@ where
             fmt,
             "{}.{}({:?})",
             C::DEBUG_NAME,
-            self.field_debug_name,
+            C::FIELD_DEBUG_NAMES[self.field_index as usize],
             index.unwrap()
         )
+    }
+
+    fn upcast_to_raw(&self) -> &dyn crate::ingredient::RawIngredient {
+        self
+    }
+
+    fn upcast_to_raw_mut(&mut self) -> &mut dyn crate::ingredient::RawIngredient {
+        self
     }
 }
 

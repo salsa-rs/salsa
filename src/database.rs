@@ -1,4 +1,10 @@
-use crate::{storage::HasJarsDyn, DebugWithDb, Durability, Event};
+use std::any::Any;
+
+use crate::{
+    ingredient::Ingredient,
+    storage::{HasJarsDyn, StorageForView},
+    DebugWithDb, Durability, Event,
+};
 
 pub trait Database: HasJarsDyn + AsSalsaDatabase {
     /// This function is invoked at key points in the salsa
@@ -30,6 +36,12 @@ pub trait Database: HasJarsDyn + AsSalsaDatabase {
     fn report_untracked_read(&self) {
         self.runtime().report_untracked_read();
     }
+}
+
+pub trait DatabaseView<Dyn: ?Sized + Any>: Database {
+    fn as_dyn(&self) -> &Dyn;
+    fn as_dyn_mut(&mut self) -> &mut Dyn;
+    fn storage_for_view(&self) -> &dyn StorageForView<Dyn>;
 }
 
 /// Indicates a database that also supports parallel query

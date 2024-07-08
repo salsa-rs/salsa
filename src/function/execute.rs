@@ -7,7 +7,7 @@ use crate::{
     Cycle, Database, Event, EventKind,
 };
 
-use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
+use super::{memo::Memo, Configuration, FunctionIngredient};
 
 impl<C> FunctionIngredient<C>
 where
@@ -24,7 +24,7 @@ where
     /// * `opt_old_memo`, the older memo, if any existed. Used for backdated.
     pub(super) fn execute<'db>(
         &'db self,
-        db: &'db DynDb<C>,
+        db: &'db C::DbView,
         active_query: ActiveQueryGuard<'_>,
         opt_old_memo: Option<Arc<Memo<C::Value<'_>>>>,
     ) -> StampedValue<&C::Value<'db>> {

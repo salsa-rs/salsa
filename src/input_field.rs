@@ -5,7 +5,8 @@ use crate::key::DependencyIndex;
 use crate::plumbing::transmute_lifetime;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::StampedValue;
-use crate::{DatabaseKeyIndex, Durability, Id, IngredientIndex, Revision, Runtime};
+use crate::storage::IngredientIndex;
+use crate::{Database, DatabaseKeyIndex, Durability, Id, Revision, Runtime};
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use std::fmt;
@@ -107,11 +108,13 @@ where
     }
 }
 
-impl<DB: ?Sized, K, F> Ingredient<DB> for InputFieldIngredient<K, F>
+impl<K, F> Ingredient for InputFieldIngredient<K, F>
 where
     K: FromId + 'static,
     F: 'static,
 {
+    type DbView = dyn Database;
+
     fn ingredient_index(&self) -> IngredientIndex {
         self.index
     }
@@ -120,7 +123,12 @@ where
         CycleRecoveryStrategy::Panic
     }
 
-    fn maybe_changed_after(&self, _db: &DB, input: DependencyIndex, revision: Revision) -> bool {
+    fn maybe_changed_after(
+        &self,
+        _db: &Self::DbView,
+        input: DependencyIndex,
+        revision: Revision,
+    ) -> bool {
         let key = K::from_id(input.key_index.unwrap());
         self.map.get(&key).unwrap().changed_at > revision
     }
@@ -131,7 +139,7 @@ where
 
     fn mark_validated_output(
         &self,
-        _db: &DB,
+        _db: &Self::DbView,
         _executor: DatabaseKeyIndex,
         _output_key: Option<Id>,
     ) {
@@ -139,13 +147,13 @@ where
 
     fn remove_stale_output(
         &self,
-        _db: &DB,
+        _db: &Self::DbView,
         _executor: DatabaseKeyIndex,
         _stale_output_key: Option<Id>,
     ) {
     }
 
-    fn salsa_struct_deleted(&self, _db: &DB, _id: Id) {
+    fn salsa_struct_deleted(&self, _db: &Self::DbView, _id: Id) {
         panic!("unexpected call: input fields are never deleted");
     }
 
@@ -155,6 +163,14 @@ where
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(self.debug_name, index, fmt)
+    }
+
+    fn upcast_to_raw(&self) -> &dyn crate::ingredient::RawIngredient {
+        self
+    }
+
+    fn upcast_to_raw_mut(&mut self) -> &mut dyn crate::ingredient::RawIngredient {
+        self
     }
 }
 

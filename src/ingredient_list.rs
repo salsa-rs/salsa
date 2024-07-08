@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arc_swap::{ArcSwapOption, AsRaw};
 
-use crate::IngredientIndex;
+use crate::storage::IngredientIndex;
 
 /// A list of ingredients that can be added to in parallel.
 pub(crate) struct IngredientList {

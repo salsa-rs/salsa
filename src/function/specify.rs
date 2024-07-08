@@ -8,7 +8,7 @@ use crate::{
     DatabaseKeyIndex, DebugWithDb, Id,
 };
 
-use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
+use super::{memo::Memo, Configuration, FunctionIngredient};
 
 impl<C> FunctionIngredient<C>
 where
@@ -19,12 +19,12 @@ where
     /// It only works if the key is a tracked struct created in the current query.
     fn specify<'db>(
         &'db self,
-        db: &'db DynDb<C>,
+        db: &'db C::DbView,
         key: Id,
         value: C::Value<'db>,
         origin: impl Fn(DatabaseKeyIndex) -> QueryOrigin,
     ) where
-        C::Input<'db>: TrackedStructInDb<DynDb<C>>,
+        C::Input<'db>: TrackedStructInDb<C::DbView>,
     {
         let runtime = db.runtime();
 
@@ -94,9 +94,9 @@ where
 
     /// Specify the value for `key` *and* record that we did so.
     /// Used for explicit calls to `specify`, but not needed for pre-declared tracked struct fields.
-    pub fn specify_and_record<'db>(&'db self, db: &'db DynDb<C>, key: Id, value: C::Value<'db>)
+    pub fn specify_and_record<'db>(&'db self, db: &'db C::DbView, key: Id, value: C::Value<'db>)
     where
-        C::Input<'db>: TrackedStructInDb<DynDb<C>>,
+        C::Input<'db>: TrackedStructInDb<C::DbView>,
     {
         self.specify(db, key, value, |database_key_index| {
             QueryOrigin::Assigned(database_key_index)
@@ -113,7 +113,7 @@ where
     /// it would have specified `key` again.
     pub(super) fn validate_specified_value(
         &self,
-        db: &DynDb<C>,
+        db: &C::DbView,
         executor: DatabaseKeyIndex,
         key: Id,
     ) {

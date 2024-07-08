@@ -12,7 +12,7 @@ use crate::{
     Id, Revision, Runtime,
 };
 
-use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
+use super::{memo::Memo, Configuration, FunctionIngredient};
 
 impl<C> FunctionIngredient<C>
 where
@@ -20,7 +20,7 @@ where
 {
     pub(super) fn maybe_changed_after<'db>(
         &'db self,
-        db: &'db DynDb<C>,
+        db: &'db C::DbView,
         key: Id,
         revision: Revision,
     ) -> bool {
@@ -57,7 +57,7 @@ where
 
     fn maybe_changed_after_cold<'db>(
         &'db self,
-        db: &'db DynDb<C>,
+        db: &'db C::DbView,
         key_index: Id,
         revision: Revision,
     ) -> Option<bool> {
@@ -106,7 +106,7 @@ where
     #[inline]
     pub(super) fn shallow_verify_memo(
         &self,
-        db: &DynDb<C>,
+        db: &C::DbView,
         runtime: &Runtime,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Value<'_>>,
@@ -146,7 +146,7 @@ where
     /// query is on the stack.
     pub(super) fn deep_verify_memo(
         &self,
-        db: &DynDb<C>,
+        db: &C::DbView,
         old_memo: &Memo<C::Value<'_>>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> bool {

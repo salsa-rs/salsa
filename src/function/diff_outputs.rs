@@ -3,7 +3,7 @@ use crate::{
     storage::HasJarsDyn, Database, DatabaseKeyIndex, Event, EventKind,
 };
 
-use super::{memo::Memo, Configuration, DynDb, FunctionIngredient};
+use super::{memo::Memo, Configuration, FunctionIngredient};
 
 impl<C> FunctionIngredient<C>
 where
@@ -13,7 +13,7 @@ where
     /// for each output that was generated before but is not generated now.
     pub(super) fn diff_outputs(
         &self,
-        db: &DynDb<C>,
+        db: &C::DbView,
         key: DatabaseKeyIndex,
         old_memo: &Memo<C::Value<'_>>,
         revisions: &QueryRevisions,
@@ -37,7 +37,7 @@ where
         }
     }
 
-    fn report_stale_output(db: &DynDb<C>, key: DatabaseKeyIndex, output: DependencyIndex) {
+    fn report_stale_output(db: &C::DbView, key: DatabaseKeyIndex, output: DependencyIndex) {
         let runtime_id = db.runtime().id();
         db.salsa_event(Event {
             runtime_id,

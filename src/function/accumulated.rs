@@ -1,11 +1,9 @@
 use crate::{
-    hash::FxHashSet,
-    runtime::local_state::QueryOrigin,
-    storage::{HasJar, HasJarsDyn},
-    DatabaseKeyIndex, Id,
+    accumulator::AccumulatorIngredient, hash::FxHashSet, runtime::local_state::QueryOrigin,
+    storage::HasJarsDyn, DatabaseKeyIndex, Id,
 };
 
-use super::{Configuration, DynDb, FunctionIngredient};
+use super::{Configuration, FunctionIngredient};
 use crate::accumulator::Accumulator;
 
 impl<C> FunctionIngredient<C>
@@ -14,20 +12,22 @@ where
 {
     /// Returns all the values accumulated into `accumulator` by this query and its
     /// transitive inputs.
-    pub fn accumulated<'db, A>(&'db self, db: &'db DynDb<C>, key: Id) -> Vec<A::Data>
+    pub fn accumulated<'db, A>(&'db self, db: &'db C::DbView, key: Id) -> Vec<A::Data>
     where
-        DynDb<C>: HasJar<A::Jar>,
         A: Accumulator,
     {
         // To start, ensure that the value is up to date:
         self.fetch(db, key);
+
+        let Some(accumulator_ingredient) = <AccumulatorIngredient<A>>::from_db(db) else {
+            return vec![];
+        };
 
         // Now walk over all the things that the value depended on
         // and find the values they accumulated into the given
         // accumulator:
         let runtime = db.runtime();
         let mut result = vec![];
-        let accumulator_ingredient = A::accumulator_ingredient(db);
         let mut stack = Stack::new(self.database_key_index(key));
         while let Some(input) = stack.pop() {
             accumulator_ingredient.produced_by(runtime, input, &mut result);

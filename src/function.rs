@@ -5,16 +5,16 @@ use crossbeam::atomic::AtomicCell;
 use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, IngredientRequiresReset},
-    jar::Jar,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
-    Cycle, DbWithJar, Event, EventKind, Id, Revision,
+    storage::{HasJarsDyn, IngredientIndex},
+    Cycle, Database, Event, EventKind, Id, Revision,
 };
 
 use self::delete::DeletedEntries;
 
-use super::{ingredient::Ingredient, routes::IngredientIndex};
+use super::ingredient::Ingredient;
 
 mod accumulated;
 mod backdate;
@@ -29,6 +29,47 @@ mod memo;
 mod specify;
 mod store;
 mod sync;
+pub trait Configuration: 'static {
+    const DEBUG_NAME: &'static str;
+
+    /// The database that this function is associated with.
+    type DbView: ?Sized + crate::Database;
+
+    /// The "salsa struct type" that this function is associated with.
+    /// This can be just `salsa::Id` for functions that intern their arguments
+    /// and are not clearly associated with any one salsa struct.
+    type SalsaStruct<'db>: SalsaStructInDb<Self::DbView>;
+
+    /// The input to the function
+    type Input<'db>;
+
+    /// The value computed by the function.
+    type Value<'db>: fmt::Debug;
+
+    /// Determines whether this function can recover from being a participant in a cycle
+    /// (and, if so, how).
+    const CYCLE_STRATEGY: CycleRecoveryStrategy;
+
+    /// Invokes after a new result `new_value`` has been computed for which an older memoized
+    /// value existed `old_value`. Returns true if the new value is equal to the older one
+    /// and hence should be "backdated" (i.e., marked as having last changed in an older revision,
+    /// even though it was recomputed).
+    ///
+    /// This invokes user's code in form of the `Eq` impl.
+    fn should_backdate_value(old_value: &Self::Value<'_>, new_value: &Self::Value<'_>) -> bool;
+
+    /// Invoked when we need to compute the value for the given key, either because we've never
+    /// computed it before or because the old one relied on inputs that have changed.
+    ///
+    /// This invokes the function the user wrote.
+    fn execute<'db>(db: &'db Self::DbView, key: Id) -> Self::Value<'db>;
+
+    /// If the cycle strategy is `Recover`, then invoked when `key` is a participant
+    /// in a cycle to find out what value it should have.
+    ///
+    /// This invokes the recovery function given by the user.
+    fn recover_from_cycle<'db>(db: &'db Self::DbView, cycle: &Cycle, key: Id) -> Self::Value<'db>;
+}
 
 /// Function ingredients are the "workhorse" of salsa.
 /// They are used for tracked functions, for the "value" fields of tracked structs, and for the fields of input structs.
@@ -74,55 +115,12 @@ pub struct FunctionIngredient<C: Configuration> {
     registered: AtomicCell<bool>,
 }
 
-pub trait Configuration: 'static {
-    const DEBUG_NAME: &'static str;
-
-    type Jar: Jar;
-
-    /// The "salsa struct type" that this function is associated with.
-    /// This can be just `salsa::Id` for functions that intern their arguments
-    /// and are not clearly associated with any one salsa struct.
-    type SalsaStruct<'db>: SalsaStructInDb<DynDb<Self>>;
-
-    /// The input to the function
-    type Input<'db>;
-
-    /// The value computed by the function.
-    type Value<'db>: fmt::Debug;
-
-    /// Determines whether this function can recover from being a participant in a cycle
-    /// (and, if so, how).
-    const CYCLE_STRATEGY: CycleRecoveryStrategy;
-
-    /// Invokes after a new result `new_value`` has been computed for which an older memoized
-    /// value existed `old_value`. Returns true if the new value is equal to the older one
-    /// and hence should be "backdated" (i.e., marked as having last changed in an older revision,
-    /// even though it was recomputed).
-    ///
-    /// This invokes user's code in form of the `Eq` impl.
-    fn should_backdate_value(old_value: &Self::Value<'_>, new_value: &Self::Value<'_>) -> bool;
-
-    /// Invoked when we need to compute the value for the given key, either because we've never
-    /// computed it before or because the old one relied on inputs that have changed.
-    ///
-    /// This invokes the function the user wrote.
-    fn execute<'db>(db: &'db DynDb<Self>, key: Id) -> Self::Value<'db>;
-
-    /// If the cycle strategy is `Recover`, then invoked when `key` is a participant
-    /// in a cycle to find out what value it should have.
-    ///
-    /// This invokes the recovery function given by the user.
-    fn recover_from_cycle<'db>(db: &'db DynDb<Self>, cycle: &Cycle, key: Id) -> Self::Value<'db>;
-}
-
 /// True if `old_value == new_value`. Invoked by the generated
 /// code for `should_backdate_value` so as to give a better
 /// error message.
 pub fn should_backdate_value<V: Eq>(old_value: &V, new_value: &V) -> bool {
     old_value == new_value
 }
-
-pub type DynDb<C> = <<C as Configuration>::Jar as Jar>::DynDb;
 
 /// This type is used to make configuration types for the functions in entities;
 /// e.g. you can do `Config<X, 0>` and `Config<X, 1>`.
@@ -171,7 +169,7 @@ where
 
     fn insert_memo<'db>(
         &'db self,
-        db: &'db DynDb<C>,
+        db: &'db C::DbView,
         key: Id,
         memo: memo::Memo<C::Value<'db>>,
     ) -> Option<&C::Value<'db>> {
@@ -193,25 +191,30 @@ where
     /// Register this function as a dependent fn of the given salsa struct.
     /// When instances of that salsa struct are deleted, we'll get a callback
     /// so we can remove any data keyed by them.
-    fn register<'db>(&self, db: &'db DynDb<C>) {
+    fn register<'db>(&self, db: &'db C::DbView) {
         if !self.registered.fetch_or(true) {
             <C::SalsaStruct<'db> as SalsaStructInDb<_>>::register_dependent_fn(db, self.index)
         }
     }
 }
 
-impl<DB, C> Ingredient<DB> for FunctionIngredient<C>
+impl<C> Ingredient for FunctionIngredient<C>
 where
-    DB: ?Sized + DbWithJar<C::Jar>,
     C: Configuration,
 {
+    type DbView = C::DbView;
+
     fn ingredient_index(&self) -> IngredientIndex {
         self.index
     }
 
-    fn maybe_changed_after(&self, db: &DB, input: DependencyIndex, revision: Revision) -> bool {
+    fn maybe_changed_after(
+        &self,
+        db: &C::DbView,
+        input: DependencyIndex,
+        revision: Revision,
+    ) -> bool {
         let key = input.key_index.unwrap();
-        let db = db.as_jar_db();
         self.maybe_changed_after(db, key, revision)
     }
 
@@ -225,17 +228,17 @@ where
 
     fn mark_validated_output(
         &self,
-        db: &DB,
+        db: &C::DbView,
         executor: DatabaseKeyIndex,
         output_key: Option<crate::Id>,
     ) {
         let output_key = output_key.unwrap();
-        self.validate_specified_value(db.as_jar_db(), executor, output_key);
+        self.validate_specified_value(db, executor, output_key);
     }
 
     fn remove_stale_output(
         &self,
-        _db: &DB,
+        _db: &C::DbView,
         _executor: DatabaseKeyIndex,
         _stale_output_key: Option<crate::Id>,
     ) {
@@ -248,7 +251,7 @@ where
         std::mem::take(&mut self.deleted_entries);
     }
 
-    fn salsa_struct_deleted(&self, db: &DB, id: Id) {
+    fn salsa_struct_deleted(&self, db: &C::DbView, id: Id) {
         // Remove any data keyed by `id`, since `id` no longer
         // exists in this revision.
 
@@ -269,6 +272,14 @@ where
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
+    }
+
+    fn upcast_to_raw(&self) -> &dyn crate::ingredient::RawIngredient {
+        self
+    }
+
+    fn upcast_to_raw_mut(&mut self) -> &mut dyn crate::ingredient::RawIngredient {
+        self
     }
 }
 

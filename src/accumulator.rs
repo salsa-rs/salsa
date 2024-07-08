@@ -1,29 +1,49 @@
 //! Basic test of accumulator functionality.
 
-use std::fmt;
+use std::{any::Any, fmt, marker::PhantomData};
 
 use crate::{
     cycle::CycleRecoveryStrategy,
     hash::FxDashMap,
-    ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
+    ingredient::{fmt_index, Ingredient, IngredientRequiresReset, Jar},
     key::DependencyIndex,
     runtime::local_state::QueryOrigin,
-    storage::HasJar,
-    DatabaseKeyIndex, Event, EventKind, IngredientIndex, Revision, Runtime,
+    storage::IngredientIndex,
+    Database, DatabaseKeyIndex, Event, EventKind, Revision, Runtime,
 };
 
-pub trait Accumulator {
-    type Data: Clone;
-    type Jar;
+pub trait Accumulator: Jar {
+    const DEBUG_NAME: &'static str;
 
-    fn accumulator_ingredient<Db>(db: &Db) -> &AccumulatorIngredient<Self::Data>
-    where
-        Db: ?Sized + HasJar<Self::Jar>;
+    type Data: Clone;
 }
-pub struct AccumulatorIngredient<Data: Clone> {
+
+pub struct AccumulatorJar<A: Accumulator> {
+    phantom: PhantomData<A>,
+}
+
+impl<A: Accumulator> Default for AccumulatorJar<A> {
+    fn default() -> Self {
+        Self {
+            phantom: Default::default(),
+        }
+    }
+}
+
+impl<A: Accumulator> Jar for AccumulatorJar<A> {
+    type DbView = dyn crate::Database;
+
+    fn create_ingredients(
+        &self,
+        first_index: IngredientIndex,
+    ) -> Vec<Box<dyn Ingredient<DbView = Self::DbView>>> {
+        vec![Box::new(<AccumulatorIngredient<A>>::new(first_index))]
+    }
+}
+
+pub struct AccumulatorIngredient<A: Accumulator> {
     index: IngredientIndex,
-    map: FxDashMap<DatabaseKeyIndex, AccumulatedValues<Data>>,
-    debug_name: &'static str,
+    map: FxDashMap<DatabaseKeyIndex, AccumulatedValues<A::Data>>,
 }
 
 struct AccumulatedValues<Data> {
@@ -31,12 +51,22 @@ struct AccumulatedValues<Data> {
     values: Vec<Data>,
 }
 
-impl<Data: Clone> AccumulatorIngredient<Data> {
-    pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
+impl<A: Accumulator> AccumulatorIngredient<A> {
+    /// Find the accumulator ingrediate for `A` in the database, if any.
+    pub fn from_db<Db>(db: &Db) -> Option<&Self>
+    where
+        Db: ?Sized + Database,
+    {
+        let jar: AccumulatorJar<A> = Default::default();
+        let index = db.jar_index_by_type_id(jar.type_id())?;
+        let ingredient = db.ingredient(index).assert_type::<Self>();
+        Some(ingredient)
+    }
+
+    pub fn new(index: IngredientIndex) -> Self {
         Self {
             map: FxDashMap::default(),
             index,
-            debug_name,
         }
     }
 
@@ -47,7 +77,7 @@ impl<Data: Clone> AccumulatorIngredient<Data> {
         }
     }
 
-    pub fn push(&self, runtime: &Runtime, value: Data) {
+    pub fn push(&self, runtime: &Runtime, value: A::Data) {
         let current_revision = runtime.current_revision();
         let (active_query, _) = match runtime.active_query() {
             Some(pair) => pair,
@@ -77,7 +107,7 @@ impl<Data: Clone> AccumulatorIngredient<Data> {
         &self,
         runtime: &Runtime,
         query: DatabaseKeyIndex,
-        output: &mut Vec<Data>,
+        output: &mut Vec<A::Data>,
     ) {
         let current_revision = runtime.current_revision();
         if let Some(v) = self.map.get(&query) {
@@ -98,16 +128,19 @@ impl<Data: Clone> AccumulatorIngredient<Data> {
     }
 }
 
-impl<DB: ?Sized, Data> Ingredient<DB> for AccumulatorIngredient<Data>
-where
-    DB: crate::Database,
-    Data: Clone + 'static,
-{
+impl<A: Accumulator> Ingredient for AccumulatorIngredient<A> {
+    type DbView = dyn crate::Database;
+
     fn ingredient_index(&self) -> IngredientIndex {
         self.index
     }
 
-    fn maybe_changed_after(&self, _db: &DB, _input: DependencyIndex, _revision: Revision) -> bool {
+    fn maybe_changed_after(
+        &self,
+        _db: &Self::DbView,
+        _input: DependencyIndex,
+        _revision: Revision,
+    ) -> bool {
         panic!("nothing should ever depend on an accumulator directly")
     }
 
@@ -121,7 +154,7 @@ where
 
     fn mark_validated_output(
         &self,
-        db: &DB,
+        db: &Self::DbView,
         executor: DatabaseKeyIndex,
         output_key: Option<crate::Id>,
     ) {
@@ -135,7 +168,7 @@ where
 
     fn remove_stale_output(
         &self,
-        db: &DB,
+        db: &Self::DbView,
         executor: DatabaseKeyIndex,
         stale_output_key: Option<crate::Id>,
     ) {
@@ -155,18 +188,23 @@ where
         panic!("unexpected reset on accumulator")
     }
 
-    fn salsa_struct_deleted(&self, _db: &DB, _id: crate::Id) {
+    fn salsa_struct_deleted(&self, _db: &Self::DbView, _id: crate::Id) {
         panic!("unexpected call: accumulator is not registered as a dependent fn");
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_index(self.debug_name, index, fmt)
+        fmt_index(A::DEBUG_NAME, index, fmt)
+    }
+
+    fn upcast_to_raw(&self) -> &dyn crate::ingredient::RawIngredient {
+        self
+    }
+
+    fn upcast_to_raw_mut(&mut self) -> &mut dyn crate::ingredient::RawIngredient {
+        self
     }
 }
 
-impl<Data> IngredientRequiresReset for AccumulatorIngredient<Data>
-where
-    Data: Clone,
-{
+impl<A: Accumulator> IngredientRequiresReset for AccumulatorIngredient<A> {
     const RESET_ON_NEW_REVISION: bool = false;
 }

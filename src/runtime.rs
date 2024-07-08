@@ -9,6 +9,7 @@ use crate::{
     durability::Durability,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::active_query::ActiveQuery,
+    storage::IngredientIndex,
     Cancelled, Cycle, Database, Event, EventKind, Revision,
 };
 
@@ -17,7 +18,7 @@ use self::{
     local_state::{ActiveQueryGuard, EdgeKind},
 };
 
-use super::{tracked_struct::Disambiguator, IngredientIndex};
+use super::tracked_struct::Disambiguator;
 
 mod active_query;
 mod dependency_graph;

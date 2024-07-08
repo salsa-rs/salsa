@@ -1,4 +1,4 @@
-use crate::{Database, IngredientIndex};
+use crate::{storage::IngredientIndex, Database};
 
 pub trait SalsaStructInDb<DB: ?Sized + Database> {
     fn register_dependent_fn(db: &DB, index: IngredientIndex);

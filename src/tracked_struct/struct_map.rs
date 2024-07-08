@@ -35,6 +35,14 @@ where
     map: Arc<FxDashMap<Id, Alloc<ValueStruct<C>>>>,
 }
 
+impl<C: Configuration> Clone for StructMapView<C> {
+    fn clone(&self) -> Self {
+        Self {
+            map: self.map.clone(),
+        }
+    }
+}
+
 /// Return value for [`StructMap`][]'s `update` method.
 pub(crate) enum Update<'db, C>
 where

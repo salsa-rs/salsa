@@ -2,13 +2,13 @@ use arc_swap::Guard;
 
 use crate::{database::AsSalsaDatabase, runtime::StampedValue, storage::HasJarsDyn, Id};
 
-use super::{Configuration, DynDb, FunctionIngredient};
+use super::{Configuration, FunctionIngredient};
 
 impl<C> FunctionIngredient<C>
 where
     C: Configuration,
 {
-    pub fn fetch<'db>(&'db self, db: &'db DynDb<C>, key: Id) -> &C::Value<'db> {
+    pub fn fetch<'db>(&'db self, db: &'db C::DbView, key: Id) -> &C::Value<'db> {
         let runtime = db.runtime();
 
         runtime.unwind_if_revision_cancelled(db);
@@ -35,7 +35,7 @@ where
     #[inline]
     fn compute_value<'db>(
         &'db self,
-        db: &'db DynDb<C>,
+        db: &'db C::DbView,
         key: Id,
     ) -> StampedValue<&'db C::Value<'db>> {
         loop {
@@ -48,7 +48,7 @@ where
     #[inline]
     fn fetch_hot<'db>(
         &'db self,
-        db: &'db DynDb<C>,
+        db: &'db C::DbView,
         key: Id,
     ) -> Option<StampedValue<&'db C::Value<'db>>> {
         let memo_guard = self.memo_map.get(key);
@@ -69,7 +69,7 @@ where
 
     fn fetch_cold<'db>(
         &'db self,
-        db: &'db DynDb<C>,
+        db: &'db C::DbView,
         key: Id,
     ) -> Option<StampedValue<&'db C::Value<'db>>> {
         let runtime = db.runtime();
