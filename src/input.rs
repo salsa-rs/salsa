@@ -70,16 +70,14 @@ impl<Id> Ingredient for InputIngredient<Id>
 where
     Id: InputId,
 {
-    type DbView = dyn Database;
-
     fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
     }
 
     fn maybe_changed_after(
         &self,
-        _db: &Self::DbView,
-        _input: DependencyIndex,
+        _db: &dyn Database,
+        _input: Option<crate::Id>,
         _revision: Revision,
     ) -> bool {
         // Input ingredients are just a counter, they store no data, they are immortal.
@@ -97,7 +95,7 @@ where
 
     fn mark_validated_output(
         &self,
-        _db: &Self::DbView,
+        _db: &dyn Database,
         executor: DatabaseKeyIndex,
         output_key: Option<crate::Id>,
     ) {
@@ -109,7 +107,7 @@ where
 
     fn remove_stale_output(
         &self,
-        _db: &Self::DbView,
+        _db: &dyn Database,
         executor: DatabaseKeyIndex,
         stale_output_key: Option<crate::Id>,
     ) {
@@ -123,7 +121,7 @@ where
         panic!("unexpected call to `reset_for_new_revision`")
     }
 
-    fn salsa_struct_deleted(&self, _db: &Self::DbView, _id: crate::Id) {
+    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: crate::Id) {
         panic!(
             "unexpected call: input ingredients do not register for salsa struct deletion events"
         );
@@ -132,14 +130,6 @@ where
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(self.debug_name, index, fmt)
     }
-
-    fn upcast_to_raw(&self) -> &dyn crate::ingredient::RawIngredient {
-        self
-    }
-
-    fn upcast_to_raw_mut(&mut self) -> &mut dyn crate::ingredient::RawIngredient {
-        self
-    }
 }
 
 impl<Id> IngredientRequiresReset for InputIngredient<Id>
@@ -147,4 +137,15 @@ where
     Id: InputId,
 {
     const RESET_ON_NEW_REVISION: bool = false;
+}
+
+impl<Id> std::fmt::Debug for InputIngredient<Id>
+where
+    Id: InputId,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(std::any::type_name::<Self>())
+            .field("index", &self.ingredient_index)
+            .finish()
+    }
 }

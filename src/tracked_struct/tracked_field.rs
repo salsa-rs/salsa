@@ -72,8 +72,6 @@ impl<C> Ingredient for TrackedFieldIngredient<C>
 where
     C: Configuration,
 {
-    type DbView = dyn Database;
-
     fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
     }
@@ -84,12 +82,12 @@ where
 
     fn maybe_changed_after<'db>(
         &'db self,
-        db: &'db Self::DbView,
-        input: crate::key::DependencyIndex,
+        db: &'db dyn Database,
+        input: Option<Id>,
         revision: crate::Revision,
     ) -> bool {
         let runtime = db.runtime();
-        let id = input.key_index.unwrap();
+        let id = input.unwrap();
         let data = self.struct_map.get(runtime, id);
         let data = C::deref_struct(data);
         let field_changed_at = C::revision(&data.revisions, self.field_index);
@@ -102,7 +100,7 @@ where
 
     fn mark_validated_output(
         &self,
-        _db: &Self::DbView,
+        _db: &dyn Database,
         _executor: crate::DatabaseKeyIndex,
         _output_key: Option<crate::Id>,
     ) {
@@ -111,14 +109,14 @@ where
 
     fn remove_stale_output(
         &self,
-        _db: &Self::DbView,
+        _db: &dyn Database,
         _executor: crate::DatabaseKeyIndex,
         _stale_output_key: Option<crate::Id>,
     ) {
         panic!("tracked field ingredients have no outputs")
     }
 
-    fn salsa_struct_deleted(&self, _db: &Self::DbView, _id: crate::Id) {
+    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: crate::Id) {
         panic!("tracked field ingredients are not registered as dependent")
     }
 
@@ -139,13 +137,17 @@ where
             index.unwrap()
         )
     }
+}
 
-    fn upcast_to_raw(&self) -> &dyn crate::ingredient::RawIngredient {
-        self
-    }
-
-    fn upcast_to_raw_mut(&mut self) -> &mut dyn crate::ingredient::RawIngredient {
-        self
+impl<C> std::fmt::Debug for TrackedFieldIngredient<C>
+where
+    C: Configuration,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(std::any::type_name::<Self>())
+            .field("ingredient_index", &self.ingredient_index)
+            .field("field_index", &self.field_index)
+            .finish()
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::{
     accumulator::AccumulatorIngredient, hash::FxHashSet, runtime::local_state::QueryOrigin,
-    storage::HasJarsDyn, DatabaseKeyIndex, Id,
+    storage::DatabaseGen, DatabaseKeyIndex, Id,
 };
 
 use super::{Configuration, FunctionIngredient};
@@ -31,7 +31,7 @@ where
         let mut stack = Stack::new(self.database_key_index(key));
         while let Some(input) = stack.pop() {
             accumulator_ingredient.produced_by(runtime, input, &mut result);
-            stack.extend(db.origin(input));
+            stack.extend(input.origin(db.as_salsa_database()));
         }
         result
     }

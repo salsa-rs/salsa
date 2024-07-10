@@ -1,11 +1,9 @@
-use crate::{
-    debug::DebugWithDb, key::DatabaseKeyIndex, key::DependencyIndex, runtime::RuntimeId, Database,
-};
-use std::fmt;
+use crate::{key::DatabaseKeyIndex, key::DependencyIndex, runtime::RuntimeId};
 
 /// The `Event` struct identifies various notable things that can
 /// occur during salsa execution. Instances of this struct are given
 /// to `salsa_event`.
+#[derive(Debug)]
 pub struct Event {
     /// The id of the snapshot that triggered the event.  Usually
     /// 1-to-1 with a thread, as well.
@@ -15,28 +13,8 @@ pub struct Event {
     pub kind: EventKind,
 }
 
-impl fmt::Debug for Event {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.debug_struct("Event")
-            .field("runtime_id", &self.runtime_id)
-            .field("kind", &self.kind)
-            .finish()
-    }
-}
-
-impl<Db> DebugWithDb<Db> for Event
-where
-    Db: ?Sized + Database,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
-        f.debug_struct("Event")
-            .field("runtime_id", &self.runtime_id)
-            .field("kind", &self.kind.debug(db))
-            .finish()
-    }
-}
-
 /// An enum identifying the various kinds of events that can occur.
+#[derive(Debug)]
 pub enum EventKind {
     /// Occurs when we found that all inputs to a memoized value are
     /// up-to-date and hence the value can be re-used without
@@ -100,94 +78,4 @@ pub enum EventKind {
         /// Accumulator that was accumulated into
         accumulator: DependencyIndex,
     },
-}
-
-impl fmt::Debug for EventKind {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EventKind::DidValidateMemoizedValue { database_key } => fmt
-                .debug_struct("DidValidateMemoizedValue")
-                .field("database_key", database_key)
-                .finish(),
-            EventKind::WillBlockOn {
-                other_runtime_id,
-                database_key,
-            } => fmt
-                .debug_struct("WillBlockOn")
-                .field("other_runtime_id", other_runtime_id)
-                .field("database_key", database_key)
-                .finish(),
-            EventKind::WillExecute { database_key } => fmt
-                .debug_struct("WillExecute")
-                .field("database_key", database_key)
-                .finish(),
-            EventKind::WillCheckCancellation => fmt.debug_struct("WillCheckCancellation").finish(),
-            EventKind::WillDiscardStaleOutput {
-                execute_key,
-                output_key,
-            } => fmt
-                .debug_struct("WillDiscardStaleOutput")
-                .field("execute_key", &execute_key)
-                .field("output_key", &output_key)
-                .finish(),
-            EventKind::DidDiscard { key } => {
-                fmt.debug_struct("DidDiscard").field("key", &key).finish()
-            }
-            EventKind::DidDiscardAccumulated {
-                executor_key,
-                accumulator,
-            } => fmt
-                .debug_struct("DidDiscardAccumulated")
-                .field("executor_key", executor_key)
-                .field("accumulator", accumulator)
-                .finish(),
-        }
-    }
-}
-
-impl<Db> DebugWithDb<Db> for EventKind
-where
-    Db: ?Sized + Database,
-{
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
-        match self {
-            EventKind::DidValidateMemoizedValue { database_key } => fmt
-                .debug_struct("DidValidateMemoizedValue")
-                .field("database_key", &database_key.debug(db))
-                .finish(),
-            EventKind::WillBlockOn {
-                other_runtime_id,
-                database_key,
-            } => fmt
-                .debug_struct("WillBlockOn")
-                .field("other_runtime_id", other_runtime_id)
-                .field("database_key", &database_key.debug(db))
-                .finish(),
-            EventKind::WillExecute { database_key } => fmt
-                .debug_struct("WillExecute")
-                .field("database_key", &database_key.debug(db))
-                .finish(),
-            EventKind::WillCheckCancellation => fmt.debug_struct("WillCheckCancellation").finish(),
-            EventKind::WillDiscardStaleOutput {
-                execute_key,
-                output_key,
-            } => fmt
-                .debug_struct("WillDiscardStaleOutput")
-                .field("execute_key", &execute_key.debug(db))
-                .field("output_key", &output_key.debug(db))
-                .finish(),
-            EventKind::DidDiscard { key } => fmt
-                .debug_struct("DidDiscard")
-                .field("key", &key.debug(db))
-                .finish(),
-            EventKind::DidDiscardAccumulated {
-                executor_key,
-                accumulator,
-            } => fmt
-                .debug_struct("DidDiscardAccumulated")
-                .field("executor_key", &executor_key.debug(db))
-                .field("accumulator", &accumulator.debug(db))
-                .finish(),
-        }
-    }
 }

@@ -165,7 +165,7 @@ impl<V> Memo<V> {
         database_key_index: DatabaseKeyIndex,
     ) {
         for output in self.revisions.origin.outputs() {
-            db.mark_validated_output(database_key_index, output);
+            output.mark_validated_output(db, database_key_index);
         }
     }
 }

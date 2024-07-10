@@ -1,11 +1,10 @@
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    database::AsSalsaDatabase,
     runtime::local_state::{QueryOrigin, QueryRevisions},
-    storage::HasJarsDyn,
+    storage::DatabaseGen,
     tracked_struct::TrackedStructInDb,
-    DatabaseKeyIndex, DebugWithDb, Id,
+    Database, DatabaseKeyIndex, Id,
 };
 
 use super::{memo::Memo, Configuration, FunctionIngredient};
@@ -111,9 +110,9 @@ where
     /// and `key` is a value that was specified by `executor`.
     /// Marks `key` as valid in the current revision since if `executor` had re-executed,
     /// it would have specified `key` again.
-    pub(super) fn validate_specified_value(
+    pub(super) fn validate_specified_value<Db: ?Sized + Database>(
         &self,
-        db: &C::DbView,
+        db: &Db,
         executor: DatabaseKeyIndex,
         key: Id,
     ) {
@@ -130,8 +129,7 @@ where
             QueryOrigin::Assigned(by_query) => assert_eq!(by_query, executor),
             _ => panic!(
                 "expected a query assigned by `{:?}`, not `{:?}`",
-                executor.debug(db),
-                memo.revisions.origin,
+                executor, memo.revisions.origin,
             ),
         }
 

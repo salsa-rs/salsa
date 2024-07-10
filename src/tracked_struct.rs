@@ -115,12 +115,10 @@ impl<C: Configuration> Default for TrackedStructJar<C> {
 }
 
 impl<C: Configuration> Jar for TrackedStructJar<C> {
-    type DbView = dyn Database;
-
     fn create_ingredients(
         &self,
         struct_index: crate::storage::IngredientIndex,
-    ) -> Vec<Box<dyn Ingredient<DbView = Self::DbView>>> {
+    ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient = TrackedStructIngredient::new(struct_index);
         let struct_map = &struct_ingredient.struct_map.view();
 
@@ -409,7 +407,8 @@ where
         }
 
         for dependent_fn in self.dependent_fns.iter() {
-            db.salsa_struct_deleted(dependent_fn, id.as_id());
+            db.lookup_ingredient(dependent_fn)
+                .salsa_struct_deleted(db, id);
         }
     }
 
@@ -425,16 +424,14 @@ impl<C> Ingredient for TrackedStructIngredient<C>
 where
     C: Configuration,
 {
-    type DbView = dyn Database;
-
     fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
     }
 
     fn maybe_changed_after(
         &self,
-        _db: &Self::DbView,
-        _input: DependencyIndex,
+        _db: &dyn Database,
+        _input: Option<Id>,
         _revision: Revision,
     ) -> bool {
         false
@@ -450,7 +447,7 @@ where
 
     fn mark_validated_output<'db>(
         &'db self,
-        db: &'db Self::DbView,
+        db: &'db dyn Database,
         _executor: DatabaseKeyIndex,
         output_key: Option<crate::Id>,
     ) {
@@ -461,7 +458,7 @@ where
 
     fn remove_stale_output(
         &self,
-        db: &Self::DbView,
+        db: &dyn Database,
         _executor: DatabaseKeyIndex,
         stale_output_key: Option<crate::Id>,
     ) {
@@ -476,20 +473,23 @@ where
         self.struct_map.drop_deleted_entries();
     }
 
-    fn salsa_struct_deleted(&self, _db: &Self::DbView, _id: crate::Id) {
+    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: crate::Id) {
         panic!("unexpected call: interned ingredients do not register for salsa struct deletion events");
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
+}
 
-    fn upcast_to_raw(&self) -> &dyn crate::ingredient::RawIngredient {
-        self
-    }
-
-    fn upcast_to_raw_mut(&mut self) -> &mut dyn crate::ingredient::RawIngredient {
-        self
+impl<C> std::fmt::Debug for TrackedStructIngredient<C>
+where
+    C: Configuration,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(std::any::type_name::<Self>())
+            .field("ingredient_index", &self.ingredient_index)
+            .finish()
     }
 }
 

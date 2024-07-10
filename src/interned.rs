@@ -184,16 +184,14 @@ impl<C> Ingredient for InternedIngredient<C>
 where
     C: Configuration,
 {
-    type DbView = dyn Database;
-
     fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
     }
 
     fn maybe_changed_after(
         &self,
-        _db: &Self::DbView,
-        _input: DependencyIndex,
+        _db: &dyn Database,
+        _input: Option<Id>,
         revision: Revision,
     ) -> bool {
         revision < self.reset_at
@@ -209,7 +207,7 @@ where
 
     fn mark_validated_output(
         &self,
-        _db: &Self::DbView,
+        _db: &dyn Database,
         executor: DatabaseKeyIndex,
         output_key: Option<crate::Id>,
     ) {
@@ -221,7 +219,7 @@ where
 
     fn remove_stale_output(
         &self,
-        _db: &Self::DbView,
+        _db: &dyn Database,
         executor: DatabaseKeyIndex,
         stale_output_key: Option<crate::Id>,
     ) {
@@ -238,20 +236,12 @@ where
         panic!("unexpected call to `reset_for_new_revision`")
     }
 
-    fn salsa_struct_deleted(&self, _db: &Self::DbView, _id: crate::Id) {
+    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: crate::Id) {
         panic!("unexpected call: interned ingredients do not register for salsa struct deletion events");
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
-    }
-
-    fn upcast_to_raw(&self) -> &dyn crate::ingredient::RawIngredient {
-        self
-    }
-
-    fn upcast_to_raw_mut(&mut self) -> &mut dyn crate::ingredient::RawIngredient {
-        self
     }
 }
 
@@ -260,6 +250,17 @@ where
     C: Configuration,
 {
     const RESET_ON_NEW_REVISION: bool = false;
+}
+
+impl<C> std::fmt::Debug for InternedIngredient<C>
+where
+    C: Configuration,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(std::any::type_name::<Self>())
+            .field("index", &self.ingredient_index)
+            .finish()
+    }
 }
 
 pub struct IdentityInterner<C>

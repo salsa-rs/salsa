@@ -1,12 +1,13 @@
-use std::fmt::Debug;
-
-use crate::{storage::IngredientIndex, Database, DebugWithDb, Id};
+use crate::{
+    cycle::CycleRecoveryStrategy, database, runtime::local_state::QueryOrigin,
+    storage::IngredientIndex, Database, Id,
+};
 
 /// An integer that uniquely identifies a particular query instance within the
 /// database. Used to track dependencies between queries. Fully ordered and
 /// equatable but those orderings are arbitrary, and meant to be used only for
 /// inserting into maps and the like.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DependencyIndex {
     pub(crate) ingredient_index: IngredientIndex,
     pub(crate) key_index: Option<Id>,
@@ -32,14 +33,38 @@ impl DependencyIndex {
     pub fn key_index(self) -> Option<Id> {
         self.key_index
     }
+
+    pub(crate) fn mark_validated_output(
+        &self,
+        db: &dyn Database,
+        database_key_index: DatabaseKeyIndex,
+    ) {
+        db.lookup_ingredient(self.ingredient_index)
+            .mark_validated_output(db, database_key_index, self.key_index)
+    }
+
+    pub(crate) fn maybe_changed_after(
+        &self,
+        db: &dyn Database,
+        last_verified_at: crate::Revision,
+    ) -> bool {
+        db.lookup_ingredient(self.ingredient_index)
+            .maybe_changed_after(db, self.key_index, last_verified_at)
+    }
 }
 
-impl<Db> crate::debug::DebugWithDb<Db> for DependencyIndex
-where
-    Db: ?Sized + Database,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
-        db.fmt_index(*self, f)
+impl std::fmt::Debug for DependencyIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        database::with_attached_database(|db| {
+            let ingredient = db.lookup_ingredient(self.ingredient_index);
+            ingredient.fmt_index(self.key_index, f)
+        })
+        .unwrap_or_else(|| {
+            f.debug_tuple("DependencyIndex")
+                .field(&self.ingredient_index)
+                .field(&self.key_index)
+                .finish()
+        })
     }
 }
 
@@ -47,7 +72,7 @@ where
 /// An "active" database key index represents a database key index
 /// that is actively executing. In that case, the `key_index` cannot be
 /// None.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DatabaseKeyIndex {
     pub(crate) ingredient_index: IngredientIndex,
     pub(crate) key_index: Id,
@@ -62,15 +87,31 @@ impl DatabaseKeyIndex {
     pub fn key_index(self) -> Id {
         self.key_index
     }
+
+    pub(crate) fn cycle_recovery_strategy(&self, db: &dyn Database) -> CycleRecoveryStrategy {
+        self.ingredient_index.cycle_recovery_strategy(db)
+    }
+
+    pub(crate) fn mark_validated_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
+        db.lookup_ingredient(self.ingredient_index)
+            .mark_validated_output(db, executor, Some(self.key_index))
+    }
+
+    pub(crate) fn remove_stale_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
+        db.lookup_ingredient(self.ingredient_index)
+            .remove_stale_output(db, executor, Some(self.key_index))
+    }
+
+    pub(crate) fn origin(&self, db: &dyn Database) -> Option<QueryOrigin> {
+        db.lookup_ingredient(self.ingredient_index)
+            .origin(self.key_index)
+    }
 }
 
-impl<Db> crate::debug::DebugWithDb<Db> for DatabaseKeyIndex
-where
-    Db: ?Sized + Database,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &Db) -> std::fmt::Result {
+impl std::fmt::Debug for DatabaseKeyIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let i: DependencyIndex = (*self).into();
-        DebugWithDb::fmt(&i, f, db)
+        std::fmt::Debug::fmt(&i, f)
     }
 }
 

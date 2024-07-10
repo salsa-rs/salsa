@@ -1,12 +1,11 @@
-use std::any::Any;
+use std::{any::Any, cell::Cell, ptr::NonNull};
 
-use crate::{
-    ingredient::Ingredient,
-    storage::{HasJarsDyn, StorageForView},
-    DebugWithDb, Durability, Event,
-};
+use crossbeam::atomic::AtomicCell;
+use parking_lot::Mutex;
 
-pub trait Database: HasJarsDyn + AsSalsaDatabase {
+use crate::{storage::DatabaseGen, Durability, Event};
+
+pub trait Database: DatabaseGen {
     /// This function is invoked at key points in the salsa
     /// runtime. It permits the database to be customized and to
     /// inject logging or other custom behavior.
@@ -14,7 +13,7 @@ pub trait Database: HasJarsDyn + AsSalsaDatabase {
     /// By default, the event is logged at level debug using
     /// the standard `log` facade.
     fn salsa_event(&self, event: Event) {
-        log::debug!("salsa_event: {:?}", event.debug(self));
+        log::debug!("salsa_event: {:?}", event)
     }
 
     /// A "synthetic write" causes the system to act *as though* some
@@ -38,10 +37,19 @@ pub trait Database: HasJarsDyn + AsSalsaDatabase {
     }
 }
 
+/// The database view trait allows you to define your own views on the database.
+/// This lets you add extra context beyond what is stored in the salsa database itself.
 pub trait DatabaseView<Dyn: ?Sized + Any>: Database {
-    fn as_dyn(&self) -> &Dyn;
-    fn as_dyn_mut(&mut self) -> &mut Dyn;
-    fn storage_for_view(&self) -> &dyn StorageForView<Dyn>;
+    /// Registers this database view in the database.
+    /// This is normally invoked automatically by tracked functions that require a given view.
+    fn add_view_to_db(&self);
+}
+
+impl<Db: Database> DatabaseView<dyn Database> for Db {
+    fn add_view_to_db(&self) {
+        let upcasts = self.upcasts_for_self();
+        upcasts.add::<dyn Database>(|t| t, |t| t);
+    }
 }
 
 /// Indicates a database that also supports parallel query
@@ -109,9 +117,6 @@ pub trait ParallelDatabase: Database + Send {
     /// ```
     fn snapshot(&self) -> Snapshot<Self>;
 }
-pub trait AsSalsaDatabase {
-    fn as_salsa_database(&self) -> &dyn Database;
-}
 
 /// Simple wrapper struct that takes ownership of a database `DB` and
 /// only gives `&self` access to it. See [the `snapshot` method][fm]
@@ -145,6 +150,76 @@ where
     type Target = DB;
 
     fn deref(&self) -> &DB {
+        &self.db
+    }
+}
+
+thread_local! {
+    static DATABASE: Cell<AttachedDatabase> = Cell::new(AttachedDatabase::null());
+}
+
+/// Access the "attached" database. Returns `None` if no database is attached.
+/// Databases are attached with `attach_database`.
+pub fn with_attached_database<R>(op: impl FnOnce(&dyn Database) -> R) -> Option<R> {
+    // SAFETY: We always attach the database in for the entire duration of a function,
+    // so it cannot become "unattached" while this function is running.
+    let db = DATABASE.get();
+    Some(op(unsafe { db.ptr?.as_ref() }))
+}
+
+/// Attach database and returns a guard that will un-attach the database when dropped.
+/// Has no effect if a database is already attached.
+pub fn attach_database<Db: ?Sized + Database, R>(db: &Db, op: impl FnOnce() -> R) -> R {
+    let _guard = AttachedDb::new(db);
+    op()
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+struct AttachedDatabase {
+    ptr: Option<NonNull<dyn Database>>,
+}
+
+impl AttachedDatabase {
+    pub const fn null() -> Self {
+        Self { ptr: None }
+    }
+
+    pub fn from<Db: ?Sized + Database>(db: &Db) -> Self {
+        unsafe {
+            let db: *const dyn Database = db.as_salsa_database();
+            Self {
+                ptr: Some(NonNull::new_unchecked(db as *mut dyn Database)),
+            }
+        }
+    }
+}
+
+unsafe impl Send for AttachedDatabase where dyn Database: Sync {}
+
+unsafe impl Sync for AttachedDatabase where dyn Database: Sync {}
+
+struct AttachedDb<'db, Db: ?Sized + Database> {
+    db: &'db Db,
+    previous: AttachedDatabase,
+}
+
+impl<'db, Db: ?Sized + Database> AttachedDb<'db, Db> {
+    pub fn new(db: &'db Db) -> Self {
+        let previous = DATABASE.replace(AttachedDatabase::from(db));
+        AttachedDb { db, previous }
+    }
+}
+
+impl<Db: ?Sized + Database> Drop for AttachedDb<'_, Db> {
+    fn drop(&mut self) {
+        DATABASE.set(self.previous);
+    }
+}
+
+impl<Db: ?Sized + Database> std::ops::Deref for AttachedDb<'_, Db> {
+    type Target = Db;
+
+    fn deref(&self) -> &Db {
         &self.db
     }
 }

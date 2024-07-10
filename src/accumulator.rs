@@ -1,6 +1,10 @@
 //! Basic test of accumulator functionality.
 
-use std::{any::Any, fmt, marker::PhantomData};
+use std::{
+    any::Any,
+    fmt::{self, Debug},
+    marker::PhantomData,
+};
 
 use crate::{
     cycle::CycleRecoveryStrategy,
@@ -9,13 +13,13 @@ use crate::{
     key::DependencyIndex,
     runtime::local_state::QueryOrigin,
     storage::IngredientIndex,
-    Database, DatabaseKeyIndex, Event, EventKind, Revision, Runtime,
+    Database, DatabaseKeyIndex, Event, EventKind, Id, Revision, Runtime,
 };
 
 pub trait Accumulator: Jar {
     const DEBUG_NAME: &'static str;
 
-    type Data: Clone;
+    type Data: Clone + Debug;
 }
 
 pub struct AccumulatorJar<A: Accumulator> {
@@ -31,12 +35,7 @@ impl<A: Accumulator> Default for AccumulatorJar<A> {
 }
 
 impl<A: Accumulator> Jar for AccumulatorJar<A> {
-    type DbView = dyn crate::Database;
-
-    fn create_ingredients(
-        &self,
-        first_index: IngredientIndex,
-    ) -> Vec<Box<dyn Ingredient<DbView = Self::DbView>>> {
+    fn create_ingredients(&self, first_index: IngredientIndex) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(<AccumulatorIngredient<A>>::new(first_index))]
     }
 }
@@ -58,8 +57,8 @@ impl<A: Accumulator> AccumulatorIngredient<A> {
         Db: ?Sized + Database,
     {
         let jar: AccumulatorJar<A> = Default::default();
-        let index = db.jar_index_by_type_id(jar.type_id())?;
-        let ingredient = db.ingredient(index).assert_type::<Self>();
+        let index = db.add_or_lookup_jar_by_type(&jar);
+        let ingredient = db.lookup_ingredient(index).assert_type::<Self>();
         Some(ingredient)
     }
 
@@ -129,16 +128,14 @@ impl<A: Accumulator> AccumulatorIngredient<A> {
 }
 
 impl<A: Accumulator> Ingredient for AccumulatorIngredient<A> {
-    type DbView = dyn crate::Database;
-
     fn ingredient_index(&self) -> IngredientIndex {
         self.index
     }
 
     fn maybe_changed_after(
         &self,
-        _db: &Self::DbView,
-        _input: DependencyIndex,
+        _db: &dyn Database,
+        _input: Option<Id>,
         _revision: Revision,
     ) -> bool {
         panic!("nothing should ever depend on an accumulator directly")
@@ -154,7 +151,7 @@ impl<A: Accumulator> Ingredient for AccumulatorIngredient<A> {
 
     fn mark_validated_output(
         &self,
-        db: &Self::DbView,
+        db: &dyn Database,
         executor: DatabaseKeyIndex,
         output_key: Option<crate::Id>,
     ) {
@@ -168,7 +165,7 @@ impl<A: Accumulator> Ingredient for AccumulatorIngredient<A> {
 
     fn remove_stale_output(
         &self,
-        db: &Self::DbView,
+        db: &dyn Database,
         executor: DatabaseKeyIndex,
         stale_output_key: Option<crate::Id>,
     ) {
@@ -188,23 +185,26 @@ impl<A: Accumulator> Ingredient for AccumulatorIngredient<A> {
         panic!("unexpected reset on accumulator")
     }
 
-    fn salsa_struct_deleted(&self, _db: &Self::DbView, _id: crate::Id) {
+    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: crate::Id) {
         panic!("unexpected call: accumulator is not registered as a dependent fn");
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(A::DEBUG_NAME, index, fmt)
     }
-
-    fn upcast_to_raw(&self) -> &dyn crate::ingredient::RawIngredient {
-        self
-    }
-
-    fn upcast_to_raw_mut(&mut self) -> &mut dyn crate::ingredient::RawIngredient {
-        self
-    }
 }
 
 impl<A: Accumulator> IngredientRequiresReset for AccumulatorIngredient<A> {
     const RESET_ON_NEW_REVISION: bool = false;
+}
+
+impl<A> std::fmt::Debug for AccumulatorIngredient<A>
+where
+    A: Accumulator,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(std::any::type_name::<Self>())
+            .field("index", &self.index)
+            .finish()
+    }
 }

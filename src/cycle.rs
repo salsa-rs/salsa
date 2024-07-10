@@ -1,5 +1,4 @@
-use crate::debug::DebugWithDb;
-use crate::{key::DatabaseKeyIndex, Database};
+use crate::{database, key::DatabaseKeyIndex, Database};
 use std::{panic::AssertUnwindSafe, sync::Arc};
 
 /// Captures the participants of a cycle that occurred when executing a query.
@@ -17,7 +16,7 @@ use std::{panic::AssertUnwindSafe, sync::Arc};
 ///
 /// You can read more about cycle handling in
 /// the [salsa book](https://https://salsa-rs.github.io/salsa/cycles.html).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Cycle {
     participants: CycleParticipants,
 }
@@ -59,47 +58,33 @@ impl Cycle {
 
     /// Returns a vector with the debug information for
     /// all the participants in the cycle.
-    pub fn all_participants<DB: ?Sized + Database>(&self, db: &DB) -> Vec<String> {
-        self.participant_keys()
-            .map(|d| format!("{:?}", d.debug(db)))
-            .collect()
+    pub fn all_participants(&self, _db: &dyn Database) -> Vec<DatabaseKeyIndex> {
+        self.participant_keys().collect()
     }
 
     /// Returns a vector with the debug information for
     /// those participants in the cycle that lacked recovery
     /// information.
-    pub fn unexpected_participants<DB: ?Sized + Database>(&self, db: &DB) -> Vec<String> {
+    pub fn unexpected_participants(&self, db: &dyn Database) -> Vec<DatabaseKeyIndex> {
         self.participant_keys()
-            .filter(|&d| {
-                db.cycle_recovery_strategy(d.ingredient_index) == CycleRecoveryStrategy::Panic
-            })
-            .map(|d| format!("{:?}", d.debug(db)))
+            .filter(|&d| d.cycle_recovery_strategy(db) == CycleRecoveryStrategy::Panic)
             .collect()
     }
+}
 
-    /// Returns a "debug" view onto this strict that can be used to print out information.
-    pub fn debug<'me, DB: ?Sized + Database>(&'me self, db: &'me DB) -> impl std::fmt::Debug + 'me {
-        struct UnexpectedCycleDebug<'me> {
-            c: &'me Cycle,
-            db: &'me dyn Database,
-        }
-
-        impl<'me> std::fmt::Debug for UnexpectedCycleDebug<'me> {
-            fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                fmt.debug_struct("UnexpectedCycle")
-                    .field("all_participants", &self.c.all_participants(self.db))
-                    .field(
-                        "unexpected_participants",
-                        &self.c.unexpected_participants(self.db),
-                    )
-                    .finish()
-            }
-        }
-
-        UnexpectedCycleDebug {
-            c: self,
-            db: db.as_salsa_database(),
-        }
+impl std::fmt::Debug for Cycle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        database::with_attached_database(|db| {
+            f.debug_struct("UnexpectedCycle")
+                .field("all_participants", &self.all_participants(db))
+                .field("unexpected_participants", &self.unexpected_participants(db))
+                .finish()
+        })
+        .unwrap_or_else(|| {
+            f.debug_struct("Cycle")
+                .field("participants", &self.participants)
+                .finish()
+        })
     }
 }
 

@@ -113,8 +113,6 @@ where
     K: FromId + 'static,
     F: 'static,
 {
-    type DbView = dyn Database;
-
     fn ingredient_index(&self) -> IngredientIndex {
         self.index
     }
@@ -125,11 +123,11 @@ where
 
     fn maybe_changed_after(
         &self,
-        _db: &Self::DbView,
-        input: DependencyIndex,
+        _db: &dyn Database,
+        input: Option<Id>,
         revision: Revision,
     ) -> bool {
-        let key = K::from_id(input.key_index.unwrap());
+        let key = K::from_id(input.unwrap());
         self.map.get(&key).unwrap().changed_at > revision
     }
 
@@ -139,7 +137,7 @@ where
 
     fn mark_validated_output(
         &self,
-        _db: &Self::DbView,
+        _db: &dyn Database,
         _executor: DatabaseKeyIndex,
         _output_key: Option<Id>,
     ) {
@@ -147,13 +145,13 @@ where
 
     fn remove_stale_output(
         &self,
-        _db: &Self::DbView,
+        _db: &dyn Database,
         _executor: DatabaseKeyIndex,
         _stale_output_key: Option<Id>,
     ) {
     }
 
-    fn salsa_struct_deleted(&self, _db: &Self::DbView, _id: Id) {
+    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: Id) {
         panic!("unexpected call: input fields are never deleted");
     }
 
@@ -164,14 +162,6 @@ where
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(self.debug_name, index, fmt)
     }
-
-    fn upcast_to_raw(&self) -> &dyn crate::ingredient::RawIngredient {
-        self
-    }
-
-    fn upcast_to_raw_mut(&mut self) -> &mut dyn crate::ingredient::RawIngredient {
-        self
-    }
 }
 
 impl<K, F> IngredientRequiresReset for InputFieldIngredient<K, F>
@@ -179,4 +169,15 @@ where
     K: AsId,
 {
     const RESET_ON_NEW_REVISION: bool = false;
+}
+
+impl<K, F> std::fmt::Debug for InputFieldIngredient<K, F>
+where
+    K: AsId,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(std::any::type_name::<Self>())
+            .field("index", &self.index)
+            .finish()
+    }
 }

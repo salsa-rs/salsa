@@ -1,6 +1,6 @@
 use crate::{
     hash::FxHashSet, key::DependencyIndex, runtime::local_state::QueryRevisions,
-    storage::HasJarsDyn, Database, DatabaseKeyIndex, Event, EventKind,
+    storage::DatabaseGen, Database, DatabaseKeyIndex, Event, EventKind,
 };
 
 use super::{memo::Memo, Configuration, FunctionIngredient};
@@ -47,6 +47,6 @@ where
             },
         });
 
-        db.remove_stale_output(key, output);
+        key.remove_stale_output(db.as_salsa_database(), output.try_into().unwrap());
     }
 }

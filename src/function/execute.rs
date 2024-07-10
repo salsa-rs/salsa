@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-    debug::DebugWithDb,
     runtime::{local_state::ActiveQueryGuard, StampedValue},
-    storage::HasJarsDyn,
+    storage::DatabaseGen,
     Cycle, Database, Event, EventKind,
 };
 
@@ -49,9 +48,7 @@ where
             Ok(v) => v,
             Err(cycle) => {
                 log::debug!(
-                    "{:?}: caught cycle {:?}, have strategy {:?}",
-                    database_key_index.debug(db),
-                    cycle,
+                    "{database_key_index:?}: caught cycle {cycle:?}, have strategy {:?}",
                     C::CYCLE_STRATEGY
                 );
                 match C::CYCLE_STRATEGY {
@@ -101,11 +98,7 @@ where
 
         let stamped_value = revisions.stamped_value(value);
 
-        log::debug!(
-            "{:?}: read_upgrade: result.revisions = {:#?}",
-            database_key_index.debug(db),
-            revisions
-        );
+        log::debug!("{database_key_index:?}: read_upgrade: result.revisions = {revisions:#?}");
 
         stamped_value
     }

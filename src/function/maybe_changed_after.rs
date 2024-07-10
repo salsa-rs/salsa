@@ -1,14 +1,12 @@
 use arc_swap::Guard;
 
 use crate::{
-    database::AsSalsaDatabase,
-    debug::DebugWithDb,
     key::DatabaseKeyIndex,
     runtime::{
         local_state::{ActiveQueryGuard, EdgeKind, QueryOrigin},
         StampedValue,
     },
-    storage::HasJarsDyn,
+    storage::DatabaseGen,
     Id, Revision, Runtime,
 };
 
@@ -30,11 +28,7 @@ where
         loop {
             let database_key_index = self.database_key_index(key);
 
-            log::debug!(
-                "{:?}: maybe_changed_after(revision = {:?})",
-                database_key_index.debug(db),
-                revision,
-            );
+            log::debug!("{database_key_index:?}: maybe_changed_after(revision = {revision:?})");
 
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.memo_map.get(key);
@@ -77,10 +71,8 @@ where
         };
 
         log::debug!(
-            "{:?}: maybe_changed_after_cold, successful claim, revision = {:?}, old_memo = {:#?}",
-            database_key_index.debug(db),
-            revision,
-            old_memo
+            "{database_key_index:?}: maybe_changed_after_cold, successful claim, \
+            revision = {revision:?}, old_memo = {old_memo:#?}",
         );
 
         // Check if the inputs are still valid and we can just compare `changed_at`.
@@ -114,11 +106,7 @@ where
         let verified_at = memo.verified_at.load();
         let revision_now = runtime.current_revision();
 
-        log::debug!(
-            "{:?}: shallow_verify_memo(memo = {:#?})",
-            database_key_index.debug(db),
-            memo,
-        );
+        log::debug!("{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",);
 
         if verified_at == revision_now {
             // Already verified.
@@ -153,11 +141,7 @@ where
         let runtime = db.runtime();
         let database_key_index = active_query.database_key_index;
 
-        log::debug!(
-            "{:?}: deep_verify_memo(old_memo = {:#?})",
-            database_key_index.debug(db),
-            old_memo
-        );
+        log::debug!("{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",);
 
         if self.shallow_verify_memo(db, runtime, database_key_index, old_memo) {
             return true;
@@ -197,7 +181,9 @@ where
                 for &(edge_kind, dependency_index) in edges.input_outputs.iter() {
                     match edge_kind {
                         EdgeKind::Input => {
-                            if db.maybe_changed_after(dependency_index, last_verified_at) {
+                            if dependency_index
+                                .maybe_changed_after(db.as_salsa_database(), last_verified_at)
+                            {
                                 return false;
                             }
                         }
@@ -218,7 +204,10 @@ where
                             // by this function cannot be read until this function is marked green,
                             // so even if we mark them as valid here, the function will re-execute
                             // and overwrite the contents.
-                            db.mark_validated_output(database_key_index, dependency_index);
+                            database_key_index.mark_validated_output(
+                                db.as_salsa_database(),
+                                dependency_index.try_into().unwrap(),
+                            );
                         }
                     }
                 }

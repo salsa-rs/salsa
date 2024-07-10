@@ -10,6 +10,7 @@ description = "A generic framework for on-demand, incrementalized computation (e
 [dependencies]
 append-only-vec = { git = "https://github.com/nikomatsakis/append-only-vec.git", version = "0.1.4" }
 arc-swap = "1.6.0"
+boomphf = "0.6.0"
 crossbeam = "0.8.1"
 dashmap = "5.3.4"
 hashlink = "0.8.0"

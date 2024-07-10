@@ -5,7 +5,6 @@ use std::{
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    debug::DebugWithDb,
     durability::Durability,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::active_query::ActiveQuery,
@@ -395,11 +394,7 @@ impl Runtime {
 
             Cycle::new(Arc::new(v))
         };
-        log::debug!(
-            "cycle {:?}, cycle_query {:#?}",
-            cycle.debug(db),
-            cycle_query,
-        );
+        log::debug!("cycle {cycle:?}, cycle_query {cycle_query:#?}");
 
         // We can remove the cycle participants from the list of dependencies;
         // they are a strongly connected component (SCC) and we only care about
@@ -413,13 +408,16 @@ impl Runtime {
         dg.for_each_cycle_participant(from_id, &mut from_stack, database_key_index, to_id, |aqs| {
             aqs.iter_mut()
                 .skip_while(|aq| {
-                    match db.cycle_recovery_strategy(aq.database_key_index.ingredient_index) {
+                    match db
+                        .lookup_ingredient(aq.database_key_index.ingredient_index)
+                        .cycle_recovery_strategy()
+                    {
                         CycleRecoveryStrategy::Panic => true,
                         CycleRecoveryStrategy::Fallback => false,
                     }
                 })
                 .for_each(|aq| {
-                    log::debug!("marking {:?} for fallback", aq.database_key_index.debug(db));
+                    log::debug!("marking {:?} for fallback", aq.database_key_index);
                     aq.take_inputs_from(&cycle_query);
                     assert!(aq.cycle.is_none());
                     aq.cycle = Some(cycle.clone());

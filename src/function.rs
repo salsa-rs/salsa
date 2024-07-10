@@ -8,7 +8,7 @@ use crate::{
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
-    storage::{HasJarsDyn, IngredientIndex},
+    storage::IngredientIndex,
     Cycle, Database, Event, EventKind, Id, Revision,
 };
 
@@ -29,6 +29,7 @@ mod memo;
 mod specify;
 mod store;
 mod sync;
+
 pub trait Configuration: 'static {
     const DEBUG_NAME: &'static str;
 
@@ -202,19 +203,18 @@ impl<C> Ingredient for FunctionIngredient<C>
 where
     C: Configuration,
 {
-    type DbView = C::DbView;
-
     fn ingredient_index(&self) -> IngredientIndex {
         self.index
     }
 
     fn maybe_changed_after(
         &self,
-        db: &C::DbView,
-        input: DependencyIndex,
+        db: &dyn Database,
+        input: Option<Id>,
         revision: Revision,
     ) -> bool {
-        let key = input.key_index.unwrap();
+        let key = input.unwrap();
+        let db = db.as_view::<C::DbView>();
         self.maybe_changed_after(db, key, revision)
     }
 
@@ -228,7 +228,7 @@ where
 
     fn mark_validated_output(
         &self,
-        db: &C::DbView,
+        db: &dyn Database,
         executor: DatabaseKeyIndex,
         output_key: Option<crate::Id>,
     ) {
@@ -238,7 +238,7 @@ where
 
     fn remove_stale_output(
         &self,
-        _db: &C::DbView,
+        _db: &dyn Database,
         _executor: DatabaseKeyIndex,
         _stale_output_key: Option<crate::Id>,
     ) {
@@ -251,7 +251,7 @@ where
         std::mem::take(&mut self.deleted_entries);
     }
 
-    fn salsa_struct_deleted(&self, db: &C::DbView, id: Id) {
+    fn salsa_struct_deleted(&self, db: &dyn Database, id: Id) {
         // Remove any data keyed by `id`, since `id` no longer
         // exists in this revision.
 
@@ -265,7 +265,8 @@ where
             // Anything that was output by this memoized execution
             // is now itself stale.
             for stale_output in origin.outputs() {
-                db.remove_stale_output(key, stale_output)
+                db.lookup_ingredient(stale_output.ingredient_index)
+                    .remove_stale_output(db, key, stale_output.key_index);
             }
         }
     }
@@ -273,13 +274,16 @@ where
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
+}
 
-    fn upcast_to_raw(&self) -> &dyn crate::ingredient::RawIngredient {
-        self
-    }
-
-    fn upcast_to_raw_mut(&mut self) -> &mut dyn crate::ingredient::RawIngredient {
-        self
+impl<C> std::fmt::Debug for FunctionIngredient<C>
+where
+    C: Configuration,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(std::any::type_name::<Self>())
+            .field("index", &self.index)
+            .finish()
     }
 }
 
