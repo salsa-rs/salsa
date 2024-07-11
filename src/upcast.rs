@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use append_only_vec::AppendOnlyVec;
+use orx_concurrent_vec::ConcurrentVec;
 
 use crate::Database;
 
@@ -17,7 +17,7 @@ pub(crate) struct DynUpcastsFor<Db: Database> {
 #[derive(Clone)]
 pub(crate) struct DynUpcasts {
     source_type_id: TypeId,
-    vec: Arc<AppendOnlyVec<DynUpcast>>,
+    vec: Arc<ConcurrentVec<DynUpcast>>,
 }
 
 struct DynUpcast {
@@ -63,7 +63,7 @@ impl DynUpcasts {
         let source_type_id = TypeId::of::<Db>();
         Self {
             source_type_id,
-            vec: Arc::new(AppendOnlyVec::new()),
+            vec: Default::default(),
         }
     }
 

@@ -8,7 +8,6 @@ repository = "https://github.com/salsa-rs/salsa"
 description = "A generic framework for on-demand, incrementalized computation (experimental)"
 
 [dependencies]
-append-only-vec = { git = "https://github.com/nikomatsakis/append-only-vec.git", version = "0.1.4" }
 arc-swap = "1.6.0"
 boomphf = "0.6.0"
 crossbeam = "0.8.1"
@@ -16,7 +15,7 @@ dashmap = "5.3.4"
 hashlink = "0.8.0"
 indexmap = "2"
 log = "0.4.5"
-orx-concurrent-vec = "1.9.0"
+orx-concurrent-vec = "1.10.0"
 parking_lot = "0.12.1"
 rustc-hash = "1.1.0"
 salsa-macros = { path = "components/salsa-macros" }

@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::sync::Arc;
 
-use append_only_vec::AppendOnlyVec;
+use orx_concurrent_vec::ConcurrentVec;
 use parking_lot::{Condvar, Mutex};
 use rustc_hash::FxHashMap;
 
@@ -153,7 +153,7 @@ struct Shared<Db: Database> {
     /// Vector of ingredients.
     ///
     /// Immutable unless the mutex on `ingredients_map` is held.
-    ingredients_vec: Arc<AppendOnlyVec<Box<dyn Ingredient>>>,
+    ingredients_vec: Arc<ConcurrentVec<Box<dyn Ingredient>>>,
 
     /// Conditional variable that is used to coordinate cancellation.
     /// When the main thread writes to the database, it blocks until each of the snapshots can be cancelled.
@@ -177,7 +177,7 @@ impl<Db: Database> Default for Storage<Db> {
                 cvar: Arc::new(Default::default()),
                 noti_lock: Arc::new(parking_lot::Mutex::new(())),
                 jar_map: Default::default(),
-                ingredients_vec: Arc::new(AppendOnlyVec::new()),
+                ingredients_vec: Default::default(),
                 sync: Some(Arc::new(())),
             },
             runtime: Runtime::default(),
@@ -230,7 +230,7 @@ impl<Db: Database> Storage<Db> {
     }
 
     pub fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
-        &*self.shared.ingredients_vec[index.as_usize()]
+        &**self.shared.ingredients_vec.get(index.as_usize()).unwrap()
     }
 
     pub fn snapshot(&self) -> Storage<Db>
