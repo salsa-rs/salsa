@@ -9,18 +9,18 @@ use orx_concurrent_vec::ConcurrentVec;
 
 use crate::Database;
 
-pub struct DynDowncastsFor<Db: Database> {
-    upcasts: DynDowncasts,
+pub struct ViewsOf<Db: Database> {
+    upcasts: Views,
     phantom: PhantomData<Db>,
 }
 
 #[derive(Clone)]
-pub struct DynDowncasts {
+pub struct Views {
     source_type_id: TypeId,
-    vec: Arc<ConcurrentVec<Caster>>,
+    view_casters: Arc<ConcurrentVec<ViewCaster>>,
 }
 
-struct Caster {
+struct ViewCaster {
     target_type_id: TypeId,
     type_name: &'static str,
     func: fn(&Dummy) -> &Dummy,
@@ -30,16 +30,16 @@ struct Caster {
 #[allow(dead_code)]
 enum Dummy {}
 
-impl<Db: Database> Default for DynDowncastsFor<Db> {
+impl<Db: Database> Default for ViewsOf<Db> {
     fn default() -> Self {
         Self {
-            upcasts: DynDowncasts::new::<Db>(),
+            upcasts: Views::new::<Db>(),
             phantom: Default::default(),
         }
     }
 }
 
-impl<Db: Database> DynDowncastsFor<Db> {
+impl<Db: Database> ViewsOf<Db> {
     /// Add a new upcast from `Db` to `T`, given the upcasting function `func`.
     pub fn add<DbView: ?Sized + Any>(
         &self,
@@ -50,20 +50,20 @@ impl<Db: Database> DynDowncastsFor<Db> {
     }
 }
 
-impl<Db: Database> Deref for DynDowncastsFor<Db> {
-    type Target = DynDowncasts;
+impl<Db: Database> Deref for ViewsOf<Db> {
+    type Target = Views;
 
     fn deref(&self) -> &Self::Target {
         &self.upcasts
     }
 }
 
-impl DynDowncasts {
+impl Views {
     fn new<Db: Database>() -> Self {
         let source_type_id = TypeId::of::<Db>();
         Self {
             source_type_id,
-            vec: Default::default(),
+            view_casters: Default::default(),
         }
     }
 
@@ -77,11 +77,15 @@ impl DynDowncasts {
 
         let target_type_id = TypeId::of::<DbView>();
 
-        if self.vec.iter().any(|u| u.target_type_id == target_type_id) {
+        if self
+            .view_casters
+            .iter()
+            .any(|u| u.target_type_id == target_type_id)
+        {
             return;
         }
 
-        self.vec.push(Caster {
+        self.view_casters.push(ViewCaster {
             target_type_id,
             type_name: std::any::type_name::<DbView>(),
             func: unsafe { std::mem::transmute(func) },
@@ -94,7 +98,7 @@ impl DynDowncasts {
     /// # Panics
     ///
     /// If the underlying type of `db` is not the same as the database type this upcasts was created for.
-    pub fn try_cast<'db, DbView: ?Sized + Any>(
+    pub fn try_view_as<'db, DbView: ?Sized + Any>(
         &self,
         db: &'db dyn Database,
     ) -> Option<&'db DbView> {
@@ -102,7 +106,7 @@ impl DynDowncasts {
         assert_eq!(self.source_type_id, db_type_id, "database type mismatch");
 
         let view_type_id = TypeId::of::<DbView>();
-        for caster in self.vec.iter() {
+        for caster in self.view_casters.iter() {
             if caster.target_type_id == view_type_id {
                 // SAFETY: We have some function that takes a thin reference to the underlying
                 // database type `X` and returns a (potentially wide) reference to `View`.
@@ -123,7 +127,7 @@ impl DynDowncasts {
     /// # Panics
     ///
     /// If the underlying type of `db` is not the same as the database type this upcasts was created for.
-    pub fn try_cast_mut<'db, View: ?Sized + Any>(
+    pub fn try_view_as_mut<'db, View: ?Sized + Any>(
         &self,
         db: &'db mut dyn Database,
     ) -> Option<&'db mut View> {
@@ -131,7 +135,7 @@ impl DynDowncasts {
         assert_eq!(self.source_type_id, db_type_id, "database type mismatch");
 
         let view_type_id = TypeId::of::<View>();
-        for caster in self.vec.iter() {
+        for caster in self.view_casters.iter() {
             if caster.target_type_id == view_type_id {
                 // SAFETY: We have some function that takes a thin reference to the underlying
                 // database type `X` and returns a (potentially wide) reference to `View`.
@@ -149,15 +153,15 @@ impl DynDowncasts {
     }
 }
 
-impl std::fmt::Debug for DynDowncasts {
+impl std::fmt::Debug for Views {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DynDowncasts")
-            .field("vec", &self.vec)
+            .field("vec", &self.view_casters)
             .finish()
     }
 }
 
-impl std::fmt::Debug for Caster {
+impl std::fmt::Debug for ViewCaster {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("DynDowncast").field(&self.type_name).finish()
     }
@@ -179,7 +183,7 @@ fn data_ptr_mut<T: ?Sized>(t: &mut T) -> &mut () {
     unsafe { &mut *u }
 }
 
-impl<Db: Database> Clone for DynDowncastsFor<Db> {
+impl<Db: Database> Clone for ViewsOf<Db> {
     fn clone(&self) -> Self {
         Self {
             upcasts: self.upcasts.clone(),

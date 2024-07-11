@@ -7,6 +7,8 @@ extern crate proc_macro2;
 #[macro_use]
 extern crate quote;
 
+mod hygiene;
+
 use proc_macro::TokenStream;
 
 macro_rules! parse_quote {

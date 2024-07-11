@@ -8,7 +8,7 @@ use expect_test::expect;
 use test_log::test;
 
 #[salsa::db_view]
-trait Db: DatabaseView<dyn Db> + HasLogger {}
+trait Db: HasLogger {}
 
 #[salsa::input]
 struct MyInput {

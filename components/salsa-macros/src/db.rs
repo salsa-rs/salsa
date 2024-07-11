@@ -1,5 +1,7 @@
-use proc_macro2::{Literal, TokenStream};
-use syn::{parse::Nothing, spanned::Spanned, Token};
+use proc_macro2::TokenStream;
+use syn::{parse::Nothing, ItemStruct};
+
+use crate::hygiene::Hygiene;
 
 // Source:
 //
@@ -12,37 +14,35 @@ pub(crate) fn db(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let args = syn::parse_macro_input!(args as Args);
-    let input = syn::parse_macro_input!(input as syn::ItemStruct);
-    match args.try_db(&input) {
-        Ok(v) => quote! { #input #v }.into(),
-        Err(e) => {
-            let error = e.to_compile_error();
-            quote! { #input #error }.into()
-        }
+    let _nothing = syn::parse_macro_input!(args as Nothing);
+    let db_macro = DbMacro {
+        hygiene: Hygiene::from(&input),
+        input: syn::parse_macro_input!(input as syn::ItemStruct),
+    };
+    match db_macro.try_db() {
+        Ok(v) => v.into(),
+        Err(e) => e.to_compile_error().into(),
     }
 }
 
-pub struct Args {}
-
-impl syn::parse::Parse for Args {
-    fn parse(_input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
-        Ok(Args {})
-    }
+struct DbMacro {
+    hygiene: Hygiene,
+    input: ItemStruct,
 }
 
-impl Args {
-    fn try_db(self, input: &syn::ItemStruct) -> syn::Result<TokenStream> {
-        let storage = self.find_storage_field(input)?;
-
+impl DbMacro {
+    fn try_db(self) -> syn::Result<TokenStream> {
+        let has_storage_impl = self.has_storage_impl()?;
+        let input = self.input;
         Ok(quote! {
+            #has_storage_impl
             #input
         })
     }
 
-    fn find_storage_field(&self, input: &syn::ItemStruct) -> syn::Result<syn::Ident> {
+    fn find_storage_field(&self) -> syn::Result<syn::Ident> {
         let storage = "storage";
-        for field in input.fields.iter() {
+        for field in self.input.fields.iter() {
             if let Some(i) = &field.ident {
                 if i == storage {
                     return Ok(i.clone());
@@ -56,8 +56,34 @@ impl Args {
         }
 
         return Err(syn::Error::new_spanned(
-            &input.ident,
+            &self.input.ident,
             "database struct must be a braced struct (`{}`) with a field named `storage`",
         ));
+    }
+
+    #[allow(non_snake_case)]
+    fn has_storage_impl(&self) -> syn::Result<TokenStream> {
+        let storage = self.find_storage_field()?;
+        let db = &self.input.ident;
+
+        let SalsaHasStorage = self.hygiene.ident("SalsaHasStorage");
+        let SalsaStorage = self.hygiene.ident("SalsaStorage");
+
+        Ok(quote! {
+            const _: () = {
+                use salsa::storage::HasStorage as #SalsaHasStorage;
+                use salsa::storage::Storage as #SalsaStorage;
+
+                unsafe impl #SalsaHasStorage for #db {
+                    fn storage(&self) -> &#SalsaStorage<Self> {
+                        &self.#storage
+                    }
+
+                    fn storage_mut(&mut self) -> &mut #SalsaStorage<Self> {
+                        &mut self.#storage
+                    }
+                }
+            };
+        })
     }
 }

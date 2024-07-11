@@ -47,7 +47,7 @@ pub trait DatabaseView<Dyn: ?Sized + Any>: Database {
 
 impl<Db: Database> DatabaseView<dyn Database> for Db {
     fn add_view_to_db(&self) {
-        let upcasts = self.upcasts_for_self();
+        let upcasts = self.views_of_self();
         upcasts.add::<dyn Database>(|t| t, |t| t);
     }
 }
