@@ -3,6 +3,7 @@ mod alloc;
 pub mod cancelled;
 pub mod cycle;
 pub mod database;
+mod downcast;
 pub mod durability;
 pub mod event;
 pub mod function;
@@ -22,7 +23,6 @@ pub mod salsa_struct;
 pub mod setter;
 pub mod storage;
 pub mod tracked_struct;
-mod upcast;
 pub mod update;
 
 pub use self::cancelled::Cancelled;

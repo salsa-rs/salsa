@@ -9,18 +9,18 @@ use orx_concurrent_vec::ConcurrentVec;
 
 use crate::Database;
 
-pub(crate) struct DynUpcastsFor<Db: Database> {
-    upcasts: DynUpcasts,
+pub struct DynDowncastsFor<Db: Database> {
+    upcasts: DynDowncasts,
     phantom: PhantomData<Db>,
 }
 
 #[derive(Clone)]
-pub(crate) struct DynUpcasts {
+pub struct DynDowncasts {
     source_type_id: TypeId,
-    vec: Arc<ConcurrentVec<DynUpcast>>,
+    vec: Arc<ConcurrentVec<Caster>>,
 }
 
-struct DynUpcast {
+struct Caster {
     target_type_id: TypeId,
     type_name: &'static str,
     func: fn(&Dummy) -> &Dummy,
@@ -30,16 +30,16 @@ struct DynUpcast {
 #[allow(dead_code)]
 enum Dummy {}
 
-impl<Db: Database> Default for DynUpcastsFor<Db> {
+impl<Db: Database> Default for DynDowncastsFor<Db> {
     fn default() -> Self {
         Self {
-            upcasts: DynUpcasts::new::<Db>(),
+            upcasts: DynDowncasts::new::<Db>(),
             phantom: Default::default(),
         }
     }
 }
 
-impl<Db: Database> DynUpcastsFor<Db> {
+impl<Db: Database> DynDowncastsFor<Db> {
     /// Add a new upcast from `Db` to `T`, given the upcasting function `func`.
     pub fn add<DbView: ?Sized + Any>(
         &self,
@@ -50,15 +50,15 @@ impl<Db: Database> DynUpcastsFor<Db> {
     }
 }
 
-impl<Db: Database> Deref for DynUpcastsFor<Db> {
-    type Target = DynUpcasts;
+impl<Db: Database> Deref for DynDowncastsFor<Db> {
+    type Target = DynDowncasts;
 
     fn deref(&self) -> &Self::Target {
         &self.upcasts
     }
 }
 
-impl DynUpcasts {
+impl DynDowncasts {
     fn new<Db: Database>() -> Self {
         let source_type_id = TypeId::of::<Db>();
         Self {
@@ -81,7 +81,7 @@ impl DynUpcasts {
             return;
         }
 
-        self.vec.push(DynUpcast {
+        self.vec.push(Caster {
             target_type_id,
             type_name: std::any::type_name::<DbView>(),
             func: unsafe { std::mem::transmute(func) },
@@ -94,7 +94,7 @@ impl DynUpcasts {
     /// # Panics
     ///
     /// If the underlying type of `db` is not the same as the database type this upcasts was created for.
-    pub fn try_upcast<'db, DbView: ?Sized + Any>(
+    pub fn try_cast<'db, DbView: ?Sized + Any>(
         &self,
         db: &'db dyn Database,
     ) -> Option<&'db DbView> {
@@ -102,15 +102,15 @@ impl DynUpcasts {
         assert_eq!(self.source_type_id, db_type_id, "database type mismatch");
 
         let view_type_id = TypeId::of::<DbView>();
-        for upcast in self.vec.iter() {
-            if upcast.target_type_id == view_type_id {
+        for caster in self.vec.iter() {
+            if caster.target_type_id == view_type_id {
                 // SAFETY: We have some function that takes a thin reference to the underlying
                 // database type `X` and returns a (potentially wide) reference to `View`.
                 //
                 // While the compiler doesn't know what `X` is at this point, we know it's the
                 // same as the true type of `db_data_ptr`, and the memory representation for `()`
                 // and `&X` are the same (since `X` is `Sized`).
-                let func: fn(&()) -> &DbView = unsafe { std::mem::transmute(upcast.func) };
+                let func: fn(&()) -> &DbView = unsafe { std::mem::transmute(caster.func) };
                 return Some(func(data_ptr(db)));
             }
         }
@@ -123,7 +123,7 @@ impl DynUpcasts {
     /// # Panics
     ///
     /// If the underlying type of `db` is not the same as the database type this upcasts was created for.
-    pub fn try_upcast_mut<'db, View: ?Sized + Any>(
+    pub fn try_cast_mut<'db, View: ?Sized + Any>(
         &self,
         db: &'db mut dyn Database,
     ) -> Option<&'db mut View> {
@@ -131,8 +131,8 @@ impl DynUpcasts {
         assert_eq!(self.source_type_id, db_type_id, "database type mismatch");
 
         let view_type_id = TypeId::of::<View>();
-        for upcast in self.vec.iter() {
-            if upcast.target_type_id == view_type_id {
+        for caster in self.vec.iter() {
+            if caster.target_type_id == view_type_id {
                 // SAFETY: We have some function that takes a thin reference to the underlying
                 // database type `X` and returns a (potentially wide) reference to `View`.
                 //
@@ -140,7 +140,7 @@ impl DynUpcasts {
                 // same as the true type of `db_data_ptr`, and the memory representation for `()`
                 // and `&X` are the same (since `X` is `Sized`).
                 let func_mut: fn(&mut ()) -> &mut View =
-                    unsafe { std::mem::transmute(upcast.func_mut) };
+                    unsafe { std::mem::transmute(caster.func_mut) };
                 return Some(func_mut(data_ptr_mut(db)));
             }
         }
@@ -149,17 +149,17 @@ impl DynUpcasts {
     }
 }
 
-impl std::fmt::Debug for DynUpcasts {
+impl std::fmt::Debug for DynDowncasts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DynUpcasts")
+        f.debug_struct("DynDowncasts")
             .field("vec", &self.vec)
             .finish()
     }
 }
 
-impl std::fmt::Debug for DynUpcast {
+impl std::fmt::Debug for Caster {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("DynUpcast").field(&self.type_name).finish()
+        f.debug_tuple("DynDowncast").field(&self.type_name).finish()
     }
 }
 
@@ -179,7 +179,7 @@ fn data_ptr_mut<T: ?Sized>(t: &mut T) -> &mut () {
     unsafe { &mut *u }
 }
 
-impl<Db: Database> Clone for DynUpcastsFor<Db> {
+impl<Db: Database> Clone for DynDowncastsFor<Db> {
     fn clone(&self) -> Self {
         Self {
             upcasts: self.upcasts.clone(),

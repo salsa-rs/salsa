@@ -40,6 +40,7 @@ mod accumulator;
 mod configuration;
 mod db;
 mod db_lifetime;
+mod db_view;
 mod debug;
 mod debug_with_db;
 mod input;
@@ -66,6 +67,11 @@ pub fn jar(args: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
     db::db(args, input)
+}
+
+#[proc_macro_attribute]
+pub fn db_view(args: TokenStream, input: TokenStream) -> TokenStream {
+    db_view::db_view(args, input)
 }
 
 #[proc_macro_attribute]

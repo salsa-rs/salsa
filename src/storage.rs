@@ -6,10 +6,10 @@ use parking_lot::{Condvar, Mutex};
 use rustc_hash::FxHashMap;
 
 use crate::cycle::CycleRecoveryStrategy;
+use crate::downcast::{DynDowncasts, DynDowncastsFor};
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
-use crate::upcast::{DynUpcasts, DynUpcastsFor};
 use crate::Database;
 
 use super::ParallelDatabase;
@@ -24,7 +24,7 @@ pub unsafe trait DatabaseGen: Any + Send + Sync {
     fn as_salsa_database(&self) -> &dyn Database;
 
     /// Returns a reference to the underlying "dyn-upcasts"
-    fn upcasts(&self) -> &DynUpcasts;
+    fn upcasts(&self) -> &DynDowncasts;
 
     /// Upcast to a `dyn DatabaseGen`.
     ///
@@ -36,7 +36,7 @@ pub unsafe trait DatabaseGen: Any + Send + Sync {
     fn upcast_to_dyn_database_gen(&self) -> &dyn DatabaseGen;
 
     /// Returns the upcasts database, tied to the type of `Self`; cannot be used from `dyn DatabaseGen` objects.
-    fn upcasts_for_self(&self) -> &DynUpcastsFor<Self>
+    fn upcasts_for_self(&self) -> &DynDowncastsFor<Self>
     where
         Self: Sized + Database;
 
@@ -68,7 +68,7 @@ impl dyn Database {
     ///
     /// If the view has not been added to the database (see [`DatabaseView`][])
     pub fn as_view<DbView: ?Sized + Database>(&self) -> &DbView {
-        self.upcasts().try_upcast(self).unwrap()
+        self.upcasts().try_cast(self).unwrap()
     }
 
     /// Upcasts `self` to the given view.
@@ -79,7 +79,7 @@ impl dyn Database {
     pub fn as_view_mut<DbView: ?Sized + Database>(&mut self) -> &mut DbView {
         // Avoid a borrow check error by cloning. This is the "uncommon" path so it seems fine.
         let upcasts = self.upcasts().clone();
-        upcasts.try_upcast_mut(self).unwrap()
+        upcasts.try_cast_mut(self).unwrap()
     }
 }
 
@@ -138,7 +138,7 @@ pub struct Storage<Db: Database> {
 /// This is where the actual data for tracked functions, structs, inputs, etc lives,
 /// along with some coordination variables between treads.
 struct Shared<Db: Database> {
-    upcasts: DynUpcastsFor<Db>,
+    upcasts: DynDowncastsFor<Db>,
 
     nonce: Nonce<StorageNonce>,
 

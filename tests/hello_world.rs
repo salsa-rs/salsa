@@ -7,34 +7,32 @@ use common::{HasLogger, Logger};
 use expect_test::expect;
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked<'_>, final_result, intermediate_result);
+#[salsa::db_view]
+trait Db: DatabaseView<dyn Db> + HasLogger {}
 
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
-
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn final_result(db: &dyn Db, input: MyInput) -> u32 {
     db.push_log(format!("final_result({:?})", input));
     intermediate_result(db, input).field(db) * 2
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct MyTracked<'db> {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn intermediate_result<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     db.push_log(format!("intermediate_result({:?})", input));
     MyTracked::new(db, input.field(db) / 2)
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
