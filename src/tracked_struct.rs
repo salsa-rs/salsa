@@ -2,6 +2,7 @@ use std::{fmt, hash::Hash, marker::PhantomData, ptr::NonNull};
 
 use crossbeam::atomic::AtomicCell;
 use dashmap::mapref::entry::Entry;
+use tracked_field::FieldIngredientImpl;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
@@ -17,10 +18,9 @@ use crate::{
 };
 
 use self::struct_map::{StructMap, Update};
-pub use self::tracked_field::TrackedFieldIngredient;
 
 mod struct_map;
-mod tracked_field;
+pub mod tracked_field;
 
 // ANCHOR: Configuration
 /// Trait that defines the key properties of a tracked struct.
@@ -99,14 +99,14 @@ pub trait Configuration: Jar + Sized + 'static {
 }
 // ANCHOR_END: Configuration
 
-pub struct TrackedStructJar<C>
+pub struct JarImpl<C>
 where
     C: Configuration,
 {
     phantom: PhantomData<C>,
 }
 
-impl<C: Configuration> Default for TrackedStructJar<C> {
+impl<C: Configuration> Default for JarImpl<C> {
     fn default() -> Self {
         Self {
             phantom: Default::default(),
@@ -114,18 +114,18 @@ impl<C: Configuration> Default for TrackedStructJar<C> {
     }
 }
 
-impl<C: Configuration> Jar for TrackedStructJar<C> {
+impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
         &self,
         struct_index: crate::storage::IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>> {
-        let struct_ingredient = TrackedStructIngredient::new(struct_index);
+        let struct_ingredient = IngredientImpl::new(struct_index);
         let struct_map = &struct_ingredient.struct_map.view();
 
         std::iter::once(Box::new(struct_ingredient) as _)
             .chain(
                 (0..u32::try_from(C::FIELD_DEBUG_NAMES.len()).unwrap()).map(|field_index| {
-                    Box::new(TrackedFieldIngredient::<C>::new(
+                    Box::new(FieldIngredientImpl::<C>::new(
                         struct_index,
                         field_index,
                         struct_map,
@@ -149,7 +149,7 @@ pub trait TrackedStructInDb<DB: ?Sized + Database>: SalsaStructInDb<DB> {
 /// Unlike normal interners, tracked struct indices can be deleted and reused aggressively:
 /// when a tracked function re-executes,
 /// any tracked structs that it created before but did not create this time can be deleted.
-pub struct TrackedStructIngredient<C>
+pub struct IngredientImpl<C>
 where
     C: Configuration,
 {
@@ -236,7 +236,7 @@ where
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
 pub struct Disambiguator(pub u32);
 
-impl<C> TrackedStructIngredient<C>
+impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
@@ -420,7 +420,7 @@ where
     }
 }
 
-impl<C> Ingredient for TrackedStructIngredient<C>
+impl<C> Ingredient for IngredientImpl<C>
 where
     C: Configuration,
 {
@@ -482,7 +482,7 @@ where
     }
 }
 
-impl<C> std::fmt::Debug for TrackedStructIngredient<C>
+impl<C> std::fmt::Debug for IngredientImpl<C>
 where
     C: Configuration,
 {
@@ -493,7 +493,7 @@ where
     }
 }
 
-impl<C> IngredientRequiresReset for TrackedStructIngredient<C>
+impl<C> IngredientRequiresReset for IngredientImpl<C>
 where
     C: Configuration,
 {

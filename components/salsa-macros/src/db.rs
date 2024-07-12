@@ -84,21 +84,18 @@ impl DbMacro {
     fn has_storage_impl(&self, input: &syn::ItemStruct) -> syn::Result<TokenStream> {
         let storage = self.find_storage_field(input)?;
         let db = &input.ident;
-
-        let SalsaHasStorage = self.hygiene.ident("SalsaHasStorage");
-        let SalsaStorage = self.hygiene.ident("SalsaStorage");
+        let zalsa = self.hygiene.ident("zalsa");
 
         Ok(quote! {
             const _: () = {
-                use salsa::storage::HasStorage as #SalsaHasStorage;
-                use salsa::storage::Storage as #SalsaStorage;
+                use salsa::plumbing as #zalsa;
 
-                unsafe impl #SalsaHasStorage for #db {
-                    fn storage(&self) -> &#SalsaStorage<Self> {
+                unsafe impl #zalsa::HasStorage for #db {
+                    fn storage(&self) -> &#zalsa::Storage<Self> {
                         &self.#storage
                     }
 
-                    fn storage_mut(&mut self) -> &mut #SalsaStorage<Self> {
+                    fn storage_mut(&mut self) -> &mut #zalsa::Storage<Self> {
                         &mut self.#storage
                     }
                 }
@@ -115,17 +112,21 @@ impl DbMacro {
     }
 
     fn add_salsa_view_method_impl(&self, input: &mut syn::ItemImpl) -> syn::Result<()> {
+        let zalsa = self.hygiene.ident("zalsa");
+
         let Some((_, TraitPath, _)) = &input.trait_ else {
             return Err(syn::Error::new_spanned(
                 &input.self_ty,
                 "impl must be on a trait",
             ));
         };
+
         input.items.push(parse_quote! {
             #[doc(hidden)]
             #[allow(uncommon_codepoins)]
             fn zalsa_add_view(&self) {
-                salsa::storage::views(self).add::<Self, dyn #TraitPath>(|t| t, |t| t);
+                use salsa::plumbing as #zalsa;
+                #zalsa::views(self).add::<Self, dyn #TraitPath>(|t| t, |t| t);
             }
         });
         Ok(())

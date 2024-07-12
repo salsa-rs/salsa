@@ -3,9 +3,9 @@ use crossbeam::queue::SegQueue;
 
 use crate::{runtime::local_state::QueryOrigin, Id};
 
-use super::{memo, Configuration, FunctionIngredient};
+use super::{memo, Configuration, IngredientImpl};
 
-impl<C> FunctionIngredient<C>
+impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {

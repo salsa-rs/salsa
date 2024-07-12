@@ -3,10 +3,10 @@ use crate::{
     storage::DatabaseGen, DatabaseKeyIndex, Id,
 };
 
-use super::{Configuration, FunctionIngredient};
+use super::{Configuration, IngredientImpl};
 use crate::accumulator::Accumulator;
 
-impl<C> FunctionIngredient<C>
+impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {

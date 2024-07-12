@@ -10,9 +10,9 @@ use crate::{
     Id, Revision, Runtime,
 };
 
-use super::{memo::Memo, Configuration, FunctionIngredient};
+use super::{memo::Memo, Configuration, IngredientImpl};
 
-impl<C> FunctionIngredient<C>
+impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {

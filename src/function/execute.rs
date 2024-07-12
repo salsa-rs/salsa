@@ -6,9 +6,9 @@ use crate::{
     Cycle, Database, Event, EventKind,
 };
 
-use super::{memo::Memo, Configuration, FunctionIngredient};
+use super::{memo::Memo, Configuration, IngredientImpl};
 
-impl<C> FunctionIngredient<C>
+impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {

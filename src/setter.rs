@@ -1,6 +1,6 @@
 use crate::id::AsId;
 use crate::input::Configuration;
-use crate::input_field::{InputFieldData, InputFieldIngredient};
+use crate::input_field::{FieldIngredientImpl, InputFieldData};
 use crate::{Durability, Runtime};
 use std::hash::Hash;
 
@@ -8,7 +8,7 @@ use std::hash::Hash;
 pub struct Setter<'setter, C: Configuration, F: InputFieldData> {
     runtime: &'setter mut Runtime,
     key: C::Id,
-    ingredient: &'setter mut InputFieldIngredient<C, F>,
+    ingredient: &'setter mut FieldIngredientImpl<C, F>,
     durability: Durability,
 }
 
@@ -20,7 +20,7 @@ where
     pub fn new(
         runtime: &'setter mut Runtime,
         key: C::Id,
-        ingredient: &'setter mut InputFieldIngredient<C, F>,
+        ingredient: &'setter mut FieldIngredientImpl<C, F>,
     ) -> Self {
         Setter {
             runtime,

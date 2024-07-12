@@ -53,7 +53,7 @@ impl<T: Eq + Hash + Clone> InternedData for T {}
 /// The interned ingredient has the job of hashing values of type `Data` to produce an `Id`.
 /// It used to store interned structs but also to store the id fields of a tracked struct.
 /// Interned values endure until they are explicitly removed in some way.
-pub struct InternedIngredient<C: Configuration> {
+pub struct IngredientImpl<C: Configuration> {
     /// Index of this ingredient in the database (used to construct database-ids, etc).
     ingredient_index: IngredientIndex,
 
@@ -86,7 +86,7 @@ where
     fields: C::Data<'static>,
 }
 
-impl<C> InternedIngredient<C>
+impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
@@ -182,7 +182,7 @@ where
     }
 }
 
-impl<C> Ingredient for InternedIngredient<C>
+impl<C> Ingredient for IngredientImpl<C>
 where
     C: Configuration,
 {
@@ -247,14 +247,14 @@ where
     }
 }
 
-impl<C> IngredientRequiresReset for InternedIngredient<C>
+impl<C> IngredientRequiresReset for IngredientImpl<C>
 where
     C: Configuration,
 {
     const RESET_ON_NEW_REVISION: bool = false;
 }
 
-impl<C> std::fmt::Debug for InternedIngredient<C>
+impl<C> std::fmt::Debug for IngredientImpl<C>
 where
     C: Configuration,
 {

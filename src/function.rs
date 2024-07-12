@@ -82,7 +82,7 @@ pub trait Configuration: 'static {
 /// * the `specify` method, which can only be used when the key is an entity created by the active query.
 ///   It sets the value of the function imperatively, so that when later fetches occur, they'll return this value.
 /// * the `store` method, which can only be invoked with an `&mut` reference, and is to set input fields.
-pub struct FunctionIngredient<C: Configuration> {
+pub struct IngredientImpl<C: Configuration> {
     /// The ingredient index we were assigned in the database.
     /// Used to construct `DatabaseKeyIndex` values.
     index: IngredientIndex,
@@ -127,7 +127,7 @@ pub fn should_backdate_value<V: Eq>(old_value: &V, new_value: &V) -> bool {
 /// e.g. you can do `Config<X, 0>` and `Config<X, 1>`.
 pub struct Config<const C: usize>(std::marker::PhantomData<[(); C]>);
 
-impl<C> FunctionIngredient<C>
+impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
@@ -199,7 +199,7 @@ where
     }
 }
 
-impl<C> Ingredient for FunctionIngredient<C>
+impl<C> Ingredient for IngredientImpl<C>
 where
     C: Configuration,
 {
@@ -276,7 +276,7 @@ where
     }
 }
 
-impl<C> std::fmt::Debug for FunctionIngredient<C>
+impl<C> std::fmt::Debug for IngredientImpl<C>
 where
     C: Configuration,
 {
@@ -287,7 +287,7 @@ where
     }
 }
 
-impl<C> IngredientRequiresReset for FunctionIngredient<C>
+impl<C> IngredientRequiresReset for IngredientImpl<C>
 where
     C: Configuration,
 {

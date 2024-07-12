@@ -1,8 +1,8 @@
 use crate::{runtime::local_state::QueryOrigin, Id};
 
-use super::{Configuration, FunctionIngredient};
+use super::{Configuration, IngredientImpl};
 
-impl<C> FunctionIngredient<C>
+impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {

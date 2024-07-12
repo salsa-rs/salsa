@@ -16,7 +16,7 @@ use super::{struct_map::StructMapView, Configuration};
 /// Unlike normal interners, tracked struct indices can be deleted and reused aggressively:
 /// when a tracked function re-executes,
 /// any tracked structs that it created before but did not create this time can be deleted.
-pub struct TrackedFieldIngredient<C>
+pub struct FieldIngredientImpl<C>
 where
     C: Configuration,
 {
@@ -26,7 +26,7 @@ where
     struct_map: StructMapView<C>,
 }
 
-impl<C> TrackedFieldIngredient<C>
+impl<C> FieldIngredientImpl<C>
 where
     C: Configuration,
 {
@@ -68,7 +68,7 @@ where
     }
 }
 
-impl<C> Ingredient for TrackedFieldIngredient<C>
+impl<C> Ingredient for FieldIngredientImpl<C>
 where
     C: Configuration,
 {
@@ -139,7 +139,7 @@ where
     }
 }
 
-impl<C> std::fmt::Debug for TrackedFieldIngredient<C>
+impl<C> std::fmt::Debug for FieldIngredientImpl<C>
 where
     C: Configuration,
 {
@@ -151,7 +151,7 @@ where
     }
 }
 
-impl<C> IngredientRequiresReset for TrackedFieldIngredient<C>
+impl<C> IngredientRequiresReset for FieldIngredientImpl<C>
 where
     C: Configuration,
 {

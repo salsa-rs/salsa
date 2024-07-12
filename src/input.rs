@@ -18,14 +18,14 @@ pub trait Configuration: Any {
     type Id: FromId + 'static + Send + Sync;
 }
 
-pub struct InputIngredient<C: Configuration> {
+pub struct IngredientImpl<C: Configuration> {
     ingredient_index: IngredientIndex,
     counter: AtomicU32,
     debug_name: &'static str,
     _phantom: std::marker::PhantomData<C::Id>,
 }
 
-impl<C: Configuration> InputIngredient<C> {
+impl<C: Configuration> IngredientImpl<C> {
     pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
             ingredient_index: index,
@@ -62,7 +62,7 @@ impl<C: Configuration> InputIngredient<C> {
     }
 }
 
-impl<C: Configuration> Ingredient for InputIngredient<C> {
+impl<C: Configuration> Ingredient for IngredientImpl<C> {
     fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
     }
@@ -125,11 +125,11 @@ impl<C: Configuration> Ingredient for InputIngredient<C> {
     }
 }
 
-impl<C: Configuration> IngredientRequiresReset for InputIngredient<C> {
+impl<C: Configuration> IngredientRequiresReset for IngredientImpl<C> {
     const RESET_ON_NEW_REVISION: bool = false;
 }
 
-impl<C: Configuration> std::fmt::Debug for InputIngredient<C> {
+impl<C: Configuration> std::fmt::Debug for IngredientImpl<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(std::any::type_name::<Self>())
             .field("index", &self.ingredient_index)

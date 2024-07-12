@@ -2,7 +2,6 @@ use crate::cycle::CycleRecoveryStrategy;
 use crate::id::{AsId, FromId};
 use crate::ingredient::{fmt_index, Ingredient, IngredientRequiresReset};
 use crate::input::Configuration;
-use crate::plumbing::transmute_lifetime;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::StampedValue;
 use crate::storage::IngredientIndex;
@@ -23,13 +22,13 @@ impl<T: Send + Sync + 'static> InputFieldData for T {}
 /// a shared reference, so some locking is required.
 /// Altogether this makes the implementation somewhat simpler than tracked
 /// structs.
-pub struct InputFieldIngredient<C: Configuration, F: InputFieldData> {
+pub struct FieldIngredientImpl<C: Configuration, F: InputFieldData> {
     index: IngredientIndex,
     map: DashMap<C::Id, Box<StampedValue<F>>>,
     debug_name: &'static str,
 }
 
-impl<C, F> InputFieldIngredient<C, F>
+impl<C, F> FieldIngredientImpl<C, F>
 where
     C: Configuration,
     F: InputFieldData,
@@ -110,7 +109,16 @@ where
     }
 }
 
-impl<C, F> Ingredient for InputFieldIngredient<C, F>
+/// More limited wrapper around transmute that copies lifetime from `a` to `b`.
+///
+/// # Safety condition
+///
+/// `b` must be owned by `a`
+unsafe fn transmute_lifetime<'a, 'b, A, B>(_a: &'a A, b: &'b B) -> &'a B {
+    std::mem::transmute(b)
+}
+
+impl<C, F> Ingredient for FieldIngredientImpl<C, F>
 where
     C: Configuration,
     F: InputFieldData,
@@ -166,7 +174,7 @@ where
     }
 }
 
-impl<C, F> IngredientRequiresReset for InputFieldIngredient<C, F>
+impl<C, F> IngredientRequiresReset for FieldIngredientImpl<C, F>
 where
     C: Configuration,
     F: InputFieldData,
@@ -174,7 +182,7 @@ where
     const RESET_ON_NEW_REVISION: bool = false;
 }
 
-impl<C, F> std::fmt::Debug for InputFieldIngredient<C, F>
+impl<C, F> std::fmt::Debug for FieldIngredientImpl<C, F>
 where
     C: Configuration,
     F: InputFieldData,
