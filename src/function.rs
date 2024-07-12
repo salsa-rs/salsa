@@ -42,10 +42,10 @@ pub trait Configuration: 'static {
     type SalsaStruct<'db>: SalsaStructInDb<Self::DbView>;
 
     /// The input to the function
-    type Input<'db>;
+    type Input<'db>: Send + Sync;
 
     /// The value computed by the function.
-    type Value<'db>: fmt::Debug;
+    type Value<'db>: fmt::Debug + Send + Sync;
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).

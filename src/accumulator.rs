@@ -19,7 +19,7 @@ use crate::{
 pub trait Accumulator: Jar {
     const DEBUG_NAME: &'static str;
 
-    type Data: Clone + Debug;
+    type Data: Clone + Debug + Send + Sync;
 }
 
 pub struct AccumulatorJar<A: Accumulator> {

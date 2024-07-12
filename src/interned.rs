@@ -21,8 +21,10 @@ use super::Revision;
 pub trait Configuration: Sized + 'static {
     const DEBUG_NAME: &'static str;
 
-    type Data<'db>: InternedData;
+    /// The type of data being interned
+    type Data<'db>: InternedData + Send + Sync;
 
+    /// The end user struct
     type Struct<'db>: Copy;
 
     /// Create an end-user struct from the underlying raw pointer.

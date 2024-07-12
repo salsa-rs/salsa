@@ -1,25 +1,26 @@
 use crate::id::AsId;
-use crate::input_field::InputFieldIngredient;
+use crate::input::Configuration;
+use crate::input_field::{InputFieldData, InputFieldIngredient};
 use crate::{Durability, Runtime};
 use std::hash::Hash;
 
 #[must_use]
-pub struct Setter<'setter, K, F> {
+pub struct Setter<'setter, C: Configuration, F: InputFieldData> {
     runtime: &'setter mut Runtime,
-    key: K,
-    ingredient: &'setter mut InputFieldIngredient<K, F>,
+    key: C::Id,
+    ingredient: &'setter mut InputFieldIngredient<C, F>,
     durability: Durability,
 }
 
-impl<'setter, K, F> Setter<'setter, K, F>
+impl<'setter, C, F> Setter<'setter, C, F>
 where
-    K: Eq + Hash + AsId + 'static,
-    F: 'static,
+    C: Configuration,
+    F: InputFieldData,
 {
     pub fn new(
         runtime: &'setter mut Runtime,
-        key: K,
-        ingredient: &'setter mut InputFieldIngredient<K, F>,
+        key: C::Id,
+        ingredient: &'setter mut InputFieldIngredient<C, F>,
     ) -> Self {
         Setter {
             runtime,

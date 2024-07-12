@@ -1,35 +1,31 @@
 use std::{
+    any::Any,
     fmt,
     sync::atomic::{AtomicU32, Ordering},
 };
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    id::FromId,
+    id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
-    key::{DatabaseKeyIndex, DependencyIndex},
+    key::DatabaseKeyIndex,
     runtime::{local_state::QueryOrigin, Runtime},
     storage::IngredientIndex,
     Database, Revision,
 };
 
-pub trait InputId: FromId + 'static {}
-impl<T: FromId + 'static> InputId for T {}
+pub trait Configuration: Any {
+    type Id: FromId + 'static + Send + Sync;
+}
 
-pub struct InputIngredient<Id>
-where
-    Id: InputId,
-{
+pub struct InputIngredient<C: Configuration> {
     ingredient_index: IngredientIndex,
     counter: AtomicU32,
     debug_name: &'static str,
-    _phantom: std::marker::PhantomData<Id>,
+    _phantom: std::marker::PhantomData<C::Id>,
 }
 
-impl<Id> InputIngredient<Id>
-where
-    Id: InputId,
-{
+impl<C: Configuration> InputIngredient<C> {
     pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
             ingredient_index: index,
@@ -39,37 +35,34 @@ where
         }
     }
 
-    pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
+    pub fn database_key_index(&self, id: C::Id) -> DatabaseKeyIndex {
         DatabaseKeyIndex {
             ingredient_index: self.ingredient_index,
             key_index: id.as_id(),
         }
     }
 
-    pub fn new_input(&self, _runtime: &Runtime) -> Id {
+    pub fn new_input(&self, _runtime: &Runtime) -> C::Id {
         let next_id = self.counter.fetch_add(1, Ordering::Relaxed);
-        Id::from_id(crate::Id::from_u32(next_id))
+        C::Id::from_id(crate::Id::from_u32(next_id))
     }
 
-    pub fn new_singleton_input(&self, _runtime: &Runtime) -> Id {
+    pub fn new_singleton_input(&self, _runtime: &Runtime) -> C::Id {
         // when one exists already, panic
         if self.counter.load(Ordering::Relaxed) >= 1 {
             panic!("singleton struct may not be duplicated");
         }
         // fresh new ingredient
         self.counter.store(1, Ordering::Relaxed);
-        Id::from_id(crate::Id::from_u32(0))
+        C::Id::from_id(crate::Id::from_u32(0))
     }
 
-    pub fn get_singleton_input(&self, _runtime: &Runtime) -> Option<Id> {
-        (self.counter.load(Ordering::Relaxed) > 0).then(|| Id::from_id(crate::Id::from_u32(0)))
+    pub fn get_singleton_input(&self, _runtime: &Runtime) -> Option<C::Id> {
+        (self.counter.load(Ordering::Relaxed) > 0).then(|| C::Id::from_id(crate::Id::from_u32(0)))
     }
 }
 
-impl<Id> Ingredient for InputIngredient<Id>
-where
-    Id: InputId,
-{
+impl<C: Configuration> Ingredient for InputIngredient<C> {
     fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
     }
@@ -132,17 +125,11 @@ where
     }
 }
 
-impl<Id> IngredientRequiresReset for InputIngredient<Id>
-where
-    Id: InputId,
-{
+impl<C: Configuration> IngredientRequiresReset for InputIngredient<C> {
     const RESET_ON_NEW_REVISION: bool = false;
 }
 
-impl<Id> std::fmt::Debug for InputIngredient<Id>
-where
-    Id: InputId,
-{
+impl<C: Configuration> std::fmt::Debug for InputIngredient<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(std::any::type_name::<Self>())
             .field("index", &self.ingredient_index)

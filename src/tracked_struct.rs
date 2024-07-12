@@ -31,13 +31,13 @@ pub trait Configuration: Jar + Sized + 'static {
     const FIELD_DEBUG_NAMES: &'static [&'static str];
 
     /// A (possibly empty) tuple of the fields for this struct.
-    type Fields<'db>;
+    type Fields<'db>: Send + Sync;
 
     /// A array of [`Revision`][] values, one per each of the value fields.
     /// When a struct is re-recreated in a new revision, the corresponding
     /// entries for each field are updated to the new revision if their
     /// values have changed (or if the field is marked as `#[no_eq]`).
-    type Revisions;
+    type Revisions: Send + Sync;
 
     type Struct<'db>: Copy;
 

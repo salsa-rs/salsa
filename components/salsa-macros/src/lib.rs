@@ -46,7 +46,6 @@ mod debug;
 mod debug_with_db;
 mod input;
 mod interned;
-mod jar;
 mod options;
 mod salsa_struct;
 mod tracked;
@@ -61,18 +60,8 @@ pub fn accumulator(args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn jar(args: TokenStream, input: TokenStream) -> TokenStream {
-    jar::jar(args, input)
-}
-
-#[proc_macro_attribute]
 pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
     db::db(args, input)
-}
-
-#[proc_macro_attribute]
-pub fn db_view(args: TokenStream, input: TokenStream) -> TokenStream {
-    db_view::db_view(args, input)
 }
 
 #[proc_macro_attribute]

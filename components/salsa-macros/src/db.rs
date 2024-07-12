@@ -108,7 +108,8 @@ impl DbMacro {
 
     fn add_salsa_view_method(&self, input: &mut syn::ItemTrait) -> syn::Result<()> {
         input.items.push(parse_quote! {
-            fn __salsa_add_view__(&self);
+            #[doc(hidden)]
+            fn zalsa_add_view(&self);
         });
         Ok(())
     }
@@ -121,8 +122,10 @@ impl DbMacro {
             ));
         };
         input.items.push(parse_quote! {
-            fn __salsa_add_view__(&self) {
-                salsa::storage::views(self).add::<dyn #TraitPath>(|t| t, |t| t);
+            #[doc(hidden)]
+            #[allow(uncommon_codepoins)]
+            fn zalsa_add_view(&self) {
+                salsa::storage::views(self).add::<Self, dyn #TraitPath>(|t| t, |t| t);
             }
         });
         Ok(())

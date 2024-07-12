@@ -68,7 +68,7 @@ impl Views {
     }
 
     /// Add a new upcast from `Db` to `T`, given the upcasting function `func`.
-    fn add<Db: Database, DbView: ?Sized + Any>(
+    pub fn add<Db: Database, DbView: ?Sized + Any>(
         &self,
         func: fn(&Db) -> &DbView,
         func_mut: fn(&mut Db) -> &mut DbView,

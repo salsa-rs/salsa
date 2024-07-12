@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 
 use crate::{storage::DatabaseGen, Durability, Event};
 
+#[salsa_macros::db]
 pub trait Database: DatabaseGen {
     /// This function is invoked at key points in the salsa
     /// runtime. It permits the database to be customized and to
@@ -34,21 +35,6 @@ pub trait Database: DatabaseGen {
     /// revision.
     fn report_untracked_read(&self) {
         self.runtime().report_untracked_read();
-    }
-}
-
-/// The database view trait allows you to define your own views on the database.
-/// This lets you add extra context beyond what is stored in the salsa database itself.
-pub trait DatabaseView<Dyn: ?Sized + Any>: Database {
-    /// Registers this database view in the database.
-    /// This is normally invoked automatically by tracked functions that require a given view.
-    fn add_view_to_db(&self);
-}
-
-impl<Db: Database> DatabaseView<dyn Database> for Db {
-    fn add_view_to_db(&self) {
-        let upcasts = self.views_of_self();
-        upcasts.add::<dyn Database>(|t| t, |t| t);
     }
 }
 
@@ -193,10 +179,6 @@ impl AttachedDatabase {
         }
     }
 }
-
-unsafe impl Send for AttachedDatabase where dyn Database: Sync {}
-
-unsafe impl Sync for AttachedDatabase where dyn Database: Sync {}
 
 struct AttachedDb<'db, Db: ?Sized + Database> {
     db: &'db Db,

@@ -1,7 +1,7 @@
 use crate::cycle::CycleRecoveryStrategy;
 use crate::id::{AsId, FromId};
 use crate::ingredient::{fmt_index, Ingredient, IngredientRequiresReset};
-use crate::key::DependencyIndex;
+use crate::input::Configuration;
 use crate::plumbing::transmute_lifetime;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::StampedValue;
@@ -10,7 +10,9 @@ use crate::{Database, DatabaseKeyIndex, Durability, Id, Revision, Runtime};
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use std::fmt;
-use std::hash::Hash;
+
+pub trait InputFieldData: Send + Sync + 'static {}
+impl<T: Send + Sync + 'static> InputFieldData for T {}
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
 ///
@@ -21,16 +23,16 @@ use std::hash::Hash;
 /// a shared reference, so some locking is required.
 /// Altogether this makes the implementation somewhat simpler than tracked
 /// structs.
-pub struct InputFieldIngredient<K, F> {
+pub struct InputFieldIngredient<C: Configuration, F: InputFieldData> {
     index: IngredientIndex,
-    map: DashMap<K, Box<StampedValue<F>>>,
+    map: DashMap<C::Id, Box<StampedValue<F>>>,
     debug_name: &'static str,
 }
 
-impl<K, F> InputFieldIngredient<K, F>
+impl<C, F> InputFieldIngredient<C, F>
 where
-    K: Eq + Hash + AsId + 'static,
-    F: 'static,
+    C: Configuration,
+    F: InputFieldData,
 {
     pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
         Self {
@@ -43,7 +45,7 @@ where
     pub fn store_mut(
         &mut self,
         runtime: &Runtime,
-        key: K,
+        key: C::Id,
         value: F,
         durability: Durability,
     ) -> Option<F> {
@@ -62,7 +64,7 @@ where
     /// Set the field of a new input.
     ///
     /// This function panics if the field has ever been set before.
-    pub fn store_new(&self, runtime: &Runtime, key: K, value: F, durability: Durability) {
+    pub fn store_new(&self, runtime: &Runtime, key: C::Id, value: F, durability: Durability) {
         let revision = runtime.current_revision();
         let stamped_value = Box::new(StampedValue {
             value,
@@ -80,7 +82,7 @@ where
         }
     }
 
-    pub fn fetch<'db>(&'db self, runtime: &'db Runtime, key: K) -> &F {
+    pub fn fetch<'db>(&'db self, runtime: &'db Runtime, key: C::Id) -> &F {
         let StampedValue {
             value,
             durability,
@@ -100,7 +102,7 @@ where
         unsafe { transmute_lifetime(self, value) }
     }
 
-    fn database_key_index(&self, key: K) -> DatabaseKeyIndex {
+    fn database_key_index(&self, key: C::Id) -> DatabaseKeyIndex {
         DatabaseKeyIndex {
             ingredient_index: self.index,
             key_index: key.as_id(),
@@ -108,10 +110,10 @@ where
     }
 }
 
-impl<K, F> Ingredient for InputFieldIngredient<K, F>
+impl<C, F> Ingredient for InputFieldIngredient<C, F>
 where
-    K: FromId + 'static,
-    F: 'static,
+    C: Configuration,
+    F: InputFieldData,
 {
     fn ingredient_index(&self) -> IngredientIndex {
         self.index
@@ -127,7 +129,7 @@ where
         input: Option<Id>,
         revision: Revision,
     ) -> bool {
-        let key = K::from_id(input.unwrap());
+        let key = C::Id::from_id(input.unwrap());
         self.map.get(&key).unwrap().changed_at > revision
     }
 
@@ -164,16 +166,18 @@ where
     }
 }
 
-impl<K, F> IngredientRequiresReset for InputFieldIngredient<K, F>
+impl<C, F> IngredientRequiresReset for InputFieldIngredient<C, F>
 where
-    K: AsId,
+    C: Configuration,
+    F: InputFieldData,
 {
     const RESET_ON_NEW_REVISION: bool = false;
 }
 
-impl<K, F> std::fmt::Debug for InputFieldIngredient<K, F>
+impl<C, F> std::fmt::Debug for InputFieldIngredient<C, F>
 where
-    K: AsId,
+    C: Configuration,
+    F: InputFieldData,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(std::any::type_name::<Self>())

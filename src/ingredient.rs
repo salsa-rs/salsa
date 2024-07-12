@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::{
-    cycle::CycleRecoveryStrategy, key::DependencyIndex, runtime::local_state::QueryOrigin,
-    storage::IngredientIndex, Database, DatabaseKeyIndex, Id,
+    cycle::CycleRecoveryStrategy, runtime::local_state::QueryOrigin, storage::IngredientIndex,
+    Database, DatabaseKeyIndex, Id,
 };
 
 use super::Revision;
@@ -18,7 +18,7 @@ pub trait Jar: Any {
     fn create_ingredients(&self, first_index: IngredientIndex) -> Vec<Box<dyn Ingredient>>;
 }
 
-pub trait Ingredient: Any + std::fmt::Debug {
+pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// Has the value for `input` in this ingredient changed after `revision`?
     fn maybe_changed_after<'db>(
         &'db self,

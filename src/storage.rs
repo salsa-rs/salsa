@@ -25,7 +25,7 @@ pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
 ///
 /// This trait is meant to be implemented by our procedural macro.
 /// We need to document any non-obvious conditions that it satisfies.
-pub unsafe trait DatabaseGen: Any + Send + Sync {
+pub unsafe trait DatabaseGen: Any {
     /// Upcast to a `dyn Database`.
     ///
     /// Only required because upcasts not yet stabilized (*grr*).
@@ -80,9 +80,9 @@ pub unsafe trait DatabaseGen: Any + Send + Sync {
 ///
 /// The `storage` field must be an owned field of
 /// the implementing struct.
-pub unsafe trait HasStorage: Database + Sized + Any + Send + Sync {
+pub unsafe trait HasStorage: Database + Sized + Any {
     fn storage(&self) -> &Storage<Self>;
-    fn storage_mut(&self) -> &mut Storage<Self>;
+    fn storage_mut(&mut self) -> &mut Storage<Self>;
 }
 
 unsafe impl<T: HasStorage> DatabaseGen for T {
@@ -95,13 +95,6 @@ unsafe impl<T: HasStorage> DatabaseGen for T {
     }
 
     fn views(&self) -> &Views {
-        &self.storage().shared.upcasts
-    }
-
-    fn views_of_self(&self) -> &ViewsOf<Self>
-    where
-        Self: Sized + Database,
-    {
         &self.storage().shared.upcasts
     }
 
@@ -388,10 +381,19 @@ where
     cached_data: std::sync::OnceLock<(Nonce<StorageNonce>, *const I)>,
 }
 
+unsafe impl<I> Sync for IngredientCache<I> where I: Ingredient + Sync {}
+
 impl<I> IngredientCache<I>
 where
     I: Ingredient,
 {
+    /// Create a new cache
+    pub const fn new() -> Self {
+        Self {
+            cached_data: std::sync::OnceLock::new(),
+        }
+    }
+
     /// Get a reference to the ingredient in the database.
     /// If the ingredient is not already in the cache, it will be created.
     pub fn get_or_create<'s>(
