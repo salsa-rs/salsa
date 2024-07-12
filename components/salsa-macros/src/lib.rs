@@ -42,7 +42,6 @@ mod accumulator;
 mod configuration;
 mod db;
 mod db_lifetime;
-mod db_view;
 mod debug;
 mod debug_with_db;
 mod input;

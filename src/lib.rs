@@ -41,7 +41,6 @@ pub use self::runtime::Runtime;
 pub use self::storage::Storage;
 pub use salsa_macros::accumulator;
 pub use salsa_macros::db;
-pub use salsa_macros::db_view;
 pub use salsa_macros::input;
 pub use salsa_macros::interned;
 pub use salsa_macros::jar;
