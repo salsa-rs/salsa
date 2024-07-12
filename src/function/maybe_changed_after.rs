@@ -101,7 +101,7 @@ where
         db: &C::DbView,
         runtime: &Runtime,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Value<'_>>,
+        memo: &Memo<C::Output<'_>>,
     ) -> bool {
         let verified_at = memo.verified_at.load();
         let revision_now = runtime.current_revision();
@@ -135,7 +135,7 @@ where
     pub(super) fn deep_verify_memo(
         &self,
         db: &C::DbView,
-        old_memo: &Memo<C::Value<'_>>,
+        old_memo: &Memo<C::Output<'_>>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> bool {
         let runtime = db.runtime();

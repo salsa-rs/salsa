@@ -61,8 +61,10 @@ pub mod plumbing {
     pub use crate::ingredient::Jar;
     pub use crate::salsa_struct::SalsaStructInDb;
     pub use crate::storage::views;
+    pub use crate::storage::HasStorage;
     pub use crate::storage::IngredientCache;
     pub use crate::storage::IngredientIndex;
+    pub use crate::storage::Storage;
 
     pub mod input {
         pub use crate::input::Configuration;

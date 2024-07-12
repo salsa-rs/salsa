@@ -18,7 +18,7 @@ where
         &'db mut self,
         runtime: &mut Runtime,
         key: Id,
-        value: C::Value<'db>,
+        value: C::Output<'db>,
         durability: Durability,
     ) {
         let revision = runtime.current_revision();

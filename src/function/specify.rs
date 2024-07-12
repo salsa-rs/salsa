@@ -20,7 +20,7 @@ where
         &'db self,
         db: &'db C::DbView,
         key: Id,
-        value: C::Value<'db>,
+        value: C::Output<'db>,
         origin: impl Fn(DatabaseKeyIndex) -> QueryOrigin,
     ) where
         C::Input<'db>: TrackedStructInDb<C::DbView>,
@@ -93,7 +93,7 @@ where
 
     /// Specify the value for `key` *and* record that we did so.
     /// Used for explicit calls to `specify`, but not needed for pre-declared tracked struct fields.
-    pub fn specify_and_record<'db>(&'db self, db: &'db C::DbView, key: Id, value: C::Value<'db>)
+    pub fn specify_and_record<'db>(&'db self, db: &'db C::DbView, key: Id, value: C::Output<'db>)
     where
         C::Input<'db>: TrackedStructInDb<C::DbView>,
     {

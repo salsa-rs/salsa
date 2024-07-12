@@ -25,8 +25,8 @@ where
         &'db self,
         db: &'db C::DbView,
         active_query: ActiveQueryGuard<'_>,
-        opt_old_memo: Option<Arc<Memo<C::Value<'_>>>>,
-    ) -> StampedValue<&C::Value<'db>> {
+        opt_old_memo: Option<Arc<Memo<C::Output<'_>>>>,
+    ) -> StampedValue<&C::Output<'db>> {
         let runtime = db.runtime();
         let revision_now = runtime.current_revision();
         let database_key_index = active_query.database_key_index;
@@ -44,7 +44,7 @@ where
         // stale, or value is absent. Let's execute!
         let database_key_index = active_query.database_key_index;
         let key = database_key_index.key_index;
-        let value = match Cycle::catch(|| C::execute(db, key)) {
+        let value = match Cycle::catch(|| C::execute(db, C::id_to_input(db, key))) {
             Ok(v) => v,
             Err(cycle) => {
                 log::debug!(

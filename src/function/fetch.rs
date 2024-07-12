@@ -8,7 +8,7 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn fetch<'db>(&'db self, db: &'db C::DbView, key: Id) -> &C::Value<'db> {
+    pub fn fetch<'db>(&'db self, db: &'db C::DbView, key: Id) -> &C::Output<'db> {
         let runtime = db.runtime();
 
         runtime.unwind_if_revision_cancelled(db);
@@ -37,7 +37,7 @@ where
         &'db self,
         db: &'db C::DbView,
         key: Id,
-    ) -> StampedValue<&'db C::Value<'db>> {
+    ) -> StampedValue<&'db C::Output<'db>> {
         loop {
             if let Some(value) = self.fetch_hot(db, key).or_else(|| self.fetch_cold(db, key)) {
                 return value;
@@ -50,7 +50,7 @@ where
         &'db self,
         db: &'db C::DbView,
         key: Id,
-    ) -> Option<StampedValue<&'db C::Value<'db>>> {
+    ) -> Option<StampedValue<&'db C::Output<'db>>> {
         let memo_guard = self.memo_map.get(key);
         if let Some(memo) = &memo_guard {
             if memo.value.is_some() {
@@ -71,7 +71,7 @@ where
         &'db self,
         db: &'db C::DbView,
         key: Id,
-    ) -> Option<StampedValue<&'db C::Value<'db>>> {
+    ) -> Option<StampedValue<&'db C::Output<'db>>> {
         let runtime = db.runtime();
         let database_key_index = self.database_key_index(key);
 

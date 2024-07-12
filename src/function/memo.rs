@@ -18,7 +18,7 @@ pub(super) struct MemoMap<C: Configuration> {
 }
 
 #[allow(type_alias_bounds)]
-type ArcMemo<'lt, C: Configuration> = ArcSwap<Memo<<C as Configuration>::Value<'lt>>>;
+type ArcMemo<'lt, C: Configuration> = ArcSwap<Memo<<C as Configuration>::Output<'lt>>>;
 
 impl<C: Configuration> Default for MemoMap<C> {
     fn default() -> Self {
@@ -47,8 +47,8 @@ impl<C: Configuration> MemoMap<C> {
     pub(super) fn insert<'db>(
         &'db self,
         key: Id,
-        memo: Arc<Memo<C::Value<'db>>>,
-    ) -> Option<ArcSwap<Memo<C::Value<'db>>>> {
+        memo: Arc<Memo<C::Output<'db>>>,
+    ) -> Option<ArcSwap<Memo<C::Output<'db>>>> {
         unsafe {
             let value = ArcSwap::from(memo);
             let old_value = self.map.insert(key, self.to_static(value))?;
@@ -58,18 +58,18 @@ impl<C: Configuration> MemoMap<C> {
 
     /// Removes any existing memo for the given key.
     #[must_use]
-    pub(super) fn remove(&self, key: Id) -> Option<ArcSwap<Memo<C::Value<'_>>>> {
+    pub(super) fn remove(&self, key: Id) -> Option<ArcSwap<Memo<C::Output<'_>>>> {
         unsafe { self.map.remove(&key).map(|o| self.to_self(o.1)) }
     }
 
     /// Loads the current memo for `key_index`. This does not hold any sort of
     /// lock on the `memo_map` once it returns, so this memo could immediately
     /// become outdated if other threads store into the `memo_map`.
-    pub(super) fn get<'db>(&self, key: Id) -> Option<Guard<Arc<Memo<C::Value<'db>>>>> {
+    pub(super) fn get<'db>(&self, key: Id) -> Option<Guard<Arc<Memo<C::Output<'db>>>>> {
         self.map.get(&key).map(|v| unsafe {
             std::mem::transmute::<
-                Guard<Arc<Memo<C::Value<'static>>>>,
-                Guard<Arc<Memo<C::Value<'db>>>>,
+                Guard<Arc<Memo<C::Output<'static>>>>,
+                Guard<Arc<Memo<C::Output<'db>>>>,
             >(v.load())
         })
     }
@@ -95,7 +95,7 @@ impl<C: Configuration> MemoMap<C> {
 
                 QueryOrigin::Derived(_) => {
                     let memo_evicted = Arc::new(Memo::new(
-                        None::<C::Value<'_>>,
+                        None::<C::Output<'_>>,
                         memo.verified_at.load(),
                         memo.revisions.clone(),
                     ));

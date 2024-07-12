@@ -1,4 +1,4 @@
-use std::{fmt, sync::Arc};
+use std::{any::Any, fmt, sync::Arc};
 
 use crossbeam::atomic::AtomicCell;
 
@@ -30,7 +30,9 @@ mod specify;
 mod store;
 mod sync;
 
-pub trait Configuration: 'static {
+pub mod interned;
+
+pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
 
     /// The database that this function is associated with.
@@ -45,7 +47,7 @@ pub trait Configuration: 'static {
     type Input<'db>: Send + Sync;
 
     /// The value computed by the function.
-    type Value<'db>: fmt::Debug + Send + Sync;
+    type Output<'db>: fmt::Debug + Send + Sync;
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
@@ -57,19 +59,23 @@ pub trait Configuration: 'static {
     /// even though it was recomputed).
     ///
     /// This invokes user's code in form of the `Eq` impl.
-    fn should_backdate_value(old_value: &Self::Value<'_>, new_value: &Self::Value<'_>) -> bool;
+    fn should_backdate_value(old_value: &Self::Output<'_>, new_value: &Self::Output<'_>) -> bool;
+
+    /// Convert from the id used internally to the value that execute is expecting.
+    /// This is a no-op if the input to the function is a salsa struct.
+    fn id_to_input<'db>(db: &'db Self::DbView, key: Id) -> Self::Input<'db>;
 
     /// Invoked when we need to compute the value for the given key, either because we've never
     /// computed it before or because the old one relied on inputs that have changed.
     ///
     /// This invokes the function the user wrote.
-    fn execute<'db>(db: &'db Self::DbView, key: Id) -> Self::Value<'db>;
+    fn execute<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Self::Output<'db>;
 
     /// If the cycle strategy is `Recover`, then invoked when `key` is a participant
     /// in a cycle to find out what value it should have.
     ///
     /// This invokes the recovery function given by the user.
-    fn recover_from_cycle<'db>(db: &'db Self::DbView, cycle: &Cycle, key: Id) -> Self::Value<'db>;
+    fn recover_from_cycle<'db>(db: &'db Self::DbView, cycle: &Cycle, key: Id) -> Self::Output<'db>;
 }
 
 /// Function ingredients are the "workhorse" of salsa.
@@ -162,9 +168,9 @@ where
     /// only cleared with `&mut self`.
     unsafe fn extend_memo_lifetime<'this, 'memo>(
         &'this self,
-        memo: &'memo memo::Memo<C::Value<'this>>,
-    ) -> Option<&'this C::Value<'this>> {
-        let memo_value: Option<&'memo C::Value<'this>> = memo.value.as_ref();
+        memo: &'memo memo::Memo<C::Output<'this>>,
+    ) -> Option<&'this C::Output<'this>> {
+        let memo_value: Option<&'memo C::Output<'this>> = memo.value.as_ref();
         std::mem::transmute(memo_value)
     }
 
@@ -172,8 +178,8 @@ where
         &'db self,
         db: &'db C::DbView,
         key: Id,
-        memo: memo::Memo<C::Value<'db>>,
-    ) -> Option<&C::Value<'db>> {
+        memo: memo::Memo<C::Output<'db>>,
+    ) -> Option<&C::Output<'db>> {
         self.register(db);
         let memo = Arc::new(memo);
         let value = unsafe {

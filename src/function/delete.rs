@@ -26,7 +26,7 @@ where
 /// once the next revision starts. See the comment on the field
 /// `deleted_entries` of [`FunctionIngredient`][] for more details.
 pub(super) struct DeletedEntries<C: Configuration> {
-    seg_queue: SegQueue<ArcSwap<memo::Memo<C::Value<'static>>>>,
+    seg_queue: SegQueue<ArcSwap<memo::Memo<C::Output<'static>>>>,
 }
 
 impl<C: Configuration> Default for DeletedEntries<C> {
@@ -38,7 +38,7 @@ impl<C: Configuration> Default for DeletedEntries<C> {
 }
 
 impl<C: Configuration> DeletedEntries<C> {
-    pub(super) fn push<'db>(&'db self, memo: ArcSwap<memo::Memo<C::Value<'db>>>) {
+    pub(super) fn push<'db>(&'db self, memo: ArcSwap<memo::Memo<C::Output<'db>>>) {
         let memo = unsafe { std::mem::transmute(memo) };
         self.seg_queue.push(memo);
     }
