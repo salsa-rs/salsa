@@ -66,6 +66,9 @@ pub mod plumbing {
     pub use crate::storage::IngredientIndex;
     pub use crate::storage::Storage;
 
+    pub use salsa_macro_rules::setup_interned_fn;
+    pub use salsa_macro_rules::unexpected_cycle_recovery;
+
     pub mod input {
         pub use crate::input::Configuration;
         pub use crate::input::IngredientImpl;

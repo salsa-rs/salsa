@@ -5,7 +5,7 @@ use crossbeam::atomic::AtomicCell;
 use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, IngredientRequiresReset},
-    key::{DatabaseKeyIndex, DependencyIndex},
+    key::DatabaseKeyIndex,
     runtime::local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
     storage::IngredientIndex,
@@ -29,8 +29,6 @@ mod memo;
 mod specify;
 mod store;
 mod sync;
-
-pub mod interned;
 
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
@@ -75,7 +73,11 @@ pub trait Configuration: Any {
     /// in a cycle to find out what value it should have.
     ///
     /// This invokes the recovery function given by the user.
-    fn recover_from_cycle<'db>(db: &'db Self::DbView, cycle: &Cycle, key: Id) -> Self::Output<'db>;
+    fn recover_from_cycle<'db>(
+        db: &'db Self::DbView,
+        cycle: &Cycle,
+        input: Self::Input<'db>,
+    ) -> Self::Output<'db>;
 }
 
 /// Function ingredients are the "workhorse" of salsa.

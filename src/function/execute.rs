@@ -56,7 +56,7 @@ where
                     crate::cycle::CycleRecoveryStrategy::Fallback => {
                         if let Some(c) = active_query.take_cycle() {
                             assert!(c.is(&cycle));
-                            C::recover_from_cycle(db, &cycle, key)
+                            C::recover_from_cycle(db, &cycle, C::id_to_input(db, key))
                         } else {
                             // we are not a participant in this cycle
                             debug_assert!(!cycle

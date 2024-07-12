@@ -18,6 +18,7 @@ log = "0.4.5"
 orx-concurrent-vec = "1.10.0"
 parking_lot = "0.12.1"
 rustc-hash = "1.1.0"
+salsa-macro-rules = { version = "0.1.0", path = "components/salsa-macro-rules" }
 salsa-macros = { path = "components/salsa-macros" }
 smallvec = "1.0.0"
 
@@ -32,4 +33,4 @@ test-log = "0.2.11"
 trybuild = "1.0"
 
 [workspace]
-members = ["components/salsa-macros"]
+members = [ "components/salsa-macro-rules","components/salsa-macros"]
