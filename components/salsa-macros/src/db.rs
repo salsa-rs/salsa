@@ -15,7 +15,7 @@ pub(crate) fn db(
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     let _nothing = syn::parse_macro_input!(args as Nothing);
-    let hygiene = Hygiene::from(&input);
+    let hygiene = Hygiene::from1(&input);
     let input = syn::parse_macro_input!(input as syn::Item);
     let db_macro = DbMacro { hygiene };
     match db_macro.try_db(input) {

@@ -45,10 +45,6 @@ macro_rules! setup_interned_fn {
         // (e.g., `(a, b): (u32, u32)`) we will synthesize an identifier.
         input_ids: [$($input_id:ident),*],
 
-        // Patterns that the user gave for each argument EXCEPT the database.
-        // May be identifiers, but could be something else.
-        input_pats: [$($input_pat:pat),*],
-
         // Types of the function arguments (may reference `$generics`).
         input_tys: [$($input_ty:ty),*],
 
@@ -56,7 +52,7 @@ macro_rules! setup_interned_fn {
         output_ty: $output_ty:ty,
 
         // Function body, may reference identifiers defined in `$input_pats` and the generics from `$generics`
-        body: $body:block,
+        inner_fn: $inner_fn:item,
 
         // Path to the cycle recovery function to use.
         cycle_recovery_fn: ($($cycle_recovery_fn:tt)*),
@@ -121,12 +117,7 @@ macro_rules! setup_interned_fn {
                 }
 
                 fn execute<'db>($db: &'db Self::DbView, ($($input_id),*): ($($input_ty),*)) -> Self::Output<'db> {
-                    $vis fn $inner<$db_lt>(
-                        $db: &$db_lt dyn $Db,
-                        $($input_pat: $input_ty,)*
-                    ) -> $output_ty {
-                        $body
-                    }
+                    $inner_fn
 
                     $inner($db, $($input_id),*)
                 }
