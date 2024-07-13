@@ -1,36 +1,89 @@
 use std::{
     any::Any,
     fmt,
+    ops::DerefMut,
     sync::atomic::{AtomicU32, Ordering},
 };
+
+pub mod input_field;
+pub mod setter;
+mod struct_map;
+
+use input_field::FieldIngredientImpl;
+use struct_map::StructMap;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
-    key::DatabaseKeyIndex,
+    key::{DatabaseKeyIndex, DependencyIndex},
+    plumbing::{Jar, Stamp},
     runtime::{local_state::QueryOrigin, Runtime},
     storage::IngredientIndex,
-    Database, Revision,
+    Database, Durability, Revision,
 };
 
 pub trait Configuration: Any {
+    const DEBUG_NAME: &'static str;
+    const FIELD_DEBUG_NAMES: &'static [&'static str];
+
+    /// The input struct (which wraps an `Id`)
     type Id: FromId + 'static + Send + Sync;
+
+    /// A (possibly empty) tuple of the fields for this struct.
+    type Fields: Send + Sync;
+
+    /// A array of [`StampedValue<()>`](`StampedValue`) tuples, one per each of the value fields.
+    type Stamps: Send + Sync + DerefMut<Target = [Stamp]>;
+
+    fn update_stamp(stamps: &mut Self::Stamps, field_index: u32, field_stamp: Stamp);
+}
+
+pub struct JarImpl<C: Configuration> {
+    _phantom: std::marker::PhantomData<C>,
+}
+
+impl<C: Configuration> Default for JarImpl<C> {
+    fn default() -> Self {
+        Self {
+            _phantom: Default::default(),
+        }
+    }
+}
+
+impl<C: Configuration> Jar for JarImpl<C> {
+    fn create_ingredients(
+        &self,
+        struct_index: crate::storage::IngredientIndex,
+    ) -> Vec<Box<dyn Ingredient>> {
+        let struct_ingredient: IngredientImpl<C> = IngredientImpl::new(struct_index);
+        let struct_map = struct_ingredient.struct_map.clone();
+
+        std::iter::once(Box::new(struct_ingredient) as _)
+            .chain((0..C::FIELD_DEBUG_NAMES.len()).map(|field_index| {
+                Box::new(FieldIngredientImpl::new(
+                    struct_index,
+                    field_index,
+                    struct_map.clone(),
+                )) as _
+            }))
+            .collect()
+    }
 }
 
 pub struct IngredientImpl<C: Configuration> {
     ingredient_index: IngredientIndex,
     counter: AtomicU32,
-    debug_name: &'static str,
+    struct_map: StructMap<C>,
     _phantom: std::marker::PhantomData<C::Id>,
 }
 
 impl<C: Configuration> IngredientImpl<C> {
-    pub fn new(index: IngredientIndex, debug_name: &'static str) -> Self {
+    pub fn new(index: IngredientIndex) -> Self {
         Self {
             ingredient_index: index,
             counter: Default::default(),
-            debug_name,
+            struct_map: StructMap::new(),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -42,11 +95,44 @@ impl<C: Configuration> IngredientImpl<C> {
         }
     }
 
-    pub fn new_input(&self, _runtime: &Runtime) -> C::Id {
-        let next_id = self.counter.fetch_add(1, Ordering::Relaxed);
-        C::Id::from_id(crate::Id::from_u32(next_id))
+    pub fn new_input(&self, fields: C::Fields, stamps: C::Stamps) -> C::Id {
+        let next_id = crate::Id::from_u32(self.counter.fetch_add(1, Ordering::Relaxed));
+        let value = Value {
+            struct_ingredient_index: self.ingredient_index,
+            id: next_id,
+            fields,
+            stamps,
+        };
+        self.struct_map.insert(value)
     }
 
+    /// Change the value of the field `field_index` to a new value.
+    ///
+    /// # Parameters
+    ///
+    /// * `runtime`, the salsa runtiem
+    /// * `id`, id of the input struct
+    /// * `field_index`, index of the field that will be changed
+    /// * `durability`, durability of the new value
+    /// * `setter`, function that modifies the fields tuple; should only modify the element for `field_index`
+    pub fn set_field<R>(
+        &mut self,
+        runtime: &mut Runtime,
+        id: C::Id,
+        field_index: usize,
+        durability: Durability,
+        setter: impl FnOnce(&mut C::Fields) -> R,
+    ) -> R {
+        let revision = runtime.current_revision();
+        let id: crate::Id = id.as_id();
+        let mut r = self.struct_map.update(id);
+        let stamp = &mut r.stamps[field_index];
+        stamp.durability = durability;
+        stamp.changed_at = revision;
+        setter(&mut r.fields)
+    }
+
+    /// Creates a new singleton input.
     pub fn new_singleton_input(&self, _runtime: &Runtime) -> C::Id {
         // when one exists already, panic
         if self.counter.load(Ordering::Relaxed) >= 1 {
@@ -57,8 +143,33 @@ impl<C: Configuration> IngredientImpl<C> {
         C::Id::from_id(crate::Id::from_u32(0))
     }
 
+    /// Get the singleton input previously created.
     pub fn get_singleton_input(&self, _runtime: &Runtime) -> Option<C::Id> {
         (self.counter.load(Ordering::Relaxed) > 0).then(|| C::Id::from_id(crate::Id::from_u32(0)))
+    }
+
+    /// Access field of an input.
+    /// Note that this function returns the entire tuple of value fields.
+    /// The caller is responible for selecting the appropriate element.
+    pub fn field<'db>(
+        &'db self,
+        runtime: &'db Runtime,
+        id: C::Id,
+        field_index: usize,
+    ) -> &'db C::Fields {
+        let field_ingredient_index = self.ingredient_index + field_index;
+        let id = id.as_id();
+        let value = self.struct_map.get(id);
+        let stamp = &value.stamps[field_index];
+        runtime.report_tracked_read(
+            DependencyIndex {
+                ingredient_index: field_ingredient_index,
+                key_index: Some(id),
+            },
+            stamp.durability,
+            stamp.changed_at,
+        );
+        &value.fields
     }
 }
 
@@ -121,7 +232,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_index(self.debug_name, index, fmt)
+        fmt_index(C::DEBUG_NAME, index, fmt)
     }
 }
 
@@ -135,4 +246,23 @@ impl<C: Configuration> std::fmt::Debug for IngredientImpl<C> {
             .field("index", &self.ingredient_index)
             .finish()
     }
+}
+
+#[derive(Debug)]
+pub struct Value<C>
+where
+    C: Configuration,
+{
+    /// Index of the struct ingredient.
+    struct_ingredient_index: IngredientIndex,
+
+    /// The id of this struct in the ingredient.
+    id: crate::Id,
+
+    /// Fields of this input struct. They can change across revisions,
+    /// but they do not change within a particular revision.
+    fields: C::Fields,
+
+    /// The revision and durability information for each field: when did this field last change.
+    stamps: C::Stamps,
 }

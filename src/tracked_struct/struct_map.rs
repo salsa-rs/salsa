@@ -12,27 +12,27 @@ use crate::{
     Id, Runtime,
 };
 
-use super::{Configuration, KeyStruct, ValueStruct};
+use super::{Configuration, KeyStruct, Value};
 
 pub(crate) struct StructMap<C>
 where
     C: Configuration,
 {
-    map: Arc<FxDashMap<Id, Alloc<ValueStruct<C>>>>,
+    map: Arc<FxDashMap<Id, Alloc<Value<C>>>>,
 
     /// When specific entities are deleted, their data is added
     /// to this vector rather than being immediately freed. This is because we may` have
     /// references to that data floating about that are tied to the lifetime of some
     /// `&db` reference. This queue itself is not freed until we have an `&mut db` reference,
     /// guaranteeing that there are no more references to it.
-    deleted_entries: SegQueue<Alloc<ValueStruct<C>>>,
+    deleted_entries: SegQueue<Alloc<Value<C>>>,
 }
 
 pub(crate) struct StructMapView<C>
 where
     C: Configuration,
 {
-    map: Arc<FxDashMap<Id, Alloc<ValueStruct<C>>>>,
+    map: Arc<FxDashMap<Id, Alloc<Value<C>>>>,
 }
 
 impl<C: Configuration> Clone for StructMapView<C> {
@@ -84,7 +84,7 @@ where
     ///
     /// * If value with same `value.id` is already present in the map.
     /// * If value not created in current revision.
-    pub fn insert<'db>(&'db self, runtime: &'db Runtime, value: ValueStruct<C>) -> C::Struct<'db> {
+    pub fn insert<'db>(&'db self, runtime: &'db Runtime, value: Value<C>) -> C::Struct<'db> {
         assert_eq!(value.created_at, runtime.current_revision());
 
         let id = value.id;
@@ -182,7 +182,7 @@ where
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
     fn get_from_map<'db>(
-        map: &'db FxDashMap<Id, Alloc<ValueStruct<C>>>,
+        map: &'db FxDashMap<Id, Alloc<Value<C>>>,
         runtime: &'db Runtime,
         id: Id,
     ) -> C::Struct<'db> {
@@ -190,7 +190,7 @@ where
 
         // UNSAFE: We permit `&`-access in the current revision once data.created_at
         // has been updated to the current revision (which we check below).
-        let data_ref: &ValueStruct<C> = unsafe { data.as_ref() };
+        let data_ref: &Value<C> = unsafe { data.as_ref() };
 
         // Before we drop the lock, check that the value has
         // been updated in this revision. This is what allows us to return a ``
@@ -251,7 +251,7 @@ pub(crate) struct UpdateRef<'db, C>
 where
     C: Configuration,
 {
-    guard: RefMut<'db, Id, Alloc<ValueStruct<C>>, FxHasher>,
+    guard: RefMut<'db, Id, Alloc<Value<C>>, FxHasher>,
 }
 
 impl<'db, C> UpdateRef<'db, C>
@@ -272,7 +272,7 @@ impl<C> Deref for UpdateRef<'_, C>
 where
     C: Configuration,
 {
-    type Target = ValueStruct<C>;
+    type Target = Value<C>;
 
     fn deref(&self) -> &Self::Target {
         unsafe { self.guard.as_ref() }

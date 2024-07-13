@@ -53,12 +53,12 @@ pub trait Configuration: Jar + Sized + 'static {
     /// Requires that `ptr` represents a "confirmed" value in this revision,
     /// which means that it will remain valid and immutable for the remainder of this
     /// revision, represented by the lifetime `'db`.
-    unsafe fn struct_from_raw<'db>(ptr: NonNull<ValueStruct<Self>>) -> Self::Struct<'db>;
+    unsafe fn struct_from_raw<'db>(ptr: NonNull<Value<Self>>) -> Self::Struct<'db>;
 
     /// Deref the struct to yield the underlying value struct.
     /// Since we are still part of the `'db` lifetime in which the struct was created,
     /// this deref is safe, and the value-struct fields are immutable and verified.
-    fn deref_struct(s: Self::Struct<'_>) -> &ValueStruct<Self>;
+    fn deref_struct(s: Self::Struct<'_>) -> &Value<Self>;
 
     fn id_fields(fields: &Self::Fields<'_>) -> impl Hash;
 
@@ -194,7 +194,7 @@ struct KeyStruct {
 
 // ANCHOR: ValueStruct
 #[derive(Debug)]
-pub struct ValueStruct<C>
+pub struct Value<C>
 where
     C: Configuration,
 {
@@ -316,7 +316,7 @@ where
 
             self.struct_map.insert(
                 runtime,
-                ValueStruct {
+                Value {
                     id,
                     key: entity_key,
                     struct_ingredient_index: self.ingredient_index,
@@ -500,7 +500,7 @@ where
     const RESET_ON_NEW_REVISION: bool = true;
 }
 
-impl<C> ValueStruct<C>
+impl<C> Value<C>
 where
     C: Configuration,
 {
@@ -530,7 +530,7 @@ where
     }
 }
 
-impl<C> AsId for ValueStruct<C>
+impl<C> AsId for Value<C>
 where
     C: Configuration,
 {

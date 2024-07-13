@@ -11,14 +11,12 @@ mod id;
 mod ingredient;
 mod ingredient_list;
 mod input;
-mod input_field;
 mod interned;
 mod key;
 mod nonce;
 mod revision;
 mod runtime;
 mod salsa_struct;
-mod setter;
 mod storage;
 mod tracked_struct;
 mod update;
@@ -59,6 +57,9 @@ pub mod plumbing {
     pub use crate::id::Id;
     pub use crate::ingredient::Ingredient;
     pub use crate::ingredient::Jar;
+    pub use crate::runtime::Runtime;
+    pub use crate::runtime::Stamp;
+    pub use crate::runtime::StampedValue;
     pub use crate::salsa_struct::SalsaStructInDb;
     pub use crate::storage::views;
     pub use crate::storage::HasStorage;
@@ -66,13 +67,17 @@ pub mod plumbing {
     pub use crate::storage::IngredientIndex;
     pub use crate::storage::Storage;
 
+    pub use salsa_macro_rules::setup_input;
     pub use salsa_macro_rules::setup_interned_fn;
+    pub use salsa_macro_rules::setup_tracked_struct;
     pub use salsa_macro_rules::unexpected_cycle_recovery;
 
     pub mod input {
+        pub use crate::input::input_field::FieldIngredientImpl;
+        pub use crate::input::setter::Setter;
         pub use crate::input::Configuration;
         pub use crate::input::IngredientImpl;
-        pub use crate::input_field::FieldIngredientImpl;
+        pub use crate::input::JarImpl;
     }
 
     pub mod interned {

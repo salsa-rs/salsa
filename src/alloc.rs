@@ -25,6 +25,17 @@ impl<T> Alloc<T> {
     pub unsafe fn as_mut(&mut self) -> &mut T {
         unsafe { self.data.as_mut() }
     }
+
+    fn into_box(self) -> Box<T> {
+        let data: *mut T = self.data.as_ptr();
+        let data: Box<T> = unsafe { Box::from_raw(data) };
+        std::mem::forget(self);
+        data
+    }
+
+    pub fn into_inner(self) -> T {
+        *self.into_box()
+    }
 }
 
 impl<T> Drop for Alloc<T> {

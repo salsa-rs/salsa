@@ -51,11 +51,13 @@ pub struct RuntimeId {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct StampedValue<V> {
-    pub(crate) value: V,
-    pub(crate) durability: Durability,
-    pub(crate) changed_at: Revision,
+pub struct StampedValue<V> {
+    pub value: V,
+    pub durability: Durability,
+    pub changed_at: Revision,
 }
+
+pub type Stamp = StampedValue<()>;
 
 impl<V> StampedValue<V> {
     // FIXME: Use or remove this.

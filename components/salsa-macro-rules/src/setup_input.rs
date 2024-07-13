@@ -1,6 +1,6 @@
 /// Macro for setting up a function that must intern its arguments.
 #[macro_export]
-macro_rules! setup_tracked_struct {
+macro_rules! setup_input {
     (
         // Visibility of the struct
         vis: $vis:vis,
@@ -26,15 +26,6 @@ macro_rules! setup_tracked_struct {
         // Indices of fields to be used for id computations
         id_field_indices: [$($id_field_index:tt),*],
 
-        // A set of "field options". Each field option is a tuple `(maybe_clone, maybe_backdate)` where:
-        //
-        // * `maybe_clone` is either the identifier `clone` or `no_clone`
-        // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
-        //
-        // These are used to drive conditional logic for each field via recursive macro invocation
-        // (see e.g. @maybe_clone below).
-        field_options: [$($field_option:tt),*],
-
         // Number of fields
         num_fields: $N:literal,
 
@@ -49,6 +40,7 @@ macro_rules! setup_tracked_struct {
             $Db:ident,
             $NonNull:ident,
             $Revision:ident,
+            $ValueStruct:ident,
         ]
     ) => {
         $vis struct $Struct<$db_lt> {
@@ -57,13 +49,13 @@ macro_rules! setup_tracked_struct {
 
         const _: () = {
             use salsa::plumbing as $zalsa;
-            use $zalsa_struct as $zalsa_struct;
+            use $zalsa::input as $zalsa_struct;
             use $zalsa::Revision as $Revision;
             use std::ptr::NonNull as $NonNull;
 
             struct $Configuration;
 
-            impl $zalsa_struct::Configuration for $Configuration {
+            impl $zalsa::tracked_struct::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
 
                 const FIELD_DEBUG_NAMES: &'static [&'static str] = &[
@@ -76,11 +68,11 @@ macro_rules! setup_tracked_struct {
 
                 type Struct<$db_lt> = $Struct<$db_lt>;
 
-                unsafe fn struct_from_raw<'db>(ptr: $NonNull<$zalsa_struct::Value<Self>>) -> Self::Struct<'db> {
+                unsafe fn struct_from_raw<'db>(ptr: $NonNull<$ValueStruct<Self>>) -> Self::Struct<'db> {
                     $Struct(ptr, std::marker::PhantomData)
                 }
 
-                fn deref_struct(s: Self::Struct<'_>) -> &$zalsa_struct::Value<Self> {
+                fn deref_struct(s: Self::Struct<'_>) -> &$ValueStruct<Self> {
                     unsafe { s.0.as_ref() }
                 }
 
@@ -120,11 +112,11 @@ macro_rules! setup_tracked_struct {
             }
 
             impl $Configuration {
-                pub fn ingredient<Db>(db: &Db) -> &$zalsa_struct::Ingredient<Self> {
-                    static CACHE: $zalsa::IngredientCache<$zalsa_struct::Ingredient<Self>> =
+                pub fn ingredient<Db>(db: &Db) -> &$zalsa::tracked_struct::Ingredient<Self> {
+                    static CACHE: $zalsa::IngredientCache<$zalsa::tracked_struct::Ingredient<Self>> =
                         $zalsa::IngredientCache::new();
                     CACHE.get_or_create(|| {
-                        db.add_or_lookup_jar_by_type(&$zalsa_struct::JarImpl::<$Configuration>)
+                        db.add_or_lookup_jar_by_type(&$zalsa::tracked_struct::JarImpl::<$Configuration>)
                     })
                 }
             }
@@ -147,7 +139,7 @@ macro_rules! setup_tracked_struct {
                 }
             }
 
-            impl<$db_lt, $Db> $zalsa_struct::TrackedStructInDb<#db> for $Struct<$db_lt>
+            impl<$db_lt, $Db> $zalsa::tracked_struct::TrackedStructInDb<#db> for $Struct<$db_lt>
             where
                 $Db: ?Sized + $zalsa::Database,
             {

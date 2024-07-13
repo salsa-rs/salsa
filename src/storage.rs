@@ -183,6 +183,14 @@ impl std::ops::Add<u32> for IngredientIndex {
     }
 }
 
+impl std::ops::Add<usize> for IngredientIndex {
+    type Output = IngredientIndex;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        IngredientIndex(self.0.checked_add(u32::try_from(rhs).unwrap()).unwrap())
+    }
+}
+
 /// The "storage" struct stores all the data for the jars.
 /// It is shared between the main database and any active snapshots.
 pub struct Storage<Db: Database> {
