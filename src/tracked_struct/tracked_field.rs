@@ -22,7 +22,7 @@ where
 {
     /// Index of this ingredient in the database (used to construct database-ids, etc).
     ingredient_index: IngredientIndex,
-    field_index: u32,
+    field_index: usize,
     struct_map: StructMapView<C>,
 }
 
@@ -32,7 +32,7 @@ where
 {
     pub(super) fn new(
         struct_index: IngredientIndex,
-        field_index: u32,
+        field_index: usize,
         struct_map: &StructMapView<C>,
     ) -> Self {
         Self {
@@ -52,8 +52,7 @@ where
     pub fn field<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db C::Fields<'db> {
         let data = self.struct_map.get(runtime, id);
         let data = C::deref_struct(data);
-
-        let changed_at = C::revision(&data.revisions, self.field_index);
+        let changed_at = data.revisions[self.field_index];
 
         runtime.report_tracked_read(
             DependencyIndex {
@@ -90,7 +89,7 @@ where
         let id = input.unwrap();
         let data = self.struct_map.get(runtime, id);
         let data = C::deref_struct(data);
-        let field_changed_at = C::revision(&data.revisions, self.field_index);
+        let field_changed_at = data.revisions[self.field_index];
         field_changed_at > revision
     }
 

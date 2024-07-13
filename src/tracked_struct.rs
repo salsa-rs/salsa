@@ -1,4 +1,4 @@
-use std::{fmt, hash::Hash, marker::PhantomData, ptr::NonNull};
+use std::{fmt, hash::Hash, marker::PhantomData, ops::DerefMut, ptr::NonNull};
 
 use crossbeam::atomic::AtomicCell;
 use dashmap::mapref::entry::Entry;
@@ -37,7 +37,7 @@ pub trait Configuration: Jar + Sized + 'static {
     /// When a struct is re-recreated in a new revision, the corresponding
     /// entries for each field are updated to the new revision if their
     /// values have changed (or if the field is marked as `#[no_eq]`).
-    type Revisions: Send + Sync;
+    type Revisions: Send + Sync + DerefMut<Target = [Revision]>;
 
     type Struct<'db>: Copy;
 
@@ -61,10 +61,6 @@ pub trait Configuration: Jar + Sized + 'static {
     fn deref_struct(s: Self::Struct<'_>) -> &Value<Self>;
 
     fn id_fields(fields: &Self::Fields<'_>) -> impl Hash;
-
-    /// Access the revision of a given value field.
-    /// `field_index` will be between 0 and the number of value fields.
-    fn revision(revisions: &Self::Revisions, field_index: u32) -> Revision;
 
     /// Create a new value revision array where each element is set to `current_revision`.
     fn new_revisions(current_revision: Revision) -> Self::Revisions;
@@ -123,15 +119,13 @@ impl<C: Configuration> Jar for JarImpl<C> {
         let struct_map = &struct_ingredient.struct_map.view();
 
         std::iter::once(Box::new(struct_ingredient) as _)
-            .chain(
-                (0..u32::try_from(C::FIELD_DEBUG_NAMES.len()).unwrap()).map(|field_index| {
-                    Box::new(FieldIngredientImpl::<C>::new(
-                        struct_index,
-                        field_index,
-                        struct_map,
-                    )) as _
-                }),
-            )
+            .chain((0..C::FIELD_DEBUG_NAMES.len()).map(|field_index| {
+                Box::new(FieldIngredientImpl::<C>::new(
+                    struct_index,
+                    field_index,
+                    struct_map,
+                )) as _
+            }))
             .collect()
     }
 }
@@ -507,11 +501,9 @@ where
     /// Access to this value field.
     /// Note that this function returns the entire tuple of value fields.
     /// The caller is responible for selecting the appropriate element.
-    pub fn field<'db>(&'db self, runtime: &'db Runtime, field_index: u32) -> &'db C::Fields<'db> {
-        let field_ingredient_index = IngredientIndex::from(
-            self.struct_ingredient_index.as_usize() + field_index as usize + 1,
-        );
-        let changed_at = C::revision(&self.revisions, field_index);
+    pub fn field<'db>(&'db self, runtime: &'db Runtime, field_index: usize) -> &'db C::Fields<'db> {
+        let field_ingredient_index = self.struct_ingredient_index + field_index;
+        let changed_at = self.revisions[field_index];
 
         runtime.report_tracked_read(
             DependencyIndex {
