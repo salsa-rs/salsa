@@ -3,7 +3,7 @@ use std::{any::Any, cell::Cell, ptr::NonNull};
 use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 
-use crate::{storage::DatabaseGen, Durability, Event};
+use crate::{storage::DatabaseGen, Durability, Event, Revision};
 
 #[salsa_macros::db]
 pub trait Database: DatabaseGen {
@@ -204,4 +204,8 @@ impl<Db: ?Sized + Database> std::ops::Deref for AttachedDb<'_, Db> {
     fn deref(&self) -> &Db {
         &self.db
     }
+}
+
+pub fn current_revision<Db: ?Sized + Database>(db: &Db) -> Revision {
+    db.runtime().current_revision()
 }

@@ -59,6 +59,7 @@ impl Macro {
     fn try_fn(&self, item: syn::ItemFn) -> syn::Result<TokenStream> {
         let ValidFn { db_ident, db_path } = self.validity_check(&item)?;
 
+        let attrs = &item.attrs;
         let fn_name = &item.sig.ident;
         let vis = &item.vis;
         let db_lt = db_lifetime::db_lifetime(&item.sig.generics);
@@ -82,6 +83,7 @@ impl Macro {
             FunctionType::RequiresInterning => Ok(crate::debug::dump_tokens(
                 fn_name,
                 quote![salsa::plumbing::setup_interned_fn! {
+                    attrs: [#(#attrs),*],
                     vis: #vis,
                     fn_name: #fn_name,
                     db_lt: #db_lt,

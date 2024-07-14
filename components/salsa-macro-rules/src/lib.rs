@@ -12,6 +12,8 @@
 //! from a submodule is to use multiple crates, hence the existence
 //! of this crate.
 
+mod maybe_backdate;
+mod maybe_clone;
 mod setup_input;
 mod setup_interned_fn;
 mod setup_tracked_struct;

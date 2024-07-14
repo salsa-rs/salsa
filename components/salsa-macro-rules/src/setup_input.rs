@@ -2,29 +2,32 @@
 #[macro_export]
 macro_rules! setup_input {
     (
+        // Attributes on the struct
+        attrs: [$(#[$attr:meta]),*],
+
         // Visibility of the struct
         vis: $vis:vis,
 
         // Name of the struct
         Struct: $Struct:ident,
 
-        // Name of the `'db` lifetime that the user gave
-        db_lt: $db_lt:lifetime,
-
         // Name user gave for `new`
         new_fn: $new_fn:ident,
+
+        // A series of option tuples; see `setup_tracked_struct` macro
+        field_options: [$($field_option:tt),*],
 
         // Field names
         field_ids: [$($field_id:ident),*],
 
-        // Field types, may reference `db_lt`
+        // Names for field setter methods (typically `set_foo`)
+        field_setter_ids: [$($field_setter_id:ident),*],
+
+        // Field types
         field_tys: [$($field_ty:ty),*],
 
         // Indices for each field from 0..N -- must be unsuffixed (e.g., `0`, `1`).
         field_indices: [$($field_index:tt),*],
-
-        // Indices of fields to be used for id computations
-        id_field_indices: [$($id_field_index:tt),*],
 
         // Number of fields
         num_fields: $N:literal,
@@ -43,9 +46,9 @@ macro_rules! setup_input {
             $ValueStruct:ident,
         ]
     ) => {
-        $vis struct $Struct<$db_lt> {
-
-        }
+        $(#[$attr])*
+        #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+        $vis struct $Struct(salsa::Id);
 
         const _: () = {
             use salsa::plumbing as $zalsa;
@@ -55,196 +58,117 @@ macro_rules! setup_input {
 
             struct $Configuration;
 
-            impl $zalsa::tracked_struct::Configuration for $Configuration {
+            impl $zalsa_struct::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
+                const FIELD_DEBUG_NAMES: &'static [&'static str] = &[$(stringify!($field_id)),*];
 
-                const FIELD_DEBUG_NAMES: &'static [&'static str] = &[
-                    $(stringify!($field_id),)*
-                ];
+                /// The input struct (which wraps an `Id`)
+                type Struct = $Struct;
 
-                type Fields<$db_lt> = ($($field_ty,)*);
+                /// A (possibly empty) tuple of the fields for this struct.
+                type Fields = ($($field_ty,)*);
 
-                type Revisions = [$Revision; $N];
-
-                type Struct<$db_lt> = $Struct<$db_lt>;
-
-                unsafe fn struct_from_raw<'db>(ptr: $NonNull<$ValueStruct<Self>>) -> Self::Struct<'db> {
-                    $Struct(ptr, std::marker::PhantomData)
-                }
-
-                fn deref_struct(s: Self::Struct<'_>) -> &$ValueStruct<Self> {
-                    unsafe { s.0.as_ref() }
-                }
-
-                fn id_fields(fields: &Self::Fields<'_>) -> impl Hash {
-                    ( $( &fields.$id_field_index ),* )
-                }
-
-                fn revision(revisions: &Self::Revisions, field_index: u32) -> $Revision {
-                    revisions[field_index as usize]
-                }
-
-                fn new_revisions(current_revision: $Revision) -> Self::Revisions {
-                    [current_revision; $N]
-                }
-
-                unsafe fn update_fields<'db>(
-                    current_revision: Revision,
-                    revisions: &mut Self::Revisions,
-                    old_fields: *mut Self::Fields<'db>,
-                    new_fields: Self::Fields<'db>,
-                ) {
-                    use salsa::update::helper::Fallback as _;
-                    unsafe {
-                        $(
-                            $crate::setup_tracked_struct!(@maybe_backdate(
-                                $field_option,
-                                $field_ty,
-                                (*old_fields).$field_index,
-                                new_fields.$field_index,
-                                revisions[$field_index],
-                                current_revision,
-                                $zalsa,
-                            ));
-                        )*
-                    }
-                }
+                /// A array of [`StampedValue<()>`](`StampedValue`) tuples, one per each of the value fields.
+                type Stamps = $zalsa::Array<$zalsa::Stamp, $N>;
             }
 
             impl $Configuration {
-                pub fn ingredient<Db>(db: &Db) -> &$zalsa::tracked_struct::Ingredient<Self> {
-                    static CACHE: $zalsa::IngredientCache<$zalsa::tracked_struct::Ingredient<Self>> =
+                pub fn ingredient<Db>(db: &Db) -> &$zalsa_struct::IngredientImpl<Self>
+                where
+                    Db: ?Sized + $zalsa::Database,
+                {
+                    static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
-                    CACHE.get_or_create(|| {
-                        db.add_or_lookup_jar_by_type(&$zalsa::tracked_struct::JarImpl::<$Configuration>)
+                    CACHE.get_or_create(db, || {
+                        db.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
+                    })
+                }
+
+                pub fn ingredient_mut<Db>(db: &Db) -> (&mut $zalsa_struct::IngredientImpl<Self>, &mut $zalsa::Runtime)
+                where
+                   Db: ?Sized + $zalsa::Database,
+                {
+                    let index = db.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default());
+                    let (ingredient, runtime) = db.lookup_ingredient_mut(index);
+                    let ingredient = ingredient.assert_type_mut::<$zalsa_struct::IngredientImpl<Self>>();
+                    (ingredient, runtime)
+                }
+            }
+
+            impl $zalsa::FromId for $Struct {
+                fn from_id(id: salsa::Id) -> Self {
+                    Self(id)
+                }
+            }
+
+            impl $zalsa::AsId for $Struct {
+                fn as_id(&self) -> salsa::Id {
+                    self.0
+                }
+            }
+
+            impl std::fmt::Debug for $Struct {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    $zalsa::with_attached_database(|db| {
+                        let fields = $Configuration::ingredient(db).fields(self.0);
+                        let f = f.debug_struct(stringify!($Struct));
+                        $(
+                            let f = f.field(stringify!($field_id), &fields.$field_index);
+                        )*
+                        f.finish()
+                    }).unwrap_or_else(|| {
+                        f.debug_tuple(stringify!($Struct))
+                            .field(&self.0)
+                            .finish()
                     })
                 }
             }
 
-            impl<$db_lt, $Db> $zalsa::LookupId<&$db_lt $Db> for $Struct<$db_lt>
-            where
-                $Db: ?Sized + $zalsa::Database,
-            {
-                fn lookup_id(id: salsa::Id, db: & $db_lt $Db) -> Self {
-                    $Configuration::ingredient(db).lookup_struct(db.runtime(), id)
-                }
-            }
-
-            impl<$db_lt, $Db> $zalsa::SalsaStructInDb<$Db> for $Struct<$db_lt>
-            where
-                $Db: ?Sized + $zalsa::Database,
-            {
-                fn register_dependent_fn(db: & $Db, index: $zalsa::IngredientIndex) {
-                    $Configuration::ingredient(db).register_dependent_fn(index)
-                }
-            }
-
-            impl<$db_lt, $Db> $zalsa::tracked_struct::TrackedStructInDb<#db> for $Struct<$db_lt>
-            where
-                $Db: ?Sized + $zalsa::Database,
-            {
-                fn database_key_index(db: &$Db, id: $zalsa::Id) -> $zalsa::DatabaseKeyIndex {
-                    $Configuration::ingredient(db).database_key_index(id)
-                }
-            }
-
-            impl<$db_lt> $Struct<$db_lt> {
-                pub fn $new_fn<$Db>(db: &$Db, $($field_id: $field_ty),*) -> Self
+            impl $Struct {
+                pub fn new<Db>(db: &Db, $($field_id: $field_ty),*) -> Self
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                    $Db: ?Sized + $zalsa::Database,
+                    Db: ?Sized + salsa::Database,
                 {
-                    $Configuration::ingredient(db).new_struct(
-                        db.runtime(),
-                        ($($field_id,)*)
-                    )
+                    let current_revision = $zalsa::current_revision(db);
+                    let stamps = $zalsa::Array::new([$zalsa::stamp(current_revision, Default::default()); $N]);
+                    $Configuration::ingredient(db).new_input(($($field_id,)*), stamps)
                 }
 
                 $(
-                    pub fn $field_id<$Db>(&self, db: &$db_lt $Db) -> &$field_ty
+                    pub fn $field_id<'db, $Db>(self, db: &'db $Db) -> $zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let runtime = db.runtime();
-                        let fields = unsafe { self.0.as_ref() }.field(runtime, $field_index);
-                        $crate::setup_tracked_struct!(@maybe_clone(
+                        let fields = $Configuration::ingredient(db).field(runtime, self, $field_index);
+                        $zalsa::maybe_clone!(
                             $field_option,
                             $field_ty,
                             &fields.$field_index,
-                        ))
+                        )
+                    }
+                )*
+
+                $(
+                    #[must_use]
+                    pub fn $field_setter_id<'db, $Db>(self, db: &'db mut $Db) -> impl salsa::Setter<FieldTy = $field_ty> + 'db
+                    where
+                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
+                        $Db: ?Sized + $zalsa::Database,
+                    {
+                        let (ingredient, runtime) = $Configuration::ingredient_mut(db);
+                        $zalsa::input::SetterImpl::new(
+                            runtime,
+                            self,
+                            $field_index,
+                            ingredient,
+                            |fields, f| std::mem::replace(&mut fields.$field_index, f),
+                        )
                     }
                 )*
             }
         };
     };
-
-    // --------------------------------------------------------------
-    // @maybe_clone
-    //
-    // Conditionally invoke `clone` from a field getter
-
-    (
-        @maybe_clone(
-            (no_clone, $maybe_backdate:ident),
-            $field_ty:ty,
-            $field_ref_expr:expr,
-        )
-    ) => {
-        $field_ref_expr
-    };
-
-    (
-        @maybe_clone(
-            (clone, $maybe_backdate:ident),
-            $field_ty:ty,
-            $field_ref_expr:expr,
-        )
-     ) => {
-        <$field_ty as std::clone::Clone>::clone($field_ref_expr)
-    };
-
-    // --------------------------------------------------------------
-    // @maybe_backdate
-    //
-    // Conditionally update field value and backdate revisions
-
-    (
-        @maybe_backdate(
-            ($maybe_clone:ident, no_backdate)
-            $field_ty:ty,
-            $old_field_place:expr,
-            $new_field_place:expr,
-            $revision_place:expr,
-            $current_revision:expr,
-            $zalsa:ident,
-        )
-    ) => {
-        $zalsa::update::always_update(
-            &mut $revision_place,
-            $current_revision,
-            &mut $old_field_place,
-            $new_field_place,
-        );
-    };
-
-    (
-        @maybe_backdate(
-            ($maybe_clone:ident, backdate),
-            $field_ty:ty,
-            $old_field_place:expr,
-            $new_field_place:expr,
-            $revision_place:expr,
-            $current_revision:expr,
-            $zalsa:ident,
-        )
-     ) => {
-        if $zalsa::update::helper::Dispatch::<$field_ty>::maybe_update(
-            $old_field_ptr_expr,
-            std::ptr::addr_of_mut!($old_field_place),
-            $new_field_place,
-        ) {
-            $revision_place = #current_revision;
-        }
-   };
 }

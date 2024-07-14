@@ -47,3 +47,9 @@ impl Durability {
         self.0 as usize
     }
 }
+
+impl Default for Durability {
+    fn default() -> Self {
+        Durability::LOW
+    }
+}

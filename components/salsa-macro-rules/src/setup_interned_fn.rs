@@ -2,6 +2,9 @@
 #[macro_export]
 macro_rules! setup_interned_fn {
     (
+        // Attributes on the function
+        attrs: [$(#[$attr:meta]),*],
+
         // Visibility of the function
         vis: $vis:vis,
 
@@ -49,6 +52,7 @@ macro_rules! setup_interned_fn {
             $inner:ident,
         ]
     ) => {
+        $(#[$attr])*
         $vis fn $fn_name<$db_lt>(
             $db: &$db_lt dyn $Db,
             $($input_id: $input_ty,)*

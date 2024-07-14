@@ -97,6 +97,23 @@ impl dyn Ingredient {
         let this = this as *const T; // discards the vtable
         unsafe { &*this }
     }
+
+    /// Equivalent to the `downcast` methods on `any`.
+    /// Because we do not have dyn-upcasting support, we need this workaround.
+    pub fn assert_type_mut<T: Any>(&mut self) -> &mut T {
+        assert_eq!(
+            Any::type_id(self),
+            TypeId::of::<T>(),
+            "ingredient `{self:?}` is not of type `{}`",
+            std::any::type_name::<T>()
+        );
+
+        // SAFETY: We know that the underlying data pointer
+        // refers to a value of type T because of the `TypeId` check above.
+        let this: *mut dyn Ingredient = self;
+        let this = this as *mut T; // discards the vtable
+        unsafe { &mut *this }
+    }
 }
 
 /// A helper function to show human readable fmt.

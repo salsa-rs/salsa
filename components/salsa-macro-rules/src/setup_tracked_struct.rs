@@ -105,7 +105,7 @@ macro_rules! setup_tracked_struct {
                     use salsa::update::helper::Fallback as _;
                     unsafe {
                         $(
-                            $crate::setup_tracked_struct!(@maybe_backdate(
+                            $crate::maybe_backdate!(
                                 $field_option,
                                 $field_ty,
                                 (*old_fields).$field_index,
@@ -113,7 +113,7 @@ macro_rules! setup_tracked_struct {
                                 revisions[$field_index],
                                 current_revision,
                                 $zalsa,
-                            ));
+                            );
                         )*
                     }
                 }
@@ -169,90 +169,21 @@ macro_rules! setup_tracked_struct {
                 }
 
                 $(
-                    pub fn $field_id<$Db>(&self, db: &$db_lt $Db) -> &$field_ty
+                    pub fn $field_id<$Db>(&self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($field_option, $db_lt, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let runtime = db.runtime();
                         let fields = unsafe { self.0.as_ref() }.field(runtime, $field_index);
-                        $crate::setup_tracked_struct!(@maybe_clone(
+                        $crate::maybe_clone!(
                             $field_option,
                             $field_ty,
                             &fields.$field_index,
-                        ))
+                        )
                     }
                 )*
             }
         };
     };
-
-    // --------------------------------------------------------------
-    // @maybe_clone
-    //
-    // Conditionally invoke `clone` from a field getter
-
-    (
-        @maybe_clone(
-            (no_clone, $maybe_backdate:ident),
-            $field_ty:ty,
-            $field_ref_expr:expr,
-        )
-    ) => {
-        $field_ref_expr
-    };
-
-    (
-        @maybe_clone(
-            (clone, $maybe_backdate:ident),
-            $field_ty:ty,
-            $field_ref_expr:expr,
-        )
-     ) => {
-        <$field_ty as std::clone::Clone>::clone($field_ref_expr)
-    };
-
-    // --------------------------------------------------------------
-    // @maybe_backdate
-    //
-    // Conditionally update field value and backdate revisions
-
-    (
-        @maybe_backdate(
-            ($maybe_clone:ident, no_backdate)
-            $field_ty:ty,
-            $old_field_place:expr,
-            $new_field_place:expr,
-            $revision_place:expr,
-            $current_revision:expr,
-            $zalsa:ident,
-        )
-    ) => {
-        $zalsa::update::always_update(
-            &mut $revision_place,
-            $current_revision,
-            &mut $old_field_place,
-            $new_field_place,
-        );
-    };
-
-    (
-        @maybe_backdate(
-            ($maybe_clone:ident, backdate),
-            $field_ty:ty,
-            $old_field_place:expr,
-            $new_field_place:expr,
-            $revision_place:expr,
-            $current_revision:expr,
-            $zalsa:ident,
-        )
-     ) => {
-        if $zalsa::update::helper::Dispatch::<$field_ty>::maybe_update(
-            $old_field_ptr_expr,
-            std::ptr::addr_of_mut!($old_field_place),
-            $new_field_place,
-        ) {
-            $revision_place = #current_revision;
-        }
-   };
 }

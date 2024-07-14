@@ -48,12 +48,12 @@ where
     ///
     /// * If value with same `value.id` is already present in the map.
     /// * If value not created in current revision.
-    pub fn insert<'db>(&'db self, value: Value<C>) -> C::Id {
+    pub fn insert<'db>(&'db self, value: Value<C>) -> C::Struct {
         let id = value.id;
         let boxed_value = Alloc::new(value);
         let old_value = self.map.insert(id, boxed_value);
         assert!(old_value.is_none()); // ...strictly speaking we probably need to abort here
-        C::Id::from_id(id)
+        C::Struct::from_id(id)
     }
 
     /// Get immutable access to the data for `id` -- this holds a write lock for the duration

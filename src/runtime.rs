@@ -59,6 +59,14 @@ pub struct StampedValue<V> {
 
 pub type Stamp = StampedValue<()>;
 
+pub fn stamp(revision: Revision, durability: Durability) -> Stamp {
+    StampedValue {
+        value: (),
+        durability,
+        changed_at: revision,
+    }
+}
+
 impl<V> StampedValue<V> {
     // FIXME: Use or remove this.
     #[allow(dead_code)]

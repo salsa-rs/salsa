@@ -1,5 +1,6 @@
 mod accumulator;
 mod alloc;
+mod array;
 mod cancelled;
 mod cycle;
 mod database;
@@ -31,6 +32,7 @@ pub use self::durability::Durability;
 pub use self::event::Event;
 pub use self::event::EventKind;
 pub use self::id::Id;
+pub use self::input::setter::Setter;
 pub use self::key::DatabaseKeyIndex;
 pub use self::revision::Revision;
 pub use self::runtime::Runtime;
@@ -49,14 +51,19 @@ pub use salsa_macros::Update;
 ///
 /// The contents of this module are NOT subject to semver.
 pub mod plumbing {
+    pub use crate::array::Array;
     pub use crate::cycle::Cycle;
     pub use crate::cycle::CycleRecoveryStrategy;
+    pub use crate::database::current_revision;
+    pub use crate::database::with_attached_database;
     pub use crate::database::Database;
     pub use crate::id::AsId;
     pub use crate::id::FromId;
     pub use crate::id::Id;
     pub use crate::ingredient::Ingredient;
     pub use crate::ingredient::Jar;
+    pub use crate::revision::Revision;
+    pub use crate::runtime::stamp;
     pub use crate::runtime::Runtime;
     pub use crate::runtime::Stamp;
     pub use crate::runtime::StampedValue;
@@ -67,6 +74,9 @@ pub mod plumbing {
     pub use crate::storage::IngredientIndex;
     pub use crate::storage::Storage;
 
+    pub use salsa_macro_rules::maybe_backdate;
+    pub use salsa_macro_rules::maybe_clone;
+    pub use salsa_macro_rules::maybe_cloned_ty;
     pub use salsa_macro_rules::setup_input;
     pub use salsa_macro_rules::setup_interned_fn;
     pub use salsa_macro_rules::setup_tracked_struct;
@@ -74,7 +84,7 @@ pub mod plumbing {
 
     pub mod input {
         pub use crate::input::input_field::FieldIngredientImpl;
-        pub use crate::input::setter::Setter;
+        pub use crate::input::setter::SetterImpl;
         pub use crate::input::Configuration;
         pub use crate::input::IngredientImpl;
         pub use crate::input::JarImpl;

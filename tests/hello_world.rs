@@ -7,12 +7,35 @@ use common::{HasLogger, Logger};
 use expect_test::expect;
 use test_log::test;
 
-#[salsa::db_view]
+#[salsa::db]
 trait Db: HasLogger {}
 
-#[salsa::input]
-struct MyInput {
-    field: u32,
+// #[salsa::input]
+// struct MyInput {
+//     field: u32,
+// }
+
+salsa::plumbing::setup_input! {
+    attrs: [],
+    vis: ,
+    Struct: MyInput,
+    new_fn: new,
+    field_options: [(clone, not_applicable)],
+    field_ids: [field],
+    field_setter_ids: [set_field],
+    field_tys: [u32],
+    field_indices: [0],
+    num_fields: 1,
+    unused_names: [
+        zalsa1,
+        zalsa_struct1,
+        Configuration1,
+        CACHE1,
+        Db1,
+        NonNull1,
+        Revision1,
+        ValueStruct1,
+    ]
 }
 
 #[salsa::tracked]

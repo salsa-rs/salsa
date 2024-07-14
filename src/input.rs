@@ -20,7 +20,7 @@ use crate::{
     plumbing::{Jar, Stamp},
     runtime::{local_state::QueryOrigin, Runtime},
     storage::IngredientIndex,
-    Database, Durability, Revision,
+    Database, Durability, Id, Revision,
 };
 
 pub trait Configuration: Any {
@@ -28,15 +28,13 @@ pub trait Configuration: Any {
     const FIELD_DEBUG_NAMES: &'static [&'static str];
 
     /// The input struct (which wraps an `Id`)
-    type Id: FromId + 'static + Send + Sync;
+    type Struct: FromId + 'static + Send + Sync;
 
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields: Send + Sync;
 
     /// A array of [`StampedValue<()>`](`StampedValue`) tuples, one per each of the value fields.
     type Stamps: Send + Sync + DerefMut<Target = [Stamp]>;
-
-    fn update_stamp(stamps: &mut Self::Stamps, field_index: u32, field_stamp: Stamp);
 }
 
 pub struct JarImpl<C: Configuration> {
@@ -75,7 +73,7 @@ pub struct IngredientImpl<C: Configuration> {
     ingredient_index: IngredientIndex,
     counter: AtomicU32,
     struct_map: StructMap<C>,
-    _phantom: std::marker::PhantomData<C::Id>,
+    _phantom: std::marker::PhantomData<C::Struct>,
 }
 
 impl<C: Configuration> IngredientImpl<C> {
@@ -88,15 +86,15 @@ impl<C: Configuration> IngredientImpl<C> {
         }
     }
 
-    pub fn database_key_index(&self, id: C::Id) -> DatabaseKeyIndex {
+    pub fn database_key_index(&self, id: C::Struct) -> DatabaseKeyIndex {
         DatabaseKeyIndex {
             ingredient_index: self.ingredient_index,
             key_index: id.as_id(),
         }
     }
 
-    pub fn new_input(&self, fields: C::Fields, stamps: C::Stamps) -> C::Id {
-        let next_id = crate::Id::from_u32(self.counter.fetch_add(1, Ordering::Relaxed));
+    pub fn new_input(&self, fields: C::Fields, stamps: C::Stamps) -> C::Struct {
+        let next_id = Id::from_u32(self.counter.fetch_add(1, Ordering::Relaxed));
         let value = Value {
             struct_ingredient_index: self.ingredient_index,
             id: next_id,
@@ -118,13 +116,13 @@ impl<C: Configuration> IngredientImpl<C> {
     pub fn set_field<R>(
         &mut self,
         runtime: &mut Runtime,
-        id: C::Id,
+        id: C::Struct,
         field_index: usize,
         durability: Durability,
         setter: impl FnOnce(&mut C::Fields) -> R,
     ) -> R {
         let revision = runtime.current_revision();
-        let id: crate::Id = id.as_id();
+        let id: Id = id.as_id();
         let mut r = self.struct_map.update(id);
         let stamp = &mut r.stamps[field_index];
         stamp.durability = durability;
@@ -133,19 +131,19 @@ impl<C: Configuration> IngredientImpl<C> {
     }
 
     /// Creates a new singleton input.
-    pub fn new_singleton_input(&self, _runtime: &Runtime) -> C::Id {
+    pub fn new_singleton_input(&self, _runtime: &Runtime) -> C::Struct {
         // when one exists already, panic
         if self.counter.load(Ordering::Relaxed) >= 1 {
             panic!("singleton struct may not be duplicated");
         }
         // fresh new ingredient
         self.counter.store(1, Ordering::Relaxed);
-        C::Id::from_id(crate::Id::from_u32(0))
+        C::Struct::from_id(Id::from_u32(0))
     }
 
     /// Get the singleton input previously created.
-    pub fn get_singleton_input(&self, _runtime: &Runtime) -> Option<C::Id> {
-        (self.counter.load(Ordering::Relaxed) > 0).then(|| C::Id::from_id(crate::Id::from_u32(0)))
+    pub fn get_singleton_input(&self, _runtime: &Runtime) -> Option<C::Struct> {
+        (self.counter.load(Ordering::Relaxed) > 0).then(|| C::Struct::from_id(Id::from_u32(0)))
     }
 
     /// Access field of an input.
@@ -154,7 +152,7 @@ impl<C: Configuration> IngredientImpl<C> {
     pub fn field<'db>(
         &'db self,
         runtime: &'db Runtime,
-        id: C::Id,
+        id: C::Struct,
         field_index: usize,
     ) -> &'db C::Fields {
         let field_ingredient_index = self.ingredient_index + field_index;
@@ -171,6 +169,14 @@ impl<C: Configuration> IngredientImpl<C> {
         );
         &value.fields
     }
+
+    /// Peek at the field values without recording any read dependency.
+    /// Used for debug printouts.
+    pub fn peek_fields(&self, id: C::Struct) -> &C::Fields {
+        let id = id.as_id();
+        let value = self.struct_map.get(id);
+        &value.fields
+    }
 }
 
 impl<C: Configuration> Ingredient for IngredientImpl<C> {
@@ -181,7 +187,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
     fn maybe_changed_after(
         &self,
         _db: &dyn Database,
-        _input: Option<crate::Id>,
+        _input: Option<Id>,
         _revision: Revision,
     ) -> bool {
         // Input ingredients are just a counter, they store no data, they are immortal.
@@ -193,7 +199,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         CycleRecoveryStrategy::Panic
     }
 
-    fn origin(&self, _key_index: crate::Id) -> Option<QueryOrigin> {
+    fn origin(&self, _key_index: Id) -> Option<QueryOrigin> {
         None
     }
 
@@ -201,7 +207,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         &self,
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
-        output_key: Option<crate::Id>,
+        output_key: Option<Id>,
     ) {
         unreachable!(
             "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
@@ -213,7 +219,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         &self,
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
-        stale_output_key: Option<crate::Id>,
+        stale_output_key: Option<Id>,
     ) {
         unreachable!(
             "remove_stale_output({:?}, {:?}): input cannot be the output of a tracked function",
@@ -225,13 +231,13 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         panic!("unexpected call to `reset_for_new_revision`")
     }
 
-    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: crate::Id) {
+    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: Id) {
         panic!(
             "unexpected call: input ingredients do not register for salsa struct deletion events"
         );
     }
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: Option<Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
 }
@@ -257,7 +263,7 @@ where
     struct_ingredient_index: IngredientIndex,
 
     /// The id of this struct in the ingredient.
-    id: crate::Id,
+    id: Id,
 
     /// Fields of this input struct. They can change across revisions,
     /// but they do not change within a particular revision.

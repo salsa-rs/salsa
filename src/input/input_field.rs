@@ -43,7 +43,7 @@ where
         }
     }
 
-    fn database_key_index(&self, key: C::Id) -> DatabaseKeyIndex {
+    fn database_key_index(&self, key: C::Struct) -> DatabaseKeyIndex {
         DatabaseKeyIndex {
             ingredient_index: self.index,
             key_index: key.as_id(),

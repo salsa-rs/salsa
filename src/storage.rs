@@ -61,8 +61,14 @@ pub unsafe trait DatabaseGen: Any {
     /// If a jar of this type is already present, returns the existing index.
     fn add_or_lookup_jar_by_type(&self, jar: &dyn Jar) -> IngredientIndex;
 
-    /// Gets an ingredient by index
+    /// Gets an `&`-ref to an ingredient by index
     fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient;
+
+    /// Gets an `&mut`-ref to an ingredient by index; also returns the runtime for further use
+    fn lookup_ingredient_mut(
+        &mut self,
+        index: IngredientIndex,
+    ) -> (&mut dyn Ingredient, &mut Runtime);
 
     /// Gets the salsa runtime
     fn runtime(&self) -> &Runtime;
@@ -121,6 +127,13 @@ unsafe impl<T: HasStorage> DatabaseGen for T {
     fn runtime_mut(&mut self) -> &mut Runtime {
         &mut self.storage_mut().runtime
     }
+
+    fn lookup_ingredient_mut(
+        &mut self,
+        index: IngredientIndex,
+    ) -> (&mut dyn Ingredient, &mut Runtime) {
+        self.storage_mut().lookup_ingredient_mut(index)
+    }
 }
 
 impl dyn Database {
@@ -172,14 +185,6 @@ impl IngredientIndex {
 
     pub(crate) fn cycle_recovery_strategy(self, db: &dyn Database) -> CycleRecoveryStrategy {
         db.lookup_ingredient(self).cycle_recovery_strategy()
-    }
-}
-
-impl std::ops::Add<u32> for IngredientIndex {
-    type Output = IngredientIndex;
-
-    fn add(self, rhs: u32) -> Self::Output {
-        IngredientIndex(self.0.checked_add(rhs).unwrap())
     }
 }
 
@@ -303,6 +308,18 @@ impl<Db: Database> Storage<Db> {
         &**self.shared.ingredients_vec.get(index.as_usize()).unwrap()
     }
 
+    fn lookup_ingredient_mut(
+        &mut self,
+        index: IngredientIndex,
+    ) -> (&mut dyn Ingredient, &mut Runtime) {
+        // FIXME: rework how we handle parallelism
+        let ingredients_vec = Arc::get_mut(&mut self.shared.ingredients_vec).unwrap();
+        (
+            &mut **ingredients_vec.get_mut(index.as_usize()).unwrap(),
+            &mut self.runtime,
+        )
+    }
+
     pub fn snapshot(&self) -> Storage<Db>
     where
         Db: ParallelDatabase,
@@ -348,6 +365,7 @@ impl<Db: Database> Storage<Db> {
             self.shared.cvar.wait(&mut guard);
         }
     }
+
     // ANCHOR_END: cancel_other_workers
 }
 
