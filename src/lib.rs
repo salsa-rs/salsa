@@ -60,6 +60,7 @@ pub mod plumbing {
     pub use crate::id::AsId;
     pub use crate::id::FromId;
     pub use crate::id::Id;
+    pub use crate::id::LookupId;
     pub use crate::ingredient::Ingredient;
     pub use crate::ingredient::Jar;
     pub use crate::revision::Revision;
@@ -79,6 +80,7 @@ pub mod plumbing {
     pub use salsa_macro_rules::maybe_cloned_ty;
     pub use salsa_macro_rules::setup_input;
     pub use salsa_macro_rules::setup_interned_fn;
+    pub use salsa_macro_rules::setup_struct_fn;
     pub use salsa_macro_rules::setup_tracked_struct;
     pub use salsa_macro_rules::unexpected_cycle_recovery;
 

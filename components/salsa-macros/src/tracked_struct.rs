@@ -339,9 +339,7 @@ impl TrackedStruct {
         let jar_ty = self.jar_ty();
         let tracked_struct_ingredient = self.tracked_struct_ingredient_index();
         parse_quote_spanned! { ident.span() =>
-            impl<#db, #parameters> salsa::id::LookupId<& #db_lt #db> for #ident #type_generics
-            where
-                #db: ?Sized + salsa::DbWithJar<#jar_ty>,
+            impl<#db, #parameters> salsa::id::LookupId<#db_lt> for #ident #type_generics
                 #where_clause
             {
                 fn lookup_id(id: salsa::Id, db: & #db_lt DB) -> Self {

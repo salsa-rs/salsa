@@ -2,6 +2,8 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::num::NonZeroU32;
 
+use crate::Database;
+
 /// An Id is a newtype'd u32 ranging from `0..Id::MAX_U32`.
 /// The maximum range is smaller than a standard u32 to leave
 /// room for niches; currently there is only one niche, so that
@@ -74,7 +76,7 @@ pub trait AsId: Sized {
 /// up in the database to find it. This is different from
 /// [`AsId`][] where what we have is literally a *newtype*
 /// for an `Id`.
-pub trait LookupId<DB>: AsId {
+pub trait LookupId<'db>: AsId {
     /// Lookup from an `Id` to get an instance of the type.
     ///
     /// # Panics
@@ -86,7 +88,7 @@ pub trait LookupId<DB>: AsId {
     /// dependency tracking typically ensures this does not
     /// occur, but it is possible for a user to violate this
     /// rule.
-    fn lookup_id(id: Id, db: DB) -> Self;
+    fn lookup_id(id: Id, db: &'db dyn Database) -> Self;
 }
 
 /// Internal Salsa trait for types that are just a newtype'd [`Id`][].
@@ -124,11 +126,8 @@ impl FromId for () {
     }
 }
 
-impl<DB, ID> LookupId<DB> for ID
-where
-    ID: FromId,
-{
-    fn lookup_id(id: Id, _db: DB) -> Self {
+impl<'db, ID: FromId> LookupId<'db> for ID {
+    fn lookup_id(id: Id, _db: &'db dyn Database) -> Self {
         Self::from_id(id)
     }
 }

@@ -288,10 +288,9 @@ where
         id.as_id()
     }
 
-    pub fn data_with_db<'db, DB>(&'db self, id: crate::Id, db: &'db DB) -> C::Data<'db>
+    pub fn data_with_db<'db>(&'db self, id: crate::Id, db: &'db dyn Database) -> C::Data<'db>
     where
-        DB: ?Sized,
-        C::Data<'db>: LookupId<&'db DB>,
+        C::Data<'db>: LookupId<'db>,
     {
         <C::Data<'db>>::lookup_id(id, db)
     }

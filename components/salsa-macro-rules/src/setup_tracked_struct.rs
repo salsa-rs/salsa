@@ -129,11 +129,8 @@ macro_rules! setup_tracked_struct {
                 }
             }
 
-            impl<$db_lt, $Db> $zalsa::LookupId<&$db_lt $Db> for $Struct<$db_lt>
-            where
-                $Db: ?Sized + $zalsa::Database,
-            {
-                fn lookup_id(id: salsa::Id, db: & $db_lt $Db) -> Self {
+            impl<'db> $zalsa::LookupId<'db> for $Struct<$db_lt> {
+                fn lookup_id(id: salsa::Id, db: &'db dyn Database) -> Self {
                     $Configuration::ingredient(db).lookup_struct(db.runtime(), id)
                 }
             }

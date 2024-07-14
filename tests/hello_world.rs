@@ -62,8 +62,10 @@ struct Database {
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {
