@@ -7,8 +7,6 @@ extern crate proc_macro2;
 #[macro_use]
 extern crate quote;
 
-mod hygiene;
-
 use proc_macro::TokenStream;
 
 macro_rules! parse_quote {
@@ -42,6 +40,7 @@ mod accumulator;
 mod db;
 mod db_lifetime;
 mod debug;
+mod hygiene;
 mod input;
 mod interned;
 mod options;
@@ -50,6 +49,7 @@ mod tracked;
 mod tracked_fn;
 mod tracked_struct;
 mod update;
+mod xform;
 
 #[proc_macro_attribute]
 pub fn accumulator(args: TokenStream, input: TokenStream) -> TokenStream {

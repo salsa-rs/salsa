@@ -8,7 +8,6 @@ use notify_debouncer_mini::{
     notify::{RecommendedWatcher, RecursiveMode},
     DebounceEventResult, Debouncer,
 };
-use salsa::DebugWithDb;
 
 // ANCHOR: main
 fn main() -> Result<()> {
@@ -61,9 +60,6 @@ fn main() -> Result<()> {
 }
 // ANCHOR_END: main
 
-#[salsa::jar(db = Db)]
-struct Jar(Diagnostic, File, ParsedFile<'_>, compile, parse, sum);
-
 // ANCHOR: db
 #[salsa::input]
 struct File {
@@ -72,11 +68,12 @@ struct File {
     contents: String,
 }
 
-trait Db: salsa::DbWithJar<Jar> {
+#[salsa::db]
+trait Db: salsa::Database {
     fn input(&self, path: PathBuf) -> Result<File>;
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 struct Database {
     storage: salsa::Storage<Self>,
     logs: Mutex<Vec<String>>,
@@ -96,6 +93,7 @@ impl Database {
     }
 }
 
+#[salsa::db]
 impl Db for Database {
     fn input(&self, path: PathBuf) -> Result<File> {
         let path = path
@@ -123,14 +121,12 @@ impl Db for Database {
 }
 // ANCHOR_END: db
 
+#[salsa::db]
 impl salsa::Database for Database {
     fn salsa_event(&self, event: salsa::Event) {
         // don't log boring events
         if let salsa::EventKind::WillExecute { .. } = event.kind {
-            self.logs
-                .lock()
-                .unwrap()
-                .push(format!("{:?}", event.debug(self)));
+            self.logs.lock().unwrap().push(format!("{:?}", event));
         }
     }
 }

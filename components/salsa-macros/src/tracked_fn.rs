@@ -2,7 +2,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
 use syn::{spanned::Spanned, ItemFn};
 
-use crate::{db_lifetime, hygiene::Hygiene, options::Options};
+use crate::{db_lifetime, hygiene::Hygiene, options::Options, xform::ChangeLt};
 
 // Source:
 //
@@ -65,7 +65,7 @@ impl Macro {
         let db_lt = db_lifetime::db_lifetime(&item.sig.generics);
         let input_ids = self.input_ids(&item);
         let input_tys = self.input_tys(&item)?;
-        let output_ty = self.output_ty(&item)?;
+        let output_ty = self.output_ty(&db_lt, &item)?;
         let (cycle_recovery_fn, cycle_recovery_strategy) = self.cycle_recovery();
 
         let mut inner_fn = item.clone();
@@ -293,10 +293,14 @@ impl Macro {
             .collect()
     }
 
-    fn output_ty<'item>(&self, item: &'item ItemFn) -> syn::Result<syn::Type> {
+    fn output_ty<'item>(
+        &self,
+        db_lt: &syn::Lifetime,
+        item: &'item ItemFn,
+    ) -> syn::Result<syn::Type> {
         match &item.sig.output {
             syn::ReturnType::Default => Ok(parse_quote!(())),
-            syn::ReturnType::Type(_, ty) => Ok(syn::Type::clone(ty)),
+            syn::ReturnType::Type(_, ty) => Ok(ChangeLt::elided_to(&db_lt).in_type(&ty)),
         }
     }
 
