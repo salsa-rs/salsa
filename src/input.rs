@@ -155,7 +155,7 @@ impl<C: Configuration> IngredientImpl<C> {
         id: C::Struct,
         field_index: usize,
     ) -> &'db C::Fields {
-        let field_ingredient_index = self.ingredient_index + field_index;
+        let field_ingredient_index = self.ingredient_index.successor(field_index);
         let id = id.as_id();
         let value = self.struct_map.get(id);
         let stamp = &value.stamps[field_index];
@@ -172,7 +172,7 @@ impl<C: Configuration> IngredientImpl<C> {
 
     /// Peek at the field values without recording any read dependency.
     /// Used for debug printouts.
-    pub fn peek_fields(&self, id: C::Struct) -> &C::Fields {
+    pub fn leak_fields(&self, id: C::Struct) -> &C::Fields {
         let id = id.as_id();
         let value = self.struct_map.get(id);
         &value.fields

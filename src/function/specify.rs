@@ -23,7 +23,7 @@ where
         value: C::Output<'db>,
         origin: impl Fn(DatabaseKeyIndex) -> QueryOrigin,
     ) where
-        C::Input<'db>: TrackedStructInDb<C::DbView>,
+        C::Input<'db>: TrackedStructInDb,
     {
         let runtime = db.runtime();
 
@@ -44,7 +44,7 @@ where
         // * Q4 invokes Q2 and then Q1
         //
         // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
-        let database_key_index = <C::Input<'db>>::database_key_index(db, key);
+        let database_key_index = <C::Input<'db>>::database_key_index(db.as_salsa_database(), key);
         let dependency_index = database_key_index.into();
         if !runtime.is_output_of_active_query(dependency_index) {
             panic!("can only use `specfiy` on entities created during current query");
@@ -95,7 +95,7 @@ where
     /// Used for explicit calls to `specify`, but not needed for pre-declared tracked struct fields.
     pub fn specify_and_record<'db>(&'db self, db: &'db C::DbView, key: Id, value: C::Output<'db>)
     where
-        C::Input<'db>: TrackedStructInDb<C::DbView>,
+        C::Input<'db>: TrackedStructInDb,
     {
         self.specify(db, key, value, |database_key_index| {
             QueryOrigin::Assigned(database_key_index)

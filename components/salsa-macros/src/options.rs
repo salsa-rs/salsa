@@ -110,10 +110,6 @@ impl<A: AllowedOptions> Options<A> {
 
         parse_quote! {crate::Jar}
     }
-
-    pub(crate) fn should_backdate(&self) -> bool {
-        self.no_eq.is_none()
-    }
 }
 
 impl<A: AllowedOptions> syn::parse::Parse for Options<A> {

@@ -12,8 +12,6 @@ use crate::runtime::Runtime;
 use crate::views::{Views, ViewsOf};
 use crate::Database;
 
-use super::ParallelDatabase;
-
 pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
     DatabaseGen::views(db)
 }
@@ -34,6 +32,15 @@ pub unsafe trait DatabaseGen: Any {
     ///
     /// Returns the same data pointer as `self`.
     fn as_salsa_database(&self) -> &dyn Database;
+
+    /// Upcast to a `dyn Database`.
+    ///
+    /// Only required because upcasts not yet stabilized (*grr*).
+    ///
+    /// # Safety
+    ///
+    /// Returns the same data pointer as `self`.
+    fn as_salsa_database_mut(&mut self) -> &mut dyn Database;
 
     /// Upcast to a `dyn DatabaseGen`.
     ///
@@ -96,6 +103,10 @@ unsafe impl<T: HasStorage> DatabaseGen for T {
         self
     }
 
+    fn as_salsa_database_mut(&mut self) -> &mut dyn Database {
+        self
+    }
+
     fn as_salsa_database_gen(&self) -> &dyn DatabaseGen {
         self
     }
@@ -142,6 +153,7 @@ impl dyn Database {
     /// # Panics
     ///
     /// If the view has not been added to the database (see [`DatabaseView`][])
+    #[track_caller]
     pub fn as_view<DbView: ?Sized + Database>(&self) -> &DbView {
         self.views().try_view_as(self).unwrap()
     }
@@ -186,13 +198,9 @@ impl IngredientIndex {
     pub(crate) fn cycle_recovery_strategy(self, db: &dyn Database) -> CycleRecoveryStrategy {
         db.lookup_ingredient(self).cycle_recovery_strategy()
     }
-}
 
-impl std::ops::Add<usize> for IngredientIndex {
-    type Output = IngredientIndex;
-
-    fn add(self, rhs: usize) -> Self::Output {
-        IngredientIndex(self.0.checked_add(u32::try_from(rhs).unwrap()).unwrap())
+    pub fn successor(self, index: usize) -> Self {
+        IngredientIndex(self.0 + 1 + index as u32)
     }
 }
 
@@ -223,23 +231,12 @@ struct Shared<Db: Database> {
     /// first ingredient index will be. This allows ingredients to store their own indices.
     /// This may be worth refactoring in the future because it naturally adds more overhead to
     /// adding new kinds of ingredients.
-    jar_map: Arc<Mutex<FxHashMap<TypeId, IngredientIndex>>>,
+    jar_map: Mutex<FxHashMap<TypeId, IngredientIndex>>,
 
     /// Vector of ingredients.
     ///
     /// Immutable unless the mutex on `ingredients_map` is held.
-    ingredients_vec: Arc<ConcurrentVec<Box<dyn Ingredient>>>,
-
-    /// Conditional variable that is used to coordinate cancellation.
-    /// When the main thread writes to the database, it blocks until each of the snapshots can be cancelled.
-    cvar: Arc<Condvar>,
-
-    /// A dummy varible that we use to coordinate how many outstanding database handles exist.
-    /// This is set to `None` when dropping only.
-    sync: Option<Arc<()>>,
-
-    /// Mutex that is used to protect the `jars` field when waiting for snapshots to be dropped.
-    noti_lock: Arc<parking_lot::Mutex<()>>,
+    ingredients_vec: ConcurrentVec<Box<dyn Ingredient>>,
 }
 
 // ANCHOR: default
@@ -249,11 +246,8 @@ impl<Db: Database> Default for Storage<Db> {
             shared: Shared {
                 upcasts: Default::default(),
                 nonce: NONCE.nonce(),
-                cvar: Arc::new(Default::default()),
-                noti_lock: Arc::new(parking_lot::Mutex::new(())),
                 jar_map: Default::default(),
                 ingredients_vec: Default::default(),
-                sync: Some(Arc::new(())),
             },
             runtime: Runtime::default(),
         }
@@ -290,7 +284,8 @@ impl<Db: Database> Storage<Db> {
                 assert_eq!(
                     expected_index.as_usize(),
                     actual_index,
-                    "index predicted for ingredient (`{:?}`) does not align with assigned index (`{:?}`)",
+                    "ingredient `{:?}` was predicted to have index `{:?}` but actually has index `{:?}`",
+                    self.shared.ingredients_vec.get(actual_index).unwrap(),
                     expected_index,
                     actual_index,
                 );
@@ -312,89 +307,20 @@ impl<Db: Database> Storage<Db> {
         &mut self,
         index: IngredientIndex,
     ) -> (&mut dyn Ingredient, &mut Runtime) {
-        // FIXME: rework how we handle parallelism
-        let ingredients_vec = Arc::get_mut(&mut self.shared.ingredients_vec).unwrap();
+        self.runtime.new_revision();
+
         (
-            &mut **ingredients_vec.get_mut(index.as_usize()).unwrap(),
+            &mut **self
+                .shared
+                .ingredients_vec
+                .get_mut(index.as_usize())
+                .unwrap(),
             &mut self.runtime,
         )
     }
 
-    pub fn snapshot(&self) -> Storage<Db>
-    where
-        Db: ParallelDatabase,
-    {
-        Self {
-            shared: self.shared.clone(),
-            runtime: self.runtime.snapshot(),
-        }
-    }
-
     pub fn runtime(&self) -> &Runtime {
         &self.runtime
-    }
-
-    // ANCHOR: cancel_other_workers
-    /// Sets cancellation flag and blocks until all other workers with access
-    /// to this storage have completed.
-    ///
-    /// This could deadlock if there is a single worker with two handles to the
-    /// same database!
-    fn cancel_other_workers(&mut self) {
-        loop {
-            self.runtime.set_cancellation_flag();
-
-            // Acquire lock before we check if we have unique access to the jars.
-            // If we do not yet have unique access, we will go to sleep and wait for
-            // the snapshots to be dropped, which will signal the cond var associated
-            // with this lock.
-            //
-            // NB: We have to acquire the lock first to ensure that we can check for
-            // unique access and go to sleep waiting on the condvar atomically,
-            // as described in PR #474.
-            let mut guard = self.shared.noti_lock.lock();
-
-            // If we have unique access to the ingredients vec, we are done.
-            if Arc::get_mut(self.shared.sync.as_mut().unwrap()).is_some() {
-                return;
-            }
-
-            // Otherwise, wait until some other storage entities have dropped.
-            //
-            // The cvar `self.shared.cvar` is notified by the `Drop` impl.
-            self.shared.cvar.wait(&mut guard);
-        }
-    }
-
-    // ANCHOR_END: cancel_other_workers
-}
-
-impl<Db: Database> Clone for Shared<Db> {
-    fn clone(&self) -> Self {
-        Self {
-            upcasts: self.upcasts.clone(),
-            nonce: self.nonce.clone(),
-            jar_map: self.jar_map.clone(),
-            ingredients_vec: self.ingredients_vec.clone(),
-            cvar: self.cvar.clone(),
-            noti_lock: self.noti_lock.clone(),
-            sync: self.sync.clone(),
-        }
-    }
-}
-
-impl<Db: Database> Drop for Storage<Db> {
-    fn drop(&mut self) {
-        // Careful: if this is a snapshot on the main handle,
-        // we need to notify `shared.cvar` to make sure that the
-        // master thread wakes up. *And*, when it does wake-up, we need to be sure
-        // that the ref count on `self.shared.sync` has already been decremented.
-        // So we take the value of `self.shared.sync` now and then notify the cvar.
-        //
-        // If this is the master thread, this dance has no real effect.
-        let _guard = self.shared.noti_lock.lock();
-        drop(self.shared.sync.take());
-        self.shared.cvar.notify_all();
     }
 }
 

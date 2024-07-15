@@ -49,7 +49,7 @@ pub enum StatementData<'db> {
     Print(Expression<'db>),
 }
 
-#[derive(Eq, PartialEq, Debug, Hash, new, salsa::Update, salsa::DebugWithDb)]
+#[derive(Eq, PartialEq, Debug, Hash, new, salsa::Update)]
 pub struct Expression<'db> {
     pub span: Span<'db>,
 

@@ -8,7 +8,7 @@ use crate::{
     key::DatabaseKeyIndex,
     runtime::local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
-    storage::IngredientIndex,
+    storage::{DatabaseGen, IngredientIndex},
     Cycle, Database, Event, EventKind, Id, Revision,
 };
 
@@ -39,7 +39,7 @@ pub trait Configuration: Any {
     /// The "salsa struct type" that this function is associated with.
     /// This can be just `salsa::Id` for functions that intern their arguments
     /// and are not clearly associated with any one salsa struct.
-    type SalsaStruct<'db>: SalsaStructInDb<Self::DbView>;
+    type SalsaStruct<'db>: SalsaStructInDb;
 
     /// The input to the function
     type Input<'db>: Send + Sync;
@@ -131,10 +131,6 @@ pub fn should_backdate_value<V: Eq>(old_value: &V, new_value: &V) -> bool {
     old_value == new_value
 }
 
-/// This type is used to make configuration types for the functions in entities;
-/// e.g. you can do `Config<X, 0>` and `Config<X, 1>`.
-pub struct Config<const C: usize>(std::marker::PhantomData<[(); C]>);
-
 impl<C> IngredientImpl<C>
 where
     C: Configuration,
@@ -202,7 +198,10 @@ where
     /// so we can remove any data keyed by them.
     fn register<'db>(&self, db: &'db C::DbView) {
         if !self.registered.fetch_or(true) {
-            <C::SalsaStruct<'db> as SalsaStructInDb<_>>::register_dependent_fn(db, self.index)
+            <C::SalsaStruct<'db> as SalsaStructInDb>::register_dependent_fn(
+                db.as_salsa_database(),
+                self.index,
+            )
         }
     }
 }

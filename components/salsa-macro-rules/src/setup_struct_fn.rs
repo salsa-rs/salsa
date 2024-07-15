@@ -79,7 +79,7 @@ macro_rules! setup_struct_fn {
                     old_value: &Self::Output<'_>,
                     new_value: &Self::Output<'_>,
                 ) -> bool {
-                    old_value == new_value
+                    $zalsa::should_backdate_value(old_value, new_value)
                 }
 
                 fn execute<'db>($db: &'db Self::DbView, $input_id: $input_ty) -> Self::Output<'db> {
@@ -97,7 +97,7 @@ macro_rules! setup_struct_fn {
                 }
 
                 fn id_to_input<'db>(db: &'db Self::DbView, key: salsa::Id) -> Self::Input<'db> {
-                    $zalsa::LookupId::lookup_id(key, db)
+                    $zalsa::LookupId::lookup_id(key, db.as_salsa_database())
                 }
             }
 
@@ -114,10 +114,14 @@ macro_rules! setup_struct_fn {
                 }
             }
 
-            let fn_ingredient = $FN_CACHE.get_or_create($db.as_salsa_database(), || {
-                $db.add_or_lookup_jar_by_type(&$Configuration)
-            });
-            fn_ingredient.fetch($db, $input_id).clone()
+            $zalsa::attach_database($db, || {
+                let fn_ingredient = $FN_CACHE.get_or_create($db.as_salsa_database(), || {
+                    <dyn $Db as $Db>::zalsa_db($db);
+                    $db.add_or_lookup_jar_by_type(&$Configuration)
+                });
+
+                fn_ingredient.fetch($db, $zalsa::AsId::as_id(&$input_id)).clone()
+            })
         }
     };
 }

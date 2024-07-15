@@ -1,18 +1,6 @@
 //! Test that `DeriveWithDb` is correctly derived.
 
 use expect_test::expect;
-use salsa::DebugWithDb;
-
-#[salsa::jar(db = Db)]
-struct Jar(
-    MyInput,
-    ComplexStruct,
-    leak_debug_string,
-    DerivedCustom<'_>,
-    leak_derived_custom,
-);
-
-trait Db: salsa::DbWithJar<Jar> {}
 
 #[salsa::input]
 struct MyInput {
@@ -30,15 +18,14 @@ struct ComplexStruct {
     not_salsa: NotSalsa,
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
-
-impl Db for Database {}
 
 #[test]
 fn input() {
@@ -59,7 +46,7 @@ fn input() {
 }
 
 #[salsa::tracked]
-fn leak_debug_string(db: &dyn Db, input: MyInput) -> String {
+fn leak_debug_string(db: &dyn salsa::Database, input: MyInput) -> String {
     format!("{:?}", input.debug(db))
 }
 
@@ -87,14 +74,14 @@ fn untracked_dependencies() {
 }
 
 #[salsa::tracked]
-#[customize(DebugWithDb)]
+#[customize(Debug)]
 struct DerivedCustom<'db> {
     my_input: MyInput,
     value: u32,
 }
 
-impl<'db> DebugWithDb<dyn Db> for DerivedCustom<'db> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>, db: &dyn Db) -> std::fmt::Result {
+impl std::fmt::Debug for DerivedCustom<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{:?} / {:?}",

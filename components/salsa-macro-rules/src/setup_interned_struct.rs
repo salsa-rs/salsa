@@ -1,0 +1,170 @@
+/// Macro for setting up a function that must intern its arguments.
+#[macro_export]
+macro_rules! setup_interned_struct {
+    (
+        // Attributes on the struct
+        attrs: [$(#[$attr:meta]),*],
+
+        // Visibility of the struct
+        vis: $vis:vis,
+
+        // Name of the struct
+        Struct: $Struct:ident,
+
+        // Name of the `'db` lifetime that the user gave
+        db_lt: $db_lt:lifetime,
+
+        // Name user gave for `new`
+        new_fn: $new_fn:ident,
+
+        // A series of option tuples; see `setup_tracked_struct` macro
+        field_options: [$($field_option:tt),*],
+
+        // Field names
+        field_ids: [$($field_id:ident),*],
+
+        // Names for field setter methods (typically `set_foo`)
+        field_setter_ids: [$($field_setter_id:ident),*],
+
+        // Field types
+        field_tys: [$($field_ty:ty),*],
+
+        // Indices for each field from 0..N -- must be unsuffixed (e.g., `0`, `1`).
+        field_indices: [$($field_index:tt),*],
+
+        // Number of fields
+        num_fields: $N:literal,
+
+        // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
+        // We have the procedural macro generate names for those items that are
+        // not used elsewhere in the user's code.
+        unused_names: [
+            $zalsa:ident,
+            $zalsa_struct:ident,
+            $Configuration:ident,
+            $CACHE:ident,
+            $Db:ident,
+        ]
+    ) => {
+        $(#[$attr])*
+        #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+        $vis struct $Struct<$db_lt>(
+            std::ptr::NonNull<salsa::plumbing::interned::Value < $Struct<'static> >>,
+            std::marker::PhantomData < & $db_lt salsa::plumbing::interned::Value < $Struct<'static> > >
+        );
+
+        const _: () = {
+            use salsa::plumbing as $zalsa;
+            use $zalsa::interned as $zalsa_struct;
+
+            type $Configuration = $Struct<'static>;
+
+            impl $zalsa_struct::Configuration for $Configuration {
+                const DEBUG_NAME: &'static str = stringify!($Struct);
+                type Data<$db_lt> = ($($field_ty,)*);
+                type Struct<$db_lt> = $Struct<$db_lt>;
+                unsafe fn struct_from_raw<'db>(ptr: std::ptr::NonNull<$zalsa_struct::Value<Self>>) -> Self::Struct<'db> {
+                    $Struct(ptr, std::marker::PhantomData)
+                }
+                fn deref_struct(s: Self::Struct<'_>) -> &$zalsa_struct::Value<Self> {
+                    unsafe { s.0.as_ref() }
+                }
+            }
+
+            impl $Configuration {
+                pub fn ingredient<Db>(db: &Db) -> &$zalsa_struct::IngredientImpl<Self>
+                where
+                    Db: ?Sized + $zalsa::Database,
+                {
+                    static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
+                        $zalsa::IngredientCache::new();
+                    CACHE.get_or_create(db, || {
+                        db.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
+                    })
+                }
+            }
+
+            impl $zalsa::FromId for $Struct<'_> {
+                fn from_id(id: salsa::Id) -> Self {
+                    Self(id)
+                }
+            }
+
+            impl $zalsa::AsId for $Struct<'_> {
+                fn as_id(&self) -> salsa::Id {
+                    self.0
+                }
+            }
+
+            impl std::fmt::Debug for $Struct<'_> {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    $zalsa::with_attached_database(|db| {
+                        let fields = $Configuration::ingredient(db).fields(self.0);
+                        let f = f.debug_struct(stringify!($Struct));
+                        $(
+                            let f = f.field(stringify!($field_id), &fields.$field_index);
+                        )*
+                        f.finish()
+                    }).unwrap_or_else(|| {
+                        f.debug_tuple(stringify!($Struct))
+                            .field(&self.0)
+                            .finish()
+                    })
+                }
+            }
+
+            impl $zalsa::SalsaStructInDb for $Struct<'_> {
+                fn register_dependent_fn(_db: &dyn $zalsa::Database, _index: $zalsa::IngredientIndex) {
+                    // Inputs don't bother with dependent functions
+                }
+            }
+
+            impl<$db_lt> $Struct<$db_lt> {
+                pub fn new<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self
+                where
+                    // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
+                    $Db: ?Sized + salsa::Database,
+                {
+                    let runtime = db.runtime();
+                    let current_revision = $zalsa::current_revision(db);
+                    let stamps = $zalsa::Array::new([$zalsa::stamp(current_revision, Default::default()); $N]);
+                    $Configuration::ingredient(db).intern(runtime, ($($field_id,)*), stamps)
+                }
+
+                $(
+                    pub fn $field_id<'db, $Db>(self, db: &'db $Db) -> $zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)
+                    where
+                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
+                        $Db: ?Sized + $zalsa::Database,
+                    {
+                        let runtime = db.runtime();
+                        let fields = $Configuration::ingredient(db).field(runtime, self, $field_index);
+                        $zalsa::maybe_clone!(
+                            $field_option,
+                            $field_ty,
+                            &fields.$field_index,
+                        )
+                    }
+                )*
+
+                $(
+                    #[must_use]
+                    pub fn $field_setter_id<'db, $Db>(self, db: &'db mut $Db) -> impl salsa::Setter<FieldTy = $field_ty> + 'db
+                    where
+                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
+                        $Db: ?Sized + $zalsa::Database,
+                    {
+                        let (ingredient, runtime) = $Configuration::ingredient_mut(db);
+                        $zalsa::input::SetterImpl::new(
+                            runtime,
+                            self,
+                            $field_index,
+                            ingredient,
+                            |fields, f| std::mem::replace(&mut fields.$field_index, f),
+                        )
+                    }
+                )*
+            }
+        };
+    };
+}

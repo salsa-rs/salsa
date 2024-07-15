@@ -1,7 +1,11 @@
-use proc_macro2::{Literal, Span, TokenStream};
+use proc_macro2::{Literal, TokenStream};
 use synstructure::BindStyle;
 
+use crate::hygiene::Hygiene;
+
 pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream> {
+    let hygiene = Hygiene::from2(&input);
+
     if let syn::Data::Union(_) = &input.data {
         return Err(syn::Error::new_spanned(
             &input.ident,
@@ -15,8 +19,8 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
         v.bind_with(|_| BindStyle::Move);
     }
 
-    let old_pointer = syn::Ident::new("old_pointer", Span::call_site());
-    let new_value = syn::Ident::new("new_value", Span::call_site());
+    let old_pointer = hygiene.ident("old_pointer");
+    let new_value = hygiene.ident("new_value");
 
     let fields: TokenStream = structure
         .variants()
@@ -51,7 +55,7 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
                     quote! {
                         #tokens |
                             unsafe {
-                                salsa::update::helper::Dispatch::<#field_ty>::maybe_update(
+                                salsa::plumbing::UpdateDispatch::<#field_ty>::maybe_update(
                                     #binding,
                                     #new_value.#field_index,
                                 )
@@ -74,7 +78,7 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
     let tokens = quote! {
         unsafe impl #impl_generics salsa::update::Update for #ident #ty_generics #where_clause {
             unsafe fn maybe_update(#old_pointer: *mut Self, #new_value: Self) -> bool {
-                use ::salsa::update::helper::Fallback as _;
+                use ::salsa::plumbing::UpdateFallback as _;
                 let old_pointer = unsafe { &mut *#old_pointer };
                 match #old_pointer {
                     #fields

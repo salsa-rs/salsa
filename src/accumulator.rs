@@ -1,7 +1,6 @@
 //! Basic test of accumulator functionality.
 
 use std::{
-    any::Any,
     fmt::{self, Debug},
     marker::PhantomData,
 };

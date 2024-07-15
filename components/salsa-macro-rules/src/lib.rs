@@ -14,8 +14,9 @@
 
 mod maybe_backdate;
 mod maybe_clone;
-mod setup_input;
+mod setup_input_struct;
 mod setup_interned_fn;
+mod setup_interned_struct;
 mod setup_struct_fn;
 mod setup_tracked_struct;
 mod unexpected_cycle_recovery;

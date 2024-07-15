@@ -63,8 +63,8 @@ macro_rules! setup_interned_fn {
 
             #[derive(Copy, Clone)]
             struct $InternedData<'db>(
-                std::ptr::NonNull<$zalsa::interned::ValueStruct<$Configuration>>,
-                std::marker::PhantomData<&'db $zalsa::interned::ValueStruct<$Configuration>>,
+                std::ptr::NonNull<$zalsa::interned::Value<$Configuration>>,
+                std::marker::PhantomData<&'db $zalsa::interned::Value<$Configuration>>,
             );
 
             static $FN_CACHE: $zalsa::IngredientCache<$zalsa::function::IngredientImpl<$Configuration>> =
@@ -73,8 +73,8 @@ macro_rules! setup_interned_fn {
             static $INTERN_CACHE: $zalsa::IngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
                 $zalsa::IngredientCache::new();
 
-            impl $zalsa::SalsaStructInDb<dyn $Db> for $InternedData<'_> {
-                fn register_dependent_fn(_db: &dyn $Db, _index: $zalsa::IngredientIndex) {}
+            impl $zalsa::SalsaStructInDb for $InternedData<'_> {
+                fn register_dependent_fn(_db: &dyn $zalsa::Database, _index: $zalsa::IngredientIndex) {}
             }
 
             impl $zalsa::function::Configuration for $Configuration {
@@ -94,7 +94,7 @@ macro_rules! setup_interned_fn {
                     old_value: &Self::Output<'_>,
                     new_value: &Self::Output<'_>,
                 ) -> bool {
-                    old_value == new_value
+                    $zalsa::should_backdate_value(old_value, new_value)
                 }
 
                 fn execute<'db>($db: &'db Self::DbView, ($($input_id),*): ($($input_ty),*)) -> Self::Output<'db> {
@@ -113,7 +113,7 @@ macro_rules! setup_interned_fn {
 
                 fn id_to_input<'db>(db: &'db Self::DbView, key: salsa::Id) -> Self::Input<'db> {
                     let ingredient = $INTERN_CACHE.get_or_create(db.as_salsa_database(), || {
-                        db.add_or_lookup_jar_by_type(&$Configuration) + 1
+                        db.add_or_lookup_jar_by_type(&$Configuration).successor(0)
                     });
                     ingredient.data(key).clone()
                 }
@@ -127,12 +127,12 @@ macro_rules! setup_interned_fn {
                 type Struct<$db_lt> = $InternedData<$db_lt>;
 
                 unsafe fn struct_from_raw<'db>(
-                    ptr: std::ptr::NonNull<$zalsa::interned::ValueStruct<Self>>,
+                    ptr: std::ptr::NonNull<$zalsa::interned::Value<Self>>,
                 ) -> Self::Struct<'db> {
                     $InternedData(ptr, std::marker::PhantomData)
                 }
 
-                fn deref_struct(s: Self::Struct<'_>) -> &$zalsa::interned::ValueStruct<Self> {
+                fn deref_struct(s: Self::Struct<'_>) -> &$zalsa::interned::Value<Self> {
                     unsafe { s.0.as_ref() }
                 }
             }
@@ -147,21 +147,24 @@ macro_rules! setup_interned_fn {
                             first_index,
                         )),
                         Box::new(<$zalsa::interned::IngredientImpl<$Configuration>>::new(
-                            first_index + 1,
+                            first_index.successor(0)
                         )),
                     ]
                 }
             }
 
-            let intern_ingredient = $INTERN_CACHE.get_or_create($db.as_salsa_database(), || {
-                $db.add_or_lookup_jar_by_type(&$Configuration) + 1
-            });
-            let key = intern_ingredient.intern_id($db.runtime(), ($($input_id),*));
+            $zalsa::attach_database($db, || {
+                let intern_ingredient = $INTERN_CACHE.get_or_create($db.as_salsa_database(), || {
+                    $db.add_or_lookup_jar_by_type(&$Configuration).successor(0)
+                });
+                let key = intern_ingredient.intern_id($db.runtime(), ($($input_id),*));
 
-            let fn_ingredient = $FN_CACHE.get_or_create($db.as_salsa_database(), || {
-                $db.add_or_lookup_jar_by_type(&$Configuration)
-            });
-            fn_ingredient.fetch($db, key).clone()
+                let fn_ingredient = $FN_CACHE.get_or_create($db.as_salsa_database(), || {
+                    <dyn $Db as $Db>::zalsa_db($db);
+                    $db.add_or_lookup_jar_by_type(&$Configuration)
+                });
+                fn_ingredient.fetch($db, key).clone()
+            })
         }
     };
 }

@@ -1,5 +1,9 @@
-use crate::salsa_struct::{SalsaField, SalsaStruct};
-use proc_macro2::{Literal, TokenStream};
+use crate::{
+    hygiene::Hygiene,
+    options::Options,
+    salsa_struct::{SalsaStruct, SalsaStructAllowedOptions},
+};
+use proc_macro2::TokenStream;
 
 /// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///
@@ -10,21 +14,23 @@ pub(crate) fn input(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    match SalsaStruct::new(args, input, "input").and_then(|el| InputStruct(el).generate_input()) {
-        Ok(s) => s.into(),
-        Err(err) => err.into_compile_error().into(),
+    let args = syn::parse_macro_input!(args as InputArgs);
+    let hygiene = Hygiene::from1(&input);
+    let struct_item = syn::parse_macro_input!(input as syn::ItemStruct);
+    let m = Macro {
+        hygiene,
+        args,
+        struct_item,
+    };
+    match m.try_macro() {
+        Ok(v) => v.into(),
+        Err(e) => e.to_compile_error().into(),
     }
 }
 
-struct InputStruct(SalsaStruct<Self>);
+type InputArgs = Options<InputStruct>;
 
-impl std::ops::Deref for InputStruct {
-    type Target = SalsaStruct<Self>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+struct InputStruct;
 
 impl crate::options::AllowedOptions for InputStruct {
     const RETURN_REF: bool = false;
@@ -47,291 +53,87 @@ impl crate::options::AllowedOptions for InputStruct {
     const CONSTRUCTOR_NAME: bool = true;
 }
 
-impl InputStruct {
-    fn generate_input(&self) -> syn::Result<TokenStream> {
-        self.require_no_generics()?;
+impl SalsaStructAllowedOptions for InputStruct {
+    const KIND: &'static str = "input";
 
-        let id_struct = self.the_struct_id();
-        let inherent_impl = self.input_inherent_impl();
-        let ingredients_for_impl = self.input_ingredients();
-        let as_id_impl = self.as_id_impl();
-        let from_id_impl = self.impl_of_from_id();
-        let salsa_struct_in_db_impl = self.salsa_struct_in_db_impl();
-        let as_debug_with_db_impl = self.as_debug_with_db_impl();
-        let debug_impl = self.debug_impl();
+    const ALLOW_ID: bool = false;
 
-        Ok(quote! {
-            #id_struct
-            #inherent_impl
-            #ingredients_for_impl
-            #as_id_impl
-            #from_id_impl
-            #as_debug_with_db_impl
-            #salsa_struct_in_db_impl
-            #debug_impl
-        })
-    }
+    const HAS_LIFETIME: bool = false;
+}
 
-    /// Generate an inherent impl with methods on the entity type.
-    fn input_inherent_impl(&self) -> syn::ItemImpl {
-        let ident = self.the_ident();
-        let jar_ty = self.jar_ty();
-        let db_dyn_ty = self.db_dyn_ty();
-        let input_index = self.input_index();
+struct Macro {
+    hygiene: Hygiene,
+    args: InputArgs,
+    struct_item: syn::ItemStruct,
+}
 
-        let field_indices = self.all_field_indices();
-        let field_names = self.all_field_names();
-        let field_vises = self.all_field_vises();
-        let field_tys: Vec<_> = self.all_field_tys();
-        let field_clones: Vec<_> = self.all_fields().map(SalsaField::is_clone_field).collect();
-        let get_field_names: Vec<_> = self.all_get_field_names();
-        let field_getters: Vec<syn::ImplItemFn> = field_indices.iter().zip(&get_field_names).zip(&field_vises).zip(&field_tys).zip(&field_clones).map(|((((field_index, get_field_name), field_vis), field_ty), is_clone_field)|
-            if !*is_clone_field {
-                parse_quote_spanned! { get_field_name.span() =>
-                    #field_vis fn #get_field_name<'db>(self, __db: &'db #db_dyn_ty) -> &'db #field_ty
-                    {
-                        let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
-                        let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                        __ingredients.#field_index.fetch(__runtime, self)
-                    }
-                }
-            } else {
-                parse_quote_spanned! { get_field_name.span() =>
-                    #field_vis fn #get_field_name<'db>(self, __db: &'db #db_dyn_ty) -> #field_ty
-                    {
-                        let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
-                        let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                        __ingredients.#field_index.fetch(__runtime, self).clone()
-                    }
-                }
-            }
-        )
-        .collect();
+impl Macro {
+    #[allow(non_snake_case)]
+    fn try_macro(&self) -> syn::Result<TokenStream> {
+        let salsa_struct = SalsaStruct::new(&self.struct_item, &self.args)?;
 
-        // setters
-        let set_field_names = self.all_set_field_names();
-        let field_setters: Vec<syn::ImplItemFn> = field_indices.iter()
-            .zip(&set_field_names)
-            .zip(&field_vises)
-            .zip(&field_tys)
-            .filter_map(|(((field_index, &set_field_name), field_vis), field_ty)| {
-                let set_field_name = set_field_name?;
-                Some(parse_quote_spanned! { set_field_name.span() =>
-                    #field_vis fn #set_field_name<'db>(self, __db: &'db mut #db_dyn_ty) -> salsa::setter::Setter<'db, #ident, #field_ty>
-                    {
-                        let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar_mut(__db);
-                        let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient_mut(__jar);
-                        salsa::setter::Setter::new(__runtime, self, &mut __ingredients.#field_index)
-                    }
-                })
-        })
-        .collect();
+        let attrs = &self.struct_item.attrs;
+        let vis = &self.struct_item.vis;
+        let struct_ident = &self.struct_item.ident;
+        let field_ids = salsa_struct.field_ids();
+        let field_indices = salsa_struct.field_indices();
+        let num_fields = salsa_struct.num_fields();
+        let field_setter_ids = salsa_struct.field_setter_ids();
+        let field_options = salsa_struct.field_options();
+        let field_tys = salsa_struct.field_tys();
 
-        let constructor_name = self.constructor_name();
-        let singleton = self.0.is_isingleton();
+        let zalsa = self.hygiene.ident("zalsa");
+        let zalsa_struct = self.hygiene.ident("zalsa_struct");
+        let Configuration = self.hygiene.ident("Configuration");
+        let CACHE = self.hygiene.ident("CACHE");
+        let Db = self.hygiene.ident("Db");
 
-        let constructor: syn::ImplItemFn = if singleton {
-            parse_quote_spanned! { constructor_name.span() =>
-                /// Creates a new singleton input
-                ///
-                /// # Panics
-                ///
-                /// If called when an instance already exists
-                pub fn #constructor_name(__db: &#db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
-                {
-                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
-                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                    let __id = __ingredients.#input_index.new_singleton_input(__runtime);
-                    #(
-                        __ingredients.#field_indices.store_new(__runtime, __id, #field_names, salsa::Durability::LOW);
-                    )*
-                    __id
-                }
-            }
-        } else {
-            parse_quote_spanned! { constructor_name.span() =>
-                pub fn #constructor_name(__db: &#db_dyn_ty, #(#field_names: #field_tys,)*) -> Self
-                {
-                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
-                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                    let __id = __ingredients.#input_index.new_input(__runtime);
-                    #(
-                        __ingredients.#field_indices.store_new(__runtime, __id, #field_names, salsa::Durability::LOW);
-                    )*
-                    __id
-                }
-            }
-        };
+        Ok(crate::debug::dump_tokens(
+            struct_ident,
+            quote! {
+                salsa::plumbing::setup_input_struct!(
+                    // Attributes on the struct
+                    attrs: [#(#attrs),*],
 
-        let salsa_id = quote!(
-            pub fn salsa_id(&self) -> salsa::Id {
-                self.0
-            }
-        );
+                    // Visibility of the struct
+                    vis: #vis,
 
-        if singleton {
-            let get: syn::ImplItemFn = parse_quote! {
-                #[track_caller]
-                pub fn get(__db: &#db_dyn_ty) -> Self {
-                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
-                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                    __ingredients.#input_index.get_singleton_input(__runtime).expect("singleton input struct not yet initialized")
-                }
-            };
+                    // Name of the struct
+                    Struct: #struct_ident,
 
-            let try_get: syn::ImplItemFn = parse_quote! {
-                #[track_caller]
-                pub fn try_get(__db: &#db_dyn_ty) -> Option<Self> {
-                    let (__jar, __runtime) = <_ as salsa::storage::HasJar<#jar_ty>>::jar(__db);
-                    let __ingredients = <#jar_ty as salsa::storage::HasIngredientsFor< #ident >>::ingredient(__jar);
-                    __ingredients.#input_index.get_singleton_input(__runtime)
-                }
-            };
+                    // Name user gave for `new`
+                    new_fn: new, // FIXME
 
-            parse_quote! {
-                #[allow(dead_code)]
-                impl #ident {
-                    #constructor
+                    // A series of option tuples; see `setup_tracked_struct` macro
+                    field_options: [#(#field_options),*],
 
-                    #get
+                    // Field names
+                    field_ids: [#(#field_ids),*],
 
-                    #try_get
+                    // Names for field setter methods (typically `set_foo`)
+                    field_setter_ids: [#(#field_setter_ids),*],
 
-                    #(#field_getters)*
+                    // Field types
+                    field_tys: [#(#field_tys),*],
 
-                    #(#field_setters)*
+                    // Indices for each field from 0..N -- must be unsuffixed (e.g., `0`, `1`).
+                    field_indices: [#(#field_indices),*],
 
-                    #salsa_id
-                }
-            }
-        } else {
-            parse_quote! {
-                #[allow(dead_code, clippy::pedantic, clippy::complexity, clippy::style)]
-                impl #ident {
-                    #constructor
+                    // Number of fields
+                    num_fields: #num_fields,
 
-                    #(#field_getters)*
-
-                    #(#field_setters)*
-
-                    #salsa_id
-                }
-            }
-        }
-
-        // }
-    }
-
-    /// Generate the `IngredientsFor` impl for this entity.
-    ///
-    /// The entity's ingredients include both the main entity ingredient along with a
-    /// function ingredient for each of the value fields.
-    fn input_ingredients(&self) -> syn::ItemImpl {
-        use crate::literal;
-        let ident = self.the_ident();
-        let field_ty = self.all_field_tys();
-        let jar_ty = self.jar_ty();
-        let all_field_indices: Vec<Literal> = self.all_field_indices();
-        let input_index: Literal = self.input_index();
-        let debug_name_struct = literal(self.the_ident());
-        let debug_name_fields: Vec<_> = self.all_field_names().into_iter().map(literal).collect();
-
-        parse_quote! {
-            impl salsa::storage::IngredientsFor for #ident {
-                type Jar = #jar_ty;
-                type Ingredients = (
-                    #(
-                        salsa::input_field::InputFieldIngredient<#ident, #field_ty>,
-                    )*
-                    salsa::input::InputIngredient<#ident>,
+                    // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
+                    // We have the procedural macro generate names for those items that are
+                    // not used elsewhere in the user's code.
+                    unused_names: [
+                        #zalsa,
+                        #zalsa_struct,
+                        #Configuration,
+                        #CACHE,
+                        #Db,
+                    ]
                 );
-
-                fn create_ingredients<DB>(
-                    routes: &mut salsa::routes::Routes<DB>,
-                ) -> Self::Ingredients
-                where
-                    DB: salsa::DbWithJar<Self::Jar> + salsa::storage::JarFromJars<Self::Jar>,
-                {
-                    (
-                        #(
-                            {
-                                let index = routes.push(
-                                    |jars| {
-                                        let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
-                                        let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar);
-                                        &ingredients.#all_field_indices
-                                    },
-                                    |jars| {
-                                        let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
-                                        let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient_mut(jar);
-                                        &mut ingredients.#all_field_indices
-                                    },
-                                );
-                                salsa::input_field::InputFieldIngredient::new(index, #debug_name_fields)
-                            },
-                        )*
-                        {
-                            let index = routes.push(
-                                |jars| {
-                                    let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars(jars);
-                                    let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient(jar);
-                                    &ingredients.#input_index
-                                },
-                                |jars| {
-                                    let jar = <DB as salsa::storage::JarFromJars<Self::Jar>>::jar_from_jars_mut(jars);
-                                    let ingredients = <_ as salsa::storage::HasIngredientsFor<Self>>::ingredient_mut(jar);
-                                    &mut ingredients.#input_index
-                                },
-                            );
-                            salsa::input::InputIngredient::new(index, #debug_name_struct)
-                        },
-                    )
-                }
-            }
-        }
-    }
-
-    /// For the entity, we create a tuple that contains the function ingredients
-    /// for each "other" field and the entity ingredient. This is the index of
-    /// the entity ingredient within that tuple.
-    fn input_index(&self) -> Literal {
-        Literal::usize_unsuffixed(self.all_fields().count())
-    }
-
-    /// For the entity, we create a tuple that contains the function ingredients
-    /// for each field and an entity ingredient. These are the indices
-    /// of the function ingredients within that tuple.
-    fn all_field_indices(&self) -> Vec<Literal> {
-        self.all_fields()
-            .zip(0..)
-            .map(|(_, i)| Literal::usize_unsuffixed(i))
-            .collect()
-    }
-
-    /// Names of setters of all fields that should be generated. Returns an optional Ident for the field name
-    /// that is None when the field should not generate a setter.
-    ///
-    /// Setters are not created for fields with #[id] tag so they'll be safe to include in debug formatting
-    pub(crate) fn all_set_field_names(&self) -> Vec<Option<&syn::Ident>> {
-        self.all_fields()
-            .map(|ef| (!ef.has_id_attr).then(|| ef.set_name()))
-            .collect()
-    }
-
-    /// Implementation of `SalsaStructInDb`.
-    fn salsa_struct_in_db_impl(&self) -> syn::ItemImpl {
-        let ident = self.the_ident();
-        let jar_ty = self.jar_ty();
-        parse_quote! {
-            impl<DB> salsa::salsa_struct::SalsaStructInDb<DB> for #ident
-            where
-                DB: ?Sized + salsa::DbWithJar<#jar_ty>,
-            {
-                fn register_dependent_fn(_db: &DB, _index: salsa::routes::IngredientIndex) {
-                    // Do nothing here, at least for now.
-                    // If/when we add ability to delete inputs, this would become relevant.
-                }
-            }
-        }
+            },
+        ))
     }
 }

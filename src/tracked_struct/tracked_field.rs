@@ -36,7 +36,7 @@ where
         struct_map: &StructMapView<C>,
     ) -> Self {
         Self {
-            ingredient_index: struct_index + field_index,
+            ingredient_index: struct_index.successor(field_index),
             field_index,
             struct_map: struct_map.clone(),
         }

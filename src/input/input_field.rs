@@ -9,9 +9,6 @@ use std::fmt;
 
 use super::struct_map::StructMap;
 
-pub trait FieldData: Send + Sync + 'static {}
-impl<T: Send + Sync + 'static> FieldData for T {}
-
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
 ///
 /// These fields can only be mutated by a call to a setter with an `&mut`
@@ -37,27 +34,11 @@ where
         struct_map: StructMap<C>,
     ) -> Self {
         Self {
-            index: struct_index + field_index,
+            index: struct_index.successor(field_index),
             field_index,
             struct_map,
         }
     }
-
-    fn database_key_index(&self, key: C::Struct) -> DatabaseKeyIndex {
-        DatabaseKeyIndex {
-            ingredient_index: self.index,
-            key_index: key.as_id(),
-        }
-    }
-}
-
-/// More limited wrapper around transmute that copies lifetime from `a` to `b`.
-///
-/// # Safety condition
-///
-/// `b` must be owned by `a`
-unsafe fn transmute_lifetime<'a, 'b, A, B>(_a: &'a A, b: &'b B) -> &'a B {
-    std::mem::transmute(b)
 }
 
 impl<C> Ingredient for FieldIngredientImpl<C>

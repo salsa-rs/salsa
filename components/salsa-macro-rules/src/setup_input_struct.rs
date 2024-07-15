@@ -1,6 +1,6 @@
 /// Macro for setting up a function that must intern its arguments.
 #[macro_export]
-macro_rules! setup_input {
+macro_rules! setup_input_struct {
     (
         // Attributes on the struct
         attrs: [$(#[$attr:meta]),*],
@@ -41,9 +41,6 @@ macro_rules! setup_input {
             $Configuration:ident,
             $CACHE:ident,
             $Db:ident,
-            $NonNull:ident,
-            $Revision:ident,
-            $ValueStruct:ident,
         ]
     ) => {
         $(#[$attr])*
@@ -53,8 +50,6 @@ macro_rules! setup_input {
         const _: () = {
             use salsa::plumbing as $zalsa;
             use $zalsa::input as $zalsa_struct;
-            use $zalsa::Revision as $Revision;
-            use std::ptr::NonNull as $NonNull;
 
             struct $Configuration;
 
@@ -73,10 +68,7 @@ macro_rules! setup_input {
             }
 
             impl $Configuration {
-                pub fn ingredient<Db>(db: &Db) -> &$zalsa_struct::IngredientImpl<Self>
-                where
-                    Db: ?Sized + $zalsa::Database,
-                {
+                pub fn ingredient(db: &dyn $zalsa::Database) -> &$zalsa_struct::IngredientImpl<Self> {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
                     CACHE.get_or_create(db, || {
@@ -84,10 +76,7 @@ macro_rules! setup_input {
                     })
                 }
 
-                pub fn ingredient_mut<Db>(db: &Db) -> (&mut $zalsa_struct::IngredientImpl<Self>, &mut $zalsa::Runtime)
-                where
-                   Db: ?Sized + $zalsa::Database,
-                {
+                pub fn ingredient_mut(db: &mut dyn $zalsa::Database) -> (&mut $zalsa_struct::IngredientImpl<Self>, &mut $zalsa::Runtime) {
                     let index = db.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default());
                     let (ingredient, runtime) = db.lookup_ingredient_mut(index);
                     let ingredient = ingredient.assert_type_mut::<$zalsa_struct::IngredientImpl<Self>>();
@@ -110,29 +99,36 @@ macro_rules! setup_input {
             impl std::fmt::Debug for $Struct {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     $zalsa::with_attached_database(|db| {
-                        let fields = $Configuration::ingredient(db).fields(self.0);
-                        let f = f.debug_struct(stringify!($Struct));
+                        let fields = $Configuration::ingredient(db).leak_fields(*self);
+                        let mut f = f.debug_struct(stringify!($Struct));
+                        let f = f.field("[salsa id]", &self.0.as_u32());
                         $(
                             let f = f.field(stringify!($field_id), &fields.$field_index);
                         )*
                         f.finish()
                     }).unwrap_or_else(|| {
-                        f.debug_tuple(stringify!($Struct))
-                            .field(&self.0)
+                        f.debug_struct(stringify!($Struct))
+                            .field("[salsa id]", &self.0.as_u32())
                             .finish()
                     })
                 }
             }
 
+            impl $zalsa::SalsaStructInDb for $Struct {
+                fn register_dependent_fn(_db: &dyn $zalsa::Database, _index: $zalsa::IngredientIndex) {
+                    // Inputs don't bother with dependent functions
+                }
+            }
+
             impl $Struct {
-                pub fn new<Db>(db: &Db, $($field_id: $field_ty),*) -> Self
+                pub fn new<$Db>(db: &$Db, $($field_id: $field_ty),*) -> Self
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                    Db: ?Sized + salsa::Database,
+                    $Db: ?Sized + salsa::Database,
                 {
                     let current_revision = $zalsa::current_revision(db);
                     let stamps = $zalsa::Array::new([$zalsa::stamp(current_revision, Default::default()); $N]);
-                    $Configuration::ingredient(db).new_input(($($field_id,)*), stamps)
+                    $Configuration::ingredient(db.as_salsa_database()).new_input(($($field_id,)*), stamps)
                 }
 
                 $(
@@ -142,7 +138,7 @@ macro_rules! setup_input {
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let runtime = db.runtime();
-                        let fields = $Configuration::ingredient(db).field(runtime, self, $field_index);
+                        let fields = $Configuration::ingredient(db.as_salsa_database()).field(runtime, self, $field_index);
                         $zalsa::maybe_clone!(
                             $field_option,
                             $field_ty,
@@ -158,7 +154,7 @@ macro_rules! setup_input {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let (ingredient, runtime) = $Configuration::ingredient_mut(db);
+                        let (ingredient, runtime) = $Configuration::ingredient_mut(db.as_salsa_database_mut());
                         $zalsa::input::SetterImpl::new(
                             runtime,
                             self,

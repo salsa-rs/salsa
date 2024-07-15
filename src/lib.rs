@@ -7,6 +7,7 @@ mod database;
 mod durability;
 mod event;
 mod function;
+mod handle;
 mod hash;
 mod id;
 mod ingredient;
@@ -26,11 +27,10 @@ mod views;
 pub use self::cancelled::Cancelled;
 pub use self::cycle::Cycle;
 pub use self::database::Database;
-pub use self::database::ParallelDatabase;
-pub use self::database::Snapshot;
 pub use self::durability::Durability;
 pub use self::event::Event;
 pub use self::event::EventKind;
+pub use self::handle::Handle;
 pub use self::id::Id;
 pub use self::input::setter::Setter;
 pub use self::key::DatabaseKeyIndex;
@@ -42,7 +42,6 @@ pub use salsa_macros::db;
 pub use salsa_macros::input;
 pub use salsa_macros::interned;
 pub use salsa_macros::tracked;
-pub use salsa_macros::DebugWithDb;
 pub use salsa_macros::Update;
 
 /// Internal names used by salsa macros.
@@ -54,15 +53,18 @@ pub mod plumbing {
     pub use crate::array::Array;
     pub use crate::cycle::Cycle;
     pub use crate::cycle::CycleRecoveryStrategy;
+    pub use crate::database::attach_database;
     pub use crate::database::current_revision;
     pub use crate::database::with_attached_database;
     pub use crate::database::Database;
+    pub use crate::function::should_backdate_value;
     pub use crate::id::AsId;
     pub use crate::id::FromId;
     pub use crate::id::Id;
     pub use crate::id::LookupId;
     pub use crate::ingredient::Ingredient;
     pub use crate::ingredient::Jar;
+    pub use crate::key::DatabaseKeyIndex;
     pub use crate::revision::Revision;
     pub use crate::runtime::stamp;
     pub use crate::runtime::Runtime;
@@ -74,12 +76,17 @@ pub mod plumbing {
     pub use crate::storage::IngredientCache;
     pub use crate::storage::IngredientIndex;
     pub use crate::storage::Storage;
+    pub use crate::tracked_struct::TrackedStructInDb;
+    pub use crate::update::always_update;
+    pub use crate::update::helper::Dispatch as UpdateDispatch;
+    pub use crate::update::helper::Fallback as UpdateFallback;
 
     pub use salsa_macro_rules::maybe_backdate;
     pub use salsa_macro_rules::maybe_clone;
     pub use salsa_macro_rules::maybe_cloned_ty;
-    pub use salsa_macro_rules::setup_input;
+    pub use salsa_macro_rules::setup_input_struct;
     pub use salsa_macro_rules::setup_interned_fn;
+    pub use salsa_macro_rules::setup_interned_struct;
     pub use salsa_macro_rules::setup_struct_fn;
     pub use salsa_macro_rules::setup_tracked_struct;
     pub use salsa_macro_rules::unexpected_cycle_recovery;
@@ -95,7 +102,8 @@ pub mod plumbing {
     pub mod interned {
         pub use crate::interned::Configuration;
         pub use crate::interned::IngredientImpl;
-        pub use crate::interned::ValueStruct;
+        pub use crate::interned::JarImpl;
+        pub use crate::interned::Value;
     }
 
     pub mod function {
@@ -108,5 +116,6 @@ pub mod plumbing {
         pub use crate::tracked_struct::Configuration;
         pub use crate::tracked_struct::IngredientImpl;
         pub use crate::tracked_struct::JarImpl;
+        pub use crate::tracked_struct::Value;
     }
 }

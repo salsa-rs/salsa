@@ -34,6 +34,11 @@ impl DependencyIndex {
         self.key_index
     }
 
+    pub(crate) fn remove_stale_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
+        db.lookup_ingredient(self.ingredient_index)
+            .remove_stale_output(db, executor, self.key_index)
+    }
+
     pub(crate) fn mark_validated_output(
         &self,
         db: &dyn Database,
@@ -90,16 +95,6 @@ impl DatabaseKeyIndex {
 
     pub(crate) fn cycle_recovery_strategy(&self, db: &dyn Database) -> CycleRecoveryStrategy {
         self.ingredient_index.cycle_recovery_strategy(db)
-    }
-
-    pub(crate) fn mark_validated_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
-        db.lookup_ingredient(self.ingredient_index)
-            .mark_validated_output(db, executor, Some(self.key_index))
-    }
-
-    pub(crate) fn remove_stale_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
-        db.lookup_ingredient(self.ingredient_index)
-            .remove_stale_output(db, executor, Some(self.key_index))
     }
 
     pub(crate) fn origin(&self, db: &dyn Database) -> Option<QueryOrigin> {

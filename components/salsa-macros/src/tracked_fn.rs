@@ -295,7 +295,7 @@ impl Macro {
 
     fn output_ty<'item>(&self, item: &'item ItemFn) -> syn::Result<syn::Type> {
         match &item.sig.output {
-            syn::ReturnType::Default => Ok(parse_quote!("()")),
+            syn::ReturnType::Default => Ok(parse_quote!(())),
             syn::ReturnType::Type(_, ty) => Ok(syn::Type::clone(ty)),
         }
     }

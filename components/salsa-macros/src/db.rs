@@ -19,7 +19,7 @@ pub(crate) fn db(
     let input = syn::parse_macro_input!(input as syn::Item);
     let db_macro = DbMacro { hygiene };
     match db_macro.try_db(input) {
-        Ok(v) => v.into(),
+        Ok(v) => crate::debug::dump_tokens("db", v).into(),
         Err(e) => e.to_compile_error().into(),
     }
 }
@@ -106,7 +106,7 @@ impl DbMacro {
     fn add_salsa_view_method(&self, input: &mut syn::ItemTrait) -> syn::Result<()> {
         input.items.push(parse_quote! {
             #[doc(hidden)]
-            fn zalsa_add_view(&self);
+            fn zalsa_db(&self);
         });
         Ok(())
     }
@@ -124,7 +124,7 @@ impl DbMacro {
         input.items.push(parse_quote! {
             #[doc(hidden)]
             #[allow(uncommon_codepoins)]
-            fn zalsa_add_view(&self) {
+            fn zalsa_db(&self) {
                 use salsa::plumbing as #zalsa;
                 #zalsa::views(self).add::<Self, dyn #TraitPath>(|t| t, |t| t);
             }
