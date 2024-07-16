@@ -7,17 +7,10 @@ mod common;
 use common::{HasLogger, Logger};
 
 use expect_test::expect;
+use salsa::Setter;
 
-#[salsa::jar(db = Db)]
-struct Jar(
-    MyInput,
-    MyTracked<'_>,
-    final_result_depends_on_x,
-    final_result_depends_on_y,
-    intermediate_result,
-);
-
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct MyInput {
@@ -47,15 +40,17 @@ fn intermediate_result<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     MyTracked::new(db, (input.field(db) + 1) / 2, input.field(db) / 2)
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {
