@@ -42,8 +42,6 @@ impl crate::options::AllowedOptions for InternedStruct {
 
     const SINGLETON: bool = true;
 
-    const JAR: bool = true;
-
     const DATA: bool = true;
 
     const DB: bool = false;

@@ -24,6 +24,7 @@ mod tracked_struct;
 mod update;
 mod views;
 
+pub use self::accumulator::Accumulator;
 pub use self::cancelled::Cancelled;
 pub use self::cycle::Cycle;
 pub use self::database::Database;
@@ -44,12 +45,19 @@ pub use salsa_macros::interned;
 pub use salsa_macros::tracked;
 pub use salsa_macros::Update;
 
+pub mod prelude {
+    pub use crate::Accumulator;
+    pub use crate::Setter;
+}
+
 /// Internal names used by salsa macros.
 ///
 /// # WARNING
 ///
 /// The contents of this module are NOT subject to semver.
 pub mod plumbing {
+    pub use crate::accumulator::accumulated_by;
+    pub use crate::accumulator::Accumulator;
     pub use crate::array::Array;
     pub use crate::cycle::Cycle;
     pub use crate::cycle::CycleRecoveryStrategy;
@@ -84,12 +92,18 @@ pub mod plumbing {
     pub use salsa_macro_rules::maybe_backdate;
     pub use salsa_macro_rules::maybe_clone;
     pub use salsa_macro_rules::maybe_cloned_ty;
+    pub use salsa_macro_rules::setup_accumulator_impl;
     pub use salsa_macro_rules::setup_input_struct;
     pub use salsa_macro_rules::setup_interned_fn;
     pub use salsa_macro_rules::setup_interned_struct;
     pub use salsa_macro_rules::setup_struct_fn;
     pub use salsa_macro_rules::setup_tracked_struct;
     pub use salsa_macro_rules::unexpected_cycle_recovery;
+
+    pub mod accumulator {
+        pub use crate::accumulator::IngredientImpl;
+        pub use crate::accumulator::JarImpl;
+    }
 
     pub mod input {
         pub use crate::input::input_field::FieldIngredientImpl;

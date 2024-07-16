@@ -37,8 +37,6 @@ impl crate::options::AllowedOptions for TrackedStruct {
 
     const SINGLETON: bool = true;
 
-    const JAR: bool = true;
-
     const DATA: bool = true;
 
     const DB: bool = false;

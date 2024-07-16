@@ -40,8 +40,6 @@ impl crate::options::AllowedOptions for InputStruct {
     const NO_EQ: bool = false;
     const SINGLETON: bool = true;
 
-    const JAR: bool = true;
-
     const DATA: bool = true;
 
     const DB: bool = false;

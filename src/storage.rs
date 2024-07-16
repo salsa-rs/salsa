@@ -1,8 +1,7 @@
 use std::any::{Any, TypeId};
-use std::sync::Arc;
 
 use orx_concurrent_vec::ConcurrentVec;
-use parking_lot::{Condvar, Mutex};
+use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 
 use crate::cycle::CycleRecoveryStrategy;

@@ -89,7 +89,6 @@ pub(crate) trait AllowedOptions {
     const SPECIFY: bool;
     const NO_EQ: bool;
     const SINGLETON: bool;
-    const JAR: bool;
     const DATA: bool;
     const DB: bool;
     const RECOVERY_FN: bool;
@@ -99,18 +98,6 @@ pub(crate) trait AllowedOptions {
 
 type Equals = syn::Token![=];
 type Comma = syn::Token![,];
-
-impl<A: AllowedOptions> Options<A> {
-    /// Returns the `jar type` given by the user; if none is given,
-    /// returns the default `crate::Jar`.
-    pub(crate) fn jar_ty(&self) -> syn::Type {
-        if let Some(jar_ty) = &self.jar_ty {
-            return jar_ty.clone();
-        }
-
-        parse_quote! {crate::Jar}
-    }
-}
 
 impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
@@ -169,19 +156,6 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`specify` option not allowed here",
-                    ));
-                }
-            } else if ident == "jar" {
-                if A::JAR {
-                    let _eq = Equals::parse(input)?;
-                    let ty = syn::Type::parse(input)?;
-                    if let Some(old) = std::mem::replace(&mut options.jar_ty, Some(ty)) {
-                        return Err(syn::Error::new(old.span(), "option `jar` provided twice"));
-                    }
-                } else {
-                    return Err(syn::Error::new(
-                        ident.span(),
-                        "`jar` option not allowed here",
                     ));
                 }
             } else if ident == "db" {

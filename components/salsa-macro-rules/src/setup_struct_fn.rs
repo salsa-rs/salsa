@@ -50,6 +50,11 @@ macro_rules! setup_struct_fn {
             $inner:ident,
         ]
     ) => {
+        #[allow(non_camel_case_types)]
+        $vis struct $fn_name {
+            _priv: std::convert::Infallible,
+        }
+
         $(#[$attr])*
         $vis fn $fn_name<$db_lt>(
             $db: &$db_lt dyn $Db,
@@ -61,6 +66,15 @@ macro_rules! setup_struct_fn {
 
             static $FN_CACHE: $zalsa::IngredientCache<$zalsa::function::IngredientImpl<$Configuration>> =
                 $zalsa::IngredientCache::new();
+
+            impl $Configuration {
+                fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
+                    $FN_CACHE.get_or_create(db.as_salsa_database(), || {
+                        <dyn $Db as $Db>::zalsa_db(db);
+                        db.add_or_lookup_jar_by_type(&$Configuration)
+                    })
+                }
+            }
 
             impl $zalsa::function::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($fn_name);
@@ -114,13 +128,20 @@ macro_rules! setup_struct_fn {
                 }
             }
 
-            $zalsa::attach_database($db, || {
-                let fn_ingredient = $FN_CACHE.get_or_create($db.as_salsa_database(), || {
-                    <dyn $Db as $Db>::zalsa_db($db);
-                    $db.add_or_lookup_jar_by_type(&$Configuration)
-                });
+            impl $fn_name {
+                pub fn accumulated<$db_lt, A: salsa::Accumulator>(
+                    $db: &$db_lt dyn $Db,
+                    $input_id: $input_ty,
+                ) -> Vec<A> {
+                    use salsa::plumbing as $zalsa;
+                    let key = $zalsa::AsId::as_id(&$input_id);
+                    let database_key_index = $Configuration::fn_ingredient($db).database_key_index(key);
+                    $zalsa::accumulated_by($db.as_salsa_database(), database_key_index)
+                }
+            }
 
-                fn_ingredient.fetch($db, $zalsa::AsId::as_id(&$input_id)).clone()
+            $zalsa::attach_database($db, || {
+                $Configuration::fn_ingredient($db).fetch($db, $zalsa::AsId::as_id(&$input_id)).clone()
             })
         }
     };

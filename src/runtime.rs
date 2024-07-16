@@ -50,7 +50,7 @@ pub struct RuntimeId {
     counter: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct StampedValue<V> {
     pub value: V,
     pub durability: Durability,

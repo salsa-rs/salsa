@@ -8,6 +8,7 @@ use notify_debouncer_mini::{
     notify::{RecommendedWatcher, RecursiveMode},
     DebounceEventResult, Debouncer,
 };
+use salsa::{Accumulator, Setter};
 
 // ANCHOR: main
 fn main() -> Result<()> {
@@ -31,7 +32,7 @@ fn main() -> Result<()> {
             println!("Sum is: {}", sum);
         } else {
             for diagnostic in diagnostics {
-                println!("{}", diagnostic);
+                println!("{}", diagnostic.0);
             }
         }
 
@@ -132,21 +133,20 @@ impl salsa::Database for Database {
 }
 
 #[salsa::accumulator]
+#[derive(Clone, Debug)]
 struct Diagnostic(String);
 
 impl Diagnostic {
     fn push_error(db: &dyn Db, file: File, error: Report) {
-        Diagnostic::push(
-            db,
-            format!(
-                "Error in file {}: {:?}\n",
-                file.path(db)
-                    .file_name()
-                    .unwrap_or_else(|| "<unknown>".as_ref())
-                    .to_string_lossy(),
-                error,
-            ),
-        )
+        Diagnostic(format!(
+            "Error in file {}: {:?}\n",
+            file.path(db)
+                .file_name()
+                .unwrap_or_else(|| "<unknown>".as_ref())
+                .to_string_lossy(),
+            error,
+        ))
+        .accumulate(db);
     }
 }
 

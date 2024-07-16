@@ -16,7 +16,6 @@ use self::delete::DeletedEntries;
 
 use super::ingredient::Ingredient;
 
-mod accumulated;
 mod backdate;
 mod delete;
 mod diff_outputs;
@@ -146,7 +145,7 @@ where
         }
     }
 
-    fn database_key_index(&self, k: Id) -> DatabaseKeyIndex {
+    pub fn database_key_index(&self, k: Id) -> DatabaseKeyIndex {
         DatabaseKeyIndex {
             ingredient_index: self.index,
             key_index: k,

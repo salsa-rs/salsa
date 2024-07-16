@@ -31,8 +31,6 @@ impl crate::options::AllowedOptions for TrackedFn {
 
     const SINGLETON: bool = false;
 
-    const JAR: bool = false;
-
     const DATA: bool = false;
 
     const DB: bool = false;

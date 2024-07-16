@@ -1,5 +1,4 @@
 use crate::cycle::CycleRecoveryStrategy;
-use crate::id::AsId;
 use crate::ingredient::{fmt_index, Ingredient, IngredientRequiresReset};
 use crate::input::Configuration;
 use crate::runtime::local_state::QueryOrigin;

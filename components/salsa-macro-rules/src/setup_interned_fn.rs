@@ -52,6 +52,11 @@ macro_rules! setup_interned_fn {
             $inner:ident,
         ]
     ) => {
+        #[allow(non_camel_case_types)]
+        $vis struct $fn_name {
+            _priv: std::convert::Infallible,
+        }
+
         $(#[$attr])*
         $vis fn $fn_name<$db_lt>(
             $db: &$db_lt dyn $Db,
@@ -62,7 +67,7 @@ macro_rules! setup_interned_fn {
             struct $Configuration;
 
             #[derive(Copy, Clone)]
-            struct $InternedData<'db>(
+            struct $InternedData<$db_lt>(
                 std::ptr::NonNull<$zalsa::interned::Value<$Configuration>>,
                 std::marker::PhantomData<&'db $zalsa::interned::Value<$Configuration>>,
             );
@@ -72,6 +77,23 @@ macro_rules! setup_interned_fn {
 
             static $INTERN_CACHE: $zalsa::IngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
                 $zalsa::IngredientCache::new();
+
+            impl $Configuration {
+                fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
+                    $FN_CACHE.get_or_create(db.as_salsa_database(), || {
+                        <dyn $Db as $Db>::zalsa_db(db);
+                        db.add_or_lookup_jar_by_type(&$Configuration)
+                    })
+                }
+
+                fn intern_ingredient(
+                    db: &dyn $Db,
+                ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
+                    $INTERN_CACHE.get_or_create(db.as_salsa_database(), || {
+                        db.add_or_lookup_jar_by_type(&$Configuration).successor(0)
+                    })
+                }
+            }
 
             impl $zalsa::SalsaStructInDb for $InternedData<'_> {
                 fn register_dependent_fn(_db: &dyn $zalsa::Database, _index: $zalsa::IngredientIndex) {}
@@ -112,10 +134,7 @@ macro_rules! setup_interned_fn {
                 }
 
                 fn id_to_input<'db>(db: &'db Self::DbView, key: salsa::Id) -> Self::Input<'db> {
-                    let ingredient = $INTERN_CACHE.get_or_create(db.as_salsa_database(), || {
-                        db.add_or_lookup_jar_by_type(&$Configuration).successor(0)
-                    });
-                    ingredient.data(key).clone()
+                    $Configuration::intern_ingredient(db).data(key).clone()
                 }
             }
 
@@ -153,17 +172,21 @@ macro_rules! setup_interned_fn {
                 }
             }
 
-            $zalsa::attach_database($db, || {
-                let intern_ingredient = $INTERN_CACHE.get_or_create($db.as_salsa_database(), || {
-                    $db.add_or_lookup_jar_by_type(&$Configuration).successor(0)
-                });
-                let key = intern_ingredient.intern_id($db.runtime(), ($($input_id),*));
+            impl $fn_name {
+                pub fn accumulated<$db_lt, A: salsa::Accumulator>(
+                    $db: &$db_lt dyn $Db,
+                    $($input_id: $input_ty,)*
+                ) -> Vec<A> {
+                    use salsa::plumbing as $zalsa;
+                    let key = $Configuration::intern_ingredient($db).intern_id($db.runtime(), ($($input_id),*));
+                    let database_key_index = $Configuration::fn_ingredient($db).database_key_index(key);
+                    $zalsa::accumulated_by($db.as_salsa_database(), database_key_index)
+                }
+            }
 
-                let fn_ingredient = $FN_CACHE.get_or_create($db.as_salsa_database(), || {
-                    <dyn $Db as $Db>::zalsa_db($db);
-                    $db.add_or_lookup_jar_by_type(&$Configuration)
-                });
-                fn_ingredient.fetch($db, key).clone()
+            $zalsa::attach_database($db, || {
+                let key = $Configuration::intern_ingredient($db).intern_id($db.runtime(), ($($input_id),*));
+                $Configuration::fn_ingredient($db).fetch($db, key).clone()
             })
         }
     };
