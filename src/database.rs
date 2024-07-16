@@ -33,6 +33,14 @@ pub trait Database: DatabaseGen {
     fn report_untracked_read(&self) {
         self.runtime().report_untracked_read();
     }
+
+    /// Execute `op` with the database in thread-local storage for debug print-outs.
+    fn attach<R>(&self, op: impl FnOnce(&Self) -> R) -> R
+    where
+        Self: Sized,
+    {
+        attach_database(self, || op(self))
+    }
 }
 
 thread_local! {

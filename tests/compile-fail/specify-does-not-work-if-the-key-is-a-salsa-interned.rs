@@ -7,12 +7,12 @@ struct Jar(MyInterned<'_>, MyTracked<'_>, tracked_fn);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
-#[salsa::interned(jar = Jar)]
+#[salsa::interned]
 struct MyInterned<'db> {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct MyTracked<'db> {
     field: u32,
 }

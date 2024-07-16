@@ -11,7 +11,7 @@ struct Jar(
 
 trait Db: salsa::DbWithJar<Jar> {}
 
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     field: u32,
 }
@@ -31,10 +31,10 @@ fn tracked_fn_with_constructor(db: &dyn Db, input: MyInput) -> u32 {
     input.field(db) * 2
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn tracked_fn_with_one_input(db: &dyn Db) -> u32 {}
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn tracked_fn_with_receiver_not_applied_to_impl_block(&self, db: &dyn Db) -> u32 {}
 
 #[salsa::tracked(jar = Jar, specify)]

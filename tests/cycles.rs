@@ -56,53 +56,40 @@ struct Error {
     cycle: Vec<String>,
 }
 
-#[salsa::jar(db = Db)]
-struct Jar(
-    MyInput,
-    memoized_a,
-    memoized_b,
-    volatile_a,
-    volatile_b,
-    ABC,
-    cycle_a,
-    cycle_b,
-    cycle_c,
-);
+use salsa::Database as Db;
+use salsa::Setter;
 
-trait Db: salsa::DbWithJar<Jar> {}
-
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
 }
 
-impl Db for Database {}
-
+#[salsa::db]
 impl salsa::Database for Database {}
 
 impl RefUnwindSafe for Database {}
 
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {}
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn memoized_a(db: &dyn Db, input: MyInput) {
     memoized_b(db, input)
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn memoized_b(db: &dyn Db, input: MyInput) {
     memoized_a(db, input)
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn volatile_a(db: &dyn Db, input: MyInput) {
     db.report_untracked_read();
     volatile_b(db, input)
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn volatile_b(db: &dyn Db, input: MyInput) {
     db.report_untracked_read();
     volatile_a(db, input)
@@ -120,7 +107,7 @@ enum CycleQuery {
     AthenC,
 }
 
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct ABC {
     a: CycleQuery,
     b: CycleQuery,
@@ -142,29 +129,29 @@ impl CycleQuery {
     }
 }
 
-#[salsa::tracked(jar = Jar, recovery_fn=recover_a)]
+#[salsa::tracked(recovery_fn=recover_a)]
 fn cycle_a(db: &dyn Db, abc: ABC) -> Result<(), Error> {
     abc.a(db).invoke(db, abc)
 }
 
 fn recover_a(db: &dyn Db, cycle: &salsa::Cycle, abc: ABC) -> Result<(), Error> {
     Err(Error {
-        cycle: cycle.all_participants(db),
+        cycle: cycle.participant_keys().map(|k| format!("{k:?}")).collect(),
     })
 }
 
-#[salsa::tracked(jar = Jar, recovery_fn=recover_b)]
+#[salsa::tracked(recovery_fn=recover_b)]
 fn cycle_b(db: &dyn Db, abc: ABC) -> Result<(), Error> {
     abc.b(db).invoke(db, abc)
 }
 
 fn recover_b(db: &dyn Db, cycle: &salsa::Cycle, abc: ABC) -> Result<(), Error> {
     Err(Error {
-        cycle: cycle.all_participants(db),
+        cycle: cycle.participant_keys().map(|k| format!("{k:?}")).collect(),
     })
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn cycle_c(db: &dyn Db, abc: ABC) -> Result<(), Error> {
     abc.c(db).invoke(db, abc)
 }
@@ -182,30 +169,32 @@ fn extract_cycle(f: impl FnOnce() + UnwindSafe) -> salsa::Cycle {
 
 #[test]
 fn cycle_memoized() {
-    let mut db = Database::default();
-    let input = MyInput::new(&db);
-    let cycle = extract_cycle(|| memoized_a(&db, input));
-    let expected = expect![[r#"
-        [
-            "memoized_a(0)",
-            "memoized_b(0)",
-        ]
-    "#]];
-    expected.assert_debug_eq(&cycle.all_participants(&db));
+    Database::default().attach(|db| {
+        let input = MyInput::new(db);
+        let cycle = extract_cycle(|| memoized_a(db, input));
+        let expected = expect![[r#"
+            [
+                memoized_a(0),
+                memoized_b(0),
+            ]
+        "#]];
+        expected.assert_debug_eq(&cycle.all_participants(db));
+    })
 }
 
 #[test]
 fn cycle_volatile() {
-    let mut db = Database::default();
-    let input = MyInput::new(&db);
-    let cycle = extract_cycle(|| volatile_a(&db, input));
-    let expected = expect![[r#"
-        [
-            "volatile_a(0)",
-            "volatile_b(0)",
-        ]
-    "#]];
-    expected.assert_debug_eq(&cycle.all_participants(&db));
+    Database::default().attach(|db| {
+        let input = MyInput::new(db);
+        let cycle = extract_cycle(|| volatile_a(db, input));
+        let expected = expect![[r#"
+            [
+                volatile_a(0),
+                volatile_b(0),
+            ]
+        "#]];
+        expected.assert_debug_eq(&cycle.all_participants(db));
+    });
 }
 
 #[test]
@@ -214,9 +203,10 @@ fn expect_cycle() {
     //     ^     |
     //     +-----+
 
-    let mut db = Database::default();
-    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
-    assert!(cycle_a(&db, abc).is_err());
+    Database::default().attach(|db| {
+        let abc = ABC::new(db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
+        assert!(cycle_a(db, abc).is_err());
+    })
 }
 
 #[test]
@@ -224,17 +214,18 @@ fn inner_cycle() {
     //     A --> B <-- C
     //     ^     |
     //     +-----+
-    let mut db = Database::default();
-    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::B);
-    let err = cycle_c(&db, abc);
-    assert!(err.is_err());
-    let expected = expect![[r#"
-        [
-            "cycle_a(0)",
-            "cycle_b(0)",
-        ]
-    "#]];
-    expected.assert_debug_eq(&err.unwrap_err().cycle);
+    Database::default().attach(|db| {
+        let abc = ABC::new(db, CycleQuery::B, CycleQuery::A, CycleQuery::B);
+        let err = cycle_c(db, abc);
+        assert!(err.is_err());
+        let expected = expect![[r#"
+            [
+                "cycle_b(0)",
+                "cycle_a(0)",
+            ]
+        "#]];
+        expected.assert_debug_eq(&err.unwrap_err().cycle);
+    })
 }
 
 #[test]
@@ -329,40 +320,40 @@ fn cycle_disappears_durability() {
 
 #[test]
 fn cycle_mixed_1() {
-    let mut db = Database::default();
+    Database::default().attach(|db| {
+        //     A --> B <-- C
+        //           |     ^
+        //           +-----+
+        let abc = ABC::new(db, CycleQuery::B, CycleQuery::C, CycleQuery::B);
 
-    //     A --> B <-- C
-    //           |     ^
-    //           +-----+
-    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::C, CycleQuery::B);
-
-    let expected = expect![[r#"
-        [
-            "cycle_b(0)",
-            "cycle_c(0)",
-        ]
-    "#]];
-    expected.assert_debug_eq(&cycle_c(&db, abc).unwrap_err().cycle);
+        let expected = expect![[r#"
+            [
+                "cycle_c(0)",
+                "cycle_b(0)",
+            ]
+        "#]];
+        expected.assert_debug_eq(&cycle_c(db, abc).unwrap_err().cycle);
+    })
 }
 
 #[test]
 fn cycle_mixed_2() {
-    let mut db = Database::default();
-
-    // Configuration:
-    //
-    //     A --> B --> C
-    //     ^           |
-    //     +-----------+
-    let abc = ABC::new(&db, CycleQuery::B, CycleQuery::C, CycleQuery::A);
-    let expected = expect![[r#"
+    Database::default().attach(|db| {
+        // Configuration:
+        //
+        //     A --> B --> C
+        //     ^           |
+        //     +-----------+
+        let abc = ABC::new(db, CycleQuery::B, CycleQuery::C, CycleQuery::A);
+        let expected = expect![[r#"
         [
             "cycle_a(0)",
             "cycle_b(0)",
             "cycle_c(0)",
         ]
     "#]];
-    expected.assert_debug_eq(&cycle_a(&db, abc).unwrap_err().cycle);
+        expected.assert_debug_eq(&cycle_a(db, abc).unwrap_err().cycle);
+    })
 }
 
 #[test]
@@ -388,8 +379,8 @@ fn cycle_deterministic_order() {
                 "cycle_b(0)",
             ],
             [
-                "cycle_a(0)",
                 "cycle_b(0)",
+                "cycle_a(0)",
             ],
         )
     "#]];
@@ -441,19 +432,19 @@ fn cycle_multiple() {
 
 #[test]
 fn cycle_recovery_set_but_not_participating() {
-    let mut db = Database::default();
+    Database::default().attach(|db| {
+        //     A --> C -+
+        //           ^  |
+        //           +--+
+        let abc = ABC::new(db, CycleQuery::C, CycleQuery::None, CycleQuery::C);
 
-    //     A --> C -+
-    //           ^  |
-    //           +--+
-    let abc = ABC::new(&db, CycleQuery::C, CycleQuery::None, CycleQuery::C);
-
-    // Here we expect C to panic and A not to recover:
-    let r = extract_cycle(|| drop(cycle_a(&db, abc)));
-    let expected = expect![[r#"
-        [
-            "cycle_c(0)",
-        ]
-    "#]];
-    expected.assert_debug_eq(&r.all_participants(&db));
+        // Here we expect C to panic and A not to recover:
+        let r = extract_cycle(|| drop(cycle_a(db, abc)));
+        let expected = expect![[r#"
+            [
+                cycle_c(0),
+            ]
+        "#]];
+        expected.assert_debug_eq(&r.all_participants(db));
+    })
 }

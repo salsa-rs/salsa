@@ -19,30 +19,30 @@ struct Jar(
 
 trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn final_result_depends_on_x(db: &dyn Db, input: MyInput) -> u32 {
     db.push_log(format!("final_result_depends_on_x({:?})", input));
     intermediate_result(db, input).x(db) * 2
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn final_result_depends_on_y(db: &dyn Db, input: MyInput) -> u32 {
     db.push_log(format!("final_result_depends_on_y({:?})", input));
     intermediate_result(db, input).y(db) * 2
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct MyTracked<'db> {
     x: u32,
     y: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn intermediate_result<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     MyTracked::new(db, (input.field(db) + 1) / 2, input.field(db) / 2)
 }

@@ -13,22 +13,22 @@ struct Jar(
 
 trait Db: salsa::DbWithJar<Jar> {}
 
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct MyTracked<'db> {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn tracked_struct_created_in_another_query<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     MyTracked::new(db, input.field(db) * 2)
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     let t = tracked_struct_created_in_another_query(db, input);
     if input.field(db) != 0 {

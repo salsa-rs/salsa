@@ -14,12 +14,12 @@ impl<T: salsa::DbWithJar<Jar> + Knobs> Db for T {}
 #[salsa::jar(db = Db)]
 pub(crate) struct Jar(MyInput, a, b);
 
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 pub(crate) struct MyInput {
     field: i32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 pub(crate) fn a(db: &dyn Db, input: MyInput) -> i32 {
     // Wait to create the cycle until both threads have entered
     db.signal(1);
@@ -28,7 +28,7 @@ pub(crate) fn a(db: &dyn Db, input: MyInput) -> i32 {
     b(db, input)
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 pub(crate) fn b(db: &dyn Db, input: MyInput) -> i32 {
     // Wait to create the cycle until both threads have entered
     db.wait_for(1);

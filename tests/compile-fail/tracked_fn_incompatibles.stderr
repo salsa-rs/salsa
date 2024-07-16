@@ -46,7 +46,7 @@ error[E0412]: cannot find type `tracked_fn_with_constructor` in this scope
 6  |     tracked_fn_with_constructor,
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: a struct with a similar name exists: `tracked_fn_with_one_input`
 ...
-34 | #[salsa::tracked(jar = Jar)]
+34 | #[salsa::tracked]
    | ---------------------------- similarly named struct `tracked_fn_with_one_input` defined here
 
 error[E0412]: cannot find type `tracked_fn_with_receiver_not_applied_to_impl_block` in this scope

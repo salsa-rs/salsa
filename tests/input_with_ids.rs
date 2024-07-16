@@ -11,7 +11,7 @@ trait Db: salsa::DbWithJar<Jar> {}
 #[derive(Clone, Debug)]
 struct Field {}
 
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     #[id]
     id_one: u32,

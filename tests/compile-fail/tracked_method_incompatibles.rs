@@ -1,7 +1,7 @@
 #[salsa::jar(db = Db)]
 struct Jar(Tracked<'_>);
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct Tracked<'db> {
     field: u32,
 }

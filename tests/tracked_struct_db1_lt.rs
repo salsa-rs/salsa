@@ -11,17 +11,17 @@ struct Jar(MyInput, MyTracked1<'_>, MyTracked2<'_>);
 
 trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct MyTracked1<'db1> {
     field: MyTracked2<'db1>,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct MyTracked2<'db2> {
     field: u32,
 }

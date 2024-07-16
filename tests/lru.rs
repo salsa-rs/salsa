@@ -36,7 +36,7 @@ impl Drop for HotPotato {
     }
 }
 
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     field: u32,
 }
@@ -47,7 +47,7 @@ fn get_hot_potato(db: &dyn Db, input: MyInput) -> Arc<HotPotato> {
     Arc::new(HotPotato::new(input.field(db)))
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn get_hot_potato2(db: &dyn Db, input: MyInput) -> u32 {
     db.push_log(format!("get_hot_potato2({:?})", input.field(db)));
     get_hot_potato(db, input).0

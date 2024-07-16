@@ -6,6 +6,7 @@ mod common;
 use common::{HasLogger, Logger};
 
 use expect_test::expect;
+use salsa::{Accumulator, Setter};
 use test_log::test;
 
 #[salsa::db]
@@ -18,6 +19,7 @@ struct List {
 }
 
 #[salsa::accumulator]
+#[derive(Copy, Clone, Debug)]
 struct Integers(u32);
 
 #[salsa::tracked]
@@ -31,13 +33,13 @@ fn compute(db: &dyn Db, input: List) {
     let result = if let Some(next) = input.next(db) {
         let next_integers = compute::accumulated::<Integers>(db, next);
         eprintln!("{:?}", next_integers);
-        let v = input.value(db) + next_integers.iter().sum::<u32>();
+        let v = input.value(db) + next_integers.iter().map(|a| a.0).sum::<u32>();
         eprintln!("input={:?} v={:?}", input.value(db), v);
         v
     } else {
         input.value(db)
     };
-    Integers::push(db, result);
+    Integers(result).accumulate(db);
     eprintln!("pushed result {:?}", result);
 }
 

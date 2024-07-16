@@ -6,7 +6,7 @@ struct Jar(MyTracked<'_>);
 
 trait Db: salsa::DbWithJar<Jar> {}
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct MyTracked<'db> {
     field: u32,
 }

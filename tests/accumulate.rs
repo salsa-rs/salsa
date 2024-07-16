@@ -6,12 +6,11 @@ mod common;
 use common::{HasLogger, Logger};
 
 use expect_test::expect;
+use salsa::{Accumulator, Setter};
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, Logs, push_logs, push_a_logs, push_b_logs);
-
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct MyInput {
@@ -20,6 +19,7 @@ struct MyInput {
 }
 
 #[salsa::accumulator]
+#[derive(Clone, Debug)]
 struct Logs(String);
 
 #[salsa::tracked]
@@ -48,7 +48,7 @@ fn push_a_logs(db: &dyn Db, input: MyInput) {
     db.push_log(format!("push_a_logs({})", field_a));
 
     for i in 0..field_a {
-        Logs::push(db, format!("log_a({} of {})", i, field_a));
+        Logs(format!("log_a({} of {})", i, field_a)).accumulate(db);
     }
 }
 
@@ -58,21 +58,23 @@ fn push_b_logs(db: &dyn Db, input: MyInput) {
     db.push_log(format!("push_b_logs({})", field_a));
 
     for i in 0..field_a {
-        Logs::push(db, format!("log_b({} of {})", i, field_a));
+        Logs(format!("log_b({} of {})", i, field_a)).accumulate(db);
     }
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {
     fn salsa_event(&self, _event: salsa::Event) {}
 }
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {

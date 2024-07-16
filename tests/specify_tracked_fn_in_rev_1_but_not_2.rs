@@ -48,7 +48,7 @@ fn read_maybe_specified<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> u32 {
 
 /// Create a tracked value and *maybe* specify a value for
 /// `maybe_specified`
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn create_tracked<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     db.push_log(format!("create_tracked({:?})", input));
     let tracked = MyTracked::new(db, input);

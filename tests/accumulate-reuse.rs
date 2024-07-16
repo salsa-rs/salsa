@@ -79,7 +79,7 @@ fn test1() {
 
     // When we mutate `l1`, we should re-execute `compute` for `l1`,
     // but we should not have to re-execute `compute` for `l2`.
-    // The only inpout for `compute(l1)` is the accumulated values from `l1`,
+    // The only input for `compute(l1)` is the accumulated values from `l1`,
     // which have not changed.
     l1.set_value(&mut db).to(2);
     assert_eq!(compute(&db, l2), 2);

@@ -4,7 +4,7 @@ pub struct Jar(a::MyInput);
 mod a {
     use crate::Jar;
 
-    #[salsa::input(jar = Jar)]
+    #[salsa::input]
     pub struct MyInput {
         field: u32,
     }

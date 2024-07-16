@@ -6,10 +6,10 @@ pub struct Jar(SourceTree<'_>, SourceTree_all_items, use_tree);
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Item {}
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 pub struct SourceTree<'db> {}
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 impl<'db> SourceTree<'db> {
     #[salsa::tracked(return_ref)]
     pub fn all_items(self, _db: &'db dyn Db) -> Vec<Item> {

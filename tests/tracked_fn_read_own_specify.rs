@@ -8,17 +8,17 @@ struct Jar(MyInput, MyTracked<'_>, tracked_fn, tracked_fn_extra);
 
 trait Db: salsa::DbWithJar<Jar> + HasLogger {}
 
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct MyTracked<'db> {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> u32 {
     db.push_log(format!("tracked_fn({:?})", input.debug(db)));
     let t = MyTracked::new(db, input.field(db) * 2);

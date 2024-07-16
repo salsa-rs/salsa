@@ -304,7 +304,7 @@ impl Macro {
 
     fn cycle_recovery(&self) -> (TokenStream, TokenStream) {
         if let Some(recovery_fn) = &self.args.recovery_fn {
-            (recovery_fn.to_token_stream(), quote!(Fallback))
+            (quote!((#recovery_fn)), quote!(Fallback))
         } else {
             (
                 quote!((salsa::plumbing::unexpected_cycle_recovery!)),
