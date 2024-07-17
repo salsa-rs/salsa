@@ -51,9 +51,9 @@ impl crate::options::AllowedOptions for TrackedStruct {
 }
 
 impl SalsaStructAllowedOptions for TrackedStruct {
-    const KIND: &'static str = "interned";
+    const KIND: &'static str = "tracked";
 
-    const ALLOW_ID: bool = false;
+    const ALLOW_ID: bool = true;
 
     const HAS_LIFETIME: bool = true;
 }

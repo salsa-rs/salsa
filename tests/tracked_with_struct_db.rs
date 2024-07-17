@@ -1,6 +1,7 @@
 //! Test that a setting a field on a `#[salsa::input]`
 //! overwrites and returns the old value.
 
+use salsa::Database as _;
 use test_log::test;
 
 #[salsa::db]
@@ -38,29 +39,30 @@ fn create_tracked_list<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyT
 
 #[test]
 fn execute() {
-    let mut db = Database::default();
-    let input = MyInput::new(&mut db, "foo".to_string());
-    let t0: MyTracked = create_tracked_list(&db, input);
-    let t1 = create_tracked_list(&db, input);
-    expect_test::expect![[r#"
-        MyTracked {
-            [salsa id]: 1,
-            data: MyInput {
-                [salsa id]: 0,
-                field: "foo",
-            },
-            next: Next(
-                MyTracked {
+    Database::default().attach(|db| {
+        let input = MyInput::new(db, "foo".to_string());
+        let t0: MyTracked = create_tracked_list(db, input);
+        let t1 = create_tracked_list(db, input);
+        expect_test::expect![[r#"
+            MyTracked {
+                [salsa id]: 1,
+                data: MyInput {
                     [salsa id]: 0,
-                    data: MyInput {
-                        [salsa id]: 0,
-                        field: "foo",
-                    },
-                    next: None,
+                    field: "foo",
                 },
-            ),
-        }
-    "#]]
-    .assert_debug_eq(&t0);
-    assert_eq!(t0, t1);
+                next: Next(
+                    MyTracked {
+                        [salsa id]: 0,
+                        data: MyInput {
+                            [salsa id]: 0,
+                            field: "foo",
+                        },
+                        next: None,
+                    },
+                ),
+            }
+        "#]]
+        .assert_debug_eq(&t0);
+        assert_eq!(t0, t1);
+    })
 }

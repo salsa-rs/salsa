@@ -1,11 +1,7 @@
 //! Test an id field whose `PartialEq` impl is always true.
 
+use salsa::{Database as Db, Setter};
 use test_log::test;
-
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked<'_>, the_fn);
-
-trait Db: salsa::DbWithJar<Jar> {}
 
 #[salsa::input]
 struct MyInput {
@@ -42,15 +38,14 @@ fn the_fn(db: &dyn Db, input: MyInput) {
     assert_eq!(tracked0.field(db).field, input.field(db));
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
-
-impl Db for Database {}
 
 #[test]
 fn execute() {
