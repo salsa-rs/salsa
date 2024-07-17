@@ -102,7 +102,7 @@ impl Macro {
                     field_options: [#(#field_options),*],
                     field_ids: [#(#field_ids),*],
                     field_setter_ids: [#(#field_setter_ids),*],
-                    field_tys: [#(#field_tys:ty),*],
+                    field_tys: [#(#field_tys),*],
                     field_indices: [#(#field_indices),*],
                     num_fields: #num_fields,
                     unused_names: [

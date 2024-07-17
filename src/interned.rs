@@ -179,8 +179,14 @@ where
     /// Lookup the data for an interned value based on its id.
     /// Rarely used since end-users generally carry a struct with a pointer directly
     /// to the interned item.
-    pub fn data(&self, id: Id) -> &C::Data<'_> {
+    pub fn data<'db>(&'db self, id: Id) -> &'db C::Data<'db> {
         C::deref_struct(self.interned_value(id)).data()
+    }
+
+    /// Lookup the fields from an interned struct.
+    /// Note that this is not "leaking" since no dependency edge is required.
+    pub fn fields<'db>(&'db self, s: C::Struct<'db>) -> &'db C::Data<'db> {
+        C::deref_struct(s).data()
     }
 
     /// Variant of `data` that takes a (unnecessary) database argument.

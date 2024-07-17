@@ -78,29 +78,27 @@ macro_rules! setup_interned_struct {
                 {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
-                    CACHE.get_or_create(db, || {
+                    CACHE.get_or_create(db.as_salsa_database(), || {
                         db.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
                     })
                 }
             }
 
-            impl $zalsa::FromId for $Struct<'_> {
-                fn from_id(id: salsa::Id) -> Self {
-                    Self(id)
+            impl $zalsa::AsId for $Struct<'_> {
+                fn as_id(&self) -> salsa::Id {
+                    unsafe { self.0.as_ref() }.as_id()
                 }
             }
 
-            impl $zalsa::AsId for $Struct<'_> {
-                fn as_id(&self) -> salsa::Id {
-                    self.0
-                }
-            }
+            unsafe impl Send for $Struct<'_> {}
+
+            unsafe impl Sync for $Struct<'_> {}
 
             impl std::fmt::Debug for $Struct<'_> {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     $zalsa::with_attached_database(|db| {
-                        let fields = $Configuration::ingredient(db).fields(self.0);
-                        let f = f.debug_struct(stringify!($Struct));
+                        let fields = $Configuration::ingredient(db).fields(*self);
+                        let mut f = f.debug_struct(stringify!($Struct));
                         $(
                             let f = f.field(stringify!($field_id), &fields.$field_index);
                         )*
@@ -127,40 +125,21 @@ macro_rules! setup_interned_struct {
                 {
                     let runtime = db.runtime();
                     let current_revision = $zalsa::current_revision(db);
-                    let stamps = $zalsa::Array::new([$zalsa::stamp(current_revision, Default::default()); $N]);
-                    $Configuration::ingredient(db).intern(runtime, ($($field_id,)*), stamps)
+                    $Configuration::ingredient(db).intern(runtime, ($($field_id,)*))
                 }
 
                 $(
-                    pub fn $field_id<'db, $Db>(self, db: &'db $Db) -> $zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)
+                    pub fn $field_id<$Db>(self, db: &'db $Db) -> $zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let runtime = db.runtime();
-                        let fields = $Configuration::ingredient(db).field(runtime, self, $field_index);
+                        let fields = $Configuration::ingredient(db).fields(self);
                         $zalsa::maybe_clone!(
                             $field_option,
                             $field_ty,
                             &fields.$field_index,
-                        )
-                    }
-                )*
-
-                $(
-                    #[must_use]
-                    pub fn $field_setter_id<'db, $Db>(self, db: &'db mut $Db) -> impl salsa::Setter<FieldTy = $field_ty> + 'db
-                    where
-                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                        $Db: ?Sized + $zalsa::Database,
-                    {
-                        let (ingredient, runtime) = $Configuration::ingredient_mut(db);
-                        $zalsa::input::SetterImpl::new(
-                            runtime,
-                            self,
-                            $field_index,
-                            ingredient,
-                            |fields, f| std::mem::replace(&mut fields.$field_index, f),
                         )
                     }
                 )*
