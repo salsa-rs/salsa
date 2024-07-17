@@ -38,6 +38,9 @@ impl crate::options::AllowedOptions for InputStruct {
     const SPECIFY: bool = false;
 
     const NO_EQ: bool = false;
+
+    const NO_DEBUG: bool = true;
+
     const SINGLETON: bool = true;
 
     const DATA: bool = true;
@@ -76,9 +79,12 @@ impl Macro {
         let field_ids = salsa_struct.field_ids();
         let field_indices = salsa_struct.field_indices();
         let num_fields = salsa_struct.num_fields();
+        let field_getter_ids = salsa_struct.field_getter_ids();
         let field_setter_ids = salsa_struct.field_setter_ids();
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
+
+        let DebugTrait = salsa_struct.customized_debug_trait();
 
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
@@ -90,39 +96,20 @@ impl Macro {
             struct_ident,
             quote! {
                 salsa::plumbing::setup_input_struct!(
-                    // Attributes on the struct
                     attrs: [#(#attrs),*],
-
-                    // Visibility of the struct
                     vis: #vis,
-
-                    // Name of the struct
                     Struct: #struct_ident,
-
-                    // Name user gave for `new`
                     new_fn: new, // FIXME
-
-                    // A series of option tuples; see `setup_tracked_struct` macro
                     field_options: [#(#field_options),*],
-
-                    // Field names
                     field_ids: [#(#field_ids),*],
-
-                    // Names for field setter methods (typically `set_foo`)
+                    field_getter_ids: [#(#field_getter_ids),*],
                     field_setter_ids: [#(#field_setter_ids),*],
-
-                    // Field types
                     field_tys: [#(#field_tys),*],
-
-                    // Indices for each field from 0..N -- must be unsuffixed (e.g., `0`, `1`).
                     field_indices: [#(#field_indices),*],
-
-                    // Number of fields
                     num_fields: #num_fields,
-
-                    // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
-                    // We have the procedural macro generate names for those items that are
-                    // not used elsewhere in the user's code.
+                    customized: [
+                        #DebugTrait,
+                    ],
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,

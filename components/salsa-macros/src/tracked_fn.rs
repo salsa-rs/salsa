@@ -1,5 +1,4 @@
 use proc_macro2::{Span, TokenStream};
-use quote::ToTokens;
 use syn::{spanned::Spanned, ItemFn};
 
 use crate::{db_lifetime, hygiene::Hygiene, options::Options, xform::ChangeLt};
@@ -28,6 +27,8 @@ impl crate::options::AllowedOptions for TrackedFn {
     const SPECIFY: bool = true;
 
     const NO_EQ: bool = true;
+
+    const NO_DEBUG: bool = false;
 
     const SINGLETON: bool = false;
 

@@ -20,6 +20,9 @@ macro_rules! setup_tracked_struct {
         // Field names
         field_ids: [$($field_id:ident),*],
 
+        // Field names
+        field_getter_ids: [$($field_getter_id:ident),*],
+
         // Field types, may reference `db_lt`
         field_tys: [$($field_ty:ty),*],
 
@@ -40,6 +43,11 @@ macro_rules! setup_tracked_struct {
 
         // Number of fields
         num_fields: $N:literal,
+
+        // Control customization: each path below either appears or doesn't.
+        customized: [
+            $($DebugTrait:path)?, // std::fmt::Debug
+        ],
 
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
@@ -159,22 +167,13 @@ macro_rules! setup_tracked_struct {
 
             unsafe impl Sync for $Struct<'_> {}
 
-            impl std::fmt::Debug for $Struct<'_> {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    $zalsa::with_attached_database(|db| {
-                        let fields = $Configuration::ingredient(db).leak_fields(*self);
-                        let mut f = f.debug_struct(stringify!($Struct));
-                        $(
-                            let f = f.field(stringify!($field_id), &fields.$field_index);
-                        )*
-                        f.finish()
-                    }).unwrap_or_else(|| {
-                        f.debug_tuple(stringify!($Struct))
-                            .field(&self.0)
-                            .finish()
-                    })
+            $(
+                impl $DebugTrait for $Struct<'_> {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        Self::default_debug_fmt(*self, f)
+                    }
                 }
-            }
+            )?
 
             impl<$db_lt> $Struct<$db_lt> {
                 pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self
@@ -189,7 +188,7 @@ macro_rules! setup_tracked_struct {
                 }
 
                 $(
-                    pub fn $field_id<$Db>(&self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($field_option, $db_lt, $field_ty)
+                    pub fn $field_getter_id<$Db>(&self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($field_option, $db_lt, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
@@ -203,6 +202,23 @@ macro_rules! setup_tracked_struct {
                         )
                     }
                 )*
+
+                /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
+                pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    $zalsa::with_attached_database(|db| {
+                        let fields = $Configuration::ingredient(db).leak_fields(this);
+                        let mut f = f.debug_struct(stringify!($Struct));
+                        let f = f.field("[salsa id]", &$zalsa::AsId::as_id(&this).as_u32());
+                        $(
+                            let f = f.field(stringify!($field_id), &fields.$field_index);
+                        )*
+                        f.finish()
+                    }).unwrap_or_else(|| {
+                        f.debug_struct(stringify!($Struct))
+                            .field("[salsa id]", &$zalsa::AsId::as_id(&this).as_u32())
+                            .finish()
+                    })
+                }
             }
         };
     };

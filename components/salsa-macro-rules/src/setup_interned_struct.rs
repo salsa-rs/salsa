@@ -94,22 +94,13 @@ macro_rules! setup_interned_struct {
 
             unsafe impl Sync for $Struct<'_> {}
 
-            impl std::fmt::Debug for $Struct<'_> {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    $zalsa::with_attached_database(|db| {
-                        let fields = $Configuration::ingredient(db).fields(*self);
-                        let mut f = f.debug_struct(stringify!($Struct));
-                        $(
-                            let f = f.field(stringify!($field_id), &fields.$field_index);
-                        )*
-                        f.finish()
-                    }).unwrap_or_else(|| {
-                        f.debug_tuple(stringify!($Struct))
-                            .field(&self.0)
-                            .finish()
-                    })
+            $(
+                impl $DebugTrait for $Struct<'_> {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        Self::default_debug_fmt(*self, f)
+                    }
                 }
-            }
+            )?
 
             impl $zalsa::SalsaStructInDb for $Struct<'_> {
                 fn register_dependent_fn(_db: &dyn $zalsa::Database, _index: $zalsa::IngredientIndex) {
@@ -143,6 +134,22 @@ macro_rules! setup_interned_struct {
                         )
                     }
                 )*
+
+                /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
+                pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    $zalsa::with_attached_database(|db| {
+                        let fields = $Configuration::ingredient(db).fields(*self);
+                        let mut f = f.debug_struct(stringify!($Struct));
+                        $(
+                            let f = f.field(stringify!($field_id), &fields.$field_index);
+                        )*
+                        f.finish()
+                    }).unwrap_or_else(|| {
+                        f.debug_tuple(stringify!($Struct))
+                            .field(&self.0)
+                            .finish()
+                    })
+                }
             }
         };
     };

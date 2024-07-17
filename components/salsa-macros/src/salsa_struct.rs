@@ -212,6 +212,14 @@ where
             })
             .collect()
     }
+
+    pub fn customized_debug_trait(&self) -> TokenStream {
+        if self.args.no_debug.is_some() {
+            quote!()
+        } else {
+            quote!(std::fmt::Debug)
+        }
+    }
 }
 
 impl<'s> SalsaField<'s> {

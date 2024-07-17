@@ -73,8 +73,7 @@ fn untracked_dependencies() {
     assert!(s.contains(", field: 22 }"));
 }
 
-#[salsa::tracked]
-#[customize(Debug)]
+#[salsa::tracked(no_debug)]
 struct DerivedCustom<'db> {
     my_input: MyInput,
     value: u32,

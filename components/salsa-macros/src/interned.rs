@@ -40,6 +40,8 @@ impl crate::options::AllowedOptions for InternedStruct {
 
     const NO_EQ: bool = false;
 
+    const NO_DEBUG: bool = true;
+
     const SINGLETON: bool = true;
 
     const DATA: bool = true;
@@ -84,6 +86,8 @@ impl Macro {
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
 
+        let DebugTrait = salsa_struct.customized_debug_trait();
+
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
         let Configuration = self.hygiene.ident("Configuration");
@@ -105,6 +109,9 @@ impl Macro {
                     field_tys: [#(#field_tys),*],
                     field_indices: [#(#field_indices),*],
                     num_fields: #num_fields,
+                    customized: [
+                        #DebugTrait,
+                    ],
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,

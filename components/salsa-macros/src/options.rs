@@ -13,11 +13,16 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `ref` identifier.
     pub return_ref: Option<syn::Ident>,
 
-    ///  The `no_eq` option is used to signal that a given field does not implement
+    /// The `no_eq` option is used to signal that a given field does not implement
     /// the `Eq` trait and cannot be compared for equality.
     ///
     /// If this is `Some`, the value is the `no_eq` identifier.
     pub no_eq: Option<syn::Ident>,
+
+    /// Signal we should not generate a `Debug` impl.
+    ///
+    /// If this is `Some`, the value is the `no_debug` identifier.
+    pub no_debug: Option<syn::Ident>,
 
     /// The `singleton` option is used on input with only one field
     /// It allows the creation of convenient methods
@@ -28,11 +33,6 @@ pub(crate) struct Options<A: AllowedOptions> {
     ///
     /// If this is `Some`, the value is the `specify` identifier.
     pub specify: Option<syn::Ident>,
-
-    /// The `jar = <type>` option is used to indicate the jar; it defaults to `crate::jar`.
-    ///
-    /// If this is `Some`, the value is the `<type>`.
-    pub jar_ty: Option<syn::Type>,
 
     /// The `db = <path>` option is used to indicate the db.
     ///
@@ -71,7 +71,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             return_ref: Default::default(),
             specify: Default::default(),
             no_eq: Default::default(),
-            jar_ty: Default::default(),
+            no_debug: Default::default(),
             db_path: Default::default(),
             recovery_fn: Default::default(),
             data: Default::default(),
@@ -88,6 +88,7 @@ pub(crate) trait AllowedOptions {
     const RETURN_REF: bool;
     const SPECIFY: bool;
     const NO_EQ: bool;
+    const NO_DEBUG: bool;
     const SINGLETON: bool;
     const DATA: bool;
     const DB: bool;
@@ -128,6 +129,20 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`no_eq` option not allowed here",
+                    ));
+                }
+            } else if ident == "no_debug" {
+                if A::NO_DEBUG {
+                    if let Some(old) = std::mem::replace(&mut options.no_debug, Some(ident)) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `no_debug` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`no_debug` option not allowed here",
                     ));
                 }
             } else if ident == "singleton" {

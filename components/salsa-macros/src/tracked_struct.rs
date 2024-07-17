@@ -35,6 +35,8 @@ impl crate::options::AllowedOptions for TrackedStruct {
 
     const NO_EQ: bool = false;
 
+    const NO_DEBUG: bool = true;
+
     const SINGLETON: bool = true;
 
     const DATA: bool = true;
@@ -73,11 +75,14 @@ impl Macro {
         let db_lt = db_lifetime::db_lifetime(&self.struct_item.generics);
         let new_fn = salsa_struct.constructor_name();
         let field_ids = salsa_struct.field_ids();
+        let field_getter_ids = salsa_struct.field_getter_ids();
         let field_indices = salsa_struct.field_indices();
         let id_field_indices = salsa_struct.id_field_indices();
         let num_fields = salsa_struct.num_fields();
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
+
+        let DebugTrait = salsa_struct.customized_debug_trait();
 
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
@@ -97,11 +102,15 @@ impl Macro {
                     db_lt: #db_lt,
                     new_fn: #new_fn,
                     field_ids: [#(#field_ids),*],
+                    field_getter_ids: [#(#field_getter_ids),*],
                     field_tys: [#(#field_tys),*],
                     field_indices: [#(#field_indices),*],
                     id_field_indices: [#(#id_field_indices),*],
                     field_options: [#(#field_options),*],
                     num_fields: #num_fields,
+                    customized: [
+                        #DebugTrait,
+                    ],
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,

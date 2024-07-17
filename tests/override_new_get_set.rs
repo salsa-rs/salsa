@@ -5,12 +5,10 @@
 
 use std::fmt::Display;
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, MyInterned<'_>, MyTracked<'_>);
+#[salsa::db]
+trait Db: salsa::Database {}
 
-trait Db: salsa::DbWithJar<Jar> {}
-
-#[salsa::input(jar = Jar, constructor = from_string)]
+#[salsa::input(constructor = from_string)]
 struct MyInput {
     #[get(text)]
     #[set(set_text)]
@@ -66,14 +64,16 @@ impl<'db> MyTracked<'db> {
 
 #[test]
 fn execute() {
-    #[salsa::db(Jar)]
+    #[salsa::db]
     #[derive(Default)]
     struct Database {
         storage: salsa::Storage<Self>,
     }
 
+    #[salsa::db]
     impl salsa::Database for Database {}
 
+    #[salsa::db]
     impl Db for Database {}
 
     let mut db = Database::default();
