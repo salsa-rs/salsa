@@ -3,20 +3,14 @@
 
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked<'_>, MyInterned<'_>);
-
-trait Db: salsa::DbWithJar<Jar> {}
-
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
-
-impl Db for Database {}
 
 #[salsa::input]
 struct MyInput {

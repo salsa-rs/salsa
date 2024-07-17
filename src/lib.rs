@@ -38,6 +38,7 @@ pub use self::key::DatabaseKeyIndex;
 pub use self::revision::Revision;
 pub use self::runtime::Runtime;
 pub use self::storage::Storage;
+pub use self::update::Update;
 pub use salsa_macros::accumulator;
 pub use salsa_macros::db;
 pub use salsa_macros::input;
@@ -88,6 +89,7 @@ pub mod plumbing {
     pub use crate::update::always_update;
     pub use crate::update::helper::Dispatch as UpdateDispatch;
     pub use crate::update::helper::Fallback as UpdateFallback;
+    pub use crate::update::Update;
 
     pub use salsa_macro_rules::macro_if;
     pub use salsa_macro_rules::maybe_backdate;

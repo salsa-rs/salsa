@@ -11,7 +11,7 @@ macro_rules! setup_tracked_struct {
         // Name of the struct
         Struct: $Struct:ident,
 
-        // Name of the `'db` lifetime that the user gave
+        // Name of the `$db_lt` lifetime that the user gave
         db_lt: $db_lt:lifetime,
 
         // Name user gave for `new`
@@ -88,7 +88,7 @@ macro_rules! setup_tracked_struct {
 
                 type Struct<$db_lt> = $Struct<$db_lt>;
 
-                unsafe fn struct_from_raw<'db>(ptr: $NonNull<$zalsa_struct::Value<Self>>) -> Self::Struct<'db> {
+                unsafe fn struct_from_raw<$db_lt>(ptr: $NonNull<$zalsa_struct::Value<Self>>) -> Self::Struct<$db_lt> {
                     $Struct(ptr, std::marker::PhantomData)
                 }
 
@@ -104,11 +104,11 @@ macro_rules! setup_tracked_struct {
                     $zalsa::Array::new([current_revision; $N])
                 }
 
-                unsafe fn update_fields<'db>(
+                unsafe fn update_fields<$db_lt>(
                     current_revision: $Revision,
                     revisions: &mut Self::Revisions,
-                    old_fields: *mut Self::Fields<'db>,
-                    new_fields: Self::Fields<'db>,
+                    old_fields: *mut Self::Fields<$db_lt>,
+                    new_fields: Self::Fields<$db_lt>,
                 ) {
                     use $zalsa::UpdateFallback as _;
                     unsafe {
@@ -137,8 +137,8 @@ macro_rules! setup_tracked_struct {
                 }
             }
 
-            impl<'db> $zalsa::LookupId<'db> for $Struct<$db_lt> {
-                fn lookup_id(id: salsa::Id, db: &'db dyn $zalsa::Database) -> Self {
+            impl<$db_lt> $zalsa::LookupId<$db_lt> for $Struct<$db_lt> {
+                fn lookup_id(id: salsa::Id, db: &$db_lt dyn $zalsa::Database) -> Self {
                     $Configuration::ingredient(db).lookup_struct(db.runtime(), id)
                 }
             }
@@ -169,6 +169,17 @@ macro_rules! setup_tracked_struct {
                 impl std::fmt::Debug for $Struct<'_> {
                     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                         Self::default_debug_fmt(*self, f)
+                    }
+                }
+            }
+
+            unsafe impl $zalsa::Update for $Struct<'_> {
+                unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+                    if unsafe { *old_pointer } != new_value {
+                        unsafe { *old_pointer = new_value };
+                        true
+                    } else {
+                        false
                     }
                 }
             }

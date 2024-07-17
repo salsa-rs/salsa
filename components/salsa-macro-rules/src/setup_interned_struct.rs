@@ -111,6 +111,17 @@ macro_rules! setup_interned_struct {
                 }
             }
 
+            unsafe impl $zalsa::Update for $Struct<'_> {
+                unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+                    if unsafe { *old_pointer } != new_value {
+                        unsafe { *old_pointer = new_value };
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+
             impl<$db_lt> $Struct<$db_lt> {
                 pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self
                 where
