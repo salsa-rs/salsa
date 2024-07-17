@@ -1,9 +1,5 @@
+use salsa::{Database as Db, Setter};
 use test_log::test;
-
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked<'_>, tracked_fn);
-
-trait Db: salsa::DbWithJar<Jar> {}
 
 #[salsa::input]
 struct MyInput {
@@ -20,15 +16,14 @@ fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     MyTracked::new(db, input.field(db) / 2)
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
-
-impl Db for Database {}
 
 #[test]
 fn execute() {

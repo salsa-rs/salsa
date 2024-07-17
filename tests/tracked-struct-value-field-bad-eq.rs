@@ -3,21 +3,10 @@
 //! if we were to execute from scratch.
 
 use expect_test::expect;
-use salsa::DebugWithDb;
+use salsa::{Database as Db, Setter};
 mod common;
 use common::{HasLogger, Logger};
 use test_log::test;
-
-#[salsa::jar(db = Db)]
-struct Jar(
-    MyInput,
-    MyTracked<'_>,
-    the_fn,
-    make_tracked_struct,
-    read_tracked_struct,
-);
-
-trait Db: salsa::DbWithJar<Jar> {}
 
 #[salsa::input]
 struct MyInput {
@@ -63,26 +52,25 @@ fn read_tracked_struct<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> bool {
     tracked.field(db).field
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {
     fn salsa_event(&self, event: salsa::Event) {
         match event.kind {
             salsa::EventKind::WillExecute { .. }
             | salsa::EventKind::DidValidateMemoizedValue { .. } => {
-                self.push_log(format!("salsa_event({:?})", event.kind.debug(self)));
+                self.push_log(format!("salsa_event({:?})", event.kind));
             }
             _ => {}
         }
     }
 }
-
-impl Db for Database {}
 
 impl HasLogger for Database {
     fn logger(&self) -> &Logger {
