@@ -4,33 +4,33 @@
 use std::cell::Cell;
 
 use expect_test::expect;
-use salsa::DebugWithDb;
 mod common;
 use common::{HasLogger, Logger};
+use salsa::Setter;
 use test_log::test;
 
 thread_local! {
     static COUNTER: Cell<usize> = const { Cell::new(0) };
 }
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked<'_>, function);
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
-
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {
     fn salsa_event(&self, event: salsa::Event) {
-        self.push_log(format!("{:?}", event.debug(self)));
+        self.push_log(format!("{event:?}"));
     }
 }
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {

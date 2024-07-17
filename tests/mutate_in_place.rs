@@ -4,27 +4,28 @@
 mod common;
 use common::{HasLogger, Logger};
 
+use salsa::Setter;
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput);
-
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct MyInput {
     field: String,
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {

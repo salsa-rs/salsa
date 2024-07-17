@@ -1,6 +1,7 @@
 //! Test that `DeriveWithDb` is correctly derived.
 
 use expect_test::expect;
+use salsa::{Database as _, Setter};
 
 #[salsa::input]
 struct MyInput {
@@ -29,25 +30,25 @@ impl salsa::Database for Database {}
 
 #[test]
 fn input() {
-    let db = Database::default();
-
-    let input = MyInput::new(&db, 22);
-    let not_salsa = NotSalsa {
-        field: "it's salsa time".to_string(),
-    };
-    let complex_struct = ComplexStruct::new(&db, input, not_salsa);
-
-    // debug includes all fields
-    let actual = format!("{:?}", complex_struct.debug(&db));
-    let expected = expect![[
-        r#"ComplexStruct { [salsa id]: 0, my_input: MyInput { [salsa id]: 0, field: 22 }, not_salsa: NotSalsa { field: "it's salsa time" } }"#
-    ]];
-    expected.assert_eq(&actual);
+    Database::default().attach(|db| {
+        let input = MyInput::new(db, 22);
+        let not_salsa = NotSalsa {
+            field: "it's salsa time".to_string(),
+        };
+        let complex_struct = ComplexStruct::new(db, input, not_salsa);
+    
+        // debug includes all fields
+        let actual = format!("{complex_struct:?}");
+        let expected = expect![[
+            r#"ComplexStruct { [salsa id]: 0, my_input: MyInput { [salsa id]: 0, field: 22 }, not_salsa: NotSalsa { field: "it's salsa time" } }"#
+        ]];
+        expected.assert_eq(&actual);
+    })
 }
 
 #[salsa::tracked]
 fn leak_debug_string(db: &dyn salsa::Database, input: MyInput) -> String {
-    format!("{:?}", input.debug(db))
+    format!("{input:?}")
 }
 
 /// Test that field reads that occur as part of `Debug` are not tracked.
@@ -81,19 +82,17 @@ struct DerivedCustom<'db> {
 
 impl std::fmt::Debug for DerivedCustom<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{:?} / {:?}",
-            self.my_input(db).debug(db),
-            self.value(db)
-        )
+        salsa::with_attached_database(|db| {
+            write!(f, "{:?} / {:?}", self.my_input(db), self.value(db))
+        })
+        .unwrap_or_else(|| f.debug_tuple("DerivedCustom").finish())
     }
 }
 
 #[salsa::tracked]
-fn leak_derived_custom(db: &dyn Db, input: MyInput, value: u32) -> String {
+fn leak_derived_custom(db: &dyn salsa::Database, input: MyInput, value: u32) -> String {
     let c = DerivedCustom::new(db, input, value);
-    format!("{:?}", c.debug(db))
+    format!("{c:?}")
 }
 
 #[test]
