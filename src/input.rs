@@ -26,6 +26,7 @@ use crate::{
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
     const FIELD_DEBUG_NAMES: &'static [&'static str];
+    const IS_SINGLETON: bool;
 
     /// The input struct (which wraps an `Id`)
     type Struct: FromId + 'static + Send + Sync;
@@ -94,6 +95,11 @@ impl<C: Configuration> IngredientImpl<C> {
     }
 
     pub fn new_input(&self, fields: C::Fields, stamps: C::Stamps) -> C::Struct {
+        // If declared as a singleton, only allow a single instance
+        if C::IS_SINGLETON && self.counter.load(Ordering::Relaxed) >= 1 {
+            panic!("singleton struct may not be duplicated");
+        }
+
         let next_id = Id::from_u32(self.counter.fetch_add(1, Ordering::Relaxed));
         let value = Value {
             struct_ingredient_index: self.ingredient_index,
@@ -130,19 +136,12 @@ impl<C: Configuration> IngredientImpl<C> {
         setter(&mut r.fields)
     }
 
-    /// Creates a new singleton input.
-    pub fn new_singleton_input(&self, _runtime: &Runtime) -> C::Struct {
-        // when one exists already, panic
-        if self.counter.load(Ordering::Relaxed) >= 1 {
-            panic!("singleton struct may not be duplicated");
-        }
-        // fresh new ingredient
-        self.counter.store(1, Ordering::Relaxed);
-        C::Struct::from_id(Id::from_u32(0))
-    }
-
-    /// Get the singleton input previously created.
-    pub fn get_singleton_input(&self, _runtime: &Runtime) -> Option<C::Struct> {
+    /// Get the singleton input previously created (if any).
+    pub fn get_singleton_input(&self) -> Option<C::Struct> {
+        assert!(
+            C::IS_SINGLETON,
+            "get_singleton_input invoked on a non-singleton"
+        );
         (self.counter.load(Ordering::Relaxed) > 0).then(|| C::Struct::from_id(Id::from_u32(0)))
     }
 

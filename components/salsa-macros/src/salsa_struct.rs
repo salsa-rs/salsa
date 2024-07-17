@@ -213,12 +213,8 @@ where
             .collect()
     }
 
-    pub fn customized_debug_trait(&self) -> TokenStream {
-        if self.args.no_debug.is_some() {
-            quote!()
-        } else {
-            quote!(std::fmt::Debug)
-        }
+    pub fn generate_debug_impl(&self) -> bool {
+        self.args.no_debug.is_none()
     }
 }
 

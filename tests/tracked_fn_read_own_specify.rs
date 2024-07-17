@@ -3,10 +3,8 @@ use salsa::{Database as SalsaDatabase, DebugWithDb};
 mod common;
 use common::{HasLogger, Logger};
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked<'_>, tracked_fn, tracked_fn_extra);
-
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct MyInput {
@@ -20,27 +18,29 @@ struct MyTracked<'db> {
 
 #[salsa::tracked]
 fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> u32 {
-    db.push_log(format!("tracked_fn({:?})", input.debug(db)));
+    db.push_log(format!("tracked_fn({input:?})"));
     let t = MyTracked::new(db, input.field(db) * 2);
     tracked_fn_extra::specify(db, t, 2222);
     tracked_fn_extra(db, t)
 }
 
-#[salsa::tracked(jar = Jar, specify)]
+#[salsa::tracked(specify)]
 fn tracked_fn_extra<'db>(db: &dyn Db, input: MyTracked<'db>) -> u32 {
-    db.push_log(format!("tracked_fn_extra({:?})", input.debug(db)));
+    db.push_log(format!("tracked_fn_extra({input:?})"));
     0
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {

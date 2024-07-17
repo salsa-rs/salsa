@@ -84,8 +84,8 @@ impl Macro {
         let field_setter_ids = salsa_struct.field_setter_ids();
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
-
-        let DebugTrait = salsa_struct.customized_debug_trait();
+        let is_singleton = self.args.singleton.is_some();
+        let generate_debug_impl = salsa_struct.generate_debug_impl();
 
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
@@ -108,9 +108,8 @@ impl Macro {
                     field_tys: [#(#field_tys),*],
                     field_indices: [#(#field_indices),*],
                     num_fields: #num_fields,
-                    customized: [
-                        #DebugTrait,
-                    ],
+                    is_singleton: #is_singleton,
+                    generate_debug_impl: #generate_debug_impl,
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,

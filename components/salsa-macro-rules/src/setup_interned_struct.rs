@@ -35,10 +35,8 @@ macro_rules! setup_interned_struct {
         // Number of fields
         num_fields: $N:literal,
 
-        // Control customization: each path below either appears or doesn't.
-        customized: [
-            $($DebugTrait:path)?, // std::fmt::Debug
-        ],
+        // If true, generate a debug impl.
+        generate_debug_impl: $generate_debug_impl:tt,
 
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
@@ -99,13 +97,13 @@ macro_rules! setup_interned_struct {
 
             unsafe impl Sync for $Struct<'_> {}
 
-            $(
-                impl $DebugTrait for $Struct<'_> {
+            $zalsa::macro_if! { $generate_debug_impl =>
+                impl std::fmt::Debug for $Struct<'_> {
                     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                         Self::default_debug_fmt(*self, f)
                     }
                 }
-            )?
+            }
 
             impl $zalsa::SalsaStructInDb for $Struct<'_> {
                 fn register_dependent_fn(_db: &dyn $zalsa::Database, _index: $zalsa::IngredientIndex) {

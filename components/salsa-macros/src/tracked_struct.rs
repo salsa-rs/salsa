@@ -81,8 +81,7 @@ impl Macro {
         let num_fields = salsa_struct.num_fields();
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
-
-        let DebugTrait = salsa_struct.customized_debug_trait();
+        let generate_debug_impl = salsa_struct.generate_debug_impl();
 
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
@@ -108,9 +107,7 @@ impl Macro {
                     id_field_indices: [#(#id_field_indices),*],
                     field_options: [#(#field_options),*],
                     num_fields: #num_fields,
-                    customized: [
-                        #DebugTrait,
-                    ],
+                    generate_debug_impl: #generate_debug_impl,
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,

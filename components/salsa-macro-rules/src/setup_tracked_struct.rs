@@ -44,10 +44,8 @@ macro_rules! setup_tracked_struct {
         // Number of fields
         num_fields: $N:literal,
 
-        // Control customization: each path below either appears or doesn't.
-        customized: [
-            $($DebugTrait:path)?, // std::fmt::Debug
-        ],
+        // If true, generate a debug impl.
+        generate_debug_impl: $generate_debug_impl:tt,
 
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
@@ -167,13 +165,13 @@ macro_rules! setup_tracked_struct {
 
             unsafe impl Sync for $Struct<'_> {}
 
-            $(
-                impl $DebugTrait for $Struct<'_> {
+            $zalsa::macro_if! { $generate_debug_impl =>
+                impl std::fmt::Debug for $Struct<'_> {
                     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                         Self::default_debug_fmt(*self, f)
                     }
                 }
-            )?
+            }
 
             impl<$db_lt> $Struct<$db_lt> {
                 pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self

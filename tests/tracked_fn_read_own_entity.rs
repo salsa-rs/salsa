@@ -4,12 +4,11 @@
 use expect_test::expect;
 mod common;
 use common::{HasLogger, Logger};
+use salsa::Setter;
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked<'_>, final_result, intermediate_result);
-
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct MyInput {
@@ -35,15 +34,17 @@ fn intermediate_result<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     tracked
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {

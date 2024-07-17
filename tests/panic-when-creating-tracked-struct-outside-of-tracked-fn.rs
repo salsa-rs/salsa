@@ -1,25 +1,19 @@
 //! Test that creating a tracked struct outside of a
 //! tracked function panics with an assert message.
 
-#[salsa::jar(db = Db)]
-struct Jar(MyTracked<'_>);
-
-trait Db: salsa::DbWithJar<Jar> {}
-
 #[salsa::tracked]
 struct MyTracked<'db> {
     field: u32,
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
-
-impl Db for Database {}
 
 #[test]
 #[should_panic(

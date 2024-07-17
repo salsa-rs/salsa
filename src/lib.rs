@@ -90,6 +90,7 @@ pub mod plumbing {
     pub use crate::update::helper::Dispatch as UpdateDispatch;
     pub use crate::update::helper::Fallback as UpdateFallback;
 
+    pub use salsa_macro_rules::macro_if;
     pub use salsa_macro_rules::maybe_backdate;
     pub use salsa_macro_rules::maybe_clone;
     pub use salsa_macro_rules::maybe_cloned_ty;

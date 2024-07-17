@@ -2,32 +2,26 @@
 //! compiles and executes successfully.
 #![allow(warnings)]
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, tracked_fn);
-
-trait Db: salsa::DbWithJar<Jar> {}
-
 #[salsa::input]
 struct MyInput {
     field: u32,
 }
 
 #[salsa::tracked]
-fn tracked_fn(db: &dyn Db, input: MyInput) -> u32 {
+fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> u32 {
     input.field(db) * 2
 }
 
 #[test]
 fn execute() {
-    #[salsa::db(Jar)]
+    #[salsa::db]
     #[derive(Default)]
     struct Database {
         storage: salsa::Storage<Self>,
     }
 
+    #[salsa::db]
     impl salsa::Database for Database {}
-
-    impl Db for Database {}
 
     let mut db = Database::default();
     let input = MyInput::new(&db, 22);

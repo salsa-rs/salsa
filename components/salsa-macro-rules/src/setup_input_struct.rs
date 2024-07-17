@@ -35,10 +35,11 @@ macro_rules! setup_input_struct {
         // Number of fields
         num_fields: $N:literal,
 
-        // Control customization: each path below either appears or doesn't.
-        customized: [
-            $($DebugTrait:path)?, // std::fmt::Debug
-        ],
+        // If true, this is a singleton input.
+        is_singleton: $is_singleton:tt,
+
+        // If true, generate a debug impl.
+        generate_debug_impl: $generate_debug_impl:tt,
 
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
@@ -64,6 +65,7 @@ macro_rules! setup_input_struct {
             impl $zalsa_struct::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
                 const FIELD_DEBUG_NAMES: &'static [&'static str] = &[$(stringify!($field_id)),*];
+                const IS_SINGLETON: bool = $is_singleton;
 
                 /// The input struct (which wraps an `Id`)
                 type Struct = $Struct;
@@ -104,13 +106,13 @@ macro_rules! setup_input_struct {
                 }
             }
 
-            $(
-                impl $DebugTrait for $Struct {
+            $zalsa::macro_if! { $generate_debug_impl =>
+                impl std::fmt::Debug for $Struct {
                     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                         Self::default_debug_fmt(*self, f)
                     }
                 }
-            )?
+            }
 
             impl $zalsa::SalsaStructInDb for $Struct {
                 fn register_dependent_fn(_db: &dyn $zalsa::Database, _index: $zalsa::IngredientIndex) {
@@ -162,6 +164,25 @@ macro_rules! setup_input_struct {
                         )
                     }
                 )*
+
+                $zalsa::macro_if! { $is_singleton =>
+                    pub fn try_get<$Db>(db: &$Db) -> Option<Self>
+                    where
+                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
+                        $Db: ?Sized + salsa::Database,
+                    {
+                        $Configuration::ingredient(db.as_salsa_database()).get_singleton_input()
+                    }
+
+                    #[track_caller]
+                    pub fn get<$Db>(db: &$Db) -> Self
+                    where
+                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
+                        $Db: ?Sized + salsa::Database,
+                    {
+                        Self::try_get(db).unwrap()
+                    }
+                }
 
                 /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
                 pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

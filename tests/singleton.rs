@@ -3,33 +3,32 @@
 //! Singleton structs are created only once. Subsequent `get`s and `new`s after creation return the same `Id`.
 
 use expect_test::expect;
-use salsa::DebugWithDb;
 mod common;
 use common::{HasLogger, Logger};
 
+use salsa::Database as _;
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput);
-
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input(singleton)]
 struct MyInput {
     field: u32,
-    #[id]
     id_field: u16,
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {
@@ -65,9 +64,10 @@ fn twice() {
 
 #[test]
 fn debug() {
-    let db = Database::default();
-    let input = MyInput::new(&db, 3, 4);
-    let actual = format!("{:?}", input.debug(&db));
-    let expected = expect!["MyInput { [salsa id]: 0, field: 3, id_field: 4 }"];
-    expected.assert_eq(&actual);
+    Database::default().attach(|db| {
+        let input = MyInput::new(db, 3, 4);
+        let actual = format!("{:?}", input);
+        let expected = expect!["MyInput { [salsa id]: 0, field: 3, id_field: 4 }"];
+        expected.assert_eq(&actual);
+    });
 }

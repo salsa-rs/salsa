@@ -12,6 +12,7 @@
 //! from a submodule is to use multiple crates, hence the existence
 //! of this crate.
 
+mod macro_if;
 mod maybe_backdate;
 mod maybe_clone;
 mod setup_accumulator_impl;
