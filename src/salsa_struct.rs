@@ -8,6 +8,7 @@ pub trait SalsaStructInDb {
 ///
 /// It is used for implementing "constant" tracked function
 /// (ones that only take a database as an argument).
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Singleton;
 
 impl SalsaStructInDb for Singleton {

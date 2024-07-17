@@ -78,6 +78,27 @@ impl Macro {
         let inner = &inner_fn.sig.ident;
 
         match function_type(&item) {
+            FunctionType::Constant => Ok(crate::debug::dump_tokens(
+                fn_name,
+                quote![salsa::plumbing::setup_constant_fn! {
+                    attrs: [#(#attrs),*],
+                    vis: #vis,
+                    fn_name: #fn_name,
+                    db_lt: #db_lt,
+                    Db: #db_path,
+                    db: #db_ident,
+                    output_ty: #output_ty,
+                    inner_fn: #inner_fn,
+                    cycle_recovery_fn: #cycle_recovery_fn,
+                    cycle_recovery_strategy: #cycle_recovery_strategy,
+                    unused_names: [
+                        #zalsa,
+                        #Configuration,
+                        #FN_CACHE,
+                        #inner,
+                    ]
+                }],
+            )),
             FunctionType::RequiresInterning => Ok(crate::debug::dump_tokens(
                 fn_name,
                 quote![salsa::plumbing::setup_interned_fn! {
@@ -103,7 +124,6 @@ impl Macro {
                     ]
                 }],
             )),
-            FunctionType::Constant => todo!(),
             FunctionType::SalsaStruct => Ok(crate::debug::dump_tokens(
                 fn_name,
                 quote![salsa::plumbing::setup_struct_fn! {

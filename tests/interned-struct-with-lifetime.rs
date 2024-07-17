@@ -24,7 +24,7 @@ fn intern_stuff(db: &dyn Db) -> String {
     let s1 = InternedString::new(db, "Hello, ".to_string());
     let s2 = InternedString::new(db, "World, ".to_string());
     let s3 = InternedPair::new(db, (s1, s2));
-    format!("{:?}", s3.debug(db))
+    format!("{s3:?}")
 }
 
 #[salsa::db]
@@ -51,7 +51,7 @@ fn execute() {
     let mut db = Database::default();
 
     expect![[r#"
-        "InternedPair { [salsa id]: 0, data: (InternedString { [salsa id]: 0, data: \"Hello, \" }, InternedString { [salsa id]: 1, data: \"World, \" }) }"
+        "InternedPair { data: (InternedString { data: \"Hello, \" }, InternedString { data: \"World, \" }) }"
     "#]].assert_debug_eq(&intern_stuff(&db));
     db.assert_logs(expect!["[]"]);
 }

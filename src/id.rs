@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::num::NonZeroU32;
 
-use crate::Database;
+use crate::{salsa_struct, Database};
 
 /// An Id is a newtype'd u32 ranging from `0..Id::MAX_U32`.
 /// The maximum range is smaller than a standard u32 to leave
@@ -112,17 +112,18 @@ impl FromId for Id {
     }
 }
 
-/// As a special case, we permit `()` to be converted to an `Id`.
+/// As a special case, we permit `Singleton` to be converted to an `Id`.
 /// This is useful for declaring functions with no arguments.
-impl AsId for () {
+impl AsId for salsa_struct::Singleton {
     fn as_id(&self) -> Id {
         Id::from_u32(0)
     }
 }
 
-impl FromId for () {
+impl FromId for salsa_struct::Singleton {
     fn from_id(id: Id) -> Self {
         assert_eq!(0, id.as_u32());
+        salsa_struct::Singleton
     }
 }
 

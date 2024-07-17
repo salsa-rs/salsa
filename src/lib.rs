@@ -79,6 +79,7 @@ pub mod plumbing {
     pub use crate::runtime::Stamp;
     pub use crate::runtime::StampedValue;
     pub use crate::salsa_struct::SalsaStructInDb;
+    pub use crate::salsa_struct::Singleton;
     pub use crate::storage::views;
     pub use crate::storage::HasStorage;
     pub use crate::storage::IngredientCache;
@@ -93,6 +94,7 @@ pub mod plumbing {
     pub use salsa_macro_rules::maybe_clone;
     pub use salsa_macro_rules::maybe_cloned_ty;
     pub use salsa_macro_rules::setup_accumulator_impl;
+    pub use salsa_macro_rules::setup_constant_fn;
     pub use salsa_macro_rules::setup_input_struct;
     pub use salsa_macro_rules::setup_interned_fn;
     pub use salsa_macro_rules::setup_interned_struct;
