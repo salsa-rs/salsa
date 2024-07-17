@@ -182,6 +182,9 @@ macro_rules! setup_struct_fn {
         // Name of cycle recovery strategy variant to use.
         cycle_recovery_strategy: $cycle_recovery_strategy:ident,
 
+        // If true, this is specifiable.
+        is_specifiable: $is_specifiable:tt,
+
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
         // not used elsewhere in the user's code.
@@ -279,6 +282,21 @@ macro_rules! setup_struct_fn {
                     let key = $zalsa::AsId::as_id(&$input_id);
                     let database_key_index = $Configuration::fn_ingredient($db).database_key_index(key);
                     $zalsa::accumulated_by($db.as_salsa_database(), database_key_index)
+                }
+
+                $zalsa::macro_if! { $is_specifiable =>
+                    pub fn specify<$db_lt>(
+                        $db: &$db_lt dyn $Db,
+                        $input_id: $input_ty,
+                        value: $output_ty,
+                    ) {
+                        let key = $zalsa::AsId::as_id(&$input_id);
+                        $Configuration::fn_ingredient($db).specify_and_record(
+                            $db,
+                            key,
+                            value,
+                        )
+                    }
                 }
             }
 

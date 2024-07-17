@@ -66,6 +66,7 @@ impl Macro {
         let input_tys = self.input_tys(&item)?;
         let output_ty = self.output_ty(&db_lt, &item)?;
         let (cycle_recovery_fn, cycle_recovery_strategy) = self.cycle_recovery();
+        let is_specifiable = self.args.specify.is_some();
 
         let mut inner_fn = item.clone();
         inner_fn.vis = syn::Visibility::Inherited;
@@ -78,7 +79,21 @@ impl Macro {
         let INTERN_CACHE = self.hygiene.ident("INTERN_CACHE");
         let inner = &inner_fn.sig.ident;
 
-        match function_type(&item) {
+        let function_type = function_type(&item);
+
+        if is_specifiable {
+            match function_type {
+                FunctionType::Constant | FunctionType::RequiresInterning => {
+                    return Err(syn::Error::new_spanned(
+                        self.args.specify.as_ref().unwrap(),
+                        "only functions with a single salsa struct as their input can be specified",
+                    ))
+                }
+                FunctionType::SalsaStruct => {}
+            }
+        }
+
+        match function_type {
             FunctionType::Constant => Ok(crate::debug::dump_tokens(
                 fn_name,
                 quote![salsa::plumbing::setup_constant_fn! {
@@ -140,6 +155,7 @@ impl Macro {
                     inner_fn: #inner_fn,
                     cycle_recovery_fn: #cycle_recovery_fn,
                     cycle_recovery_strategy: #cycle_recovery_strategy,
+                    is_specifiable: #is_specifiable,
                     unused_names: [
                         #zalsa,
                         #Configuration,
