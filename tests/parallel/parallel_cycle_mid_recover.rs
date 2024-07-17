@@ -4,14 +4,10 @@
 
 use crate::setup::Database;
 use crate::setup::Knobs;
-use salsa::ParallelDatabase;
 
-pub(crate) trait Db: salsa::DbWithJar<Jar> + Knobs {}
+pub(crate) trait Db: salsa::Database + Knobs {}
 
-impl<T: salsa::DbWithJar<Jar> + Knobs> Db for T {}
-
-#[salsa::jar(db = Db)]
-pub(crate) struct Jar(MyInput, a1, a2, b1, b2, b3);
+impl<T: salsa::Database + Knobs> Db for T {}
 
 #[salsa::input]
 pub(crate) struct MyInput {
@@ -28,13 +24,14 @@ pub(crate) fn a1(db: &dyn Db, input: MyInput) -> i32 {
 
     a2(db, input)
 }
+
 #[salsa::tracked]
 pub(crate) fn a2(db: &dyn Db, input: MyInput) -> i32 {
     // create the cycle
     b1(db, input)
 }
 
-#[salsa::tracked(jar = Jar, recovery_fn=recover_b1)]
+#[salsa::tracked(recovery_fn=recover_b1)]
 pub(crate) fn b1(db: &dyn Db, input: MyInput) -> i32 {
     // wait for thread a to have started
     db.wait_for(1);
@@ -54,7 +51,7 @@ pub(crate) fn b2(db: &dyn Db, input: MyInput) -> i32 {
     0
 }
 
-#[salsa::tracked(jar = Jar, recovery_fn=recover_b3)]
+#[salsa::tracked(recovery_fn=recover_b3)]
 pub(crate) fn b3(db: &dyn Db, input: MyInput) -> i32 {
     // will block on thread a, signaling stage 2
     a1(db, input)

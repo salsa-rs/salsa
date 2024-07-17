@@ -5,14 +5,10 @@
 use crate::setup::Database;
 use crate::setup::Knobs;
 use expect_test::expect;
-use salsa::ParallelDatabase;
 
-pub(crate) trait Db: salsa::DbWithJar<Jar> + Knobs {}
+pub(crate) trait Db: salsa::Database + Knobs {}
 
-impl<T: salsa::DbWithJar<Jar> + Knobs> Db for T {}
-
-#[salsa::jar(db = Db)]
-pub(crate) struct Jar(MyInput, a, b);
+impl<T: salsa::Database + Knobs> Db for T {}
 
 #[salsa::input]
 pub(crate) struct MyInput {

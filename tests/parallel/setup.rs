@@ -25,32 +25,19 @@ pub(crate) struct KnobsStruct {
     pub(crate) signal_on_will_block: Cell<usize>,
 }
 
-#[salsa::db(
-    crate::parallel_cycle_one_recover::Jar,
-    crate::parallel_cycle_none_recover::Jar,
-    crate::parallel_cycle_mid_recover::Jar,
-    crate::parallel_cycle_all_recover::Jar
-)]
+#[salsa::db]
 #[derive(Default)]
 pub(crate) struct Database {
     storage: salsa::Storage<Self>,
     knobs: KnobsStruct,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {
     fn salsa_event(&self, event: salsa::Event) {
         if let salsa::EventKind::WillBlockOn { .. } = event.kind {
             self.signal(self.knobs().signal_on_will_block.get());
         }
-    }
-}
-
-impl salsa::ParallelDatabase for Database {
-    fn snapshot(&self) -> salsa::Snapshot<Self> {
-        salsa::Snapshot::new(Database {
-            storage: self.storage.snapshot(),
-            knobs: self.knobs.clone(),
-        })
     }
 }
 
