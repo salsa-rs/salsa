@@ -17,9 +17,9 @@ pub(crate) fn tracked_fn(args: proc_macro::TokenStream, item: ItemFn) -> syn::Re
     db_macro.try_fn(item)
 }
 
-type FnArgs = Options<TrackedFn>;
+pub type FnArgs = Options<TrackedFn>;
 
-struct TrackedFn;
+pub struct TrackedFn;
 
 impl crate::options::AllowedOptions for TrackedFn {
     const RETURN_REF: bool = true;

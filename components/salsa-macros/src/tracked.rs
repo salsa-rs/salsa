@@ -8,7 +8,7 @@ pub(crate) fn tracked(
     let res = match item {
         syn::Item::Struct(item) => crate::tracked_struct::tracked_struct(args, item),
         syn::Item::Fn(item) => crate::tracked_fn::tracked_fn(args, item),
-        syn::Item::Impl(item) => todo!(),
+        syn::Item::Impl(item) => crate::tracked_impl::tracked_impl(args, item),
         _ => Err(syn::Error::new(
             item.span(),
             "tracked can only be applied to structs, functions, and impls",

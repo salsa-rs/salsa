@@ -1,5 +1,5 @@
 use expect_test::expect;
-use salsa::{Database as SalsaDatabase, DebugWithDb};
+use salsa::Database as SalsaDatabase;
 mod common;
 use common::{HasLogger, Logger};
 

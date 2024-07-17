@@ -2,18 +2,8 @@
 //! compiles and executes successfully.
 #![allow(warnings)]
 
-#[salsa::jar(db = Db)]
-struct Jar(
-    MyInput,
-    MyInput_tracked_fn,
-    MyInput_tracked_fn_ref,
-    MyInput_TrackedTrait_tracked_trait_fn,
-);
-
-trait Db: salsa::DbWithJar<Jar> {}
-
 trait TrackedTrait {
-    fn tracked_trait_fn(self, db: &dyn Db) -> u32;
+    fn tracked_trait_fn(self, db: &dyn salsa::Database) -> u32;
 }
 
 #[salsa::input]
@@ -44,15 +34,14 @@ impl TrackedTrait for MyInput {
 
 #[test]
 fn execute() {
-    #[salsa::db(Jar)]
+    #[salsa::db]
     #[derive(Default)]
     struct Database {
         storage: salsa::Storage<Self>,
     }
 
+    #[salsa::db]
     impl salsa::Database for Database {}
-
-    impl Db for Database {}
 
     let mut db = Database::default();
     let object = MyInput::new(&mut db, 22);
