@@ -46,6 +46,9 @@ macro_rules! setup_fn {
         // If true, the input needs an interner (because it has >1 argument).
         needs_interner: $needs_interner:tt,
 
+        // LRU capacity (a literal, maybe 0)
+        lru: $lru:tt,
+
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
         // not used elsewhere in the user's code.
@@ -181,21 +184,21 @@ macro_rules! setup_fn {
                     &self,
                     first_index: $zalsa::IngredientIndex,
                 ) -> Vec<Box<dyn $zalsa::Ingredient>> {
+                    let mut fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
+                        first_index,
+                    );
+                    fn_ingredient.set_capacity($lru);
                     $zalsa::macro_if! {
                         if $needs_interner {
                             vec![
-                                Box::new(<$zalsa::function::IngredientImpl<$Configuration>>::new(
-                                    first_index,
-                                )),
+                                Box::new(fn_ingredient),
                                 Box::new(<$zalsa::interned::IngredientImpl<$Configuration>>::new(
                                     first_index.successor(0)
                                 )),
                             ]
                         } else {
                             vec![
-                                Box::new(<$zalsa::function::IngredientImpl<$Configuration>>::new(
-                                    first_index,
-                                )),
+                                Box::new(fn_ingredient),
                             ]
                         }
                     }
@@ -233,6 +236,13 @@ macro_rules! setup_fn {
                         )
                     }
                 }
+
+                $zalsa::macro_if! { if0 $lru { } else {
+                    #[allow(dead_code)]
+                    fn set_lru_capacity(db: &dyn $Db, value: usize) {
+                        $Configuration::fn_ingredient(db).set_capacity(value);
+                    }
+                } }
             }
 
             $zalsa::attach_database($db, || {

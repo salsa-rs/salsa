@@ -6,15 +6,13 @@ use std::sync::{
     Arc,
 };
 
-use salsa::Database;
+use salsa::Database as _;
 mod common;
 use common::{HasLogger, Logger};
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, get_hot_potato, get_hot_potato2, get_volatile);
-
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
 #[derive(Debug, PartialEq, Eq)]
 struct HotPotato(u32);
@@ -41,7 +39,7 @@ struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar, lru = 32)]
+#[salsa::tracked(lru = 32)]
 fn get_hot_potato(db: &dyn Db, input: MyInput) -> Arc<HotPotato> {
     db.push_log(format!("get_hot_potato({:?})", input.field(db)));
     Arc::new(HotPotato::new(input.field(db)))
@@ -53,22 +51,24 @@ fn get_hot_potato2(db: &dyn Db, input: MyInput) -> u32 {
     get_hot_potato(db, input).0
 }
 
-#[salsa::tracked(jar = Jar, lru = 32)]
+#[salsa::tracked(lru = 32)]
 fn get_volatile(db: &dyn Db, _input: MyInput) -> usize {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     db.report_untracked_read();
     COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct DatabaseImpl {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for DatabaseImpl {}
 
+#[salsa::db]
 impl Db for DatabaseImpl {}
 
 impl HasLogger for DatabaseImpl {

@@ -1,4 +1,4 @@
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Literal, Span, TokenStream};
 use syn::{spanned::Spanned, ItemFn};
 
 use crate::{db_lifetime, hygiene::Hygiene, options::Options, xform::ChangeLt};
@@ -98,6 +98,8 @@ impl Macro {
             FunctionType::Constant | FunctionType::SalsaStruct => false,
         };
 
+        let lru = Literal::usize_unsuffixed(self.args.lru.unwrap_or(0));
+
         Ok(crate::debug::dump_tokens(
             fn_name,
             quote![salsa::plumbing::setup_fn! {
@@ -115,6 +117,7 @@ impl Macro {
                 cycle_recovery_strategy: #cycle_recovery_strategy,
                 is_specifiable: #is_specifiable,
                 needs_interner: #needs_interner,
+                lru: #lru,
                 unused_names: [
                     #zalsa,
                     #Configuration,

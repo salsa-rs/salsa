@@ -14,4 +14,12 @@ macro_rules! macro_if {
     (if false { $($t:tt)* } else { $($f:tt)*}) => {
         $($f)*
     };
+
+    (if0 0 { $($t:tt)* } else { $($f:tt)*}) => {
+        $($t)*
+    };
+
+    (if0 $n:literal { $($t:tt)* } else { $($f:tt)*}) => {
+        $($f)*
+    };
 }
