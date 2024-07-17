@@ -34,14 +34,14 @@ pub struct Program<'db> {
 // ANCHOR_END: program
 
 // ANCHOR: statements_and_expressions
-#[derive(Eq, PartialEq, Debug, Hash, new, salsa::Update, salsa::DebugWithDb)]
+#[derive(Eq, PartialEq, Debug, Hash, new, salsa::Update)]
 pub struct Statement<'db> {
     pub span: Span<'db>,
 
     pub data: StatementData<'db>,
 }
 
-#[derive(Eq, PartialEq, Debug, Hash, salsa::Update, salsa::DebugWithDb)]
+#[derive(Eq, PartialEq, Debug, Hash, salsa::Update)]
 pub enum StatementData<'db> {
     /// Defines `fn <name>(<args>) = <body>`
     Function(Function<'db>),
@@ -56,7 +56,7 @@ pub struct Expression<'db> {
     pub data: ExpressionData<'db>,
 }
 
-#[derive(Eq, PartialEq, Debug, Hash, salsa::Update, salsa::DebugWithDb)]
+#[derive(Eq, PartialEq, Debug, Hash, salsa::Update)]
 pub enum ExpressionData<'db> {
     Op(Box<Expression<'db>>, Op, Box<Expression<'db>>),
     Number(OrderedFloat<f64>),
@@ -64,7 +64,7 @@ pub enum ExpressionData<'db> {
     Call(FunctionId<'db>, Vec<Expression<'db>>),
 }
 
-#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug, salsa::Update, salsa::DebugWithDb)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug, salsa::Update)]
 pub enum Op {
     Add,
     Subtract,
@@ -97,8 +97,6 @@ pub struct Span<'db> {
 
 // ANCHOR: diagnostic
 #[salsa::accumulator]
-pub struct Diagnostics(Diagnostic);
-
 #[derive(new, Clone, Debug)]
 pub struct Diagnostic {
     pub start: usize,
