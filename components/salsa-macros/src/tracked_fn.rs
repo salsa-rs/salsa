@@ -93,78 +93,38 @@ impl Macro {
             }
         }
 
-        match function_type {
-            FunctionType::Constant => Ok(crate::debug::dump_tokens(
-                fn_name,
-                quote![salsa::plumbing::setup_constant_fn! {
-                    attrs: [#(#attrs),*],
-                    vis: #vis,
-                    fn_name: #fn_name,
-                    db_lt: #db_lt,
-                    Db: #db_path,
-                    db: #db_ident,
-                    output_ty: #output_ty,
-                    inner_fn: #inner_fn,
-                    cycle_recovery_fn: #cycle_recovery_fn,
-                    cycle_recovery_strategy: #cycle_recovery_strategy,
-                    unused_names: [
-                        #zalsa,
-                        #Configuration,
-                        #FN_CACHE,
-                        #inner,
-                    ]
-                }],
-            )),
-            FunctionType::RequiresInterning => Ok(crate::debug::dump_tokens(
-                fn_name,
-                quote![salsa::plumbing::setup_interned_fn! {
-                    attrs: [#(#attrs),*],
-                    vis: #vis,
-                    fn_name: #fn_name,
-                    db_lt: #db_lt,
-                    Db: #db_path,
-                    db: #db_ident,
-                    input_ids: [#(#input_ids),*],
-                    input_tys: [#(#input_tys),*],
-                    output_ty: #output_ty,
-                    inner_fn: #inner_fn,
-                    cycle_recovery_fn: #cycle_recovery_fn,
-                    cycle_recovery_strategy: #cycle_recovery_strategy,
-                    unused_names: [
-                        #zalsa,
-                        #Configuration,
-                        #InternedData,
-                        #FN_CACHE,
-                        #INTERN_CACHE,
-                        #inner,
-                    ]
-                }],
-            )),
-            FunctionType::SalsaStruct => Ok(crate::debug::dump_tokens(
-                fn_name,
-                quote![salsa::plumbing::setup_struct_fn! {
-                    attrs: [#(#attrs),*],
-                    vis: #vis,
-                    fn_name: #fn_name,
-                    db_lt: #db_lt,
-                    Db: #db_path,
-                    db: #db_ident,
-                    input_id: #(#input_ids,)*
-                    input_ty: #(#input_tys,)*
-                    output_ty: #output_ty,
-                    inner_fn: #inner_fn,
-                    cycle_recovery_fn: #cycle_recovery_fn,
-                    cycle_recovery_strategy: #cycle_recovery_strategy,
-                    is_specifiable: #is_specifiable,
-                    unused_names: [
-                        #zalsa,
-                        #Configuration,
-                        #FN_CACHE,
-                        #inner,
-                    ]
-                }],
-            )),
-        }
+        let needs_interner = match function_type {
+            FunctionType::RequiresInterning => true,
+            FunctionType::Constant | FunctionType::SalsaStruct => false,
+        };
+
+        Ok(crate::debug::dump_tokens(
+            fn_name,
+            quote![salsa::plumbing::setup_fn! {
+                attrs: [#(#attrs),*],
+                vis: #vis,
+                fn_name: #fn_name,
+                db_lt: #db_lt,
+                Db: #db_path,
+                db: #db_ident,
+                input_ids: [#(#input_ids),*],
+                input_tys: [#(#input_tys),*],
+                output_ty: #output_ty,
+                inner_fn: #inner_fn,
+                cycle_recovery_fn: #cycle_recovery_fn,
+                cycle_recovery_strategy: #cycle_recovery_strategy,
+                is_specifiable: #is_specifiable,
+                needs_interner: #needs_interner,
+                unused_names: [
+                    #zalsa,
+                    #Configuration,
+                    #InternedData,
+                    #FN_CACHE,
+                    #INTERN_CACHE,
+                    #inner,
+                ]
+            }],
+        ))
     }
 
     fn validity_check<'item>(&self, item: &'item syn::ItemFn) -> syn::Result<ValidFn<'item>> {

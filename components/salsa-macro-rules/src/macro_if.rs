@@ -6,4 +6,12 @@ macro_rules! macro_if {
 
     (false => $($t:tt)*) => {
     };
+
+    (if true { $($t:tt)* } else { $($f:tt)*}) => {
+        $($t)*
+    };
+
+    (if false { $($t:tt)* } else { $($f:tt)*}) => {
+        $($f)*
+    };
 }

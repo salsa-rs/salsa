@@ -114,16 +114,15 @@ impl FromId for Id {
 
 /// As a special case, we permit `Singleton` to be converted to an `Id`.
 /// This is useful for declaring functions with no arguments.
-impl AsId for salsa_struct::Singleton {
+impl AsId for () {
     fn as_id(&self) -> Id {
         Id::from_u32(0)
     }
 }
 
-impl FromId for salsa_struct::Singleton {
+impl FromId for () {
     fn from_id(id: Id) -> Self {
         assert_eq!(0, id.as_u32());
-        salsa_struct::Singleton
     }
 }
 

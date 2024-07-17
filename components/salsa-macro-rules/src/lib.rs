@@ -21,8 +21,3 @@ mod setup_input_struct;
 mod setup_interned_struct;
 mod setup_tracked_struct;
 mod unexpected_cycle_recovery;
-
-#[macro_export]
-macro_rules! setup_fn {
-    () => {};
-}
