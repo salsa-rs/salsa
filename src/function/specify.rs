@@ -29,7 +29,7 @@ where
 
         let (active_query_key, current_deps) = match runtime.active_query() {
             Some(v) => v,
-            None => panic!("can only use `specify` with an active query"),
+            None => panic!("can only use `specify` inside a tracked function"),
         };
 
         // `specify` only works if the key is a tracked struct created in the current query.
@@ -47,7 +47,7 @@ where
         let database_key_index = <C::Input<'db>>::database_key_index(db.as_salsa_database(), key);
         let dependency_index = database_key_index.into();
         if !runtime.is_output_of_active_query(dependency_index) {
-            panic!("can only use `specfiy` on entities created during current query");
+            panic!("can only use `specify` on salsa structs created during the current tracked fn");
         }
 
         // Subtle: we treat the "input" to a set query as if it were

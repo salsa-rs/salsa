@@ -2,16 +2,8 @@
 //! compilation succeeds but execution panics
 #![allow(warnings)]
 
-#[salsa::jar(db = Db)]
-struct Jar(
-    MyInput,
-    MyTracked<'_>,
-    tracked_fn,
-    tracked_fn_extra,
-    tracked_struct_created_in_another_query,
-);
-
-trait Db: salsa::DbWithJar<Jar> {}
+#[salsa::db]
+trait Db: salsa::Database {}
 
 #[salsa::input]
 struct MyInput {
@@ -37,23 +29,27 @@ fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     t
 }
 
-#[salsa::tracked(jar = Jar, specify)]
+#[salsa::tracked(specify)]
 fn tracked_fn_extra<'db>(_db: &'db dyn Db, _input: MyTracked<'db>) -> u32 {
     0
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
 
+#[salsa::db]
 impl Db for Database {}
 
 #[test]
-#[should_panic]
+#[should_panic(
+    expected = "can only use `specify` on salsa structs created during the current tracked fn"
+)]
 fn execute_when_specified() {
     let mut db = Database::default();
     let input = MyInput::new(&db, 22);
