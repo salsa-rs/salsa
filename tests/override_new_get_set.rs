@@ -5,6 +5,8 @@
 
 use std::fmt::Display;
 
+use salsa::Setter;
+
 #[salsa::db]
 trait Db: salsa::Database {}
 

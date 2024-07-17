@@ -24,7 +24,7 @@ macro_rules! setup_interned_struct {
         field_ids: [$($field_id:ident),*],
 
         // Names for field setter methods (typically `set_foo`)
-        field_setter_ids: [$($field_setter_id:ident),*],
+        field_getter_ids: [$($field_getter_id:ident),*],
 
         // Field types
         field_tys: [$($field_ty:ty),*],
@@ -34,6 +34,11 @@ macro_rules! setup_interned_struct {
 
         // Number of fields
         num_fields: $N:literal,
+
+        // Control customization: each path below either appears or doesn't.
+        customized: [
+            $($DebugTrait:path)?, // std::fmt::Debug
+        ],
 
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
@@ -109,7 +114,7 @@ macro_rules! setup_interned_struct {
             }
 
             impl<$db_lt> $Struct<$db_lt> {
-                pub fn new<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self
+                pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + salsa::Database,
@@ -120,7 +125,7 @@ macro_rules! setup_interned_struct {
                 }
 
                 $(
-                    pub fn $field_id<$Db>(self, db: &'db $Db) -> $zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)
+                    pub fn $field_getter_id<$Db>(self, db: &'db $Db) -> $zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
@@ -138,7 +143,7 @@ macro_rules! setup_interned_struct {
                 /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
                 pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     $zalsa::with_attached_database(|db| {
-                        let fields = $Configuration::ingredient(db).fields(*self);
+                        let fields = $Configuration::ingredient(db).fields(this);
                         let mut f = f.debug_struct(stringify!($Struct));
                         $(
                             let f = f.field(stringify!($field_id), &fields.$field_index);
@@ -146,7 +151,7 @@ macro_rules! setup_interned_struct {
                         f.finish()
                     }).unwrap_or_else(|| {
                         f.debug_tuple(stringify!($Struct))
-                            .field(&self.0)
+                            .field(&$zalsa::AsId::as_id(&this))
                             .finish()
                     })
                 }

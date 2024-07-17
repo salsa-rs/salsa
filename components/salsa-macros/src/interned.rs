@@ -82,7 +82,7 @@ impl Macro {
         let field_ids = salsa_struct.field_ids();
         let field_indices = salsa_struct.field_indices();
         let num_fields = salsa_struct.num_fields();
-        let field_setter_ids = salsa_struct.field_setter_ids();
+        let field_getter_ids = salsa_struct.field_getter_ids();
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
 
@@ -105,7 +105,7 @@ impl Macro {
                     new_fn: #new_fn,
                     field_options: [#(#field_options),*],
                     field_ids: [#(#field_ids),*],
-                    field_setter_ids: [#(#field_setter_ids),*],
+                    field_getter_ids: [#(#field_getter_ids),*],
                     field_tys: [#(#field_tys),*],
                     field_indices: [#(#field_indices),*],
                     num_fields: #num_fields,
