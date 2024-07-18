@@ -6,7 +6,7 @@ use crate::{
     db_lifetime,
     hygiene::Hygiene,
     options::{AllowedOptions, Options},
-    tracked_fn::{check_db_argument, TrackedFn},
+    tracked_fn::{check_db_argument, FnArgs, TrackedFn},
 };
 
 pub(crate) fn tracked_impl(
@@ -64,6 +64,7 @@ impl Macro {
         };
 
         let salsa_tracked_attr = fn_item.attrs.remove(tracked_attr_index);
+        let args: FnArgs = salsa_tracked_attr.parse_args()?;
 
         let InnerTrait = self.hygiene.ident("InnerTrait");
         let inner_fn_name = self.hygiene.ident("inner_fn_name");
@@ -81,6 +82,8 @@ impl Macro {
         let mut inner_fn = fn_item.clone();
         inner_fn.vis = syn::Visibility::Inherited;
         inner_fn.sig.ident = inner_fn_name.clone();
+
+        // Construct the body of the method
 
         let block = parse_quote!({
             salsa::plumbing::setup_method_body! {
@@ -105,7 +108,12 @@ impl Macro {
             }
         });
 
+        // Update the method that will actually appear in the impl to have the new body
+        // and its true return type
+        let db_lt = db_lt.cloned();
+        self.update_return_type(&mut fn_item.sig, &args, &db_lt)?;
         fn_item.block = block;
+
         Ok(())
     }
 
@@ -258,5 +266,24 @@ impl Macro {
         let db_ty = &*typed.ty;
 
         Ok((db_ident, db_ty))
+    }
+
+    fn update_return_type(
+        &self,
+        sig: &mut syn::Signature,
+        args: &FnArgs,
+        db_lt: &Option<syn::Lifetime>,
+    ) -> syn::Result<()> {
+        if let Some(return_ref) = &args.return_ref {
+            if let syn::ReturnType::Type(_, t) = &mut sig.output {
+                **t = parse_quote!(& #db_lt #t)
+            } else {
+                return Err(syn::Error::new_spanned(
+                    return_ref,
+                    "return_ref attribute requires explicit return type",
+                ));
+            };
+        }
+        Ok(())
     }
 }
