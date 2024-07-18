@@ -106,6 +106,8 @@ impl Macro {
 
         let lru = Literal::usize_unsuffixed(self.args.lru.unwrap_or(0));
 
+        let return_ref: bool = self.args.return_ref.is_some();
+
         Ok(crate::debug::dump_tokens(
             fn_name,
             quote![salsa::plumbing::setup_fn! {
@@ -124,6 +126,7 @@ impl Macro {
                 is_specifiable: #is_specifiable,
                 needs_interner: #needs_interner,
                 lru: #lru,
+                return_ref: #return_ref,
                 unused_names: [
                     #zalsa,
                     #Configuration,

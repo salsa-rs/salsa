@@ -49,6 +49,9 @@ macro_rules! setup_fn {
         // LRU capacity (a literal, maybe 0)
         lru: $lru:tt,
 
+        // True if we `return_ref` flag was given to the function
+        return_ref: $return_ref:tt,
+
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
         // not used elsewhere in the user's code.
@@ -70,7 +73,13 @@ macro_rules! setup_fn {
         $vis fn $fn_name<$db_lt>(
             $db: &$db_lt dyn $Db,
             $($input_id: $input_ty,)*
-        ) -> $output_ty {
+        ) -> salsa::plumbing::macro_if! {
+            if $return_ref {
+                &$db_lt $output_ty
+            } else {
+                $output_ty
+            }
+        } {
             use salsa::plumbing as $zalsa;
 
             struct $Configuration;
@@ -246,12 +255,20 @@ macro_rules! setup_fn {
             }
 
             $zalsa::attach_database($db, || {
-                $zalsa::macro_if! {
+                let result = $zalsa::macro_if! {
                     if $needs_interner {
                         let key = $Configuration::intern_ingredient($db).intern_id($db.runtime(), ($($input_id),*));
-                        $Configuration::fn_ingredient($db).fetch($db, key).clone()
+                        $Configuration::fn_ingredient($db).fetch($db, key)
                     } else {
-                        $Configuration::fn_ingredient($db).fetch($db, $zalsa::AsId::as_id(&($($input_id),*))).clone()
+                        $Configuration::fn_ingredient($db).fetch($db, $zalsa::AsId::as_id(&($($input_id),*)))
+                    }
+                };
+
+                $zalsa::macro_if! {
+                    if $return_ref {
+                        result
+                    } else {
+                        <$output_ty as std::clone::Clone>::clone(result)
                     }
                 }
             })
