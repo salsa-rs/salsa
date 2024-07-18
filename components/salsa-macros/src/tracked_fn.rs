@@ -1,7 +1,13 @@
 use proc_macro2::{Literal, Span, TokenStream};
 use syn::{spanned::Spanned, ItemFn};
 
-use crate::{db_lifetime, hygiene::Hygiene, options::Options, xform::ChangeLt};
+use crate::{
+    db_lifetime,
+    fn_util::{self, input_ids},
+    hygiene::Hygiene,
+    options::Options,
+    xform::ChangeLt,
+};
 
 // Source:
 //
@@ -140,168 +146,10 @@ impl Macro {
             ));
         }
 
-        let (db_ident, db_path) = self.check_db_argument(&item.sig.inputs[0])?;
+        let (db_ident, db_path) = check_db_argument(&item.sig.inputs[0])?;
 
         Ok(ValidFn { db_ident, db_path })
     }
-
-    fn check_db_argument<'arg>(
-        &self,
-        fn_arg: &'arg syn::FnArg,
-    ) -> syn::Result<(&'arg syn::Ident, &'arg syn::Path)> {
-        match fn_arg {
-            syn::FnArg::Receiver(_) => {
-                // If we see `&self` where a database was expected, that indicates
-                // that `#[tracked]` was applied to a method.
-                return Err(syn::Error::new_spanned(
-                    fn_arg,
-                    "#[salsa::tracked] must also be applied to the impl block for tracked methods",
-                ));
-            }
-            syn::FnArg::Typed(typed) => {
-                let syn::Pat::Ident(db_pat_ident) = &*typed.pat else {
-                    return Err(syn::Error::new_spanned(
-                        &typed.pat,
-                        "database parameter must have a simple name",
-                    ));
-                };
-
-                let syn::PatIdent {
-                    attrs,
-                    by_ref,
-                    mutability,
-                    ident: db_ident,
-                    subpat,
-                } = db_pat_ident;
-
-                if !attrs.is_empty() {
-                    return Err(syn::Error::new_spanned(
-                        db_pat_ident,
-                        "database parameter cannot have attributes",
-                    ));
-                }
-
-                if by_ref.is_some() {
-                    return Err(syn::Error::new_spanned(
-                        by_ref,
-                        "database parameter cannot be borrowed",
-                    ));
-                }
-
-                if mutability.is_some() {
-                    return Err(syn::Error::new_spanned(
-                        mutability,
-                        "database parameter cannot be mutable",
-                    ));
-                }
-
-                if let Some((at, _)) = subpat {
-                    return Err(syn::Error::new_spanned(
-                        at,
-                        "database parameter cannot have a subpattern",
-                    ));
-                }
-
-                let extract_db_path = || -> Result<&'arg syn::Path, Span> {
-                    let syn::Type::Reference(ref_type) = &*typed.ty else {
-                        return Err(typed.ty.span());
-                    };
-
-                    if let Some(m) = &ref_type.mutability {
-                        return Err(m.span());
-                    }
-
-                    let syn::Type::TraitObject(d) = &*ref_type.elem else {
-                        return Err(ref_type.span());
-                    };
-
-                    if d.bounds.len() != 1 {
-                        return Err(d.span());
-                    }
-
-                    let syn::TypeParamBound::Trait(syn::TraitBound {
-                        paren_token,
-                        modifier,
-                        lifetimes,
-                        path,
-                    }) = &d.bounds[0]
-                    else {
-                        return Err(d.span());
-                    };
-
-                    if let Some(p) = paren_token {
-                        return Err(p.span.open());
-                    }
-
-                    let syn::TraitBoundModifier::None = modifier else {
-                        return Err(d.span());
-                    };
-
-                    if let Some(lt) = lifetimes {
-                        return Err(lt.span());
-                    }
-
-                    Ok(path)
-                };
-
-                let db_path = extract_db_path().map_err(|span| {
-                    syn::Error::new(
-                        span,
-                        "must have type `&dyn Db`, where `Db` is some Salsa Database trait",
-                    )
-                })?;
-
-                Ok((db_ident, db_path))
-            }
-        }
-    }
-
-    /// Returns a vector of ids representing the function arguments.
-    /// Prefers to reuse the names given by the user, if possible.
-    fn input_ids(&self, item: &ItemFn) -> Vec<syn::Ident> {
-        item.sig
-            .inputs
-            .iter()
-            .skip(1)
-            .zip(0..)
-            .map(|(input, index)| {
-                if let syn::FnArg::Typed(typed) = input {
-                    if let syn::Pat::Ident(ident) = &*typed.pat {
-                        return ident.ident.clone();
-                    }
-                }
-
-                self.hygiene.ident(&format!("input{}", index))
-            })
-            .collect()
-    }
-
-    fn input_tys<'item>(&self, item: &'item ItemFn) -> syn::Result<Vec<&'item syn::Type>> {
-        item.sig
-            .inputs
-            .iter()
-            .skip(1)
-            .map(|input| {
-                if let syn::FnArg::Typed(typed) = input {
-                    Ok(&*typed.ty)
-                } else {
-                    Err(syn::Error::new_spanned(input, "unexpected receiver"))
-                }
-            })
-            .collect()
-    }
-
-    fn output_ty<'item>(
-        &self,
-        db_lt: &syn::Lifetime,
-        item: &'item ItemFn,
-    ) -> syn::Result<syn::Type> {
-        match &item.sig.output {
-            syn::ReturnType::Default => Ok(parse_quote!(())),
-            syn::ReturnType::Type(_, ty) => Ok(ChangeLt::elided_to(&db_lt).in_type(&ty)),
-        }
-    }
-
     fn cycle_recovery(&self) -> (TokenStream, TokenStream) {
         if let Some(recovery_fn) = &self.args.recovery_fn {
             (quote!((#recovery_fn)), quote!(Fallback))
@@ -311,6 +159,18 @@ impl Macro {
                 quote!(Panic),
             )
         }
+    }
+
+    fn input_ids(&self, item: &ItemFn) -> Vec<syn::Ident> {
+        fn_util::input_ids(&self.hygiene, &item.sig, 1)
+    }
+
+    fn input_tys<'syn>(&self, item: &'syn ItemFn) -> syn::Result<Vec<&'syn syn::Type>> {
+        fn_util::input_tys(&item.sig, 1)
+    }
+
+    fn output_ty(&self, db_lt: &syn::Lifetime, item: &syn::ItemFn) -> syn::Result<syn::Type> {
+        fn_util::output_ty(Some(db_lt), &item.sig)
     }
 }
 
@@ -329,5 +189,115 @@ fn function_type(item_fn: &syn::ItemFn) -> FunctionType {
         1 => FunctionType::Constant,
         2 => FunctionType::SalsaStruct,
         _ => FunctionType::RequiresInterning,
+    }
+}
+
+pub fn check_db_argument<'arg>(
+    fn_arg: &'arg syn::FnArg,
+) -> syn::Result<(&'arg syn::Ident, &'arg syn::Path)> {
+    match fn_arg {
+        syn::FnArg::Receiver(_) => {
+            // If we see `&self` where a database was expected, that indicates
+            // that `#[tracked]` was applied to a method.
+            return Err(syn::Error::new_spanned(
+                fn_arg,
+                "#[salsa::tracked] must also be applied to the impl block for tracked methods",
+            ));
+        }
+        syn::FnArg::Typed(typed) => {
+            let syn::Pat::Ident(db_pat_ident) = &*typed.pat else {
+                return Err(syn::Error::new_spanned(
+                    &typed.pat,
+                    "database parameter must have a simple name",
+                ));
+            };
+
+            let syn::PatIdent {
+                attrs,
+                by_ref,
+                mutability,
+                ident: db_ident,
+                subpat,
+            } = db_pat_ident;
+
+            if !attrs.is_empty() {
+                return Err(syn::Error::new_spanned(
+                    db_pat_ident,
+                    "database parameter cannot have attributes",
+                ));
+            }
+
+            if by_ref.is_some() {
+                return Err(syn::Error::new_spanned(
+                    by_ref,
+                    "database parameter cannot be borrowed",
+                ));
+            }
+
+            if mutability.is_some() {
+                return Err(syn::Error::new_spanned(
+                    mutability,
+                    "database parameter cannot be mutable",
+                ));
+            }
+
+            if let Some((at, _)) = subpat {
+                return Err(syn::Error::new_spanned(
+                    at,
+                    "database parameter cannot have a subpattern",
+                ));
+            }
+
+            let extract_db_path = || -> Result<&'arg syn::Path, Span> {
+                let syn::Type::Reference(ref_type) = &*typed.ty else {
+                    return Err(typed.ty.span());
+                };
+
+                if let Some(m) = &ref_type.mutability {
+                    return Err(m.span());
+                }
+
+                let syn::Type::TraitObject(d) = &*ref_type.elem else {
+                    return Err(ref_type.span());
+                };
+
+                if d.bounds.len() != 1 {
+                    return Err(d.span());
+                }
+
+                let syn::TypeParamBound::Trait(syn::TraitBound {
+                    paren_token,
+                    modifier,
+                    lifetimes,
+                    path,
+                }) = &d.bounds[0]
+                else {
+                    return Err(d.span());
+                };
+
+                if let Some(p) = paren_token {
+                    return Err(p.span.open());
+                }
+
+                let syn::TraitBoundModifier::None = modifier else {
+                    return Err(d.span());
+                };
+
+                if let Some(lt) = lifetimes {
+                    return Err(lt.span());
+                }
+
+                Ok(path)
+            };
+
+            let db_path = extract_db_path().map_err(|span| {
+                syn::Error::new(
+                    span,
+                    "must have type `&dyn Db`, where `Db` is some Salsa Database trait",
+                )
+            })?;
+
+            Ok((db_ident, db_path))
+        }
     }
 }

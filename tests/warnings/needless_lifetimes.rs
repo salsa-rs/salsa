@@ -1,7 +1,5 @@
-pub trait Db: salsa::DbWithJar<Jar> {}
-
-#[salsa::jar(db = Db)]
-pub struct Jar(SourceTree<'_>, SourceTree_all_items, use_tree);
+#[salsa::db]
+pub trait Db: salsa::Database {}
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Item {}
@@ -17,7 +15,7 @@ impl<'db> SourceTree<'db> {
     }
 }
 
-#[salsa::tracked(jar = Jar, return_ref)]
+#[salsa::tracked(return_ref)]
 fn use_tree<'db>(_db: &'db dyn Db, _tree: SourceTree<'db>) {}
 
 #[allow(unused)]

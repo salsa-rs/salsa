@@ -143,14 +143,7 @@ where
         if A::HAS_LIFETIME {
             db_lifetime::require_db_lifetime(&self.struct_item.generics)
         } else {
-            if let Some(param) = self.struct_item.generics.params.iter().next() {
-                return Err(syn::Error::new_spanned(
-                    param,
-                    "generic parameters not allowed here",
-                ));
-            }
-
-            Ok(())
+            db_lifetime::require_no_generics(&self.struct_item.generics)
         }
     }
 

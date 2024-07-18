@@ -40,6 +40,7 @@ mod accumulator;
 mod db;
 mod db_lifetime;
 mod debug;
+mod fn_util;
 mod hygiene;
 mod input;
 mod interned;

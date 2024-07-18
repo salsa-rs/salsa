@@ -100,6 +100,7 @@ pub mod plumbing {
     pub use salsa_macro_rules::setup_fn;
     pub use salsa_macro_rules::setup_input_struct;
     pub use salsa_macro_rules::setup_interned_struct;
+    pub use salsa_macro_rules::setup_method_body;
     pub use salsa_macro_rules::setup_tracked_struct;
     pub use salsa_macro_rules::unexpected_cycle_recovery;
 

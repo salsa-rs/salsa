@@ -123,7 +123,6 @@ impl DbMacro {
 
         input.items.push(parse_quote! {
             #[doc(hidden)]
-            #[allow(uncommon_codepoins)]
             fn zalsa_db(&self) {
                 use salsa::plumbing as #zalsa;
                 #zalsa::views(self).add::<Self, dyn #TraitPath>(|t| t, |t| t);

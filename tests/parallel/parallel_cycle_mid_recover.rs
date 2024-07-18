@@ -5,8 +5,10 @@
 use crate::setup::Database;
 use crate::setup::Knobs;
 
+#[salsa::db]
 pub(crate) trait Db: salsa::Database + Knobs {}
 
+#[salsa::db]
 impl<T: salsa::Database + Knobs> Db for T {}
 
 #[salsa::input]
