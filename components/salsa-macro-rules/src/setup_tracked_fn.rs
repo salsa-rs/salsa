@@ -1,6 +1,6 @@
 /// Macro for setting up a function that must intern its arguments.
 #[macro_export]
-macro_rules! setup_fn {
+macro_rules! setup_tracked_fn {
     (
         // Attributes on the function
         attrs: [$(#[$attr:meta]),*],

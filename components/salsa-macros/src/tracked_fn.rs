@@ -110,7 +110,7 @@ impl Macro {
 
         Ok(crate::debug::dump_tokens(
             fn_name,
-            quote![salsa::plumbing::setup_fn! {
+            quote![salsa::plumbing::setup_tracked_fn! {
                 attrs: [#(#attrs),*],
                 vis: #vis,
                 fn_name: #fn_name,
