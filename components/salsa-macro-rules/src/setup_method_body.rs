@@ -25,7 +25,7 @@ macro_rules! setup_method_body {
                 fn $inner_fn_name($self, db: $($db_ty)*, $($input_id: $input_ty),*) -> $output_ty;
             }
 
-            impl $InnerTrait<$($db_lt)?> for $self_ty {
+            impl<$($db_lt)?> $InnerTrait<$($db_lt)?> for $self_ty {
                 $inner_fn
             }
 

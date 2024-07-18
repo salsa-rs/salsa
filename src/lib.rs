@@ -47,6 +47,21 @@ pub use salsa_macros::interned;
 pub use salsa_macros::tracked;
 pub use salsa_macros::Update;
 
+pub fn default_database() -> impl Database {
+    use crate as salsa;
+
+    #[crate::db]
+    #[derive(Default)]
+    struct DefaultDatabase {
+        storage: Storage<Self>,
+    }
+
+    #[crate::db]
+    impl Database for DefaultDatabase {}
+
+    DefaultDatabase::default()
+}
+
 pub mod prelude {
     pub use crate::Accumulator;
     pub use crate::Setter;

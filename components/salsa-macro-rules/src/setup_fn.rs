@@ -92,7 +92,7 @@ macro_rules! setup_fn {
                     #[derive(Copy, Clone)]
                     struct $InternedData<$db_lt>(
                         std::ptr::NonNull<$zalsa::interned::Value<$Configuration>>,
-                        std::marker::PhantomData<&'db $zalsa::interned::Value<$Configuration>>,
+                        std::marker::PhantomData<&$db_lt $zalsa::interned::Value<$Configuration>>,
                     );
 
                     static $INTERN_CACHE: $zalsa::IngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
@@ -109,9 +109,9 @@ macro_rules! setup_fn {
 
                         type Struct<$db_lt> = $InternedData<$db_lt>;
 
-                        unsafe fn struct_from_raw<'db>(
+                        unsafe fn struct_from_raw<$db_lt>(
                             ptr: std::ptr::NonNull<$zalsa::interned::Value<Self>>,
-                        ) -> Self::Struct<'db> {
+                        ) -> Self::Struct<$db_lt> {
                             $InternedData(ptr, std::marker::PhantomData)
                         }
 
@@ -163,21 +163,21 @@ macro_rules! setup_fn {
                     $zalsa::should_backdate_value(old_value, new_value)
                 }
 
-                fn execute<'db>($db: &'db Self::DbView, ($($input_id),*): ($($input_ty),*)) -> Self::Output<'db> {
+                fn execute<$db_lt>($db: &$db_lt Self::DbView, ($($input_id),*): ($($input_ty),*)) -> Self::Output<$db_lt> {
                     $inner_fn
 
                     $inner($db, $($input_id),*)
                 }
 
-                fn recover_from_cycle<'db>(
+                fn recover_from_cycle<$db_lt>(
                     db: &$db_lt dyn $Db,
                     cycle: &$zalsa::Cycle,
                     ($($input_id),*): ($($input_ty),*)
-                ) -> Self::Output<'db> {
+                ) -> Self::Output<$db_lt> {
                     $($cycle_recovery_fn)*(db, cycle, $($input_id),*)
                 }
 
-                fn id_to_input<'db>(db: &'db Self::DbView, key: salsa::Id) -> Self::Input<'db> {
+                fn id_to_input<$db_lt>(db: &$db_lt Self::DbView, key: salsa::Id) -> Self::Input<$db_lt> {
                     $zalsa::macro_if! {
                         if $needs_interner {
                             $Configuration::intern_ingredient(db).data(key).clone()

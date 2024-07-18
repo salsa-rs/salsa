@@ -16,7 +16,8 @@ pub(crate) fn tracked_impl(
     let hygiene = Hygiene::from2(&item);
     let _: Nothing = syn::parse(args)?;
     let m = Macro { hygiene };
-    m.try_generate(item)
+    let generated = m.try_generate(item)?;
+    Ok(generated)
 }
 
 struct Macro {
@@ -64,7 +65,10 @@ impl Macro {
         };
 
         let salsa_tracked_attr = fn_item.attrs.remove(tracked_attr_index);
-        let args: FnArgs = salsa_tracked_attr.parse_args()?;
+        let args: FnArgs = match &salsa_tracked_attr.meta {
+            syn::Meta::Path(..) => Default::default(),
+            _ => salsa_tracked_attr.parse_args()?,
+        };
 
         let InnerTrait = self.hygiene.ident("InnerTrait");
         let inner_fn_name = self.hygiene.ident("inner_fn_name");

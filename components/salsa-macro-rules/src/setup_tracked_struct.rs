@@ -11,7 +11,7 @@ macro_rules! setup_tracked_struct {
         // Name of the struct
         Struct: $Struct:ident,
 
-        // Name of the `$db_lt` lifetime that the user gave
+        // Name of the `'db` lifetime that the user gave
         db_lt: $db_lt:lifetime,
 
         // Name user gave for `new`
