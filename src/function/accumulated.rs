@@ -1,4 +1,4 @@
-use crate::{accumulator, storage::DatabaseGen, Database, Id};
+use crate::{accumulator, storage::DatabaseGen, Id};
 
 use super::{Configuration, IngredientImpl};
 

@@ -59,13 +59,13 @@ fn execute() {
     assert_eq!(result_depends_on_x(&db, input), 23);
     db.assert_logs(expect![[r#"
         [
-            "result_depends_on_x(MyInput { [salsa id]: 0 })",
+            "result_depends_on_x(MyInput { [salsa id]: 0, x: 22, y: 33 })",
         ]"#]]);
 
     assert_eq!(result_depends_on_y(&db, input), 32);
     db.assert_logs(expect![[r#"
         [
-            "result_depends_on_y(MyInput { [salsa id]: 0 })",
+            "result_depends_on_y(MyInput { [salsa id]: 0, x: 22, y: 33 })",
         ]"#]]);
 
     input.set_x(&mut db).to(23);
@@ -73,7 +73,7 @@ fn execute() {
     assert_eq!(result_depends_on_x(&db, input), 24);
     db.assert_logs(expect![[r#"
         [
-            "result_depends_on_x(MyInput { [salsa id]: 0 })",
+            "result_depends_on_x(MyInput { [salsa id]: 0, x: 23, y: 33 })",
         ]"#]]);
 
     // input y is the same, so result depends on y
