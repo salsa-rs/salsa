@@ -5,25 +5,24 @@ mod common;
 use common::{HasLogger, Logger};
 
 use expect_test::expect;
+use salsa::Setter;
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked<'_>, final_result, intermediate_result);
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
-
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn final_result(db: &dyn Db, input: MyInput) -> u32 {
     db.push_log(format!("final_result({:?})", input));
     intermediate_result(db, input).field(db) * 2
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct MyTracked<'db> {
     field: u32,
 }
@@ -34,15 +33,17 @@ fn intermediate_result(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, input.field(db) / 2)
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {
@@ -59,8 +60,8 @@ fn execute() {
     assert_eq!(final_result(&db, input), 22);
     db.assert_logs(expect![[r#"
         [
-            "final_result(MyInput { [salsa id]: 0 })",
-            "intermediate_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 22 })",
+            "intermediate_result(MyInput { [salsa id]: 0, field: 22 })",
         ]"#]]);
 
     // Intermediate result is the same, so final result does
@@ -69,14 +70,14 @@ fn execute() {
     assert_eq!(final_result(&db, input), 22);
     db.assert_logs(expect![[r#"
         [
-            "intermediate_result(MyInput { [salsa id]: 0 })",
+            "intermediate_result(MyInput { [salsa id]: 0, field: 23 })",
         ]"#]]);
 
     input.set_field(&mut db).to(24);
     assert_eq!(final_result(&db, input), 24);
     db.assert_logs(expect![[r#"
         [
-            "intermediate_result(MyInput { [salsa id]: 0 })",
-            "final_result(MyInput { [salsa id]: 0 })",
+            "intermediate_result(MyInput { [salsa id]: 0, field: 24 })",
+            "final_result(MyInput { [salsa id]: 0, field: 24 })",
         ]"#]]);
 }

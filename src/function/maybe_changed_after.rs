@@ -204,10 +204,8 @@ where
                             // by this function cannot be read until this function is marked green,
                             // so even if we mark them as valid here, the function will re-execute
                             // and overwrite the contents.
-                            database_key_index.mark_validated_output(
-                                db.as_salsa_database(),
-                                dependency_index.try_into().unwrap(),
-                            );
+                            dependency_index
+                                .mark_validated_output(db.as_salsa_database(), database_key_index);
                         }
                     }
                 }

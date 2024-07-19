@@ -1,7 +1,6 @@
 //! Basic test of accumulator functionality.
 
 use std::{
-    any::Any,
     fmt::{self, Debug},
     marker::PhantomData,
 };
@@ -9,24 +8,27 @@ use std::{
 use crate::{
     cycle::CycleRecoveryStrategy,
     hash::FxDashMap,
-    ingredient::{fmt_index, Ingredient, IngredientRequiresReset, Jar},
+    ingredient::{fmt_index, Ingredient, Jar},
     key::DependencyIndex,
     runtime::local_state::QueryOrigin,
     storage::IngredientIndex,
     Database, DatabaseKeyIndex, Event, EventKind, Id, Revision, Runtime,
 };
 
-pub trait Accumulator: Jar {
+pub trait Accumulator: Clone + Debug + Send + Sync + 'static + Sized {
     const DEBUG_NAME: &'static str;
 
-    type Data: Clone + Debug + Send + Sync;
+    /// Accumulate an instance of this in the database for later retrieval.
+    fn accumulate<Db>(self, db: &Db)
+    where
+        Db: ?Sized + Database;
 }
 
-pub struct AccumulatorJar<A: Accumulator> {
+pub struct JarImpl<A: Accumulator> {
     phantom: PhantomData<A>,
 }
 
-impl<A: Accumulator> Default for AccumulatorJar<A> {
+impl<A: Accumulator> Default for JarImpl<A> {
     fn default() -> Self {
         Self {
             phantom: Default::default(),
@@ -34,29 +36,29 @@ impl<A: Accumulator> Default for AccumulatorJar<A> {
     }
 }
 
-impl<A: Accumulator> Jar for AccumulatorJar<A> {
+impl<A: Accumulator> Jar for JarImpl<A> {
     fn create_ingredients(&self, first_index: IngredientIndex) -> Vec<Box<dyn Ingredient>> {
-        vec![Box::new(<AccumulatorIngredient<A>>::new(first_index))]
+        vec![Box::new(<IngredientImpl<A>>::new(first_index))]
     }
 }
 
-pub struct AccumulatorIngredient<A: Accumulator> {
+pub struct IngredientImpl<A: Accumulator> {
     index: IngredientIndex,
-    map: FxDashMap<DatabaseKeyIndex, AccumulatedValues<A::Data>>,
+    map: FxDashMap<DatabaseKeyIndex, AccumulatedValues<A>>,
 }
 
-struct AccumulatedValues<Data> {
+struct AccumulatedValues<A> {
     produced_at: Revision,
-    values: Vec<Data>,
+    values: Vec<A>,
 }
 
-impl<A: Accumulator> AccumulatorIngredient<A> {
+impl<A: Accumulator> IngredientImpl<A> {
     /// Find the accumulator ingrediate for `A` in the database, if any.
     pub fn from_db<Db>(db: &Db) -> Option<&Self>
     where
         Db: ?Sized + Database,
     {
-        let jar: AccumulatorJar<A> = Default::default();
+        let jar: JarImpl<A> = Default::default();
         let index = db.add_or_lookup_jar_by_type(&jar);
         let ingredient = db.lookup_ingredient(index).assert_type::<Self>();
         Some(ingredient)
@@ -76,7 +78,7 @@ impl<A: Accumulator> AccumulatorIngredient<A> {
         }
     }
 
-    pub fn push(&self, runtime: &Runtime, value: A::Data) {
+    pub fn push(&self, runtime: &Runtime, value: A) {
         let current_revision = runtime.current_revision();
         let (active_query, _) = match runtime.active_query() {
             Some(pair) => pair,
@@ -106,7 +108,7 @@ impl<A: Accumulator> AccumulatorIngredient<A> {
         &self,
         runtime: &Runtime,
         query: DatabaseKeyIndex,
-        output: &mut Vec<A::Data>,
+        output: &mut Vec<A>,
     ) {
         let current_revision = runtime.current_revision();
         if let Some(v) = self.map.get(&query) {
@@ -127,7 +129,7 @@ impl<A: Accumulator> AccumulatorIngredient<A> {
     }
 }
 
-impl<A: Accumulator> Ingredient for AccumulatorIngredient<A> {
+impl<A: Accumulator> Ingredient for IngredientImpl<A> {
     fn ingredient_index(&self) -> IngredientIndex {
         self.index
     }
@@ -181,6 +183,10 @@ impl<A: Accumulator> Ingredient for AccumulatorIngredient<A> {
         }
     }
 
+    fn requires_reset_for_new_revision(&self) -> bool {
+        false
+    }
+
     fn reset_for_new_revision(&mut self) {
         panic!("unexpected reset on accumulator")
     }
@@ -194,11 +200,7 @@ impl<A: Accumulator> Ingredient for AccumulatorIngredient<A> {
     }
 }
 
-impl<A: Accumulator> IngredientRequiresReset for AccumulatorIngredient<A> {
-    const RESET_ON_NEW_REVISION: bool = false;
-}
-
-impl<A> std::fmt::Debug for AccumulatorIngredient<A>
+impl<A> std::fmt::Debug for IngredientImpl<A>
 where
     A: Accumulator,
 {

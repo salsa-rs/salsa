@@ -6,12 +6,11 @@ mod common;
 use common::{HasLogger, Logger};
 
 use expect_test::expect;
+use salsa::{Accumulator, Setter};
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(List, Integers, compute);
-
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct List {
@@ -20,6 +19,7 @@ struct List {
 }
 
 #[salsa::accumulator]
+#[derive(Copy)]
 struct Integers(u32);
 
 #[salsa::tracked]
@@ -33,27 +33,29 @@ fn compute(db: &dyn Db, input: List) {
     let result = if let Some(next) = input.next(db) {
         let next_integers = compute::accumulated::<Integers>(db, next);
         eprintln!("{:?}", next_integers);
-        let v = input.value(db) + next_integers.iter().sum::<u32>();
+        let v = input.value(db) + next_integers.iter().map(|a| a.0).sum::<u32>();
         eprintln!("input={:?} v={:?}", input.value(db), v);
         v
     } else {
         input.value(db)
     };
-    Integers::push(db, result);
+    Integers(result).accumulate(db);
     eprintln!("pushed result {:?}", result);
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {
     fn salsa_event(&self, _event: salsa::Event) {}
 }
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {
@@ -72,8 +74,12 @@ fn test1() {
     compute(&db, l1);
     expect![[r#"
         [
-            11,
-            1,
+            Integers(
+                11,
+            ),
+            Integers(
+                1,
+            ),
         ]
     "#]]
     .assert_debug_eq(&compute::accumulated::<Integers>(&db, l1));
@@ -82,8 +88,12 @@ fn test1() {
     compute(&db, l1);
     expect![[r#"
         [
-            12,
-            2,
+            Integers(
+                12,
+            ),
+            Integers(
+                2,
+            ),
         ]
     "#]]
     .assert_debug_eq(&compute::accumulated::<Integers>(&db, l1));

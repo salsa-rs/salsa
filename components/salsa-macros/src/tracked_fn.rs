@@ -1,8 +1,7 @@
-use proc_macro2::{Span, TokenStream};
-use quote::ToTokens;
+use proc_macro2::{Literal, Span, TokenStream};
 use syn::{spanned::Spanned, ItemFn};
 
-use crate::{db_lifetime, hygiene::Hygiene, options::Options};
+use crate::{db_lifetime, fn_util, hygiene::Hygiene, options::Options};
 
 // Source:
 //
@@ -18,9 +17,9 @@ pub(crate) fn tracked_fn(args: proc_macro::TokenStream, item: ItemFn) -> syn::Re
     db_macro.try_fn(item)
 }
 
-type FnArgs = Options<TrackedFn>;
+pub type FnArgs = Options<TrackedFn>;
 
-struct TrackedFn;
+pub struct TrackedFn;
 
 impl crate::options::AllowedOptions for TrackedFn {
     const RETURN_REF: bool = true;
@@ -29,9 +28,11 @@ impl crate::options::AllowedOptions for TrackedFn {
 
     const NO_EQ: bool = true;
 
-    const SINGLETON: bool = false;
+    const NO_DEBUG: bool = false;
 
-    const JAR: bool = false;
+    const NO_CLONE: bool = false;
+
+    const SINGLETON: bool = false;
 
     const DATA: bool = false;
 
@@ -65,8 +66,9 @@ impl Macro {
         let db_lt = db_lifetime::db_lifetime(&item.sig.generics);
         let input_ids = self.input_ids(&item);
         let input_tys = self.input_tys(&item)?;
-        let output_ty = self.output_ty(&item)?;
+        let output_ty = self.output_ty(&db_lt, &item)?;
         let (cycle_recovery_fn, cycle_recovery_strategy) = self.cycle_recovery();
+        let is_specifiable = self.args.specify.is_some();
 
         let mut inner_fn = item.clone();
         inner_fn.vis = syn::Visibility::Inherited;
@@ -79,57 +81,65 @@ impl Macro {
         let INTERN_CACHE = self.hygiene.ident("INTERN_CACHE");
         let inner = &inner_fn.sig.ident;
 
-        match function_type(&item) {
-            FunctionType::RequiresInterning => Ok(crate::debug::dump_tokens(
-                fn_name,
-                quote![salsa::plumbing::setup_interned_fn! {
-                    attrs: [#(#attrs),*],
-                    vis: #vis,
-                    fn_name: #fn_name,
-                    db_lt: #db_lt,
-                    Db: #db_path,
-                    db: #db_ident,
-                    input_ids: [#(#input_ids),*],
-                    input_tys: [#(#input_tys),*],
-                    output_ty: #output_ty,
-                    inner_fn: #inner_fn,
-                    cycle_recovery_fn: #cycle_recovery_fn,
-                    cycle_recovery_strategy: #cycle_recovery_strategy,
-                    unused_names: [
-                        #zalsa,
-                        #Configuration,
-                        #InternedData,
-                        #FN_CACHE,
-                        #INTERN_CACHE,
-                        #inner,
-                    ]
-                }],
-            )),
-            FunctionType::Constant => todo!(),
-            FunctionType::SalsaStruct => Ok(crate::debug::dump_tokens(
-                fn_name,
-                quote![salsa::plumbing::setup_struct_fn! {
-                    attrs: [#(#attrs),*],
-                    vis: #vis,
-                    fn_name: #fn_name,
-                    db_lt: #db_lt,
-                    Db: #db_path,
-                    db: #db_ident,
-                    input_id: #(#input_ids,)*
-                    input_ty: #(#input_tys,)*
-                    output_ty: #output_ty,
-                    inner_fn: #inner_fn,
-                    cycle_recovery_fn: #cycle_recovery_fn,
-                    cycle_recovery_strategy: #cycle_recovery_strategy,
-                    unused_names: [
-                        #zalsa,
-                        #Configuration,
-                        #FN_CACHE,
-                        #inner,
-                    ]
-                }],
-            )),
+        let function_type = function_type(&item);
+
+        if is_specifiable {
+            match function_type {
+                FunctionType::Constant | FunctionType::RequiresInterning => {
+                    return Err(syn::Error::new_spanned(
+                        self.args.specify.as_ref().unwrap(),
+                        "only functions with a single salsa struct as their input can be specified",
+                    ))
+                }
+                FunctionType::SalsaStruct => {}
+            }
         }
+
+        if let (Some(_), Some(token)) = (&self.args.lru, &self.args.specify) {
+            return Err(syn::Error::new_spanned(
+                token,
+                "the `specify` and `lru` options cannot be used together",
+            ));
+        }
+
+        let needs_interner = match function_type {
+            FunctionType::RequiresInterning => true,
+            FunctionType::Constant | FunctionType::SalsaStruct => false,
+        };
+
+        let lru = Literal::usize_unsuffixed(self.args.lru.unwrap_or(0));
+
+        let return_ref: bool = self.args.return_ref.is_some();
+
+        Ok(crate::debug::dump_tokens(
+            fn_name,
+            quote![salsa::plumbing::setup_tracked_fn! {
+                attrs: [#(#attrs),*],
+                vis: #vis,
+                fn_name: #fn_name,
+                db_lt: #db_lt,
+                Db: #db_path,
+                db: #db_ident,
+                input_ids: [#(#input_ids),*],
+                input_tys: [#(#input_tys),*],
+                output_ty: #output_ty,
+                inner_fn: #inner_fn,
+                cycle_recovery_fn: #cycle_recovery_fn,
+                cycle_recovery_strategy: #cycle_recovery_strategy,
+                is_specifiable: #is_specifiable,
+                needs_interner: #needs_interner,
+                lru: #lru,
+                return_ref: #return_ref,
+                unused_names: [
+                    #zalsa,
+                    #Configuration,
+                    #InternedData,
+                    #FN_CACHE,
+                    #INTERN_CACHE,
+                    #inner,
+                ]
+            }],
+        ))
     }
 
     fn validity_check<'item>(&self, item: &'item syn::ItemFn) -> syn::Result<ValidFn<'item>> {
@@ -142,173 +152,31 @@ impl Macro {
             ));
         }
 
-        let (db_ident, db_path) = self.check_db_argument(&item.sig.inputs[0])?;
+        let (db_ident, db_path) = check_db_argument(&item.sig.inputs[0])?;
 
         Ok(ValidFn { db_ident, db_path })
     }
-
-    fn check_db_argument<'arg>(
-        &self,
-        fn_arg: &'arg syn::FnArg,
-    ) -> syn::Result<(&'arg syn::Ident, &'arg syn::Path)> {
-        match fn_arg {
-            syn::FnArg::Receiver(_) => {
-                // If we see `&self` where a database was expected, that indicates
-                // that `#[tracked]` was applied to a method.
-                return Err(syn::Error::new_spanned(
-                    fn_arg,
-                    "#[salsa::tracked] must also be applied to the impl block for tracked methods",
-                ));
-            }
-            syn::FnArg::Typed(typed) => {
-                let syn::Pat::Ident(db_pat_ident) = &*typed.pat else {
-                    return Err(syn::Error::new_spanned(
-                        &typed.pat,
-                        "database parameter must have a simple name",
-                    ));
-                };
-
-                let syn::PatIdent {
-                    attrs,
-                    by_ref,
-                    mutability,
-                    ident: db_ident,
-                    subpat,
-                } = db_pat_ident;
-
-                if !attrs.is_empty() {
-                    return Err(syn::Error::new_spanned(
-                        db_pat_ident,
-                        "database parameter cannot have attributes",
-                    ));
-                }
-
-                if by_ref.is_some() {
-                    return Err(syn::Error::new_spanned(
-                        by_ref,
-                        "database parameter cannot be borrowed",
-                    ));
-                }
-
-                if mutability.is_some() {
-                    return Err(syn::Error::new_spanned(
-                        mutability,
-                        "database parameter cannot be mutable",
-                    ));
-                }
-
-                if let Some((at, _)) = subpat {
-                    return Err(syn::Error::new_spanned(
-                        at,
-                        "database parameter cannot have a subpattern",
-                    ));
-                }
-
-                let extract_db_path = || -> Result<&'arg syn::Path, Span> {
-                    let syn::Type::Reference(ref_type) = &*typed.ty else {
-                        return Err(typed.ty.span());
-                    };
-
-                    if let Some(m) = &ref_type.mutability {
-                        return Err(m.span());
-                    }
-
-                    let syn::Type::TraitObject(d) = &*ref_type.elem else {
-                        return Err(ref_type.span());
-                    };
-
-                    if d.bounds.len() != 1 {
-                        return Err(d.span());
-                    }
-
-                    let syn::TypeParamBound::Trait(syn::TraitBound {
-                        paren_token,
-                        modifier,
-                        lifetimes,
-                        path,
-                    }) = &d.bounds[0]
-                    else {
-                        return Err(d.span());
-                    };
-
-                    if let Some(p) = paren_token {
-                        return Err(p.span.open());
-                    }
-
-                    let syn::TraitBoundModifier::None = modifier else {
-                        return Err(d.span());
-                    };
-
-                    if let Some(lt) = lifetimes {
-                        return Err(lt.span());
-                    }
-
-                    Ok(path)
-                };
-
-                let db_path = extract_db_path().map_err(|span| {
-                    syn::Error::new(
-                        span,
-                        "must have type `&dyn Db`, where `Db` is some Salsa Database trait",
-                    )
-                })?;
-
-                Ok((db_ident, db_path))
-            }
-        }
-    }
-
-    /// Returns a vector of ids representing the function arguments.
-    /// Prefers to reuse the names given by the user, if possible.
-    fn input_ids(&self, item: &ItemFn) -> Vec<syn::Ident> {
-        item.sig
-            .inputs
-            .iter()
-            .skip(1)
-            .zip(0..)
-            .map(|(input, index)| {
-                if let syn::FnArg::Typed(typed) = input {
-                    if let syn::Pat::Ident(ident) = &*typed.pat {
-                        return ident.ident.clone();
-                    }
-                }
-
-                self.hygiene.ident(&format!("input{}", index))
-            })
-            .collect()
-    }
-
-    fn input_tys<'item>(&self, item: &'item ItemFn) -> syn::Result<Vec<&'item syn::Type>> {
-        item.sig
-            .inputs
-            .iter()
-            .skip(1)
-            .map(|input| {
-                if let syn::FnArg::Typed(typed) = input {
-                    Ok(&*typed.ty)
-                } else {
-                    Err(syn::Error::new_spanned(input, "unexpected receiver"))
-                }
-            })
-            .collect()
-    }
-
-    fn output_ty<'item>(&self, item: &'item ItemFn) -> syn::Result<syn::Type> {
-        match &item.sig.output {
-            syn::ReturnType::Default => Ok(parse_quote!("()")),
-            syn::ReturnType::Type(_, ty) => Ok(syn::Type::clone(ty)),
-        }
-    }
-
     fn cycle_recovery(&self) -> (TokenStream, TokenStream) {
         if let Some(recovery_fn) = &self.args.recovery_fn {
-            (recovery_fn.to_token_stream(), quote!(Fallback))
+            (quote!((#recovery_fn)), quote!(Fallback))
         } else {
             (
                 quote!((salsa::plumbing::unexpected_cycle_recovery!)),
                 quote!(Panic),
             )
         }
+    }
+
+    fn input_ids(&self, item: &ItemFn) -> Vec<syn::Ident> {
+        fn_util::input_ids(&self.hygiene, &item.sig, 1)
+    }
+
+    fn input_tys<'syn>(&self, item: &'syn ItemFn) -> syn::Result<Vec<&'syn syn::Type>> {
+        fn_util::input_tys(&item.sig, 1)
+    }
+
+    fn output_ty(&self, db_lt: &syn::Lifetime, item: &syn::ItemFn) -> syn::Result<syn::Type> {
+        fn_util::output_ty(Some(db_lt), &item.sig)
     }
 }
 
@@ -327,5 +195,115 @@ fn function_type(item_fn: &syn::ItemFn) -> FunctionType {
         1 => FunctionType::Constant,
         2 => FunctionType::SalsaStruct,
         _ => FunctionType::RequiresInterning,
+    }
+}
+
+pub fn check_db_argument<'arg>(
+    fn_arg: &'arg syn::FnArg,
+) -> syn::Result<(&'arg syn::Ident, &'arg syn::Path)> {
+    match fn_arg {
+        syn::FnArg::Receiver(_) => {
+            // If we see `&self` where a database was expected, that indicates
+            // that `#[tracked]` was applied to a method.
+            Err(syn::Error::new_spanned(
+                fn_arg,
+                "#[salsa::tracked] must also be applied to the impl block for tracked methods",
+            ))
+        }
+        syn::FnArg::Typed(typed) => {
+            let syn::Pat::Ident(db_pat_ident) = &*typed.pat else {
+                return Err(syn::Error::new_spanned(
+                    &typed.pat,
+                    "database parameter must have a simple name",
+                ));
+            };
+
+            let syn::PatIdent {
+                attrs,
+                by_ref,
+                mutability,
+                ident: db_ident,
+                subpat,
+            } = db_pat_ident;
+
+            if !attrs.is_empty() {
+                return Err(syn::Error::new_spanned(
+                    db_pat_ident,
+                    "database parameter cannot have attributes",
+                ));
+            }
+
+            if by_ref.is_some() {
+                return Err(syn::Error::new_spanned(
+                    by_ref,
+                    "database parameter cannot be borrowed",
+                ));
+            }
+
+            if mutability.is_some() {
+                return Err(syn::Error::new_spanned(
+                    mutability,
+                    "database parameter cannot be mutable",
+                ));
+            }
+
+            if let Some((at, _)) = subpat {
+                return Err(syn::Error::new_spanned(
+                    at,
+                    "database parameter cannot have a subpattern",
+                ));
+            }
+
+            let extract_db_path = || -> Result<&'arg syn::Path, Span> {
+                let syn::Type::Reference(ref_type) = &*typed.ty else {
+                    return Err(typed.ty.span());
+                };
+
+                if let Some(m) = &ref_type.mutability {
+                    return Err(m.span());
+                }
+
+                let syn::Type::TraitObject(d) = &*ref_type.elem else {
+                    return Err(ref_type.span());
+                };
+
+                if d.bounds.len() != 1 {
+                    return Err(d.span());
+                }
+
+                let syn::TypeParamBound::Trait(syn::TraitBound {
+                    paren_token,
+                    modifier,
+                    lifetimes,
+                    path,
+                }) = &d.bounds[0]
+                else {
+                    return Err(d.span());
+                };
+
+                if let Some(p) = paren_token {
+                    return Err(p.span.open());
+                }
+
+                let syn::TraitBoundModifier::None = modifier else {
+                    return Err(d.span());
+                };
+
+                if let Some(lt) = lifetimes {
+                    return Err(lt.span());
+                }
+
+                Ok(path)
+            };
+
+            let db_path = extract_db_path().map_err(|span| {
+                syn::Error::new(
+                    span,
+                    "must have type `&dyn Db`, where `Db` is some Salsa Database trait",
+                )
+            })?;
+
+            Ok((db_ident, db_path))
+        }
     }
 }

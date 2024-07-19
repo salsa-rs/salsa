@@ -7,39 +7,40 @@ mod common;
 use common::{HasLogger, Logger};
 
 use expect_test::expect;
+use salsa::Setter;
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, result_depends_on_x, result_depends_on_y);
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
-
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     x: u32,
     y: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn result_depends_on_x(db: &dyn Db, input: MyInput) -> u32 {
     db.push_log(format!("result_depends_on_x({:?})", input));
     input.x(db) + 1
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn result_depends_on_y(db: &dyn Db, input: MyInput) -> u32 {
     db.push_log(format!("result_depends_on_y({:?})", input));
     input.y(db) - 1
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {
@@ -58,13 +59,13 @@ fn execute() {
     assert_eq!(result_depends_on_x(&db, input), 23);
     db.assert_logs(expect![[r#"
         [
-            "result_depends_on_x(MyInput { [salsa id]: 0 })",
+            "result_depends_on_x(MyInput { [salsa id]: 0, x: 22, y: 33 })",
         ]"#]]);
 
     assert_eq!(result_depends_on_y(&db, input), 32);
     db.assert_logs(expect![[r#"
         [
-            "result_depends_on_y(MyInput { [salsa id]: 0 })",
+            "result_depends_on_y(MyInput { [salsa id]: 0, x: 22, y: 33 })",
         ]"#]]);
 
     input.set_x(&mut db).to(23);
@@ -72,7 +73,7 @@ fn execute() {
     assert_eq!(result_depends_on_x(&db, input), 24);
     db.assert_logs(expect![[r#"
         [
-            "result_depends_on_x(MyInput { [salsa id]: 0 })",
+            "result_depends_on_x(MyInput { [salsa id]: 0, x: 23, y: 33 })",
         ]"#]]);
 
     // input y is the same, so result depends on y

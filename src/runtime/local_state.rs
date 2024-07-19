@@ -76,7 +76,16 @@ pub enum QueryOrigin {
 }
 
 impl QueryOrigin {
-    /// Indices for queries *written* by this query (or `vec![]` if its value was assigned).
+    /// Indices for queries *read* by this query
+    pub(crate) fn inputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
+        let opt_edges = match self {
+            QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
+            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => None,
+        };
+        opt_edges.into_iter().flat_map(|edges| edges.inputs())
+    }
+
+    /// Indices for queries *written* by this query (if any)
     pub(crate) fn outputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),

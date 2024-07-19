@@ -8,7 +8,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     hash::FxDashMap,
     id::AsId,
-    ingredient::{fmt_index, Ingredient, IngredientRequiresReset, Jar},
+    ingredient::{fmt_index, Ingredient, Jar},
     ingredient_list::IngredientList,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryOrigin, Runtime},
@@ -26,7 +26,7 @@ pub mod tracked_field;
 /// Trait that defines the key properties of a tracked struct.
 /// Implemented by the `#[salsa::tracked]` macro when applied
 /// to a struct.
-pub trait Configuration: Jar + Sized + 'static {
+pub trait Configuration: Sized + 'static {
     const DEBUG_NAME: &'static str;
     const FIELD_DEBUG_NAMES: &'static [&'static str];
 
@@ -130,9 +130,9 @@ impl<C: Configuration> Jar for JarImpl<C> {
     }
 }
 
-pub trait TrackedStructInDb<DB: ?Sized + Database>: SalsaStructInDb<DB> {
+pub trait TrackedStructInDb: SalsaStructInDb {
     /// Converts the identifier for this tracked struct into a `DatabaseKeyIndex`.
-    fn database_key_index(db: &DB, id: Id) -> DatabaseKeyIndex;
+    fn database_key_index(db: &dyn Database, id: Id) -> DatabaseKeyIndex;
 }
 
 /// Created for each tracked struct.
@@ -412,6 +412,13 @@ where
     pub fn register_dependent_fn(&self, index: IngredientIndex) {
         self.dependent_fns.push(index);
     }
+
+    /// Return reference to the field data ignoring dependency tracking.
+    /// Used for debugging.
+    pub fn leak_fields<'db>(&'db self, s: C::Struct<'db>) -> &'db C::Fields<'db> {
+        let value = C::deref_struct(s);
+        unsafe { value.to_self_ref(&value.fields) }
+    }
 }
 
 impl<C> Ingredient for IngredientImpl<C>
@@ -463,6 +470,10 @@ where
         self.delete_entity(db.as_salsa_database(), stale_output_key.unwrap());
     }
 
+    fn requires_reset_for_new_revision(&self) -> bool {
+        true
+    }
+
     fn reset_for_new_revision(&mut self) {
         self.struct_map.drop_deleted_entries();
     }
@@ -487,13 +498,6 @@ where
     }
 }
 
-impl<C> IngredientRequiresReset for IngredientImpl<C>
-where
-    C: Configuration,
-{
-    const RESET_ON_NEW_REVISION: bool = true;
-}
-
 impl<C> Value<C>
 where
     C: Configuration,
@@ -502,7 +506,7 @@ where
     /// Note that this function returns the entire tuple of value fields.
     /// The caller is responible for selecting the appropriate element.
     pub fn field<'db>(&'db self, runtime: &'db Runtime, field_index: usize) -> &'db C::Fields<'db> {
-        let field_ingredient_index = self.struct_ingredient_index + field_index;
+        let field_ingredient_index = self.struct_ingredient_index.successor(field_index);
         let changed_at = self.revisions[field_index];
 
         runtime.report_tracked_read(

@@ -1,6 +1,5 @@
 use crate::cycle::CycleRecoveryStrategy;
-use crate::id::AsId;
-use crate::ingredient::{fmt_index, Ingredient, IngredientRequiresReset};
+use crate::ingredient::{fmt_index, Ingredient};
 use crate::input::Configuration;
 use crate::runtime::local_state::QueryOrigin;
 use crate::storage::IngredientIndex;
@@ -8,9 +7,6 @@ use crate::{Database, DatabaseKeyIndex, Id, Revision};
 use std::fmt;
 
 use super::struct_map::StructMap;
-
-pub trait FieldData: Send + Sync + 'static {}
-impl<T: Send + Sync + 'static> FieldData for T {}
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
 ///
@@ -37,27 +33,11 @@ where
         struct_map: StructMap<C>,
     ) -> Self {
         Self {
-            index: struct_index + field_index,
+            index: struct_index.successor(field_index),
             field_index,
             struct_map,
         }
     }
-
-    fn database_key_index(&self, key: C::Struct) -> DatabaseKeyIndex {
-        DatabaseKeyIndex {
-            ingredient_index: self.index,
-            key_index: key.as_id(),
-        }
-    }
-}
-
-/// More limited wrapper around transmute that copies lifetime from `a` to `b`.
-///
-/// # Safety condition
-///
-/// `b` must be owned by `a`
-unsafe fn transmute_lifetime<'a, 'b, A, B>(_a: &'a A, b: &'b B) -> &'a B {
-    std::mem::transmute(b)
 }
 
 impl<C> Ingredient for FieldIngredientImpl<C>
@@ -106,20 +86,17 @@ where
         panic!("unexpected call: input fields are never deleted");
     }
 
+    fn requires_reset_for_new_revision(&self) -> bool {
+        false
+    }
+
     fn reset_for_new_revision(&mut self) {
         panic!("unexpected call: input fields don't register for resets");
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_index(C::FIELD_DEBUG_NAMES[self.field_index as usize], index, fmt)
+        fmt_index(C::FIELD_DEBUG_NAMES[self.field_index], index, fmt)
     }
-}
-
-impl<C> IngredientRequiresReset for FieldIngredientImpl<C>
-where
-    C: Configuration,
-{
-    const RESET_ON_NEW_REVISION: bool = false;
 }
 
 impl<C> std::fmt::Debug for FieldIngredientImpl<C>

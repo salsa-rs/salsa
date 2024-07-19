@@ -1,70 +1,37 @@
 error: `data` option not allowed here
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:19:29
-   |
-19 | #[salsa::tracked(jar = Jar, data = Data)]
-   |                             ^^^^
+ --> tests/compile-fail/tracked_fn_incompatibles.rs:8:18
+  |
+8 | #[salsa::tracked(data = Data)]
+  |                  ^^^^
 
 error: `db` option not allowed here
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:24:29
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:13:18
    |
-24 | #[salsa::tracked(jar = Jar, db = Db)]
-   |                             ^^
+13 | #[salsa::tracked(db = Db)]
+   |                  ^^
 
 error: `constructor` option not allowed here
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:29:29
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:18:18
    |
-29 | #[salsa::tracked(jar = Jar, constructor = TrackedFn3)]
-   |                             ^^^^^^^^^^^
+18 | #[salsa::tracked(constructor = TrackedFn3)]
+   |                  ^^^^^^^^^^^
 
 error: #[salsa::tracked] must also be applied to the impl block for tracked methods
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:38:55
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:27:55
    |
-38 | fn tracked_fn_with_receiver_not_applied_to_impl_block(&self, db: &dyn Db) -> u32 {}
-   |                                                       ^
+27 | fn tracked_fn_with_receiver_not_applied_to_impl_block(&self, db: &dyn Db) -> u32 {}
+   |                                                       ^^^^^
 
-error: tracked function takes too many arguments to have its value set with `specify`
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:40:29
+error: only functions with a single salsa struct as their input can be specified
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:29:18
    |
-40 | #[salsa::tracked(jar = Jar, specify)]
-   |                             ^^^^^^^
-
-error[E0412]: cannot find type `tracked_fn_with_data` in this scope
- --> tests/compile-fail/tracked_fn_incompatibles.rs:4:5
-  |
-4 |     tracked_fn_with_data,
-  |     ^^^^^^^^^^^^^^^^^^^^ not found in this scope
-
-error[E0412]: cannot find type `tracked_fn_with_db` in this scope
- --> tests/compile-fail/tracked_fn_incompatibles.rs:5:5
-  |
-5 |     tracked_fn_with_db,
-  |     ^^^^^^^^^^^^^^^^^^ not found in this scope
-
-error[E0412]: cannot find type `tracked_fn_with_constructor` in this scope
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:6:5
-   |
-6  |     tracked_fn_with_constructor,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: a struct with a similar name exists: `tracked_fn_with_one_input`
-...
-34 | #[salsa::tracked(jar = Jar)]
-   | ---------------------------- similarly named struct `tracked_fn_with_one_input` defined here
-
-error[E0412]: cannot find type `tracked_fn_with_receiver_not_applied_to_impl_block` in this scope
- --> tests/compile-fail/tracked_fn_incompatibles.rs:8:5
-  |
-8 |     tracked_fn_with_receiver_not_applied_to_impl_block,
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
-
-error[E0412]: cannot find type `tracked_fn_with_too_many_arguments_for_specify` in this scope
- --> tests/compile-fail/tracked_fn_incompatibles.rs:9:5
-  |
-9 |     tracked_fn_with_too_many_arguments_for_specify,
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+29 | #[salsa::tracked(specify)]
+   |                  ^^^^^^^
 
 error[E0308]: mismatched types
-  --> tests/compile-fail/tracked_fn_incompatibles.rs:35:46
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:24:46
    |
-35 | fn tracked_fn_with_one_input(db: &dyn Db) -> u32 {}
-   |    -------------------------                 ^^^ expected `u32`, found `()`
-   |    |
-   |    implicitly returns `()` as its body has no tail or `return` expression
+23 | #[salsa::tracked]
+   | ----------------- implicitly returns `()` as its body has no tail or `return` expression
+24 | fn tracked_fn_with_one_input(db: &dyn Db) -> u32 {}
+   |                                              ^^^ expected `u32`, found `()`

@@ -1,0 +1,25 @@
+error[E0624]: method `field` is private
+  --> tests/compile-fail/get-set-on-private-input-field.rs:14:11
+   |
+4  |     #[salsa::input]
+   |     --------------- private method defined here
+...
+14 |     input.field(&db);
+   |           ^^^^^ private method
+
+error[E0624]: method `set_field` is private
+  --> tests/compile-fail/get-set-on-private-input-field.rs:15:11
+   |
+4  |     #[salsa::input]
+   |     --------------- private method defined here
+...
+15 |     input.set_field(&mut db).to(23);
+   |           ^^^^^^^^^ private method
+
+warning: unused import: `salsa::prelude`
+ --> tests/compile-fail/get-set-on-private-input-field.rs:1:5
+  |
+1 | use salsa::prelude::*;
+  |     ^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default

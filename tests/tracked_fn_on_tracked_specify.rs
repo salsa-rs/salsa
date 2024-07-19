@@ -2,23 +2,18 @@
 //! compiles and executes successfully.
 #![allow(warnings)]
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked<'_>, tracked_fn, tracked_fn_extra);
-
-trait Db: salsa::DbWithJar<Jar> {}
-
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct MyTracked<'db> {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
-fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
+#[salsa::tracked]
+fn tracked_fn<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyTracked<'db> {
     let t = MyTracked::new(db, input.field(db) * 2);
     if input.field(db) != 0 {
         tracked_fn_extra::specify(db, t, 2222);
@@ -26,20 +21,19 @@ fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
     t
 }
 
-#[salsa::tracked(jar = Jar, specify)]
-fn tracked_fn_extra<'db>(_db: &'db dyn Db, _input: MyTracked<'db>) -> u32 {
+#[salsa::tracked(specify)]
+fn tracked_fn_extra<'db>(_db: &'db dyn salsa::Database, _input: MyTracked<'db>) -> u32 {
     0
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
-
-impl Db for Database {}
 
 #[test]
 fn execute_when_specified() {

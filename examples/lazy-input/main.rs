@@ -8,7 +8,7 @@ use notify_debouncer_mini::{
     notify::{RecommendedWatcher, RecursiveMode},
     DebounceEventResult, Debouncer,
 };
-use salsa::DebugWithDb;
+use salsa::{Accumulator, Setter};
 
 // ANCHOR: main
 fn main() -> Result<()> {
@@ -32,7 +32,7 @@ fn main() -> Result<()> {
             println!("Sum is: {}", sum);
         } else {
             for diagnostic in diagnostics {
-                println!("{}", diagnostic);
+                println!("{}", diagnostic.0);
             }
         }
 
@@ -61,9 +61,6 @@ fn main() -> Result<()> {
 }
 // ANCHOR_END: main
 
-#[salsa::jar(db = Db)]
-struct Jar(Diagnostic, File, ParsedFile<'_>, compile, parse, sum);
-
 // ANCHOR: db
 #[salsa::input]
 struct File {
@@ -72,11 +69,12 @@ struct File {
     contents: String,
 }
 
-trait Db: salsa::DbWithJar<Jar> {
+#[salsa::db]
+trait Db: salsa::Database {
     fn input(&self, path: PathBuf) -> Result<File>;
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 struct Database {
     storage: salsa::Storage<Self>,
     logs: Mutex<Vec<String>>,
@@ -96,6 +94,7 @@ impl Database {
     }
 }
 
+#[salsa::db]
 impl Db for Database {
     fn input(&self, path: PathBuf) -> Result<File> {
         let path = path
@@ -123,14 +122,12 @@ impl Db for Database {
 }
 // ANCHOR_END: db
 
+#[salsa::db]
 impl salsa::Database for Database {
     fn salsa_event(&self, event: salsa::Event) {
         // don't log boring events
         if let salsa::EventKind::WillExecute { .. } = event.kind {
-            self.logs
-                .lock()
-                .unwrap()
-                .push(format!("{:?}", event.debug(self)));
+            self.logs.lock().unwrap().push(format!("{:?}", event));
         }
     }
 }
@@ -140,17 +137,15 @@ struct Diagnostic(String);
 
 impl Diagnostic {
     fn push_error(db: &dyn Db, file: File, error: Report) {
-        Diagnostic::push(
-            db,
-            format!(
-                "Error in file {}: {:?}\n",
-                file.path(db)
-                    .file_name()
-                    .unwrap_or_else(|| "<unknown>".as_ref())
-                    .to_string_lossy(),
-                error,
-            ),
-        )
+        Diagnostic(format!(
+            "Error in file {}: {:?}\n",
+            file.path(db)
+                .file_name()
+                .unwrap_or_else(|| "<unknown>".as_ref())
+                .to_string_lossy(),
+            error,
+        ))
+        .accumulate(db);
     }
 }
 
@@ -168,7 +163,7 @@ fn compile(db: &dyn Db, input: File) -> u32 {
 }
 
 #[salsa::tracked]
-fn parse<'db>(db: &'db dyn Db, input: File) -> ParsedFile<'db> {
+fn parse(db: &dyn Db, input: File) -> ParsedFile<'_> {
     let mut lines = input.contents(db).lines();
     let value = match lines.next().map(|line| (line.parse::<u32>(), line)) {
         Some((Ok(num), _)) => num,

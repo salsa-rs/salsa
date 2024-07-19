@@ -1,13 +1,14 @@
 use ordered_float::OrderedFloat;
+use salsa::Accumulator;
 
 use crate::ir::{
-    Diagnostic, Diagnostics, Expression, ExpressionData, Function, FunctionId, Op, Program,
-    SourceProgram, Span, Statement, StatementData, VariableId,
+    Diagnostic, Expression, ExpressionData, Function, FunctionId, Op, Program, SourceProgram, Span,
+    Statement, StatementData, VariableId,
 };
 
 // ANCHOR: parse_statements
 #[salsa::tracked]
-pub fn parse_statements<'db>(db: &'db dyn crate::Db, source: SourceProgram) -> Program<'db> {
+pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program<'_> {
     // Get the source text from the database
     let source_text = source.text(db);
 
@@ -83,14 +84,12 @@ impl<'db> Parser<'_, 'db> {
             Some(ch) => self.position + ch.len_utf8(),
             None => self.position,
         };
-        Diagnostics::push(
-            self.db,
-            Diagnostic {
-                start: self.position,
-                end: next_position,
-                message: "unexpected character".to_string(),
-            },
-        );
+        Diagnostic {
+            start: self.position,
+            end: next_position,
+            message: "unexpected character".to_string(),
+        }
+        .accumulate(self.db);
     }
     // ANCHOR_END: report_error
 
@@ -352,22 +351,21 @@ impl<'db> Parser<'_, 'db> {
 /// Returns the statements and the diagnostics generated.
 #[cfg(test)]
 fn parse_string(source_text: &str) -> String {
-    use salsa::debug::DebugWithDb;
+    use salsa::Database as _;
 
-    // Create the database
-    let db = crate::db::Database::default();
+    crate::db::Database::default().attach(|db| {
+        // Create the source program
+        let source_program = SourceProgram::new(db, source_text.to_string());
 
-    // Create the source program
-    let source_program = SourceProgram::new(&db, source_text.to_string());
+        // Invoke the parser
+        let statements = parse_statements(db, source_program);
 
-    // Invoke the parser
-    let statements = parse_statements(&db, source_program);
+        // Read out any diagnostics
+        let accumulated = parse_statements::accumulated::<Diagnostic>(db, source_program);
 
-    // Read out any diagnostics
-    let accumulated = parse_statements::accumulated::<Diagnostics>(&db, source_program);
-
-    // Format the result as a string and return it
-    format!("{:#?}", (statements.debug(&db), accumulated))
+        // Format the result as a string and return it
+        format!("{:#?}", (statements, accumulated))
+    })
 }
 // ANCHOR_END: parse_string
 
@@ -457,7 +455,6 @@ fn parse_example() {
                             Function {
                                 [salsa id]: 0,
                                 name: FunctionId {
-                                    [salsa id]: 0,
                                     text: "area_rectangle",
                                 },
                                 name_span: Span {
@@ -467,11 +464,9 @@ fn parse_example() {
                                 },
                                 args: [
                                     VariableId {
-                                        [salsa id]: 0,
                                         text: "w",
                                     },
                                     VariableId {
-                                        [salsa id]: 1,
                                         text: "h",
                                     },
                                 ],
@@ -490,7 +485,6 @@ fn parse_example() {
                                             },
                                             data: Variable(
                                                 VariableId {
-                                                    [salsa id]: 0,
                                                     text: "w",
                                                 },
                                             ),
@@ -504,7 +498,6 @@ fn parse_example() {
                                             },
                                             data: Variable(
                                                 VariableId {
-                                                    [salsa id]: 1,
                                                     text: "h",
                                                 },
                                             ),
@@ -524,7 +517,6 @@ fn parse_example() {
                             Function {
                                 [salsa id]: 1,
                                 name: FunctionId {
-                                    [salsa id]: 1,
                                     text: "area_circle",
                                 },
                                 name_span: Span {
@@ -534,7 +526,6 @@ fn parse_example() {
                                 },
                                 args: [
                                     VariableId {
-                                        [salsa id]: 2,
                                         text: "r",
                                     },
                                 ],
@@ -573,7 +564,6 @@ fn parse_example() {
                                                     },
                                                     data: Variable(
                                                         VariableId {
-                                                            [salsa id]: 2,
                                                             text: "r",
                                                         },
                                                     ),
@@ -589,7 +579,6 @@ fn parse_example() {
                                             },
                                             data: Variable(
                                                 VariableId {
-                                                    [salsa id]: 2,
                                                     text: "r",
                                                 },
                                             ),
@@ -614,7 +603,6 @@ fn parse_example() {
                                 },
                                 data: Call(
                                     FunctionId {
-                                        [salsa id]: 0,
                                         text: "area_rectangle",
                                     },
                                     [
@@ -662,7 +650,6 @@ fn parse_example() {
                                 },
                                 data: Call(
                                     FunctionId {
-                                        [salsa id]: 1,
                                         text: "area_circle",
                                     },
                                     [

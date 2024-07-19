@@ -15,7 +15,7 @@ use struct_map::StructMap;
 use crate::{
     cycle::CycleRecoveryStrategy,
     id::{AsId, FromId},
-    ingredient::{fmt_index, Ingredient, IngredientRequiresReset},
+    ingredient::{fmt_index, Ingredient},
     key::{DatabaseKeyIndex, DependencyIndex},
     plumbing::{Jar, Stamp},
     runtime::{local_state::QueryOrigin, Runtime},
@@ -26,6 +26,7 @@ use crate::{
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
     const FIELD_DEBUG_NAMES: &'static [&'static str];
+    const IS_SINGLETON: bool;
 
     /// The input struct (which wraps an `Id`)
     type Struct: FromId + 'static + Send + Sync;
@@ -94,9 +95,13 @@ impl<C: Configuration> IngredientImpl<C> {
     }
 
     pub fn new_input(&self, fields: C::Fields, stamps: C::Stamps) -> C::Struct {
+        // If declared as a singleton, only allow a single instance
+        if C::IS_SINGLETON && self.counter.load(Ordering::Relaxed) >= 1 {
+            panic!("singleton struct may not be duplicated");
+        }
+
         let next_id = Id::from_u32(self.counter.fetch_add(1, Ordering::Relaxed));
         let value = Value {
-            struct_ingredient_index: self.ingredient_index,
             id: next_id,
             fields,
             stamps,
@@ -130,19 +135,12 @@ impl<C: Configuration> IngredientImpl<C> {
         setter(&mut r.fields)
     }
 
-    /// Creates a new singleton input.
-    pub fn new_singleton_input(&self, _runtime: &Runtime) -> C::Struct {
-        // when one exists already, panic
-        if self.counter.load(Ordering::Relaxed) >= 1 {
-            panic!("singleton struct may not be duplicated");
-        }
-        // fresh new ingredient
-        self.counter.store(1, Ordering::Relaxed);
-        C::Struct::from_id(Id::from_u32(0))
-    }
-
-    /// Get the singleton input previously created.
-    pub fn get_singleton_input(&self, _runtime: &Runtime) -> Option<C::Struct> {
+    /// Get the singleton input previously created (if any).
+    pub fn get_singleton_input(&self) -> Option<C::Struct> {
+        assert!(
+            C::IS_SINGLETON,
+            "get_singleton_input invoked on a non-singleton"
+        );
         (self.counter.load(Ordering::Relaxed) > 0).then(|| C::Struct::from_id(Id::from_u32(0)))
     }
 
@@ -155,7 +153,7 @@ impl<C: Configuration> IngredientImpl<C> {
         id: C::Struct,
         field_index: usize,
     ) -> &'db C::Fields {
-        let field_ingredient_index = self.ingredient_index + field_index;
+        let field_ingredient_index = self.ingredient_index.successor(field_index);
         let id = id.as_id();
         let value = self.struct_map.get(id);
         let stamp = &value.stamps[field_index];
@@ -172,7 +170,7 @@ impl<C: Configuration> IngredientImpl<C> {
 
     /// Peek at the field values without recording any read dependency.
     /// Used for debug printouts.
-    pub fn peek_fields(&self, id: C::Struct) -> &C::Fields {
+    pub fn leak_fields(&self, id: C::Struct) -> &C::Fields {
         let id = id.as_id();
         let value = self.struct_map.get(id);
         &value.fields
@@ -227,6 +225,10 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         );
     }
 
+    fn requires_reset_for_new_revision(&self) -> bool {
+        false
+    }
+
     fn reset_for_new_revision(&mut self) {
         panic!("unexpected call to `reset_for_new_revision`")
     }
@@ -242,10 +244,6 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
     }
 }
 
-impl<C: Configuration> IngredientRequiresReset for IngredientImpl<C> {
-    const RESET_ON_NEW_REVISION: bool = false;
-}
-
 impl<C: Configuration> std::fmt::Debug for IngredientImpl<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(std::any::type_name::<Self>())
@@ -259,9 +257,6 @@ pub struct Value<C>
 where
     C: Configuration,
 {
-    /// Index of the struct ingredient.
-    struct_ingredient_index: IngredientIndex,
-
     /// The id of this struct in the ingredient.
     id: Id,
 

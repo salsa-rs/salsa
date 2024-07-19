@@ -1,9 +1,6 @@
 use crate::{
-    id::AsId,
-    ingredient::{Ingredient, IngredientRequiresReset},
-    key::DependencyIndex,
-    storage::IngredientIndex,
-    Database, Id, Runtime,
+    id::AsId, ingredient::Ingredient, key::DependencyIndex, storage::IngredientIndex, Database, Id,
+    Runtime,
 };
 
 use super::{struct_map::StructMapView, Configuration};
@@ -36,7 +33,7 @@ where
         struct_map: &StructMapView<C>,
     ) -> Self {
         Self {
-            ingredient_index: struct_index + field_index,
+            ingredient_index: struct_index.successor(field_index),
             field_index,
             struct_map: struct_map.clone(),
         }
@@ -119,6 +116,10 @@ where
         panic!("tracked field ingredients are not registered as dependent")
     }
 
+    fn requires_reset_for_new_revision(&self) -> bool {
+        false
+    }
+
     fn reset_for_new_revision(&mut self) {
         panic!("tracked field ingredients do not require reset")
     }
@@ -132,7 +133,7 @@ where
             fmt,
             "{}.{}({:?})",
             C::DEBUG_NAME,
-            C::FIELD_DEBUG_NAMES[self.field_index as usize],
+            C::FIELD_DEBUG_NAMES[self.field_index],
             index.unwrap()
         )
     }
@@ -148,11 +149,4 @@ where
             .field("field_index", &self.field_index)
             .finish()
     }
-}
-
-impl<C> IngredientRequiresReset for FieldIngredientImpl<C>
-where
-    C: Configuration,
-{
-    const RESET_ON_NEW_REVISION: bool = false;
 }

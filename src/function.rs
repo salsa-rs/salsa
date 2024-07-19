@@ -4,11 +4,11 @@ use crossbeam::atomic::AtomicCell;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::{fmt_index, IngredientRequiresReset},
+    ingredient::fmt_index,
     key::DatabaseKeyIndex,
     runtime::local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
-    storage::IngredientIndex,
+    storage::{DatabaseGen, IngredientIndex},
     Cycle, Database, Event, EventKind, Id, Revision,
 };
 
@@ -39,7 +39,7 @@ pub trait Configuration: Any {
     /// The "salsa struct type" that this function is associated with.
     /// This can be just `salsa::Id` for functions that intern their arguments
     /// and are not clearly associated with any one salsa struct.
-    type SalsaStruct<'db>: SalsaStructInDb<Self::DbView>;
+    type SalsaStruct<'db>: SalsaStructInDb;
 
     /// The input to the function
     type Input<'db>: Send + Sync;
@@ -61,7 +61,7 @@ pub trait Configuration: Any {
 
     /// Convert from the id used internally to the value that execute is expecting.
     /// This is a no-op if the input to the function is a salsa struct.
-    fn id_to_input<'db>(db: &'db Self::DbView, key: Id) -> Self::Input<'db>;
+    fn id_to_input(db: &Self::DbView, key: Id) -> Self::Input<'_>;
 
     /// Invoked when we need to compute the value for the given key, either because we've never
     /// computed it before or because the old one relied on inputs that have changed.
@@ -131,10 +131,6 @@ pub fn should_backdate_value<V: Eq>(old_value: &V, new_value: &V) -> bool {
     old_value == new_value
 }
 
-/// This type is used to make configuration types for the functions in entities;
-/// e.g. you can do `Config<X, 0>` and `Config<X, 1>`.
-pub struct Config<const C: usize>(std::marker::PhantomData<[(); C]>);
-
 impl<C> IngredientImpl<C>
 where
     C: Configuration,
@@ -150,7 +146,7 @@ where
         }
     }
 
-    fn database_key_index(&self, k: Id) -> DatabaseKeyIndex {
+    pub fn database_key_index(&self, k: Id) -> DatabaseKeyIndex {
         DatabaseKeyIndex {
             ingredient_index: self.index,
             key_index: k,
@@ -202,7 +198,10 @@ where
     /// so we can remove any data keyed by them.
     fn register<'db>(&self, db: &'db C::DbView) {
         if !self.registered.fetch_or(true) {
-            <C::SalsaStruct<'db> as SalsaStructInDb<_>>::register_dependent_fn(db, self.index)
+            <C::SalsaStruct<'db> as SalsaStructInDb>::register_dependent_fn(
+                db.as_salsa_database(),
+                self.index,
+            )
         }
     }
 }
@@ -255,6 +254,10 @@ where
         // Since its `verified_at` field has not changed, it will be considered dirty if it is invoked.
     }
 
+    fn requires_reset_for_new_revision(&self) -> bool {
+        true
+    }
+
     fn reset_for_new_revision(&mut self) {
         std::mem::take(&mut self.deleted_entries);
     }
@@ -293,11 +296,4 @@ where
             .field("index", &self.index)
             .finish()
     }
-}
-
-impl<C> IngredientRequiresReset for IngredientImpl<C>
-where
-    C: Configuration,
-{
-    const RESET_ON_NEW_REVISION: bool = true;
 }

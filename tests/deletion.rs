@@ -2,23 +2,15 @@
 //!
 //! * entities not created in a revision are deleted, as is any memoized data keyed on them.
 
-use salsa::DebugWithDb;
 mod common;
 use common::{HasLogger, Logger};
 
 use expect_test::expect;
+use salsa::Setter;
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(
-    MyInput,
-    MyTracked<'_>,
-    final_result,
-    create_tracked_structs,
-    contribution_from_struct,
-);
-
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct MyInput {
@@ -41,7 +33,7 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn create_tracked_structs<'db>(db: &'db dyn Db, input: MyInput) -> Vec<MyTracked<'db>> {
+fn create_tracked_structs(db: &dyn Db, input: MyInput) -> Vec<MyTracked<'_>> {
     db.push_log(format!("intermediate_result({:?})", input));
     (0..input.field(db))
         .map(|i| MyTracked::new(db, i))
@@ -53,25 +45,27 @@ fn contribution_from_struct<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> u3
     tracked.field(db) * 2
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {
     fn salsa_event(&self, event: salsa::Event) {
         match event.kind {
             salsa::EventKind::WillDiscardStaleOutput { .. }
             | salsa::EventKind::DidDiscard { .. } => {
-                self.push_log(format!("salsa_event({:?})", event.kind.debug(self)));
+                self.push_log(format!("salsa_event({:?})", event.kind));
             }
             _ => {}
         }
     }
 }
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {
@@ -89,8 +83,8 @@ fn basic() {
     assert_eq!(final_result(&db, input), 2 * 2 + 2);
     db.assert_logs(expect![[r#"
         [
-            "final_result(MyInput { [salsa id]: 0 })",
-            "intermediate_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 3 })",
+            "intermediate_result(MyInput { [salsa id]: 0, field: 3 })",
         ]"#]]);
 
     // Creates only 2 tracked structs in this revision, should delete 1
@@ -104,10 +98,10 @@ fn basic() {
     assert_eq!(final_result(&db, input), 2);
     db.assert_logs(expect![[r#"
         [
-            "intermediate_result(MyInput { [salsa id]: 0 })",
+            "intermediate_result(MyInput { [salsa id]: 0, field: 2 })",
             "salsa_event(WillDiscardStaleOutput { execute_key: create_tracked_structs(0), output_key: MyTracked(2) })",
             "salsa_event(DidDiscard { key: MyTracked(2) })",
             "salsa_event(DidDiscard { key: contribution_from_struct(2) })",
-            "final_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 2 })",
         ]"#]]);
 }

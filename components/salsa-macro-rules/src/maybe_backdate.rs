@@ -2,7 +2,7 @@
 #[macro_export]
 macro_rules! maybe_backdate {
     (
-        ($maybe_clone:ident, no_backdate)
+        ($maybe_clone:ident, no_backdate),
         $field_ty:ty,
         $old_field_place:expr,
         $new_field_place:expr,
@@ -11,7 +11,7 @@ macro_rules! maybe_backdate {
         $zalsa:ident,
 
     ) => {
-        $zalsa::update::always_update(
+        $zalsa::always_update(
             &mut $revision_place,
             $current_revision,
             &mut $old_field_place,
@@ -28,12 +28,11 @@ macro_rules! maybe_backdate {
         $current_revision:expr,
         $zalsa:ident,
      ) => {
-        if $zalsa::update::helper::Dispatch::<$field_ty>::maybe_update(
-            $old_field_ptr_expr,
+        if $zalsa::UpdateDispatch::<$field_ty>::maybe_update(
             std::ptr::addr_of_mut!($old_field_place),
             $new_field_place,
         ) {
-            $revision_place = #current_revision;
+            $revision_place = $current_revision;
         }
-   };
+    };
 }

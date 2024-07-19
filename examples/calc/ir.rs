@@ -34,14 +34,14 @@ pub struct Program<'db> {
 // ANCHOR_END: program
 
 // ANCHOR: statements_and_expressions
-#[derive(Eq, PartialEq, Debug, Hash, new, salsa::Update, salsa::DebugWithDb)]
+#[derive(Eq, PartialEq, Debug, Hash, new, salsa::Update)]
 pub struct Statement<'db> {
     pub span: Span<'db>,
 
     pub data: StatementData<'db>,
 }
 
-#[derive(Eq, PartialEq, Debug, Hash, salsa::Update, salsa::DebugWithDb)]
+#[derive(Eq, PartialEq, Debug, Hash, salsa::Update)]
 pub enum StatementData<'db> {
     /// Defines `fn <name>(<args>) = <body>`
     Function(Function<'db>),
@@ -49,14 +49,14 @@ pub enum StatementData<'db> {
     Print(Expression<'db>),
 }
 
-#[derive(Eq, PartialEq, Debug, Hash, new, salsa::Update, salsa::DebugWithDb)]
+#[derive(Eq, PartialEq, Debug, Hash, new, salsa::Update)]
 pub struct Expression<'db> {
     pub span: Span<'db>,
 
     pub data: ExpressionData<'db>,
 }
 
-#[derive(Eq, PartialEq, Debug, Hash, salsa::Update, salsa::DebugWithDb)]
+#[derive(Eq, PartialEq, Debug, Hash, salsa::Update)]
 pub enum ExpressionData<'db> {
     Op(Box<Expression<'db>>, Op, Box<Expression<'db>>),
     Number(OrderedFloat<f64>),
@@ -64,7 +64,7 @@ pub enum ExpressionData<'db> {
     Call(FunctionId<'db>, Vec<Expression<'db>>),
 }
 
-#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug, salsa::Update, salsa::DebugWithDb)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug, salsa::Update)]
 pub enum Op {
     Add,
     Subtract,
@@ -97,12 +97,29 @@ pub struct Span<'db> {
 
 // ANCHOR: diagnostic
 #[salsa::accumulator]
-pub struct Diagnostics(Diagnostic);
-
-#[derive(new, Clone, Debug)]
+#[allow(dead_code)] // Debug impl uses them
+#[derive(new)]
 pub struct Diagnostic {
     pub start: usize,
     pub end: usize,
     pub message: String,
 }
 // ANCHOR_END: diagnostic
+
+impl Diagnostic {
+    #[cfg(test)]
+    pub fn render(&self, db: &dyn crate::Db, src: SourceProgram) -> String {
+        use annotate_snippets::*;
+        let line_start = src.text(db)[..self.start].lines().count() + 1;
+        Renderer::plain()
+            .render(
+                Level::Error.title(&self.message).snippet(
+                    Snippet::source(src.text(db))
+                        .line_start(line_start)
+                        .origin("input")
+                        .annotation(Level::Error.span(self.start..self.end).label("here")),
+                ),
+            )
+            .to_string()
+    }
+}

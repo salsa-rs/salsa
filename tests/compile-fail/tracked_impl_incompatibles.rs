@@ -1,6 +1,3 @@
-#[salsa::jar(db = Db)]
-struct Jar(MyTracked<'_>);
-
 #[salsa::tracked]
 struct MyTracked<'db> {
     field: u32,
@@ -10,6 +7,7 @@ struct MyTracked<'db> {
 impl<'db> std::default::Default for MyTracked<'db> {
     fn default() -> Self {}
 }
+
 #[salsa::tracked(specify)]
 impl<'db> std::default::Default for MyTracked<'db> {
     fn default() -> Self {}
@@ -44,11 +42,10 @@ impl<'db> std::default::Default for MyTracked<'db> {
 impl<'db> std::default::Default for MyTracked<'db> {
     fn default() -> Self {}
 }
+
 #[salsa::tracked]
 impl<'db> std::default::Default for [MyTracked<'db>; 12] {
     fn default() -> Self {}
 }
-
-trait Db: salsa::DbWithJar<Jar> {}
 
 fn main() {}

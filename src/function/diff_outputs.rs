@@ -47,6 +47,6 @@ where
             },
         });
 
-        key.remove_stale_output(db.as_salsa_database(), output.try_into().unwrap());
+        output.remove_stale_output(db.as_salsa_database(), key);
     }
 }

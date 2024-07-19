@@ -2,22 +2,13 @@
 //! compiles and executes successfully.
 
 use expect_test::expect;
-use salsa::DebugWithDb;
 mod common;
 use common::{HasLogger, Logger};
+use salsa::Setter;
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(
-    MyInput,
-    MyTracked<'_>,
-    maybe_specified,
-    read_maybe_specified,
-    create_tracked,
-    final_result,
-);
-
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct MyInput {
@@ -48,8 +39,8 @@ fn read_maybe_specified<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> u32 {
 
 /// Create a tracked value and *maybe* specify a value for
 /// `maybe_specified`
-#[salsa::tracked(jar = Jar)]
-fn create_tracked<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
+#[salsa::tracked]
+fn create_tracked(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
     db.push_log(format!("create_tracked({:?})", input));
     let tracked = MyTracked::new(db, input);
     if input.field(db) < 10 {
@@ -65,19 +56,21 @@ fn final_result(db: &dyn Db, input: MyInput) -> u32 {
     read_maybe_specified(db, tracked)
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {
     fn salsa_event(&self, event: salsa::Event) {
-        self.push_log(format!("{:?}", event.debug(self)));
+        self.push_log(format!("{event:?}"));
     }
 }
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {
@@ -96,13 +89,13 @@ fn test_run_0() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: final_result(0) } }",
-            "final_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 0 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 0 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
-            "read_maybe_specified(MyTracked { [salsa id]: 0 })",
+            "read_maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 0 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);
 }
@@ -117,13 +110,13 @@ fn test_run_5() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: final_result(0) } }",
-            "final_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 5 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 5 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
-            "read_maybe_specified(MyTracked { [salsa id]: 0 })",
+            "read_maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 5 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);
 }
@@ -138,16 +131,16 @@ fn test_run_10() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: final_result(0) } }",
-            "final_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 10 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 10 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
-            "read_maybe_specified(MyTracked { [salsa id]: 0 })",
+            "read_maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 10 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: maybe_specified(0) } }",
-            "maybe_specified(MyTracked { [salsa id]: 0 })",
+            "maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 10 } })",
         ]"#]]);
 }
 
@@ -161,16 +154,16 @@ fn test_run_20() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: final_result(0) } }",
-            "final_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 20 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 20 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
-            "read_maybe_specified(MyTracked { [salsa id]: 0 })",
+            "read_maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 20 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: maybe_specified(0) } }",
-            "maybe_specified(MyTracked { [salsa id]: 0 })",
+            "maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 20 } })",
         ]"#]]);
 }
 
@@ -188,13 +181,13 @@ fn test_run_0_then_5_then_20() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: final_result(0) } }",
-            "final_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 0 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 0 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
-            "read_maybe_specified(MyTracked { [salsa id]: 0 })",
+            "read_maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 0 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);
 
@@ -209,7 +202,7 @@ fn test_run_0_then_5_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 5 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: read_maybe_specified(0) } }",
@@ -228,17 +221,17 @@ fn test_run_0_then_5_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 20 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillDiscardStaleOutput { execute_key: create_tracked(0), output_key: maybe_specified(0) } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: maybe_specified(0) } }",
-            "maybe_specified(MyTracked { [salsa id]: 0 })",
+            "maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 20 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
-            "read_maybe_specified(MyTracked { [salsa id]: 0 })",
+            "read_maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 20 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: final_result(0) } }",
-            "final_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 20 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);
@@ -258,13 +251,13 @@ fn test_run_0_then_5_then_10_then_20() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: final_result(0) } }",
-            "final_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 0 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 0 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
-            "read_maybe_specified(MyTracked { [salsa id]: 0 })",
+            "read_maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 0 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);
 
@@ -279,7 +272,7 @@ fn test_run_0_then_5_then_10_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 5 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: read_maybe_specified(0) } }",
@@ -298,12 +291,12 @@ fn test_run_0_then_5_then_10_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 10 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillDiscardStaleOutput { execute_key: create_tracked(0), output_key: maybe_specified(0) } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: maybe_specified(0) } }",
-            "maybe_specified(MyTracked { [salsa id]: 0 })",
+            "maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 10 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: read_maybe_specified(0) } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: DidValidateMemoizedValue { database_key: final_result(0) } }",
         ]"#]]);
@@ -318,16 +311,16 @@ fn test_run_0_then_5_then_10_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 20 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: maybe_specified(0) } }",
-            "maybe_specified(MyTracked { [salsa id]: 0 })",
+            "maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 20 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
-            "read_maybe_specified(MyTracked { [salsa id]: 0 })",
+            "read_maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 20 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: final_result(0) } }",
-            "final_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 20 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);
@@ -343,13 +336,13 @@ fn test_run_5_then_20() {
         [
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: final_result(0) } }",
-            "final_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 5 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 5 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
-            "read_maybe_specified(MyTracked { [salsa id]: 0 })",
+            "read_maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 5 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);
 
@@ -360,17 +353,17 @@ fn test_run_5_then_20() {
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: create_tracked(0) } }",
-            "create_tracked(MyInput { [salsa id]: 0 })",
+            "create_tracked(MyInput { [salsa id]: 0, field: 20 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillDiscardStaleOutput { execute_key: create_tracked(0), output_key: maybe_specified(0) } }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: maybe_specified(0) } }",
-            "maybe_specified(MyTracked { [salsa id]: 0 })",
+            "maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 20 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: read_maybe_specified(0) } }",
-            "read_maybe_specified(MyTracked { [salsa id]: 0 })",
+            "read_maybe_specified(MyTracked { [salsa id]: 0, input: MyInput { [salsa id]: 0, field: 20 } })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: final_result(0) } }",
-            "final_result(MyInput { [salsa id]: 0 })",
+            "final_result(MyInput { [salsa id]: 0, field: 20 })",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
             "Event { runtime_id: RuntimeId { counter: 0 }, kind: WillCheckCancellation }",
         ]"#]]);

@@ -1,34 +1,29 @@
+use salsa::{Database as Db, Setter};
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked<'_>, tracked_fn);
-
-trait Db: salsa::DbWithJar<Jar> {}
-
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct MyTracked<'db> {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
-fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
+#[salsa::tracked]
+fn tracked_fn(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, input.field(db) / 2)
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
-
-impl Db for Database {}
 
 #[test]
 fn execute() {

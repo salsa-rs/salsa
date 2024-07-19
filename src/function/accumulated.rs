@@ -1,79 +1,37 @@
-use crate::{
-    accumulator::AccumulatorIngredient, hash::FxHashSet, runtime::local_state::QueryOrigin,
-    storage::DatabaseGen, DatabaseKeyIndex, Id,
-};
+use crate::{accumulator, storage::DatabaseGen, Id};
 
 use super::{Configuration, IngredientImpl};
-use crate::accumulator::Accumulator;
 
 impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    /// Returns all the values accumulated into `accumulator` by this query and its
-    /// transitive inputs.
-    pub fn accumulated<'db, A>(&'db self, db: &'db C::DbView, key: Id) -> Vec<A::Data>
+    /// Helper used by `accumulate` functions. Computes the results accumulated by `database_key_index`
+    /// and its inputs.
+    pub fn accumulated_by<A>(&self, db: &C::DbView, key: Id) -> Vec<A>
     where
-        A: Accumulator,
+        A: accumulator::Accumulator,
     {
-        // To start, ensure that the value is up to date:
-        self.fetch(db, key);
-
-        let Some(accumulator_ingredient) = <AccumulatorIngredient<A>>::from_db(db) else {
+        let Some(accumulator) = <accumulator::IngredientImpl<A>>::from_db(db) else {
             return vec![];
         };
-
-        // Now walk over all the things that the value depended on
-        // and find the values they accumulated into the given
-        // accumulator:
         let runtime = db.runtime();
-        let mut result = vec![];
-        let mut stack = Stack::new(self.database_key_index(key));
-        while let Some(input) = stack.pop() {
-            accumulator_ingredient.produced_by(runtime, input, &mut result);
-            stack.extend(input.origin(db.as_salsa_database()));
-        }
-        result
-    }
-}
+        let mut output = vec![];
 
-/// The stack is used to execute a DFS across all the queries
-/// that were transitively executed by some given start query.
-/// When we visit a query Q0, we look at its dependencies Q1...Qn,
-/// and if they have not already been visited, we push them on the stack.
-struct Stack {
-    /// Stack of queries left to visit.
-    v: Vec<DatabaseKeyIndex>,
+        // First ensure the result is up to date
+        self.fetch(db, key);
 
-    /// Set of all queries we've seen.
-    s: FxHashSet<DatabaseKeyIndex>,
-}
+        let database_key_index = self.database_key_index(key);
+        accumulator.produced_by(runtime, database_key_index, &mut output);
 
-impl Stack {
-    fn new(start: DatabaseKeyIndex) -> Self {
-        Self {
-            v: vec![start],
-            s: FxHashSet::default(),
-        }
-    }
-
-    fn pop(&mut self) -> Option<DatabaseKeyIndex> {
-        self.v.pop()
-    }
-
-    /// Extend the stack of queries with the dependencies from `origin`.
-    fn extend(&mut self, origin: Option<QueryOrigin>) {
-        match origin {
-            None | Some(QueryOrigin::Assigned(_)) | Some(QueryOrigin::BaseInput) => {}
-            Some(QueryOrigin::Derived(edges)) | Some(QueryOrigin::DerivedUntracked(edges)) => {
-                for dependency_index in edges.inputs() {
-                    if let Ok(i) = DatabaseKeyIndex::try_from(dependency_index) {
-                        if self.s.insert(i) {
-                            self.v.push(i)
-                        }
-                    }
+        if let Some(origin) = self.origin(key) {
+            for input in origin.inputs() {
+                if let Ok(input) = input.try_into() {
+                    accumulator.produced_by(runtime, input, &mut output);
                 }
             }
         }
+
+        output
     }
 }

@@ -1,10 +1,12 @@
 use crate::ir::{
-    Diagnostic, Diagnostics, Expression, Function, FunctionId, Program, Span, StatementData,
-    VariableId,
+    Diagnostic, Expression, Function, FunctionId, Program, Span, StatementData, VariableId,
 };
 use derive_new::new;
 #[cfg(test)]
 use expect_test::expect;
+use salsa::Accumulator;
+#[cfg(test)]
+use salsa::Database as _;
 #[cfg(test)]
 use test_log::test;
 
@@ -86,10 +88,7 @@ impl<'db> CheckExpression<'_, 'db> {
     }
 
     fn report_error(&self, span: Span, message: String) {
-        Diagnostics::push(
-            self.db,
-            Diagnostic::new(span.start(self.db), span.end(self.db), message),
-        );
+        Diagnostic::new(span.start(self.db), span.end(self.db), message).accumulate(self.db);
     }
 }
 
@@ -101,6 +100,8 @@ fn check_string(
     expected_diagnostics: expect_test::Expect,
     edits: &[(&str, expect_test::Expect, expect_test::Expect)],
 ) {
+    use salsa::Setter;
+
     use crate::{db::Database, ir::SourceProgram, parser::parse_statements};
 
     // Create the database
@@ -113,9 +114,15 @@ fn check_string(
     let program = parse_statements(&db, source_program);
 
     // Read out any diagnostics
-    expected_diagnostics.assert_debug_eq(&type_check_program::accumulated::<Diagnostics>(
-        &db, program,
-    ));
+    db.attach(|db| {
+        let rendered_diagnostics: String =
+            type_check_program::accumulated::<Diagnostic>(db, program)
+                .into_iter()
+                .map(|d| d.render(db, source_program))
+                .collect::<Vec<_>>()
+                .join("\n");
+        expected_diagnostics.assert_eq(&rendered_diagnostics);
+    });
 
     // Clear logs
     db.take_logs();
@@ -125,23 +132,20 @@ fn check_string(
         source_program
             .set_text(&mut db)
             .to(new_source_text.to_string());
-        let program = parse_statements(&db, source_program);
-        expected_diagnostics.assert_debug_eq(&type_check_program::accumulated::<Diagnostics>(
-            &db, program,
-        ));
+
+        db.attach(|db| {
+            let program = parse_statements(db, source_program);
+            expected_diagnostics
+                .assert_debug_eq(&type_check_program::accumulated::<Diagnostic>(db, program));
+        });
+
         expected_logs.assert_debug_eq(&db.take_logs());
     }
 }
 
 #[test]
 fn check_print() {
-    check_string(
-        "print 1 + 2",
-        expect![[r#"
-            []
-        "#]],
-        &[],
-    );
+    check_string("print 1 + 2", expect![""], &[]);
 }
 
 #[test]
@@ -149,19 +153,18 @@ fn check_bad_variable_in_program() {
     check_string(
         "print a + b",
         expect![[r#"
-            [
-                Diagnostic {
-                    start: 6,
-                    end: 8,
-                    message: "the variable `a` is not declared",
-                },
-                Diagnostic {
-                    start: 10,
-                    end: 11,
-                    message: "the variable `b` is not declared",
-                },
-            ]
-        "#]],
+            error: the variable `a` is not declared
+             --> input:2:7
+              |
+            2 | print a + b
+              |       ^^ here
+              |
+            error: the variable `b` is not declared
+             --> input:2:11
+              |
+            2 | print a + b
+              |           ^ here
+              |"#]],
         &[],
     );
 }
@@ -171,14 +174,12 @@ fn check_bad_function_in_program() {
     check_string(
         "print a(22)",
         expect![[r#"
-            [
-                Diagnostic {
-                    start: 6,
-                    end: 11,
-                    message: "the function `a` is not declared",
-                },
-            ]
-        "#]],
+            error: the function `a` is not declared
+             --> input:2:7
+              |
+            2 | print a(22)
+              |       ^^^^^ here
+              |"#]],
         &[],
     );
 }
@@ -191,14 +192,16 @@ fn check_bad_variable_in_function() {
             print add_one(22)
         ",
         expect![[r#"
-            [
-                Diagnostic {
-                    start: 33,
-                    end: 47,
-                    message: "the variable `b` is not declared",
-                },
-            ]
-        "#]],
+            error: the variable `b` is not declared
+             --> input:4:33
+              |
+            3 |   
+            4 |               fn add_one(a) = a + b
+              |  _________________________________^
+            5 | |             print add_one(22)
+              | |____________^ here
+            6 |           
+              |"#]],
         &[],
     );
 }
@@ -211,19 +214,25 @@ fn check_bad_function_in_function() {
             print add_one(22)
         ",
         expect![[r#"
-            [
-                Diagnostic {
-                    start: 29,
-                    end: 39,
-                    message: "the function `add_two` is not declared",
-                },
-                Diagnostic {
-                    start: 42,
-                    end: 56,
-                    message: "the variable `b` is not declared",
-                },
-            ]
-        "#]],
+            error: the function `add_two` is not declared
+             --> input:4:29
+              |
+            3 | 
+            4 |             fn add_one(a) = add_two(a) + b
+              |                             ^^^^^^^^^^ here
+            5 |             print add_one(22)
+            6 |         
+              |
+            error: the variable `b` is not declared
+             --> input:4:42
+              |
+            3 |   
+            4 |               fn add_one(a) = add_two(a) + b
+              |  __________________________________________^
+            5 | |             print add_one(22)
+              | |____________^ here
+            6 |           
+              |"#]],
         &[],
     );
 }
@@ -237,14 +246,17 @@ fn fix_bad_variable_in_function() {
             print quadruple(2)
         ",
         expect![[r#"
-            [
-                Diagnostic {
-                    start: 32,
-                    end: 46,
-                    message: "the variable `b` is not declared",
-                },
-            ]
-        "#]],
+            error: the variable `b` is not declared
+             --> input:4:32
+              |
+            3 |   
+            4 |               fn double(a) = a * b
+              |  ________________________________^
+            5 | |             fn quadruple(a) = double(double(a))
+              | |____________^ here
+            6 |               print quadruple(2)
+            7 |           
+              |"#]],
         &[(
             "
                 fn double(a) = a * 2

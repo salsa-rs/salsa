@@ -48,7 +48,7 @@ where
     ///
     /// * If value with same `value.id` is already present in the map.
     /// * If value not created in current revision.
-    pub fn insert<'db>(&'db self, value: Value<C>) -> C::Struct {
+    pub fn insert(&self, value: Value<C>) -> C::Struct {
         let id = value.id;
         let boxed_value = Alloc::new(value);
         let old_value = self.map.insert(id, boxed_value);
@@ -63,13 +63,13 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value is already updated in this revision.
-    pub fn get<'db>(&'db self, id: Id) -> &'db Value<C> {
+    pub fn get(&self, id: Id) -> &Value<C> {
         /// More limited wrapper around transmute that copies lifetime from `a` to `b`.
         ///
         /// # Safety condition
         ///
         /// `b` must be owned by `a`
-        unsafe fn transmute_lifetime<'a, 'b, A, B>(_a: &'a A, b: &'b B) -> &'a B {
+        unsafe fn transmute_lifetime<'a, A, B>(_a: &'a A, b: &B) -> &'a B {
             std::mem::transmute(b)
         }
         unsafe { transmute_lifetime(self, self.map.get(&id).unwrap().as_ref()) }
@@ -82,16 +82,7 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value is already updated in this revision.
-    pub fn update<'db>(&'db mut self, id: Id) -> impl DerefMut<Target = Value<C>> + 'db {
+    pub fn update(&mut self, id: Id) -> impl DerefMut<Target = Value<C>> + '_ {
         RefMut::map(self.map.get_mut(&id).unwrap(), |v| unsafe { v.as_mut() })
-    }
-
-    /// Remove the entry for `id` from the map.
-    pub fn delete(&mut self, id: Id) -> Option<Value<C>> {
-        if let Some((_, data)) = self.map.remove(&id) {
-            Some(data.into_inner())
-        } else {
-            None
-        }
     }
 }

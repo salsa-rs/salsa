@@ -4,21 +4,19 @@
 
 use crate::setup::Database;
 use crate::setup::Knobs;
-use salsa::ParallelDatabase;
 
-pub(crate) trait Db: salsa::DbWithJar<Jar> + Knobs {}
+#[salsa::db]
+pub(crate) trait Db: salsa::Database + Knobs {}
 
-impl<T: salsa::DbWithJar<Jar> + Knobs> Db for T {}
+#[salsa::db]
+impl<T: salsa::Database + Knobs> Db for T {}
 
-#[salsa::jar(db = Db)]
-pub(crate) struct Jar(MyInput, a1, a2, b1, b2);
-
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 pub(crate) struct MyInput {
     field: i32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 pub(crate) fn a1(db: &dyn Db, input: MyInput) -> i32 {
     // Wait to create the cycle until both threads have entered
     db.signal(1);
@@ -26,7 +24,8 @@ pub(crate) fn a1(db: &dyn Db, input: MyInput) -> i32 {
 
     a2(db, input)
 }
-#[salsa::tracked(jar = Jar, recovery_fn=recover)]
+
+#[salsa::tracked(recovery_fn=recover)]
 pub(crate) fn a2(db: &dyn Db, input: MyInput) -> i32 {
     b1(db, input)
 }
@@ -36,7 +35,7 @@ fn recover(db: &dyn Db, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
     key.field(db) * 20 + 2
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 pub(crate) fn b1(db: &dyn Db, input: MyInput) -> i32 {
     // Wait to create the cycle until both threads have entered
     db.wait_for(1);
@@ -47,7 +46,7 @@ pub(crate) fn b1(db: &dyn Db, input: MyInput) -> i32 {
     b2(db, input)
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 pub(crate) fn b2(db: &dyn Db, input: MyInput) -> i32 {
     a1(db, input)
 }

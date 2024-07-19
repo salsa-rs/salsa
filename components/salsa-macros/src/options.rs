@@ -13,11 +13,21 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `ref` identifier.
     pub return_ref: Option<syn::Ident>,
 
-    ///  The `no_eq` option is used to signal that a given field does not implement
+    /// The `no_eq` option is used to signal that a given field does not implement
     /// the `Eq` trait and cannot be compared for equality.
     ///
     /// If this is `Some`, the value is the `no_eq` identifier.
     pub no_eq: Option<syn::Ident>,
+
+    /// Signal we should not generate a `Debug` impl.
+    ///
+    /// If this is `Some`, the value is the `no_debug` identifier.
+    pub no_debug: Option<syn::Ident>,
+
+    /// Signal we should not generate a `Clone` impl.
+    ///
+    /// If this is `Some`, the value is the `no_clone` identifier.
+    pub no_clone: Option<syn::Ident>,
 
     /// The `singleton` option is used on input with only one field
     /// It allows the creation of convenient methods
@@ -28,11 +38,6 @@ pub(crate) struct Options<A: AllowedOptions> {
     ///
     /// If this is `Some`, the value is the `specify` identifier.
     pub specify: Option<syn::Ident>,
-
-    /// The `jar = <type>` option is used to indicate the jar; it defaults to `crate::jar`.
-    ///
-    /// If this is `Some`, the value is the `<type>`.
-    pub jar_ty: Option<syn::Type>,
 
     /// The `db = <path>` option is used to indicate the db.
     ///
@@ -71,7 +76,8 @@ impl<A: AllowedOptions> Default for Options<A> {
             return_ref: Default::default(),
             specify: Default::default(),
             no_eq: Default::default(),
-            jar_ty: Default::default(),
+            no_debug: Default::default(),
+            no_clone: Default::default(),
             db_path: Default::default(),
             recovery_fn: Default::default(),
             data: Default::default(),
@@ -88,8 +94,9 @@ pub(crate) trait AllowedOptions {
     const RETURN_REF: bool;
     const SPECIFY: bool;
     const NO_EQ: bool;
+    const NO_DEBUG: bool;
+    const NO_CLONE: bool;
     const SINGLETON: bool;
-    const JAR: bool;
     const DATA: bool;
     const DB: bool;
     const RECOVERY_FN: bool;
@@ -99,22 +106,6 @@ pub(crate) trait AllowedOptions {
 
 type Equals = syn::Token![=];
 type Comma = syn::Token![,];
-
-impl<A: AllowedOptions> Options<A> {
-    /// Returns the `jar type` given by the user; if none is given,
-    /// returns the default `crate::Jar`.
-    pub(crate) fn jar_ty(&self) -> syn::Type {
-        if let Some(jar_ty) = &self.jar_ty {
-            return jar_ty.clone();
-        }
-
-        parse_quote! {crate::Jar}
-    }
-
-    pub(crate) fn should_backdate(&self) -> bool {
-        self.no_eq.is_none()
-    }
-}
 
 impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
@@ -147,6 +138,34 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                         "`no_eq` option not allowed here",
                     ));
                 }
+            } else if ident == "no_debug" {
+                if A::NO_DEBUG {
+                    if let Some(old) = std::mem::replace(&mut options.no_debug, Some(ident)) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `no_debug` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`no_debug` option not allowed here",
+                    ));
+                }
+            } else if ident == "no_clone" {
+                if A::NO_CLONE {
+                    if let Some(old) = std::mem::replace(&mut options.no_clone, Some(ident)) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `no_clone` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`no_clone` option not allowed here",
+                    ));
+                }
             } else if ident == "singleton" {
                 if A::SINGLETON {
                     if let Some(old) = std::mem::replace(&mut options.singleton, Some(ident)) {
@@ -173,19 +192,6 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`specify` option not allowed here",
-                    ));
-                }
-            } else if ident == "jar" {
-                if A::JAR {
-                    let _eq = Equals::parse(input)?;
-                    let ty = syn::Type::parse(input)?;
-                    if let Some(old) = std::mem::replace(&mut options.jar_ty, Some(ty)) {
-                        return Err(syn::Error::new(old.span(), "option `jar` provided twice"));
-                    }
-                } else {
-                    return Err(syn::Error::new(
-                        ident.span(),
-                        "`jar` option not allowed here",
                     ));
                 }
             } else if ident == "db" {

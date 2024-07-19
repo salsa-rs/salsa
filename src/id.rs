@@ -112,7 +112,7 @@ impl FromId for Id {
     }
 }
 
-/// As a special case, we permit `()` to be converted to an `Id`.
+/// As a special case, we permit `Singleton` to be converted to an `Id`.
 /// This is useful for declaring functions with no arguments.
 impl AsId for () {
     fn as_id(&self) -> Id {

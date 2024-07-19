@@ -2,6 +2,9 @@
 #[macro_export]
 macro_rules! setup_tracked_struct {
     (
+        // Attributes on the function
+        attrs: [$(#[$attr:meta]),*],
+
         // Visibility of the struct
         vis: $vis:vis,
 
@@ -16,6 +19,9 @@ macro_rules! setup_tracked_struct {
 
         // Field names
         field_ids: [$($field_id:ident),*],
+
+        // Field names
+        field_getters: [$($field_getter_vis:vis $field_getter_id:ident),*],
 
         // Field types, may reference `db_lt`
         field_tys: [$($field_ty:ty),*],
@@ -38,6 +44,9 @@ macro_rules! setup_tracked_struct {
         // Number of fields
         num_fields: $N:literal,
 
+        // If true, generate a debug impl.
+        generate_debug_impl: $generate_debug_impl:tt,
+
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
         // not used elsewhere in the user's code.
@@ -51,17 +60,22 @@ macro_rules! setup_tracked_struct {
             $Revision:ident,
         ]
     ) => {
-        $vis struct $Struct<$db_lt> {
+        $(#[$attr])*
+        #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        $vis struct $Struct<$db_lt>(
+            std::ptr::NonNull<salsa::plumbing::tracked_struct::Value < $Struct<'static> >>,
+            std::marker::PhantomData < & $db_lt salsa::plumbing::tracked_struct::Value < $Struct<'static> > >
+        );
 
-        }
-
+        #[allow(clippy::all)]
+        #[allow(dead_code)]
         const _: () = {
             use salsa::plumbing as $zalsa;
-            use $zalsa_struct as $zalsa_struct;
+            use $zalsa::tracked_struct as $zalsa_struct;
             use $zalsa::Revision as $Revision;
             use std::ptr::NonNull as $NonNull;
 
-            struct $Configuration;
+            type $Configuration = $Struct<'static>;
 
             impl $zalsa_struct::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
@@ -72,11 +86,11 @@ macro_rules! setup_tracked_struct {
 
                 type Fields<$db_lt> = ($($field_ty,)*);
 
-                type Revisions = [$Revision; $N];
+                type Revisions = $zalsa::Array<$Revision, $N>;
 
                 type Struct<$db_lt> = $Struct<$db_lt>;
 
-                unsafe fn struct_from_raw<'db>(ptr: $NonNull<$zalsa_struct::Value<Self>>) -> Self::Struct<'db> {
+                unsafe fn struct_from_raw<$db_lt>(ptr: $NonNull<$zalsa_struct::Value<Self>>) -> Self::Struct<$db_lt> {
                     $Struct(ptr, std::marker::PhantomData)
                 }
 
@@ -84,25 +98,21 @@ macro_rules! setup_tracked_struct {
                     unsafe { s.0.as_ref() }
                 }
 
-                fn id_fields(fields: &Self::Fields<'_>) -> impl Hash {
+                fn id_fields(fields: &Self::Fields<'_>) -> impl std::hash::Hash {
                     ( $( &fields.$id_field_index ),* )
                 }
 
-                fn revision(revisions: &Self::Revisions, field_index: u32) -> $Revision {
-                    revisions[field_index as usize]
-                }
-
                 fn new_revisions(current_revision: $Revision) -> Self::Revisions {
-                    [current_revision; $N]
+                    $zalsa::Array::new([current_revision; $N])
                 }
 
-                unsafe fn update_fields<'db>(
-                    current_revision: Revision,
+                unsafe fn update_fields<$db_lt>(
+                    current_revision: $Revision,
                     revisions: &mut Self::Revisions,
-                    old_fields: *mut Self::Fields<'db>,
-                    new_fields: Self::Fields<'db>,
+                    old_fields: *mut Self::Fields<$db_lt>,
+                    new_fields: Self::Fields<$db_lt>,
                 ) {
-                    use salsa::update::helper::Fallback as _;
+                    use $zalsa::UpdateFallback as _;
                     unsafe {
                         $(
                             $crate::maybe_backdate!(
@@ -120,53 +130,76 @@ macro_rules! setup_tracked_struct {
             }
 
             impl $Configuration {
-                pub fn ingredient<Db>(db: &Db) -> &$zalsa_struct::Ingredient<Self> {
-                    static CACHE: $zalsa::IngredientCache<$zalsa_struct::Ingredient<Self>> =
+                pub fn ingredient(db: &dyn $zalsa::Database) -> &$zalsa_struct::IngredientImpl<$Configuration> {
+                    static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
-                    CACHE.get_or_create(|| {
-                        db.add_or_lookup_jar_by_type(&$zalsa_struct::JarImpl::<$Configuration>)
+                    CACHE.get_or_create(db, || {
+                        db.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl::<$Configuration>>::default())
                     })
                 }
             }
 
-            impl<'db> $zalsa::LookupId<'db> for $Struct<$db_lt> {
-                fn lookup_id(id: salsa::Id, db: &'db dyn Database) -> Self {
+            impl<$db_lt> $zalsa::LookupId<$db_lt> for $Struct<$db_lt> {
+                fn lookup_id(id: salsa::Id, db: &$db_lt dyn $zalsa::Database) -> Self {
                     $Configuration::ingredient(db).lookup_struct(db.runtime(), id)
                 }
             }
 
-            impl<$db_lt, $Db> $zalsa::SalsaStructInDb<$Db> for $Struct<$db_lt>
-            where
-                $Db: ?Sized + $zalsa::Database,
-            {
-                fn register_dependent_fn(db: & $Db, index: $zalsa::IngredientIndex) {
+            impl $zalsa::AsId for $Struct<'_> {
+                fn as_id(&self) -> $zalsa::Id {
+                    unsafe { self.0.as_ref() }.as_id()
+                }
+            }
+
+            impl $zalsa::SalsaStructInDb for $Struct<'_> {
+                fn register_dependent_fn(db: &dyn $zalsa::Database, index: $zalsa::IngredientIndex) {
                     $Configuration::ingredient(db).register_dependent_fn(index)
                 }
             }
 
-            impl<$db_lt, $Db> $zalsa_struct::TrackedStructInDb<#db> for $Struct<$db_lt>
-            where
-                $Db: ?Sized + $zalsa::Database,
-            {
-                fn database_key_index(db: &$Db, id: $zalsa::Id) -> $zalsa::DatabaseKeyIndex {
+            impl $zalsa::TrackedStructInDb for $Struct<'_> {
+                fn database_key_index(db: &dyn $zalsa::Database, id: $zalsa::Id) -> $zalsa::DatabaseKeyIndex {
                     $Configuration::ingredient(db).database_key_index(id)
                 }
             }
 
+            unsafe impl Send for $Struct<'_> {}
+
+            unsafe impl Sync for $Struct<'_> {}
+
+            $zalsa::macro_if! { $generate_debug_impl =>
+                impl std::fmt::Debug for $Struct<'_> {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        Self::default_debug_fmt(*self, f)
+                    }
+                }
+            }
+
+            unsafe impl $zalsa::Update for $Struct<'_> {
+                unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+                    if unsafe { *old_pointer } != new_value {
+                        unsafe { *old_pointer = new_value };
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+
             impl<$db_lt> $Struct<$db_lt> {
-                pub fn $new_fn<$Db>(db: &$Db, $($field_id: $field_ty),*) -> Self
+                pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + $zalsa::Database,
                 {
-                    $Configuration::ingredient(db).new_struct(
+                    $Configuration::ingredient(db.as_salsa_database()).new_struct(
                         db.runtime(),
                         ($($field_id,)*)
                     )
                 }
 
                 $(
-                    pub fn $field_id<$Db>(&self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($field_option, $db_lt, $field_ty)
+                    $field_getter_vis fn $field_getter_id<$Db>(&self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($field_option, $db_lt, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
@@ -180,6 +213,23 @@ macro_rules! setup_tracked_struct {
                         )
                     }
                 )*
+
+                /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
+                pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    $zalsa::with_attached_database(|db| {
+                        let fields = $Configuration::ingredient(db).leak_fields(this);
+                        let mut f = f.debug_struct(stringify!($Struct));
+                        let f = f.field("[salsa id]", &$zalsa::AsId::as_id(&this).as_u32());
+                        $(
+                            let f = f.field(stringify!($field_id), &fields.$field_index);
+                        )*
+                        f.finish()
+                    }).unwrap_or_else(|| {
+                        f.debug_struct(stringify!($Struct))
+                            .field("[salsa id]", &$zalsa::AsId::as_id(&this).as_u32())
+                            .finish()
+                    })
+                }
             }
         };
     };

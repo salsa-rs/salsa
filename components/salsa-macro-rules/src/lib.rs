@@ -12,15 +12,13 @@
 //! from a submodule is to use multiple crates, hence the existence
 //! of this crate.
 
+mod macro_if;
 mod maybe_backdate;
 mod maybe_clone;
-mod setup_input;
-mod setup_interned_fn;
-mod setup_struct_fn;
+mod setup_accumulator_impl;
+mod setup_input_struct;
+mod setup_interned_struct;
+mod setup_method_body;
+mod setup_tracked_fn;
 mod setup_tracked_struct;
 mod unexpected_cycle_recovery;
-
-#[macro_export]
-macro_rules! setup_fn {
-    () => {};
-}

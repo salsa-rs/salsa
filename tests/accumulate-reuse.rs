@@ -7,12 +7,11 @@ mod common;
 use common::{HasLogger, Logger};
 
 use expect_test::expect;
+use salsa::prelude::*;
 use test_log::test;
 
-#[salsa::jar(db = Db)]
-struct Jar(List, Integers, compute);
-
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct List {
@@ -28,11 +27,11 @@ fn compute(db: &dyn Db, input: List) -> u32 {
     db.push_log(format!("compute({:?})", input,));
 
     // always pushes 0
-    Integers::push(db, 0);
+    Integers(0).accumulate(db);
 
     let result = if let Some(next) = input.next(db) {
         let next_integers = compute::accumulated::<Integers>(db, next);
-        let v = input.value(db) + next_integers.iter().sum::<u32>();
+        let v = input.value(db) + next_integers.iter().map(|i| i.0).sum::<u32>();
         v
     } else {
         input.value(db)
@@ -42,17 +41,19 @@ fn compute(db: &dyn Db, input: List) -> u32 {
     result
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {
     fn salsa_event(&self, _event: salsa::Event) {}
 }
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {
@@ -71,19 +72,19 @@ fn test1() {
     assert_eq!(compute(&db, l2), 2);
     db.assert_logs(expect![[r#"
         [
-            "compute(List { [salsa id]: 1 })",
-            "compute(List { [salsa id]: 0 })",
+            "compute(List { [salsa id]: 1, value: 2, next: Some(List { [salsa id]: 0, value: 1, next: None }) })",
+            "compute(List { [salsa id]: 0, value: 1, next: None })",
         ]"#]]);
 
     // When we mutate `l1`, we should re-execute `compute` for `l1`,
     // but we should not have to re-execute `compute` for `l2`.
-    // The only inpout for `compute(l1)` is the accumulated values from `l1`,
+    // The only input for `compute(l1)` is the accumulated values from `l1`,
     // which have not changed.
     l1.set_value(&mut db).to(2);
     assert_eq!(compute(&db, l2), 2);
     db.assert_logs(expect![[r#"
         [
-            "compute(List { [salsa id]: 1 })",
-            "compute(List { [salsa id]: 0 })",
+            "compute(List { [salsa id]: 1, value: 2, next: Some(List { [salsa id]: 0, value: 2, next: None }) })",
+            "compute(List { [salsa id]: 0, value: 2, next: None })",
         ]"#]]);
 }

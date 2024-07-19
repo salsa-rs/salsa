@@ -7,55 +7,50 @@ mod common;
 use common::{HasLogger, Logger};
 
 use expect_test::expect;
+use salsa::Setter;
 
-#[salsa::jar(db = Db)]
-struct Jar(
-    MyInput,
-    MyTracked<'_>,
-    final_result_depends_on_x,
-    final_result_depends_on_y,
-    intermediate_result,
-);
+#[salsa::db]
+trait Db: salsa::Database + HasLogger {}
 
-trait Db: salsa::DbWithJar<Jar> + HasLogger {}
-
-#[salsa::input(jar = Jar)]
+#[salsa::input]
 struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn final_result_depends_on_x(db: &dyn Db, input: MyInput) -> u32 {
     db.push_log(format!("final_result_depends_on_x({:?})", input));
     intermediate_result(db, input).x(db) * 2
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 fn final_result_depends_on_y(db: &dyn Db, input: MyInput) -> u32 {
     db.push_log(format!("final_result_depends_on_y({:?})", input));
     intermediate_result(db, input).y(db) * 2
 }
 
-#[salsa::tracked(jar = Jar)]
+#[salsa::tracked]
 struct MyTracked<'db> {
     x: u32,
     y: u32,
 }
 
-#[salsa::tracked(jar = Jar)]
-fn intermediate_result<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
+#[salsa::tracked]
+fn intermediate_result(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, (input.field(db) + 1) / 2, input.field(db) / 2)
 }
 
-#[salsa::db(Jar)]
+#[salsa::db]
 #[derive(Default)]
 struct Database {
     storage: salsa::Storage<Self>,
     logger: Logger,
 }
 
+#[salsa::db]
 impl salsa::Database for Database {}
 
+#[salsa::db]
 impl Db for Database {}
 
 impl HasLogger for Database {
@@ -79,13 +74,13 @@ fn execute() {
     assert_eq!(final_result_depends_on_x(&db, input), 22);
     db.assert_logs(expect![[r#"
         [
-            "final_result_depends_on_x(MyInput { [salsa id]: 0 })",
+            "final_result_depends_on_x(MyInput { [salsa id]: 0, field: 22 })",
         ]"#]]);
 
     assert_eq!(final_result_depends_on_y(&db, input), 22);
     db.assert_logs(expect![[r#"
         [
-            "final_result_depends_on_y(MyInput { [salsa id]: 0 })",
+            "final_result_depends_on_y(MyInput { [salsa id]: 0, field: 22 })",
         ]"#]]);
 
     input.set_field(&mut db).to(23);
@@ -95,7 +90,7 @@ fn execute() {
     assert_eq!(final_result_depends_on_x(&db, input), 24);
     db.assert_logs(expect![[r#"
         [
-            "final_result_depends_on_x(MyInput { [salsa id]: 0 })",
+            "final_result_depends_on_x(MyInput { [salsa id]: 0, field: 23 })",
         ]"#]]);
 
     // y = 23 / 2 = 11

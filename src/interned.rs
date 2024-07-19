@@ -6,9 +6,10 @@ use std::ptr::NonNull;
 
 use crate::alloc::Alloc;
 use crate::durability::Durability;
-use crate::id::{AsId, LookupId};
-use crate::ingredient::{fmt_index, IngredientRequiresReset};
+use crate::id::AsId;
+use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
+use crate::plumbing::Jar;
 use crate::runtime::local_state::QueryOrigin;
 use crate::runtime::Runtime;
 use crate::storage::IngredientIndex;
@@ -39,16 +40,20 @@ pub trait Configuration: Sized + 'static {
     /// Requires that `ptr` represents a "confirmed" value in this revision,
     /// which means that it will remain valid and immutable for the remainder of this
     /// revision, represented by the lifetime `'db`.
-    unsafe fn struct_from_raw<'db>(ptr: NonNull<ValueStruct<Self>>) -> Self::Struct<'db>;
+    unsafe fn struct_from_raw<'db>(ptr: NonNull<Value<Self>>) -> Self::Struct<'db>;
 
     /// Deref the struct to yield the underlying value struct.
     /// Since we are still part of the `'db` lifetime in which the struct was created,
     /// this deref is safe, and the value-struct fields are immutable and verified.
-    fn deref_struct(s: Self::Struct<'_>) -> &ValueStruct<Self>;
+    fn deref_struct(s: Self::Struct<'_>) -> &Value<Self>;
 }
 
 pub trait InternedData: Sized + Eq + Hash + Clone {}
 impl<T: Eq + Hash + Clone> InternedData for T {}
+
+pub struct JarImpl<C: Configuration> {
+    phantom: PhantomData<C>,
+}
 
 /// The interned ingredient has the job of hashing values of type `Data` to produce an `Id`.
 /// It used to store interned structs but also to store the id fields of a tracked struct.
@@ -65,7 +70,7 @@ pub struct IngredientImpl<C: Configuration> {
     /// Maps from an interned id to its data.
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
-    value_map: FxDashMap<Id, Alloc<ValueStruct<C>>>,
+    value_map: FxDashMap<Id, Alloc<Value<C>>>,
 
     /// counter for the next id.
     counter: AtomicCell<u32>,
@@ -78,12 +83,26 @@ pub struct IngredientImpl<C: Configuration> {
 }
 
 /// Struct storing the interned fields.
-pub struct ValueStruct<C>
+pub struct Value<C>
 where
     C: Configuration,
 {
     id: Id,
     fields: C::Data<'static>,
+}
+
+impl<C: Configuration> Default for JarImpl<C> {
+    fn default() -> Self {
+        Self {
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<C: Configuration> Jar for JarImpl<C> {
+    fn create_ingredients(&self, first_index: IngredientIndex) -> Vec<Box<dyn Ingredient>> {
+        vec![Box::new(IngredientImpl::<C>::new(first_index)) as _]
+    }
 }
 
 impl<C> IngredientImpl<C>
@@ -137,13 +156,10 @@ where
             dashmap::mapref::entry::Entry::Vacant(entry) => {
                 let next_id = self.counter.fetch_add(1);
                 let next_id = crate::id::Id::from_u32(next_id);
-                let value = self
-                    .value_map
-                    .entry(next_id)
-                    .or_insert(Alloc::new(ValueStruct {
-                        id: next_id,
-                        fields: internal_data,
-                    }));
+                let value = self.value_map.entry(next_id).or_insert(Alloc::new(Value {
+                    id: next_id,
+                    fields: internal_data,
+                }));
                 let value_raw = value.as_raw();
                 drop(value);
                 entry.insert(next_id);
@@ -165,6 +181,12 @@ where
     /// to the interned item.
     pub fn data(&self, id: Id) -> &C::Data<'_> {
         C::deref_struct(self.interned_value(id)).data()
+    }
+
+    /// Lookup the fields from an interned struct.
+    /// Note that this is not "leaking" since no dependency edge is required.
+    pub fn fields<'db>(&'db self, s: C::Struct<'db>) -> &'db C::Data<'db> {
+        C::deref_struct(s).data()
     }
 
     /// Variant of `data` that takes a (unnecessary) database argument.
@@ -231,6 +253,10 @@ where
         );
     }
 
+    fn requires_reset_for_new_revision(&self) -> bool {
+        false
+    }
+
     fn reset_for_new_revision(&mut self) {
         // Interned ingredients do not, normally, get deleted except when they are "reset" en masse.
         // There ARE methods (e.g., `clear_deleted_entries` and `remove`) for deleting individual
@@ -247,13 +273,6 @@ where
     }
 }
 
-impl<C> IngredientRequiresReset for IngredientImpl<C>
-where
-    C: Configuration,
-{
-    const RESET_ON_NEW_REVISION: bool = false;
-}
-
 impl<C> std::fmt::Debug for IngredientImpl<C>
 where
     C: Configuration,
@@ -265,38 +284,7 @@ where
     }
 }
 
-pub struct IdentityInterner<C>
-where
-    C: Configuration,
-{
-    data: PhantomData<C>,
-}
-
-impl<C> IdentityInterner<C>
-where
-    C: Configuration,
-{
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        IdentityInterner { data: PhantomData }
-    }
-
-    pub fn intern_id<'db>(&'db self, _runtime: &'db Runtime, id: C::Data<'db>) -> crate::Id
-    where
-        C::Data<'db>: AsId,
-    {
-        id.as_id()
-    }
-
-    pub fn data_with_db<'db>(&'db self, id: crate::Id, db: &'db dyn Database) -> C::Data<'db>
-    where
-        C::Data<'db>: LookupId<'db>,
-    {
-        <C::Data<'db>>::lookup_id(id, db)
-    }
-}
-
-impl<C> ValueStruct<C>
+impl<C> Value<C>
 where
     C: Configuration,
 {
@@ -311,7 +299,7 @@ where
     }
 }
 
-impl<C> AsId for ValueStruct<C>
+impl<C> AsId for Value<C>
 where
     C: Configuration,
 {

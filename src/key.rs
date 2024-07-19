@@ -1,7 +1,4 @@
-use crate::{
-    cycle::CycleRecoveryStrategy, database, runtime::local_state::QueryOrigin,
-    storage::IngredientIndex, Database, Id,
-};
+use crate::{cycle::CycleRecoveryStrategy, database, storage::IngredientIndex, Database, Id};
 
 /// An integer that uniquely identifies a particular query instance within the
 /// database. Used to track dependencies between queries. Fully ordered and
@@ -32,6 +29,11 @@ impl DependencyIndex {
 
     pub fn key_index(self) -> Option<Id> {
         self.key_index
+    }
+
+    pub(crate) fn remove_stale_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
+        db.lookup_ingredient(self.ingredient_index)
+            .remove_stale_output(db, executor, self.key_index)
     }
 
     pub(crate) fn mark_validated_output(
@@ -90,21 +92,6 @@ impl DatabaseKeyIndex {
 
     pub(crate) fn cycle_recovery_strategy(&self, db: &dyn Database) -> CycleRecoveryStrategy {
         self.ingredient_index.cycle_recovery_strategy(db)
-    }
-
-    pub(crate) fn mark_validated_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
-        db.lookup_ingredient(self.ingredient_index)
-            .mark_validated_output(db, executor, Some(self.key_index))
-    }
-
-    pub(crate) fn remove_stale_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
-        db.lookup_ingredient(self.ingredient_index)
-            .remove_stale_output(db, executor, Some(self.key_index))
-    }
-
-    pub(crate) fn origin(&self, db: &dyn Database) -> Option<QueryOrigin> {
-        db.lookup_ingredient(self.ingredient_index)
-            .origin(self.key_index)
     }
 }
 

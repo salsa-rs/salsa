@@ -7,8 +7,6 @@ extern crate proc_macro2;
 #[macro_use]
 extern crate quote;
 
-mod hygiene;
-
 use proc_macro::TokenStream;
 
 macro_rules! parse_quote {
@@ -22,35 +20,19 @@ macro_rules! parse_quote {
     }
 }
 
-macro_rules! parse_quote_spanned {
-    ($($inp:tt)*) => {
-        {
-            let tt = quote_spanned!{$($inp)*};
-            syn::parse2(tt.clone()).unwrap_or_else(|err| {
-                panic!("failed to parse `{}` at {}:{}:{}: {}", tt, file!(), line!(), column!(), err)
-            })
-        }
-    }
-}
-
-/// Convert a single Ident to Literal: useful when &'static str is needed.
-pub(crate) fn literal(ident: &proc_macro2::Ident) -> proc_macro2::Literal {
-    proc_macro2::Literal::string(&ident.to_string())
-}
-
 mod accumulator;
-mod configuration;
 mod db;
 mod db_lifetime;
 mod debug;
-mod debug_with_db;
+mod fn_util;
+mod hygiene;
 mod input;
 mod interned;
 mod options;
 mod salsa_struct;
 mod tracked;
 mod tracked_fn;
-mod tracked_fn1;
+mod tracked_impl;
 mod tracked_struct;
 mod update;
 mod xform;
@@ -84,15 +66,6 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn update(input: TokenStream) -> TokenStream {
     let item = syn::parse_macro_input!(input as syn::DeriveInput);
     match update::update_derive(item) {
-        Ok(tokens) => tokens.into(),
-        Err(err) => err.to_compile_error().into(),
-    }
-}
-
-#[proc_macro_derive(DebugWithDb)]
-pub fn debug(input: TokenStream) -> TokenStream {
-    let item = syn::parse_macro_input!(input as syn::DeriveInput);
-    match debug_with_db::debug_with_db(item) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }
