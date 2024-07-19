@@ -69,6 +69,8 @@ macro_rules! setup_tracked_fn {
             _priv: std::convert::Infallible,
         }
 
+        // Suppress this clippy lint because we sometimes require `'db` where the ordinary Rust rules would not.
+        #[allow(clippy::needless_lifetimes)]
         $(#[$attr])*
         $vis fn $fn_name<$db_lt>(
             $db: &$db_lt dyn $Db,

@@ -17,7 +17,7 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> u32 {
+fn tracked_fn(db: &dyn Db, input: MyInput) -> u32 {
     db.push_log(format!("tracked_fn({input:?})"));
     let t = MyTracked::new(db, input.field(db) * 2);
     tracked_fn_extra::specify(db, t, 2222);

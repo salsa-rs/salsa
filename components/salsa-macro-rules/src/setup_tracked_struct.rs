@@ -67,6 +67,8 @@ macro_rules! setup_tracked_struct {
             std::marker::PhantomData < & $db_lt salsa::plumbing::tracked_struct::Value < $Struct<'static> > >
         );
 
+        #[allow(clippy::all)]
+        #[allow(dead_code)]
         const _: () = {
             use salsa::plumbing as $zalsa;
             use $zalsa::tracked_struct as $zalsa_struct;
