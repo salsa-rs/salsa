@@ -133,7 +133,6 @@ impl salsa::Database for Database {
 }
 
 #[salsa::accumulator]
-#[derive(Clone, Debug)]
 struct Diagnostic(String);
 
 impl Diagnostic {

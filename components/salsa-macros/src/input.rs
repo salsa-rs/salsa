@@ -41,6 +41,8 @@ impl crate::options::AllowedOptions for InputStruct {
 
     const NO_DEBUG: bool = true;
 
+    const NO_CLONE: bool = false;
+
     const SINGLETON: bool = true;
 
     const DATA: bool = true;
@@ -80,6 +82,7 @@ impl Macro {
         let field_ids = salsa_struct.field_ids();
         let field_indices = salsa_struct.field_indices();
         let num_fields = salsa_struct.num_fields();
+        let field_vis = salsa_struct.field_vis();
         let field_getter_ids = salsa_struct.field_getter_ids();
         let field_setter_ids = salsa_struct.field_setter_ids();
         let field_options = salsa_struct.field_options();
@@ -103,6 +106,7 @@ impl Macro {
                     new_fn: #new_fn,
                     field_options: [#(#field_options),*],
                     field_ids: [#(#field_ids),*],
+                    field_vis: [#(#field_vis f),*],
                     field_getter_ids: [#(#field_getter_ids),*],
                     field_setter_ids: [#(#field_setter_ids),*],
                     field_tys: [#(#field_tys),*],

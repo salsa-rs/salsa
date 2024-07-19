@@ -1,7 +1,3 @@
-//! Basic deletion test:
-//!
-//! * entities not created in a revision are deleted, as is any memoized data keyed on them.
-
 mod common;
 use common::{HasLogger, Logger};
 
@@ -19,7 +15,6 @@ struct MyInput {
 }
 
 #[salsa::accumulator]
-#[derive(Clone, Debug)]
 struct Log(#[allow(dead_code)] String);
 
 #[salsa::tracked]

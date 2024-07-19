@@ -19,7 +19,7 @@ struct List {
 }
 
 #[salsa::accumulator]
-#[derive(Clone, Copy, Debug)]
+#[derive(Copy)]
 struct Integers(u32);
 
 #[salsa::tracked]

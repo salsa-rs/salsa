@@ -1,7 +1,10 @@
 use proc_macro2::TokenStream;
 use syn::parse::Nothing;
 
-use crate::hygiene::Hygiene;
+use crate::{
+    hygiene::Hygiene,
+    options::{AllowedOptions, Options},
+};
 
 // #[salsa::accumulator(jar = Jar0)]
 // struct Accumulator(DataType);
@@ -11,11 +14,12 @@ pub(crate) fn accumulator(
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     let hygiene = Hygiene::from1(&input);
-    let _ = syn::parse_macro_input!(args as Nothing);
+    let args = syn::parse_macro_input!(args as Options<Accumulator>);
     let struct_item = syn::parse_macro_input!(input as syn::ItemStruct);
     let ident = struct_item.ident.clone();
     let m = StructMacro {
         hygiene,
+        args,
         struct_item,
     };
     match m.try_expand() {
@@ -24,8 +28,25 @@ pub(crate) fn accumulator(
     }
 }
 
+struct Accumulator;
+
+impl AllowedOptions for Accumulator {
+    const RETURN_REF: bool = false;
+    const SPECIFY: bool = false;
+    const NO_EQ: bool = false;
+    const NO_DEBUG: bool = true;
+    const NO_CLONE: bool = true;
+    const SINGLETON: bool = false;
+    const DATA: bool = false;
+    const DB: bool = false;
+    const RECOVERY_FN: bool = false;
+    const LRU: bool = false;
+    const CONSTRUCTOR_NAME: bool = false;
+}
+
 struct StructMacro {
     hygiene: Hygiene,
+    args: Options<Accumulator>,
     struct_item: syn::ItemStruct,
 }
 
@@ -41,7 +62,16 @@ impl StructMacro {
 
         let struct_item = self.struct_item;
 
+        let mut derives = vec![];
+        if self.args.no_debug.is_none() {
+            derives.push(quote!(Debug));
+        }
+        if self.args.no_clone.is_none() {
+            derives.push(quote!(Clone));
+        }
+
         Ok(quote! {
+            #[derive(#(#derives),*)]
             #struct_item
 
             salsa::plumbing::setup_accumulator_impl! {

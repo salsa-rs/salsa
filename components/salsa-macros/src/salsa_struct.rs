@@ -173,6 +173,10 @@ where
             .collect()
     }
 
+    pub(crate) fn field_vis(&self) -> Vec<&syn::Visibility> {
+        self.fields.iter().map(|f| &f.field.vis).collect()
+    }
+
     pub(crate) fn field_getter_ids(&self) -> Vec<&syn::Ident> {
         self.fields.iter().map(|f| &f.get_name).collect()
     }

@@ -30,6 +30,8 @@ impl crate::options::AllowedOptions for TrackedFn {
 
     const NO_DEBUG: bool = false;
 
+    const NO_CLONE: bool = false;
+
     const SINGLETON: bool = false;
 
     const DATA: bool = false;

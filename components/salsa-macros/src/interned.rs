@@ -42,6 +42,8 @@ impl crate::options::AllowedOptions for InternedStruct {
 
     const NO_DEBUG: bool = true;
 
+    const NO_CLONE: bool = false;
+
     const SINGLETON: bool = true;
 
     const DATA: bool = true;

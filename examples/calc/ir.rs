@@ -97,7 +97,7 @@ pub struct Span<'db> {
 
 // ANCHOR: diagnostic
 #[salsa::accumulator]
-#[derive(new, Clone, Debug)]
+#[derive(new)]
 pub struct Diagnostic {
     pub start: usize,
     pub end: usize,

@@ -1,5 +1,4 @@
 mod common;
-use common::{HasLogger, Logger};
 
 use expect_test::expect;
 use salsa::{Accumulator, Database};
@@ -12,7 +11,6 @@ struct MyInput {
 }
 
 #[salsa::accumulator]
-#[derive(Clone, Debug)]
 struct Log(#[allow(dead_code)] String);
 
 #[salsa::tracked]
