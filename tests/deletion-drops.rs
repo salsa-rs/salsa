@@ -22,7 +22,7 @@ struct MyTracked<'db> {
 }
 
 thread_local! {
-    static DROPPED: std::cell::RefCell<Vec<u32>> = std::cell::RefCell::new(vec![]);
+    static DROPPED: std::cell::RefCell<Vec<u32>> = const { std::cell::RefCell::new(vec![]) };
 }
 
 fn dropped() -> Vec<u32> {
