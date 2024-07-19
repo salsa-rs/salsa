@@ -32,6 +32,7 @@ fn invoke() {
                 "test 1",
                 "test 2",
             ]
-        "#]].assert_debug_eq(x);
+        "#]]
+        .assert_debug_eq(x);
     })
 }

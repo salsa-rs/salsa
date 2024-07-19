@@ -145,11 +145,7 @@ fn check_string(
 
 #[test]
 fn check_print() {
-    check_string(
-        "print 1 + 2",
-        expect![""],
-        &[],
-    );
+    check_string("print 1 + 2", expect![""], &[]);
 }
 
 #[test]
