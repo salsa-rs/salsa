@@ -97,6 +97,7 @@ pub struct Span<'db> {
 
 // ANCHOR: diagnostic
 #[salsa::accumulator]
+#[allow(dead_code)] // Debug impl uses them
 #[derive(new)]
 pub struct Diagnostic {
     pub start: usize,
@@ -106,6 +107,7 @@ pub struct Diagnostic {
 // ANCHOR_END: diagnostic
 
 impl Diagnostic {
+    #[cfg(test)]
     pub fn render(&self, db: &dyn crate::Db, src: SourceProgram) -> String {
         use annotate_snippets::*;
         let line_start = src.text(db)[..self.start].lines().count() + 1;
