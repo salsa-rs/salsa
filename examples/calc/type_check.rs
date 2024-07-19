@@ -115,8 +115,13 @@ fn check_string(
 
     // Read out any diagnostics
     db.attach(|db| {
-        expected_diagnostics
-            .assert_debug_eq(&type_check_program::accumulated::<Diagnostic>(db, program));
+        let rendered_diagnostics: String =
+            type_check_program::accumulated::<Diagnostic>(db, program)
+                .into_iter()
+                .map(|d| d.render(db, source_program))
+                .collect::<Vec<_>>()
+                .join("\n");
+        expected_diagnostics.assert_eq(&rendered_diagnostics);
     });
 
     // Clear logs
@@ -142,9 +147,7 @@ fn check_string(
 fn check_print() {
     check_string(
         "print 1 + 2",
-        expect![[r#"
-            []
-        "#]],
+        expect![""],
         &[],
     );
 }
@@ -154,8 +157,18 @@ fn check_bad_variable_in_program() {
     check_string(
         "print a + b",
         expect![[r#"
-            []
-        "#]],
+            error: the variable `a` is not declared
+             --> input:2:7
+              |
+            2 | print a + b
+              |       ^^ here
+              |
+            error: the variable `b` is not declared
+             --> input:2:11
+              |
+            2 | print a + b
+              |           ^ here
+              |"#]],
         &[],
     );
 }
@@ -165,8 +178,12 @@ fn check_bad_function_in_program() {
     check_string(
         "print a(22)",
         expect![[r#"
-            []
-        "#]],
+            error: the function `a` is not declared
+             --> input:2:7
+              |
+            2 | print a(22)
+              |       ^^^^^ here
+              |"#]],
         &[],
     );
 }
@@ -179,8 +196,16 @@ fn check_bad_variable_in_function() {
             print add_one(22)
         ",
         expect![[r#"
-            []
-        "#]],
+            error: the variable `b` is not declared
+             --> input:4:33
+              |
+            3 |   
+            4 |               fn add_one(a) = a + b
+              |  _________________________________^
+            5 | |             print add_one(22)
+              | |____________^ here
+            6 |           
+              |"#]],
         &[],
     );
 }
@@ -193,8 +218,25 @@ fn check_bad_function_in_function() {
             print add_one(22)
         ",
         expect![[r#"
-            []
-        "#]],
+            error: the function `add_two` is not declared
+             --> input:4:29
+              |
+            3 | 
+            4 |             fn add_one(a) = add_two(a) + b
+              |                             ^^^^^^^^^^ here
+            5 |             print add_one(22)
+            6 |         
+              |
+            error: the variable `b` is not declared
+             --> input:4:42
+              |
+            3 |   
+            4 |               fn add_one(a) = add_two(a) + b
+              |  __________________________________________^
+            5 | |             print add_one(22)
+              | |____________^ here
+            6 |           
+              |"#]],
         &[],
     );
 }
@@ -208,8 +250,17 @@ fn fix_bad_variable_in_function() {
             print quadruple(2)
         ",
         expect![[r#"
-            []
-        "#]],
+            error: the variable `b` is not declared
+             --> input:4:32
+              |
+            3 |   
+            4 |               fn double(a) = a * b
+              |  ________________________________^
+            5 | |             fn quadruple(a) = double(double(a))
+              | |____________^ here
+            6 |               print quadruple(2)
+            7 |           
+              |"#]],
         &[(
             "
                 fn double(a) = a * 2
@@ -222,6 +273,7 @@ fn fix_bad_variable_in_function() {
             expect![[r#"
                 [
                     "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: parse_statements(0) } }",
+                    "Event: Event { runtime_id: RuntimeId { counter: 0 }, kind: WillExecute { database_key: type_check_function(0) } }",
                 ]
             "#]],
         )],

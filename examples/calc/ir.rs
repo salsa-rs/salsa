@@ -104,3 +104,20 @@ pub struct Diagnostic {
     pub message: String,
 }
 // ANCHOR_END: diagnostic
+
+impl Diagnostic {
+    pub fn render(&self, db: &dyn crate::Db, src: SourceProgram) -> String {
+        use annotate_snippets::*;
+        let line_start = src.text(db)[..self.start].lines().count() + 1;
+        Renderer::plain()
+            .render(
+                Level::Error.title(&self.message).snippet(
+                    Snippet::source(src.text(db))
+                        .line_start(line_start)
+                        .origin("input")
+                        .annotation(Level::Error.span(self.start..self.end).label("here")),
+                ),
+            )
+            .to_string()
+    }
+}
