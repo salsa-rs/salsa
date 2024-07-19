@@ -19,24 +19,6 @@ pub fn input_ids(hygiene: &Hygiene, sig: &syn::Signature, skip: usize) -> Vec<sy
         .collect()
 }
 
-/// Returns a vector of ids representing the function arguments.
-/// Prefers to reuse the names given by the user, if possible.
-pub fn input_pats<'syn>(
-    sig: &'syn syn::Signature,
-    skip: usize,
-) -> syn::Result<Vec<&'syn syn::Pat>> {
-    sig.inputs
-        .iter()
-        .skip(skip)
-        .map(|input| match input {
-            syn::FnArg::Receiver(_) => {
-                Err(syn::Error::new_spanned(input, "self argument unexpected"))
-            }
-            syn::FnArg::Typed(typed) => Ok(&*typed.pat),
-        })
-        .collect()
-}
-
 pub fn input_tys<'syn>(
     sig: &'syn syn::Signature,
     skip: usize,

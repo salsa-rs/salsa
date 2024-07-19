@@ -20,22 +20,6 @@ macro_rules! parse_quote {
     }
 }
 
-macro_rules! parse_quote_spanned {
-    ($($inp:tt)*) => {
-        {
-            let tt = quote_spanned!{$($inp)*};
-            syn::parse2(tt.clone()).unwrap_or_else(|err| {
-                panic!("failed to parse `{}` at {}:{}:{}: {}", tt, file!(), line!(), column!(), err)
-            })
-        }
-    }
-}
-
-/// Convert a single Ident to Literal: useful when &'static str is needed.
-pub(crate) fn literal(ident: &proc_macro2::Ident) -> proc_macro2::Literal {
-    proc_macro2::Literal::string(&ident.to_string())
-}
-
 mod accumulator;
 mod db;
 mod db_lifetime;

@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::num::NonZeroU32;
 
-use crate::{salsa_struct, Database};
+use crate::Database;
 
 /// An Id is a newtype'd u32 ranging from `0..Id::MAX_U32`.
 /// The maximum range is smaller than a standard u32 to leave

@@ -9,9 +9,6 @@ use common::{HasLogger, Logger};
 use salsa::Database as _;
 use test_log::test;
 
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
-
 #[salsa::input(singleton)]
 struct MyInput {
     field: u32,
@@ -27,9 +24,6 @@ struct Database {
 
 #[salsa::db]
 impl salsa::Database for Database {}
-
-#[salsa::db]
-impl Db for Database {}
 
 impl HasLogger for Database {
     fn logger(&self) -> &Logger {

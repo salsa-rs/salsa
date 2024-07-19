@@ -102,7 +102,6 @@ impl<C: Configuration> IngredientImpl<C> {
 
         let next_id = Id::from_u32(self.counter.fetch_add(1, Ordering::Relaxed));
         let value = Value {
-            struct_ingredient_index: self.ingredient_index,
             id: next_id,
             fields,
             stamps,
@@ -258,9 +257,6 @@ pub struct Value<C>
 where
     C: Configuration,
 {
-    /// Index of the struct ingredient.
-    struct_ingredient_index: IngredientIndex,
-
     /// The id of this struct in the ingredient.
     id: Id,
 

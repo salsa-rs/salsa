@@ -20,10 +20,9 @@ struct MyInput {
 
 #[salsa::accumulator]
 #[derive(Clone, Debug)]
-struct Logs(String);
+struct Logs(#[allow(dead_code)] String);
 
 #[salsa::tracked]
-#[allow(dead_code)]
 fn push_logs(db: &dyn Db, input: MyInput) {
     db.push_log(format!(
         "push_logs(a = {}, b = {})",

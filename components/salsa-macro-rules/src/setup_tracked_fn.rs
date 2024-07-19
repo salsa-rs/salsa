@@ -257,8 +257,10 @@ macro_rules! setup_tracked_fn {
             $zalsa::attach_database($db, || {
                 let result = $zalsa::macro_if! {
                     if $needs_interner {
-                        let key = $Configuration::intern_ingredient($db).intern_id($db.runtime(), ($($input_id),*));
-                        $Configuration::fn_ingredient($db).fetch($db, key)
+                        {
+                            let key = $Configuration::intern_ingredient($db).intern_id($db.runtime(), ($($input_id),*));
+                            $Configuration::fn_ingredient($db).fetch($db, key)
+                        }
                     } else {
                         $Configuration::fn_ingredient($db).fetch($db, $zalsa::AsId::as_id(&($($input_id),*)))
                     }

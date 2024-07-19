@@ -7,9 +7,6 @@ use common::{HasLogger, Logger};
 use salsa::Setter;
 use test_log::test;
 
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
-
 #[salsa::input]
 struct MyInput {
     field: String,
@@ -24,9 +21,6 @@ struct Database {
 
 #[salsa::db]
 impl salsa::Database for Database {}
-
-#[salsa::db]
-impl Db for Database {}
 
 impl HasLogger for Database {
     fn logger(&self) -> &Logger {

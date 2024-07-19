@@ -1,13 +1,7 @@
 use proc_macro2::{Literal, Span, TokenStream};
 use syn::{spanned::Spanned, ItemFn};
 
-use crate::{
-    db_lifetime,
-    fn_util::{self, input_ids},
-    hygiene::Hygiene,
-    options::Options,
-    xform::ChangeLt,
-};
+use crate::{db_lifetime, fn_util, hygiene::Hygiene, options::Options};
 
 // Source:
 //

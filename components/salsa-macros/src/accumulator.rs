@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use syn::{parse::Nothing, spanned::Spanned};
+use syn::parse::Nothing;
 
 use crate::hygiene::Hygiene;
 

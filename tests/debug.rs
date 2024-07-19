@@ -47,7 +47,7 @@ fn input() {
 }
 
 #[salsa::tracked]
-fn leak_debug_string(db: &dyn salsa::Database, input: MyInput) -> String {
+fn leak_debug_string(_db: &dyn salsa::Database, input: MyInput) -> String {
     format!("{input:?}")
 }
 

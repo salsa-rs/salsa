@@ -6,8 +6,10 @@ use crate::setup::Database;
 use crate::setup::Knobs;
 use expect_test::expect;
 
+#[salsa::db]
 pub(crate) trait Db: salsa::Database + Knobs {}
 
+#[salsa::db]
 impl<T: salsa::Database + Knobs> Db for T {}
 
 #[salsa::input]

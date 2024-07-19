@@ -1,13 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::ToTokens;
-use syn::{parse::Nothing, Receiver};
+use syn::parse::Nothing;
 
-use crate::{
-    db_lifetime,
-    hygiene::Hygiene,
-    options::{AllowedOptions, Options},
-    tracked_fn::{check_db_argument, FnArgs, TrackedFn},
-};
+use crate::{hygiene::Hygiene, tracked_fn::FnArgs};
 
 pub(crate) fn tracked_impl(
     args: proc_macro::TokenStream,
@@ -128,12 +123,11 @@ impl Macro {
     ) -> syn::Result<MethodArguments<'syn>> {
         let db_lt = self.extract_db_lifetime(impl_item, fn_item)?;
 
-        let (self_token, self_mut) = self.check_self_argument(fn_item)?;
+        let self_token = self.check_self_argument(fn_item)?;
 
         let (db_ident, db_ty) = self.check_db_argument(&fn_item.sig.inputs[1])?;
 
         let input_ids: Vec<syn::Ident> = crate::fn_util::input_ids(&self.hygiene, &fn_item.sig, 2);
-        let input_pats = crate::fn_util::input_pats(&fn_item.sig, 2)?;
         let input_tys = crate::fn_util::input_tys(&fn_item.sig, 2)?;
         let output_ty = crate::fn_util::output_ty(db_lt, &fn_item.sig)?;
 
@@ -208,7 +202,7 @@ impl Macro {
     fn check_self_argument<'syn>(
         &self,
         fn_item: &'syn syn::ImplItemFn,
-    ) -> syn::Result<(&'syn syn::token::SelfValue, &'syn Option<syn::token::Mut>)> {
+    ) -> syn::Result<&'syn syn::token::SelfValue> {
         if fn_item.sig.inputs.is_empty() {
             return Err(syn::Error::new_spanned(
                 &fn_item.sig.ident,
@@ -220,7 +214,7 @@ impl Macro {
             attrs: _,
             self_token,
             reference,
-            mutability,
+            mutability: _,
             colon_token,
             ty: _,
         }) = &fn_item.sig.inputs[0]
@@ -245,7 +239,7 @@ impl Macro {
             ));
         }
 
-        Ok((self_token, mutability))
+        Ok(self_token)
     }
 
     fn check_db_argument<'syn>(
