@@ -169,7 +169,7 @@ fn change_a_from_2_to_0() {
     .assert_eq(&format!("{:#?}", logs));
     db.assert_logs(expect![[r#"
         [
-            "push_logs(a = 1, b = 3)",
+            "push_logs(a = 0, b = 3)",
         ]"#]]);
 }
 
