@@ -23,6 +23,9 @@ macro_rules! setup_interned_struct {
         // Field names
         field_ids: [$($field_id:ident),*],
 
+        // Visibilities for field accessor methods
+        field_vis: [$($field_vis:vis f),*],
+
         // Names for field setter methods (typically `set_foo`)
         field_getter_ids: [$($field_getter_id:ident),*],
 
@@ -134,7 +137,7 @@ macro_rules! setup_interned_struct {
                 }
 
                 $(
-                    pub fn $field_getter_id<$Db>(self, db: &'db $Db) -> $zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)
+                    $field_vis fn $field_getter_id<$Db>(self, db: &'db $Db) -> $zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
