@@ -65,6 +65,10 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// since only function ingredients push themselves onto the active query stack.)
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy;
 
+    /// Returns true if `reset_for_new_revision` should be called when new revisions start.
+    /// Invoked once when ingredient is added and not after that.
+    fn requires_reset_for_new_revision(&self) -> bool;
+
     /// Invoked when a new revision is about to start.
     /// This moment is important because it means that we have an `&mut`-reference to the
     /// database, and hence any pre-existing `&`-references must have expired.
@@ -127,12 +131,4 @@ pub(crate) fn fmt_index(
     } else {
         write!(fmt, "{}()", debug_name)
     }
-}
-
-/// Defines a const indicating if an ingredient needs to be reset each round.
-/// This const probably *should* be a member of `Ingredient` trait but then `Ingredient` would
-/// not be dyn-safe.
-pub trait IngredientRequiresReset {
-    /// If this is true, then `reset_for_new_revision` will be called every new revision.
-    const RESET_ON_NEW_REVISION: bool;
 }

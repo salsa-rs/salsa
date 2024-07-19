@@ -1,5 +1,5 @@
 use crate::cycle::CycleRecoveryStrategy;
-use crate::ingredient::{fmt_index, Ingredient, IngredientRequiresReset};
+use crate::ingredient::{fmt_index, Ingredient};
 use crate::input::Configuration;
 use crate::runtime::local_state::QueryOrigin;
 use crate::storage::IngredientIndex;
@@ -86,6 +86,10 @@ where
         panic!("unexpected call: input fields are never deleted");
     }
 
+    fn requires_reset_for_new_revision(&self) -> bool {
+        false
+    }
+
     fn reset_for_new_revision(&mut self) {
         panic!("unexpected call: input fields don't register for resets");
     }
@@ -93,13 +97,6 @@ where
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::FIELD_DEBUG_NAMES[self.field_index], index, fmt)
     }
-}
-
-impl<C> IngredientRequiresReset for FieldIngredientImpl<C>
-where
-    C: Configuration,
-{
-    const RESET_ON_NEW_REVISION: bool = false;
 }
 
 impl<C> std::fmt::Debug for FieldIngredientImpl<C>

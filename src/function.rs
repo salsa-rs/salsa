@@ -4,7 +4,7 @@ use crossbeam::atomic::AtomicCell;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::{fmt_index, IngredientRequiresReset},
+    ingredient::fmt_index,
     key::DatabaseKeyIndex,
     runtime::local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
@@ -254,6 +254,10 @@ where
         // Since its `verified_at` field has not changed, it will be considered dirty if it is invoked.
     }
 
+    fn requires_reset_for_new_revision(&self) -> bool {
+        true
+    }
+
     fn reset_for_new_revision(&mut self) {
         std::mem::take(&mut self.deleted_entries);
     }
@@ -292,11 +296,4 @@ where
             .field("index", &self.index)
             .finish()
     }
-}
-
-impl<C> IngredientRequiresReset for IngredientImpl<C>
-where
-    C: Configuration,
-{
-    const RESET_ON_NEW_REVISION: bool = true;
 }

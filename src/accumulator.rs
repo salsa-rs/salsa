@@ -8,7 +8,7 @@ use std::{
 use crate::{
     cycle::CycleRecoveryStrategy,
     hash::FxDashMap,
-    ingredient::{fmt_index, Ingredient, IngredientRequiresReset, Jar},
+    ingredient::{fmt_index, Ingredient, Jar},
     key::DependencyIndex,
     runtime::local_state::QueryOrigin,
     storage::IngredientIndex,
@@ -183,6 +183,10 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         }
     }
 
+    fn requires_reset_for_new_revision(&self) -> bool {
+        false
+    }
+
     fn reset_for_new_revision(&mut self) {
         panic!("unexpected reset on accumulator")
     }
@@ -194,10 +198,6 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(A::DEBUG_NAME, index, fmt)
     }
-}
-
-impl<A: Accumulator> IngredientRequiresReset for IngredientImpl<A> {
-    const RESET_ON_NEW_REVISION: bool = false;
 }
 
 impl<A> std::fmt::Debug for IngredientImpl<A>

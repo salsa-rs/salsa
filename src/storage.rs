@@ -236,6 +236,9 @@ struct Shared<Db: Database> {
     ///
     /// Immutable unless the mutex on `ingredients_map` is held.
     ingredients_vec: ConcurrentVec<Box<dyn Ingredient>>,
+
+    /// Indices of ingredients that require reset when a new revision starts.
+    ingredients_requiring_reset: ConcurrentVec<IngredientIndex>,
 }
 
 // ANCHOR: default
@@ -247,6 +250,7 @@ impl<Db: Database> Default for Storage<Db> {
                 nonce: NONCE.nonce(),
                 jar_map: Default::default(),
                 ingredients_vec: Default::default(),
+                ingredients_requiring_reset: Default::default(),
             },
             runtime: Runtime::default(),
         }
@@ -276,6 +280,11 @@ impl<Db: Database> Storage<Db> {
             let ingredients = jar.create_ingredients(index);
             for ingredient in ingredients {
                 let expected_index = ingredient.ingredient_index();
+
+                if ingredient.requires_reset_for_new_revision() {
+                    self.shared.ingredients_requiring_reset.push(expected_index);
+                }
+
                 let actual_index = self
                     .shared
                     .ingredients_vec
@@ -288,6 +297,7 @@ impl<Db: Database> Storage<Db> {
                     expected_index,
                     actual_index,
                 );
+                
             }
             index
         })
@@ -307,6 +317,10 @@ impl<Db: Database> Storage<Db> {
         index: IngredientIndex,
     ) -> (&mut dyn Ingredient, &mut Runtime) {
         self.runtime.new_revision();
+
+        for index in self.shared.ingredients_requiring_reset.iter() {
+            self.shared.ingredients_vec.get_mut(index.as_usize()).unwrap().reset_for_new_revision();
+        }
 
         (
             &mut **self
@@ -337,7 +351,7 @@ unsafe impl<I> Sync for IngredientCache<I> where I: Ingredient + Sync {}
 impl<I> Default for IngredientCache<I>
 where
     I: Ingredient,
- {
+{
     fn default() -> Self {
         Self::new()
     }

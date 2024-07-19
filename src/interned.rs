@@ -7,7 +7,7 @@ use std::ptr::NonNull;
 use crate::alloc::Alloc;
 use crate::durability::Durability;
 use crate::id::AsId;
-use crate::ingredient::{fmt_index, IngredientRequiresReset};
+use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
 use crate::plumbing::Jar;
 use crate::runtime::local_state::QueryOrigin;
@@ -253,6 +253,10 @@ where
         );
     }
 
+    fn requires_reset_for_new_revision(&self) -> bool {
+        false
+    }
+
     fn reset_for_new_revision(&mut self) {
         // Interned ingredients do not, normally, get deleted except when they are "reset" en masse.
         // There ARE methods (e.g., `clear_deleted_entries` and `remove`) for deleting individual
@@ -267,13 +271,6 @@ where
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
-}
-
-impl<C> IngredientRequiresReset for IngredientImpl<C>
-where
-    C: Configuration,
-{
-    const RESET_ON_NEW_REVISION: bool = false;
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>

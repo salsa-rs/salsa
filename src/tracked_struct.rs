@@ -8,7 +8,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     hash::FxDashMap,
     id::AsId,
-    ingredient::{fmt_index, Ingredient, IngredientRequiresReset, Jar},
+    ingredient::{fmt_index, Ingredient, Jar},
     ingredient_list::IngredientList,
     key::{DatabaseKeyIndex, DependencyIndex},
     runtime::{local_state::QueryOrigin, Runtime},
@@ -470,6 +470,10 @@ where
         self.delete_entity(db.as_salsa_database(), stale_output_key.unwrap());
     }
 
+    fn requires_reset_for_new_revision(&self) -> bool {
+        true
+    }
+
     fn reset_for_new_revision(&mut self) {
         self.struct_map.drop_deleted_entries();
     }
@@ -492,13 +496,6 @@ where
             .field("ingredient_index", &self.ingredient_index)
             .finish()
     }
-}
-
-impl<C> IngredientRequiresReset for IngredientImpl<C>
-where
-    C: Configuration,
-{
-    const RESET_ON_NEW_REVISION: bool = true;
 }
 
 impl<C> Value<C>
