@@ -20,14 +20,11 @@ macro_rules! setup_input_struct {
         // Field names
         field_ids: [$($field_id:ident),*],
 
-        // Visibilities for field accessor methods
-        field_vis: [$($field_vis:vis f),*],
-
         // Names for field getter methods (typically `foo`)
-        field_getter_ids: [$($field_getter_id:ident),*],
+        field_getters: [$($field_getter_vis:vis $field_getter_id:ident),*],
 
         // Names for field setter methods (typically `set_foo`)
-        field_setter_ids: [$($field_setter_id:ident),*],
+        field_setters: [$($field_setter_vis:vis $field_setter_id:ident),*],
 
         // Field types
         field_tys: [$($field_ty:ty),*],
@@ -135,7 +132,7 @@ macro_rules! setup_input_struct {
                 }
 
                 $(
-                    $field_vis fn $field_getter_id<'db, $Db>(self, db: &'db $Db) -> $zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)
+                    $field_getter_vis fn $field_getter_id<'db, $Db>(self, db: &'db $Db) -> $zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
@@ -152,7 +149,7 @@ macro_rules! setup_input_struct {
 
                 $(
                     #[must_use]
-                    $field_vis fn $field_setter_id<'db, $Db>(self, db: &'db mut $Db) -> impl salsa::Setter<FieldTy = $field_ty> + 'db
+                    $field_setter_vis fn $field_setter_id<'db, $Db>(self, db: &'db mut $Db) -> impl salsa::Setter<FieldTy = $field_ty> + 'db
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
