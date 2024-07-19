@@ -1,36 +1,31 @@
-#[salsa::jar(db = Db)]
-struct Jar(TrackedWithRetRef, TrackedSructWithSpecify, TrackedStructWithNoEq, TrackedStructWithDb, TrackedStructWithRecover, TrackedStructWithLru);
-
-trait Db: salsa::DbWithJar<Jar> {}
-
-
-#[salsa::tracked(jar = Jar, return_ref)]
+#[salsa::tracked(return_ref)]
 struct TrackedWithRetRef {
-    field: u32,    
+    field: u32,
 }
 
-#[salsa::tracked(jar = Jar, specify)]
+#[salsa::tracked(specify)]
 struct TrackedSructWithSpecify {
-    field: u32,    
+    field: u32,
 }
 
-#[salsa::tracked(jar = Jar, no_eq)]
+#[salsa::tracked(no_eq)]
 struct TrackedStructWithNoEq {
-    field: u32,    
+    field: u32,
 }
 
-#[salsa::tracked(jar = Jar, db = Db)]
+#[salsa::tracked(db = Db)]
 struct TrackedStructWithDb {
-    field: u32,    
+    field: u32,
 }
 
-#[salsa::tracked(jar = Jar, recover_fn = recover)]
+#[salsa::tracked(recover_fn = recover)]
 struct TrackedStructWithRecover {
-    field: u32,    
+    field: u32,
 }
 
-#[salsa::tracked(jar = Jar, lru =12)]
+#[salsa::tracked(lru = 12)]
 struct TrackedStructWithLru {
-    field: u32,    
+    field: u32,
 }
+
 fn main() {}

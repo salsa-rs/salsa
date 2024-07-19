@@ -1,6 +1,3 @@
-#[salsa::jar(db = Db)]
-struct Jar(InputWithBannedName1, InputWithBannedName2);
-
 // Banned field name: `from`
 #[salsa::input]
 struct InputWithBannedName1 {
@@ -12,8 +9,5 @@ struct InputWithBannedName1 {
 struct InputWithBannedName2 {
     new: u32,
 }
-
-trait Db: salsa::DbWithJar<Jar> {}
-
 
 fn main() {}

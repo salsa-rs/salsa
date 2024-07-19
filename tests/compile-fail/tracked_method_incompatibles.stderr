@@ -1,5 +1,23 @@
-error: #[salsa::tracked] must also be applied to the impl block for tracked methods
-  --> tests/compile-fail/tracked_method_incompatibles.rs:11:20
+error: tracked methods's first argument must be declared as `self`, not `&self` or `&mut self`
+ --> tests/compile-fail/tracked_method_incompatibles.rs:9:17
+  |
+9 |     fn ref_self(&self, db: &dyn salsa::Database) {}
+  |                 ^
+
+error: tracked methods's first argument must be declared as `self`, not `&self` or `&mut self`
+  --> tests/compile-fail/tracked_method_incompatibles.rs:15:21
    |
-11 |     fn use_tracked(&self) {}
-   |                    ^
+15 |     fn ref_mut_self(&mut self, db: &dyn salsa::Database) {}
+   |                     ^
+
+error: tracked method already has a lifetime parameter in scope
+  --> tests/compile-fail/tracked_method_incompatibles.rs:21:27
+   |
+21 |     fn multiple_lifetimes<'db1>(&mut self, db: &'db1 dyn salsa::Database) {}
+   |                           ^^^^
+
+error: tracked methods cannot have non-lifetime generic parameters
+  --> tests/compile-fail/tracked_method_incompatibles.rs:27:22
+   |
+27 |     fn type_generics<T>(&mut self, db: &dyn salsa::Database) -> T {
+   |                      ^

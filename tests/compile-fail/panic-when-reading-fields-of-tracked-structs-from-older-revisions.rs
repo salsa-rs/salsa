@@ -1,9 +1,4 @@
-use test_log::test;
-
-#[salsa::jar(db = Db)]
-struct Jar(MyInput, MyTracked<'_>, tracked_fn);
-
-trait Db: salsa::DbWithJar<Jar> {}
+use salsa::prelude::*;
 
 #[salsa::input]
 struct MyInput {
@@ -16,31 +11,14 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
+fn tracked_fn<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyTracked<'db> {
     MyTracked::new(db, input.field(db) / 2)
 }
 
-#[salsa::db(Jar)]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-}
-
-impl salsa::Database for Database {}
-
-impl Db for Database {}
-
-#[test]
-#[should_panic(expected = "access to tracked struct from previous revision")]
-fn execute() {
-    let mut db = Database::default();
-
+fn main() {
+    let mut db = salsa::default_database();
     let input = MyInput::new(&db, 22);
     let tracked = tracked_fn(&db, input);
-
-    // modify the input and change the revision
     input.set_field(&mut db).to(24);
-
-    // panic when reading fields of tracked structs from older revisions
-    tracked.field(&db);
+    tracked.field(&db); // tracked comes from prior revision
 }

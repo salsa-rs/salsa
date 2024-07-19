@@ -95,6 +95,13 @@ impl Macro {
             }
         }
 
+        if let (Some(_), Some(token)) = (&self.args.lru, &self.args.specify) {
+            return Err(syn::Error::new_spanned(
+                token,
+                "the `specify` and `lru` options cannot be used together",
+            ));
+        }
+
         let needs_interner = match function_type {
             FunctionType::RequiresInterning => true,
             FunctionType::Constant | FunctionType::SalsaStruct => false,
