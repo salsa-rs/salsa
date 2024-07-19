@@ -89,6 +89,12 @@ fn accumulate_once() {
     // Just call accumulate on a base input to see what happens.
     let input = MyInput::new(&db, 2, 3);
     let logs = push_logs::accumulated::<Logs>(&db, input);
+    db.assert_logs(expect![[r#"
+        [
+            "push_logs(a = 2, b = 3)",
+            "push_a_logs(2)",
+            "push_b_logs(3)",
+        ]"#]]);
     expect![[r#"
         [
             "log_b(0 of 3)",
@@ -98,12 +104,6 @@ fn accumulate_once() {
             "log_a(1 of 2)",
         ]"#]]
     .assert_eq(&format!("{:#?}", logs));
-    db.assert_logs(expect![[r#"
-        [
-            "push_logs(a = 2, b = 3)",
-            "push_a_logs(2)",
-            "push_b_logs(3)",
-        ]"#]])
 }
 
 #[test]
