@@ -36,7 +36,7 @@ fn input() {
             field: "it's salsa time".to_string(),
         };
         let complex_struct = ComplexStruct::new(db, input, not_salsa);
-    
+
         // debug includes all fields
         let actual = format!("{complex_struct:?}");
         let expected = expect![[
