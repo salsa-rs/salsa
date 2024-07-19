@@ -1,71 +1,42 @@
 error: `return_ref` option not allowed here
- --> tests/compile-fail/interned_struct_incompatibles.rs:7:30
+ --> tests/compile-fail/interned_struct_incompatibles.rs:1:19
   |
-7 | #[salsa::interned(jar = Jar, return_ref)]
-  |                              ^^^^^^^^^^
+1 | #[salsa::interned(return_ref)]
+  |                   ^^^^^^^^^^
 
 error: `specify` option not allowed here
-  --> tests/compile-fail/interned_struct_incompatibles.rs:12:30
-   |
-12 | #[salsa::interned(jar = Jar, specify)]
-   |                              ^^^^^^^
+ --> tests/compile-fail/interned_struct_incompatibles.rs:6:19
+  |
+6 | #[salsa::interned(specify)]
+  |                   ^^^^^^^
 
 error: `no_eq` option not allowed here
-  --> tests/compile-fail/interned_struct_incompatibles.rs:17:30
+  --> tests/compile-fail/interned_struct_incompatibles.rs:11:19
    |
-17 | #[salsa::interned(jar = Jar, no_eq)]
-   |                              ^^^^^
+11 | #[salsa::interned(no_eq)]
+   |                   ^^^^^
 
 error: `db` option not allowed here
-  --> tests/compile-fail/interned_struct_incompatibles.rs:22:30
+  --> tests/compile-fail/interned_struct_incompatibles.rs:16:19
    |
-22 | #[salsa::interned(jar = Jar, db = Db)]
-   |                              ^^
+16 | #[salsa::interned(db = Db)]
+   |                   ^^
 
 error: unrecognized option `recover_fn`
-  --> tests/compile-fail/interned_struct_incompatibles.rs:27:30
+  --> tests/compile-fail/interned_struct_incompatibles.rs:21:19
    |
-27 | #[salsa::interned(jar = Jar, recover_fn = recover)]
-   |                              ^^^^^^^^^^
+21 | #[salsa::interned(recover_fn = recover)]
+   |                   ^^^^^^^^^^
 
 error: `lru` option not allowed here
-  --> tests/compile-fail/interned_struct_incompatibles.rs:32:30
+  --> tests/compile-fail/interned_struct_incompatibles.rs:26:19
    |
-32 | #[salsa::interned(jar = Jar, lru =12)]
-   |                              ^^^
+26 | #[salsa::interned(lru = 12)]
+   |                   ^^^
 
-error[E0412]: cannot find type `InternedWithRetRef` in this scope
- --> tests/compile-fail/interned_struct_incompatibles.rs:2:12
-  |
-2 | struct Jar(InternedWithRetRef, InternedWithSpecify, InternedWithNoEq, InternedWithDb, InternedWithRecover, InternedWithLru);
-  |            ^^^^^^^^^^^^^^^^^^ not found in this scope
-
-error[E0412]: cannot find type `InternedWithSpecify` in this scope
- --> tests/compile-fail/interned_struct_incompatibles.rs:2:32
-  |
-2 | struct Jar(InternedWithRetRef, InternedWithSpecify, InternedWithNoEq, InternedWithDb, InternedWithRecover, InternedWithLru);
-  |                                ^^^^^^^^^^^^^^^^^^^ not found in this scope
-
-error[E0412]: cannot find type `InternedWithNoEq` in this scope
- --> tests/compile-fail/interned_struct_incompatibles.rs:2:53
-  |
-2 | struct Jar(InternedWithRetRef, InternedWithSpecify, InternedWithNoEq, InternedWithDb, InternedWithRecover, InternedWithLru);
-  |                                                     ^^^^^^^^^^^^^^^^ not found in this scope
-
-error[E0412]: cannot find type `InternedWithDb` in this scope
- --> tests/compile-fail/interned_struct_incompatibles.rs:2:71
-  |
-2 | struct Jar(InternedWithRetRef, InternedWithSpecify, InternedWithNoEq, InternedWithDb, InternedWithRecover, InternedWithLru);
-  |                                                                       ^^^^^^^^^^^^^^ not found in this scope
-
-error[E0412]: cannot find type `InternedWithRecover` in this scope
- --> tests/compile-fail/interned_struct_incompatibles.rs:2:87
-  |
-2 | struct Jar(InternedWithRetRef, InternedWithSpecify, InternedWithNoEq, InternedWithDb, InternedWithRecover, InternedWithLru);
-  |                                                                                       ^^^^^^^^^^^^^^^^^^^ not found in this scope
-
-error[E0412]: cannot find type `InternedWithLru` in this scope
- --> tests/compile-fail/interned_struct_incompatibles.rs:2:108
-  |
-2 | struct Jar(InternedWithRetRef, InternedWithSpecify, InternedWithNoEq, InternedWithDb, InternedWithRecover, InternedWithLru);
-  |                                                                                                            ^^^^^^^^^^^^^^^ not found in this scope
+error: `#[id]` cannot be used with `#[salsa::interned]`
+  --> tests/compile-fail/interned_struct_incompatibles.rs:33:5
+   |
+33 | /     #[id]
+34 | |     field: u32,
+   | |______________^
