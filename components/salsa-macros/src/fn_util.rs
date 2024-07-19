@@ -19,10 +19,7 @@ pub fn input_ids(hygiene: &Hygiene, sig: &syn::Signature, skip: usize) -> Vec<sy
         .collect()
 }
 
-pub fn input_tys<'syn>(
-    sig: &'syn syn::Signature,
-    skip: usize,
-) -> syn::Result<Vec<&'syn syn::Type>> {
+pub fn input_tys(sig: &syn::Signature, skip: usize) -> syn::Result<Vec<&syn::Type>> {
     sig.inputs
         .iter()
         .skip(skip)
@@ -40,7 +37,7 @@ pub fn output_ty(db_lt: Option<&syn::Lifetime>, sig: &syn::Signature) -> syn::Re
     match &sig.output {
         syn::ReturnType::Default => Ok(parse_quote!(())),
         syn::ReturnType::Type(_, ty) => match db_lt {
-            Some(db_lt) => Ok(ChangeLt::elided_to(db_lt).in_type(&ty)),
+            Some(db_lt) => Ok(ChangeLt::elided_to(db_lt).in_type(ty)),
             None => Ok(syn::Type::clone(ty)),
         },
     }

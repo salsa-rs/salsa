@@ -22,7 +22,7 @@ pub(crate) fn accumulator(
         struct_item,
     };
     match m.try_expand() {
-        Ok(v) => crate::debug::dump_tokens(&ident, v).into(),
+        Ok(v) => crate::debug::dump_tokens(ident, v).into(),
         Err(e) => e.to_compile_error().into(),
     }
 }

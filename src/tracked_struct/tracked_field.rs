@@ -132,7 +132,7 @@ where
             fmt,
             "{}.{}({:?})",
             C::DEBUG_NAME,
-            C::FIELD_DEBUG_NAMES[self.field_index as usize],
+            C::FIELD_DEBUG_NAMES[self.field_index],
             index.unwrap()
         )
     }

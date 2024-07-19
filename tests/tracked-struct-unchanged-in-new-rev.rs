@@ -12,7 +12,7 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn tracked_fn<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
+fn tracked_fn(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, input.field(db) / 2)
 }
 

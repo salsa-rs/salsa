@@ -88,8 +88,12 @@ impl Views {
         self.view_casters.push(ViewCaster {
             target_type_id,
             type_name: std::any::type_name::<DbView>(),
-            func: unsafe { std::mem::transmute(func) },
-            func_mut: unsafe { std::mem::transmute(func_mut) },
+            func: unsafe { std::mem::transmute::<fn(&Db) -> &DbView, fn(&Dummy) -> &Dummy>(func) },
+            func_mut: unsafe {
+                std::mem::transmute::<fn(&mut Db) -> &mut DbView, fn(&mut Dummy) -> &mut Dummy>(
+                    func_mut,
+                )
+            },
         });
     }
 
@@ -187,7 +191,7 @@ impl<Db: Database> Clone for ViewsOf<Db> {
     fn clone(&self) -> Self {
         Self {
             upcasts: self.upcasts.clone(),
-            phantom: self.phantom.clone(),
+            phantom: self.phantom,
         }
     }
 }

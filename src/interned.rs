@@ -179,7 +179,7 @@ where
     /// Lookup the data for an interned value based on its id.
     /// Rarely used since end-users generally carry a struct with a pointer directly
     /// to the interned item.
-    pub fn data<'db>(&'db self, id: Id) -> &'db C::Data<'db> {
+    pub fn data(&self, id: Id) -> &C::Data<'_> {
         C::deref_struct(self.interned_value(id)).data()
     }
 

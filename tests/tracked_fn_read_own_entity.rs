@@ -27,7 +27,7 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn intermediate_result<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
+fn intermediate_result(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
     db.push_log(format!("intermediate_result({:?})", input));
     let tracked = MyTracked::new(db, input.field(db) / 2);
     let _ = tracked.field(db); // read the field of an entity we created

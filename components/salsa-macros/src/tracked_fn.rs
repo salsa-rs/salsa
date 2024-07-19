@@ -205,10 +205,10 @@ pub fn check_db_argument<'arg>(
         syn::FnArg::Receiver(_) => {
             // If we see `&self` where a database was expected, that indicates
             // that `#[tracked]` was applied to a method.
-            return Err(syn::Error::new_spanned(
+            Err(syn::Error::new_spanned(
                 fn_arg,
                 "#[salsa::tracked] must also be applied to the impl block for tracked methods",
-            ));
+            ))
         }
         syn::FnArg::Typed(typed) => {
             let syn::Pat::Ident(db_pat_ident) = &*typed.pat else {

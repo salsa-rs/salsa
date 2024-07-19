@@ -334,6 +334,15 @@ where
 
 unsafe impl<I> Sync for IngredientCache<I> where I: Ingredient + Sync {}
 
+impl<I> Default for IngredientCache<I>
+where
+    I: Ingredient,
+ {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<I> IngredientCache<I>
 where
     I: Ingredient,

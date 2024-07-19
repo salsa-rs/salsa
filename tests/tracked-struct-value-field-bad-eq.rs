@@ -43,7 +43,7 @@ fn the_fn(db: &dyn Db, input: MyInput) -> bool {
 }
 
 #[salsa::tracked]
-fn make_tracked_struct<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
+fn make_tracked_struct(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, BadEq::from(input.field(db)))
 }
 

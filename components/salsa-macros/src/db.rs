@@ -51,12 +51,10 @@ impl DbMacro {
                     #input
                 })
             }
-            _ => {
-                return Err(syn::Error::new_spanned(
-                    input,
-                    "`db` must be applied to a struct, trait, or impl",
-                ));
-            }
+            _ => Err(syn::Error::new_spanned(
+                input,
+                "`db` must be applied to a struct, trait, or impl",
+            )),
         }
     }
 
@@ -75,10 +73,10 @@ impl DbMacro {
             }
         }
 
-        return Err(syn::Error::new_spanned(
+        Err(syn::Error::new_spanned(
             &input.ident,
             "database struct must be a braced struct (`{}`) with a field named `storage`",
-        ));
+        ))
     }
 
     fn has_storage_impl(&self, input: &syn::ItemStruct) -> syn::Result<TokenStream> {

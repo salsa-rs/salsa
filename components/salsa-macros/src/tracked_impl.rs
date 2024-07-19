@@ -31,13 +31,13 @@ struct MethodArguments<'syn> {
 
 impl Macro {
     fn try_generate(&self, mut impl_item: syn::ItemImpl) -> syn::Result<TokenStream> {
-        let mut member_items = std::mem::replace(&mut impl_item.items, vec![]);
+        let mut member_items = std::mem::take(&mut impl_item.items);
         for member_item in &mut member_items {
             self.modify_member(&impl_item, member_item)?;
         }
         impl_item.items = member_items;
         Ok(crate::debug::dump_tokens(
-            &format!("impl {:?}", impl_item.self_ty),
+            format!("impl {:?}", impl_item.self_ty),
             impl_item.into_token_stream(),
         ))
     }
@@ -221,21 +221,21 @@ impl Macro {
         else {
             return Err(syn::Error::new_spanned(
                 &fn_item.sig.inputs[0],
-                format!("tracked methods must take a `self` argument"),
+                "tracked methods must take a `self` argument",
             ));
         };
 
         if let Some(colon_token) = colon_token {
             return Err(syn::Error::new_spanned(
                 colon_token,
-                format!("tracked method's `self` argument must not have an explicit type"),
+                "tracked method's `self` argument must not have an explicit type",
             ));
         }
 
         if let Some((and_token, _)) = reference {
             return Err(syn::Error::new_spanned(
                 and_token,
-                format!("tracked methods's first argument must be declared as `self`, not `&self` or `&mut self`"),
+                "tracked methods's first argument must be declared as `self`, not `&self` or `&mut self`",
             ));
         }
 

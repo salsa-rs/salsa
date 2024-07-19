@@ -33,7 +33,7 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn create_tracked_structs<'db>(db: &'db dyn Db, input: MyInput) -> Vec<MyTracked<'db>> {
+fn create_tracked_structs(db: &dyn Db, input: MyInput) -> Vec<MyTracked<'_>> {
     db.push_log(format!("intermediate_result({:?})", input));
     (0..input.field(db))
         .map(|i| MyTracked::new(db, i))

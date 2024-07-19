@@ -44,7 +44,7 @@ pub trait Database: DatabaseGen {
 }
 
 thread_local! {
-    static DATABASE: Cell<AttachedDatabase> = Cell::new(AttachedDatabase::null());
+    static DATABASE: Cell<AttachedDatabase> = const { Cell::new(AttachedDatabase::null()) };
 }
 
 /// Access the "attached" database. Returns `None` if no database is attached.
@@ -105,7 +105,7 @@ impl<Db: ?Sized + Database> std::ops::Deref for AttachedDb<'_, Db> {
     type Target = Db;
 
     fn deref(&self) -> &Db {
-        &self.db
+        self.db
     }
 }
 

@@ -28,7 +28,7 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn intermediate_result<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
+fn intermediate_result(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
     db.push_log(format!("intermediate_result({:?})", input));
     MyTracked::new(db, input.field(db) / 2)
 }

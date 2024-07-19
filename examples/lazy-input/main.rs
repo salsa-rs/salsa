@@ -163,7 +163,7 @@ fn compile(db: &dyn Db, input: File) -> u32 {
 }
 
 #[salsa::tracked]
-fn parse<'db>(db: &'db dyn Db, input: File) -> ParsedFile<'db> {
+fn parse(db: &dyn Db, input: File) -> ParsedFile<'_> {
     let mut lines = input.contents(db).lines();
     let value = match lines.next().map(|line| (line.parse::<u32>(), line)) {
         Some((Ok(num), _)) => num,

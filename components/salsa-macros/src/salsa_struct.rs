@@ -129,7 +129,7 @@ where
         for ef in &self.fields {
             if ef.has_id_attr {
                 return Err(syn::Error::new_spanned(
-                    &ef.field,
+                    ef.field,
                     format!("`#[id]` cannot be used with `#[salsa::{}]`", A::KIND),
                 ));
             }
