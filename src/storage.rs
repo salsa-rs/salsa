@@ -297,7 +297,7 @@ impl<Db: Database> Storage<Db> {
                     expected_index,
                     actual_index,
                 );
-                
+
             }
             index
         })
@@ -319,7 +319,11 @@ impl<Db: Database> Storage<Db> {
         self.runtime.new_revision();
 
         for index in self.shared.ingredients_requiring_reset.iter() {
-            self.shared.ingredients_vec.get_mut(index.as_usize()).unwrap().reset_for_new_revision();
+            self.shared
+                .ingredients_vec
+                .get_mut(index.as_usize())
+                .unwrap()
+                .reset_for_new_revision();
         }
 
         (
