@@ -20,6 +20,9 @@ macro_rules! setup_tracked_struct {
         // Field names
         field_ids: [$($field_id:ident),*],
 
+        // Visibilities for field accessor methods
+        field_vis: [$($field_vis:vis f),*],
+
         // Field names
         field_getter_ids: [$($field_getter_id:ident),*],
 
@@ -197,7 +200,7 @@ macro_rules! setup_tracked_struct {
                 }
 
                 $(
-                    pub fn $field_getter_id<$Db>(&self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($field_option, $db_lt, $field_ty)
+                    $field_vis fn $field_getter_id<$Db>(&self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($field_option, $db_lt, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,

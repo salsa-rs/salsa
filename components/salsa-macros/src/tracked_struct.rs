@@ -77,6 +77,7 @@ impl Macro {
         let db_lt = db_lifetime::db_lifetime(&self.struct_item.generics);
         let new_fn = salsa_struct.constructor_name();
         let field_ids = salsa_struct.field_ids();
+        let field_vis = salsa_struct.field_vis();
         let field_getter_ids = salsa_struct.field_getter_ids();
         let field_indices = salsa_struct.field_indices();
         let id_field_indices = salsa_struct.id_field_indices();
@@ -103,6 +104,7 @@ impl Macro {
                     db_lt: #db_lt,
                     new_fn: #new_fn,
                     field_ids: [#(#field_ids),*],
+                    field_vis: [#(#field_vis f),*],
                     field_getter_ids: [#(#field_getter_ids),*],
                     field_tys: [#(#field_tys),*],
                     field_indices: [#(#field_indices),*],
