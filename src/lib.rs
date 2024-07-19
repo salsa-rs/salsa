@@ -73,7 +73,6 @@ pub mod prelude {
 ///
 /// The contents of this module are NOT subject to semver.
 pub mod plumbing {
-    pub use crate::accumulator::accumulated_by;
     pub use crate::accumulator::Accumulator;
     pub use crate::array::Array;
     pub use crate::cycle::Cycle;

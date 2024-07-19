@@ -227,9 +227,8 @@ macro_rules! setup_tracked_fn {
                             $zalsa::AsId::as_id(&($($input_id),*))
                         }
                     };
-                    $Configuration::fn_ingredient($db).fetch($db, key);
-                    let database_key_index = $Configuration::fn_ingredient($db).database_key_index(key);
-                    $zalsa::accumulated_by($db.as_salsa_database(), database_key_index)
+
+                    $Configuration::fn_ingredient($db).accumulated_by::<A>($db, key)
                 }
 
                 $zalsa::macro_if! { $is_specifiable =>

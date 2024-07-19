@@ -16,6 +16,7 @@ use self::delete::DeletedEntries;
 
 use super::ingredient::Ingredient;
 
+mod accumulated;
 mod backdate;
 mod delete;
 mod diff_outputs;

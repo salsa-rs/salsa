@@ -210,16 +210,3 @@ where
             .finish()
     }
 }
-
-pub fn accumulated_by<A>(db: &dyn Database, database_key_index: DatabaseKeyIndex) -> Vec<A>
-where
-    A: Accumulator,
-{
-    let Some(accumulator) = <IngredientImpl<A>>::from_db(db) else {
-        return vec![];
-    };
-    let runtime = db.runtime();
-    let mut output = vec![];
-    accumulator.produced_by(runtime, database_key_index, &mut output);
-    output
-}
