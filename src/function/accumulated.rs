@@ -1,4 +1,6 @@
-use crate::{accumulator, storage::DatabaseGen, Id};
+use std::collections::HashSet;
+
+use crate::{accumulator, storage::DatabaseGen, DatabaseKeyIndex, Id};
 
 use super::{Configuration, IngredientImpl};
 
@@ -21,17 +23,42 @@ where
         // First ensure the result is up to date
         self.fetch(db, key);
 
-        let database_key_index = self.database_key_index(key);
-        accumulator.produced_by(runtime, database_key_index, &mut output);
+        // Recursively accumulate outputs from children
+        self.database_key_index(key).traverse_children::<C, _>(
+            db,
+            &mut |query| accumulator.produced_by(runtime, query, &mut output),
+            &mut HashSet::new(),
+        );
 
-        if let Some(origin) = self.origin(key) {
+        output
+    }
+}
+
+impl DatabaseKeyIndex {
+    pub fn traverse_children<C, F>(
+        &self,
+        db: &C::DbView,
+        handler: &mut F,
+        visited: &mut HashSet<DatabaseKeyIndex>,
+    ) where
+        C: Configuration,
+        F: (FnMut(DatabaseKeyIndex)),
+    {
+        handler(*self);
+        visited.insert(*self);
+
+        let origin = db
+            .lookup_ingredient(self.ingredient_index)
+            .origin(self.key_index);
+
+        if let Some(origin) = origin {
             for input in origin.inputs() {
-                if let Ok(input) = input.try_into() {
-                    accumulator.produced_by(runtime, input, &mut output);
+                if let Ok(input) = TryInto::<DatabaseKeyIndex>::try_into(input) {
+                    if !visited.contains(&input) {
+                        input.traverse_children::<C, F>(db, handler, visited);
+                    }
                 }
             }
         }
-
-        output
     }
 }
