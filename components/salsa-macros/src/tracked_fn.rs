@@ -69,6 +69,7 @@ impl Macro {
         let output_ty = self.output_ty(&db_lt, &item)?;
         let (cycle_recovery_fn, cycle_recovery_strategy) = self.cycle_recovery();
         let is_specifiable = self.args.specify.is_some();
+        let no_eq = self.args.no_eq.is_some();
 
         let mut inner_fn = item.clone();
         inner_fn.vis = syn::Visibility::Inherited;
@@ -127,6 +128,7 @@ impl Macro {
                 cycle_recovery_fn: #cycle_recovery_fn,
                 cycle_recovery_strategy: #cycle_recovery_strategy,
                 is_specifiable: #is_specifiable,
+                no_eq: #no_eq,
                 needs_interner: #needs_interner,
                 lru: #lru,
                 return_ref: #return_ref,

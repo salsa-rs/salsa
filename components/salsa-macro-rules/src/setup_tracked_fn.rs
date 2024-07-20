@@ -43,6 +43,9 @@ macro_rules! setup_tracked_fn {
         // If true, this is specifiable.
         is_specifiable: $is_specifiable:tt,
 
+        // If true, don't backdate the value when the new value compares equal to the old value.
+        no_eq: $no_eq:tt,
+
         // If true, the input needs an interner (because it has >1 argument).
         needs_interner: $needs_interner:tt,
 
@@ -162,7 +165,13 @@ macro_rules! setup_tracked_fn {
                     old_value: &Self::Output<'_>,
                     new_value: &Self::Output<'_>,
                 ) -> bool {
-                    $zalsa::should_backdate_value(old_value, new_value)
+                    $zalsa::macro_if! {
+                        if $no_eq {
+                            false
+                        } else {
+                            $zalsa::should_backdate_value(old_value, new_value)
+                        }
+                    }
                 }
 
                 fn execute<$db_lt>($db: &$db_lt Self::DbView, ($($input_id),*): ($($input_ty),*)) -> Self::Output<$db_lt> {
