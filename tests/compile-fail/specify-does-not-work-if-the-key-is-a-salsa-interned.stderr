@@ -1,13 +1,3 @@
-error[E0277]: the trait bound `MyInterned<'_>: LookupId<'_>` is not satisfied
-  --> tests/compile-fail/specify-does-not-work-if-the-key-is-a-salsa-interned.rs:15:1
-   |
-15 | #[salsa::tracked(specify)]
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `FromId` is not implemented for `MyInterned<'_>`, which is required by `MyInterned<'_>: LookupId<'_>`
-   |
-   = help: the trait `LookupId<'db>` is implemented for `MyTracked<'db>`
-   = note: required for `MyInterned<'_>` to implement `LookupId<'_>`
-   = note: this error originates in the macro `salsa::plumbing::setup_tracked_fn` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
-
 error[E0277]: the trait bound `MyInterned<'_>: TrackedStructInDb` is not satisfied
   --> tests/compile-fail/specify-does-not-work-if-the-key-is-a-salsa-interned.rs:15:1
    |
