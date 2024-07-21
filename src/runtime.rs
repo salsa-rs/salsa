@@ -1,12 +1,16 @@
 use std::{
     panic::panic_any,
-    sync::{atomic::Ordering, Arc},
+    sync::{atomic::AtomicUsize, Arc},
 };
+
+use crossbeam::atomic::AtomicCell;
+use parking_lot::Mutex;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
     durability::Durability,
     key::{DatabaseKeyIndex, DependencyIndex},
+    revision::AtomicRevision,
     runtime::active_query::ActiveQuery,
     storage::IngredientIndex,
     Cancelled, Cycle, Database, Event, EventKind, Revision,
@@ -22,7 +26,6 @@ use super::tracked_struct::Disambiguator;
 mod active_query;
 mod dependency_graph;
 pub mod local_state;
-mod shared_state;
 
 pub struct Runtime {
     /// Our unique runtime id.
@@ -31,8 +34,31 @@ pub struct Runtime {
     /// Local state that is specific to this runtime (thread).
     local_state: local_state::LocalState,
 
-    /// Shared state that is accessible via all runtimes.
-    shared_state: Arc<shared_state::SharedState>,
+    /// Stores the next id to use for a snapshotted runtime (starts at 1).
+    next_id: AtomicUsize,
+
+    /// Vector we can clone
+    empty_dependencies: Arc<[(EdgeKind, DependencyIndex)]>,
+
+    /// Set to true when the current revision has been canceled.
+    /// This is done when we an input is being changed. The flag
+    /// is set back to false once the input has been changed.
+    revision_canceled: AtomicCell<bool>,
+
+    /// Stores the "last change" revision for values of each duration.
+    /// This vector is always of length at least 1 (for Durability 0)
+    /// but its total length depends on the number of durations. The
+    /// element at index 0 is special as it represents the "current
+    /// revision".  In general, we have the invariant that revisions
+    /// in here are *declining* -- that is, `revisions[i] >=
+    /// revisions[i + 1]`, for all `i`. This is because when you
+    /// modify a value with durability D, that implies that values
+    /// with durability less than D may have changed too.
+    revisions: Vec<AtomicRevision>,
+
+    /// The dependency graph tracks which runtimes are blocked on one
+    /// another, waiting for queries to terminate.
+    dependency_graph: Mutex<DependencyGraph>,
 }
 
 #[derive(Clone, Debug)]
@@ -80,8 +106,14 @@ impl Default for Runtime {
     fn default() -> Self {
         Runtime {
             id: RuntimeId { counter: 0 },
-            shared_state: Default::default(),
             local_state: Default::default(),
+            revisions: (0..Durability::LEN)
+                .map(|_| AtomicRevision::start())
+                .collect(),
+            next_id: AtomicUsize::new(1),
+            empty_dependencies: None.into_iter().collect(),
+            revision_canceled: Default::default(),
+            dependency_graph: Default::default(),
         }
     }
 }
@@ -89,8 +121,11 @@ impl Default for Runtime {
 impl std::fmt::Debug for Runtime {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fmt.debug_struct("Runtime")
-            .field("id", &self.id())
-            .field("shared_state", &self.shared_state)
+            .field("id", &self.id)
+            .field("revisions", &self.revisions)
+            .field("next_id", &self.next_id)
+            .field("revision_canceled", &self.revision_canceled)
+            .field("dependency_graph", &self.dependency_graph)
             .finish()
     }
 }
@@ -101,7 +136,7 @@ impl Runtime {
     }
 
     pub(crate) fn current_revision(&self) -> Revision {
-        self.shared_state.revisions[0].load()
+        self.revisions[0].load()
     }
 
     /// Returns the index of the active query along with its *current* durability/changed-at
@@ -111,7 +146,7 @@ impl Runtime {
     }
 
     pub(crate) fn empty_dependencies(&self) -> Arc<[(EdgeKind, DependencyIndex)]> {
-        self.shared_state.empty_dependencies.clone()
+        self.empty_dependencies.clone()
     }
 
     /// Executes `op` but ignores its effect on
@@ -128,22 +163,6 @@ impl Runtime {
     /// (such as accumulators) from the current Salsa query.**
     pub fn debug_probe<R>(&self, op: impl FnOnce() -> R) -> R {
         self.local_state.debug_probe(op)
-    }
-
-    pub fn snapshot(&self) -> Self {
-        if self.local_state.query_in_progress() {
-            panic!("it is not legal to `snapshot` during a query (see salsa-rs/salsa#80)");
-        }
-
-        let id = RuntimeId {
-            counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),
-        };
-
-        Runtime {
-            id,
-            shared_state: self.shared_state.clone(),
-            local_state: Default::default(),
-        }
     }
 
     pub(crate) fn report_tracked_read(
@@ -170,7 +189,7 @@ impl Runtime {
     /// less than or equal to `durability` to the current revision.
     pub(crate) fn report_tracked_write(&mut self, durability: Durability) {
         let new_revision = self.current_revision();
-        for rev in &self.shared_state.revisions[1..=durability.index()] {
+        for rev in &self.revisions[1..=durability.index()] {
             rev.store(new_revision);
         }
     }
@@ -219,7 +238,7 @@ impl Runtime {
     /// dependencies.
     #[inline]
     pub(crate) fn last_changed_revision(&self, d: Durability) -> Revision {
-        self.shared_state.revisions[d.index()].load()
+        self.revisions[d.index()].load()
     }
 
     /// Starts unwinding the stack if the current revision is cancelled.
@@ -239,7 +258,7 @@ impl Runtime {
             runtime_id: self.id(),
             kind: EventKind::WillCheckCancellation,
         });
-        if self.shared_state.revision_canceled.load() {
+        if self.revision_canceled.load() {
             db.salsa_event(Event {
                 runtime_id: self.id(),
                 kind: EventKind::WillCheckCancellation,
@@ -255,7 +274,7 @@ impl Runtime {
     }
 
     pub(crate) fn set_cancellation_flag(&self) {
-        self.shared_state.revision_canceled.store(true);
+        self.revision_canceled.store(true);
     }
 
     /// Increments the "current revision" counter and clears
@@ -265,8 +284,8 @@ impl Runtime {
     pub(crate) fn new_revision(&mut self) -> Revision {
         let r_old = self.current_revision();
         let r_new = r_old.next();
-        self.shared_state.revisions[0].store(r_new);
-        self.shared_state.revision_canceled.store(false);
+        self.revisions[0].store(r_new);
+        self.revision_canceled.store(false);
         r_new
     }
 
@@ -304,7 +323,7 @@ impl Runtime {
         other_id: RuntimeId,
         query_mutex_guard: QueryMutexGuard,
     ) {
-        let mut dg = self.shared_state.dependency_graph.lock();
+        let mut dg = self.dependency_graph.lock();
 
         if dg.depends_on(other_id, self.id()) {
             self.unblock_cycle_and_maybe_throw(db, &mut dg, database_key, other_id);
@@ -464,8 +483,7 @@ impl Runtime {
         database_key: DatabaseKeyIndex,
         wait_result: WaitResult,
     ) {
-        self.shared_state
-            .dependency_graph
+        self.dependency_graph
             .lock()
             .unblock_runtimes_blocked_on(database_key, wait_result);
     }
