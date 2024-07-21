@@ -149,22 +149,6 @@ impl Runtime {
         self.empty_dependencies.clone()
     }
 
-    /// Executes `op` but ignores its effect on
-    /// the query dependencies; intended for use
-    /// by `DebugWithDb` only.
-    ///
-    /// # Danger: intended for debugging only
-    ///
-    /// This operation is intended for **debugging only**.
-    /// Misuse will cause Salsa to give incorrect results.
-    /// The expectation is that the type `R` produced will be
-    /// logged or printed out. **The type `R` that is produced
-    /// should not affect the result or other outputs
-    /// (such as accumulators) from the current Salsa query.**
-    pub fn debug_probe<R>(&self, op: impl FnOnce() -> R) -> R {
-        self.local_state.debug_probe(op)
-    }
-
     pub(crate) fn report_tracked_read(
         &self,
         key_index: DependencyIndex,

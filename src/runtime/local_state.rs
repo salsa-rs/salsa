@@ -183,25 +183,6 @@ impl LocalState {
         self.with_query_stack(|stack| !stack.is_empty())
     }
 
-    /// Dangerous operation: executes `op` but ignores its effect on
-    /// the query dependencies. Useful for debugging statements, but
-    /// otherwise not to be toyed with!
-    pub(super) fn debug_probe<R>(&self, op: impl FnOnce() -> R) -> R {
-        let saved_state: Option<_> =
-            self.with_query_stack(|stack| Some(stack.last()?.save_query_state()));
-
-        let result = op();
-
-        if let Some(saved_state) = saved_state {
-            self.with_query_stack(|stack| {
-                let active_query = stack.last_mut().expect("query stack not empty");
-                active_query.restore_query_state(saved_state);
-            });
-        }
-
-        result
-    }
-
     /// Returns the index of the active query along with its *current* durability/changed-at
     /// information. As the query continues to execute, naturally, that information may change.
     pub(super) fn active_query(&self) -> Option<(DatabaseKeyIndex, StampedValue<()>)> {
