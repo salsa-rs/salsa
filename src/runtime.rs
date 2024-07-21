@@ -7,25 +7,21 @@ use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 
 use crate::{
+    active_query::ActiveQuery,
     cycle::CycleRecoveryStrategy,
     durability::Durability,
     key::{DatabaseKeyIndex, DependencyIndex},
+    local_state::{self, ActiveQueryGuard, EdgeKind},
     revision::AtomicRevision,
-    runtime::active_query::ActiveQuery,
     storage::IngredientIndex,
     Cancelled, Cycle, Database, Event, EventKind, Revision,
 };
 
-use self::{
-    dependency_graph::DependencyGraph,
-    local_state::{ActiveQueryGuard, EdgeKind},
-};
+use self::dependency_graph::DependencyGraph;
 
 use super::tracked_struct::Disambiguator;
 
-mod active_query;
 mod dependency_graph;
-pub mod local_state;
 
 pub struct Runtime {
     /// Our unique runtime id.

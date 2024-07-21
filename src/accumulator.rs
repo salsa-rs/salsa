@@ -10,7 +10,7 @@ use crate::{
     hash::FxDashMap,
     ingredient::{fmt_index, Ingredient, Jar},
     key::DependencyIndex,
-    runtime::local_state::QueryOrigin,
+    local_state::QueryOrigin,
     storage::IngredientIndex,
     Database, DatabaseKeyIndex, Event, EventKind, Id, Revision, Runtime,
 };

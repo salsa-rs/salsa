@@ -17,8 +17,9 @@ use crate::{
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient},
     key::{DatabaseKeyIndex, DependencyIndex},
+    local_state::QueryOrigin,
     plumbing::{Jar, Stamp},
-    runtime::{local_state::QueryOrigin, Runtime},
+    runtime::Runtime,
     storage::IngredientIndex,
     Database, Durability, Id, Revision,
 };

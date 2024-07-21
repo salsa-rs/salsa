@@ -2,10 +2,8 @@ use arc_swap::Guard;
 
 use crate::{
     key::DatabaseKeyIndex,
-    runtime::{
-        local_state::{ActiveQueryGuard, EdgeKind, QueryOrigin},
-        StampedValue,
-    },
+    local_state::{ActiveQueryGuard, EdgeKind, QueryOrigin},
+    runtime::StampedValue,
     storage::DatabaseGen,
     Id, Revision, Runtime,
 };

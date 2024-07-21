@@ -1,4 +1,4 @@
-use crate::{runtime::local_state::QueryOrigin, Id};
+use crate::{local_state::QueryOrigin, Id};
 
 use super::{Configuration, IngredientImpl};
 

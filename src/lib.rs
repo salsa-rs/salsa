@@ -1,4 +1,5 @@
 mod accumulator;
+mod active_query;
 mod alloc;
 mod array;
 mod cancelled;
@@ -15,6 +16,7 @@ mod ingredient_list;
 mod input;
 mod interned;
 mod key;
+mod local_state;
 mod nonce;
 mod revision;
 mod runtime;

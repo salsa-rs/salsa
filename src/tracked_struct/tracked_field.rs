@@ -90,7 +90,7 @@ where
         field_changed_at > revision
     }
 
-    fn origin(&self, _key_index: crate::Id) -> Option<crate::runtime::local_state::QueryOrigin> {
+    fn origin(&self, _key_index: crate::Id) -> Option<crate::local_state::QueryOrigin> {
         None
     }
 

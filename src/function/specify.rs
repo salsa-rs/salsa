@@ -1,7 +1,7 @@
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    runtime::local_state::{QueryOrigin, QueryRevisions},
+    local_state::{QueryOrigin, QueryRevisions},
     storage::DatabaseGen,
     tracked_struct::TrackedStructInDb,
     Database, DatabaseKeyIndex, Id,

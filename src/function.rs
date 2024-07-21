@@ -6,7 +6,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::fmt_index,
     key::DatabaseKeyIndex,
-    runtime::local_state::QueryOrigin,
+    local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
     storage::{DatabaseGen, IngredientIndex},
     Cycle, Database, Event, EventKind, Id, Revision,

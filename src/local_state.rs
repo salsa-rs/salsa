@@ -1,17 +1,16 @@
 use tracing::debug;
 
+use super::active_query::ActiveQuery;
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::key::DependencyIndex;
-use crate::runtime::Revision;
+use crate::runtime::StampedValue;
 use crate::tracked_struct::Disambiguator;
 use crate::Cycle;
+use crate::Revision;
 use crate::Runtime;
 use std::cell::RefCell;
 use std::sync::Arc;
-
-use super::active_query::ActiveQuery;
-use super::StampedValue;
 
 /// State that is specific to a single execution thread.
 ///

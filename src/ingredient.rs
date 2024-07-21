@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::{
-    cycle::CycleRecoveryStrategy, runtime::local_state::QueryOrigin, storage::IngredientIndex,
-    Database, DatabaseKeyIndex, Id,
+    cycle::CycleRecoveryStrategy, local_state::QueryOrigin, storage::IngredientIndex, Database,
+    DatabaseKeyIndex, Id,
 };
 
 use super::Revision;

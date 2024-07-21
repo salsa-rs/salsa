@@ -1,6 +1,6 @@
 use crate::{
-    hash::FxHashSet, key::DependencyIndex, runtime::local_state::QueryRevisions,
-    storage::DatabaseGen, Database, DatabaseKeyIndex, Event, EventKind,
+    hash::FxHashSet, key::DependencyIndex, local_state::QueryRevisions, storage::DatabaseGen,
+    Database, DatabaseKeyIndex, Event, EventKind,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};

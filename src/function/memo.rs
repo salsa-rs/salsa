@@ -4,8 +4,8 @@ use arc_swap::{ArcSwap, Guard};
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    hash::FxDashMap, key::DatabaseKeyIndex, runtime::local_state::QueryRevisions, Event, EventKind,
-    Id, Revision, Runtime,
+    hash::FxDashMap, key::DatabaseKeyIndex, local_state::QueryRevisions, Event, EventKind, Id,
+    Revision, Runtime,
 };
 
 use super::Configuration;
@@ -78,7 +78,7 @@ impl<C: Configuration> MemoMap<C> {
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
     pub(super) fn evict(&self, key: Id) {
-        use crate::runtime::local_state::QueryOrigin;
+        use crate::local_state::QueryOrigin;
         use dashmap::mapref::entry::Entry::*;
 
         if let Occupied(entry) = self.map.entry(key) {

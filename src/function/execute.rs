@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-    runtime::{local_state::ActiveQueryGuard, StampedValue},
-    storage::DatabaseGen,
-    Cycle, Database, Event, EventKind,
+    local_state::ActiveQueryGuard, runtime::StampedValue, storage::DatabaseGen, Cycle, Database,
+    Event, EventKind,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};
