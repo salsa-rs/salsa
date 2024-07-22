@@ -1,6 +1,6 @@
 use tracing::debug;
 
-use super::active_query::ActiveQuery;
+use crate::active_query::ActiveQuery;
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::key::DependencyIndex;
@@ -18,7 +18,7 @@ use std::sync::Arc;
 ///
 /// **Note also that all mutations to the database handle (and hence
 /// to the local-state) must be undone during unwinding.**
-pub(super) struct LocalState {
+pub(crate) struct LocalState {
     /// Vector of active queries.
     ///
     /// This is normally `Some`, but it is set to `None`
@@ -159,7 +159,7 @@ impl Default for LocalState {
 
 impl LocalState {
     #[inline]
-    pub(super) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
+    pub(crate) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
         let mut query_stack = self.query_stack.borrow_mut();
         let query_stack = query_stack.as_mut().expect("local stack taken");
         query_stack.push(ActiveQuery::new(database_key_index));
@@ -178,13 +178,13 @@ impl LocalState {
             .expect("query stack taken"))
     }
 
-    pub(super) fn query_in_progress(&self) -> bool {
+    pub(crate) fn query_in_progress(&self) -> bool {
         self.with_query_stack(|stack| !stack.is_empty())
     }
 
     /// Returns the index of the active query along with its *current* durability/changed-at
     /// information. As the query continues to execute, naturally, that information may change.
-    pub(super) fn active_query(&self) -> Option<(DatabaseKeyIndex, StampedValue<()>)> {
+    pub(crate) fn active_query(&self) -> Option<(DatabaseKeyIndex, StampedValue<()>)> {
         self.with_query_stack(|stack| {
             stack.last().map(|active_query| {
                 (
@@ -199,7 +199,8 @@ impl LocalState {
         })
     }
 
-    pub(super) fn add_output(&self, entity: DependencyIndex) {
+    /// Add an output to the current query's list of dependencies
+    pub(crate) fn add_output(&self, entity: DependencyIndex) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_output(entity)
@@ -207,7 +208,8 @@ impl LocalState {
         })
     }
 
-    pub(super) fn is_output(&self, entity: DependencyIndex) -> bool {
+    /// Check whether `entity` is an output of the currently active query (if any)
+    pub(crate) fn is_output(&self, entity: DependencyIndex) -> bool {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.is_output(entity)
@@ -217,7 +219,8 @@ impl LocalState {
         })
     }
 
-    pub(super) fn report_tracked_read(
+    /// Register that currently active query reads the given input
+    pub(crate) fn report_tracked_read(
         &self,
         input: DependencyIndex,
         durability: Durability,
@@ -259,7 +262,12 @@ impl LocalState {
         })
     }
 
-    pub(super) fn report_untracked_read(&self, current_revision: Revision) {
+    /// Register that the current query read an untracked value
+    ///
+    /// # Parameters
+    ///
+    /// * `current_revision`, the current revision
+    pub(crate) fn report_untracked_read(&self, current_revision: Revision) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_untracked_read(current_revision);
@@ -271,7 +279,7 @@ impl LocalState {
     /// of durability `durability` which changed in `revision`.
     // FIXME: Use or remove this.
     #[allow(dead_code)]
-    pub(super) fn report_synthetic_read(&self, durability: Durability, revision: Revision) {
+    pub(crate) fn report_synthetic_read(&self, durability: Durability, revision: Revision) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_synthetic_read(durability, revision);
@@ -282,7 +290,7 @@ impl LocalState {
     /// Takes the query stack and returns it. This is used when
     /// the current thread is blocking. The stack must be restored
     /// with [`Self::restore_query_stack`] when the thread unblocks.
-    pub(super) fn take_query_stack(&self) -> Vec<ActiveQuery> {
+    pub(crate) fn take_query_stack(&self) -> Vec<ActiveQuery> {
         assert!(
             self.query_stack.borrow().is_some(),
             "query stack already taken"
@@ -292,11 +300,19 @@ impl LocalState {
 
     /// Restores a query stack taken with [`Self::take_query_stack`] once
     /// the thread unblocks.
-    pub(super) fn restore_query_stack(&self, stack: Vec<ActiveQuery>) {
+    pub(crate) fn restore_query_stack(&self, stack: Vec<ActiveQuery>) {
         assert!(self.query_stack.borrow().is_none(), "query stack not taken");
         self.query_stack.replace(Some(stack));
     }
 
+    /// Given the hash of the id fields of a tracked struct, returns:
+    ///
+    /// * database-key-index of currently active query
+    /// * durability/changed-at info for the inputs read thus far by said query
+    /// * a `Disambiguator` that uniquely identifies the tracked struct about to be created
+    ///
+    /// The disambiguator is basically an integer that increments each time
+    /// a tracked struct with this `data_hash` is created.
     #[track_caller]
     pub(crate) fn disambiguate(
         &self,
@@ -348,7 +364,7 @@ impl ActiveQueryGuard<'_> {
     }
 
     /// Invoked when the query has successfully completed execution.
-    pub(super) fn complete(self) -> ActiveQuery {
+    pub(crate) fn complete(self) -> ActiveQuery {
         let query = self.pop_helper();
         std::mem::forget(self);
         query
