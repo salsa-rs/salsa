@@ -189,14 +189,14 @@ macro_rules! setup_input_struct {
                     $zalsa::with_attached_database(|db| {
                         let fields = $Configuration::ingredient(db).leak_fields(this);
                         let mut f = f.debug_struct(stringify!($Struct));
-                        let f = f.field("[salsa id]", &$zalsa::AsId::as_id(&this).as_u32());
+                        let f = f.field("[salsa id]", &$zalsa::AsId::as_id(&this));
                         $(
                             let f = f.field(stringify!($field_id), &fields.$field_index);
                         )*
                         f.finish()
                     }).unwrap_or_else(|| {
                         f.debug_struct(stringify!($Struct))
-                            .field("[salsa id]", &this.0.as_u32())
+                            .field("[salsa id]", &this.0)
                             .finish()
                     })
                 }

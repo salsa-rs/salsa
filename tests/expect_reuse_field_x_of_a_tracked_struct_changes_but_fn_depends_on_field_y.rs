@@ -74,13 +74,13 @@ fn execute() {
     assert_eq!(final_result_depends_on_x(&db, input), 22);
     db.assert_logs(expect![[r#"
         [
-            "final_result_depends_on_x(MyInput { [salsa id]: 0, field: 22 })",
+            "final_result_depends_on_x(MyInput { [salsa id]: Id(0), field: 22 })",
         ]"#]]);
 
     assert_eq!(final_result_depends_on_y(&db, input), 22);
     db.assert_logs(expect![[r#"
         [
-            "final_result_depends_on_y(MyInput { [salsa id]: 0, field: 22 })",
+            "final_result_depends_on_y(MyInput { [salsa id]: Id(0), field: 22 })",
         ]"#]]);
 
     input.set_field(&mut db).to(23);
@@ -90,7 +90,7 @@ fn execute() {
     assert_eq!(final_result_depends_on_x(&db, input), 24);
     db.assert_logs(expect![[r#"
         [
-            "final_result_depends_on_x(MyInput { [salsa id]: 0, field: 23 })",
+            "final_result_depends_on_x(MyInput { [salsa id]: Id(0), field: 23 })",
         ]"#]]);
 
     // y = 23 / 2 = 11

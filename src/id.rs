@@ -12,7 +12,7 @@ use crate::Database;
 /// You will rarely use the `Id` type directly, though you can.
 /// You are more likely to use types that implement the `AsId` trait,
 /// such as entity keys.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id {
     value: NonZeroU32,
 }
@@ -39,6 +39,12 @@ impl Id {
 
     pub const fn as_u32(self) -> u32 {
         self.value.get() - 1
+    }
+}
+
+impl Debug for Id {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Id({})", self.as_u32())
     }
 }
 
