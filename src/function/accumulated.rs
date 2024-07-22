@@ -31,6 +31,9 @@ where
 
                 let origin = db.lookup_ingredient(k.ingredient_index).origin(k.key_index);
                 let inputs = origin.iter().flat_map(|origin| origin.inputs());
+                // Careful: we want to push in execution order, so reverse order to
+                // ensure the first child that was executed will be the first child popped
+                // from the stack.
                 stack.extend(
                     inputs
                         .flat_map(|input| TryInto::<DatabaseKeyIndex>::try_into(input).into_iter())
