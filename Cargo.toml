@@ -11,13 +11,13 @@ description = "A generic framework for on-demand, incrementalized computation (e
 arc-swap = "1.6.0"
 boomphf = "0.6.0"
 crossbeam = "0.8.1"
-dashmap = "5.3.4"
-hashlink = "0.8.0"
+dashmap = "6.0.1"
+hashlink = "0.9.1"
 indexmap = "2"
 log = "0.4.5"
 orx-concurrent-vec = "1.10.0"
 parking_lot = "0.12.1"
-rustc-hash = "1.1.0"
+rustc-hash = "2.0.0"
 salsa-macro-rules = { version = "0.1.0", path = "components/salsa-macro-rules" }
 salsa-macros = { path = "components/salsa-macros" }
 smallvec = "1.0.0"
