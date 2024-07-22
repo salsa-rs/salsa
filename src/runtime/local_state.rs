@@ -77,7 +77,7 @@ pub enum QueryOrigin {
 
 impl QueryOrigin {
     /// Indices for queries *read* by this query
-    pub(crate) fn inputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
             QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => None,
@@ -86,7 +86,7 @@ impl QueryOrigin {
     }
 
     /// Indices for queries *written* by this query (if any)
-    pub(crate) fn outputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
             QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => None,
@@ -127,7 +127,7 @@ impl QueryEdges {
     /// Returns the (tracked) inputs that were executed in computing this memoized value.
     ///
     /// These will always be in execution order.
-    pub(crate) fn inputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
         self.input_outputs
             .iter()
             .filter(|(edge_kind, _)| *edge_kind == EdgeKind::Input)
@@ -137,7 +137,7 @@ impl QueryEdges {
     /// Returns the (tracked) outputs that were executed in computing this memoized value.
     ///
     /// These will always be in execution order.
-    pub(crate) fn outputs(&self) -> impl Iterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
         self.input_outputs
             .iter()
             .filter(|(edge_kind, _)| *edge_kind == EdgeKind::Output)
