@@ -28,7 +28,7 @@ where
         loop {
             let database_key_index = self.database_key_index(key);
 
-            log::debug!("{database_key_index:?}: maybe_changed_after(revision = {revision:?})");
+            tracing::debug!("{database_key_index:?}: maybe_changed_after(revision = {revision:?})");
 
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.memo_map.get(key);
@@ -70,7 +70,7 @@ where
             None => return Some(true),
         };
 
-        log::debug!(
+        tracing::debug!(
             "{database_key_index:?}: maybe_changed_after_cold, successful claim, \
             revision = {revision:?}, old_memo = {old_memo:#?}",
         );
@@ -106,7 +106,7 @@ where
         let verified_at = memo.verified_at.load();
         let revision_now = runtime.current_revision();
 
-        log::debug!("{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",);
+        tracing::debug!("{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",);
 
         if verified_at == revision_now {
             // Already verified.
@@ -141,7 +141,7 @@ where
         let runtime = db.runtime();
         let database_key_index = active_query.database_key_index;
 
-        log::debug!("{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",);
+        tracing::debug!("{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",);
 
         if self.shallow_verify_memo(db, runtime, database_key_index, old_memo) {
             return true;

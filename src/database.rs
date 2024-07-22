@@ -11,7 +11,7 @@ pub trait Database: DatabaseGen {
     /// By default, the event is logged at level debug using
     /// the standard `log` facade.
     fn salsa_event(&self, event: Event) {
-        log::debug!("salsa_event: {:?}", event)
+        tracing::debug!("salsa_event: {:?}", event)
     }
 
     /// A "synthetic write" causes the system to act *as though* some
