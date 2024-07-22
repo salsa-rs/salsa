@@ -1,3 +1,6 @@
+//! Demonstrates that accumulation is done in the order
+//! in which things were originally executed.
+
 mod common;
 
 use expect_test::expect;
@@ -37,7 +40,7 @@ fn push_d_logs(db: &dyn Database) {
 }
 
 #[test]
-fn accumulate_chain() {
+fn accumulate_execution_order() {
     salsa::default_database().attach(|db| {
         let logs = push_logs::accumulated::<Log>(db);
         // Check that we get logs in execution order

@@ -1,3 +1,6 @@
+//! Test that when having nested tracked functions
+//! we don't drop any values when accumulating.
+
 mod common;
 
 use expect_test::expect;
