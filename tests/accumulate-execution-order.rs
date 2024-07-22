@@ -16,18 +16,19 @@ fn push_logs(db: &dyn Database) {
 fn push_a_logs(db: &dyn Database) {
     Log("log a".to_string()).accumulate(db);
     push_b_logs(db);
+    push_c_logs(db);
+    push_d_logs(db);
 }
 
 #[salsa::tracked]
 fn push_b_logs(db: &dyn Database) {
-    // No logs
-    push_c_logs(db);
+    Log("log b".to_string()).accumulate(db);
+    push_d_logs(db);
 }
 
 #[salsa::tracked]
 fn push_c_logs(db: &dyn Database) {
-    // No logs
-    push_d_logs(db);
+    Log("log c".to_string()).accumulate(db);
 }
 
 #[salsa::tracked]
@@ -39,14 +40,20 @@ fn push_d_logs(db: &dyn Database) {
 fn accumulate_chain() {
     salsa::default_database().attach(|db| {
         let logs = push_logs::accumulated::<Log>(db);
-        // Check that we get all the logs.
+        // Check that we get logs in execution order
         expect![[r#"
             [
                 Log(
                     "log a",
                 ),
                 Log(
+                    "log b",
+                ),
+                Log(
                     "log d",
+                ),
+                Log(
+                    "log c",
                 ),
             ]"#]]
         .assert_eq(&format!("{:#?}", logs));

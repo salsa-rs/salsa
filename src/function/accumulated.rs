@@ -26,18 +26,16 @@ where
         let mut stack: Vec<DatabaseKeyIndex> = vec![db_key];
 
         while let Some(k) = stack.pop() {
-            visited.insert(k);
-            accumulator.produced_by(runtime, k, &mut output);
+            if visited.insert(k) {
+                accumulator.produced_by(runtime, k, &mut output);
 
-            let origin = db.lookup_ingredient(k.ingredient_index).origin(k.key_index);
-            let inputs = origin.iter().flat_map(|origin| origin.inputs());
-
-            for input in inputs.rev() {
-                if let Ok(input) = input.try_into() {
-                    if !visited.contains(&input) {
-                        stack.push(input);
-                    }
-                }
+                let origin = db.lookup_ingredient(k.ingredient_index).origin(k.key_index);
+                let inputs = origin.iter().flat_map(|origin| origin.inputs());
+                stack.extend(
+                    inputs
+                        .flat_map(|input| TryInto::<DatabaseKeyIndex>::try_into(input).into_iter())
+                        .rev(),
+                );
             }
         }
 
