@@ -38,9 +38,8 @@ where
     }
 
     fn report_stale_output(db: &C::DbView, key: DatabaseKeyIndex, output: DependencyIndex) {
-        let runtime_id = db.runtime().id();
         db.salsa_event(Event {
-            runtime_id,
+            thread_id: std::thread::current().id(),
             kind: EventKind::WillDiscardStaleOutput {
                 execute_key: key,
                 output_key: output,

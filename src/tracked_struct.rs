@@ -391,7 +391,7 @@ where
     /// discussion and important considerations.
     pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id) {
         db.salsa_event(Event {
-            runtime_id: db.runtime().id(),
+            thread_id: std::thread::current().id(),
             kind: crate::EventKind::DidDiscard {
                 key: self.database_key_index(id),
             },

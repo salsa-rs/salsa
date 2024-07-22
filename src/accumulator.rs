@@ -174,7 +174,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         assert!(stale_output_key.is_none());
         if self.map.remove(&executor).is_some() {
             db.salsa_event(Event {
-                runtime_id: db.runtime().id(),
+                thread_id: std::thread::current().id(),
                 kind: EventKind::DidDiscardAccumulated {
                     executor_key: executor,
                     accumulator: self.dependency_index(),

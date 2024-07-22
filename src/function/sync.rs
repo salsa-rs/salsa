@@ -1,11 +1,9 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-
-use crate::{
-    hash::FxDashMap,
-    key::DatabaseKeyIndex,
-    runtime::{RuntimeId, WaitResult},
-    Database, Id, Runtime,
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    thread::ThreadId,
 };
+
+use crate::{hash::FxDashMap, key::DatabaseKeyIndex, runtime::WaitResult, Database, Id, Runtime};
 
 #[derive(Default)]
 pub(super) struct SyncMap {
@@ -13,7 +11,7 @@ pub(super) struct SyncMap {
 }
 
 struct SyncState {
-    id: RuntimeId,
+    id: ThreadId,
 
     /// Set to true if any other queries are blocked,
     /// waiting for this query to complete.
@@ -27,10 +25,11 @@ impl SyncMap {
         database_key_index: DatabaseKeyIndex,
     ) -> Option<ClaimGuard<'me>> {
         let runtime = db.runtime();
+        let thread_id = std::thread::current().id();
         match self.sync_map.entry(database_key_index.key_index) {
             dashmap::mapref::entry::Entry::Vacant(entry) => {
                 entry.insert(SyncState {
-                    id: runtime.id(),
+                    id: thread_id,
                     anyone_waiting: AtomicBool::new(false),
                 });
                 Some(ClaimGuard {

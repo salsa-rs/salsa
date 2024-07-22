@@ -1,6 +1,7 @@
 use std::{
     panic::panic_any,
     sync::{atomic::AtomicUsize, Arc},
+    thread::ThreadId,
 };
 
 use crossbeam::atomic::AtomicCell;
@@ -24,9 +25,6 @@ use super::tracked_struct::Disambiguator;
 mod dependency_graph;
 
 pub struct Runtime {
-    /// Our unique runtime id.
-    id: RuntimeId,
-
     /// Local state that is specific to this runtime (thread).
     local_state: local_state::LocalState,
 
@@ -64,14 +62,6 @@ pub(crate) enum WaitResult {
     Cycle(Cycle),
 }
 
-/// A unique identifier for a particular runtime. Each time you create
-/// a snapshot, a fresh `RuntimeId` is generated. Once a snapshot is
-/// complete, its `RuntimeId` may potentially be re-used.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct RuntimeId {
-    counter: usize,
-}
-
 #[derive(Copy, Clone, Debug)]
 pub struct StampedValue<V> {
     pub value: V,
@@ -101,7 +91,6 @@ impl<V> StampedValue<V> {
 impl Default for Runtime {
     fn default() -> Self {
         Runtime {
-            id: RuntimeId { counter: 0 },
             local_state: Default::default(),
             revisions: (0..Durability::LEN)
                 .map(|_| AtomicRevision::start())
@@ -117,7 +106,6 @@ impl Default for Runtime {
 impl std::fmt::Debug for Runtime {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fmt.debug_struct("Runtime")
-            .field("id", &self.id)
             .field("revisions", &self.revisions)
             .field("next_id", &self.next_id)
             .field("revision_canceled", &self.revision_canceled)
@@ -127,10 +115,6 @@ impl std::fmt::Debug for Runtime {
 }
 
 impl Runtime {
-    pub(crate) fn id(&self) -> RuntimeId {
-        self.id
-    }
-
     pub(crate) fn current_revision(&self) -> Revision {
         self.revisions[0].load()
     }
@@ -234,13 +218,15 @@ impl Runtime {
     /// `salsa_event` is emitted when this method is called, so that should be
     /// used instead.
     pub(crate) fn unwind_if_revision_cancelled<DB: ?Sized + Database>(&self, db: &DB) {
+        let thread_id = std::thread::current().id();
         db.salsa_event(Event {
-            runtime_id: self.id(),
+            thread_id,
+
             kind: EventKind::WillCheckCancellation,
         });
         if self.revision_canceled.load() {
             db.salsa_event(Event {
-                runtime_id: self.id(),
+                thread_id,
                 kind: EventKind::WillCheckCancellation,
             });
             self.unwind_cancelled();
@@ -300,23 +286,24 @@ impl Runtime {
         &self,
         db: &dyn Database,
         database_key: DatabaseKeyIndex,
-        other_id: RuntimeId,
+        other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
     ) {
         let mut dg = self.dependency_graph.lock();
+        let thread_id = std::thread::current().id();
 
-        if dg.depends_on(other_id, self.id()) {
+        if dg.depends_on(other_id, thread_id) {
             self.unblock_cycle_and_maybe_throw(db, &mut dg, database_key, other_id);
 
             // If the above fn returns, then (via cycle recovery) it has unblocked the
             // cycle, so we can continue.
-            assert!(!dg.depends_on(other_id, self.id()));
+            assert!(!dg.depends_on(other_id, thread_id));
         }
 
         db.salsa_event(Event {
-            runtime_id: self.id(),
+            thread_id,
             kind: EventKind::WillBlockOn {
-                other_runtime_id: other_id,
+                other_thread_id: other_id,
                 database_key,
             },
         });
@@ -325,7 +312,7 @@ impl Runtime {
 
         let (stack, result) = DependencyGraph::block_on(
             dg,
-            self.id(),
+            thread_id,
             database_key,
             other_id,
             stack,
@@ -359,7 +346,7 @@ impl Runtime {
         db: &dyn Database,
         dg: &mut DependencyGraph,
         database_key_index: DatabaseKeyIndex,
-        to_id: RuntimeId,
+        to_id: ThreadId,
     ) {
         tracing::debug!(
             "unblock_cycle_and_maybe_throw(database_key={:?})",
@@ -367,7 +354,7 @@ impl Runtime {
         );
 
         let mut from_stack = self.local_state.take_query_stack();
-        let from_id = self.id();
+        let from_id = std::thread::current().id();
 
         // Make a "dummy stack frame". As we iterate through the cycle, we will collect the
         // inputs from each participant. Then, if we are participating in cycle recovery, we
