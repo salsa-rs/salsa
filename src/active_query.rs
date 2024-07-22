@@ -9,16 +9,16 @@ use crate::{
 use super::local_state::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
 
 #[derive(Debug)]
-pub(super) struct ActiveQuery {
+pub(crate) struct ActiveQuery {
     /// What query is executing
-    pub(super) database_key_index: DatabaseKeyIndex,
+    pub(crate) database_key_index: DatabaseKeyIndex,
 
     /// Minimum durability of inputs observed so far.
-    pub(super) durability: Durability,
+    pub(crate) durability: Durability,
 
     /// Maximum revision of all inputs observed. If we observe an
     /// untracked read, this will be set to the most recent revision.
-    pub(super) changed_at: Revision,
+    pub(crate) changed_at: Revision,
 
     /// Inputs: Set of subqueries that were accessed thus far.
     /// Outputs: Tracks values written by this query. Could be...
@@ -26,18 +26,18 @@ pub(super) struct ActiveQuery {
     /// * tracked structs created
     /// * invocations of `specify`
     /// * accumulators pushed to
-    pub(super) input_outputs: FxIndexSet<(EdgeKind, DependencyIndex)>,
+    input_outputs: FxIndexSet<(EdgeKind, DependencyIndex)>,
 
     /// True if there was an untracked read.
-    pub(super) untracked_read: bool,
+    untracked_read: bool,
 
     /// Stores the entire cycle, if one is found and this query is part of it.
-    pub(super) cycle: Option<Cycle>,
+    pub(crate) cycle: Option<Cycle>,
 
     /// When new entities are created, their data is hashed, and the resulting
     /// hash is added to this map. If it is not present, then the disambiguator is 0.
     /// Otherwise it is 1 more than the current value (which is incremented).
-    pub(super) disambiguator_map: FxIndexMap<u64, Disambiguator>,
+    disambiguator_map: FxIndexMap<u64, Disambiguator>,
 }
 
 impl ActiveQuery {
