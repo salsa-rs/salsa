@@ -1,4 +1,5 @@
 use crate::{accumulator, hash::FxHashSet, storage::DatabaseGen, DatabaseKeyIndex, Id};
+use std::collections::VecDeque;
 
 use super::{Configuration, IngredientImpl};
 
@@ -23,9 +24,9 @@ where
 
         let db_key = self.database_key_index(key);
         let mut visited: FxHashSet<DatabaseKeyIndex> = std::iter::once(db_key).collect();
-        let mut stack = vec![db_key];
+        let mut queue: VecDeque<DatabaseKeyIndex> = std::iter::once(db_key).collect();
 
-        while let Some(k) = stack.pop() {
+        while let Some(k) = queue.pop_front() {
             accumulator.produced_by(runtime, k, &mut output);
 
             let origin = db.lookup_ingredient(k.ingredient_index).origin(k.key_index);
@@ -34,7 +35,7 @@ where
             for input in inputs {
                 if let Ok(input) = input.try_into() {
                     if visited.insert(input) {
-                        stack.push(input);
+                        queue.push_back(input);
                     }
                 }
             }

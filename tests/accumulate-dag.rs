@@ -46,6 +46,12 @@ fn accumulate_a_called_twice() {
         expect![[r#"
             [
                 Log(
+                    "log_a(0 of 2)",
+                ),
+                Log(
+                    "log_a(1 of 2)",
+                ),
+                Log(
                     "log_b(0 of 3)",
                 ),
                 Log(
@@ -53,12 +59,6 @@ fn accumulate_a_called_twice() {
                 ),
                 Log(
                     "log_b(2 of 3)",
-                ),
-                Log(
-                    "log_a(0 of 2)",
-                ),
-                Log(
-                    "log_a(1 of 2)",
                 ),
             ]"#]]
         .assert_eq(&format!("{:#?}", logs));

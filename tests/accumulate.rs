@@ -95,6 +95,12 @@ fn accumulate_once() {
     expect![[r#"
         [
             Log(
+                "log_a(0 of 2)",
+            ),
+            Log(
+                "log_a(1 of 2)",
+            ),
+            Log(
                 "log_b(0 of 3)",
             ),
             Log(
@@ -102,12 +108,6 @@ fn accumulate_once() {
             ),
             Log(
                 "log_b(2 of 3)",
-            ),
-            Log(
-                "log_a(0 of 2)",
-            ),
-            Log(
-                "log_a(1 of 2)",
             ),
         ]"#]]
     .assert_eq(&format!("{:#?}", logs));
@@ -123,6 +123,12 @@ fn change_a_from_2_to_0() {
     expect![[r#"
         [
             Log(
+                "log_a(0 of 2)",
+            ),
+            Log(
+                "log_a(1 of 2)",
+            ),
+            Log(
                 "log_b(0 of 3)",
             ),
             Log(
@@ -130,12 +136,6 @@ fn change_a_from_2_to_0() {
             ),
             Log(
                 "log_b(2 of 3)",
-            ),
-            Log(
-                "log_a(0 of 2)",
-            ),
-            Log(
-                "log_a(1 of 2)",
             ),
         ]"#]]
     .assert_eq(&format!("{:#?}", logs));
@@ -178,6 +178,12 @@ fn change_a_from_2_to_1() {
     expect![[r#"
         [
             Log(
+                "log_a(0 of 2)",
+            ),
+            Log(
+                "log_a(1 of 2)",
+            ),
+            Log(
                 "log_b(0 of 3)",
             ),
             Log(
@@ -185,12 +191,6 @@ fn change_a_from_2_to_1() {
             ),
             Log(
                 "log_b(2 of 3)",
-            ),
-            Log(
-                "log_a(0 of 2)",
-            ),
-            Log(
-                "log_a(1 of 2)",
             ),
         ]"#]]
     .assert_eq(&format!("{:#?}", logs));
@@ -207,6 +207,9 @@ fn change_a_from_2_to_1() {
     expect![[r#"
         [
             Log(
+                "log_a(0 of 1)",
+            ),
+            Log(
                 "log_b(0 of 3)",
             ),
             Log(
@@ -214,9 +217,6 @@ fn change_a_from_2_to_1() {
             ),
             Log(
                 "log_b(2 of 3)",
-            ),
-            Log(
-                "log_a(0 of 1)",
             ),
         ]"#]]
     .assert_eq(&format!("{:#?}", logs));
