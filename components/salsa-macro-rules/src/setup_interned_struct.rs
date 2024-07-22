@@ -93,6 +93,12 @@ macro_rules! setup_interned_struct {
                 }
             }
 
+            impl<$db_lt> $zalsa::LookupId<$db_lt> for $Struct<$db_lt> {
+                fn lookup_id(id: salsa::Id, db: &$db_lt dyn $zalsa::Database) -> Self {
+                    $Configuration::ingredient(db).interned_value(id)
+                }
+            }
+
             unsafe impl Send for $Struct<'_> {}
 
             unsafe impl Sync for $Struct<'_> {}
