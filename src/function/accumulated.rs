@@ -1,4 +1,4 @@
-use crate::{accumulator, storage::DatabaseGen, Id};
+use crate::{accumulator, hash::FxHashSet, storage::DatabaseGen, DatabaseKeyIndex, Id};
 
 use super::{Configuration, IngredientImpl};
 
@@ -21,14 +21,24 @@ where
         // First ensure the result is up to date
         self.fetch(db, key);
 
-        let database_key_index = self.database_key_index(key);
-        accumulator.produced_by(runtime, database_key_index, &mut output);
+        let db_key = self.database_key_index(key);
+        let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();
+        let mut stack: Vec<DatabaseKeyIndex> = vec![db_key];
 
-        if let Some(origin) = self.origin(key) {
-            for input in origin.inputs() {
-                if let Ok(input) = input.try_into() {
-                    accumulator.produced_by(runtime, input, &mut output);
-                }
+        while let Some(k) = stack.pop() {
+            if visited.insert(k) {
+                accumulator.produced_by(runtime, k, &mut output);
+
+                let origin = db.lookup_ingredient(k.ingredient_index).origin(k.key_index);
+                let inputs = origin.iter().flat_map(|origin| origin.inputs());
+                // Careful: we want to push in execution order, so reverse order to
+                // ensure the first child that was executed will be the first child popped
+                // from the stack.
+                stack.extend(
+                    inputs
+                        .flat_map(|input| TryInto::<DatabaseKeyIndex>::try_into(input).into_iter())
+                        .rev(),
+                );
             }
         }
 
