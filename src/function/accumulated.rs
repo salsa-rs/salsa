@@ -1,5 +1,6 @@
-use crate::{accumulator, hash::FxHashSet, storage::DatabaseGen, DatabaseKeyIndex, Id};
 use std::collections::VecDeque;
+
+use crate::{accumulator, hash::FxHashSet, storage::DatabaseGen, DatabaseKeyIndex, Id};
 
 use super::{Configuration, IngredientImpl};
 
