@@ -134,9 +134,8 @@ macro_rules! setup_interned_struct {
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + salsa::Database,
                 {
-                    let runtime = db.runtime();
                     let current_revision = $zalsa::current_revision(db);
-                    $Configuration::ingredient(db).intern(runtime, ($($field_id,)*))
+                    $Configuration::ingredient(db).intern(db.as_salsa_database(), ($($field_id,)*))
                 }
 
                 $(

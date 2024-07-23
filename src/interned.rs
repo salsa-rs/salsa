@@ -11,7 +11,6 @@ use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
 use crate::local_state::QueryOrigin;
 use crate::plumbing::Jar;
-use crate::runtime::Runtime;
 use crate::storage::IngredientIndex;
 use crate::{Database, DatabaseKeyIndex, Id};
 
@@ -123,13 +122,21 @@ where
         unsafe { std::mem::transmute(data) }
     }
 
-    pub fn intern_id<'db>(&'db self, runtime: &'db Runtime, data: C::Data<'db>) -> crate::Id {
-        C::deref_struct(self.intern(runtime, data)).as_id()
+    pub fn intern_id<'db>(
+        &'db self,
+        db: &'db dyn crate::Database,
+        data: C::Data<'db>,
+    ) -> crate::Id {
+        C::deref_struct(self.intern(db, data)).as_id()
     }
 
     /// Intern data to a unique reference.
-    pub fn intern<'db>(&'db self, runtime: &'db Runtime, data: C::Data<'db>) -> C::Struct<'db> {
-        runtime.report_tracked_read(
+    pub fn intern<'db>(
+        &'db self,
+        db: &'db dyn crate::Database,
+        data: C::Data<'db>,
+    ) -> C::Struct<'db> {
+        db.runtime().report_tracked_read(
             DependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
             self.reset_at,

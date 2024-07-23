@@ -233,7 +233,7 @@ macro_rules! setup_tracked_fn {
                     use salsa::plumbing as $zalsa;
                     let key = $zalsa::macro_if! {
                         if $needs_interner {
-                            $Configuration::intern_ingredient($db).intern_id($db.runtime(), ($($input_id),*))
+                            $Configuration::intern_ingredient($db).intern_id($db.as_salsa_database(), ($($input_id),*))
                         } else {
                             $zalsa::AsId::as_id(&($($input_id),*))
                         }
@@ -269,7 +269,7 @@ macro_rules! setup_tracked_fn {
                 let result = $zalsa::macro_if! {
                     if $needs_interner {
                         {
-                            let key = $Configuration::intern_ingredient($db).intern_id($db.runtime(), ($($input_id),*));
+                            let key = $Configuration::intern_ingredient($db).intern_id($db.as_salsa_database(), ($($input_id),*));
                             $Configuration::fn_ingredient($db).fetch($db, key)
                         }
                     } else {
