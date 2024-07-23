@@ -34,7 +34,7 @@ impl Cycle {
     }
 
     pub(crate) fn throw(self) -> ! {
-        log::debug!("throwing cycle {:?}", self);
+        tracing::debug!("throwing cycle {:?}", self);
         std::panic::resume_unwind(Box::new(self))
     }
 

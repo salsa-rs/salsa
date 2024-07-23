@@ -23,7 +23,7 @@ where
             if revisions.durability >= old_memo.revisions.durability
                 && C::should_backdate_value(old_value, value)
             {
-                log::debug!(
+                tracing::debug!(
                     "value is equal, back-dating to {:?}",
                     old_memo.revisions.changed_at,
                 );

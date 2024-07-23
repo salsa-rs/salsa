@@ -31,7 +31,7 @@ where
         let revision_now = runtime.current_revision();
         let database_key_index = active_query.database_key_index;
 
-        log::info!("{:?}: executing query", database_key_index);
+        tracing::info!("{:?}: executing query", database_key_index);
 
         db.salsa_event(Event {
             runtime_id: runtime.id(),
@@ -47,7 +47,7 @@ where
         let value = match Cycle::catch(|| C::execute(db, C::id_to_input(db, key))) {
             Ok(v) => v,
             Err(cycle) => {
-                log::debug!(
+                tracing::debug!(
                     "{database_key_index:?}: caught cycle {cycle:?}, have strategy {:?}",
                     C::CYCLE_STRATEGY
                 );
@@ -98,7 +98,7 @@ where
 
         let stamped_value = revisions.stamped_value(value);
 
-        log::debug!("{database_key_index:?}: read_upgrade: result.revisions = {revisions:#?}");
+        tracing::debug!("{database_key_index:?}: read_upgrade: result.revisions = {revisions:#?}");
 
         stamped_value
     }

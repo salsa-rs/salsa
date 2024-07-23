@@ -362,7 +362,7 @@ impl Runtime {
         database_key_index: DatabaseKeyIndex,
         to_id: RuntimeId,
     ) {
-        log::debug!(
+        tracing::debug!(
             "unblock_cycle_and_maybe_throw(database_key={:?})",
             database_key_index
         );
@@ -404,7 +404,7 @@ impl Runtime {
 
             Cycle::new(Arc::new(v))
         };
-        log::debug!("cycle {cycle:?}, cycle_query {cycle_query:#?}");
+        tracing::debug!("cycle {cycle:?}, cycle_query {cycle_query:#?}");
 
         // We can remove the cycle participants from the list of dependencies;
         // they are a strongly connected component (SCC) and we only care about
@@ -427,7 +427,7 @@ impl Runtime {
                     }
                 })
                 .for_each(|aq| {
-                    log::debug!("marking {:?} for fallback", aq.database_key_index);
+                    tracing::debug!("marking {:?} for fallback", aq.database_key_index);
                     aq.take_inputs_from(&cycle_query);
                     assert!(aq.cycle.is_none());
                     aq.cycle = Some(cycle.clone());

@@ -87,7 +87,7 @@ where
             revisions,
         };
 
-        log::debug!("specify: about to add memo {:#?} for key {:?}", memo, key);
+        tracing::debug!("specify: about to add memo {:#?} for key {:?}", memo, key);
         self.insert_memo(db, key, memo);
     }
 

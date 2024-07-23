@@ -1,4 +1,4 @@
-use log::debug;
+use tracing::debug;
 
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;

@@ -132,7 +132,7 @@ impl<V> Memo<V> {
     pub(super) fn check_durability(&self, runtime: &Runtime) -> bool {
         let last_changed = runtime.last_changed_revision(self.revisions.durability);
         let verified_at = self.verified_at.load();
-        log::debug!(
+        tracing::debug!(
             "check_durability(last_changed={:?} <= verified_at={:?}) = {:?}",
             last_changed,
             self.verified_at,
