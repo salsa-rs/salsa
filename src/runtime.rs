@@ -136,7 +136,7 @@ impl Runtime {
         }
 
         let id = RuntimeId {
-            counter: self.shared_state.next_id.fetch_add(1, Ordering::SeqCst),
+            counter: self.shared_state.next_id.fetch_add(1, Ordering::Relaxed),
         };
 
         Runtime {

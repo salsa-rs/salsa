@@ -54,10 +54,10 @@ impl AtomicRevision {
     }
 
     pub(crate) fn load(&self) -> Revision {
-        Revision::from(self.data.load(Ordering::SeqCst))
+        Revision::from(self.data.load(Ordering::Acquire))
     }
 
     pub(crate) fn store(&self, r: Revision) {
-        self.data.store(r.as_usize(), Ordering::SeqCst);
+        self.data.store(r.as_usize(), Ordering::Release);
     }
 }
