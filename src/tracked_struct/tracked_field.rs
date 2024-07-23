@@ -1,6 +1,5 @@
 use crate::{
     id::AsId, ingredient::Ingredient, key::DependencyIndex, storage::IngredientIndex, Database, Id,
-    Runtime,
 };
 
 use super::{struct_map::StructMapView, Configuration};
@@ -46,7 +45,8 @@ where
     /// Access to this value field.
     /// Note that this function returns the entire tuple of value fields.
     /// The caller is responible for selecting the appropriate element.
-    pub fn field<'db>(&'db self, runtime: &'db Runtime, id: Id) -> &'db C::Fields<'db> {
+    pub fn field<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
+        let runtime = db.runtime();
         let data = self.struct_map.get(runtime, id);
         let data = C::deref_struct(data);
         let changed_at = data.revisions[self.field_index];

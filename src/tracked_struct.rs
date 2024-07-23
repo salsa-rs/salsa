@@ -288,11 +288,12 @@ where
 
     pub fn new_struct<'db>(
         &'db self,
-        runtime: &'db Runtime,
+        db: &'db dyn Database,
         fields: C::Fields<'db>,
     ) -> C::Struct<'db> {
         let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
+        let runtime = db.runtime();
         let (query_key, current_deps, disambiguator) =
             runtime.disambiguate_entity(self.ingredient_index, Revision::start(), data_hash);
 
@@ -506,7 +507,8 @@ where
     /// Access to this value field.
     /// Note that this function returns the entire tuple of value fields.
     /// The caller is responible for selecting the appropriate element.
-    pub fn field<'db>(&'db self, runtime: &'db Runtime, field_index: usize) -> &'db C::Fields<'db> {
+    pub fn field<'db>(&'db self, db: &'db dyn Database, field_index: usize) -> &'db C::Fields<'db> {
+        let runtime = db.runtime();
         let field_ingredient_index = self.struct_ingredient_index.successor(field_index);
         let changed_at = self.revisions[field_index];
 
