@@ -150,7 +150,7 @@ impl<C: Configuration> IngredientImpl<C> {
     /// The caller is responible for selecting the appropriate element.
     pub fn field<'db>(
         &'db self,
-        runtime: &'db Runtime,
+        db: &'db dyn crate::Database,
         id: C::Struct,
         field_index: usize,
     ) -> &'db C::Fields {
@@ -158,7 +158,7 @@ impl<C: Configuration> IngredientImpl<C> {
         let id = id.as_id();
         let value = self.struct_map.get(id);
         let stamp = &value.stamps[field_index];
-        runtime.report_tracked_read(
+        db.runtime().report_tracked_read(
             DependencyIndex {
                 ingredient_index: field_ingredient_index,
                 key_index: Some(id),
