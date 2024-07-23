@@ -3,7 +3,10 @@ use std::{
     thread::ThreadId,
 };
 
-use crate::{hash::FxDashMap, key::DatabaseKeyIndex, runtime::WaitResult, Database, Id, Runtime};
+use crate::{
+    hash::FxDashMap, key::DatabaseKeyIndex, local_state::LocalState, runtime::WaitResult, Database,
+    Id, Runtime,
+};
 
 #[derive(Default)]
 pub(super) struct SyncMap {
@@ -22,6 +25,7 @@ impl SyncMap {
     pub(super) fn claim<'me>(
         &'me self,
         db: &'me dyn Database,
+        local_state: &LocalState,
         database_key_index: DatabaseKeyIndex,
     ) -> Option<ClaimGuard<'me>> {
         let runtime = db.runtime();
@@ -47,7 +51,7 @@ impl SyncMap {
                 // not to gate future atomic reads.
                 entry.get().anyone_waiting.store(true, Ordering::Relaxed);
                 let other_id = entry.get().id;
-                runtime.block_on_or_unwind(db, database_key_index, other_id, entry);
+                runtime.block_on_or_unwind(db, local_state, database_key_index, other_id, entry);
                 None
             }
         }

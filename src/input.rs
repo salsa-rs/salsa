@@ -17,7 +17,7 @@ use crate::{
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient},
     key::{DatabaseKeyIndex, DependencyIndex},
-    local_state::QueryOrigin,
+    local_state::{self, QueryOrigin},
     plumbing::{Jar, Stamp},
     runtime::Runtime,
     storage::IngredientIndex,
@@ -154,19 +154,21 @@ impl<C: Configuration> IngredientImpl<C> {
         id: C::Struct,
         field_index: usize,
     ) -> &'db C::Fields {
-        let field_ingredient_index = self.ingredient_index.successor(field_index);
-        let id = id.as_id();
-        let value = self.struct_map.get(id);
-        let stamp = &value.stamps[field_index];
-        db.runtime().report_tracked_read(
-            DependencyIndex {
-                ingredient_index: field_ingredient_index,
-                key_index: Some(id),
-            },
-            stamp.durability,
-            stamp.changed_at,
-        );
-        &value.fields
+        local_state::attach(db, |state| {
+            let field_ingredient_index = self.ingredient_index.successor(field_index);
+            let id = id.as_id();
+            let value = self.struct_map.get(id);
+            let stamp = &value.stamps[field_index];
+            state.report_tracked_read(
+                DependencyIndex {
+                    ingredient_index: field_ingredient_index,
+                    key_index: Some(id),
+                },
+                stamp.durability,
+                stamp.changed_at,
+            );
+            &value.fields
+        })
     }
 
     /// Peek at the field values without recording any read dependency.

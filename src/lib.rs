@@ -41,7 +41,7 @@ pub use self::revision::Revision;
 pub use self::runtime::Runtime;
 pub use self::storage::Storage;
 pub use self::update::Update;
-pub use crate::database::with_attached_database;
+pub use crate::local_state::with_attached_database;
 pub use salsa_macros::accumulator;
 pub use salsa_macros::db;
 pub use salsa_macros::input;
@@ -79,9 +79,7 @@ pub mod plumbing {
     pub use crate::array::Array;
     pub use crate::cycle::Cycle;
     pub use crate::cycle::CycleRecoveryStrategy;
-    pub use crate::database::attach_database;
     pub use crate::database::current_revision;
-    pub use crate::database::with_attached_database;
     pub use crate::database::Database;
     pub use crate::function::should_backdate_value;
     pub use crate::id::AsId;
@@ -91,6 +89,7 @@ pub mod plumbing {
     pub use crate::ingredient::Ingredient;
     pub use crate::ingredient::Jar;
     pub use crate::key::DatabaseKeyIndex;
+    pub use crate::local_state::with_attached_database;
     pub use crate::revision::Revision;
     pub use crate::runtime::stamp;
     pub use crate::runtime::Runtime;

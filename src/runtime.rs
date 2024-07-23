@@ -12,22 +12,16 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     durability::Durability,
     key::{DatabaseKeyIndex, DependencyIndex},
-    local_state::{self, ActiveQueryGuard, EdgeKind},
+    local_state::{EdgeKind, LocalState},
     revision::AtomicRevision,
-    storage::IngredientIndex,
     Cancelled, Cycle, Database, Event, EventKind, Revision,
 };
 
 use self::dependency_graph::DependencyGraph;
 
-use super::tracked_struct::Disambiguator;
-
 mod dependency_graph;
 
 pub struct Runtime {
-    /// Local state that is specific to this runtime (thread).
-    local_state: local_state::LocalState,
-
     /// Stores the next id to use for a snapshotted runtime (starts at 1).
     next_id: AtomicUsize,
 
@@ -91,7 +85,6 @@ impl<V> StampedValue<V> {
 impl Default for Runtime {
     fn default() -> Self {
         Runtime {
-            local_state: Default::default(),
             revisions: (0..Durability::LEN)
                 .map(|_| AtomicRevision::start())
                 .collect(),
@@ -119,33 +112,8 @@ impl Runtime {
         self.revisions[0].load()
     }
 
-    /// Returns the index of the active query along with its *current* durability/changed-at
-    /// information. As the query continues to execute, naturally, that information may change.
-    pub(crate) fn active_query(&self) -> Option<(DatabaseKeyIndex, StampedValue<()>)> {
-        self.local_state.active_query()
-    }
-
     pub(crate) fn empty_dependencies(&self) -> Arc<[(EdgeKind, DependencyIndex)]> {
         self.empty_dependencies.clone()
-    }
-
-    pub(crate) fn report_tracked_read(
-        &self,
-        key_index: DependencyIndex,
-        durability: Durability,
-        changed_at: Revision,
-    ) {
-        self.local_state
-            .report_tracked_read(key_index, durability, changed_at)
-    }
-
-    /// Reports that the query depends on some state unknown to salsa.
-    ///
-    /// Queries which report untracked reads will be re-executed in the next
-    /// revision.
-    pub fn report_untracked_read(&self) {
-        self.local_state
-            .report_untracked_read(self.current_revision());
     }
 
     /// Reports that an input with durability `durability` changed.
@@ -156,41 +124,6 @@ impl Runtime {
         for rev in &self.revisions[1..=durability.index()] {
             rev.store(new_revision);
         }
-    }
-
-    /// Adds `key` to the list of output created by the current query
-    /// (if not already present).
-    pub(crate) fn add_output(&self, key: DependencyIndex) {
-        self.local_state.add_output(key);
-    }
-
-    /// Check whether `entity` is contained the list of outputs written by the current query.
-    pub(super) fn is_output_of_active_query(&self, entity: DependencyIndex) -> bool {
-        self.local_state.is_output(entity)
-    }
-
-    /// Called when the active queries creates an index from the
-    /// entity table with the index `entity_index`. Has the following effects:
-    ///
-    /// * Add a query read on `DatabaseKeyIndex::for_table(entity_index)`
-    /// * Identify a unique disambiguator for the hash within the current query,
-    ///   adding the hash to the current query's disambiguator table.
-    /// * Returns a tuple of:
-    ///   * the id of the current query
-    ///   * the current dependencies (durability, changed_at) of current query
-    ///   * the disambiguator index
-    pub(crate) fn disambiguate_entity(
-        &self,
-        entity_index: IngredientIndex,
-        reset_at: Revision,
-        data_hash: u64,
-    ) -> (DatabaseKeyIndex, StampedValue<()>, Disambiguator) {
-        self.report_tracked_read(
-            DependencyIndex::for_table(entity_index),
-            Durability::MAX,
-            reset_at,
-        );
-        self.local_state.disambiguate(data_hash)
     }
 
     /// The revision in which values with durability `d` may have last
@@ -205,38 +138,8 @@ impl Runtime {
         self.revisions[d.index()].load()
     }
 
-    /// Starts unwinding the stack if the current revision is cancelled.
-    ///
-    /// This method can be called by query implementations that perform
-    /// potentially expensive computations, in order to speed up propagation of
-    /// cancellation.
-    ///
-    /// Cancellation will automatically be triggered by salsa on any query
-    /// invocation.
-    ///
-    /// This method should not be overridden by `Database` implementors. A
-    /// `salsa_event` is emitted when this method is called, so that should be
-    /// used instead.
-    pub(crate) fn unwind_if_revision_cancelled<DB: ?Sized + Database>(&self, db: &DB) {
-        let thread_id = std::thread::current().id();
-        db.salsa_event(Event {
-            thread_id,
-
-            kind: EventKind::WillCheckCancellation,
-        });
-        if self.revision_canceled.load() {
-            db.salsa_event(Event {
-                thread_id,
-                kind: EventKind::WillCheckCancellation,
-            });
-            self.unwind_cancelled();
-        }
-    }
-
-    #[cold]
-    pub(crate) fn unwind_cancelled(&self) {
-        self.report_untracked_read();
-        Cancelled::PendingWrite.throw();
+    pub(crate) fn load_cancellation_flag(&self) -> bool {
+        self.revision_canceled.load()
     }
 
     pub(crate) fn set_cancellation_flag(&self) {
@@ -253,11 +156,6 @@ impl Runtime {
         self.revisions[0].store(r_new);
         self.revision_canceled.store(false);
         r_new
-    }
-
-    #[inline]
-    pub(crate) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
-        self.local_state.push_query(database_key_index)
     }
 
     /// Block until `other_id` completes executing `database_key`;
@@ -285,6 +183,7 @@ impl Runtime {
     pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
         &self,
         db: &dyn Database,
+        local_state: &LocalState,
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
@@ -293,7 +192,7 @@ impl Runtime {
         let thread_id = std::thread::current().id();
 
         if dg.depends_on(other_id, thread_id) {
-            self.unblock_cycle_and_maybe_throw(db, &mut dg, database_key, other_id);
+            self.unblock_cycle_and_maybe_throw(db, local_state, &mut dg, database_key, other_id);
 
             // If the above fn returns, then (via cycle recovery) it has unblocked the
             // cycle, so we can continue.
@@ -308,7 +207,7 @@ impl Runtime {
             },
         });
 
-        let stack = self.local_state.take_query_stack();
+        let stack = local_state.take_query_stack();
 
         let (stack, result) = DependencyGraph::block_on(
             dg,
@@ -319,7 +218,7 @@ impl Runtime {
             query_mutex_guard,
         );
 
-        self.local_state.restore_query_stack(stack);
+        local_state.restore_query_stack(stack);
 
         match result {
             WaitResult::Completed => (),
@@ -344,6 +243,7 @@ impl Runtime {
     fn unblock_cycle_and_maybe_throw(
         &self,
         db: &dyn Database,
+        local_state: &LocalState,
         dg: &mut DependencyGraph,
         database_key_index: DatabaseKeyIndex,
         to_id: ThreadId,
@@ -353,7 +253,7 @@ impl Runtime {
             database_key_index
         );
 
-        let mut from_stack = self.local_state.take_query_stack();
+        let mut from_stack = local_state.take_query_stack();
         let from_id = std::thread::current().id();
 
         // Make a "dummy stack frame". As we iterate through the cycle, we will collect the
@@ -426,7 +326,7 @@ impl Runtime {
         let (me_recovered, others_recovered) =
             dg.maybe_unblock_runtimes_in_cycle(from_id, &from_stack, database_key_index, to_id);
 
-        self.local_state.restore_query_stack(from_stack);
+        local_state.restore_query_stack(from_stack);
 
         if me_recovered {
             // If the current thread has recovery, we want to throw
