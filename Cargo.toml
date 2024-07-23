@@ -32,6 +32,11 @@ ordered-float = "3.0"
 rustversion = "1.0"
 test-log = "0.2.11"
 trybuild = "1.0"
+criterion = "0.5.1"
+
+[[bench]]
+name = "compare"
+harness = false
 
 [workspace]
 members = [ "components/salsa-macro-rules","components/salsa-macros"]
