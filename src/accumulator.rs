@@ -78,7 +78,8 @@ impl<A: Accumulator> IngredientImpl<A> {
         }
     }
 
-    pub fn push(&self, runtime: &Runtime, value: A) {
+    pub fn push(&self, db: &dyn crate::Database, value: A) {
+        let runtime = db.runtime();
         let current_revision = runtime.current_revision();
         let (active_query, _) = match runtime.active_query() {
             Some(pair) => pair,
