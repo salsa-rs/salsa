@@ -19,6 +19,8 @@ pub trait Jar: Any {
 }
 
 pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
+    fn debug_name(&self) -> &'static str;
+
     /// Has the value for `input` in this ingredient changed after `revision`?
     fn maybe_changed_after<'db>(
         &'db self,

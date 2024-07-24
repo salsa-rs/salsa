@@ -140,6 +140,10 @@ where
             index.unwrap()
         )
     }
+
+    fn debug_name(&self) -> &'static str {
+        C::FIELD_DEBUG_NAMES[self.field_index]
+    }
 }
 
 impl<C> std::fmt::Debug for FieldIngredientImpl<C>

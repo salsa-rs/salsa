@@ -202,6 +202,10 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(A::DEBUG_NAME, index, fmt)
     }
+
+    fn debug_name(&self) -> &'static str {
+        A::DEBUG_NAME
+    }
 }
 
 impl<A> std::fmt::Debug for IngredientImpl<A>

@@ -245,6 +245,10 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
     fn fmt_index(&self, index: Option<Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
+
+    fn debug_name(&self) -> &'static str {
+        C::DEBUG_NAME
+    }
 }
 
 impl<C: Configuration> std::fmt::Debug for IngredientImpl<C> {
