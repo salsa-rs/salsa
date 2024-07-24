@@ -281,7 +281,12 @@ impl Runtime {
             // (at least for this execution, not necessarily across executions),
             // no matter where it started on the stack. Find the minimum
             // key and rotate it to the front.
-            let min = v.iter().min().unwrap();
+            let min = v
+                .iter()
+                .map(|key| (key.ingredient_index.debug_name(db), key))
+                .min()
+                .unwrap()
+                .1;
             let index = v.iter().position(|p| p == min).unwrap();
             v.rotate_left(index);
 

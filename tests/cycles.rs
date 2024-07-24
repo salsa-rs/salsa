@@ -220,8 +220,8 @@ fn inner_cycle() {
         assert!(err.is_err());
         let expected = expect![[r#"
             [
-                "cycle_b(0)",
                 "cycle_a(0)",
+                "cycle_b(0)",
             ]
         "#]];
         expected.assert_debug_eq(&err.unwrap_err().cycle);
@@ -328,8 +328,8 @@ fn cycle_mixed_1() {
 
         let expected = expect![[r#"
             [
-                "cycle_c(0)",
                 "cycle_b(0)",
+                "cycle_c(0)",
             ]
         "#]];
         expected.assert_debug_eq(&cycle_c(db, abc).unwrap_err().cycle);
@@ -379,8 +379,8 @@ fn cycle_deterministic_order() {
                 "cycle_b(0)",
             ],
             [
-                "cycle_b(0)",
                 "cycle_a(0)",
+                "cycle_b(0)",
             ],
         )
     "#]];

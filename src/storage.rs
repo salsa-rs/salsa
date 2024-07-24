@@ -201,6 +201,11 @@ impl IngredientIndex {
     pub fn successor(self, index: usize) -> Self {
         IngredientIndex(self.0 + 1 + index as u32)
     }
+
+    /// Return the "debug name" of this ingredient (e.g., the name of the tracked struct it represents)
+    pub(crate) fn debug_name(self, db: &dyn Database) -> &'static str {
+        db.lookup_ingredient(self).debug_name()
+    }
 }
 
 /// The "storage" struct stores all the data for the jars.
