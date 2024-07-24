@@ -1,4 +1,4 @@
-use std::{cell::Cell, sync::Arc};
+use crossbeam::atomic::AtomicCell;
 
 use crate::signal::Signal;
 
@@ -15,14 +15,14 @@ pub(crate) trait Knobs {
 /// Various "knobs" that can be used to customize how the queries
 /// behave on one specific thread. Note that this state is
 /// intentionally thread-local (apart from `signal`).
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub(crate) struct KnobsStruct {
     /// A kind of flexible barrier used to coordinate execution across
     /// threads to ensure we reach various weird states.
-    pub(crate) signal: Arc<Signal>,
+    pub(crate) signal: Signal,
 
     /// When this database is about to block, send a signal.
-    pub(crate) signal_on_will_block: Cell<usize>,
+    pub(crate) signal_on_will_block: AtomicCell<usize>,
 }
 
 #[salsa::db]
@@ -36,7 +36,7 @@ pub(crate) struct Database {
 impl salsa::Database for Database {
     fn salsa_event(&self, event: salsa::Event) {
         if let salsa::EventKind::WillBlockOn { .. } = event.kind {
-            self.signal(self.knobs().signal_on_will_block.get());
+            self.signal(self.knobs().signal_on_will_block.load());
         }
     }
 }
