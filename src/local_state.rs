@@ -325,10 +325,6 @@ impl LocalState {
             kind: EventKind::WillCheckCancellation,
         });
         if runtime.load_cancellation_flag() {
-            db.salsa_event(Event {
-                thread_id,
-                kind: EventKind::WillCheckCancellation,
-            });
             self.unwind_cancelled(runtime);
         }
     }

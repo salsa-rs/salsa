@@ -21,8 +21,11 @@ pub(crate) struct KnobsStruct {
     /// threads to ensure we reach various weird states.
     pub(crate) signal: Signal,
 
-    /// When this database is about to block, send a signal.
+    /// When this database is about to block, send this signal.
     pub(crate) signal_on_will_block: AtomicCell<usize>,
+
+    /// When this database has set the cancellation flag, send this signal.
+    pub(crate) signal_on_did_cancel: AtomicCell<usize>,
 }
 
 #[salsa::db]
@@ -35,8 +38,14 @@ pub(crate) struct Database {
 #[salsa::db]
 impl salsa::Database for Database {
     fn salsa_event(&self, event: salsa::Event) {
-        if let salsa::EventKind::WillBlockOn { .. } = event.kind {
-            self.signal(self.knobs().signal_on_will_block.load());
+        match event.kind {
+            salsa::EventKind::WillBlockOn { .. } => {
+                self.signal(self.knobs().signal_on_will_block.load());
+            }
+            salsa::EventKind::DidSetCancellationFlag => {
+                self.signal(self.knobs().signal_on_did_cancel.load());
+            }
+            _ => {}
         }
     }
 }

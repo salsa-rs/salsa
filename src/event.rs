@@ -53,6 +53,11 @@ pub enum EventKind {
     /// the current revision has been cancelled.
     WillCheckCancellation,
 
+    /// Indicates that one [`Handle`](`crate::Handle`) has set the cancellation flag.
+    /// When other active handles execute salsa methods, they will observe this flag
+    /// and panic with a sentinel value of type [`Cancelled`](`crate::Cancelled`).
+    DidSetCancellationFlag,
+
     /// Discovered that a query used to output a given output but no longer does.
     WillDiscardStaleOutput {
         /// Key for the query that is executing and which no longer outputs the given value.

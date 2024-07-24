@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::{Condvar, Mutex};
 
-use crate::storage::HasStorage;
+use crate::{storage::HasStorage, Event, EventKind};
 
 /// A database "handle" allows coordination of multiple async tasks accessing the same database.
 /// So long as you are just doing reads, you can freely clone.
@@ -48,6 +48,12 @@ impl<Db: HasStorage> Handle<Db> {
     fn cancel_others(&mut self) {
         let storage = self.db.storage();
         storage.runtime().set_cancellation_flag();
+
+        self.db.salsa_event(Event {
+            thread_id: std::thread::current().id(),
+
+            kind: EventKind::DidSetCancellationFlag,
+        });
 
         let mut clones = self.coordinate.clones.lock();
         while *clones != 1 {
