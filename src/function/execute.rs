@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-    runtime::{local_state::ActiveQueryGuard, StampedValue},
-    storage::DatabaseGen,
-    Cycle, Database, Event, EventKind,
+    local_state::ActiveQueryGuard, runtime::StampedValue, storage::DatabaseGen, Cycle, Database,
+    Event, EventKind,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};
@@ -34,7 +33,7 @@ where
         tracing::info!("{:?}: executing query", database_key_index);
 
         db.salsa_event(Event {
-            runtime_id: runtime.id(),
+            thread_id: std::thread::current().id(),
             kind: EventKind::WillExecute {
                 database_key: database_key_index,
             },

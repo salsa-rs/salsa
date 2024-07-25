@@ -1,7 +1,7 @@
 use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::input::Configuration;
-use crate::runtime::local_state::QueryOrigin;
+use crate::local_state::QueryOrigin;
 use crate::storage::IngredientIndex;
 use crate::{Database, DatabaseKeyIndex, Id, Revision};
 use std::fmt;
@@ -96,6 +96,10 @@ where
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::FIELD_DEBUG_NAMES[self.field_index], index, fmt)
+    }
+
+    fn debug_name(&self) -> &'static str {
+        C::FIELD_DEBUG_NAMES[self.field_index]
     }
 }
 

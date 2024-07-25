@@ -1,11 +1,12 @@
 use std::sync::Arc;
+use std::thread::ThreadId;
 
+use crate::active_query::ActiveQuery;
 use crate::key::DatabaseKeyIndex;
+use crate::runtime::WaitResult;
 use parking_lot::{Condvar, MutexGuard};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
-
-use super::{active_query::ActiveQuery, RuntimeId, WaitResult};
 
 type QueryStack = Vec<ActiveQuery>;
 
@@ -15,21 +16,21 @@ pub(super) struct DependencyGraph {
     /// `K` is blocked on some query executing in the runtime `V`.
     /// This encodes a graph that must be acyclic (or else deadlock
     /// will result).
-    edges: FxHashMap<RuntimeId, Edge>,
+    edges: FxHashMap<ThreadId, Edge>,
 
-    /// Encodes the `RuntimeId` that are blocked waiting for the result
+    /// Encodes the `ThreadId` that are blocked waiting for the result
     /// of a given query.
-    query_dependents: FxHashMap<DatabaseKeyIndex, SmallVec<[RuntimeId; 4]>>,
+    query_dependents: FxHashMap<DatabaseKeyIndex, SmallVec<[ThreadId; 4]>>,
 
     /// When a key K completes which had dependent queries Qs blocked on it,
     /// it stores its `WaitResult` here. As they wake up, each query Q in Qs will
     /// come here to fetch their results.
-    wait_results: FxHashMap<RuntimeId, (QueryStack, WaitResult)>,
+    wait_results: FxHashMap<ThreadId, (QueryStack, WaitResult)>,
 }
 
 #[derive(Debug)]
 struct Edge {
-    blocked_on_id: RuntimeId,
+    blocked_on_id: ThreadId,
     blocked_on_key: DatabaseKeyIndex,
     stack: QueryStack,
 
@@ -42,7 +43,7 @@ impl DependencyGraph {
     /// True if `from_id` depends on `to_id`.
     ///
     /// (i.e., there is a path from `from_id` to `to_id` in the graph.)
-    pub(super) fn depends_on(&mut self, from_id: RuntimeId, to_id: RuntimeId) -> bool {
+    pub(super) fn depends_on(&mut self, from_id: ThreadId, to_id: ThreadId) -> bool {
         let mut p = from_id;
         while let Some(q) = self.edges.get(&p).map(|edge| edge.blocked_on_id) {
             if q == to_id {
@@ -62,10 +63,10 @@ impl DependencyGraph {
     /// 3. ...and `to_id` is transitively dependent on something which is present on `from_stack`.
     pub(super) fn for_each_cycle_participant(
         &mut self,
-        from_id: RuntimeId,
+        from_id: ThreadId,
         from_stack: &mut QueryStack,
         database_key: DatabaseKeyIndex,
-        to_id: RuntimeId,
+        to_id: ThreadId,
         mut closure: impl FnMut(&mut [ActiveQuery]),
     ) {
         debug_assert!(self.depends_on(to_id, from_id));
@@ -130,10 +131,10 @@ impl DependencyGraph {
     /// * Others is true if other runtimes were unblocked.
     pub(super) fn maybe_unblock_runtimes_in_cycle(
         &mut self,
-        from_id: RuntimeId,
+        from_id: ThreadId,
         from_stack: &QueryStack,
         database_key: DatabaseKeyIndex,
-        to_id: RuntimeId,
+        to_id: ThreadId,
     ) -> (bool, bool) {
         // See diagram in `for_each_cycle_participant`.
         let mut id = to_id;
@@ -194,9 +195,9 @@ impl DependencyGraph {
     /// * `held_mutex` is a read lock (or stronger) on `database_key`
     pub(super) fn block_on<QueryMutexGuard>(
         mut me: MutexGuard<'_, Self>,
-        from_id: RuntimeId,
+        from_id: ThreadId,
         database_key: DatabaseKeyIndex,
-        to_id: RuntimeId,
+        to_id: ThreadId,
         from_stack: QueryStack,
         query_mutex_guard: QueryMutexGuard,
     ) -> (QueryStack, WaitResult) {
@@ -220,9 +221,9 @@ impl DependencyGraph {
     /// computing `database_key`.
     fn add_edge(
         &mut self,
-        from_id: RuntimeId,
+        from_id: ThreadId,
         database_key: DatabaseKeyIndex,
-        to_id: RuntimeId,
+        to_id: ThreadId,
         from_stack: QueryStack,
     ) -> Arc<parking_lot::Condvar> {
         assert_ne!(from_id, to_id);
@@ -266,7 +267,7 @@ impl DependencyGraph {
     /// Unblock the runtime with the given id with the given wait-result.
     /// This will cause it resume execution (though it will have to grab
     /// the lock on this data structure first, to recover the wait result).
-    fn unblock_runtime(&mut self, id: RuntimeId, wait_result: WaitResult) {
+    fn unblock_runtime(&mut self, id: ThreadId, wait_result: WaitResult) {
         let edge = self.edges.remove(&id).expect("not blocked");
         self.wait_results.insert(id, (edge.stack, wait_result));
 

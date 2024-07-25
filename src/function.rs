@@ -6,7 +6,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::fmt_index,
     key::DatabaseKeyIndex,
-    runtime::local_state::QueryOrigin,
+    local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
     storage::{DatabaseGen, IngredientIndex},
     Cycle, Database, Event, EventKind, Id, Revision,
@@ -269,7 +269,7 @@ where
         if let Some(origin) = self.delete_memo(id) {
             let key = self.database_key_index(id);
             db.salsa_event(Event {
-                runtime_id: db.runtime().id(),
+                thread_id: std::thread::current().id(),
                 kind: EventKind::DidDiscard { key },
             });
 
@@ -284,6 +284,10 @@ where
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
+    }
+
+    fn debug_name(&self) -> &'static str {
+        C::DEBUG_NAME
     }
 }
 

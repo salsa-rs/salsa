@@ -9,9 +9,8 @@ use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
+use crate::local_state::{self, QueryOrigin};
 use crate::plumbing::Jar;
-use crate::runtime::local_state::QueryOrigin;
-use crate::runtime::Runtime;
 use crate::storage::IngredientIndex;
 use crate::{Database, DatabaseKeyIndex, Id};
 
@@ -123,50 +122,60 @@ where
         unsafe { std::mem::transmute(data) }
     }
 
-    pub fn intern_id<'db>(&'db self, runtime: &'db Runtime, data: C::Data<'db>) -> crate::Id {
-        C::deref_struct(self.intern(runtime, data)).as_id()
+    pub fn intern_id<'db>(
+        &'db self,
+        db: &'db dyn crate::Database,
+        data: C::Data<'db>,
+    ) -> crate::Id {
+        C::deref_struct(self.intern(db, data)).as_id()
     }
 
     /// Intern data to a unique reference.
-    pub fn intern<'db>(&'db self, runtime: &'db Runtime, data: C::Data<'db>) -> C::Struct<'db> {
-        runtime.report_tracked_read(
-            DependencyIndex::for_table(self.ingredient_index),
-            Durability::MAX,
-            self.reset_at,
-        );
+    pub fn intern<'db>(
+        &'db self,
+        db: &'db dyn crate::Database,
+        data: C::Data<'db>,
+    ) -> C::Struct<'db> {
+        local_state::attach(db, |state| {
+            state.report_tracked_read(
+                DependencyIndex::for_table(self.ingredient_index),
+                Durability::MAX,
+                self.reset_at,
+            );
 
-        // Optimisation to only get read lock on the map if the data has already
-        // been interned.
-        let internal_data = unsafe { self.to_internal_data(data) };
-        if let Some(guard) = self.key_map.get(&internal_data) {
-            let id = *guard;
-            drop(guard);
-            return self.interned_value(id);
-        }
-
-        match self.key_map.entry(internal_data.clone()) {
-            // Data has been interned by a racing call, use that ID instead
-            dashmap::mapref::entry::Entry::Occupied(entry) => {
-                let id = *entry.get();
-                drop(entry);
-                self.interned_value(id)
+            // Optimisation to only get read lock on the map if the data has already
+            // been interned.
+            let internal_data = unsafe { self.to_internal_data(data) };
+            if let Some(guard) = self.key_map.get(&internal_data) {
+                let id = *guard;
+                drop(guard);
+                return self.interned_value(id);
             }
 
-            // We won any races so should intern the data
-            dashmap::mapref::entry::Entry::Vacant(entry) => {
-                let next_id = self.counter.fetch_add(1);
-                let next_id = crate::id::Id::from_u32(next_id);
-                let value = self.value_map.entry(next_id).or_insert(Alloc::new(Value {
-                    id: next_id,
-                    fields: internal_data,
-                }));
-                let value_raw = value.as_raw();
-                drop(value);
-                entry.insert(next_id);
-                // SAFETY: Items are only removed from the `value_map` with an `&mut self` reference.
-                unsafe { C::struct_from_raw(value_raw) }
+            match self.key_map.entry(internal_data.clone()) {
+                // Data has been interned by a racing call, use that ID instead
+                dashmap::mapref::entry::Entry::Occupied(entry) => {
+                    let id = *entry.get();
+                    drop(entry);
+                    self.interned_value(id)
+                }
+
+                // We won any races so should intern the data
+                dashmap::mapref::entry::Entry::Vacant(entry) => {
+                    let next_id = self.counter.fetch_add(1);
+                    let next_id = crate::id::Id::from_u32(next_id);
+                    let value = self.value_map.entry(next_id).or_insert(Alloc::new(Value {
+                        id: next_id,
+                        fields: internal_data,
+                    }));
+                    let value_raw = value.as_raw();
+                    drop(value);
+                    entry.insert(next_id);
+                    // SAFETY: Items are only removed from the `value_map` with an `&mut self` reference.
+                    unsafe { C::struct_from_raw(value_raw) }
+                }
             }
-        }
+        })
     }
 
     pub fn interned_value(&self, id: Id) -> C::Struct<'_> {
@@ -270,6 +279,10 @@ where
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
+    }
+
+    fn debug_name(&self) -> &'static str {
+        C::DEBUG_NAME
     }
 }
 

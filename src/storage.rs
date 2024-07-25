@@ -111,11 +111,11 @@ unsafe impl<T: HasStorage> DatabaseGen for T {
     }
 
     fn views(&self) -> &Views {
-        &self.storage().shared.upcasts
+        &self.storage().upcasts
     }
 
     fn nonce(&self) -> Nonce<StorageNonce> {
-        self.storage().shared.nonce
+        self.storage().nonce
     }
 
     fn lookup_jar_by_type(&self, jar: &dyn Jar) -> Option<IngredientIndex> {
@@ -201,25 +201,16 @@ impl IngredientIndex {
     pub fn successor(self, index: usize) -> Self {
         IngredientIndex(self.0 + 1 + index as u32)
     }
+
+    /// Return the "debug name" of this ingredient (e.g., the name of the tracked struct it represents)
+    pub(crate) fn debug_name(self, db: &dyn Database) -> &'static str {
+        db.lookup_ingredient(self).debug_name()
+    }
 }
 
 /// The "storage" struct stores all the data for the jars.
 /// It is shared between the main database and any active snapshots.
 pub struct Storage<Db: Database> {
-    /// Data shared across all databases. This contains the ingredients needed by each jar.
-    /// See the ["jars and ingredients" chapter](https://salsa-rs.github.io/salsa/plumbing/jars_and_ingredients.html)
-    /// for more detailed description.
-    shared: Shared<Db>,
-
-    /// The runtime for this particular salsa database handle.
-    /// Each handle gets its own runtime, but the runtimes have shared state between them.
-    runtime: Runtime,
-}
-
-/// Data shared between all threads.
-/// This is where the actual data for tracked functions, structs, inputs, etc lives,
-/// along with some coordination variables between treads.
-struct Shared<Db: Database> {
     upcasts: ViewsOf<Db>,
 
     nonce: Nonce<StorageNonce>,
@@ -239,19 +230,21 @@ struct Shared<Db: Database> {
 
     /// Indices of ingredients that require reset when a new revision starts.
     ingredients_requiring_reset: ConcurrentVec<IngredientIndex>,
+
+    /// The runtime for this particular salsa database handle.
+    /// Each handle gets its own runtime, but the runtimes have shared state between them.
+    runtime: Runtime,
 }
 
 // ANCHOR: default
 impl<Db: Database> Default for Storage<Db> {
     fn default() -> Self {
         Self {
-            shared: Shared {
-                upcasts: Default::default(),
-                nonce: NONCE.nonce(),
-                jar_map: Default::default(),
-                ingredients_vec: Default::default(),
-                ingredients_requiring_reset: Default::default(),
-            },
+            upcasts: Default::default(),
+            nonce: NONCE.nonce(),
+            jar_map: Default::default(),
+            ingredients_vec: Default::default(),
+            ingredients_requiring_reset: Default::default(),
             runtime: Runtime::default(),
         }
     }
@@ -265,35 +258,34 @@ impl<Db: Database> Storage<Db> {
         func: fn(&Db) -> &T,
         func_mut: fn(&mut Db) -> &mut T,
     ) {
-        self.shared.upcasts.add::<T>(func, func_mut)
+        self.upcasts.add::<T>(func, func_mut)
     }
 
     /// Adds the ingredients in `jar` to the database if not already present.
     /// If a jar of this type is already present, returns the index.
     fn add_or_lookup_jar_by_type(&self, jar: &dyn Jar) -> IngredientIndex {
         let jar_type_id = jar.type_id();
-        let mut jar_map = self.shared.jar_map.lock();
+        let mut jar_map = self.jar_map.lock();
         *jar_map
         .entry(jar_type_id)
         .or_insert_with(|| {
-            let index = IngredientIndex::from(self.shared.ingredients_vec.len());
+            let index = IngredientIndex::from(self.ingredients_vec.len());
             let ingredients = jar.create_ingredients(index);
             for ingredient in ingredients {
                 let expected_index = ingredient.ingredient_index();
 
                 if ingredient.requires_reset_for_new_revision() {
-                    self.shared.ingredients_requiring_reset.push(expected_index);
+                    self.ingredients_requiring_reset.push(expected_index);
                 }
 
                 let actual_index = self
-                    .shared
                     .ingredients_vec
                     .push(ingredient);
                 assert_eq!(
                     expected_index.as_usize(),
                     actual_index,
                     "ingredient `{:?}` was predicted to have index `{:?}` but actually has index `{:?}`",
-                    self.shared.ingredients_vec.get(actual_index).unwrap(),
+                    self.ingredients_vec.get(actual_index).unwrap(),
                     expected_index,
                     actual_index,
                 );
@@ -305,11 +297,11 @@ impl<Db: Database> Storage<Db> {
 
     /// Return the index of the 1st ingredient from the given jar.
     pub fn lookup_jar_by_type(&self, jar: &dyn Jar) -> Option<IngredientIndex> {
-        self.shared.jar_map.lock().get(&jar.type_id()).copied()
+        self.jar_map.lock().get(&jar.type_id()).copied()
     }
 
     pub fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
-        &**self.shared.ingredients_vec.get(index.as_usize()).unwrap()
+        &**self.ingredients_vec.get(index.as_usize()).unwrap()
     }
 
     fn lookup_ingredient_mut(
@@ -318,20 +310,15 @@ impl<Db: Database> Storage<Db> {
     ) -> (&mut dyn Ingredient, &mut Runtime) {
         self.runtime.new_revision();
 
-        for index in self.shared.ingredients_requiring_reset.iter() {
-            self.shared
-                .ingredients_vec
+        for index in self.ingredients_requiring_reset.iter() {
+            self.ingredients_vec
                 .get_mut(index.as_usize())
                 .unwrap()
                 .reset_for_new_revision();
         }
 
         (
-            &mut **self
-                .shared
-                .ingredients_vec
-                .get_mut(index.as_usize())
-                .unwrap(),
+            &mut **self.ingredients_vec.get_mut(index.as_usize()).unwrap(),
             &mut self.runtime,
         )
     }

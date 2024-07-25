@@ -2,10 +2,8 @@ use arc_swap::Guard;
 
 use crate::{
     key::DatabaseKeyIndex,
-    runtime::{
-        local_state::{ActiveQueryGuard, EdgeKind, QueryOrigin},
-        StampedValue,
-    },
+    local_state::{self, ActiveQueryGuard, EdgeKind, LocalState, QueryOrigin},
+    runtime::StampedValue,
     storage::DatabaseGen,
     Id, Revision, Runtime,
 };
@@ -22,46 +20,51 @@ where
         key: Id,
         revision: Revision,
     ) -> bool {
-        let runtime = db.runtime();
-        runtime.unwind_if_revision_cancelled(db);
+        local_state::attach(db.as_salsa_database(), |local_state| {
+            let runtime = db.runtime();
+            local_state.unwind_if_revision_cancelled(db.as_salsa_database());
 
-        loop {
-            let database_key_index = self.database_key_index(key);
+            loop {
+                let database_key_index = self.database_key_index(key);
 
-            tracing::debug!("{database_key_index:?}: maybe_changed_after(revision = {revision:?})");
+                tracing::debug!(
+                    "{database_key_index:?}: maybe_changed_after(revision = {revision:?})"
+                );
 
-            // Check if we have a verified version: this is the hot path.
-            let memo_guard = self.memo_map.get(key);
-            if let Some(memo) = &memo_guard {
-                if self.shallow_verify_memo(db, runtime, database_key_index, memo) {
-                    return memo.revisions.changed_at > revision;
-                }
-                drop(memo_guard); // release the arc-swap guard before cold path
-                if let Some(mcs) = self.maybe_changed_after_cold(db, key, revision) {
-                    return mcs;
+                // Check if we have a verified version: this is the hot path.
+                let memo_guard = self.memo_map.get(key);
+                if let Some(memo) = &memo_guard {
+                    if self.shallow_verify_memo(db, runtime, database_key_index, memo) {
+                        return memo.revisions.changed_at > revision;
+                    }
+                    drop(memo_guard); // release the arc-swap guard before cold path
+                    if let Some(mcs) = self.maybe_changed_after_cold(db, local_state, key, revision)
+                    {
+                        return mcs;
+                    } else {
+                        // We failed to claim, have to retry.
+                    }
                 } else {
-                    // We failed to claim, have to retry.
+                    // No memo? Assume has changed.
+                    return true;
                 }
-            } else {
-                // No memo? Assume has changed.
-                return true;
             }
-        }
+        })
     }
 
     fn maybe_changed_after_cold<'db>(
         &'db self,
         db: &'db C::DbView,
+        local_state: &LocalState,
         key_index: Id,
         revision: Revision,
     ) -> Option<bool> {
-        let runtime = db.runtime();
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = self
-            .sync_map
-            .claim(db.as_salsa_database(), database_key_index)?;
-        let active_query = runtime.push_query(database_key_index);
+        let _claim_guard =
+            self.sync_map
+                .claim(db.as_salsa_database(), local_state, database_key_index)?;
+        let active_query = local_state.push_query(database_key_index);
 
         // Load the current memo, if any. Use a real arc, not an arc-swap guard,
         // since we may recurse.
@@ -72,7 +75,7 @@ where
 
         tracing::debug!(
             "{database_key_index:?}: maybe_changed_after_cold, successful claim, \
-            revision = {revision:?}, old_memo = {old_memo:#?}",
+                revision = {revision:?}, old_memo = {old_memo:#?}",
         );
 
         // Check if the inputs are still valid and we can just compare `changed_at`.

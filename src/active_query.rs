@@ -9,16 +9,16 @@ use crate::{
 use super::local_state::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
 
 #[derive(Debug)]
-pub(super) struct ActiveQuery {
+pub(crate) struct ActiveQuery {
     /// What query is executing
-    pub(super) database_key_index: DatabaseKeyIndex,
+    pub(crate) database_key_index: DatabaseKeyIndex,
 
     /// Minimum durability of inputs observed so far.
-    pub(super) durability: Durability,
+    pub(crate) durability: Durability,
 
     /// Maximum revision of all inputs observed. If we observe an
     /// untracked read, this will be set to the most recent revision.
-    pub(super) changed_at: Revision,
+    pub(crate) changed_at: Revision,
 
     /// Inputs: Set of subqueries that were accessed thus far.
     /// Outputs: Tracks values written by this query. Could be...
@@ -26,38 +26,18 @@ pub(super) struct ActiveQuery {
     /// * tracked structs created
     /// * invocations of `specify`
     /// * accumulators pushed to
-    pub(super) input_outputs: FxIndexSet<(EdgeKind, DependencyIndex)>,
+    input_outputs: FxIndexSet<(EdgeKind, DependencyIndex)>,
 
     /// True if there was an untracked read.
-    pub(super) untracked_read: bool,
+    untracked_read: bool,
 
     /// Stores the entire cycle, if one is found and this query is part of it.
-    pub(super) cycle: Option<Cycle>,
+    pub(crate) cycle: Option<Cycle>,
 
     /// When new entities are created, their data is hashed, and the resulting
     /// hash is added to this map. If it is not present, then the disambiguator is 0.
     /// Otherwise it is 1 more than the current value (which is incremented).
-    pub(super) disambiguator_map: FxIndexMap<u64, Disambiguator>,
-}
-
-pub(super) struct SavedQueryState {
-    database_key_index: DatabaseKeyIndex,
-    durability: Durability,
-    changed_at: Revision,
-    input_outputs_len: usize,
-    untracked_read: bool,
-}
-
-impl SavedQueryState {
-    fn new(query: &ActiveQuery) -> Self {
-        Self {
-            database_key_index: query.database_key_index,
-            durability: query.durability,
-            changed_at: query.changed_at,
-            input_outputs_len: query.input_outputs.len(),
-            untracked_read: query.untracked_read,
-        }
-    }
+    disambiguator_map: FxIndexMap<u64, Disambiguator>,
 }
 
 impl ActiveQuery {
@@ -71,26 +51,6 @@ impl ActiveQuery {
             cycle: None,
             disambiguator_map: Default::default(),
         }
-    }
-
-    pub(super) fn save_query_state(&self) -> SavedQueryState {
-        SavedQueryState::new(self)
-    }
-
-    pub(super) fn restore_query_state(&mut self, state: SavedQueryState) {
-        assert_eq!(self.database_key_index, state.database_key_index);
-
-        assert!(self.durability <= state.durability);
-        self.durability = state.durability;
-
-        assert!(self.changed_at >= state.changed_at);
-        self.changed_at = state.changed_at;
-
-        assert!(self.input_outputs.len() >= state.input_outputs_len);
-        self.input_outputs.truncate(state.input_outputs_len);
-
-        assert!(self.untracked_read >= state.untracked_read);
-        self.untracked_read = state.untracked_read;
     }
 
     pub(super) fn add_read(

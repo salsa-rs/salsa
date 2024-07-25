@@ -10,9 +10,9 @@ use crate::{
     hash::FxDashMap,
     ingredient::{fmt_index, Ingredient, Jar},
     key::DependencyIndex,
-    runtime::local_state::QueryOrigin,
+    local_state::{self, LocalState, QueryOrigin},
     storage::IngredientIndex,
-    Database, DatabaseKeyIndex, Event, EventKind, Id, Revision, Runtime,
+    Database, DatabaseKeyIndex, Event, EventKind, Id, Revision,
 };
 
 pub trait Accumulator: Clone + Debug + Send + Sync + 'static + Sized {
@@ -78,44 +78,48 @@ impl<A: Accumulator> IngredientImpl<A> {
         }
     }
 
-    pub fn push(&self, runtime: &Runtime, value: A) {
-        let current_revision = runtime.current_revision();
-        let (active_query, _) = match runtime.active_query() {
-            Some(pair) => pair,
-            None => {
-                panic!("cannot accumulate values outside of an active query")
+    pub fn push(&self, db: &dyn crate::Database, value: A) {
+        local_state::attach(db, |state| {
+            let runtime = db.runtime();
+            let current_revision = runtime.current_revision();
+            let (active_query, _) = match state.active_query() {
+                Some(pair) => pair,
+                None => {
+                    panic!("cannot accumulate values outside of an active query")
+                }
+            };
+
+            let mut accumulated_values =
+                self.map.entry(active_query).or_insert(AccumulatedValues {
+                    values: vec![],
+                    produced_at: current_revision,
+                });
+
+            // When we call `push' in a query, we will add the accumulator to the output of the query.
+            // If we find here that this accumulator is not the output of the query,
+            // we can say that the accumulated values we stored for this query is out of date.
+            if !state.is_output_of_active_query(self.dependency_index()) {
+                accumulated_values.values.truncate(0);
+                accumulated_values.produced_at = current_revision;
             }
-        };
 
-        let mut accumulated_values = self.map.entry(active_query).or_insert(AccumulatedValues {
-            values: vec![],
-            produced_at: current_revision,
-        });
-
-        // When we call `push' in a query, we will add the accumulator to the output of the query.
-        // If we find here that this accumulator is not the output of the query,
-        // we can say that the accumulated values we stored for this query is out of date.
-        if !runtime.is_output_of_active_query(self.dependency_index()) {
-            accumulated_values.values.truncate(0);
-            accumulated_values.produced_at = current_revision;
-        }
-
-        runtime.add_output(self.dependency_index());
-        accumulated_values.values.push(value);
+            state.add_output(self.dependency_index());
+            accumulated_values.values.push(value);
+        })
     }
 
     pub(crate) fn produced_by(
         &self,
-        runtime: &Runtime,
+        current_revision: Revision,
+        local_state: &LocalState,
         query: DatabaseKeyIndex,
         output: &mut Vec<A>,
     ) {
-        let current_revision = runtime.current_revision();
         if let Some(v) = self.map.get(&query) {
             // FIXME: We don't currently have a good way to identify the value that was read.
             // You can't report is as a tracked read of `query`, because the return value of query is not being read here --
             // instead it is the set of values accumuated by `query`.
-            runtime.report_untracked_read();
+            local_state.report_untracked_read(current_revision);
 
             let AccumulatedValues {
                 values,
@@ -174,7 +178,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         assert!(stale_output_key.is_none());
         if self.map.remove(&executor).is_some() {
             db.salsa_event(Event {
-                runtime_id: db.runtime().id(),
+                thread_id: std::thread::current().id(),
                 kind: EventKind::DidDiscardAccumulated {
                     executor_key: executor,
                     accumulator: self.dependency_index(),
@@ -197,6 +201,10 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(A::DEBUG_NAME, index, fmt)
+    }
+
+    fn debug_name(&self) -> &'static str {
+        A::DEBUG_NAME
     }
 }
 

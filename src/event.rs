@@ -1,13 +1,14 @@
-use crate::{key::DatabaseKeyIndex, key::DependencyIndex, runtime::RuntimeId};
+use std::thread::ThreadId;
+
+use crate::{key::DatabaseKeyIndex, key::DependencyIndex};
 
 /// The `Event` struct identifies various notable things that can
 /// occur during salsa execution. Instances of this struct are given
 /// to `salsa_event`.
 #[derive(Debug)]
 pub struct Event {
-    /// The id of the snapshot that triggered the event.  Usually
-    /// 1-to-1 with a thread, as well.
-    pub runtime_id: RuntimeId,
+    /// The id of the thread that triggered the event.
+    pub thread_id: ThreadId,
 
     /// What sort of event was it.
     pub kind: EventKind,
@@ -26,18 +27,15 @@ pub enum EventKind {
         database_key: DatabaseKeyIndex,
     },
 
-    /// Indicates that another thread (with id `other_runtime_id`) is processing the
+    /// Indicates that another thread (with id `other_thread_id`) is processing the
     /// given query (`database_key`), so we will block until they
     /// finish.
     ///
     /// Executes after we have registered with the other thread but
     /// before they have answered us.
-    ///
-    /// (NB: you can find the `id` of the current thread via the
-    /// `runtime`)
     WillBlockOn {
-        /// The id of the runtime we will block on.
-        other_runtime_id: RuntimeId,
+        /// The id of the thread we will block on.
+        other_thread_id: ThreadId,
 
         /// The database-key for the affected value. Implements `Debug`.
         database_key: DatabaseKeyIndex,
@@ -54,6 +52,11 @@ pub enum EventKind {
     /// Indicates that `unwind_if_cancelled` was called and salsa will check if
     /// the current revision has been cancelled.
     WillCheckCancellation,
+
+    /// Indicates that one [`Handle`](`crate::Handle`) has set the cancellation flag.
+    /// When other active handles execute salsa methods, they will observe this flag
+    /// and panic with a sentinel value of type [`Cancelled`](`crate::Cancelled`).
+    DidSetCancellationFlag,
 
     /// Discovered that a query used to output a given output but no longer does.
     WillDiscardStaleOutput {

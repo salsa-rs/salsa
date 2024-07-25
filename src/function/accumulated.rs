@@ -1,4 +1,6 @@
-use crate::{accumulator, hash::FxHashSet, storage::DatabaseGen, DatabaseKeyIndex, Id};
+use crate::{
+    accumulator, hash::FxHashSet, local_state, storage::DatabaseGen, DatabaseKeyIndex, Id,
+};
 
 use super::{Configuration, IngredientImpl};
 
@@ -12,36 +14,41 @@ where
     where
         A: accumulator::Accumulator,
     {
-        let Some(accumulator) = <accumulator::IngredientImpl<A>>::from_db(db) else {
-            return vec![];
-        };
-        let runtime = db.runtime();
-        let mut output = vec![];
+        local_state::attach(db, |local_state| {
+            let current_revision = db.runtime().current_revision();
 
-        // First ensure the result is up to date
-        self.fetch(db, key);
+            let Some(accumulator) = <accumulator::IngredientImpl<A>>::from_db(db) else {
+                return vec![];
+            };
+            let mut output = vec![];
 
-        let db_key = self.database_key_index(key);
-        let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();
-        let mut stack: Vec<DatabaseKeyIndex> = vec![db_key];
+            // First ensure the result is up to date
+            self.fetch(db, key);
 
-        while let Some(k) = stack.pop() {
-            if visited.insert(k) {
-                accumulator.produced_by(runtime, k, &mut output);
+            let db_key = self.database_key_index(key);
+            let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();
+            let mut stack: Vec<DatabaseKeyIndex> = vec![db_key];
 
-                let origin = db.lookup_ingredient(k.ingredient_index).origin(k.key_index);
-                let inputs = origin.iter().flat_map(|origin| origin.inputs());
-                // Careful: we want to push in execution order, so reverse order to
-                // ensure the first child that was executed will be the first child popped
-                // from the stack.
-                stack.extend(
-                    inputs
-                        .flat_map(|input| TryInto::<DatabaseKeyIndex>::try_into(input).into_iter())
-                        .rev(),
-                );
+            while let Some(k) = stack.pop() {
+                if visited.insert(k) {
+                    accumulator.produced_by(current_revision, local_state, k, &mut output);
+
+                    let origin = db.lookup_ingredient(k.ingredient_index).origin(k.key_index);
+                    let inputs = origin.iter().flat_map(|origin| origin.inputs());
+                    // Careful: we want to push in execution order, so reverse order to
+                    // ensure the first child that was executed will be the first child popped
+                    // from the stack.
+                    stack.extend(
+                        inputs
+                            .flat_map(|input| {
+                                TryInto::<DatabaseKeyIndex>::try_into(input).into_iter()
+                            })
+                            .rev(),
+                    );
+                }
             }
-        }
 
-        output
+            output
+        })
     }
 }

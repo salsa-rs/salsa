@@ -1,4 +1,4 @@
-use crate::{cycle::CycleRecoveryStrategy, database, storage::IngredientIndex, Database, Id};
+use crate::{cycle::CycleRecoveryStrategy, local_state, storage::IngredientIndex, Database, Id};
 
 /// An integer that uniquely identifies a particular query instance within the
 /// database. Used to track dependencies between queries. Fully ordered and
@@ -57,7 +57,7 @@ impl DependencyIndex {
 
 impl std::fmt::Debug for DependencyIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        database::with_attached_database(|db| {
+        local_state::with_attached_database(|db| {
             let ingredient = db.lookup_ingredient(self.ingredient_index);
             ingredient.fmt_index(self.key_index, f)
         })

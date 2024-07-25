@@ -1,7 +1,7 @@
 use arc_swap::ArcSwap;
 use crossbeam::queue::SegQueue;
 
-use crate::{runtime::local_state::QueryOrigin, Id};
+use crate::{local_state::QueryOrigin, Id};
 
 use super::{memo, Configuration, IngredientImpl};
 

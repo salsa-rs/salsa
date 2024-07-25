@@ -1,6 +1,11 @@
 use arc_swap::Guard;
 
-use crate::{runtime::StampedValue, storage::DatabaseGen, Id};
+use crate::{
+    local_state::{self, LocalState},
+    runtime::StampedValue,
+    storage::DatabaseGen,
+    Id,
+};
 
 use super::{Configuration, IngredientImpl};
 
@@ -9,37 +14,41 @@ where
     C: Configuration,
 {
     pub fn fetch<'db>(&'db self, db: &'db C::DbView, key: Id) -> &C::Output<'db> {
-        let runtime = db.runtime();
+        local_state::attach(db.as_salsa_database(), |local_state| {
+            local_state.unwind_if_revision_cancelled(db.as_salsa_database());
 
-        runtime.unwind_if_revision_cancelled(db);
+            let StampedValue {
+                value,
+                durability,
+                changed_at,
+            } = self.compute_value(db, local_state, key);
 
-        let StampedValue {
-            value,
-            durability,
-            changed_at,
-        } = self.compute_value(db, key);
+            if let Some(evicted) = self.lru.record_use(key) {
+                self.evict(evicted);
+            }
 
-        if let Some(evicted) = self.lru.record_use(key) {
-            self.evict(evicted);
-        }
+            local_state.report_tracked_read(
+                self.database_key_index(key).into(),
+                durability,
+                changed_at,
+            );
 
-        db.runtime().report_tracked_read(
-            self.database_key_index(key).into(),
-            durability,
-            changed_at,
-        );
-
-        value
+            value
+        })
     }
 
     #[inline]
     fn compute_value<'db>(
         &'db self,
         db: &'db C::DbView,
+        local_state: &LocalState,
         key: Id,
     ) -> StampedValue<&'db C::Output<'db>> {
         loop {
-            if let Some(value) = self.fetch_hot(db, key).or_else(|| self.fetch_cold(db, key)) {
+            if let Some(value) = self
+                .fetch_hot(db, key)
+                .or_else(|| self.fetch_cold(db, local_state, key))
+            {
                 return value;
             }
         }
@@ -70,18 +79,18 @@ where
     fn fetch_cold<'db>(
         &'db self,
         db: &'db C::DbView,
+        local_state: &LocalState,
         key: Id,
     ) -> Option<StampedValue<&'db C::Output<'db>>> {
-        let runtime = db.runtime();
         let database_key_index = self.database_key_index(key);
 
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let _claim_guard = self
-            .sync_map
-            .claim(db.as_salsa_database(), database_key_index)?;
+        let _claim_guard =
+            self.sync_map
+                .claim(db.as_salsa_database(), local_state, database_key_index)?;
 
         // Push the query on the stack.
-        let active_query = runtime.push_query(database_key_index);
+        let active_query = local_state.push_query(database_key_index);
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
         // This time we can do a *deep* verify. Because this can recurse, don't hold the arcswap guard.
