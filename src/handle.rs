@@ -24,6 +24,7 @@ struct Coordinate {
 }
 
 impl<Db: HasStorage> Handle<Db> {
+    /// Create a new handle wrapping `db`.
     pub fn new(db: Db) -> Self {
         Self {
             db: Some(Arc::new(db)),
