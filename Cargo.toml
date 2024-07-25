@@ -20,6 +20,8 @@ salsa-macros = { path = "components/salsa-macros" }
 smallvec = "1.0.0"
 
 [dev-dependencies]
+annotate-snippets = "0.11.4"
+criterion = "0.5.1"
 derive-new = "0.5.9"
 expect-test = "1.4.0"
 eyre = "0.6.8"
@@ -28,6 +30,11 @@ ordered-float = "3.0"
 rustversion = "1.0"
 test-log = "0.2.11"
 trybuild = "1.0"
+
+
+[[bench]]
+name = "incremental"
+harness = false
 
 [workspace]
 members = ["components/salsa-macros"]
