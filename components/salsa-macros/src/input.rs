@@ -93,6 +93,7 @@ impl Macro {
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
         let Configuration = self.hygiene.ident("Configuration");
+        let Builder = self.hygiene.ident("Builder");
         let CACHE = self.hygiene.ident("CACHE");
         let Db = self.hygiene.ident("Db");
 
@@ -117,6 +118,7 @@ impl Macro {
                         #zalsa,
                         #zalsa_struct,
                         #Configuration,
+                        #Builder,
                         #CACHE,
                         #Db,
                     ]

@@ -48,6 +48,7 @@ macro_rules! setup_input_struct {
             $zalsa:ident,
             $zalsa_struct:ident,
             $Configuration:ident,
+            $Builder:ident,
             $CACHE:ident,
             $Db:ident,
         ]
@@ -60,7 +61,7 @@ macro_rules! setup_input_struct {
             use salsa::plumbing as $zalsa;
             use $zalsa::input as $zalsa_struct;
 
-            struct $Configuration;
+            type $Configuration = $Struct;
 
             impl $zalsa_struct::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
@@ -121,14 +122,22 @@ macro_rules! setup_input_struct {
             }
 
             impl $Struct {
+                #[inline]
                 pub fn $new_fn<$Db>(db: &$Db, $($field_id: $field_ty),*) -> Self
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + salsa::Database,
                 {
+                    Self::builder(db).new($($field_id,)*)
+                }
+
+                pub fn builder<'db, $Db>(db: &'db $Db) -> private::$Builder<'db>
+                where
+                    // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
+                    $Db: ?Sized + salsa::Database,
+                {
                     let current_revision = $zalsa::current_revision(db);
-                    let stamps = $zalsa::Array::new([$zalsa::stamp(current_revision, Default::default()); $N]);
-                    $Configuration::ingredient(db.as_salsa_database()).new_input(($($field_id,)*), stamps)
+                    private::$Builder::create(current_revision, $Configuration::ingredient(db.as_salsa_database()))
                 }
 
                 $(
@@ -204,6 +213,36 @@ macro_rules! setup_input_struct {
                     })
                 }
             }
+
+
+            mod private {
+                use salsa::plumbing as $zalsa;
+                use $zalsa::input as $zalsa_struct;
+
+                pub struct $Builder<'db> {
+                    inner: $zalsa_struct::BuilderImpl<'db, super::$Struct>,
+                }
+
+                impl<'db> $Builder<'db> {
+                    #[doc(hidden)]
+                    pub(super) fn create(revision: $zalsa::Revision, ingredient: &'db $zalsa_struct::IngredientImpl<super::$Struct>) -> Self {
+                        Self {
+                            inner: $zalsa_struct::BuilderImpl::new(revision, ingredient),
+                        }
+                    }
+
+                    /// Sets the durability for all fields.
+                    pub fn durability(mut self, durability: $zalsa::Durability) -> Self {
+                        self.inner.durability(durability);
+                        self
+                    }
+
+                    pub fn new(self, $($field_id: $field_ty),*) -> super::$Struct {
+                        self.inner.build(($($field_id,)*))
+                    }
+                }
+            }
+
         };
     };
 }

@@ -5,6 +5,7 @@ use std::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
+pub mod builder;
 pub mod input_field;
 pub mod setter;
 mod struct_map;
