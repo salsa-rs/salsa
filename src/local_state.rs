@@ -84,9 +84,10 @@ impl LocalState {
             fn new(state: &'s LocalState, db: &dyn Database) -> Self {
                 if let Some(current_db) = state.database.get() {
                     // Already attached? Assert that the database has not changed.
+                    // compare the thin pointer https://github.com/salsa-rs/salsa/issues/536
                     assert_eq!(
-                        current_db,
-                        NonNull::from(db),
+                        current_db.as_ptr() as * mut (),
+                        NonNull::from(db).as_ptr() as * mut (),
                         "cannot change database mid-query",
                     );
                     Self { state: None }
