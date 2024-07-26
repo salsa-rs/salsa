@@ -2,13 +2,13 @@
 //! Then mutate the values so that the tracked function re-executes.
 //! Check that we accumulate the appropriate, new values.
 
-mod common;
-use common::{HasLogger, Logger};
-
 use expect_test::expect;
-use salsa::{Accumulator, Setter};
 use test_log::test;
 
+use common::{HasLogger, Logger};
+use salsa::{Accumulator, Setter};
+
+mod common;
 #[salsa::db]
 trait Db: salsa::Database + HasLogger {}
 
