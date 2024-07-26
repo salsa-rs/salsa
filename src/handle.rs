@@ -60,6 +60,16 @@ impl<Db: HasStorage> Handle<Db> {
         Arc::get_mut(self.db_mut()).expect("other threads remain active despite cancellation")
     }
 
+    /// Returns the inner database, consuming the handle.
+    ///
+    /// If other handles are active, this method sets the cancellation flag
+    /// and blocks until they are dropped.
+    pub fn into_inner(mut self) -> Db {
+        self.cancel_others();
+        Arc::into_inner(self.db.take().unwrap())
+            .expect("other threads remain active despite cancellation")
+    }
+
     // ANCHOR: cancel_other_workers
     /// Sets cancellation flag and blocks until all other workers with access
     /// to this storage have completed.
