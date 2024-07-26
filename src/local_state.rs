@@ -83,12 +83,16 @@ impl LocalState {
         impl<'s> DbGuard<'s> {
             fn new(state: &'s LocalState, db: &dyn Database) -> Self {
                 if let Some(current_db) = state.database.get() {
+                    let new_db = NonNull::from(db);
+
                     // Already attached? Assert that the database has not changed.
-                    assert_eq!(
-                        current_db,
-                        NonNull::from(db),
-                        "cannot change database mid-query",
-                    );
+                    // NOTE: It's important to use `addr_eq` here because `NonNull` not only compares the address but also the type's metadata.
+                    if !std::ptr::addr_eq(current_db.as_ptr(), new_db.as_ptr()) {
+                        panic!(
+                            "Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}",
+                        );
+                    }
+
                     Self { state: None }
                 } else {
                     // Otherwise, set the database.
