@@ -110,7 +110,8 @@ pub struct DatabaseImpl<U: UserData = ()> {
     /// Reference to the database. This is always `Some` except during destruction.
     zalsa_impl: Option<Arc<ZalsaImpl<U>>>,
 
-    /// Coordination data.
+    /// Coordination data for cancellation of other handles when `zalsa_mut` is called.
+    /// This could be stored in ZalsaImpl but it makes things marginally cleaner to keep it separate.
     coordinate: Arc<Coordinate>,
 }
 
@@ -143,6 +144,9 @@ impl<U: UserData> DatabaseImpl<U> {
         }
     }
 
+    /// Access the `Arc<ZalsaImpl>`. This should always be
+    /// possible as `zalsa_impl` only becomes
+    /// `None` once we are in the `Drop` impl.
     fn zalsa_impl(&self) -> &Arc<ZalsaImpl<U>> {
         self.zalsa_impl.as_ref().unwrap()
     }
