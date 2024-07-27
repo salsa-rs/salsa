@@ -1,6 +1,6 @@
 use crate::{
     hash::FxHashSet, key::DependencyIndex, local_state::QueryRevisions, AsDynDatabase as _,
-    Database, DatabaseKeyIndex, Event, EventKind,
+    DatabaseKeyIndex, Event, EventKind,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};
@@ -38,7 +38,9 @@ where
     }
 
     fn report_stale_output(db: &C::DbView, key: DatabaseKeyIndex, output: DependencyIndex) {
-        db.salsa_event(Event {
+        let db = db.as_dyn_database();
+
+        db.salsa_event(&|| Event {
             thread_id: std::thread::current().id(),
             kind: EventKind::WillDiscardStaleOutput {
                 execute_key: key,
@@ -46,6 +48,6 @@ where
             },
         });
 
-        output.remove_stale_output(db.as_dyn_database(), key);
+        output.remove_stale_output(db, key);
     }
 }

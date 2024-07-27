@@ -36,7 +36,8 @@ impl Database {
 // ANCHOR: db_impl
 #[salsa::db]
 impl salsa::Database for Database {
-    fn salsa_event(&self, event: salsa::Event) {
+    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
+        let event = event();
         eprintln!("Event: {event:?}");
         // Log interesting events, if logging is enabled
         if let Some(logs) = &self.logs {

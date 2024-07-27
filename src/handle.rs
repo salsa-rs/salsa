@@ -80,7 +80,7 @@ impl<Db: Database> Handle<Db> {
         let zalsa = self.db().zalsa();
         zalsa.set_cancellation_flag();
 
-        self.db().salsa_event(Event {
+        self.db().salsa_event(&|| Event {
             thread_id: std::thread::current().id(),
 
             kind: EventKind::DidSetCancellationFlag,

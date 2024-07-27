@@ -187,7 +187,7 @@ impl Runtime {
             assert!(!dg.depends_on(other_id, thread_id));
         }
 
-        db.salsa_event(Event {
+        db.salsa_event(&|| Event {
             thread_id,
             kind: EventKind::WillBlockOn {
                 other_thread_id: other_id,

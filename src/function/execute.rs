@@ -32,7 +32,7 @@ where
 
         tracing::info!("{:?}: executing query", database_key_index);
 
-        db.salsa_event(Event {
+        db.salsa_event(&|| Event {
             thread_id: std::thread::current().id(),
             kind: EventKind::WillExecute {
                 database_key: database_key_index,

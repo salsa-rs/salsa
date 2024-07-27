@@ -61,7 +61,8 @@ struct Database {
 
 #[salsa::db]
 impl salsa::Database for Database {
-    fn salsa_event(&self, event: salsa::Event) {
+    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
+        let event = event();
         match event.kind {
             salsa::EventKind::WillExecute { .. }
             | salsa::EventKind::DidValidateMemoizedValue { .. } => {

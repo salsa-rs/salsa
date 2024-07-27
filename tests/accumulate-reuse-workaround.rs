@@ -59,7 +59,7 @@ struct Database {
 
 #[salsa::db]
 impl salsa::Database for Database {
-    fn salsa_event(&self, _event: salsa::Event) {}
+    fn salsa_event(&self, _event: &dyn Fn() -> salsa::Event) {}
 }
 
 #[salsa::db]

@@ -124,8 +124,9 @@ impl Db for Database {
 
 #[salsa::db]
 impl salsa::Database for Database {
-    fn salsa_event(&self, event: salsa::Event) {
+    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
         // don't log boring events
+        let event = event();
         if let salsa::EventKind::WillExecute { .. } = event.kind {
             self.logs.lock().unwrap().push(format!("{:?}", event));
         }

@@ -8,8 +8,12 @@ pub trait Database: ZalsaDatabase + AsDynDatabase {
     ///
     /// By default, the event is logged at level debug using
     /// the standard `log` facade.
-    fn salsa_event(&self, event: Event) {
-        tracing::debug!("salsa_event: {:?}", event)
+    ///
+    /// # Parameters
+    ///
+    /// * `event`, a fn that, if called, will create the event that occurred
+    fn salsa_event(&self, event: &dyn Fn() -> Event) {
+        tracing::debug!("salsa_event: {:?}", event())
     }
 
     /// A "synthetic write" causes the system to act *as though* some

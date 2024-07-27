@@ -264,7 +264,7 @@ where
 
         if let Some(origin) = self.delete_memo(id) {
             let key = self.database_key_index(id);
-            db.salsa_event(Event {
+            db.salsa_event(&|| Event {
                 thread_id: std::thread::current().id(),
                 kind: EventKind::DidDiscard { key },
             });
