@@ -35,7 +35,7 @@ macro_rules! setup_accumulator_impl {
                 where
                     Db: ?Sized + $zalsa::Database,
                 {
-                    let db = db.as_salsa_database();
+                    let db = db.as_dyn_database();
                     $ingredient(db).push(db, self);
                 }
             }

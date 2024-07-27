@@ -471,7 +471,7 @@ where
         // `executor` creates a tracked struct `salsa_output_key`,
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
-        self.delete_entity(db.as_salsa_database(), stale_output_key.unwrap());
+        self.delete_entity(db.as_dyn_database(), stale_output_key.unwrap());
     }
 
     fn requires_reset_for_new_revision(&self) -> bool {

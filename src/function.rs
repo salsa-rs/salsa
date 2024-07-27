@@ -3,13 +3,9 @@ use std::{any::Any, fmt, sync::Arc};
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    cycle::CycleRecoveryStrategy,
-    ingredient::fmt_index,
-    key::DatabaseKeyIndex,
-    local_state::QueryOrigin,
-    salsa_struct::SalsaStructInDb,
-    storage::{DatabaseGen, IngredientIndex},
-    Cycle, Database, Event, EventKind, Id, Revision,
+    cycle::CycleRecoveryStrategy, ingredient::fmt_index, key::DatabaseKeyIndex,
+    local_state::QueryOrigin, salsa_struct::SalsaStructInDb, storage::IngredientIndex,
+    AsDynDatabase as _, Cycle, Database, Event, EventKind, Id, Revision,
 };
 
 use self::delete::DeletedEntries;
@@ -199,7 +195,7 @@ where
     fn register<'db>(&self, db: &'db C::DbView) {
         if !self.registered.fetch_or(true) {
             <C::SalsaStruct<'db> as SalsaStructInDb>::register_dependent_fn(
-                db.as_salsa_database(),
+                db.as_dyn_database(),
                 self.index,
             )
         }

@@ -5,7 +5,7 @@ use crate::{
     local_state::{self, ActiveQueryGuard, EdgeKind, LocalState, QueryOrigin},
     runtime::StampedValue,
     storage::DatabaseGen,
-    Id, Revision, Runtime,
+    AsDynDatabase as _, Id, Revision, Runtime,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};
@@ -20,9 +20,9 @@ where
         key: Id,
         revision: Revision,
     ) -> bool {
-        local_state::attach(db.as_salsa_database(), |local_state| {
+        local_state::attach(db.as_dyn_database(), |local_state| {
             let runtime = db.runtime();
-            local_state.unwind_if_revision_cancelled(db.as_salsa_database());
+            local_state.unwind_if_revision_cancelled(db.as_dyn_database());
 
             loop {
                 let database_key_index = self.database_key_index(key);
@@ -63,7 +63,7 @@ where
 
         let _claim_guard =
             self.sync_map
-                .claim(db.as_salsa_database(), local_state, database_key_index)?;
+                .claim(db.as_dyn_database(), local_state, database_key_index)?;
         let active_query = local_state.push_query(database_key_index);
 
         // Load the current memo, if any. Use a real arc, not an arc-swap guard,
@@ -118,7 +118,7 @@ where
 
         if memo.check_durability(runtime) {
             // No input of the suitable durability has changed since last verified.
-            let db = db.as_salsa_database();
+            let db = db.as_dyn_database();
             memo.mark_as_verified(db, runtime, database_key_index);
             memo.mark_outputs_as_verified(db, database_key_index);
             return true;
@@ -185,7 +185,7 @@ where
                     match edge_kind {
                         EdgeKind::Input => {
                             if dependency_index
-                                .maybe_changed_after(db.as_salsa_database(), last_verified_at)
+                                .maybe_changed_after(db.as_dyn_database(), last_verified_at)
                             {
                                 return false;
                             }
@@ -208,14 +208,14 @@ where
                             // so even if we mark them as valid here, the function will re-execute
                             // and overwrite the contents.
                             dependency_index
-                                .mark_validated_output(db.as_salsa_database(), database_key_index);
+                                .mark_validated_output(db.as_dyn_database(), database_key_index);
                         }
                     }
                 }
             }
         }
 
-        old_memo.mark_as_verified(db.as_salsa_database(), runtime, database_key_index);
+        old_memo.mark_as_verified(db.as_dyn_database(), runtime, database_key_index);
         true
     }
 }

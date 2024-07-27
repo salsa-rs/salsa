@@ -29,6 +29,7 @@ mod views;
 pub use self::accumulator::Accumulator;
 pub use self::cancelled::Cancelled;
 pub use self::cycle::Cycle;
+pub use self::database::AsDynDatabase;
 pub use self::database::Database;
 pub use self::durability::Durability;
 pub use self::event::Event;

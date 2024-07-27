@@ -1,7 +1,7 @@
 use crate::{local_state, storage::DatabaseGen, Durability, Event, Revision};
 
 #[salsa_macros::db]
-pub trait Database: DatabaseGen {
+pub trait Database: DatabaseGen + AsDynDatabase {
     /// This function is invoked at key points in the salsa
     /// runtime. It permits the database to be customized and to
     /// inject logging or other custom behavior.
@@ -31,7 +31,7 @@ pub trait Database: DatabaseGen {
     /// Queries which report untracked reads will be re-executed in the next
     /// revision.
     fn report_untracked_read(&self) {
-        let db = self.as_salsa_database();
+        let db = self.as_dyn_database();
         local_state::attach(db, |state| {
             state.report_untracked_read(db.runtime().current_revision())
         })
@@ -43,6 +43,24 @@ pub trait Database: DatabaseGen {
         Self: Sized,
     {
         local_state::attach(self, |_state| op(self))
+    }
+}
+
+/// Upcast to a `dyn Database`.
+///
+/// Only required because upcasts not yet stabilized (*grr*).
+pub trait AsDynDatabase {
+    fn as_dyn_database(&self) -> &dyn Database;
+    fn as_dyn_database_mut(&mut self) -> &mut dyn Database;
+}
+
+impl<T: Database> AsDynDatabase for T {
+    fn as_dyn_database(&self) -> &dyn Database {
+        self
+    }
+
+    fn as_dyn_database_mut(&mut self) -> &mut dyn Database {
+        self
     }
 }
 

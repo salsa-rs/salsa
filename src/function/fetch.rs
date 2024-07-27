@@ -4,7 +4,7 @@ use crate::{
     local_state::{self, LocalState},
     runtime::StampedValue,
     storage::DatabaseGen,
-    Id,
+    AsDynDatabase as _, Id,
 };
 
 use super::{Configuration, IngredientImpl};
@@ -14,8 +14,8 @@ where
     C: Configuration,
 {
     pub fn fetch<'db>(&'db self, db: &'db C::DbView, key: Id) -> &C::Output<'db> {
-        local_state::attach(db.as_salsa_database(), |local_state| {
-            local_state.unwind_if_revision_cancelled(db.as_salsa_database());
+        local_state::attach(db.as_dyn_database(), |local_state| {
+            local_state.unwind_if_revision_cancelled(db.as_dyn_database());
 
             let StampedValue {
                 value,
@@ -87,7 +87,7 @@ where
         // Try to claim this query: if someone else has claimed it already, go back and start again.
         let _claim_guard =
             self.sync_map
-                .claim(db.as_salsa_database(), local_state, database_key_index)?;
+                .claim(db.as_dyn_database(), local_state, database_key_index)?;
 
         // Push the query on the stack.
         let active_query = local_state.push_query(database_key_index);

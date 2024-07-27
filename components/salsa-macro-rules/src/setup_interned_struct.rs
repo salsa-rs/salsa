@@ -81,7 +81,7 @@ macro_rules! setup_interned_struct {
                 {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
-                    CACHE.get_or_create(db.as_salsa_database(), || {
+                    CACHE.get_or_create(db.as_dyn_database(), || {
                         db.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
                     })
                 }
@@ -135,7 +135,7 @@ macro_rules! setup_interned_struct {
                     $Db: ?Sized + salsa::Database,
                 {
                     let current_revision = $zalsa::current_revision(db);
-                    $Configuration::ingredient(db).intern(db.as_salsa_database(), ($($field_id,)*))
+                    $Configuration::ingredient(db).intern(db.as_dyn_database(), ($($field_id,)*))
                 }
 
                 $(

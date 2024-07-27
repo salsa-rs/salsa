@@ -1,5 +1,5 @@
 use crate::{
-    hash::FxHashSet, key::DependencyIndex, local_state::QueryRevisions, storage::DatabaseGen,
+    hash::FxHashSet, key::DependencyIndex, local_state::QueryRevisions, AsDynDatabase as _,
     Database, DatabaseKeyIndex, Event, EventKind,
 };
 
@@ -46,6 +46,6 @@ where
             },
         });
 
-        output.remove_stale_output(db.as_salsa_database(), key);
+        output.remove_stale_output(db.as_dyn_database(), key);
     }
 }

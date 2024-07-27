@@ -192,8 +192,8 @@ macro_rules! setup_tracked_struct {
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + $zalsa::Database,
                 {
-                    $Configuration::ingredient(db.as_salsa_database()).new_struct(
-                        db.as_salsa_database(),
+                    $Configuration::ingredient(db.as_dyn_database()).new_struct(
+                        db.as_dyn_database(),
                         ($($field_id,)*)
                     )
                 }
@@ -204,7 +204,7 @@ macro_rules! setup_tracked_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let fields = unsafe { self.0.as_ref() }.field(db.as_salsa_database(), $field_index);
+                        let fields = unsafe { self.0.as_ref() }.field(db.as_dyn_database(), $field_index);
                         $crate::maybe_clone!(
                             $field_option,
                             $field_ty,

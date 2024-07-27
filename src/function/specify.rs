@@ -4,7 +4,7 @@ use crate::{
     local_state::{self, QueryOrigin, QueryRevisions},
     storage::DatabaseGen,
     tracked_struct::TrackedStructInDb,
-    Database, DatabaseKeyIndex, Id,
+    AsDynDatabase as _, Database, DatabaseKeyIndex, Id,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};
@@ -19,7 +19,7 @@ where
     where
         C::Input<'db>: TrackedStructInDb,
     {
-        local_state::attach(db.as_salsa_database(), |state| {
+        local_state::attach(db.as_dyn_database(), |state| {
             let (active_query_key, current_deps) = match state.active_query() {
                 Some(v) => v,
                 None => panic!("can only use `specify` inside a tracked function"),
@@ -37,8 +37,7 @@ where
             // * Q4 invokes Q2 and then Q1
             //
             // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
-            let database_key_index =
-                <C::Input<'db>>::database_key_index(db.as_salsa_database(), key);
+            let database_key_index = <C::Input<'db>>::database_key_index(db.as_dyn_database(), key);
             let dependency_index = database_key_index.into();
             if !state.is_output_of_active_query(dependency_index) {
                 panic!(
@@ -120,6 +119,6 @@ where
         }
 
         let database_key_index = self.database_key_index(key);
-        memo.mark_as_verified(db.as_salsa_database(), runtime, database_key_index);
+        memo.mark_as_verified(db.as_dyn_database(), runtime, database_key_index);
     }
 }

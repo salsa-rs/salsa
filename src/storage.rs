@@ -23,33 +23,6 @@ pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
 /// This trait is meant to be implemented by our procedural macro.
 /// We need to document any non-obvious conditions that it satisfies.
 pub unsafe trait DatabaseGen: Any {
-    /// Upcast to a `dyn Database`.
-    ///
-    /// Only required because upcasts not yet stabilized (*grr*).
-    ///
-    /// # Safety
-    ///
-    /// Returns the same data pointer as `self`.
-    fn as_salsa_database(&self) -> &dyn Database;
-
-    /// Upcast to a `dyn Database`.
-    ///
-    /// Only required because upcasts not yet stabilized (*grr*).
-    ///
-    /// # Safety
-    ///
-    /// Returns the same data pointer as `self`.
-    fn as_salsa_database_mut(&mut self) -> &mut dyn Database;
-
-    /// Upcast to a `dyn DatabaseGen`.
-    ///
-    /// Only required because upcasts not yet stabilized (*grr*).
-    ///
-    /// # Safety
-    ///
-    /// Returns the same data pointer as `self`.
-    fn as_salsa_database_gen(&self) -> &dyn DatabaseGen;
-
     /// Returns a reference to the underlying.
     fn views(&self) -> &Views;
 
@@ -98,18 +71,6 @@ pub unsafe trait HasStorage: Database + Sized + Any {
 }
 
 unsafe impl<T: HasStorage> DatabaseGen for T {
-    fn as_salsa_database(&self) -> &dyn Database {
-        self
-    }
-
-    fn as_salsa_database_mut(&mut self) -> &mut dyn Database {
-        self
-    }
-
-    fn as_salsa_database_gen(&self) -> &dyn DatabaseGen {
-        self
-    }
-
     fn views(&self) -> &Views {
         &self.storage().upcasts
     }

@@ -30,7 +30,7 @@ pub(crate) fn attach<R, DB>(db: &DB, op: impl FnOnce(&LocalState) -> R) -> R
 where
     DB: ?Sized + Database,
 {
-    LOCAL_STATE.with(|state| state.attach(db.as_salsa_database(), || op(state)))
+    LOCAL_STATE.with(|state| state.attach(db.as_dyn_database(), || op(state)))
 }
 
 /// Access the "attached" database. Returns `None` if no database is attached.
