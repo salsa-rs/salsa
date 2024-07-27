@@ -4,7 +4,6 @@
 
 use salsa::Cancelled;
 use salsa::DatabaseImpl;
-use salsa::Handle;
 use salsa::Setter;
 
 use crate::setup::Knobs;
@@ -44,17 +43,17 @@ fn dummy(_db: &dyn KnobsDatabase, _input: MyInput) -> MyInput {
 
 #[test]
 fn execute() {
-    let mut db = Handle::new(<DatabaseImpl<Knobs>>::default());
+    let mut db = <DatabaseImpl<Knobs>>::default();
     db.knobs().signal_on_will_block.store(3);
 
-    let input = MyInput::new(&*db, 1);
+    let input = MyInput::new(&db, 1);
 
     let thread_a = std::thread::spawn({
         let db = db.clone();
-        move || a1(&*db, input)
+        move || a1(&db, input)
     });
 
-    input.set_field(db.get_mut()).to(2);
+    input.set_field(&mut db).to(2);
 
     // Assert thread A *should* was cancelled
     let cancelled = thread_a

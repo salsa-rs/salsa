@@ -2,7 +2,7 @@
 //! See `../cycles.rs` for a complete listing of cycle tests,
 //! both intra and cross thread.
 
-use salsa::{DatabaseImpl, Handle};
+use salsa::DatabaseImpl;
 
 use crate::setup::{Knobs, KnobsDatabase};
 
@@ -70,19 +70,19 @@ pub(crate) fn b2(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
 
 #[test]
 fn execute() {
-    let db = Handle::new(<DatabaseImpl<Knobs>>::default());
+    let db = <DatabaseImpl<Knobs>>::default();
     db.knobs().signal_on_will_block.store(3);
 
-    let input = MyInput::new(&*db, 1);
+    let input = MyInput::new(&db, 1);
 
     let thread_a = std::thread::spawn({
         let db = db.clone();
-        move || a1(&*db, input)
+        move || a1(&db, input)
     });
 
     let thread_b = std::thread::spawn({
         let db = db.clone();
-        move || b1(&*db, input)
+        move || b1(&db, input)
     });
 
     // We expect that the recovery function yields

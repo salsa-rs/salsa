@@ -1,9 +1,11 @@
-use std::{any::Any, panic::RefUnwindSafe};
+use std::{any::Any, panic::RefUnwindSafe, sync::Arc};
+
+use parking_lot::{Condvar, Mutex};
 
 use crate::{
     self as salsa, local_state,
     storage::{Zalsa, ZalsaImpl},
-    Durability, Event, Revision,
+    Durability, Event, EventKind, Revision,
 };
 
 /// The trait implemented by all Salsa databases.
@@ -34,7 +36,6 @@ pub unsafe trait Database: AsDynDatabase + Any {
     /// is owned by the current thread, this could trigger deadlock.
     fn synthetic_write(&mut self, durability: Durability) {
         let zalsa_mut = self.zalsa_mut();
-        zalsa_mut.new_revision();
         zalsa_mut.report_tracked_write(durability);
     }
 
@@ -57,10 +58,14 @@ pub unsafe trait Database: AsDynDatabase + Any {
         local_state::attach(self, |_state| op(self))
     }
 
-    /// Plumbing methods.
+    /// Plumbing method: Access the internal salsa methods.
     #[doc(hidden)]
     fn zalsa(&self) -> &dyn Zalsa;
 
+    /// Plumbing method: Access the internal salsa methods for mutating the database.
+    ///
+    /// **WARNING:** Triggers a new revision, canceling other database handles.
+    /// This can lead to deadlock!
     #[doc(hidden)]
     fn zalsa_mut(&mut self) -> &mut dyn Zalsa;
 }
@@ -102,7 +107,11 @@ impl dyn Database {
 /// Concrete implementation of the [`Database`][] trait.
 /// Takes an optional type parameter `U` that allows you to thread your own data.
 pub struct DatabaseImpl<U: UserData = ()> {
-    storage: ZalsaImpl<U>,
+    /// Reference to the database. This is always `Some` except during destruction.
+    zalsa_impl: Option<Arc<ZalsaImpl<U>>>,
+
+    /// Coordination data.
+    coordinate: Arc<Coordinate>,
 }
 
 impl<U: UserData + Default> Default for DatabaseImpl<U> {
@@ -116,9 +125,7 @@ impl DatabaseImpl<()> {
     ///
     /// You can also use the [`Default`][] trait if your userdata implements it.
     pub fn new() -> Self {
-        Self {
-            storage: ZalsaImpl::with(()),
-        }
+        Self::with(())
     }
 }
 
@@ -128,16 +135,47 @@ impl<U: UserData> DatabaseImpl<U> {
     /// You can also use the [`Default`][] trait if your userdata implements it.
     pub fn with(u: U) -> Self {
         Self {
-            storage: ZalsaImpl::with(u),
+            zalsa_impl: Some(Arc::new(ZalsaImpl::with(u))),
+            coordinate: Arc::new(Coordinate {
+                clones: Mutex::new(1),
+                cvar: Default::default(),
+            }),
         }
     }
+
+    fn zalsa_impl(&self) -> &Arc<ZalsaImpl<U>> {
+        self.zalsa_impl.as_ref().unwrap()
+    }
+
+    // ANCHOR: cancel_other_workers
+    /// Sets cancellation flag and blocks until all other workers with access
+    /// to this storage have completed.
+    ///
+    /// This could deadlock if there is a single worker with two handles to the
+    /// same database!
+    fn cancel_others(&mut self) {
+        let zalsa = self.zalsa_impl();
+        zalsa.set_cancellation_flag();
+
+        self.salsa_event(&|| Event {
+            thread_id: std::thread::current().id(),
+
+            kind: EventKind::DidSetCancellationFlag,
+        });
+
+        let mut clones = self.coordinate.clones.lock();
+        while *clones != 1 {
+            self.coordinate.cvar.wait(&mut clones);
+        }
+    }
+    // ANCHOR_END: cancel_other_workers
 }
 
 impl<U: UserData> std::ops::Deref for DatabaseImpl<U> {
     type Target = U;
 
     fn deref(&self) -> &U {
-        &self.storage.user_data()
+        self.zalsa_impl().user_data()
     }
 }
 
@@ -146,16 +184,44 @@ impl<U: UserData + RefUnwindSafe> RefUnwindSafe for DatabaseImpl<U> {}
 #[salsa_macros::db]
 unsafe impl<U: UserData> Database for DatabaseImpl<U> {
     fn zalsa(&self) -> &dyn Zalsa {
-        &self.storage
+        &**self.zalsa_impl()
     }
 
     fn zalsa_mut(&mut self) -> &mut dyn Zalsa {
-        &mut self.storage
+        self.cancel_others();
+
+        // The ref count on the `Arc` should now be 1
+        let arc_zalsa_mut = self.zalsa_impl.as_mut().unwrap();
+        let zalsa_mut = Arc::get_mut(arc_zalsa_mut).unwrap();
+        zalsa_mut.new_revision();
+        zalsa_mut
     }
 
     // Report a salsa event.
     fn salsa_event(&self, event: &dyn Fn() -> Event) {
         U::salsa_event(self, event)
+    }
+}
+
+impl<U: UserData> Clone for DatabaseImpl<U> {
+    fn clone(&self) -> Self {
+        *self.coordinate.clones.lock() += 1;
+
+        Self {
+            zalsa_impl: self.zalsa_impl.clone(),
+            coordinate: Arc::clone(&self.coordinate),
+        }
+    }
+}
+
+impl<U: UserData> Drop for DatabaseImpl<U> {
+    fn drop(&mut self) {
+        // Drop the database handle *first*
+        self.zalsa_impl.take();
+
+        // *Now* decrement the number of clones and notify once we have completed
+        *self.coordinate.clones.lock() -= 1;
+        self.coordinate.cvar.notify_all();
     }
 }
 
@@ -174,3 +240,10 @@ pub trait UserData: Any + Sized {
 }
 
 impl UserData for () {}
+
+struct Coordinate {
+    /// Counter of the number of clones of actor. Begins at 1.
+    /// Incremented when cloned, decremented when dropped.
+    clones: Mutex<usize>,
+    cvar: Condvar,
+}

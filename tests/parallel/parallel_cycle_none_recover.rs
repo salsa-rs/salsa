@@ -5,9 +5,8 @@
 use crate::setup::Knobs;
 use crate::setup::KnobsDatabase;
 use expect_test::expect;
-use salsa::Database as _;
+use salsa::Database;
 use salsa::DatabaseImpl;
-use salsa::Handle;
 
 #[salsa::input]
 pub(crate) struct MyInput {
@@ -38,19 +37,19 @@ pub(crate) fn b(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
 
 #[test]
 fn execute() {
-    let db = Handle::new(<DatabaseImpl<Knobs>>::default());
+    let db = <DatabaseImpl<Knobs>>::default();
     db.knobs().signal_on_will_block.store(3);
 
-    let input = MyInput::new(&*db, -1);
+    let input = MyInput::new(&db, -1);
 
     let thread_a = std::thread::spawn({
         let db = db.clone();
-        move || a(&*db, input)
+        move || a(&db, input)
     });
 
     let thread_b = std::thread::spawn({
         let db = db.clone();
-        move || b(&*db, input)
+        move || b(&db, input)
     });
 
     // We expect B to panic because it detects a cycle (it is the one that calls A, ultimately).
@@ -64,7 +63,7 @@ fn execute() {
                     b(0),
                 ]
             "#]];
-            expected.assert_debug_eq(&c.all_participants(&*db));
+            expected.assert_debug_eq(&c.all_participants(&db));
         } else {
             panic!("b failed in an unexpected way: {:?}", err_b);
         }

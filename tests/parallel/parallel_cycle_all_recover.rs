@@ -3,7 +3,6 @@
 //! both intra and cross thread.
 
 use salsa::DatabaseImpl;
-use salsa::Handle;
 
 use crate::setup::Knobs;
 use crate::setup::KnobsDatabase;
@@ -87,19 +86,19 @@ fn recover_b2(db: &dyn KnobsDatabase, _cycle: &salsa::Cycle, key: MyInput) -> i3
 
 #[test]
 fn execute() {
-    let db = Handle::new(<DatabaseImpl<Knobs>>::default());
+    let db = <DatabaseImpl<Knobs>>::default();
     db.knobs().signal_on_will_block.store(3);
 
-    let input = MyInput::new(&*db, 1);
+    let input = MyInput::new(&db, 1);
 
     let thread_a = std::thread::spawn({
         let db = db.clone();
-        move || a1(&*db, input)
+        move || a1(&db, input)
     });
 
     let thread_b = std::thread::spawn({
         let db = db.clone();
-        move || b1(&*db, input)
+        move || b1(&db, input)
     });
 
     assert_eq!(thread_a.join().unwrap(), 11);

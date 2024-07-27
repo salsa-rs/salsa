@@ -41,23 +41,15 @@ pub trait Zalsa {
     fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient;
 
     /// Gets an `&mut`-ref to an ingredient by index.
-    /// 
-    /// **Triggers a new revision.** Returns the `&mut` reference 
-    /// along with the new revision index.
     fn lookup_ingredient_mut(
         &mut self,
         index: IngredientIndex,
-    ) -> (&mut dyn Ingredient, Revision);
+    ) -> &mut dyn Ingredient;
 
     fn runtimex(&self) -> &Runtime;
 
     /// Return the current revision
     fn current_revision(&self) -> Revision;
-
-    /// Increment revision counter.
-    /// 
-    /// **Triggers a new revision.**
-    fn new_revision(&mut self) -> Revision;
 
     /// Return the time when an input of durability `durability` last changed
     fn last_changed_revision(&self, durability: Durability) -> Revision;
@@ -126,22 +118,10 @@ impl<U: UserData> Zalsa for ZalsaImpl<U> {
     fn lookup_ingredient_mut(
         &mut self,
         index: IngredientIndex,
-    ) -> (&mut dyn Ingredient, Revision) {
-        let new_revision = self.runtime.new_revision();
-
-        for index in self.ingredients_requiring_reset.iter() {
-            self.ingredients_vec
-                .get_mut(index.as_usize())
-                .unwrap()
-                .reset_for_new_revision();
-        }
-
-        (
-            &mut **self.ingredients_vec.get_mut(index.as_usize()).unwrap(),
-            new_revision,
-        )
+    ) -> &mut dyn Ingredient {
+        &mut **self.ingredients_vec.get_mut(index.as_usize()).unwrap()
     }
-    
+
     fn current_revision(&self) -> Revision {
         self.runtime.current_revision()
     }
@@ -164,10 +144,6 @@ impl<U: UserData> Zalsa for ZalsaImpl<U> {
     
     fn set_cancellation_flag(&self) {
         self.runtime.set_cancellation_flag()
-    }
-    
-    fn new_revision(&mut self) -> Revision {
-        self.runtime.new_revision()
     }
 }
 
@@ -263,6 +239,21 @@ impl<U: UserData> ZalsaImpl<U> {
 
     pub(crate) fn user_data(&self) -> &U {
         &self.user_data
+    }
+
+    /// Triggers a new revision. Invoked automatically when you call `zalsa_mut`
+    /// and so doesn't need to be called otherwise.
+    pub(crate) fn new_revision(&mut self) -> Revision {
+        let new_revision = self.runtime.new_revision();
+
+        for index in self.ingredients_requiring_reset.iter() {
+            self.ingredients_vec
+                .get_mut(index.as_usize())
+                .unwrap()
+                .reset_for_new_revision();
+        }
+
+        new_revision
     }
 }
 
