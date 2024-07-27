@@ -42,7 +42,6 @@ pub use self::input::setter::Setter;
 pub use self::key::DatabaseKeyIndex;
 pub use self::revision::Revision;
 pub use self::runtime::Runtime;
-pub use self::storage::Storage;
 pub use self::update::Update;
 pub use crate::local_state::with_attached_database;
 pub use salsa_macros::accumulator;
@@ -89,7 +88,6 @@ pub mod plumbing {
     pub use crate::storage::views;
     pub use crate::storage::IngredientCache;
     pub use crate::storage::IngredientIndex;
-    pub use crate::storage::Storage;
     pub use crate::storage::Zalsa;
     pub use crate::tracked_struct::TrackedStructInDb;
     pub use crate::update::always_update;

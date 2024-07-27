@@ -1,6 +1,10 @@
 use std::{any::Any, panic::RefUnwindSafe};
 
-use crate::{self as salsa, local_state, storage::Zalsa, Durability, Event, Revision, Storage};
+use crate::{
+    self as salsa, local_state,
+    storage::{Zalsa, ZalsaImpl},
+    Durability, Event, Revision,
+};
 
 /// The trait implemented by all Salsa databases.
 /// You can create your own subtraits of this trait using the `#[salsa::db]` procedural macro.
@@ -98,7 +102,7 @@ impl dyn Database {
 /// Concrete implementation of the [`Database`][] trait.
 /// Takes an optional type parameter `U` that allows you to thread your own data.
 pub struct DatabaseImpl<U: UserData = ()> {
-    storage: Storage<U>,
+    storage: ZalsaImpl<U>,
 }
 
 impl<U: UserData + Default> Default for DatabaseImpl<U> {
@@ -113,7 +117,7 @@ impl DatabaseImpl<()> {
     /// You can also use the [`Default`][] trait if your userdata implements it.
     pub fn new() -> Self {
         Self {
-            storage: Storage::with(()),
+            storage: ZalsaImpl::with(()),
         }
     }
 }
@@ -124,7 +128,7 @@ impl<U: UserData> DatabaseImpl<U> {
     /// You can also use the [`Default`][] trait if your userdata implements it.
     pub fn with(u: U) -> Self {
         Self {
-            storage: Storage::with(u),
+            storage: ZalsaImpl::with(u),
         }
     }
 }

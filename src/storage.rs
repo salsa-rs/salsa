@@ -72,7 +72,7 @@ pub trait Zalsa {
     fn report_tracked_write(&mut self, durability: Durability);
 }
 
-impl<U: UserData> Zalsa for Storage<U> {
+impl<U: UserData> Zalsa for ZalsaImpl<U> {
     fn views(&self) -> &Views {
         &self.views_of
     }
@@ -212,7 +212,7 @@ impl IngredientIndex {
 
 /// The "storage" struct stores all the data for the jars.
 /// It is shared between the main database and any active snapshots.
-pub struct Storage<U: UserData> {
+pub(crate) struct ZalsaImpl<U: UserData> {
     user_data: U,
     
     views_of: ViewsOf<DatabaseImpl<U>>,
@@ -241,14 +241,14 @@ pub struct Storage<U: UserData> {
 }
 
 // ANCHOR: default
-impl<U: UserData + Default> Default for Storage<U> {
+impl<U: UserData + Default> Default for ZalsaImpl<U> {
     fn default() -> Self {
         Self::with(Default::default())
     }
 }
 // ANCHOR_END: default
 
-impl<U: UserData> Storage<U> {
+impl<U: UserData> ZalsaImpl<U> {
     pub(crate) fn with(user_data: U) -> Self {
         Self {
             views_of: Default::default(),
