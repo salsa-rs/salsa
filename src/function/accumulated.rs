@@ -16,7 +16,7 @@ where
     {
         local_state::attach(db, |local_state| {
             let zalsa = db.zalsa();
-            let current_revision = zalsa.runtime().current_revision();
+            let current_revision = zalsa.current_revision();
 
             let Some(accumulator) = <accumulator::IngredientImpl<A>>::from_db(db) else {
                 return vec![];

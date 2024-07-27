@@ -64,7 +64,7 @@ where
             // - a result that is verified in the current revision, because it was set, which will use the set value
             // - a result that is NOT verified and has untracked inputs, which will re-execute (and likely panic)
 
-            let revision = db.zalsa().runtime().current_revision();
+            let revision = db.zalsa().current_revision();
             let mut revisions = QueryRevisions {
                 changed_at: current_deps.changed_at,
                 durability: current_deps.durability,
@@ -101,7 +101,7 @@ where
         executor: DatabaseKeyIndex,
         key: Id,
     ) {
-        let runtime = db.zalsa().runtime();
+        let zalsa = db.zalsa();
 
         let memo = match self.memo_map.get(key) {
             Some(m) => m,
@@ -119,6 +119,10 @@ where
         }
 
         let database_key_index = self.database_key_index(key);
-        memo.mark_as_verified(db.as_dyn_database(), runtime, database_key_index);
+        memo.mark_as_verified(
+            db.as_dyn_database(),
+            zalsa.current_revision(),
+            database_key_index,
+        );
     }
 }

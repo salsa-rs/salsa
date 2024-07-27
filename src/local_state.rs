@@ -13,7 +13,6 @@ use crate::Database;
 use crate::Event;
 use crate::EventKind;
 use crate::Revision;
-use crate::Runtime;
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::ptr::NonNull;
@@ -321,21 +320,20 @@ impl LocalState {
     /// `salsa_event` is emitted when this method is called, so that should be
     /// used instead.
     pub(crate) fn unwind_if_revision_cancelled(&self, db: &dyn Database) {
-        let runtime = db.zalsa().runtime();
         let thread_id = std::thread::current().id();
         db.salsa_event(Event {
             thread_id,
 
             kind: EventKind::WillCheckCancellation,
         });
-        if runtime.load_cancellation_flag() {
-            self.unwind_cancelled(runtime);
+        let zalsa = db.zalsa();
+        if zalsa.load_cancellation_flag() {
+            self.unwind_cancelled(zalsa.current_revision());
         }
     }
 
     #[cold]
-    pub(crate) fn unwind_cancelled(&self, runtime: &Runtime) {
-        let current_revision = runtime.current_revision();
+    pub(crate) fn unwind_cancelled(&self, current_revision: Revision) {
         self.report_untracked_read(current_revision);
         Cancelled::PendingWrite.throw();
     }
@@ -412,6 +410,10 @@ impl QueryOrigin {
 pub enum EdgeKind {
     Input,
     Output,
+}
+
+lazy_static::lazy_static! {
+    pub(crate) static ref EMPTY_DEPENDENCIES: Arc<[(EdgeKind, DependencyIndex)]> = Arc::new([]);
 }
 
 /// The edges between a memoized value and other queries in the dependency graph.
@@ -497,14 +499,14 @@ impl ActiveQueryGuard<'_> {
     /// which summarizes the other queries that were accessed during this
     /// query's execution.
     #[inline]
-    pub(crate) fn pop(self, runtime: &Runtime) -> QueryRevisions {
+    pub(crate) fn pop(self) -> QueryRevisions {
         // Extract accumulated inputs.
         let popped_query = self.complete();
 
         // If this frame were a cycle participant, it would have unwound.
         assert!(popped_query.cycle.is_none());
 
-        popped_query.revisions(runtime)
+        popped_query.revisions()
     }
 
     /// If the active query is registered as a cycle participant, remove and

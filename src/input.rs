@@ -19,7 +19,6 @@ use crate::{
     key::{DatabaseKeyIndex, DependencyIndex},
     local_state::{self, QueryOrigin},
     plumbing::{Jar, Stamp},
-    runtime::Runtime,
     storage::IngredientIndex,
     Database, Durability, Id, Revision,
 };
@@ -121,18 +120,17 @@ impl<C: Configuration> IngredientImpl<C> {
     /// * `setter`, function that modifies the fields tuple; should only modify the element for `field_index`
     pub fn set_field<R>(
         &mut self,
-        runtime: &mut Runtime,
+        current_revision: Revision,
         id: C::Struct,
         field_index: usize,
         durability: Durability,
         setter: impl FnOnce(&mut C::Fields) -> R,
     ) -> R {
-        let revision = runtime.current_revision();
         let id: Id = id.as_id();
         let mut r = self.struct_map.update(id);
         let stamp = &mut r.stamps[field_index];
         stamp.durability = durability;
-        stamp.changed_at = revision;
+        stamp.changed_at = current_revision;
         setter(&mut r.fields)
     }
 

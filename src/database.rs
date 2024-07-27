@@ -21,9 +21,9 @@ pub trait Database: ZalsaDatabase + AsDynDatabase {
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
     fn synthetic_write(&mut self, durability: Durability) {
-        let runtime = self.zalsa_mut().runtime_mut();
-        runtime.new_revision();
-        runtime.report_tracked_write(durability);
+        let zalsa_mut = self.zalsa_mut();
+        zalsa_mut.new_revision();
+        zalsa_mut.report_tracked_write(durability);
     }
 
     /// Reports that the query depends on some state unknown to salsa.
@@ -33,7 +33,7 @@ pub trait Database: ZalsaDatabase + AsDynDatabase {
     fn report_untracked_read(&self) {
         let db = self.as_dyn_database();
         local_state::attach(db, |state| {
-            state.report_untracked_read(db.zalsa().runtime().current_revision())
+            state.report_untracked_read(db.zalsa().current_revision())
         })
     }
 
@@ -65,7 +65,7 @@ impl<T: Database> AsDynDatabase for T {
 }
 
 pub fn current_revision<Db: ?Sized + Database>(db: &Db) -> Revision {
-    db.zalsa().runtime().current_revision()
+    db.zalsa().current_revision()
 }
 
 impl dyn Database {

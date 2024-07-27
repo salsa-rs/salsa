@@ -4,8 +4,8 @@ use crate::{
     key::DatabaseKeyIndex,
     local_state::{self, ActiveQueryGuard, EdgeKind, LocalState, QueryOrigin},
     runtime::StampedValue,
-    storage::ZalsaDatabase as _,
-    AsDynDatabase as _, Id, Revision, Runtime,
+    storage::{Zalsa, ZalsaDatabase as _},
+    AsDynDatabase as _, Id, Revision,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};
@@ -21,7 +21,7 @@ where
         revision: Revision,
     ) -> bool {
         local_state::attach(db.as_dyn_database(), |local_state| {
-            let runtime = db.zalsa().runtime();
+            let zalsa = db.zalsa();
             local_state.unwind_if_revision_cancelled(db.as_dyn_database());
 
             loop {
@@ -34,7 +34,7 @@ where
                 // Check if we have a verified version: this is the hot path.
                 let memo_guard = self.memo_map.get(key);
                 if let Some(memo) = &memo_guard {
-                    if self.shallow_verify_memo(db, runtime, database_key_index, memo) {
+                    if self.shallow_verify_memo(db, zalsa, database_key_index, memo) {
                         return memo.revisions.changed_at > revision;
                     }
                     drop(memo_guard); // release the arc-swap guard before cold path
@@ -102,12 +102,12 @@ where
     pub(super) fn shallow_verify_memo(
         &self,
         db: &C::DbView,
-        runtime: &Runtime,
+        zalsa: &dyn Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
         let verified_at = memo.verified_at.load();
-        let revision_now = runtime.current_revision();
+        let revision_now = zalsa.current_revision();
 
         tracing::debug!("{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",);
 
@@ -116,10 +116,10 @@ where
             return true;
         }
 
-        if memo.check_durability(runtime) {
+        if memo.check_durability(zalsa) {
             // No input of the suitable durability has changed since last verified.
             let db = db.as_dyn_database();
-            memo.mark_as_verified(db, runtime, database_key_index);
+            memo.mark_as_verified(db, revision_now, database_key_index);
             memo.mark_outputs_as_verified(db, database_key_index);
             return true;
         }
@@ -141,12 +141,12 @@ where
         old_memo: &Memo<C::Output<'_>>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> bool {
-        let runtime = db.zalsa().runtime();
+        let zalsa = db.zalsa();
         let database_key_index = active_query.database_key_index;
 
         tracing::debug!("{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",);
 
-        if self.shallow_verify_memo(db, runtime, database_key_index, old_memo) {
+        if self.shallow_verify_memo(db, zalsa, database_key_index, old_memo) {
             return true;
         }
 
@@ -215,7 +215,11 @@ where
             }
         }
 
-        old_memo.mark_as_verified(db.as_dyn_database(), runtime, database_key_index);
+        old_memo.mark_as_verified(
+            db.as_dyn_database(),
+            zalsa.current_revision(),
+            database_key_index,
+        );
         true
     }
 }

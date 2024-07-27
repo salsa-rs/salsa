@@ -307,7 +307,7 @@ where
             let (id, new_id) = self.intern(entity_key);
             local_state.add_output(self.database_key_index(id).into());
 
-            let current_revision = zalsa.runtime().current_revision();
+            let current_revision = zalsa.current_revision();
             if new_id {
                 // This is a new tracked struct, so create an entry in the struct map.
 
@@ -379,7 +379,7 @@ where
     ///
     /// If the struct has not been created in this revision.
     pub fn lookup_struct<'db>(&'db self, db: &'db dyn Database, id: Id) -> C::Struct<'db> {
-        let current_revision = db.zalsa().runtime().current_revision();
+        let current_revision = db.zalsa().current_revision();
         self.struct_map.get(current_revision, id)
     }
 
@@ -458,9 +458,9 @@ where
         _executor: DatabaseKeyIndex,
         output_key: Option<crate::Id>,
     ) {
-        let runtime = db.zalsa().runtime();
+        let current_revision = db.zalsa().current_revision();
         let output_key = output_key.unwrap();
-        self.struct_map.validate(runtime, output_key);
+        self.struct_map.validate(current_revision, output_key);
     }
 
     fn remove_stale_output(

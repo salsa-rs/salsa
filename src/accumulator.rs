@@ -81,8 +81,7 @@ impl<A: Accumulator> IngredientImpl<A> {
 
     pub fn push(&self, db: &dyn crate::Database, value: A) {
         local_state::attach(db, |state| {
-            let runtime = db.zalsa().runtime();
-            let current_revision = runtime.current_revision();
+            let current_revision = db.zalsa().current_revision();
             let (active_query, _) = match state.active_query() {
                 Some(pair) => pair,
                 None => {
@@ -163,7 +162,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         output_key: Option<crate::Id>,
     ) {
         assert!(output_key.is_none());
-        let current_revision = db.zalsa().runtime().current_revision();
+        let current_revision = db.zalsa().current_revision();
         if let Some(mut v) = self.map.get_mut(&executor) {
             // The value is still valid in the new revision.
             v.produced_at = current_revision;

@@ -9,7 +9,7 @@ use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
 use crate::views::{Views, ViewsOf};
-use crate::Database;
+use crate::{Database, Durability, Revision};
 
 pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
     db.zalsa().views()
@@ -55,17 +55,36 @@ pub trait Zalsa {
     /// Gets an `&`-ref to an ingredient by index
     fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient;
 
-    /// Gets an `&mut`-ref to an ingredient by index; also returns the runtime for further use
+    /// Gets an `&mut`-ref to an ingredient by index.
+    /// 
+    /// **Triggers a new revision.** Returns the `&mut` reference 
+    /// along with the new revision index.
     fn lookup_ingredient_mut(
         &mut self,
         index: IngredientIndex,
-    ) -> (&mut dyn Ingredient, &mut Runtime);
+    ) -> (&mut dyn Ingredient, Revision);
 
-    /// Gets the salsa runtime
-    fn runtime(&self) -> &Runtime;
+    fn runtimex(&self) -> &Runtime;
 
-    /// Gets the salsa runtime
-    fn runtime_mut(&mut self) -> &mut Runtime;
+    /// Return the current revision
+    fn current_revision(&self) -> Revision;
+
+    /// Increment revision counter.
+    /// 
+    /// **Triggers a new revision.**
+    fn new_revision(&mut self) -> Revision;
+
+    /// Return the time when an input of durability `durability` last changed
+    fn last_changed_revision(&self, durability: Durability) -> Revision;
+
+    /// True if any threads have signalled for cancellation
+    fn load_cancellation_flag(&self) -> bool;
+
+    /// Signal for cancellation, indicating current thread is trying to get unique access.
+    fn set_cancellation_flag(&self);
+
+    /// Reports a (synthetic) tracked write to "some input of the given durability".
+    fn report_tracked_write(&mut self, durability: Durability);
 }
 
 impl<Db: Database> Zalsa for Storage<Db> {
@@ -119,19 +138,11 @@ impl<Db: Database> Zalsa for Storage<Db> {
         &**self.ingredients_vec.get(index.as_usize()).unwrap()
     }
 
-    fn runtime(&self) -> &Runtime {
-        &self.runtime
-    }
-
-    fn runtime_mut(&mut self) -> &mut Runtime {
-        &mut self.runtime
-    }
-
     fn lookup_ingredient_mut(
         &mut self,
         index: IngredientIndex,
-    ) -> (&mut dyn Ingredient, &mut Runtime) {
-        self.runtime.new_revision();
+    ) -> (&mut dyn Ingredient, Revision) {
+        let new_revision = self.runtime.new_revision();
 
         for index in self.ingredients_requiring_reset.iter() {
             self.ingredients_vec
@@ -142,8 +153,36 @@ impl<Db: Database> Zalsa for Storage<Db> {
 
         (
             &mut **self.ingredients_vec.get_mut(index.as_usize()).unwrap(),
-            &mut self.runtime,
+            new_revision,
         )
+    }
+    
+    fn current_revision(&self) -> Revision {
+        self.runtime.current_revision()
+    }
+    
+    fn load_cancellation_flag(&self) -> bool {
+        self.runtime.load_cancellation_flag()
+    }
+    
+    fn report_tracked_write(&mut self, durability: Durability) {
+        self.runtime.report_tracked_write(durability)
+    }
+    
+    fn runtimex(&self) -> &Runtime {
+        &self.runtime
+    }
+    
+    fn last_changed_revision(&self, durability: Durability) -> Revision {
+        self.runtime.last_changed_revision(durability)
+    }
+    
+    fn set_cancellation_flag(&self) {
+        self.runtime.set_cancellation_flag()
+    }
+    
+    fn new_revision(&mut self) -> Revision {
+        self.runtime.new_revision()
     }
 }
 

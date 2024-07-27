@@ -6,7 +6,7 @@ use std::{
 use crossbeam::queue::SegQueue;
 use dashmap::mapref::one::RefMut;
 
-use crate::{alloc::Alloc, hash::FxDashMap, Id, Revision, Runtime};
+use crate::{alloc::Alloc, hash::FxDashMap, Id, Revision};
 
 use super::{Configuration, KeyStruct, Value};
 
@@ -99,7 +99,7 @@ where
         unsafe { C::struct_from_raw(pointer) }
     }
 
-    pub fn validate<'db>(&'db self, runtime: &'db Runtime, id: Id) {
+    pub fn validate<'db>(&'db self, current_revision: Revision, id: Id) {
         let mut data = self.map.get_mut(&id).unwrap();
 
         // UNSAFE: We never permit `&`-access in the current revision until data.created_at
@@ -107,7 +107,6 @@ where
         let data = unsafe { data.as_mut() };
 
         // Never update a struct twice in the same revision.
-        let current_revision = runtime.current_revision();
         assert!(data.created_at < current_revision);
         data.created_at = current_revision;
     }

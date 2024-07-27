@@ -8,13 +8,9 @@ use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 
 use crate::{
-    active_query::ActiveQuery,
-    cycle::CycleRecoveryStrategy,
-    durability::Durability,
-    key::{DatabaseKeyIndex, DependencyIndex},
-    local_state::{EdgeKind, LocalState},
-    revision::AtomicRevision,
-    Cancelled, Cycle, Database, Event, EventKind, Revision,
+    active_query::ActiveQuery, cycle::CycleRecoveryStrategy, durability::Durability,
+    key::DatabaseKeyIndex, local_state::LocalState, revision::AtomicRevision, Cancelled, Cycle,
+    Database, Event, EventKind, Revision,
 };
 
 use self::dependency_graph::DependencyGraph;
@@ -24,9 +20,6 @@ mod dependency_graph;
 pub struct Runtime {
     /// Stores the next id to use for a snapshotted runtime (starts at 1).
     next_id: AtomicUsize,
-
-    /// Vector we can clone
-    empty_dependencies: Arc<[(EdgeKind, DependencyIndex)]>,
 
     /// Set to true when the current revision has been canceled.
     /// This is done when we an input is being changed. The flag
@@ -89,7 +82,6 @@ impl Default for Runtime {
                 .map(|_| AtomicRevision::start())
                 .collect(),
             next_id: AtomicUsize::new(1),
-            empty_dependencies: None.into_iter().collect(),
             revision_canceled: Default::default(),
             dependency_graph: Default::default(),
         }
@@ -110,10 +102,6 @@ impl std::fmt::Debug for Runtime {
 impl Runtime {
     pub(crate) fn current_revision(&self) -> Revision {
         self.revisions[0].load()
-    }
-
-    pub(crate) fn empty_dependencies(&self) -> Arc<[(EdgeKind, DependencyIndex)]> {
-        self.empty_dependencies.clone()
     }
 
     /// Reports that an input with durability `durability` changed.

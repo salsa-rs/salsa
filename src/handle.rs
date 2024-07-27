@@ -78,7 +78,7 @@ impl<Db: Database> Handle<Db> {
     /// same database!
     fn cancel_others(&mut self) {
         let zalsa = self.db().zalsa();
-        zalsa.runtime().set_cancellation_flag();
+        zalsa.set_cancellation_flag();
 
         self.db().salsa_event(Event {
             thread_id: std::thread::current().id(),

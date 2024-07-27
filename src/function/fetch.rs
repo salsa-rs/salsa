@@ -63,8 +63,8 @@ where
         let memo_guard = self.memo_map.get(key);
         if let Some(memo) = &memo_guard {
             if memo.value.is_some() {
-                let runtime = db.zalsa().runtime();
-                if self.shallow_verify_memo(db, runtime, self.database_key_index(key), memo) {
+                let zalsa = db.zalsa();
+                if self.shallow_verify_memo(db, zalsa, self.database_key_index(key), memo) {
                     let value = unsafe {
                         // Unsafety invariant: memo is present in memo_map
                         self.extend_memo_lifetime(memo).unwrap()

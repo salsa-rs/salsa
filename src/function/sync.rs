@@ -28,7 +28,7 @@ impl SyncMap {
         local_state: &LocalState,
         database_key_index: DatabaseKeyIndex,
     ) -> Option<ClaimGuard<'me>> {
-        let runtime = db.zalsa().runtime();
+        let runtime = db.zalsa().runtimex();
         let thread_id = std::thread::current().id();
         match self.sync_map.entry(database_key_index.key_index) {
             dashmap::mapref::entry::Entry::Vacant(entry) => {

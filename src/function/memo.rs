@@ -4,8 +4,8 @@ use arc_swap::{ArcSwap, Guard};
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    hash::FxDashMap, key::DatabaseKeyIndex, local_state::QueryRevisions, Event, EventKind, Id,
-    Revision, Runtime,
+    hash::FxDashMap, key::DatabaseKeyIndex, local_state::QueryRevisions, storage::Zalsa, Event,
+    EventKind, Id, Revision,
 };
 
 use super::Configuration;
@@ -129,8 +129,8 @@ impl<V> Memo<V> {
         }
     }
     /// True if this memo is known not to have changed based on its durability.
-    pub(super) fn check_durability(&self, runtime: &Runtime) -> bool {
-        let last_changed = runtime.last_changed_revision(self.revisions.durability);
+    pub(super) fn check_durability(&self, zalsa: &dyn Zalsa) -> bool {
+        let last_changed = zalsa.last_changed_revision(self.revisions.durability);
         let verified_at = self.verified_at.load();
         tracing::debug!(
             "check_durability(last_changed={:?} <= verified_at={:?}) = {:?}",
@@ -146,7 +146,7 @@ impl<V> Memo<V> {
     pub(super) fn mark_as_verified(
         &self,
         db: &dyn crate::Database,
-        runtime: &crate::Runtime,
+        revision_now: Revision,
         database_key_index: DatabaseKeyIndex,
     ) {
         db.salsa_event(Event {
@@ -156,7 +156,7 @@ impl<V> Memo<V> {
             },
         });
 
-        self.verified_at.store(runtime.current_revision());
+        self.verified_at.store(revision_now);
     }
 
     pub(super) fn mark_outputs_as_verified(

@@ -86,12 +86,12 @@ macro_rules! setup_input_struct {
                     })
                 }
 
-                pub fn ingredient_mut(db: &mut dyn $zalsa::Database) -> (&mut $zalsa_struct::IngredientImpl<Self>, &mut $zalsa::Runtime) {
+                pub fn ingredient_mut(db: &mut dyn $zalsa::Database) -> (&mut $zalsa_struct::IngredientImpl<Self>, $zalsa::Revision) {
                     let zalsa_mut = db.zalsa_mut();
                     let index = zalsa_mut.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default());
-                    let (ingredient, runtime) = zalsa_mut.lookup_ingredient_mut(index);
+                    let (ingredient, current_revision) = zalsa_mut.lookup_ingredient_mut(index);
                     let ingredient = ingredient.assert_type_mut::<$zalsa_struct::IngredientImpl<Self>>();
-                    (ingredient, runtime)
+                    (ingredient, current_revision)
                 }
             }
 
