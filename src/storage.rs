@@ -156,17 +156,6 @@ impl dyn Database {
     pub fn as_view<DbView: ?Sized + Database>(&self) -> &DbView {
         self.views().try_view_as(self).unwrap()
     }
-
-    /// Upcasts `self` to the given view.
-    ///
-    /// # Panics
-    ///
-    /// If the view has not been added to the database (see [`DatabaseView`][])
-    pub fn as_view_mut<DbView: ?Sized + Database>(&mut self) -> &mut DbView {
-        // Avoid a borrow check error by cloning. This is the "uncommon" path so it seems fine.
-        let upcasts = self.views().clone();
-        upcasts.try_view_as_mut(self).unwrap()
-    }
 }
 
 /// Nonce type representing the underlying database storage.
@@ -253,12 +242,8 @@ impl<Db: Database> Default for Storage<Db> {
 
 impl<Db: Database> Storage<Db> {
     /// Add an upcast function to type `T`.
-    pub fn add_upcast<T: ?Sized + Any>(
-        &mut self,
-        func: fn(&Db) -> &T,
-        func_mut: fn(&mut Db) -> &mut T,
-    ) {
-        self.upcasts.add::<T>(func, func_mut)
+    pub fn add_upcast<T: ?Sized + Any>(&mut self, func: fn(&Db) -> &T) {
+        self.upcasts.add::<T>(func)
     }
 
     /// Adds the ingredients in `jar` to the database if not already present.
