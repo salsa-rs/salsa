@@ -271,8 +271,10 @@ where
 
             // Anything that was output by this memoized execution
             // is now itself stale.
+            let zalsa = db.zalsa();
             for stale_output in origin.outputs() {
-                db.lookup_ingredient(stale_output.ingredient_index)
+                zalsa
+                    .lookup_ingredient(stale_output.ingredient_index)
                     .remove_stale_output(db, key, stale_output.key_index);
             }
         }

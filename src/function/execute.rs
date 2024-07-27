@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    local_state::ActiveQueryGuard, runtime::StampedValue, storage::DatabaseGen, Cycle, Database,
+    local_state::ActiveQueryGuard, runtime::StampedValue, storage::ZalsaDatabase, Cycle, Database,
     Event, EventKind,
 };
 
@@ -26,7 +26,8 @@ where
         active_query: ActiveQueryGuard<'_>,
         opt_old_memo: Option<Arc<Memo<C::Output<'_>>>>,
     ) -> StampedValue<&C::Output<'db>> {
-        let runtime = db.runtime();
+        let zalsa = db.zalsa();
+        let runtime = zalsa.runtime();
         let revision_now = runtime.current_revision();
         let database_key_index = active_query.database_key_index;
 

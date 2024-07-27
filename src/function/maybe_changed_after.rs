@@ -4,7 +4,7 @@ use crate::{
     key::DatabaseKeyIndex,
     local_state::{self, ActiveQueryGuard, EdgeKind, LocalState, QueryOrigin},
     runtime::StampedValue,
-    storage::DatabaseGen,
+    storage::ZalsaDatabase as _,
     AsDynDatabase as _, Id, Revision, Runtime,
 };
 
@@ -21,7 +21,7 @@ where
         revision: Revision,
     ) -> bool {
         local_state::attach(db.as_dyn_database(), |local_state| {
-            let runtime = db.runtime();
+            let runtime = db.zalsa().runtime();
             local_state.unwind_if_revision_cancelled(db.as_dyn_database());
 
             loop {
@@ -141,7 +141,7 @@ where
         old_memo: &Memo<C::Output<'_>>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> bool {
-        let runtime = db.runtime();
+        let runtime = db.zalsa().runtime();
         let database_key_index = active_query.database_key_index;
 
         tracing::debug!("{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",);

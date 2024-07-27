@@ -48,7 +48,7 @@ where
     /// The caller is responible for selecting the appropriate element.
     pub fn field<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
         local_state::attach(db, |local_state| {
-            let current_revision = db.runtime().current_revision();
+            let current_revision = db.zalsa().runtime().current_revision();
             let data = self.struct_map.get(current_revision, id);
             let data = C::deref_struct(data);
             let changed_at = data.revisions[self.field_index];
@@ -85,7 +85,7 @@ where
         input: Option<Id>,
         revision: crate::Revision,
     ) -> bool {
-        let current_revision = db.runtime().current_revision();
+        let current_revision = db.zalsa().runtime().current_revision();
         let id = input.unwrap();
         let data = self.struct_map.get(current_revision, id);
         let data = C::deref_struct(data);

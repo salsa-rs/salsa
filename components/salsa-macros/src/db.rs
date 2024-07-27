@@ -33,7 +33,7 @@ impl DbMacro {
     fn try_db(self, input: syn::Item) -> syn::Result<TokenStream> {
         match input {
             syn::Item::Struct(input) => {
-                let has_storage_impl = self.has_storage_impl(&input)?;
+                let has_storage_impl = self.zalsa_database_impl(&input)?;
                 Ok(quote! {
                     #has_storage_impl
                     #input
@@ -79,7 +79,7 @@ impl DbMacro {
         ))
     }
 
-    fn has_storage_impl(&self, input: &syn::ItemStruct) -> syn::Result<TokenStream> {
+    fn zalsa_database_impl(&self, input: &syn::ItemStruct) -> syn::Result<TokenStream> {
         let storage = self.find_storage_field(input)?;
         let db = &input.ident;
         let zalsa = self.hygiene.ident("zalsa");
@@ -88,12 +88,12 @@ impl DbMacro {
             const _: () = {
                 use salsa::plumbing as #zalsa;
 
-                unsafe impl #zalsa::HasStorage for #db {
-                    fn storage(&self) -> &#zalsa::Storage<Self> {
+                unsafe impl #zalsa::ZalsaDatabase for #db {
+                    fn zalsa(&self) -> &dyn #zalsa::Zalsa {
                         &self.#storage
                     }
 
-                    fn storage_mut(&mut self) -> &mut #zalsa::Storage<Self> {
+                    fn zalsa_mut(&mut self) -> &mut dyn #zalsa::Zalsa {
                         &mut self.#storage
                     }
                 }

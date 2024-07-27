@@ -133,7 +133,7 @@ macro_rules! setup_tracked_fn {
                 fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
                     $FN_CACHE.get_or_create(db.as_dyn_database(), || {
                         <dyn $Db as $Db>::zalsa_db(db);
-                        db.add_or_lookup_jar_by_type(&$Configuration)
+                        db.zalsa().add_or_lookup_jar_by_type(&$Configuration)
                     })
                 }
 
@@ -142,7 +142,7 @@ macro_rules! setup_tracked_fn {
                         db: &dyn $Db,
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
                         $INTERN_CACHE.get_or_create(db.as_dyn_database(), || {
-                            db.add_or_lookup_jar_by_type(&$Configuration).successor(0)
+                            db.zalsa().add_or_lookup_jar_by_type(&$Configuration).successor(0)
                         })
                     }
                 }

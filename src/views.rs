@@ -38,13 +38,6 @@ impl<Db: Database> Default for ViewsOf<Db> {
     }
 }
 
-impl<Db: Database> ViewsOf<Db> {
-    /// Add a new upcast from `Db` to `T`, given the upcasting function `func`.
-    pub fn add<DbView: ?Sized + Any>(&self, func: fn(&Db) -> &DbView) {
-        self.upcasts.add(func);
-    }
-}
-
 impl<Db: Database> Deref for ViewsOf<Db> {
     type Target = Views;
 

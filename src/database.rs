@@ -1,7 +1,7 @@
-use crate::{local_state, storage::DatabaseGen, Durability, Event, Revision};
+use crate::{local_state, storage::ZalsaDatabase, Durability, Event, Revision};
 
 #[salsa_macros::db]
-pub trait Database: DatabaseGen + AsDynDatabase {
+pub trait Database: ZalsaDatabase + AsDynDatabase {
     /// This function is invoked at key points in the salsa
     /// runtime. It permits the database to be customized and to
     /// inject logging or other custom behavior.
@@ -21,7 +21,7 @@ pub trait Database: DatabaseGen + AsDynDatabase {
     /// will block until that snapshot is dropped -- if that snapshot
     /// is owned by the current thread, this could trigger deadlock.
     fn synthetic_write(&mut self, durability: Durability) {
-        let runtime = self.runtime_mut();
+        let runtime = self.zalsa_mut().runtime_mut();
         runtime.new_revision();
         runtime.report_tracked_write(durability);
     }
@@ -33,7 +33,7 @@ pub trait Database: DatabaseGen + AsDynDatabase {
     fn report_untracked_read(&self) {
         let db = self.as_dyn_database();
         local_state::attach(db, |state| {
-            state.report_untracked_read(db.runtime().current_revision())
+            state.report_untracked_read(db.zalsa().runtime().current_revision())
         })
     }
 
@@ -65,5 +65,17 @@ impl<T: Database> AsDynDatabase for T {
 }
 
 pub fn current_revision<Db: ?Sized + Database>(db: &Db) -> Revision {
-    db.runtime().current_revision()
+    db.zalsa().runtime().current_revision()
+}
+
+impl dyn Database {
+    /// Upcasts `self` to the given view.
+    ///
+    /// # Panics
+    ///
+    /// If the view has not been added to the database (see [`DatabaseView`][])
+    #[track_caller]
+    pub fn as_view<DbView: ?Sized + Database>(&self) -> &DbView {
+        self.zalsa().views().try_view_as(self).unwrap()
+    }
 }

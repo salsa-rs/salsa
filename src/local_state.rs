@@ -321,7 +321,7 @@ impl LocalState {
     /// `salsa_event` is emitted when this method is called, so that should be
     /// used instead.
     pub(crate) fn unwind_if_revision_cancelled(&self, db: &dyn Database) {
-        let runtime = db.runtime();
+        let runtime = db.zalsa().runtime();
         let thread_id = std::thread::current().id();
         db.salsa_event(Event {
             thread_id,

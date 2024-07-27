@@ -12,7 +12,6 @@ use crate::{
     ingredient_list::IngredientList,
     key::{DatabaseKeyIndex, DependencyIndex},
     local_state::{self, QueryOrigin},
-    runtime::Runtime,
     salsa_struct::SalsaStructInDb,
     storage::IngredientIndex,
     Database, Durability, Event, Id, Revision,
@@ -292,6 +291,8 @@ where
         fields: C::Fields<'db>,
     ) -> C::Struct<'db> {
         local_state::attach(db, |local_state| {
+            let zalsa = db.zalsa();
+
             let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
             let (query_key, current_deps, disambiguator) =
@@ -306,7 +307,7 @@ where
             let (id, new_id) = self.intern(entity_key);
             local_state.add_output(self.database_key_index(id).into());
 
-            let current_revision = db.runtime().current_revision();
+            let current_revision = zalsa.runtime().current_revision();
             if new_id {
                 // This is a new tracked struct, so create an entry in the struct map.
 
@@ -377,8 +378,8 @@ where
     /// # Panics
     ///
     /// If the struct has not been created in this revision.
-    pub fn lookup_struct<'db>(&'db self, runtime: &'db Runtime, id: Id) -> C::Struct<'db> {
-        let current_revision = runtime.current_revision();
+    pub fn lookup_struct<'db>(&'db self, db: &'db dyn Database, id: Id) -> C::Struct<'db> {
+        let current_revision = db.zalsa().runtime().current_revision();
         self.struct_map.get(current_revision, id)
     }
 
@@ -405,7 +406,8 @@ where
         }
 
         for dependent_fn in self.dependent_fns.iter() {
-            db.lookup_ingredient(dependent_fn)
+            db.zalsa()
+                .lookup_ingredient(dependent_fn)
                 .salsa_struct_deleted(db, id);
         }
     }
@@ -456,7 +458,7 @@ where
         _executor: DatabaseKeyIndex,
         output_key: Option<crate::Id>,
     ) {
-        let runtime = db.runtime();
+        let runtime = db.zalsa().runtime();
         let output_key = output_key.unwrap();
         self.struct_map.validate(runtime, output_key);
     }

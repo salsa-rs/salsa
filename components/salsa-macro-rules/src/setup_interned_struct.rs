@@ -82,7 +82,7 @@ macro_rules! setup_interned_struct {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
                     CACHE.get_or_create(db.as_dyn_database(), || {
-                        db.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
+                        db.zalsa().add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
                     })
                 }
             }
@@ -144,7 +144,6 @@ macro_rules! setup_interned_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let runtime = db.runtime();
                         let fields = $Configuration::ingredient(db).fields(self);
                         $zalsa::maybe_clone!(
                             $field_option,

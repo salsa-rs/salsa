@@ -1,5 +1,5 @@
 use crate::{
-    accumulator, hash::FxHashSet, local_state, storage::DatabaseGen, DatabaseKeyIndex, Id,
+    accumulator, hash::FxHashSet, local_state, storage::ZalsaDatabase as _, DatabaseKeyIndex, Id,
 };
 
 use super::{Configuration, IngredientImpl};
@@ -15,7 +15,8 @@ where
         A: accumulator::Accumulator,
     {
         local_state::attach(db, |local_state| {
-            let current_revision = db.runtime().current_revision();
+            let zalsa = db.zalsa();
+            let current_revision = zalsa.runtime().current_revision();
 
             let Some(accumulator) = <accumulator::IngredientImpl<A>>::from_db(db) else {
                 return vec![];
@@ -33,7 +34,9 @@ where
                 if visited.insert(k) {
                     accumulator.produced_by(current_revision, local_state, k, &mut output);
 
-                    let origin = db.lookup_ingredient(k.ingredient_index).origin(k.key_index);
+                    let origin = zalsa
+                        .lookup_ingredient(k.ingredient_index)
+                        .origin(k.key_index);
                     let inputs = origin.iter().flat_map(|origin| origin.inputs());
                     // Careful: we want to push in execution order, so reverse order to
                     // ensure the first child that was executed will be the first child popped

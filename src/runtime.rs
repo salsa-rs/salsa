@@ -310,6 +310,7 @@ impl Runtime {
             aqs.iter_mut()
                 .skip_while(|aq| {
                     match db
+                        .zalsa()
                         .lookup_ingredient(aq.database_key_index.ingredient_index)
                         .cycle_recovery_strategy()
                     {

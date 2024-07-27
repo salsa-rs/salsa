@@ -98,10 +98,11 @@ pub mod plumbing {
     pub use crate::runtime::StampedValue;
     pub use crate::salsa_struct::SalsaStructInDb;
     pub use crate::storage::views;
-    pub use crate::storage::HasStorage;
     pub use crate::storage::IngredientCache;
     pub use crate::storage::IngredientIndex;
     pub use crate::storage::Storage;
+    pub use crate::storage::Zalsa;
+    pub use crate::storage::ZalsaDatabase;
     pub use crate::tracked_struct::TrackedStructInDb;
     pub use crate::update::always_update;
     pub use crate::update::helper::Dispatch as UpdateDispatch;
