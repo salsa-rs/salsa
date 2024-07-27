@@ -42,18 +42,9 @@ fn the_fn(db: &dyn Db, input: MyInput) {
     assert_eq!(tracked0.field(db).field, input.field(db));
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
 #[test]
 fn execute() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
 
     let input = MyInput::new(&db, true);
     the_fn(&db, input);

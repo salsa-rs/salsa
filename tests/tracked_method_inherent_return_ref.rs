@@ -1,4 +1,4 @@
-use salsa::Database as _;
+use salsa::Database;
 
 #[salsa::input]
 struct Input {
@@ -15,18 +15,9 @@ impl Input {
     }
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
 #[test]
 fn invoke() {
-    Database::default().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let input = Input::new(db, 3);
         let x: &Vec<String> = input.test(db);
         expect_test::expect![[r#"

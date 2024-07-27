@@ -3,12 +3,9 @@
 
 use expect_test::expect;
 mod common;
-use common::{HasLogger, Logger};
+use common::{LogDatabase, Logger};
 use salsa::Setter;
 use test_log::test;
-
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct MyInput {
@@ -16,7 +13,7 @@ struct MyInput {
 }
 
 #[salsa::tracked]
-fn final_result(db: &dyn Db, input: MyInput) -> u32 {
+fn final_result(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("final_result({:?})", input));
     intermediate_result(db, input).field(db) * 2
 }
@@ -27,35 +24,16 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn intermediate_result(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
+fn intermediate_result(db: &dyn LogDatabase, input: MyInput) -> MyTracked<'_> {
     db.push_log(format!("intermediate_result({:?})", input));
     let tracked = MyTracked::new(db, input.field(db) / 2);
     let _ = tracked.field(db); // read the field of an entity we created
     tracked
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
-#[salsa::db]
-impl Db for Database {}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-}
-
 #[test]
 fn one_entity() {
-    let mut db = Database::default();
+    let mut db: salsa::DatabaseImpl<Logger> = Default::default();
 
     let input = MyInput::new(&db, 22);
     assert_eq!(final_result(&db, input), 22);
@@ -86,7 +64,7 @@ fn one_entity() {
 /// Create and mutate a distinct input. No re-execution required.
 #[test]
 fn red_herring() {
-    let mut db = Database::default();
+    let mut db: salsa::DatabaseImpl<Logger> = Default::default();
 
     let input = MyInput::new(&db, 22);
     assert_eq!(final_result(&db, input), 22);

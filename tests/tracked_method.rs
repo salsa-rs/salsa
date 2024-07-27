@@ -34,16 +34,7 @@ impl TrackedTrait for MyInput {
 
 #[test]
 fn execute() {
-    #[salsa::db]
-    #[derive(Default)]
-    struct Database {
-        storage: salsa::Storage<Self>,
-    }
-
-    #[salsa::db]
-    impl salsa::Database for Database {}
-
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
     let object = MyInput::new(&mut db, 22);
     // assert_eq!(object.tracked_fn(&db), 44);
     // assert_eq!(*object.tracked_fn_ref(&db), 66);

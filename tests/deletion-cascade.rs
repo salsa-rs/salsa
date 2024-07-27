@@ -3,14 +3,11 @@
 //! * when we delete memoized data, also delete outputs from that data
 
 mod common;
-use common::{HasLogger, Logger};
+use common::{DiscardLogger, LogDatabase};
 
 use expect_test::expect;
-use salsa::Setter;
+use salsa::{DatabaseImpl, Setter};
 use test_log::test;
-
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input(singleton)]
 struct MyInput {
@@ -18,7 +15,7 @@ struct MyInput {
 }
 
 #[salsa::tracked]
-fn final_result(db: &dyn Db, input: MyInput) -> u32 {
+fn final_result(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("final_result({:?})", input));
     let mut sum = 0;
     for tracked_struct in create_tracked_structs(db, input) {
@@ -33,7 +30,7 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn create_tracked_structs(db: &dyn Db, input: MyInput) -> Vec<MyTracked<'_>> {
+fn create_tracked_structs(db: &dyn LogDatabase, input: MyInput) -> Vec<MyTracked<'_>> {
     db.push_log(format!("intermediate_result({:?})", input));
     (0..input.field(db))
         .map(|i| MyTracked::new(db, i))
@@ -41,49 +38,19 @@ fn create_tracked_structs(db: &dyn Db, input: MyInput) -> Vec<MyTracked<'_>> {
 }
 
 #[salsa::tracked]
-fn contribution_from_struct<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> u32 {
+fn contribution_from_struct<'db>(db: &'db dyn LogDatabase, tracked: MyTracked<'db>) -> u32 {
     let m = MyTracked::new(db, tracked.field(db));
     copy_field(db, m) * 2
 }
 
 #[salsa::tracked]
-fn copy_field<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> u32 {
+fn copy_field<'db>(db: &'db dyn LogDatabase, tracked: MyTracked<'db>) -> u32 {
     tracked.field(db)
-}
-
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {
-    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
-        let event = event();
-        match event.kind {
-            salsa::EventKind::WillDiscardStaleOutput { .. }
-            | salsa::EventKind::DidDiscard { .. } => {
-                self.push_log(format!("salsa_event({:?})", event.kind));
-            }
-            _ => {}
-        }
-    }
-}
-
-#[salsa::db]
-impl Db for Database {}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
 }
 
 #[test]
 fn basic() {
-    let mut db = Database::default();
+    let mut db: DatabaseImpl<DiscardLogger> = Default::default();
 
     // Creates 3 tracked structs
     let input = MyInput::new(&db, 3);

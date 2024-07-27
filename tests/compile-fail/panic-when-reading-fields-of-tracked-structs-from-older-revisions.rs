@@ -16,7 +16,7 @@ fn tracked_fn<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyTracked<'d
 }
 
 fn main() {
-    let mut db = salsa::default_database();
+    let mut db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, 22);
     let tracked = tracked_fn(&db, input);
     input.set_field(&mut db).to(24);

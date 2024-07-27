@@ -9,15 +9,6 @@ fn tracked_fn(db: &dyn salsa::Database) -> u32 {
 
 #[test]
 fn execute() {
-    #[salsa::db]
-    #[derive(Default)]
-    struct Database {
-        storage: salsa::Storage<Self>,
-    }
-
-    #[salsa::db]
-    impl salsa::Database for Database {}
-
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
     assert_eq!(tracked_fn(&db), 44);
 }

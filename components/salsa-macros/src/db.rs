@@ -32,13 +32,6 @@ struct DbMacro {
 impl DbMacro {
     fn try_db(self, input: syn::Item) -> syn::Result<TokenStream> {
         match input {
-            syn::Item::Struct(input) => {
-                let has_storage_impl = self.zalsa_database_impl(&input)?;
-                Ok(quote! {
-                    #has_storage_impl
-                    #input
-                })
-            }
             syn::Item::Trait(mut input) => {
                 self.add_salsa_view_method(&mut input)?;
                 Ok(quote! {
@@ -53,52 +46,9 @@ impl DbMacro {
             }
             _ => Err(syn::Error::new_spanned(
                 input,
-                "`db` must be applied to a struct, trait, or impl",
+                "`db` must be applied to a trait or impl",
             )),
         }
-    }
-
-    fn find_storage_field(&self, input: &syn::ItemStruct) -> syn::Result<syn::Ident> {
-        let storage = "storage";
-        for field in input.fields.iter() {
-            if let Some(i) = &field.ident {
-                if i == storage {
-                    return Ok(i.clone());
-                }
-            } else {
-                return Err(syn::Error::new_spanned(
-                    field,
-                    "database struct must be a braced struct (`{}`) with a field named `storage`",
-                ));
-            }
-        }
-
-        Err(syn::Error::new_spanned(
-            &input.ident,
-            "database struct must be a braced struct (`{}`) with a field named `storage`",
-        ))
-    }
-
-    fn zalsa_database_impl(&self, input: &syn::ItemStruct) -> syn::Result<TokenStream> {
-        let storage = self.find_storage_field(input)?;
-        let db = &input.ident;
-        let zalsa = self.hygiene.ident("zalsa");
-
-        Ok(quote! {
-            const _: () = {
-                use salsa::plumbing as #zalsa;
-
-                unsafe impl #zalsa::ZalsaDatabase for #db {
-                    fn zalsa(&self) -> &dyn #zalsa::Zalsa {
-                        &self.#storage
-                    }
-
-                    fn zalsa_mut(&mut self) -> &mut dyn #zalsa::Zalsa {
-                        &mut self.#storage
-                    }
-                }
-            };
-        })
     }
 
     fn add_salsa_view_method(&self, input: &mut syn::ItemTrait) -> syn::Result<()> {

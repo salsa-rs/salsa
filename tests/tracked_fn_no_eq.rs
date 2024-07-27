@@ -1,11 +1,8 @@
 mod common;
 
-use common::{HasLogger, Logger};
+use common::{LogDatabase, Logger};
 use expect_test::expect;
-use salsa::Setter as _;
-
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
+use salsa::{DatabaseImpl, Setter as _};
 
 #[salsa::input]
 struct Input {
@@ -13,7 +10,7 @@ struct Input {
 }
 
 #[salsa::tracked(no_eq)]
-fn abs_float(db: &dyn Db, input: Input) -> f32 {
+fn abs_float(db: &dyn LogDatabase, input: Input) -> f32 {
     let number = input.number(db);
 
     db.push_log(format!("abs_float({number})"));
@@ -21,35 +18,15 @@ fn abs_float(db: &dyn Db, input: Input) -> f32 {
 }
 
 #[salsa::tracked]
-fn derived(db: &dyn Db, input: Input) -> u32 {
+fn derived(db: &dyn LogDatabase, input: Input) -> u32 {
     let x = abs_float(db, input);
     db.push_log("derived".to_string());
 
     x as u32
 }
-
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
-#[salsa::db]
-impl Db for Database {}
-
 #[test]
 fn invoke() {
-    let mut db = Database::default();
+    let mut db: DatabaseImpl<Logger> = Default::default();
 
     let input = Input::new(&db, 5);
     let x = derived(&db, input);

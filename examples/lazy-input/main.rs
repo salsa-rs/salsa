@@ -8,13 +8,13 @@ use notify_debouncer_mini::{
     notify::{RecommendedWatcher, RecursiveMode},
     DebounceEventResult, Debouncer,
 };
-use salsa::{Accumulator, Setter};
+use salsa::{Accumulator, DatabaseImpl, Setter, UserData};
 
 // ANCHOR: main
 fn main() -> Result<()> {
     // Create the channel to receive file change events.
     let (tx, rx) = unbounded();
-    let mut db = Database::new(tx);
+    let mut db = DatabaseImpl::with(LazyInput::new(tx));
 
     let initial_file_path = std::env::args_os()
         .nth(1)
@@ -74,19 +74,15 @@ trait Db: salsa::Database {
     fn input(&self, path: PathBuf) -> Result<File>;
 }
 
-#[salsa::db]
-struct Database {
-    storage: salsa::Storage<Self>,
+struct LazyInput {
     logs: Mutex<Vec<String>>,
     files: DashMap<PathBuf, File>,
     file_watcher: Mutex<Debouncer<RecommendedWatcher>>,
 }
 
-impl Database {
+impl LazyInput {
     fn new(tx: Sender<DebounceEventResult>) -> Self {
-        let storage = Default::default();
         Self {
-            storage,
             logs: Default::default(),
             files: DashMap::new(),
             file_watcher: Mutex::new(new_debouncer(Duration::from_secs(1), tx).unwrap()),
@@ -94,8 +90,18 @@ impl Database {
     }
 }
 
+impl UserData for LazyInput {
+    fn salsa_event(db: &DatabaseImpl<Self>, event: &dyn Fn() -> salsa::Event) {
+        // don't log boring events
+        let event = event();
+        if let salsa::EventKind::WillExecute { .. } = event.kind {
+            db.logs.lock().unwrap().push(format!("{:?}", event));
+        }
+    }
+}
+
 #[salsa::db]
-impl Db for Database {
+impl Db for DatabaseImpl<LazyInput> {
     fn input(&self, path: PathBuf) -> Result<File> {
         let path = path
             .canonicalize()
@@ -121,17 +127,6 @@ impl Db for Database {
     }
 }
 // ANCHOR_END: db
-
-#[salsa::db]
-impl salsa::Database for Database {
-    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
-        // don't log boring events
-        let event = event();
-        if let salsa::EventKind::WillExecute { .. } = event.kind {
-            self.logs.lock().unwrap().push(format!("{:?}", event));
-        }
-    }
-}
 
 #[salsa::accumulator]
 struct Diagnostic(String);

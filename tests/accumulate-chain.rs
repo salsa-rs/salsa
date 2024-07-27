@@ -4,7 +4,7 @@
 mod common;
 
 use expect_test::expect;
-use salsa::{Accumulator, Database};
+use salsa::{Accumulator, Database, DatabaseImpl};
 use test_log::test;
 
 #[salsa::accumulator]
@@ -40,7 +40,7 @@ fn push_d_logs(db: &dyn Database) {
 
 #[test]
 fn accumulate_chain() {
-    salsa::default_database().attach(|db| {
+    DatabaseImpl::new().attach(|db| {
         let logs = push_logs::accumulated::<Log>(db);
         // Check that we get all the logs.
         expect![[r#"

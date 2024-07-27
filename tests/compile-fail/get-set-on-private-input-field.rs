@@ -8,7 +8,7 @@ mod a {
 }
 
 fn main() {
-    let mut db = salsa::default_database();
+    let mut db = salsa::DatabaseImpl::new();
     let input = a::MyInput::new(&mut db, 22);
 
     input.field(&db);

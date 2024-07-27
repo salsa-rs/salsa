@@ -3,15 +3,6 @@
 
 use test_log::test;
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
 #[salsa::input]
 struct MyInput {
     field: String,

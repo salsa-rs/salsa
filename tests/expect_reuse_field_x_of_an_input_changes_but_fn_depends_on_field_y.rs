@@ -4,13 +4,10 @@
 #![allow(dead_code)]
 
 mod common;
-use common::{HasLogger, Logger};
+use common::{LogDatabase, Logger};
 
 use expect_test::expect;
 use salsa::Setter;
-
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct MyInput {
@@ -19,41 +16,21 @@ struct MyInput {
 }
 
 #[salsa::tracked]
-fn result_depends_on_x(db: &dyn Db, input: MyInput) -> u32 {
+fn result_depends_on_x(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("result_depends_on_x({:?})", input));
     input.x(db) + 1
 }
 
 #[salsa::tracked]
-fn result_depends_on_y(db: &dyn Db, input: MyInput) -> u32 {
+fn result_depends_on_y(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("result_depends_on_y({:?})", input));
     input.y(db) - 1
 }
-
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
-#[salsa::db]
-impl Db for Database {}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-}
-
 #[test]
 fn execute() {
     // result_depends_on_x = x + 1
     // result_depends_on_y = y - 1
-    let mut db = Database::default();
+    let mut db: salsa::DatabaseImpl<Logger> = Default::default();
 
     let input = MyInput::new(&db, 22, 33);
     assert_eq!(result_depends_on_x(&db, input), 23);

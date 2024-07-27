@@ -3,14 +3,11 @@
 //! reuse.
 
 mod common;
-use common::{HasLogger, Logger};
+use common::{LogDatabase, Logger};
 
 use expect_test::expect;
-use salsa::{Accumulator, Setter};
+use salsa::{Accumulator, DatabaseImpl, Setter};
 use test_log::test;
-
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct List {
@@ -23,7 +20,7 @@ struct List {
 struct Integers(u32);
 
 #[salsa::tracked]
-fn compute(db: &dyn Db, input: List) -> u32 {
+fn compute(db: &dyn LogDatabase, input: List) -> u32 {
     db.push_log(format!("compute({:?})", input,));
 
     // always pushes 0
@@ -42,38 +39,17 @@ fn compute(db: &dyn Db, input: List) -> u32 {
 }
 
 #[salsa::tracked(return_ref)]
-fn accumulated(db: &dyn Db, input: List) -> Vec<u32> {
-    db.push_log(format!("accumulated({:?})", input,));
+fn accumulated(db: &dyn LogDatabase, input: List) -> Vec<u32> {
+    db.push_log(format!("accumulated({:?})", input));
     compute::accumulated::<Integers>(db, input)
         .into_iter()
         .map(|a| a.0)
         .collect()
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {
-    fn salsa_event(&self, _event: &dyn Fn() -> salsa::Event) {}
-}
-
-#[salsa::db]
-impl Db for Database {}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-}
-
 #[test]
 fn test1() {
-    let mut db = Database::default();
+    let mut db: DatabaseImpl<Logger> = DatabaseImpl::default();
 
     let l1 = List::new(&db, 1, None);
     let l2 = List::new(&db, 2, Some(l1));

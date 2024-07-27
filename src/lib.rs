@@ -31,6 +31,8 @@ pub use self::cancelled::Cancelled;
 pub use self::cycle::Cycle;
 pub use self::database::AsDynDatabase;
 pub use self::database::Database;
+pub use self::database::DatabaseImpl;
+pub use self::database::UserData;
 pub use self::durability::Durability;
 pub use self::event::Event;
 pub use self::event::EventKind;
@@ -50,23 +52,9 @@ pub use salsa_macros::interned;
 pub use salsa_macros::tracked;
 pub use salsa_macros::Update;
 
-pub fn default_database() -> impl Database {
-    use crate as salsa;
-
-    #[crate::db]
-    #[derive(Default)]
-    struct DefaultDatabase {
-        storage: Storage<Self>,
-    }
-
-    #[crate::db]
-    impl Database for DefaultDatabase {}
-
-    DefaultDatabase::default()
-}
-
 pub mod prelude {
     pub use crate::Accumulator;
+    pub use crate::Database;
     pub use crate::Setter;
 }
 
@@ -82,6 +70,7 @@ pub mod plumbing {
     pub use crate::cycle::CycleRecoveryStrategy;
     pub use crate::database::current_revision;
     pub use crate::database::Database;
+    pub use crate::database::UserData;
     pub use crate::function::should_backdate_value;
     pub use crate::id::AsId;
     pub use crate::id::FromId;
@@ -102,7 +91,6 @@ pub mod plumbing {
     pub use crate::storage::IngredientIndex;
     pub use crate::storage::Storage;
     pub use crate::storage::Zalsa;
-    pub use crate::storage::ZalsaDatabase;
     pub use crate::tracked_struct::TrackedStructInDb;
     pub use crate::update::always_update;
     pub use crate::update::helper::Dispatch as UpdateDispatch;

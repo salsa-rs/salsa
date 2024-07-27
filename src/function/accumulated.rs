@@ -1,6 +1,4 @@
-use crate::{
-    accumulator, hash::FxHashSet, local_state, storage::ZalsaDatabase as _, DatabaseKeyIndex, Id,
-};
+use crate::{accumulator, hash::FxHashSet, local_state, Database, DatabaseKeyIndex, Id};
 
 use super::{Configuration, IngredientImpl};
 

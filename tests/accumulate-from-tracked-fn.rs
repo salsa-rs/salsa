@@ -2,15 +2,9 @@
 //! Then mutate the values so that the tracked function re-executes.
 //! Check that we accumulate the appropriate, new values.
 
-mod common;
-use common::{HasLogger, Logger};
-
 use expect_test::expect;
 use salsa::{Accumulator, Setter};
 use test_log::test;
-
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct List {
@@ -23,7 +17,7 @@ struct List {
 struct Integers(u32);
 
 #[salsa::tracked]
-fn compute(db: &dyn Db, input: List) {
+fn compute(db: &dyn salsa::Database, input: List) {
     eprintln!(
         "{:?}(value={:?}, next={:?})",
         input,
@@ -43,30 +37,9 @@ fn compute(db: &dyn Db, input: List) {
     eprintln!("pushed result {:?}", result);
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {
-    fn salsa_event(&self, _event: &dyn Fn() -> salsa::Event) {}
-}
-
-#[salsa::db]
-impl Db for Database {}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-}
-
 #[test]
 fn test1() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
 
     let l0 = List::new(&db, 1, None);
     let l1 = List::new(&db, 10, Some(l0));

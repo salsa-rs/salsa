@@ -2,7 +2,6 @@ use crossbeam::atomic::AtomicCell;
 
 use crate::{
     local_state::{self, QueryOrigin, QueryRevisions},
-    storage::ZalsaDatabase,
     tracked_struct::TrackedStructInDb,
     AsDynDatabase as _, Database, DatabaseKeyIndex, Id,
 };

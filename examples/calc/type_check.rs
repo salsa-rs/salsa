@@ -6,8 +6,6 @@ use derive_new::new;
 use expect_test::expect;
 use salsa::Accumulator;
 #[cfg(test)]
-use salsa::Database as _;
-#[cfg(test)]
 use test_log::test;
 
 // ANCHOR: parse_statements
@@ -100,12 +98,13 @@ fn check_string(
     expected_diagnostics: expect_test::Expect,
     edits: &[(&str, expect_test::Expect, expect_test::Expect)],
 ) {
-    use salsa::Setter;
+    use salsa::{Database, Setter};
 
-    use crate::{db::Database, ir::SourceProgram, parser::parse_statements};
+    use crate::{db::CalcDatabaseImpl, ir::SourceProgram, parser::parse_statements};
 
     // Create the database
-    let mut db = Database::default().enable_logging();
+    let mut db = CalcDatabaseImpl::default();
+    db.enable_logging();
 
     // Create the source program
     let source_program = SourceProgram::new(&db, source_text.to_string());

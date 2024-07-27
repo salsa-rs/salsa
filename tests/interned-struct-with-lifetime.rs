@@ -1,13 +1,8 @@
 //! Test that a `tracked` fn on a `salsa::input`
 //! compiles and executes successfully.
-mod common;
-use common::{HasLogger, Logger};
 
 use expect_test::expect;
 use test_log::test;
-
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
 
 #[salsa::interned]
 struct InternedString<'db> {
@@ -20,38 +15,17 @@ struct InternedPair<'db> {
 }
 
 #[salsa::tracked]
-fn intern_stuff(db: &dyn Db) -> String {
+fn intern_stuff(db: &dyn salsa::Database) -> String {
     let s1 = InternedString::new(db, "Hello, ".to_string());
     let s2 = InternedString::new(db, "World, ".to_string());
     let s3 = InternedPair::new(db, (s1, s2));
     format!("{s3:?}")
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
-#[salsa::db]
-impl Db for Database {}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-}
-
 #[test]
 fn execute() {
-    let mut db = Database::default();
-
+    let db = salsa::DatabaseImpl::new();
     expect![[r#"
         "InternedPair { data: (InternedString { data: \"Hello, \" }, InternedString { data: \"World, \" }) }"
     "#]].assert_debug_eq(&intern_stuff(&db));
-    db.assert_logs(expect!["[]"]);
 }

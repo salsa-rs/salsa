@@ -1,12 +1,9 @@
 mod common;
-use common::{HasLogger, Logger};
+use common::{LogDatabase, Logger};
 
 use expect_test::expect;
 use salsa::{Accumulator, Setter};
 use test_log::test;
-
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
 
 #[salsa::input]
 struct MyInput {
@@ -18,7 +15,7 @@ struct MyInput {
 struct Log(#[allow(dead_code)] String);
 
 #[salsa::tracked]
-fn push_logs(db: &dyn Db, input: MyInput) {
+fn push_logs(db: &dyn LogDatabase, input: MyInput) {
     db.push_log(format!(
         "push_logs(a = {}, b = {})",
         input.field_a(db),
@@ -37,7 +34,7 @@ fn push_logs(db: &dyn Db, input: MyInput) {
 }
 
 #[salsa::tracked]
-fn push_a_logs(db: &dyn Db, input: MyInput) {
+fn push_a_logs(db: &dyn LogDatabase, input: MyInput) {
     let field_a = input.field_a(db);
     db.push_log(format!("push_a_logs({})", field_a));
 
@@ -47,7 +44,7 @@ fn push_a_logs(db: &dyn Db, input: MyInput) {
 }
 
 #[salsa::tracked]
-fn push_b_logs(db: &dyn Db, input: MyInput) {
+fn push_b_logs(db: &dyn LogDatabase, input: MyInput) {
     let field_a = input.field_b(db);
     db.push_log(format!("push_b_logs({})", field_a));
 
@@ -56,30 +53,9 @@ fn push_b_logs(db: &dyn Db, input: MyInput) {
     }
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {
-    fn salsa_event(&self, _event: &dyn Fn() -> salsa::Event) {}
-}
-
-#[salsa::db]
-impl Db for Database {}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-}
-
 #[test]
 fn accumulate_once() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::with(Logger::default());
 
     // Just call accumulate on a base input to see what happens.
     let input = MyInput::new(&db, 2, 3);
@@ -115,7 +91,7 @@ fn accumulate_once() {
 
 #[test]
 fn change_a_from_2_to_0() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::with(Logger::default());
 
     // Accumulate logs for `a = 2` and `b = 3`
     let input = MyInput::new(&db, 2, 3);
@@ -170,7 +146,7 @@ fn change_a_from_2_to_0() {
 
 #[test]
 fn change_a_from_2_to_1() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::with(Logger::default());
 
     // Accumulate logs for `a = 2` and `b = 3`
     let input = MyInput::new(&db, 2, 3);
@@ -229,7 +205,7 @@ fn change_a_from_2_to_1() {
 
 #[test]
 fn get_a_logs_after_changing_b() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::with(Logger::default());
 
     // Invoke `push_a_logs` with `a = 2` and `b = 3` (but `b` doesn't matter)
     let input = MyInput::new(&db, 2, 3);

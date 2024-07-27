@@ -6,13 +6,10 @@ use std::sync::{
     Arc,
 };
 
-use salsa::Database as _;
 mod common;
-use common::{HasLogger, Logger};
+use common::{LogDatabase, Logger};
+use salsa::Database as _;
 use test_log::test;
-
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
 
 #[derive(Debug, PartialEq, Eq)]
 struct HotPotato(u32);
@@ -40,41 +37,22 @@ struct MyInput {
 }
 
 #[salsa::tracked(lru = 32)]
-fn get_hot_potato(db: &dyn Db, input: MyInput) -> Arc<HotPotato> {
+fn get_hot_potato(db: &dyn LogDatabase, input: MyInput) -> Arc<HotPotato> {
     db.push_log(format!("get_hot_potato({:?})", input.field(db)));
     Arc::new(HotPotato::new(input.field(db)))
 }
 
 #[salsa::tracked]
-fn get_hot_potato2(db: &dyn Db, input: MyInput) -> u32 {
+fn get_hot_potato2(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("get_hot_potato2({:?})", input.field(db)));
     get_hot_potato(db, input).0
 }
 
 #[salsa::tracked(lru = 32)]
-fn get_volatile(db: &dyn Db, _input: MyInput) -> usize {
+fn get_volatile(db: &dyn LogDatabase, _input: MyInput) -> usize {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     db.report_untracked_read();
     COUNTER.fetch_add(1, Ordering::SeqCst)
-}
-
-#[salsa::db]
-#[derive(Default)]
-struct DatabaseImpl {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for DatabaseImpl {}
-
-#[salsa::db]
-impl Db for DatabaseImpl {}
-
-impl HasLogger for DatabaseImpl {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
 }
 
 fn load_n_potatoes() -> usize {
@@ -83,7 +61,7 @@ fn load_n_potatoes() -> usize {
 
 #[test]
 fn lru_works() {
-    let db = DatabaseImpl::default();
+    let db: salsa::DatabaseImpl<Logger> = Default::default();
     assert_eq!(load_n_potatoes(), 0);
 
     for i in 0..128u32 {
@@ -99,7 +77,7 @@ fn lru_works() {
 
 #[test]
 fn lru_doesnt_break_volatile_queries() {
-    let db = DatabaseImpl::default();
+    let db: salsa::DatabaseImpl<Logger> = Default::default();
 
     // Create all inputs first, so that there are no revision changes among calls to `get_volatile`
     let inputs: Vec<MyInput> = (0..128usize).map(|i| MyInput::new(&db, i as u32)).collect();
@@ -117,7 +95,7 @@ fn lru_doesnt_break_volatile_queries() {
 
 #[test]
 fn lru_can_be_changed_at_runtime() {
-    let db = DatabaseImpl::default();
+    let db: salsa::DatabaseImpl<Logger> = Default::default();
     assert_eq!(load_n_potatoes(), 0);
 
     let inputs: Vec<(u32, MyInput)> = (0..128).map(|i| (i, MyInput::new(&db, i))).collect();
@@ -160,7 +138,7 @@ fn lru_can_be_changed_at_runtime() {
 
 #[test]
 fn lru_keeps_dependency_info() {
-    let mut db = DatabaseImpl::default();
+    let mut db: salsa::DatabaseImpl<Logger> = Default::default();
     let capacity = 32;
 
     // Invoke `get_hot_potato2` 33 times. This will (in turn) invoke

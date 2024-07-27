@@ -1,11 +1,13 @@
 use crossbeam::atomic::AtomicCell;
+use salsa::{Database, DatabaseImpl, UserData};
 
 use crate::signal::Signal;
 
 /// Various "knobs" and utilities used by tests to force
 /// a certain behavior.
-pub(crate) trait Knobs {
-    fn knobs(&self) -> &KnobsStruct;
+#[salsa::db]
+pub(crate) trait KnobsDatabase: Database {
+    fn knobs(&self) -> &Knobs;
 
     fn signal(&self, stage: usize);
 
@@ -16,7 +18,7 @@ pub(crate) trait Knobs {
 /// behave on one specific thread. Note that this state is
 /// intentionally thread-local (apart from `signal`).
 #[derive(Default)]
-pub(crate) struct KnobsStruct {
+pub(crate) struct Knobs {
     /// A kind of flexible barrier used to coordinate execution across
     /// threads to ensure we reach various weird states.
     pub(crate) signal: Signal,
@@ -28,39 +30,32 @@ pub(crate) struct KnobsStruct {
     pub(crate) signal_on_did_cancel: AtomicCell<usize>,
 }
 
-#[salsa::db]
-#[derive(Default)]
-pub(crate) struct Database {
-    storage: salsa::Storage<Self>,
-    knobs: KnobsStruct,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {
-    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
+impl UserData for Knobs {
+    fn salsa_event(db: &DatabaseImpl<Self>, event: &dyn Fn() -> salsa::Event) {
         let event = event();
         match event.kind {
             salsa::EventKind::WillBlockOn { .. } => {
-                self.signal(self.knobs().signal_on_will_block.load());
+                db.signal(db.signal_on_will_block.load());
             }
             salsa::EventKind::DidSetCancellationFlag => {
-                self.signal(self.knobs().signal_on_did_cancel.load());
+                db.signal(db.signal_on_did_cancel.load());
             }
             _ => {}
         }
     }
 }
 
-impl Knobs for Database {
-    fn knobs(&self) -> &KnobsStruct {
-        &self.knobs
+#[salsa::db]
+impl KnobsDatabase for DatabaseImpl<Knobs> {
+    fn knobs(&self) -> &Knobs {
+        self
     }
 
     fn signal(&self, stage: usize) {
-        self.knobs.signal.signal(stage);
+        self.signal.signal(stage);
     }
 
     fn wait_for(&self, stage: usize) {
-        self.knobs.signal.wait_for(stage);
+        self.signal.wait_for(stage);
     }
 }

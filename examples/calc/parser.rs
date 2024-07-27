@@ -351,9 +351,11 @@ impl<'db> Parser<'_, 'db> {
 /// Returns the statements and the diagnostics generated.
 #[cfg(test)]
 fn parse_string(source_text: &str) -> String {
-    use salsa::Database as _;
+    use salsa::Database;
 
-    crate::db::Database::default().attach(|db| {
+    use crate::db::CalcDatabaseImpl;
+
+    CalcDatabaseImpl::default().attach(|db| {
         // Create the source program
         let source_program = SourceProgram::new(db, source_text.to_string());
 

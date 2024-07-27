@@ -3,8 +3,7 @@ use arc_swap::Guard;
 use crate::{
     local_state::{self, LocalState},
     runtime::StampedValue,
-    storage::ZalsaDatabase as _,
-    AsDynDatabase as _, Id,
+    AsDynDatabase as _, Database as _, Id,
 };
 
 use super::{Configuration, IngredientImpl};

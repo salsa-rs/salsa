@@ -4,8 +4,8 @@ use crate::{
     key::DatabaseKeyIndex,
     local_state::{self, ActiveQueryGuard, EdgeKind, LocalState, QueryOrigin},
     runtime::StampedValue,
-    storage::{Zalsa, ZalsaDatabase as _},
-    AsDynDatabase as _, Id, Revision,
+    storage::Zalsa,
+    AsDynDatabase as _, Database, Id, Revision,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};

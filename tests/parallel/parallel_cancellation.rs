@@ -3,17 +3,12 @@
 //! both intra and cross thread.
 
 use salsa::Cancelled;
+use salsa::DatabaseImpl;
 use salsa::Handle;
 use salsa::Setter;
 
-use crate::setup::Database;
 use crate::setup::Knobs;
-
-#[salsa::db]
-pub(crate) trait Db: salsa::Database + Knobs {}
-
-#[salsa::db]
-impl<T: salsa::Database + Knobs> Db for T {}
+use crate::setup::KnobsDatabase;
 
 #[salsa::input]
 struct MyInput {
@@ -21,14 +16,14 @@ struct MyInput {
 }
 
 #[salsa::tracked]
-fn a1(db: &dyn Db, input: MyInput) -> MyInput {
+fn a1(db: &dyn KnobsDatabase, input: MyInput) -> MyInput {
     db.signal(1);
     db.wait_for(2);
     dummy(db, input)
 }
 
 #[salsa::tracked]
-fn dummy(_db: &dyn Db, _input: MyInput) -> MyInput {
+fn dummy(_db: &dyn KnobsDatabase, _input: MyInput) -> MyInput {
     panic!("should never get here!")
 }
 
@@ -49,7 +44,7 @@ fn dummy(_db: &dyn Db, _input: MyInput) -> MyInput {
 
 #[test]
 fn execute() {
-    let mut db = Handle::new(Database::default());
+    let mut db = Handle::new(<DatabaseImpl<Knobs>>::default());
     db.knobs().signal_on_will_block.store(3);
 
     let input = MyInput::new(&*db, 1);

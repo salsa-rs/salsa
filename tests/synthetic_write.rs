@@ -4,12 +4,9 @@
 
 mod common;
 
-use common::{HasLogger, Logger};
+use common::{ExecuteValidateLogger, LogDatabase, Logger};
 use expect_test::expect;
-use salsa::{Database as _, Durability, Event, EventKind};
-
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
+use salsa::{Database, DatabaseImpl, Durability, Event, EventKind};
 
 #[salsa::input]
 struct MyInput {
@@ -17,47 +14,20 @@ struct MyInput {
 }
 
 #[salsa::tracked]
-fn tracked_fn(db: &dyn Db, input: MyInput) -> u32 {
+fn tracked_fn(db: &dyn Database, input: MyInput) -> u32 {
     input.field(db) * 2
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {
-    fn salsa_event(&self, event: Event) {
-        if let EventKind::WillExecute { .. } | EventKind::DidValidateMemoizedValue { .. } =
-            event.kind
-        {
-            self.push_log(format!("{:?}", event.kind));
-        }
-    }
-}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-}
-
-#[salsa::db]
-impl Db for Database {}
-
 #[test]
 fn execute() {
-    let mut db = Database::default();
+    let mut db: DatabaseImpl<ExecuteValidateLogger> = Default::default();
 
     let input = MyInput::new(&db, 22);
     assert_eq!(tracked_fn(&db, input), 44);
 
     db.assert_logs(expect![[r#"
         [
-            "WillExecute { database_key: tracked_fn(0) }",
+            "salsa_event(WillExecute { database_key: tracked_fn(0) })",
         ]"#]]);
 
     // Bumps the revision
@@ -68,6 +38,6 @@ fn execute() {
 
     db.assert_logs(expect![[r#"
         [
-            "DidValidateMemoizedValue { database_key: tracked_fn(0) }",
+            "salsa_event(DidValidateMemoizedValue { database_key: tracked_fn(0) })",
         ]"#]]);
 }

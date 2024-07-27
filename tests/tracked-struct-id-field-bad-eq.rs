@@ -1,6 +1,6 @@
 //! Test an id field whose `PartialEq` impl is always true.
 
-use salsa::{Database as Db, Setter};
+use salsa::{Database, Setter};
 use test_log::test;
 
 #[salsa::input]
@@ -33,24 +33,14 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn the_fn(db: &dyn Db, input: MyInput) {
+fn the_fn(db: &dyn Database, input: MyInput) {
     let tracked0 = MyTracked::new(db, BadEq::from(input.field(db)));
     assert_eq!(tracked0.field(db).field, input.field(db));
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
 #[test]
 fn execute() {
-    let mut db = Database::default();
-
+    let mut db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, true);
     the_fn(&db, input);
     input.set_field(&mut db).to(false);

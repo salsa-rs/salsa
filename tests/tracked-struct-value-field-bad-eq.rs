@@ -3,9 +3,9 @@
 //! if we were to execute from scratch.
 
 use expect_test::expect;
-use salsa::{Database as Db, Setter};
+use salsa::{Database, Setter};
 mod common;
-use common::{HasLogger, Logger};
+use common::LogDatabase;
 use test_log::test;
 
 #[salsa::input]
@@ -37,51 +37,24 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn the_fn(db: &dyn Db, input: MyInput) -> bool {
+fn the_fn(db: &dyn Database, input: MyInput) -> bool {
     let tracked = make_tracked_struct(db, input);
     read_tracked_struct(db, tracked)
 }
 
 #[salsa::tracked]
-fn make_tracked_struct(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
+fn make_tracked_struct(db: &dyn Database, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, BadEq::from(input.field(db)))
 }
 
 #[salsa::tracked]
-fn read_tracked_struct<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> bool {
+fn read_tracked_struct<'db>(db: &'db dyn Database, tracked: MyTracked<'db>) -> bool {
     tracked.field(db).field
-}
-
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {
-    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
-        let event = event();
-        match event.kind {
-            salsa::EventKind::WillExecute { .. }
-            | salsa::EventKind::DidValidateMemoizedValue { .. } => {
-                self.push_log(format!("salsa_event({:?})", event.kind));
-            }
-            _ => {}
-        }
-    }
-}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
 }
 
 #[test]
 fn execute() {
-    let mut db = Database::default();
+    let mut db: salsa::DatabaseImpl<common::ExecuteValidateLogger> = Default::default();
 
     let input = MyInput::new(&db, true);
     let result = the_fn(&db, input);

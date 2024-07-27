@@ -2,17 +2,12 @@
 //! See the `../cycles.rs` for a complete listing of cycle tests,
 //! both intra and cross thread.
 
-use crate::setup::Database;
 use crate::setup::Knobs;
+use crate::setup::KnobsDatabase;
 use expect_test::expect;
 use salsa::Database as _;
+use salsa::DatabaseImpl;
 use salsa::Handle;
-
-#[salsa::db]
-pub(crate) trait Db: salsa::Database + Knobs {}
-
-#[salsa::db]
-impl<T: salsa::Database + Knobs> Db for T {}
 
 #[salsa::input]
 pub(crate) struct MyInput {
@@ -20,7 +15,7 @@ pub(crate) struct MyInput {
 }
 
 #[salsa::tracked]
-pub(crate) fn a(db: &dyn Db, input: MyInput) -> i32 {
+pub(crate) fn a(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
     // Wait to create the cycle until both threads have entered
     db.signal(1);
     db.wait_for(2);
@@ -29,7 +24,7 @@ pub(crate) fn a(db: &dyn Db, input: MyInput) -> i32 {
 }
 
 #[salsa::tracked]
-pub(crate) fn b(db: &dyn Db, input: MyInput) -> i32 {
+pub(crate) fn b(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
     // Wait to create the cycle until both threads have entered
     db.wait_for(1);
     db.signal(2);
@@ -43,7 +38,7 @@ pub(crate) fn b(db: &dyn Db, input: MyInput) -> i32 {
 
 #[test]
 fn execute() {
-    let db = Handle::new(Database::default());
+    let db = Handle::new(<DatabaseImpl<Knobs>>::default());
     db.knobs().signal_on_will_block.store(3);
 
     let input = MyInput::new(&*db, -1);
