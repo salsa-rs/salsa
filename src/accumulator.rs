@@ -10,7 +10,7 @@ use crate::{
     hash::FxDashMap,
     ingredient::{fmt_index, Ingredient, Jar},
     key::DependencyIndex,
-    local_state::{self, LocalState, QueryOrigin},
+    local_state::{LocalState, QueryOrigin},
     storage::IngredientIndex,
     Database, DatabaseKeyIndex, Event, EventKind, Id, Revision,
 };
@@ -80,32 +80,30 @@ impl<A: Accumulator> IngredientImpl<A> {
     }
 
     pub fn push(&self, db: &dyn crate::Database, value: A) {
-        local_state::attach(db, |state| {
-            let current_revision = db.zalsa().current_revision();
-            let (active_query, _) = match state.active_query() {
-                Some(pair) => pair,
-                None => {
-                    panic!("cannot accumulate values outside of an active query")
-                }
-            };
-
-            let mut accumulated_values =
-                self.map.entry(active_query).or_insert(AccumulatedValues {
-                    values: vec![],
-                    produced_at: current_revision,
-                });
-
-            // When we call `push' in a query, we will add the accumulator to the output of the query.
-            // If we find here that this accumulator is not the output of the query,
-            // we can say that the accumulated values we stored for this query is out of date.
-            if !state.is_output_of_active_query(self.dependency_index()) {
-                accumulated_values.values.truncate(0);
-                accumulated_values.produced_at = current_revision;
+        let state = db.zalsa_local();
+        let current_revision = db.zalsa().current_revision();
+        let (active_query, _) = match state.active_query() {
+            Some(pair) => pair,
+            None => {
+                panic!("cannot accumulate values outside of an active query")
             }
+        };
 
-            state.add_output(self.dependency_index());
-            accumulated_values.values.push(value);
-        })
+        let mut accumulated_values = self.map.entry(active_query).or_insert(AccumulatedValues {
+            values: vec![],
+            produced_at: current_revision,
+        });
+
+        // When we call `push' in a query, we will add the accumulator to the output of the query.
+        // If we find here that this accumulator is not the output of the query,
+        // we can say that the accumulated values we stored for this query is out of date.
+        if !state.is_output_of_active_query(self.dependency_index()) {
+            accumulated_values.values.truncate(0);
+            accumulated_values.produced_at = current_revision;
+        }
+
+        state.add_output(self.dependency_index());
+        accumulated_values.values.push(value);
     }
 
     pub(crate) fn produced_by(

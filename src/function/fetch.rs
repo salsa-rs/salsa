@@ -1,9 +1,7 @@
 use arc_swap::Guard;
 
 use crate::{
-    local_state::{self, LocalState},
-    runtime::StampedValue,
-    AsDynDatabase as _, Database as _, Id,
+    local_state::LocalState, runtime::StampedValue, AsDynDatabase as _, Database as _, Id,
 };
 
 use super::{Configuration, IngredientImpl};
@@ -13,27 +11,26 @@ where
     C: Configuration,
 {
     pub fn fetch<'db>(&'db self, db: &'db C::DbView, key: Id) -> &C::Output<'db> {
-        local_state::attach(db.as_dyn_database(), |local_state| {
-            local_state.unwind_if_revision_cancelled(db.as_dyn_database());
+        let zalsa_local = db.zalsa_local();
+        zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
 
-            let StampedValue {
-                value,
-                durability,
-                changed_at,
-            } = self.compute_value(db, local_state, key);
+        let StampedValue {
+            value,
+            durability,
+            changed_at,
+        } = self.compute_value(db, zalsa_local, key);
 
-            if let Some(evicted) = self.lru.record_use(key) {
-                self.evict(evicted);
-            }
+        if let Some(evicted) = self.lru.record_use(key) {
+            self.evict(evicted);
+        }
 
-            local_state.report_tracked_read(
-                self.database_key_index(key).into(),
-                durability,
-                changed_at,
-            );
+        zalsa_local.report_tracked_read(
+            self.database_key_index(key).into(),
+            durability,
+            changed_at,
+        );
 
-            value
-        })
+        value
     }
 
     #[inline]

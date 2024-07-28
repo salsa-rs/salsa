@@ -55,7 +55,7 @@ fn push_b_logs(db: &dyn LogDatabase, input: MyInput) {
 
 #[test]
 fn accumulate_once() {
-    let mut db = salsa::DatabaseImpl::with(Logger::default());
+    let db = salsa::DatabaseImpl::with(Logger::default());
 
     // Just call accumulate on a base input to see what happens.
     let input = MyInput::new(&db, 2, 3);

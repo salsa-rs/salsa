@@ -13,38 +13,8 @@ use crate::Database;
 use crate::Event;
 use crate::EventKind;
 use crate::Revision;
-use std::cell::Cell;
 use std::cell::RefCell;
-use std::ptr::NonNull;
 use std::sync::Arc;
-
-thread_local! {
-    /// The thread-local state salsa requires for a given thread
-    static LOCAL_STATE: LocalState = const { LocalState::new() }
-}
-
-/// Attach the database to the current thread and execute `op`.
-/// Panics if a different database has already been attached.
-pub(crate) fn attach<R, DB>(db: &DB, op: impl FnOnce(&LocalState) -> R) -> R
-where
-    DB: ?Sized + Database,
-{
-    LOCAL_STATE.with(|state| state.attach(db.as_dyn_database(), || op(state)))
-}
-
-/// Access the "attached" database. Returns `None` if no database is attached.
-/// Databases are attached with `attach_database`.
-pub fn with_attached_database<R>(op: impl FnOnce(&dyn Database) -> R) -> Option<R> {
-    LOCAL_STATE.with(|state| {
-        if let Some(db) = state.database.get() {
-            // SAFETY: We always attach the database in for the entire duration of a function,
-            // so it cannot become "unattached" while this function is running.
-            Some(op(unsafe { db.as_ref() }))
-        } else {
-            None
-        }
-    })
-}
 
 /// State that is specific to a single execution thread.
 ///
@@ -52,10 +22,7 @@ pub fn with_attached_database<R>(op: impl FnOnce(&dyn Database) -> R) -> Option<
 ///
 /// **Note also that all mutations to the database handle (and hence
 /// to the local-state) must be undone during unwinding.**
-pub(crate) struct LocalState {
-    /// Pointer to the currently attached database.
-    database: Cell<Option<NonNull<dyn Database>>>,
-
+pub struct LocalState {
     /// Vector of active queries.
     ///
     /// This is normally `Some`, but it is set to `None`
@@ -67,54 +34,10 @@ pub(crate) struct LocalState {
 }
 
 impl LocalState {
-    const fn new() -> Self {
+    pub(crate) fn new() -> Self {
         LocalState {
-            database: Cell::new(None),
             query_stack: RefCell::new(Some(vec![])),
         }
-    }
-
-    fn attach<R>(&self, db: &dyn Database, op: impl FnOnce() -> R) -> R {
-        struct DbGuard<'s> {
-            state: Option<&'s LocalState>,
-        }
-
-        impl<'s> DbGuard<'s> {
-            fn new(state: &'s LocalState, db: &dyn Database) -> Self {
-                if let Some(current_db) = state.database.get() {
-                    let new_db = NonNull::from(db);
-
-                    // Already attached? Assert that the database has not changed.
-                    // NOTE: It's important to use `addr_eq` here because `NonNull::eq` not only compares the address but also the type's metadata.
-                    if !std::ptr::addr_eq(current_db.as_ptr(), new_db.as_ptr()) {
-                        panic!(
-                            "Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}",
-                        );
-                    }
-
-                    Self { state: None }
-                } else {
-                    // Otherwise, set the database.
-                    state.database.set(Some(NonNull::from(db)));
-                    Self { state: Some(state) }
-                }
-            }
-        }
-
-        impl Drop for DbGuard<'_> {
-            fn drop(&mut self) {
-                // Reset database to null if we did anything in `DbGuard::new`.
-                if let Some(state) = self.state {
-                    state.database.set(None);
-
-                    // All stack frames should have been popped from the local stack.
-                    assert!(state.query_stack.borrow().as_ref().unwrap().is_empty());
-                }
-            }
-        }
-
-        let _guard = DbGuard::new(self, db);
-        op()
     }
 
     #[inline]

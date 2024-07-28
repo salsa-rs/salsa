@@ -1,6 +1,5 @@
 use crate::{
-    id::AsId, ingredient::Ingredient, key::DependencyIndex, local_state, storage::IngredientIndex,
-    Database, Id,
+    id::AsId, ingredient::Ingredient, key::DependencyIndex, storage::IngredientIndex, Database, Id,
 };
 
 use super::{struct_map::StructMapView, Configuration};
@@ -47,23 +46,22 @@ where
     /// Note that this function returns the entire tuple of value fields.
     /// The caller is responible for selecting the appropriate element.
     pub fn field<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
-        local_state::attach(db, |local_state| {
-            let current_revision = db.zalsa().current_revision();
-            let data = self.struct_map.get(current_revision, id);
-            let data = C::deref_struct(data);
-            let changed_at = data.revisions[self.field_index];
+        let zalsa_local = db.zalsa_local();
+        let current_revision = db.zalsa().current_revision();
+        let data = self.struct_map.get(current_revision, id);
+        let data = C::deref_struct(data);
+        let changed_at = data.revisions[self.field_index];
 
-            local_state.report_tracked_read(
-                DependencyIndex {
-                    ingredient_index: self.ingredient_index,
-                    key_index: Some(id.as_id()),
-                },
-                data.durability,
-                changed_at,
-            );
+        zalsa_local.report_tracked_read(
+            DependencyIndex {
+                ingredient_index: self.ingredient_index,
+                key_index: Some(id.as_id()),
+            },
+            data.durability,
+            changed_at,
+        );
 
-            unsafe { self.to_self_ref(&data.fields) }
-        })
+        unsafe { self.to_self_ref(&data.fields) }
     }
 }
 

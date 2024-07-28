@@ -5,12 +5,12 @@ use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 
 use crate::cycle::CycleRecoveryStrategy;
-use crate::database::{DatabaseImpl, UserData};
+use crate::database::UserData;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
-use crate::views::{Views, ViewsOf};
-use crate::{Database, Durability, Revision};
+use crate::views::Views;
+use crate::{Database, DatabaseImpl, Durability, Revision};
 
 pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
     db.zalsa().views()
@@ -191,7 +191,7 @@ impl IngredientIndex {
 pub(crate) struct ZalsaImpl<U: UserData> {
     user_data: U,
     
-    views_of: ViewsOf<DatabaseImpl<U>>,
+    views_of: Views,
 
     nonce: Nonce<StorageNonce>,
 
@@ -227,7 +227,7 @@ impl<U: UserData + Default> Default for ZalsaImpl<U> {
 impl<U: UserData> ZalsaImpl<U> {
     pub(crate) fn with(user_data: U) -> Self {
         Self {
-            views_of: Default::default(),
+            views_of: Views::new::<DatabaseImpl<U>>(),
             nonce: NONCE.nonce(),
             jar_map: Default::default(),
             ingredients_vec: Default::default(),

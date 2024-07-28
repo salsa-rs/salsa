@@ -1,18 +1,11 @@
 use std::{
     any::{Any, TypeId},
-    marker::PhantomData,
-    ops::Deref,
     sync::Arc,
 };
 
 use orx_concurrent_vec::ConcurrentVec;
 
 use crate::Database;
-
-pub struct ViewsOf<Db: Database> {
-    upcasts: Views,
-    phantom: PhantomData<Db>,
-}
 
 #[derive(Clone)]
 pub struct Views {
@@ -29,25 +22,8 @@ struct ViewCaster {
 #[allow(dead_code)]
 enum Dummy {}
 
-impl<Db: Database> Default for ViewsOf<Db> {
-    fn default() -> Self {
-        Self {
-            upcasts: Views::new::<Db>(),
-            phantom: Default::default(),
-        }
-    }
-}
-
-impl<Db: Database> Deref for ViewsOf<Db> {
-    type Target = Views;
-
-    fn deref(&self) -> &Self::Target {
-        &self.upcasts
-    }
-}
-
 impl Views {
-    fn new<Db: Database>() -> Self {
+    pub(crate) fn new<Db: Database>() -> Self {
         let source_type_id = TypeId::of::<Db>();
         Self {
             source_type_id,
@@ -126,13 +102,4 @@ fn data_ptr<T: ?Sized>(t: &T) -> &() {
     let t: *const T = t;
     let u: *const () = t as *const ();
     unsafe { &*u }
-}
-
-impl<Db: Database> Clone for ViewsOf<Db> {
-    fn clone(&self) -> Self {
-        Self {
-            upcasts: self.upcasts.clone(),
-            phantom: self.phantom,
-        }
-    }
 }

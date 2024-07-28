@@ -2,6 +2,7 @@ mod accumulator;
 mod active_query;
 mod alloc;
 mod array;
+mod attach;
 mod cancelled;
 mod cycle;
 mod database;
@@ -41,7 +42,7 @@ pub use self::key::DatabaseKeyIndex;
 pub use self::revision::Revision;
 pub use self::runtime::Runtime;
 pub use self::update::Update;
-pub use crate::local_state::with_attached_database;
+pub use crate::attach::with_attached_database;
 pub use salsa_macros::accumulator;
 pub use salsa_macros::db;
 pub use salsa_macros::input;
@@ -63,6 +64,8 @@ pub mod prelude {
 pub mod plumbing {
     pub use crate::accumulator::Accumulator;
     pub use crate::array::Array;
+    pub use crate::attach::attach;
+    pub use crate::attach::with_attached_database;
     pub use crate::cycle::Cycle;
     pub use crate::cycle::CycleRecoveryStrategy;
     pub use crate::database::current_revision;
@@ -76,7 +79,6 @@ pub mod plumbing {
     pub use crate::ingredient::Ingredient;
     pub use crate::ingredient::Jar;
     pub use crate::key::DatabaseKeyIndex;
-    pub use crate::local_state::with_attached_database;
     pub use crate::revision::Revision;
     pub use crate::runtime::stamp;
     pub use crate::runtime::Runtime;

@@ -3,7 +3,8 @@ use std::{any::Any, panic::RefUnwindSafe, sync::Arc};
 use parking_lot::{Condvar, Mutex};
 
 use crate::{
-    self as salsa, local_state,
+    self as salsa,
+    local_state::{self, LocalState},
     storage::{Zalsa, ZalsaImpl},
     Durability, Event, EventKind, Revision,
 };
@@ -16,7 +17,7 @@ use crate::{
 /// This trait can only safely be implemented by Salsa's [`DatabaseImpl`][] type.
 /// FIXME: Document better the unsafety conditions we guarantee.
 #[salsa_macros::db]
-pub unsafe trait Database: AsDynDatabase + Any {
+pub unsafe trait Database: Send + AsDynDatabase + Any {
     /// This function is invoked by the salsa runtime at various points during execution.
     /// You can customize what happens by implementing the [`UserData`][] trait.
     /// By default, the event is logged at level debug using tracing facade.
@@ -45,9 +46,8 @@ pub unsafe trait Database: AsDynDatabase + Any {
     /// revision.
     fn report_untracked_read(&self) {
         let db = self.as_dyn_database();
-        local_state::attach(db, |state| {
-            state.report_untracked_read(db.zalsa().current_revision())
-        })
+        let zalsa_local = db.zalsa_local();
+        zalsa_local.report_untracked_read(db.zalsa().current_revision())
     }
 
     /// Execute `op` with the database in thread-local storage for debug print-outs.
@@ -55,7 +55,7 @@ pub unsafe trait Database: AsDynDatabase + Any {
     where
         Self: Sized,
     {
-        local_state::attach(self, |_state| op(self))
+        crate::attach::attach(self, || op(self))
     }
 
     /// Plumbing method: Access the internal salsa methods.
@@ -68,6 +68,10 @@ pub unsafe trait Database: AsDynDatabase + Any {
     /// This can lead to deadlock!
     #[doc(hidden)]
     fn zalsa_mut(&mut self) -> &mut dyn Zalsa;
+
+    /// Access the thread-local state associated with this database
+    #[doc(hidden)]
+    fn zalsa_local(&self) -> &LocalState;
 }
 
 /// Upcast to a `dyn Database`.
@@ -113,6 +117,9 @@ pub struct DatabaseImpl<U: UserData = ()> {
     /// Coordination data for cancellation of other handles when `zalsa_mut` is called.
     /// This could be stored in ZalsaImpl but it makes things marginally cleaner to keep it separate.
     coordinate: Arc<Coordinate>,
+
+    /// Per-thread state
+    zalsa_local: local_state::LocalState,
 }
 
 impl<U: UserData + Default> Default for DatabaseImpl<U> {
@@ -141,6 +148,7 @@ impl<U: UserData> DatabaseImpl<U> {
                 clones: Mutex::new(1),
                 cvar: Default::default(),
             }),
+            zalsa_local: LocalState::new(),
         }
     }
 
@@ -201,6 +209,10 @@ unsafe impl<U: UserData> Database for DatabaseImpl<U> {
         zalsa_mut
     }
 
+    fn zalsa_local(&self) -> &LocalState {
+        &self.zalsa_local
+    }
+
     // Report a salsa event.
     fn salsa_event(&self, event: &dyn Fn() -> Event) {
         U::salsa_event(self, event)
@@ -214,6 +226,7 @@ impl<U: UserData> Clone for DatabaseImpl<U> {
         Self {
             zalsa_impl: self.zalsa_impl.clone(),
             coordinate: Arc::clone(&self.coordinate),
+            zalsa_local: LocalState::new(),
         }
     }
 }
@@ -229,7 +242,7 @@ impl<U: UserData> Drop for DatabaseImpl<U> {
     }
 }
 
-pub trait UserData: Any + Sized {
+pub trait UserData: Any + Sized + Send + Sync {
     /// Callback invoked by the [`Database`][] at key points during salsa execution.
     /// By overriding this method, you can inject logging or other custom behavior.
     ///

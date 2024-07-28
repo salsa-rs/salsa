@@ -11,7 +11,7 @@ use crate::{
     ingredient::{fmt_index, Ingredient, Jar},
     ingredient_list::IngredientList,
     key::{DatabaseKeyIndex, DependencyIndex},
-    local_state::{self, QueryOrigin},
+    local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
     storage::IngredientIndex,
     Database, Durability, Event, Id, Revision,
@@ -290,86 +290,85 @@ where
         db: &'db dyn Database,
         fields: C::Fields<'db>,
     ) -> C::Struct<'db> {
-        local_state::attach(db, |local_state| {
-            let zalsa = db.zalsa();
+        let zalsa = db.zalsa();
+        let zalsa_local = db.zalsa_local();
 
-            let data_hash = crate::hash::hash(&C::id_fields(&fields));
+        let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
-            let (query_key, current_deps, disambiguator) =
-                local_state.disambiguate(self.ingredient_index, Revision::start(), data_hash);
+        let (query_key, current_deps, disambiguator) =
+            zalsa_local.disambiguate(self.ingredient_index, Revision::start(), data_hash);
 
-            let entity_key = KeyStruct {
-                query_key,
-                disambiguator,
-                data_hash,
-            };
+        let entity_key = KeyStruct {
+            query_key,
+            disambiguator,
+            data_hash,
+        };
 
-            let (id, new_id) = self.intern(entity_key);
-            local_state.add_output(self.database_key_index(id).into());
+        let (id, new_id) = self.intern(entity_key);
+        zalsa_local.add_output(self.database_key_index(id).into());
 
-            let current_revision = zalsa.current_revision();
-            if new_id {
-                // This is a new tracked struct, so create an entry in the struct map.
+        let current_revision = zalsa.current_revision();
+        if new_id {
+            // This is a new tracked struct, so create an entry in the struct map.
 
-                self.struct_map.insert(
-                    current_revision,
-                    Value {
-                        id,
-                        key: entity_key,
-                        struct_ingredient_index: self.ingredient_index,
-                        created_at: current_revision,
-                        durability: current_deps.durability,
-                        fields: unsafe { self.to_static(fields) },
-                        revisions: C::new_revisions(current_deps.changed_at),
-                    },
-                )
-            } else {
-                // The struct already exists in the intern map.
-                // Note that we assume there is at most one executing copy of
-                // the current query at a time, which implies that the
-                // struct must exist in `self.struct_map` already
-                // (if the same query could execute twice in parallel,
-                // then it would potentially create the same struct twice in parallel,
-                // which means the interned key could exist but `struct_map` not yet have
-                // been updated).
+            self.struct_map.insert(
+                current_revision,
+                Value {
+                    id,
+                    key: entity_key,
+                    struct_ingredient_index: self.ingredient_index,
+                    created_at: current_revision,
+                    durability: current_deps.durability,
+                    fields: unsafe { self.to_static(fields) },
+                    revisions: C::new_revisions(current_deps.changed_at),
+                },
+            )
+        } else {
+            // The struct already exists in the intern map.
+            // Note that we assume there is at most one executing copy of
+            // the current query at a time, which implies that the
+            // struct must exist in `self.struct_map` already
+            // (if the same query could execute twice in parallel,
+            // then it would potentially create the same struct twice in parallel,
+            // which means the interned key could exist but `struct_map` not yet have
+            // been updated).
 
-                match self.struct_map.update(current_revision, id) {
-                    Update::Current(r) => {
-                        // All inputs up to this point were previously
-                        // observed to be green and this struct was already
-                        // verified. Therefore, the durability ought not to have
-                        // changed (nor the field values, but the user could've
-                        // done something stupid, so we can't *assert* this is true).
-                        assert!(C::deref_struct(r).durability == current_deps.durability);
+            match self.struct_map.update(current_revision, id) {
+                Update::Current(r) => {
+                    // All inputs up to this point were previously
+                    // observed to be green and this struct was already
+                    // verified. Therefore, the durability ought not to have
+                    // changed (nor the field values, but the user could've
+                    // done something stupid, so we can't *assert* this is true).
+                    assert!(C::deref_struct(r).durability == current_deps.durability);
 
-                        r
+                    r
+                }
+                Update::Outdated(mut data_ref) => {
+                    let data = &mut *data_ref;
+
+                    // SAFETY: We assert that the pointer to `data.revisions`
+                    // is a pointer into the database referencing a value
+                    // from a previous revision. As such, it continues to meet
+                    // its validity invariant and any owned content also continues
+                    // to meet its safety invariant.
+                    unsafe {
+                        C::update_fields(
+                            current_revision,
+                            &mut data.revisions,
+                            self.to_self_ptr(std::ptr::addr_of_mut!(data.fields)),
+                            fields,
+                        );
                     }
-                    Update::Outdated(mut data_ref) => {
-                        let data = &mut *data_ref;
-
-                        // SAFETY: We assert that the pointer to `data.revisions`
-                        // is a pointer into the database referencing a value
-                        // from a previous revision. As such, it continues to meet
-                        // its validity invariant and any owned content also continues
-                        // to meet its safety invariant.
-                        unsafe {
-                            C::update_fields(
-                                current_revision,
-                                &mut data.revisions,
-                                self.to_self_ptr(std::ptr::addr_of_mut!(data.fields)),
-                                fields,
-                            );
-                        }
-                        if current_deps.durability < data.durability {
-                            data.revisions = C::new_revisions(current_revision);
-                        }
-                        data.durability = current_deps.durability;
-                        data.created_at = current_revision;
-                        data_ref.freeze()
+                    if current_deps.durability < data.durability {
+                        data.revisions = C::new_revisions(current_revision);
                     }
+                    data.durability = current_deps.durability;
+                    data.created_at = current_revision;
+                    data_ref.freeze()
                 }
             }
-        })
+        }
     }
 
     /// Given the id of a tracked struct created in this revision,
@@ -520,21 +519,20 @@ where
         db: &dyn crate::Database,
         field_index: usize,
     ) -> &'db C::Fields<'db> {
-        local_state::attach(db, |local_state| {
-            let field_ingredient_index = self.struct_ingredient_index.successor(field_index);
-            let changed_at = self.revisions[field_index];
+        let zalsa_local = db.zalsa_local();
+        let field_ingredient_index = self.struct_ingredient_index.successor(field_index);
+        let changed_at = self.revisions[field_index];
 
-            local_state.report_tracked_read(
-                DependencyIndex {
-                    ingredient_index: field_ingredient_index,
-                    key_index: Some(self.id.as_id()),
-                },
-                self.durability,
-                changed_at,
-            );
+        zalsa_local.report_tracked_read(
+            DependencyIndex {
+                ingredient_index: field_ingredient_index,
+                key_index: Some(self.id.as_id()),
+            },
+            self.durability,
+            changed_at,
+        );
 
-            unsafe { self.to_self_ref(&self.fields) }
-        })
+        unsafe { self.to_self_ref(&self.fields) }
     }
 
     unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Fields<'static>) -> &'db C::Fields<'db> {
