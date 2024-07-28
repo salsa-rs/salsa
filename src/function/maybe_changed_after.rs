@@ -2,7 +2,7 @@ use arc_swap::Guard;
 
 use crate::{
     key::DatabaseKeyIndex,
-    local_state::{ActiveQueryGuard, EdgeKind, QueryOrigin, ZalsaLocal},
+    zalsa_local::{ActiveQueryGuard, EdgeKind, QueryOrigin, ZalsaLocal},
     runtime::StampedValue,
     zalsa::Zalsa,
     AsDynDatabase as _, Database, Id, Revision,

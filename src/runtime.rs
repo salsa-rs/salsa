@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 
 use crate::{
     active_query::ActiveQuery, cycle::CycleRecoveryStrategy, durability::Durability,
-    key::DatabaseKeyIndex, local_state::ZalsaLocal, revision::AtomicRevision, Cancelled, Cycle,
+    key::DatabaseKeyIndex, zalsa_local::ZalsaLocal, revision::AtomicRevision, Cancelled, Cycle,
     Database, Event, EventKind, Revision,
 };
 

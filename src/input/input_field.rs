@@ -1,7 +1,7 @@
 use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::input::Configuration;
-use crate::local_state::QueryOrigin;
+use crate::zalsa_local::QueryOrigin;
 use crate::zalsa::IngredientIndex;
 use crate::{Database, DatabaseKeyIndex, Id, Revision};
 use std::fmt;

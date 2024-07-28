@@ -4,7 +4,7 @@ use parking_lot::{Condvar, Mutex};
 
 use crate::{
     self as salsa,
-    local_state::{self, ZalsaLocal},
+    zalsa_local::{self, ZalsaLocal},
     zalsa::Zalsa,
     Durability, Event, EventKind, Revision,
 };
@@ -120,7 +120,7 @@ pub struct DatabaseImpl<U: UserData = ()> {
     coordinate: Arc<Coordinate>,
 
     /// Per-thread state
-    zalsa_local: local_state::ZalsaLocal,
+    zalsa_local: zalsa_local::ZalsaLocal,
 
     /// The `U` is stored as a `dyn Any` in `zalsa_impl`
     phantom: PhantomData<U>,

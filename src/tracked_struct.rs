@@ -11,7 +11,7 @@ use crate::{
     ingredient::{fmt_index, Ingredient, Jar},
     ingredient_list::IngredientList,
     key::{DatabaseKeyIndex, DependencyIndex},
-    local_state::QueryOrigin,
+    zalsa_local::QueryOrigin,
     salsa_struct::SalsaStructInDb,
     zalsa::IngredientIndex,
     Database, Durability, Event, Id, Revision,

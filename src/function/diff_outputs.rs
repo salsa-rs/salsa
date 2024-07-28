@@ -1,5 +1,5 @@
 use crate::{
-    hash::FxHashSet, key::DependencyIndex, local_state::QueryRevisions, AsDynDatabase as _,
+    hash::FxHashSet, key::DependencyIndex, zalsa_local::QueryRevisions, AsDynDatabase as _,
     DatabaseKeyIndex, Event, EventKind,
 };
 

@@ -2,12 +2,12 @@ use crate::{
     durability::Durability,
     hash::{FxIndexMap, FxIndexSet},
     key::{DatabaseKeyIndex, DependencyIndex},
-    local_state::EMPTY_DEPENDENCIES,
+    zalsa_local::EMPTY_DEPENDENCIES,
     tracked_struct::Disambiguator,
     Cycle, Revision,
 };
 
-use super::local_state::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
+use super::zalsa_local::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
 
 #[derive(Debug)]
 pub(crate) struct ActiveQuery {

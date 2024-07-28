@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::{
-    hash::FxDashMap, key::DatabaseKeyIndex, local_state::ZalsaLocal, runtime::WaitResult,
-    zalsa::Zalsa, Database, Id,
+    hash::FxDashMap, key::DatabaseKeyIndex, runtime::WaitResult, zalsa::Zalsa,
+    zalsa_local::ZalsaLocal, Database, Id,
 };
 
 #[derive(Default)]

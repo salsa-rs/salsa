@@ -16,7 +16,7 @@ mod ingredient_list;
 mod input;
 mod interned;
 mod key;
-mod local_state;
+mod zalsa_local;
 mod nonce;
 mod revision;
 mod runtime;

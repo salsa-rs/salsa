@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    local_state::ActiveQueryGuard, runtime::StampedValue, Cycle, Database, Event, EventKind,
+    zalsa_local::ActiveQueryGuard, runtime::StampedValue, Cycle, Database, Event, EventKind,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};

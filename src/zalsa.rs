@@ -8,10 +8,10 @@ use rustc_hash::FxHashMap;
 use crate::cycle::CycleRecoveryStrategy;
 use crate::database::UserData;
 use crate::ingredient::{Ingredient, Jar};
-use crate::local_state::ZalsaLocal;
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
 use crate::views::Views;
+use crate::zalsa_local::ZalsaLocal;
 use crate::{Database, DatabaseImpl, DatabaseKeyIndex, Durability, Revision};
 
 pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {

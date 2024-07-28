@@ -1,7 +1,7 @@
 use arc_swap::Guard;
 
 use crate::{
-    local_state::ZalsaLocal, runtime::StampedValue, AsDynDatabase as _, Database as _, Id,
+    zalsa_local::ZalsaLocal, runtime::StampedValue, AsDynDatabase as _, Database as _, Id,
 };
 
 use super::{Configuration, IngredientImpl};

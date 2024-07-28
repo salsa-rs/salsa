@@ -9,7 +9,7 @@ use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
-use crate::local_state::QueryOrigin;
+use crate::zalsa_local::QueryOrigin;
 use crate::plumbing::Jar;
 use crate::zalsa::IngredientIndex;
 use crate::{Database, DatabaseKeyIndex, Id};
