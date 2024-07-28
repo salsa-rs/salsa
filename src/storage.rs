@@ -41,10 +41,7 @@ pub trait Zalsa {
     fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient;
 
     /// Gets an `&mut`-ref to an ingredient by index.
-    fn lookup_ingredient_mut(
-        &mut self,
-        index: IngredientIndex,
-    ) -> &mut dyn Ingredient;
+    fn lookup_ingredient_mut(&mut self, index: IngredientIndex) -> &mut dyn Ingredient;
 
     fn runtimex(&self) -> &Runtime;
 
@@ -88,11 +85,11 @@ impl<U: UserData> Zalsa for ZalsaImpl<U> {
                 let ingredients = jar.create_ingredients(index);
                 for ingredient in ingredients {
                     let expected_index = ingredient.ingredient_index();
-    
+
                     if ingredient.requires_reset_for_new_revision() {
                         self.ingredients_requiring_reset.push(expected_index);
                     }
-    
+
                     let actual_index = self
                         .ingredients_vec
                         .push(ingredient);
@@ -104,7 +101,7 @@ impl<U: UserData> Zalsa for ZalsaImpl<U> {
                         expected_index,
                         actual_index,
                     );
-    
+
                 }
                 index
             })
@@ -115,33 +112,30 @@ impl<U: UserData> Zalsa for ZalsaImpl<U> {
         &**self.ingredients_vec.get(index.as_usize()).unwrap()
     }
 
-    fn lookup_ingredient_mut(
-        &mut self,
-        index: IngredientIndex,
-    ) -> &mut dyn Ingredient {
+    fn lookup_ingredient_mut(&mut self, index: IngredientIndex) -> &mut dyn Ingredient {
         &mut **self.ingredients_vec.get_mut(index.as_usize()).unwrap()
     }
 
     fn current_revision(&self) -> Revision {
         self.runtime.current_revision()
     }
-    
+
     fn load_cancellation_flag(&self) -> bool {
         self.runtime.load_cancellation_flag()
     }
-    
+
     fn report_tracked_write(&mut self, durability: Durability) {
         self.runtime.report_tracked_write(durability)
     }
-    
+
     fn runtimex(&self) -> &Runtime {
         &self.runtime
     }
-    
+
     fn last_changed_revision(&self, durability: Durability) -> Revision {
         self.runtime.last_changed_revision(durability)
     }
-    
+
     fn set_cancellation_flag(&self) {
         self.runtime.set_cancellation_flag()
     }
@@ -190,7 +184,7 @@ impl IngredientIndex {
 /// It is shared between the main database and any active snapshots.
 pub(crate) struct ZalsaImpl<U: UserData> {
     user_data: U,
-    
+
     views_of: Views,
 
     nonce: Nonce<StorageNonce>,
