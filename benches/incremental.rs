@@ -1,4 +1,4 @@
-use codspeed_criterion_compat::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use salsa::Setter;
 
 #[salsa::input]
