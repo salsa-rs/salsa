@@ -5,7 +5,7 @@ use parking_lot::{Condvar, Mutex};
 use crate::{
     self as salsa,
     local_state::{self, LocalState},
-    storage::{Zalsa, ZalsaImpl},
+    storage::Zalsa,
     Durability, Event, EventKind, Revision,
 };
 
@@ -61,14 +61,14 @@ pub unsafe trait Database: Send + AsDynDatabase + Any {
 
     /// Plumbing method: Access the internal salsa methods.
     #[doc(hidden)]
-    fn zalsa(&self) -> &dyn Zalsa;
+    fn zalsa(&self) -> &Zalsa;
 
     /// Plumbing method: Access the internal salsa methods for mutating the database.
     ///
     /// **WARNING:** Triggers a new revision, canceling other database handles.
     /// This can lead to deadlock!
     #[doc(hidden)]
-    fn zalsa_mut(&mut self) -> &mut dyn Zalsa;
+    fn zalsa_mut(&mut self) -> &mut Zalsa;
 
     /// Access the thread-local state associated with this database
     #[doc(hidden)]
@@ -113,10 +113,10 @@ impl dyn Database {
 /// Takes an optional type parameter `U` that allows you to thread your own data.
 pub struct DatabaseImpl<U: UserData = ()> {
     /// Reference to the database. This is always `Some` except during destruction.
-    zalsa_impl: Option<Arc<ZalsaImpl>>,
+    zalsa_impl: Option<Arc<Zalsa>>,
 
     /// Coordination data for cancellation of other handles when `zalsa_mut` is called.
-    /// This could be stored in ZalsaImpl but it makes things marginally cleaner to keep it separate.
+    /// This could be stored in Zalsa but it makes things marginally cleaner to keep it separate.
     coordinate: Arc<Coordinate>,
 
     /// Per-thread state
@@ -147,7 +147,7 @@ impl<U: UserData> DatabaseImpl<U> {
     /// You can also use the [`Default`][] trait if your userdata implements it.
     pub fn with(u: U) -> Self {
         Self {
-            zalsa_impl: Some(Arc::new(ZalsaImpl::with(u))),
+            zalsa_impl: Some(Arc::new(Zalsa::with(u))),
             coordinate: Arc::new(Coordinate {
                 clones: Mutex::new(1),
                 cvar: Default::default(),
@@ -157,10 +157,10 @@ impl<U: UserData> DatabaseImpl<U> {
         }
     }
 
-    /// Access the `Arc<ZalsaImpl>`. This should always be
+    /// Access the `Arc<Zalsa>`. This should always be
     /// possible as `zalsa_impl` only becomes
     /// `None` once we are in the `Drop` impl.
-    fn zalsa_impl(&self) -> &Arc<ZalsaImpl> {
+    fn zalsa_impl(&self) -> &Arc<Zalsa> {
         self.zalsa_impl.as_ref().unwrap()
     }
 
@@ -200,11 +200,11 @@ impl<U: UserData + RefUnwindSafe> RefUnwindSafe for DatabaseImpl<U> {}
 
 #[salsa_macros::db]
 unsafe impl<U: UserData> Database for DatabaseImpl<U> {
-    fn zalsa(&self) -> &dyn Zalsa {
+    fn zalsa(&self) -> &Zalsa {
         &**self.zalsa_impl()
     }
 
-    fn zalsa_mut(&mut self) -> &mut dyn Zalsa {
+    fn zalsa_mut(&mut self) -> &mut Zalsa {
         self.cancel_others();
 
         // The ref count on the `Arc` should now be 1

@@ -129,7 +129,7 @@ impl<V> Memo<V> {
         }
     }
     /// True if this memo is known not to have changed based on its durability.
-    pub(super) fn check_durability(&self, zalsa: &dyn Zalsa) -> bool {
+    pub(super) fn check_durability(&self, zalsa: &Zalsa) -> bool {
         let last_changed = zalsa.last_changed_revision(self.revisions.durability);
         let verified_at = self.verified_at.load();
         tracing::debug!(

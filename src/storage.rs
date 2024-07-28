@@ -16,131 +16,6 @@ pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
     db.zalsa().views()
 }
 
-/// The "plumbing interface" to the Salsa database.
-///
-/// **NOT SEMVER STABLE.**
-pub trait Zalsa {
-    /// Returns a reference to the underlying.
-    fn views(&self) -> &Views;
-
-    /// Returns the nonce for the underyling storage.
-    ///
-    /// # Safety
-    ///
-    /// This nonce is guaranteed to be unique for the database and never to be reused.
-    fn nonce(&self) -> Nonce<StorageNonce>;
-
-    /// Lookup the index assigned to the given jar (if any). This lookup is based purely on the jar's type.
-    fn lookup_jar_by_type(&self, jar: &dyn Jar) -> Option<IngredientIndex>;
-
-    /// Adds a jar to the database, returning the index of the first ingredient.
-    /// If a jar of this type is already present, returns the existing index.
-    fn add_or_lookup_jar_by_type(&self, jar: &dyn Jar) -> IngredientIndex;
-
-    /// Gets an `&`-ref to an ingredient by index
-    fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient;
-
-    /// Gets an `&mut`-ref to an ingredient by index.
-    fn lookup_ingredient_mut(&mut self, index: IngredientIndex) -> &mut dyn Ingredient;
-
-    fn runtimex(&self) -> &Runtime;
-
-    /// Return the current revision
-    fn current_revision(&self) -> Revision;
-
-    /// Return the time when an input of durability `durability` last changed
-    fn last_changed_revision(&self, durability: Durability) -> Revision;
-
-    /// True if any threads have signalled for cancellation
-    fn load_cancellation_flag(&self) -> bool;
-
-    /// Signal for cancellation, indicating current thread is trying to get unique access.
-    fn set_cancellation_flag(&self);
-
-    /// Reports a (synthetic) tracked write to "some input of the given durability".
-    fn report_tracked_write(&mut self, durability: Durability);
-}
-
-impl Zalsa for ZalsaImpl {
-    fn views(&self) -> &Views {
-        &self.views_of
-    }
-
-    fn nonce(&self) -> Nonce<StorageNonce> {
-        self.nonce
-    }
-
-    fn lookup_jar_by_type(&self, jar: &dyn Jar) -> Option<IngredientIndex> {
-        self.jar_map.lock().get(&jar.type_id()).copied()
-    }
-
-    fn add_or_lookup_jar_by_type(&self, jar: &dyn Jar) -> IngredientIndex {
-        {
-            let jar_type_id = jar.type_id();
-            let mut jar_map = self.jar_map.lock();
-            *jar_map
-            .entry(jar_type_id)
-            .or_insert_with(|| {
-                let index = IngredientIndex::from(self.ingredients_vec.len());
-                let ingredients = jar.create_ingredients(index);
-                for ingredient in ingredients {
-                    let expected_index = ingredient.ingredient_index();
-
-                    if ingredient.requires_reset_for_new_revision() {
-                        self.ingredients_requiring_reset.push(expected_index);
-                    }
-
-                    let actual_index = self
-                        .ingredients_vec
-                        .push(ingredient);
-                    assert_eq!(
-                        expected_index.as_usize(),
-                        actual_index,
-                        "ingredient `{:?}` was predicted to have index `{:?}` but actually has index `{:?}`",
-                        self.ingredients_vec.get(actual_index).unwrap(),
-                        expected_index,
-                        actual_index,
-                    );
-
-                }
-                index
-            })
-        }
-    }
-
-    fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
-        &**self.ingredients_vec.get(index.as_usize()).unwrap()
-    }
-
-    fn lookup_ingredient_mut(&mut self, index: IngredientIndex) -> &mut dyn Ingredient {
-        &mut **self.ingredients_vec.get_mut(index.as_usize()).unwrap()
-    }
-
-    fn current_revision(&self) -> Revision {
-        self.runtime.current_revision()
-    }
-
-    fn load_cancellation_flag(&self) -> bool {
-        self.runtime.load_cancellation_flag()
-    }
-
-    fn report_tracked_write(&mut self, durability: Durability) {
-        self.runtime.report_tracked_write(durability)
-    }
-
-    fn runtimex(&self) -> &Runtime {
-        &self.runtime
-    }
-
-    fn last_changed_revision(&self, durability: Durability) -> Revision {
-        self.runtime.last_changed_revision(durability)
-    }
-
-    fn set_cancellation_flag(&self) {
-        self.runtime.set_cancellation_flag()
-    }
-}
-
 /// Nonce type representing the underlying database storage.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StorageNonce;
@@ -180,9 +55,10 @@ impl IngredientIndex {
     }
 }
 
-/// The "storage" struct stores all the data for the jars.
-/// It is shared between the main database and any active snapshots.
-pub(crate) struct ZalsaImpl {
+/// The "plumbing interface" to the Salsa database. Stores all the ingredients and other data.
+///
+/// **NOT SEMVER STABLE.**
+pub struct Zalsa {
     user_data: Box<dyn Any + Send + Sync>,
 
     views_of: Views,
@@ -210,7 +86,7 @@ pub(crate) struct ZalsaImpl {
     runtime: Runtime,
 }
 
-impl ZalsaImpl {
+impl Zalsa {
     pub(crate) fn with<U: UserData>(user_data: U) -> Self {
         Self {
             views_of: Views::new::<DatabaseImpl<U>>(),
@@ -221,6 +97,84 @@ impl ZalsaImpl {
             runtime: Runtime::default(),
             user_data: Box::new(user_data),
         }
+    }
+
+    pub(crate) fn views(&self) -> &Views {
+        &self.views_of
+    }
+
+    pub(crate) fn nonce(&self) -> Nonce<StorageNonce> {
+        self.nonce
+    }
+
+    /// **NOT SEMVER STABLE**
+    pub fn add_or_lookup_jar_by_type(&self, jar: &dyn Jar) -> IngredientIndex {
+        {
+            let jar_type_id = jar.type_id();
+            let mut jar_map = self.jar_map.lock();
+            *jar_map
+            .entry(jar_type_id)
+            .or_insert_with(|| {
+                let index = IngredientIndex::from(self.ingredients_vec.len());
+                let ingredients = jar.create_ingredients(index);
+                for ingredient in ingredients {
+                    let expected_index = ingredient.ingredient_index();
+
+                    if ingredient.requires_reset_for_new_revision() {
+                        self.ingredients_requiring_reset.push(expected_index);
+                    }
+
+                    let actual_index = self
+                        .ingredients_vec
+                        .push(ingredient);
+                    assert_eq!(
+                        expected_index.as_usize(),
+                        actual_index,
+                        "ingredient `{:?}` was predicted to have index `{:?}` but actually has index `{:?}`",
+                        self.ingredients_vec.get(actual_index).unwrap(),
+                        expected_index,
+                        actual_index,
+                    );
+
+                }
+                index
+            })
+        }
+    }
+
+    pub(crate) fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
+        &**self.ingredients_vec.get(index.as_usize()).unwrap()
+    }
+
+    /// **NOT SEMVER STABLE**
+    pub fn lookup_ingredient_mut(&mut self, index: IngredientIndex) -> &mut dyn Ingredient {
+        &mut **self.ingredients_vec.get_mut(index.as_usize()).unwrap()
+    }
+
+    /// **NOT SEMVER STABLE**
+    pub fn current_revision(&self) -> Revision {
+        self.runtime.current_revision()
+    }
+
+    pub(crate) fn load_cancellation_flag(&self) -> bool {
+        self.runtime.load_cancellation_flag()
+    }
+
+    pub(crate) fn report_tracked_write(&mut self, durability: Durability) {
+        self.runtime.report_tracked_write(durability)
+    }
+
+    pub(crate) fn runtimex(&self) -> &Runtime {
+        &self.runtime
+    }
+
+    /// **NOT SEMVER STABLE**
+    pub fn last_changed_revision(&self, durability: Durability) -> Revision {
+        self.runtime.last_changed_revision(durability)
+    }
+
+    pub(crate) fn set_cancellation_flag(&self) {
+        self.runtime.set_cancellation_flag()
     }
 
     pub(crate) fn user_data(&self) -> &(dyn Any + Send + Sync) {

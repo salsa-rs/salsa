@@ -98,7 +98,7 @@ where
     pub(super) fn shallow_verify_memo(
         &self,
         db: &C::DbView,
-        zalsa: &dyn Zalsa,
+        zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
