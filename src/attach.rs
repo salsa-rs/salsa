@@ -74,13 +74,11 @@ impl Attached {
     /// Access the "attached" database. Returns `None` if no database is attached.
     /// Databases are attached with `attach_database`.
     fn with<R>(&self, op: impl FnOnce(&dyn Database) -> R) -> Option<R> {
-        if let Some(db) = self.database.get() {
-            // SAFETY: We always attach the database in for the entire duration of a function,
-            // so it cannot become "unattached" while this function is running.
-            Some(op(unsafe { db.as_ref() }))
-        } else {
-            None
-        }
+        let db = self.database.get()?;
+
+        // SAFETY: We always attach the database in for the entire duration of a function,
+        // so it cannot become "unattached" while this function is running.
+        Some(op(unsafe { db.as_ref() }))
     }
 }
 

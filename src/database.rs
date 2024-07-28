@@ -12,10 +12,11 @@ use crate::{
 /// The trait implemented by all Salsa databases.
 /// You can create your own subtraits of this trait using the `#[salsa::db]` procedural macro.
 ///
-/// # Safety conditions
+/// # Safety
 ///
 /// This trait can only safely be implemented by Salsa's [`DatabaseImpl`][] type.
-/// FIXME: Document better the unsafety conditions we guarantee.
+///
+/// FIXME: Document better the unsafety conditions we require.
 #[salsa_macros::db]
 pub unsafe trait Database: Send + AsDynDatabase + Any {
     /// This function is invoked by the salsa runtime at various points during execution.
