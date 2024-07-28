@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     hash::FxDashMap, key::DatabaseKeyIndex, local_state::LocalState, runtime::WaitResult,
-    storage::Zalsa, Database, Id,
+    zalsa::Zalsa, Database, Id,
 };
 
 #[derive(Default)]

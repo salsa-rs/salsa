@@ -11,7 +11,7 @@ use crate::{
     ingredient::{fmt_index, Ingredient, Jar},
     key::DependencyIndex,
     local_state::{LocalState, QueryOrigin},
-    storage::IngredientIndex,
+    zalsa::IngredientIndex,
     Database, DatabaseKeyIndex, Event, EventKind, Id, Revision,
 };
 

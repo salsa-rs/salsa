@@ -21,10 +21,10 @@ mod nonce;
 mod revision;
 mod runtime;
 mod salsa_struct;
-mod storage;
 mod tracked_struct;
 mod update;
 mod views;
+mod zalsa;
 
 pub use self::accumulator::Accumulator;
 pub use self::cancelled::Cancelled;
@@ -85,15 +85,15 @@ pub mod plumbing {
     pub use crate::runtime::Stamp;
     pub use crate::runtime::StampedValue;
     pub use crate::salsa_struct::SalsaStructInDb;
-    pub use crate::storage::views;
-    pub use crate::storage::IngredientCache;
-    pub use crate::storage::IngredientIndex;
-    pub use crate::storage::Zalsa;
     pub use crate::tracked_struct::TrackedStructInDb;
     pub use crate::update::always_update;
     pub use crate::update::helper::Dispatch as UpdateDispatch;
     pub use crate::update::helper::Fallback as UpdateFallback;
     pub use crate::update::Update;
+    pub use crate::zalsa::views;
+    pub use crate::zalsa::IngredientCache;
+    pub use crate::zalsa::IngredientIndex;
+    pub use crate::zalsa::Zalsa;
 
     pub use salsa_macro_rules::macro_if;
     pub use salsa_macro_rules::maybe_backdate;

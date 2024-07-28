@@ -19,7 +19,7 @@ use crate::{
     key::{DatabaseKeyIndex, DependencyIndex},
     local_state::QueryOrigin,
     plumbing::{Jar, Stamp},
-    storage::IngredientIndex,
+    zalsa::IngredientIndex,
     Database, Durability, Id, Revision,
 };
 
@@ -53,7 +53,7 @@ impl<C: Configuration> Default for JarImpl<C> {
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
         &self,
-        struct_index: crate::storage::IngredientIndex,
+        struct_index: crate::zalsa::IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient: IngredientImpl<C> = IngredientImpl::new(struct_index);
         let struct_map = struct_ingredient.struct_map.clone();

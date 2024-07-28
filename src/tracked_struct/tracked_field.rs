@@ -1,5 +1,5 @@
 use crate::{
-    id::AsId, ingredient::Ingredient, key::DependencyIndex, storage::IngredientIndex, Database, Id,
+    id::AsId, ingredient::Ingredient, key::DependencyIndex, zalsa::IngredientIndex, Database, Id,
 };
 
 use super::{struct_map::StructMapView, Configuration};

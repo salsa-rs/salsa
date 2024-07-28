@@ -4,7 +4,7 @@ use crate::{
     key::DatabaseKeyIndex,
     local_state::{ActiveQueryGuard, EdgeKind, LocalState, QueryOrigin},
     runtime::StampedValue,
-    storage::Zalsa,
+    zalsa::Zalsa,
     AsDynDatabase as _, Database, Id, Revision,
 };
 

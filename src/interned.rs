@@ -11,7 +11,7 @@ use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
 use crate::local_state::QueryOrigin;
 use crate::plumbing::Jar;
-use crate::storage::IngredientIndex;
+use crate::zalsa::IngredientIndex;
 use crate::{Database, DatabaseKeyIndex, Id};
 
 use super::hash::FxDashMap;

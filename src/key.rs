@@ -1,4 +1,4 @@
-use crate::{cycle::CycleRecoveryStrategy, storage::IngredientIndex, Database, Id};
+use crate::{cycle::CycleRecoveryStrategy, zalsa::IngredientIndex, Database, Id};
 
 /// An integer that uniquely identifies a particular query instance within the
 /// database. Used to track dependencies between queries. Fully ordered and

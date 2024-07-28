@@ -5,7 +5,7 @@ use parking_lot::{Condvar, Mutex};
 use crate::{
     self as salsa,
     local_state::{self, LocalState},
-    storage::Zalsa,
+    zalsa::Zalsa,
     Durability, Event, EventKind, Revision,
 };
 

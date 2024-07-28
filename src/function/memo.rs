@@ -4,7 +4,7 @@ use arc_swap::{ArcSwap, Guard};
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    hash::FxDashMap, key::DatabaseKeyIndex, local_state::QueryRevisions, storage::Zalsa, Event,
+    hash::FxDashMap, key::DatabaseKeyIndex, local_state::QueryRevisions, zalsa::Zalsa, Event,
     EventKind, Id, Revision,
 };
 

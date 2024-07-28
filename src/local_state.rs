@@ -5,7 +5,7 @@ use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::key::DependencyIndex;
 use crate::runtime::StampedValue;
-use crate::storage::IngredientIndex;
+use crate::zalsa::IngredientIndex;
 use crate::tracked_struct::Disambiguator;
 use crate::Cancelled;
 use crate::Cycle;

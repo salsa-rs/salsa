@@ -13,7 +13,7 @@ use crate::{
     key::{DatabaseKeyIndex, DependencyIndex},
     local_state::QueryOrigin,
     salsa_struct::SalsaStructInDb,
-    storage::IngredientIndex,
+    zalsa::IngredientIndex,
     Database, Durability, Event, Id, Revision,
 };
 
@@ -113,7 +113,7 @@ impl<C: Configuration> Default for JarImpl<C> {
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
         &self,
-        struct_index: crate::storage::IngredientIndex,
+        struct_index: crate::zalsa::IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient = IngredientImpl::new(struct_index);
         let struct_map = &struct_ingredient.struct_map.view();
