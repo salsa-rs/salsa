@@ -1,4 +1,4 @@
-use std::{any::Any, panic::RefUnwindSafe, sync::Arc};
+use std::{any::Any, marker::PhantomData, panic::RefUnwindSafe, sync::Arc};
 
 use parking_lot::{Condvar, Mutex};
 
@@ -113,7 +113,7 @@ impl dyn Database {
 /// Takes an optional type parameter `U` that allows you to thread your own data.
 pub struct DatabaseImpl<U: UserData = ()> {
     /// Reference to the database. This is always `Some` except during destruction.
-    zalsa_impl: Option<Arc<ZalsaImpl<U>>>,
+    zalsa_impl: Option<Arc<ZalsaImpl>>,
 
     /// Coordination data for cancellation of other handles when `zalsa_mut` is called.
     /// This could be stored in ZalsaImpl but it makes things marginally cleaner to keep it separate.
@@ -121,6 +121,9 @@ pub struct DatabaseImpl<U: UserData = ()> {
 
     /// Per-thread state
     zalsa_local: local_state::LocalState,
+
+    /// The `U` is stored as a `dyn Any` in `zalsa_impl`
+    phantom: PhantomData<U>,
 }
 
 impl<U: UserData + Default> Default for DatabaseImpl<U> {
@@ -150,13 +153,14 @@ impl<U: UserData> DatabaseImpl<U> {
                 cvar: Default::default(),
             }),
             zalsa_local: LocalState::new(),
+            phantom: PhantomData::<U>,
         }
     }
 
     /// Access the `Arc<ZalsaImpl>`. This should always be
     /// possible as `zalsa_impl` only becomes
     /// `None` once we are in the `Drop` impl.
-    fn zalsa_impl(&self) -> &Arc<ZalsaImpl<U>> {
+    fn zalsa_impl(&self) -> &Arc<ZalsaImpl> {
         self.zalsa_impl.as_ref().unwrap()
     }
 
@@ -188,7 +192,7 @@ impl<U: UserData> std::ops::Deref for DatabaseImpl<U> {
     type Target = U;
 
     fn deref(&self) -> &U {
-        self.zalsa_impl().user_data()
+        self.zalsa_impl().user_data().downcast_ref::<U>().unwrap()
     }
 }
 
@@ -228,6 +232,7 @@ impl<U: UserData> Clone for DatabaseImpl<U> {
             zalsa_impl: self.zalsa_impl.clone(),
             coordinate: Arc::clone(&self.coordinate),
             zalsa_local: LocalState::new(),
+            phantom: PhantomData::<U>,
         }
     }
 }

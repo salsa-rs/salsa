@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 
 use orx_concurrent_vec::ConcurrentVec;
 use parking_lot::Mutex;
@@ -61,7 +61,7 @@ pub trait Zalsa {
     fn report_tracked_write(&mut self, durability: Durability);
 }
 
-impl<U: UserData> Zalsa for ZalsaImpl<U> {
+impl Zalsa for ZalsaImpl {
     fn views(&self) -> &Views {
         &self.views_of
     }
@@ -182,8 +182,8 @@ impl IngredientIndex {
 
 /// The "storage" struct stores all the data for the jars.
 /// It is shared between the main database and any active snapshots.
-pub(crate) struct ZalsaImpl<U: UserData> {
-    user_data: U,
+pub(crate) struct ZalsaImpl {
+    user_data: Box<dyn Any + Send + Sync>,
 
     views_of: Views,
 
@@ -210,16 +210,8 @@ pub(crate) struct ZalsaImpl<U: UserData> {
     runtime: Runtime,
 }
 
-// ANCHOR: default
-impl<U: UserData + Default> Default for ZalsaImpl<U> {
-    fn default() -> Self {
-        Self::with(Default::default())
-    }
-}
-// ANCHOR_END: default
-
-impl<U: UserData> ZalsaImpl<U> {
-    pub(crate) fn with(user_data: U) -> Self {
+impl ZalsaImpl {
+    pub(crate) fn with<U: UserData>(user_data: U) -> Self {
         Self {
             views_of: Views::new::<DatabaseImpl<U>>(),
             nonce: NONCE.nonce(),
@@ -227,12 +219,12 @@ impl<U: UserData> ZalsaImpl<U> {
             ingredients_vec: Default::default(),
             ingredients_requiring_reset: Default::default(),
             runtime: Runtime::default(),
-            user_data,
+            user_data: Box::new(user_data),
         }
     }
 
-    pub(crate) fn user_data(&self) -> &U {
-        &self.user_data
+    pub(crate) fn user_data(&self) -> &(dyn Any + Send + Sync) {
+        &*self.user_data
     }
 
     /// Triggers a new revision. Invoked automatically when you call `zalsa_mut`
