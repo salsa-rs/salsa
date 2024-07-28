@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::{
-    hash::FxDashMap, key::DatabaseKeyIndex, local_state::LocalState, runtime::WaitResult, Database,
-    Id, Runtime,
+    hash::FxDashMap, key::DatabaseKeyIndex, local_state::LocalState, runtime::WaitResult,
+    storage::Zalsa, Database, Id,
 };
 
 #[derive(Default)]
@@ -28,7 +28,7 @@ impl SyncMap {
         local_state: &LocalState,
         database_key_index: DatabaseKeyIndex,
     ) -> Option<ClaimGuard<'me>> {
-        let runtime = db.zalsa().runtimex();
+        let zalsa = db.zalsa();
         let thread_id = std::thread::current().id();
         match self.sync_map.entry(database_key_index.key_index) {
             dashmap::mapref::entry::Entry::Vacant(entry) => {
@@ -38,7 +38,7 @@ impl SyncMap {
                 });
                 Some(ClaimGuard {
                     database_key: database_key_index,
-                    runtime,
+                    zalsa,
                     sync_map: &self.sync_map,
                 })
             }
@@ -51,7 +51,7 @@ impl SyncMap {
                 // not to gate future atomic reads.
                 entry.get().anyone_waiting.store(true, Ordering::Relaxed);
                 let other_id = entry.get().id;
-                runtime.block_on_or_unwind(db, local_state, database_key_index, other_id, entry);
+                zalsa.block_on_or_unwind(db, local_state, database_key_index, other_id, entry);
                 None
             }
         }
@@ -63,7 +63,7 @@ impl SyncMap {
 #[must_use]
 pub(super) struct ClaimGuard<'me> {
     database_key: DatabaseKeyIndex,
-    runtime: &'me Runtime,
+    zalsa: &'me Zalsa,
     sync_map: &'me FxDashMap<Id, SyncState>,
 }
 
@@ -75,7 +75,7 @@ impl<'me> ClaimGuard<'me> {
         // NB: `Ordering::Relaxed` is sufficient here,
         // see `store` above for explanation.
         if anyone_waiting.load(Ordering::Relaxed) {
-            self.runtime
+            self.zalsa
                 .unblock_queries_blocked_on(self.database_key, wait_result)
         }
     }

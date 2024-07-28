@@ -1,4 +1,5 @@
 use std::any::{Any, TypeId};
+use std::thread::ThreadId;
 
 use orx_concurrent_vec::ConcurrentVec;
 use parking_lot::Mutex;
@@ -7,10 +8,11 @@ use rustc_hash::FxHashMap;
 use crate::cycle::CycleRecoveryStrategy;
 use crate::database::UserData;
 use crate::ingredient::{Ingredient, Jar};
+use crate::local_state::LocalState;
 use crate::nonce::{Nonce, NonceGenerator};
-use crate::runtime::Runtime;
+use crate::runtime::{Runtime, WaitResult};
 use crate::views::Views;
-use crate::{Database, DatabaseImpl, Durability, Revision};
+use crate::{Database, DatabaseImpl, DatabaseKeyIndex, Durability, Revision};
 
 pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
     db.zalsa().views()
@@ -164,10 +166,6 @@ impl Zalsa {
         self.runtime.report_tracked_write(durability)
     }
 
-    pub(crate) fn runtimex(&self) -> &Runtime {
-        &self.runtime
-    }
-
     /// **NOT SEMVER STABLE**
     pub fn last_changed_revision(&self, durability: Durability) -> Revision {
         self.runtime.last_changed_revision(durability)
@@ -194,6 +192,29 @@ impl Zalsa {
         }
 
         new_revision
+    }
+
+    /// See [`Runtime::block_on_or_unwind`][]
+    pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
+        &self,
+        db: &dyn Database,
+        local_state: &LocalState,
+        database_key: DatabaseKeyIndex,
+        other_id: ThreadId,
+        query_mutex_guard: QueryMutexGuard,
+    ) {
+        self.runtime
+            .block_on_or_unwind(db, local_state, database_key, other_id, query_mutex_guard)
+    }
+
+    /// See [`Runtime::unblock_queries_blocked_on`][]
+    pub(crate) fn unblock_queries_blocked_on(
+        &self,
+        database_key: DatabaseKeyIndex,
+        wait_result: WaitResult,
+    ) {
+        self.runtime
+            .unblock_queries_blocked_on(database_key, wait_result)
     }
 }
 
