@@ -1,4 +1,5 @@
 use std::any::{Any, TypeId};
+use std::marker::PhantomData;
 use std::thread::ThreadId;
 
 use orx_concurrent_vec::ConcurrentVec;
@@ -242,7 +243,8 @@ pub struct IngredientCache<I>
 where
     I: Ingredient,
 {
-    cached_data: std::sync::OnceLock<(Nonce<StorageNonce>, *const I)>,
+    cached_data: std::sync::OnceLock<(Nonce<StorageNonce>, IngredientIndex)>,
+    phantom: PhantomData<fn() -> I>,
 }
 
 unsafe impl<I> Sync for IngredientCache<I> where I: Ingredient + Sync {}
@@ -264,6 +266,7 @@ where
     pub const fn new() -> Self {
         Self {
             cached_data: std::sync::OnceLock::new(),
+            phantom: PhantomData,
         }
     }
 
@@ -274,24 +277,24 @@ where
         db: &'s dyn Database,
         create_index: impl Fn() -> IngredientIndex,
     ) -> &'s I {
-        let &(nonce, ingredient) = self.cached_data.get_or_init(|| {
-            let ingredient = self.create_ingredient(db, &create_index);
-            (db.zalsa().nonce(), ingredient as *const I)
+        let zalsa = db.zalsa();
+        let (nonce, index) = self.cached_data.get_or_init(|| {
+            let index = create_index();
+            (zalsa.nonce(), index)
         });
 
-        if db.zalsa().nonce() == nonce {
-            unsafe { &*ingredient }
-        } else {
-            self.create_ingredient(db, &create_index)
-        }
-    }
+        // FIXME: We used to cache a raw pointer to the revision but miri
+        // was reporting errors because that pointer was derived from an `&`
+        // that is invalidated when the next revision starts with an `&mut`.
+        //
+        // We could fix it with orxfun/orx-concurrent-vec#18 or by "refreshing" the cache
+        // when the revision changes but just caching the index is an awful lot simpler.
 
-    fn create_ingredient<'s>(
-        &self,
-        storage: &'s dyn Database,
-        create_index: &impl Fn() -> IngredientIndex,
-    ) -> &'s I {
-        let index = create_index();
-        storage.zalsa().lookup_ingredient(index).assert_type::<I>()
+        if db.zalsa().nonce() == *nonce {
+            zalsa.lookup_ingredient(*index).assert_type::<I>()
+        } else {
+            let index = create_index();
+            zalsa.lookup_ingredient(index).assert_type::<I>()
+        }
     }
 }
