@@ -2,9 +2,9 @@ use arc_swap::Guard;
 
 use crate::{
     key::DatabaseKeyIndex,
-    zalsa_local::{ActiveQueryGuard, EdgeKind, QueryOrigin, ZalsaLocal},
     runtime::StampedValue,
     zalsa::Zalsa,
+    zalsa_local::{ActiveQueryGuard, EdgeKind, QueryOrigin, ZalsaLocal},
     AsDynDatabase as _, Database, Id, Revision,
 };
 

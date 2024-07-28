@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    cycle::CycleRecoveryStrategy, zalsa_local::QueryOrigin, zalsa::IngredientIndex, Database,
+    cycle::CycleRecoveryStrategy, zalsa::IngredientIndex, zalsa_local::QueryOrigin, Database,
     DatabaseKeyIndex, Id,
 };
 

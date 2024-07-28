@@ -10,8 +10,8 @@ use crate::{
     hash::FxDashMap,
     ingredient::{fmt_index, Ingredient, Jar},
     key::DependencyIndex,
-    zalsa_local::{QueryOrigin, ZalsaLocal},
     zalsa::IngredientIndex,
+    zalsa_local::{QueryOrigin, ZalsaLocal},
     Database, DatabaseKeyIndex, Event, EventKind, Id, Revision,
 };
 

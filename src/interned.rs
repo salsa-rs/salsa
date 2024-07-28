@@ -9,9 +9,9 @@ use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
-use crate::zalsa_local::QueryOrigin;
 use crate::plumbing::Jar;
 use crate::zalsa::IngredientIndex;
+use crate::zalsa_local::QueryOrigin;
 use crate::{Database, DatabaseKeyIndex, Id};
 
 use super::hash::FxDashMap;

@@ -2,8 +2,8 @@ use crate::{
     durability::Durability,
     hash::{FxIndexMap, FxIndexSet},
     key::{DatabaseKeyIndex, DependencyIndex},
-    zalsa_local::EMPTY_DEPENDENCIES,
     tracked_struct::Disambiguator,
+    zalsa_local::EMPTY_DEPENDENCIES,
     Cycle, Revision,
 };
 

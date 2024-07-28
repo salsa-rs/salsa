@@ -16,7 +16,6 @@ mod ingredient_list;
 mod input;
 mod interned;
 mod key;
-mod zalsa_local;
 mod nonce;
 mod revision;
 mod runtime;
@@ -25,6 +24,7 @@ mod tracked_struct;
 mod update;
 mod views;
 mod zalsa;
+mod zalsa_local;
 
 pub use self::accumulator::Accumulator;
 pub use self::cancelled::Cancelled;

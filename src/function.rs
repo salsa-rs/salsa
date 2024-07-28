@@ -4,7 +4,7 @@ use crossbeam::atomic::AtomicCell;
 
 use crate::{
     cycle::CycleRecoveryStrategy, ingredient::fmt_index, key::DatabaseKeyIndex,
-    zalsa_local::QueryOrigin, salsa_struct::SalsaStructInDb, zalsa::IngredientIndex,
+    salsa_struct::SalsaStructInDb, zalsa::IngredientIndex, zalsa_local::QueryOrigin,
     AsDynDatabase as _, Cycle, Database, Event, EventKind, Id, Revision,
 };
 

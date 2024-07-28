@@ -17,9 +17,9 @@ use crate::{
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient},
     key::{DatabaseKeyIndex, DependencyIndex},
-    zalsa_local::QueryOrigin,
     plumbing::{Jar, Stamp},
     zalsa::IngredientIndex,
+    zalsa_local::QueryOrigin,
     Database, Durability, Id, Revision,
 };
 

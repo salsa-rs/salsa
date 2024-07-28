@@ -4,8 +4,8 @@ use parking_lot::{Condvar, Mutex};
 
 use crate::{
     self as salsa,
-    zalsa_local::{self, ZalsaLocal},
     zalsa::Zalsa,
+    zalsa_local::{self, ZalsaLocal},
     Durability, Event, EventKind, Revision,
 };
 
