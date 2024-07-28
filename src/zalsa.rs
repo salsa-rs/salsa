@@ -8,7 +8,7 @@ use rustc_hash::FxHashMap;
 use crate::cycle::CycleRecoveryStrategy;
 use crate::database::UserData;
 use crate::ingredient::{Ingredient, Jar};
-use crate::local_state::LocalState;
+use crate::local_state::ZalsaLocal;
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
 use crate::views::Views;
@@ -198,7 +198,7 @@ impl Zalsa {
     pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
         &self,
         db: &dyn Database,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,

@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    hash::FxDashMap, key::DatabaseKeyIndex, local_state::LocalState, runtime::WaitResult,
+    hash::FxDashMap, key::DatabaseKeyIndex, local_state::ZalsaLocal, runtime::WaitResult,
     zalsa::Zalsa, Database, Id,
 };
 
@@ -25,7 +25,7 @@ impl SyncMap {
     pub(super) fn claim<'me>(
         &'me self,
         db: &'me dyn Database,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
     ) -> Option<ClaimGuard<'me>> {
         let zalsa = db.zalsa();

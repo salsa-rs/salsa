@@ -2,7 +2,7 @@ use arc_swap::Guard;
 
 use crate::{
     key::DatabaseKeyIndex,
-    local_state::{ActiveQueryGuard, EdgeKind, LocalState, QueryOrigin},
+    local_state::{ActiveQueryGuard, EdgeKind, QueryOrigin, ZalsaLocal},
     runtime::StampedValue,
     zalsa::Zalsa,
     AsDynDatabase as _, Database, Id, Revision,
@@ -51,7 +51,7 @@ where
     fn maybe_changed_after_cold<'db>(
         &'db self,
         db: &'db C::DbView,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         key_index: Id,
         revision: Revision,
     ) -> Option<bool> {

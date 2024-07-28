@@ -1,7 +1,7 @@
 use arc_swap::Guard;
 
 use crate::{
-    local_state::LocalState, runtime::StampedValue, AsDynDatabase as _, Database as _, Id,
+    local_state::ZalsaLocal, runtime::StampedValue, AsDynDatabase as _, Database as _, Id,
 };
 
 use super::{Configuration, IngredientImpl};
@@ -37,7 +37,7 @@ where
     fn compute_value<'db>(
         &'db self,
         db: &'db C::DbView,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         key: Id,
     ) -> StampedValue<&'db C::Output<'db>> {
         loop {
@@ -75,7 +75,7 @@ where
     fn fetch_cold<'db>(
         &'db self,
         db: &'db C::DbView,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         key: Id,
     ) -> Option<StampedValue<&'db C::Output<'db>>> {
         let database_key_index = self.database_key_index(key);

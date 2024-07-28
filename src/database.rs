@@ -4,7 +4,7 @@ use parking_lot::{Condvar, Mutex};
 
 use crate::{
     self as salsa,
-    local_state::{self, LocalState},
+    local_state::{self, ZalsaLocal},
     zalsa::Zalsa,
     Durability, Event, EventKind, Revision,
 };
@@ -72,7 +72,7 @@ pub unsafe trait Database: Send + AsDynDatabase + Any {
 
     /// Access the thread-local state associated with this database
     #[doc(hidden)]
-    fn zalsa_local(&self) -> &LocalState;
+    fn zalsa_local(&self) -> &ZalsaLocal;
 }
 
 /// Upcast to a `dyn Database`.
@@ -120,7 +120,7 @@ pub struct DatabaseImpl<U: UserData = ()> {
     coordinate: Arc<Coordinate>,
 
     /// Per-thread state
-    zalsa_local: local_state::LocalState,
+    zalsa_local: local_state::ZalsaLocal,
 
     /// The `U` is stored as a `dyn Any` in `zalsa_impl`
     phantom: PhantomData<U>,
@@ -152,7 +152,7 @@ impl<U: UserData> DatabaseImpl<U> {
                 clones: Mutex::new(1),
                 cvar: Default::default(),
             }),
-            zalsa_local: LocalState::new(),
+            zalsa_local: ZalsaLocal::new(),
             phantom: PhantomData::<U>,
         }
     }
@@ -214,7 +214,7 @@ unsafe impl<U: UserData> Database for DatabaseImpl<U> {
         zalsa_mut
     }
 
-    fn zalsa_local(&self) -> &LocalState {
+    fn zalsa_local(&self) -> &ZalsaLocal {
         &self.zalsa_local
     }
 
@@ -231,7 +231,7 @@ impl<U: UserData> Clone for DatabaseImpl<U> {
         Self {
             zalsa_impl: self.zalsa_impl.clone(),
             coordinate: Arc::clone(&self.coordinate),
-            zalsa_local: LocalState::new(),
+            zalsa_local: ZalsaLocal::new(),
             phantom: PhantomData::<U>,
         }
     }

@@ -10,7 +10,7 @@ use crate::{
     hash::FxDashMap,
     ingredient::{fmt_index, Ingredient, Jar},
     key::DependencyIndex,
-    local_state::{LocalState, QueryOrigin},
+    local_state::{QueryOrigin, ZalsaLocal},
     zalsa::IngredientIndex,
     Database, DatabaseKeyIndex, Event, EventKind, Id, Revision,
 };
@@ -109,7 +109,7 @@ impl<A: Accumulator> IngredientImpl<A> {
     pub(crate) fn produced_by(
         &self,
         current_revision: Revision,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         query: DatabaseKeyIndex,
         output: &mut Vec<A>,
     ) {

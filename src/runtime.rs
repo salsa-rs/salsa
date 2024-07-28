@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 
 use crate::{
     active_query::ActiveQuery, cycle::CycleRecoveryStrategy, durability::Durability,
-    key::DatabaseKeyIndex, local_state::LocalState, revision::AtomicRevision, Cancelled, Cycle,
+    key::DatabaseKeyIndex, local_state::ZalsaLocal, revision::AtomicRevision, Cancelled, Cycle,
     Database, Event, EventKind, Revision,
 };
 
@@ -171,7 +171,7 @@ impl Runtime {
     pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
         &self,
         db: &dyn Database,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
@@ -231,7 +231,7 @@ impl Runtime {
     fn unblock_cycle_and_maybe_throw(
         &self,
         db: &dyn Database,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         dg: &mut DependencyGraph,
         database_key_index: DatabaseKeyIndex,
         to_id: ThreadId,

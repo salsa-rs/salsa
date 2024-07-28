@@ -5,8 +5,8 @@ use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::key::DependencyIndex;
 use crate::runtime::StampedValue;
-use crate::zalsa::IngredientIndex;
 use crate::tracked_struct::Disambiguator;
+use crate::zalsa::IngredientIndex;
 use crate::Cancelled;
 use crate::Cycle;
 use crate::Database;
@@ -22,7 +22,7 @@ use std::sync::Arc;
 ///
 /// **Note also that all mutations to the database handle (and hence
 /// to the local-state) must be undone during unwinding.**
-pub struct LocalState {
+pub struct ZalsaLocal {
     /// Vector of active queries.
     ///
     /// This is normally `Some`, but it is set to `None`
@@ -33,9 +33,9 @@ pub struct LocalState {
     query_stack: RefCell<Option<Vec<ActiveQuery>>>,
 }
 
-impl LocalState {
+impl ZalsaLocal {
     pub(crate) fn new() -> Self {
-        LocalState {
+        ZalsaLocal {
             query_stack: RefCell::new(Some(vec![])),
         }
     }
@@ -262,7 +262,7 @@ impl LocalState {
     }
 }
 
-impl std::panic::RefUnwindSafe for LocalState {}
+impl std::panic::RefUnwindSafe for ZalsaLocal {}
 
 /// Summarizes "all the inputs that a query used"
 #[derive(Debug, Clone)]
@@ -393,7 +393,7 @@ impl QueryEdges {
 /// the query from the stack -- in the case of unwinding, the guard's
 /// destructor will also remove the query.
 pub(crate) struct ActiveQueryGuard<'me> {
-    local_state: &'me LocalState,
+    local_state: &'me ZalsaLocal,
     push_len: usize,
     pub(crate) database_key_index: DatabaseKeyIndex,
 }
