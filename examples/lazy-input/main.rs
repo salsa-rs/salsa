@@ -89,7 +89,7 @@ impl Database {
             storage,
             logs: Default::default(),
             files: DashMap::new(),
-            file_watcher: Mutex::new(new_debouncer(Duration::from_secs(1), None, tx).unwrap()),
+            file_watcher: Mutex::new(new_debouncer(Duration::from_secs(1), tx).unwrap()),
         }
     }
 }
