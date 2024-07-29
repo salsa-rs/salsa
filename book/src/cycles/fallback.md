@@ -16,4 +16,6 @@ fn my_recover_fn(
 ) -> MyResultValue
 ```
 
+See [the tests](https://github.com/salsa-rs/salsa/blob/cd339fc1c9a6ea0ffb1d09bd3bffb5633f776ef3/tests/cycles.rs#L132-L141) for an example.
+
 **Important:** Although the recovery function is given a `db` handle, you should be careful to avoid creating a cycle from within recovery or invoking queries that may be participating in the current cycle. Attempting to do so can result in inconsistent results.
