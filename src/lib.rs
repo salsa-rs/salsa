@@ -106,6 +106,7 @@ pub mod plumbing {
     pub use crate::update::helper::Dispatch as UpdateDispatch;
     pub use crate::update::helper::Fallback as UpdateFallback;
     pub use crate::update::Update;
+    pub use crate::Durability;
 
     pub use salsa_macro_rules::macro_if;
     pub use salsa_macro_rules::maybe_backdate;
@@ -128,6 +129,7 @@ pub mod plumbing {
         pub use crate::input::input_field::FieldIngredientImpl;
         pub use crate::input::setter::SetterImpl;
         pub use crate::input::Configuration;
+        pub use crate::input::HasBuilder;
         pub use crate::input::IngredientImpl;
         pub use crate::input::JarImpl;
     }
