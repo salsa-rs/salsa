@@ -179,6 +179,10 @@ impl Zalsa {
         &*self.user_data
     }
 
+    pub(crate) fn user_data_mut(&mut self) -> &mut (dyn Any + Send + Sync) {
+        &mut *self.user_data
+    }
+
     /// Triggers a new revision. Invoked automatically when you call `zalsa_mut`
     /// and so doesn't need to be called otherwise.
     pub(crate) fn new_revision(&mut self) -> Revision {

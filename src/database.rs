@@ -196,6 +196,15 @@ impl<U: UserData> std::ops::Deref for DatabaseImpl<U> {
     }
 }
 
+impl<U: UserData> std::ops::DerefMut for DatabaseImpl<U> {
+    fn deref_mut(&mut self) -> &mut U {
+        self.zalsa_mut()
+            .user_data_mut()
+            .downcast_mut::<U>()
+            .unwrap()
+    }
+}
+
 impl<U: UserData + RefUnwindSafe> RefUnwindSafe for DatabaseImpl<U> {}
 
 #[salsa_macros::db]
