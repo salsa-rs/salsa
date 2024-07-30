@@ -399,9 +399,7 @@ fn parse_print() {
                                             end: 7,
                                         },
                                         data: Number(
-                                            OrderedFloat(
-                                                1.0,
-                                            ),
+                                            1.0,
                                         ),
                                     },
                                     Add,
@@ -412,9 +410,7 @@ fn parse_print() {
                                             end: 11,
                                         },
                                         data: Number(
-                                            OrderedFloat(
-                                                2.0,
-                                            ),
+                                            2.0,
                                         ),
                                     },
                                 ),
@@ -550,9 +546,7 @@ fn parse_example() {
                                                         end: 81,
                                                     },
                                                     data: Number(
-                                                        OrderedFloat(
-                                                            3.14,
-                                                        ),
+                                                        3.14,
                                                     ),
                                                 },
                                                 Multiply,
@@ -613,9 +607,7 @@ fn parse_example() {
                                                 end: 124,
                                             },
                                             data: Number(
-                                                OrderedFloat(
-                                                    3.0,
-                                                ),
+                                                3.0,
                                             ),
                                         },
                                         Expression {
@@ -625,9 +617,7 @@ fn parse_example() {
                                                 end: 127,
                                             },
                                             data: Number(
-                                                OrderedFloat(
-                                                    4.0,
-                                                ),
+                                                4.0,
                                             ),
                                         },
                                     ],
@@ -660,9 +650,7 @@ fn parse_example() {
                                                 end: 160,
                                             },
                                             data: Number(
-                                                OrderedFloat(
-                                                    1.0,
-                                                ),
+                                                1.0,
                                             ),
                                         },
                                     ],
@@ -691,9 +679,7 @@ fn parse_example() {
                                             end: 182,
                                         },
                                         data: Number(
-                                            OrderedFloat(
-                                                11.0,
-                                            ),
+                                            11.0,
                                         ),
                                     },
                                     Multiply,
@@ -704,9 +690,7 @@ fn parse_example() {
                                             end: 186,
                                         },
                                         data: Number(
-                                            OrderedFloat(
-                                                2.0,
-                                            ),
+                                            2.0,
                                         ),
                                     },
                                 ),
@@ -780,9 +764,7 @@ fn parse_precedence() {
                                                     end: 7,
                                                 },
                                                 data: Number(
-                                                    OrderedFloat(
-                                                        1.0,
-                                                    ),
+                                                    1.0,
                                                 ),
                                             },
                                             Add,
@@ -800,9 +782,7 @@ fn parse_precedence() {
                                                             end: 11,
                                                         },
                                                         data: Number(
-                                                            OrderedFloat(
-                                                                2.0,
-                                                            ),
+                                                            2.0,
                                                         ),
                                                     },
                                                     Multiply,
@@ -813,9 +793,7 @@ fn parse_precedence() {
                                                             end: 15,
                                                         },
                                                         data: Number(
-                                                            OrderedFloat(
-                                                                3.0,
-                                                            ),
+                                                            3.0,
                                                         ),
                                                     },
                                                 ),
@@ -830,9 +808,7 @@ fn parse_precedence() {
                                             end: 19,
                                         },
                                         data: Number(
-                                            OrderedFloat(
-                                                4.0,
-                                            ),
+                                            4.0,
                                         ),
                                     },
                                 ),
