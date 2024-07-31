@@ -105,6 +105,8 @@ pub mod plumbing {
     pub use salsa_macro_rules::maybe_backdate;
     pub use salsa_macro_rules::maybe_clone;
     pub use salsa_macro_rules::maybe_cloned_ty;
+    pub use salsa_macro_rules::maybe_default;
+    pub use salsa_macro_rules::maybe_default_tt;
     pub use salsa_macro_rules::setup_accumulator_impl;
     pub use salsa_macro_rules::setup_input_struct;
     pub use salsa_macro_rules::setup_interned_struct;

@@ -2,7 +2,7 @@
 
 use expect_test::expect;
 
-use common::{HasLogger, Logger};
+use common::{EventLoggerDatabase, HasLogger, LogDatabase, Logger};
 use salsa::plumbing::HasStorage;
 use salsa::{Database, Durability, Event, EventKind, Setter};
 
@@ -19,32 +19,7 @@ fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> u32 {
 
 #[test]
 fn execute() {
-    #[salsa::db]
-    #[derive(Default)]
-    struct Database {
-        storage: salsa::Storage<Self>,
-        logger: Logger,
-    }
-
-    #[salsa::db]
-    impl salsa::Database for Database {
-        fn salsa_event(&self, event: Event) {
-            match event.kind {
-                EventKind::WillCheckCancellation => {}
-                _ => {
-                    self.push_log(format!("salsa_event({:?})", event.kind));
-                }
-            }
-        }
-    }
-
-    impl HasLogger for Database {
-        fn logger(&self) -> &Logger {
-            &self.logger
-        }
-    }
-
-    let mut db = Database::default();
+    let mut db = EventLoggerDatabase::default();
     let input_low = MyInput::new(&db, 22);
     let input_high = MyInput::builder(2200).durability(Durability::HIGH).new(&db);
 
@@ -53,8 +28,10 @@ fn execute() {
 
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(WillExecute { database_key: tracked_fn(0) })",
-            "salsa_event(WillExecute { database_key: tracked_fn(1) })",
+            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
+            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: tracked_fn(0) } }",
+            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
+            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: tracked_fn(1) } }",
         ]"#]]);
 
     db.synthetic_write(Durability::LOW);
@@ -69,7 +46,10 @@ fn execute() {
     // executed the query.
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(DidValidateMemoizedValue { database_key: tracked_fn(0) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: tracked_fn(1) })",
+            "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
+            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
+            "Event { thread_id: ThreadId(2), kind: DidValidateMemoizedValue { database_key: tracked_fn(0) } }",
+            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
+            "Event { thread_id: ThreadId(2), kind: DidValidateMemoizedValue { database_key: tracked_fn(1) } }",
         ]"#]]);
 }

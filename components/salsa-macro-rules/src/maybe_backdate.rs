@@ -2,7 +2,7 @@
 #[macro_export]
 macro_rules! maybe_backdate {
     (
-        ($maybe_clone:ident, no_backdate),
+        ($maybe_clone:ident, no_backdate, $maybe_default:ident),
         $field_ty:ty,
         $old_field_place:expr,
         $new_field_place:expr,
@@ -20,7 +20,7 @@ macro_rules! maybe_backdate {
     };
 
     (
-        ($maybe_clone:ident, backdate),
+        ($maybe_clone:ident, backdate, $maybe_default:ident),
         $field_ty:ty,
         $old_field_place:expr,
         $new_field_place:expr,
