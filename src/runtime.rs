@@ -146,6 +146,12 @@ impl Runtime {
         self.revision_canceled.store(true);
     }
 
+    /// Only use this if the cancellation flag was set without 
+    /// any mutation actually being done.
+    pub(crate) fn reset_cancellation_flag(&self) {
+        self.revision_canceled.store(false);
+    }
+
     /// Increments the "current revision" counter and clears
     /// the cancellation flag.
     ///

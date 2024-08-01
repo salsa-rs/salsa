@@ -86,10 +86,18 @@ impl<Db: HasStorage> Handle<Db> {
             kind: EventKind::DidSetCancellationFlag,
         });
 
-        let mut clones = self.coordinate.clones.lock();
-        while *clones != 1 {
-            self.coordinate.cvar.wait(&mut clones);
+        {
+            let mut clones = self.coordinate.clones.lock();
+            while *clones != 1 {
+                self.coordinate.cvar.wait(&mut clones);
+            }
         }
+
+        // Force a new revision to clear the cancellation flag. 
+        // This is necessary to ensure non-mutable operations work after this.
+        let db =
+            Arc::get_mut(self.db_mut()).expect("other threads remain active despite cancellation");
+        db.runtime_mut().reset_cancellation_flag();
     }
     // ANCHOR_END: cancel_other_workers
 }
