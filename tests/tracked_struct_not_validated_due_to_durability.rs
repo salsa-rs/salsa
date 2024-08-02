@@ -69,6 +69,7 @@ fn infer<'db>(db: &'db dyn Db, definition: Definition<'db>) -> Inference<'db> {
         infer(db, definitions(db, dependent_file).definition(db))
     } else {
         db.file(0).field(db);
+        index(db, file);
         Inference::new(db, definition)
     }
 }

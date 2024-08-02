@@ -118,7 +118,7 @@ where
 
         // Never update a struct twice in the same revision.
         let current_revision = runtime.current_revision();
-        assert!(data.created_at < current_revision);
+        assert!(data.created_at <= current_revision);
         data.created_at = current_revision;
     }
 
@@ -253,7 +253,7 @@ where
         drop(data);
 
         // Validate in current revision, if necessary.
-        if last_changed < runtime.current_revision() {
+        if created_at < runtime.current_revision() {
             Self::validate_in_map(map, runtime, id);
         }
 
