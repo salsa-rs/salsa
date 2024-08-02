@@ -85,9 +85,10 @@ where
         input: Option<Id>,
         revision: crate::Revision,
     ) -> bool {
-        let current_revision = db.runtime().current_revision();
         let id = input.unwrap();
-        let data = self.struct_map.get(current_revision, id);
+        let data = self
+            .struct_map
+            .get_and_validate_last_changed(db.runtime(), id);
         let data = C::deref_struct(data);
         let field_changed_at = data.revisions[self.field_index];
         field_changed_at > revision

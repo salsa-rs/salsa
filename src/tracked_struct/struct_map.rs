@@ -99,8 +99,18 @@ where
         unsafe { C::struct_from_raw(pointer) }
     }
 
+    /// Mark the given tracked struct as valid in the current revision.
     pub fn validate<'db>(&'db self, runtime: &'db Runtime, id: Id) {
-        let mut data = self.map.get_mut(&id).unwrap();
+        Self::validate_in_map(&self.map, runtime, id)
+    }
+
+    /// Internal helper to provide shared functionality for [`StructMapView`].
+    fn validate_in_map<'db>(
+        map: &'db FxDashMap<Id, Alloc<Value<C>>>,
+        runtime: &'db Runtime,
+        id: Id,
+    ) {
+        let mut data = map.get_mut(&id).unwrap();
 
         // UNSAFE: We never permit `&`-access in the current revision until data.created_at
         // has been updated to the current revision (which we check below).
@@ -186,7 +196,7 @@ where
         let data_ref: &Value<C> = unsafe { data.as_ref() };
 
         // Before we drop the lock, check that the value has
-        // been updated in this revision. This is what allows us to return a ``
+        // been updated in this revision. This is what allows us to return a Struct
         let created_at = data_ref.created_at;
         assert!(
             created_at == current_revision,
@@ -199,6 +209,55 @@ where
         //   and revision will not change so long as runtime is shared
         // * We only remove values from the map when we have `&mut self`
         unsafe { C::struct_from_raw(data.as_raw()) }
+    }
+
+    /// Lookup an existing tracked struct from the map, maybe validating it to current revision.
+    ///
+    /// Validates to current revision if the struct was last created/validated in a revision that
+    /// is still current for the struct's durability. That is, if the struct is HIGH durability
+    /// (created by a HIGH durability query) and was created in R2, and we are now at R3 but no
+    /// HIGH durability input has changed since R2, the struct is still valid and we can validate
+    /// it to R3.
+    ///
+    /// # Panics
+    ///
+    /// * If the value is not present in the map.
+    /// * If the value has not been updated in the last-changed revision for its durability.
+    fn get_and_validate_last_changed<'db>(
+        map: &'db FxDashMap<Id, Alloc<Value<C>>>,
+        runtime: &'db Runtime,
+        id: Id,
+    ) -> C::Struct<'db> {
+        let data = map.get(&id).unwrap();
+
+        // UNSAFE: We permit `&`-access in the current revision once data.created_at
+        // has been updated to the current revision (which we ensure below).
+        let data_ref: &Value<C> = unsafe { data.as_ref() };
+
+        // Before we drop the lock, check that the value has been updated in the most recent
+        // version in which the query that created it could have changed (based on durability).
+        let created_at = data_ref.created_at;
+        let last_changed = runtime.last_changed_revision(data_ref.durability);
+        assert!(
+            created_at >= last_changed,
+            "access to tracked struct from obsolete revision"
+        );
+
+        // Unsafety clause:
+        //
+        // * Value will not be updated again in this revision,
+        //   and revision will not change so long as runtime is shared
+        // * We only remove values from the map when we have `&mut self`
+        let ret = unsafe { C::struct_from_raw(data.as_raw()) };
+
+        drop(data);
+
+        // Validate in current revision, if necessary.
+        if last_changed < runtime.current_revision() {
+            Self::validate_in_map(map, runtime, id);
+        }
+
+        ret
     }
 
     /// Remove the entry for `id` from the map.
@@ -233,6 +292,22 @@ where
     /// * If the value has not been updated in this revision.
     pub fn get<'db>(&'db self, current_revision: Revision, id: Id) -> C::Struct<'db> {
         StructMap::get_from_map(&self.map, current_revision, id)
+    }
+
+    /// Lookup an existing tracked struct from the map, maybe validating it to current revision.
+    ///
+    /// See [`StructMap::get_and_validate_last_changed`].
+    ///
+    /// # Panics
+    ///
+    /// * If the value is not present in the map.
+    /// * If the value has not been updated in the last-changed revision for its durability.
+    pub(super) fn get_and_validate_last_changed<'db>(
+        &'db self,
+        runtime: &'db Runtime,
+        id: Id,
+    ) -> C::Struct<'db> {
+        StructMap::get_and_validate_last_changed(&self.map, runtime, id)
     }
 }
 
