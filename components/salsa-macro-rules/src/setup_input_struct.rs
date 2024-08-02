@@ -145,6 +145,7 @@ macro_rules! setup_input_struct {
                     // because $Configuration can't be named in `builder`.
                     impl builder::$Builder {
                         /// Creates the new input with the set values.
+                        #[must_use]
                         pub fn new<$Db>(self, db: &$Db) -> $Struct
                         where
                             // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
@@ -261,6 +262,7 @@ macro_rules! setup_input_struct {
                     (builder.fields, stamps)
                 }
 
+                #[must_use]
                 pub struct $Builder {
                     /// The field values.
                     fields: ($($field_ty,)*),
