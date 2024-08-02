@@ -63,6 +63,8 @@ impl SalsaStructAllowedOptions for InternedStruct {
     const ALLOW_ID: bool = false;
 
     const HAS_LIFETIME: bool = true;
+
+    const ALLOW_DEFAULT: bool = false;
 }
 
 struct Macro {
