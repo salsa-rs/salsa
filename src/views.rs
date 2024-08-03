@@ -5,8 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use orx_concurrent_vec::ConcurrentVec;
-
 use crate::Database;
 
 pub struct ViewsOf<Db: Database> {
@@ -17,7 +15,7 @@ pub struct ViewsOf<Db: Database> {
 #[derive(Clone)]
 pub struct Views {
     source_type_id: TypeId,
-    view_casters: Arc<ConcurrentVec<ViewCaster>>,
+    view_casters: Arc<boxcar::Vec<ViewCaster>>,
 }
 
 struct ViewCaster {
@@ -80,7 +78,7 @@ impl Views {
         if self
             .view_casters
             .iter()
-            .any(|u| u.target_type_id == target_type_id)
+            .any(|(_, u)| u.target_type_id == target_type_id)
         {
             return;
         }
@@ -110,7 +108,7 @@ impl Views {
         assert_eq!(self.source_type_id, db_type_id, "database type mismatch");
 
         let view_type_id = TypeId::of::<DbView>();
-        for caster in self.view_casters.iter() {
+        for (_, caster) in self.view_casters.iter() {
             if caster.target_type_id == view_type_id {
                 // SAFETY: We have some function that takes a thin reference to the underlying
                 // database type `X` and returns a (potentially wide) reference to `View`.
@@ -139,7 +137,7 @@ impl Views {
         assert_eq!(self.source_type_id, db_type_id, "database type mismatch");
 
         let view_type_id = TypeId::of::<View>();
-        for caster in self.view_casters.iter() {
+        for (_, caster) in self.view_casters.iter() {
             if caster.target_type_id == view_type_id {
                 // SAFETY: We have some function that takes a thin reference to the underlying
                 // database type `X` and returns a (potentially wide) reference to `View`.
