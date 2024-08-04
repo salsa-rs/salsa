@@ -2,8 +2,6 @@
 //! See `../cycles.rs` for a complete listing of cycle tests,
 //! both intra and cross thread.
 
-use salsa::DatabaseImpl;
-
 use crate::setup::{Knobs, KnobsDatabase};
 
 #[salsa::input]
@@ -70,13 +68,13 @@ pub(crate) fn b2(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
 
 #[test]
 fn execute() {
-    let db = <DatabaseImpl<Knobs>>::default();
-    db.knobs().signal_on_will_block.store(3);
+    let db = Knobs::default();
 
     let input = MyInput::new(&db, 1);
 
     let thread_a = std::thread::spawn({
         let db = db.clone();
+        db.knobs().signal_on_will_block.store(3);
         move || a1(&db, input)
     });
 

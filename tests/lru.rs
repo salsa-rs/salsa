@@ -7,7 +7,7 @@ use std::sync::{
 };
 
 mod common;
-use common::{LogDatabase, Logger};
+use common::LogDatabase;
 use salsa::Database as _;
 use test_log::test;
 
@@ -61,7 +61,7 @@ fn load_n_potatoes() -> usize {
 
 #[test]
 fn lru_works() {
-    let db: salsa::DatabaseImpl<Logger> = Default::default();
+    let db = common::LoggerDatabase::default();
     assert_eq!(load_n_potatoes(), 0);
 
     for i in 0..128u32 {
@@ -77,7 +77,7 @@ fn lru_works() {
 
 #[test]
 fn lru_doesnt_break_volatile_queries() {
-    let db: salsa::DatabaseImpl<Logger> = Default::default();
+    let db = common::LoggerDatabase::default();
 
     // Create all inputs first, so that there are no revision changes among calls to `get_volatile`
     let inputs: Vec<MyInput> = (0..128usize).map(|i| MyInput::new(&db, i as u32)).collect();
@@ -95,7 +95,7 @@ fn lru_doesnt_break_volatile_queries() {
 
 #[test]
 fn lru_can_be_changed_at_runtime() {
-    let db: salsa::DatabaseImpl<Logger> = Default::default();
+    let db = common::LoggerDatabase::default();
     assert_eq!(load_n_potatoes(), 0);
 
     let inputs: Vec<(u32, MyInput)> = (0..128).map(|i| (i, MyInput::new(&db, i))).collect();
@@ -138,7 +138,7 @@ fn lru_can_be_changed_at_runtime() {
 
 #[test]
 fn lru_keeps_dependency_info() {
-    let mut db: salsa::DatabaseImpl<Logger> = Default::default();
+    let mut db = common::LoggerDatabase::default();
     let capacity = 32;
 
     // Invoke `get_hot_potato2` 33 times. This will (in turn) invoke

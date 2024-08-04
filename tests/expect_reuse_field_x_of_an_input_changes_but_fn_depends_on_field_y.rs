@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 mod common;
-use common::{LogDatabase, Logger};
+use common::LogDatabase;
 
 use expect_test::expect;
 use salsa::Setter;
@@ -30,7 +30,7 @@ fn result_depends_on_y(db: &dyn LogDatabase, input: MyInput) -> u32 {
 fn execute() {
     // result_depends_on_x = x + 1
     // result_depends_on_y = y - 1
-    let mut db: salsa::DatabaseImpl<Logger> = Default::default();
+    let mut db = common::LoggerDatabase::default();
 
     let input = MyInput::new(&db, 22, 33);
     assert_eq!(result_depends_on_x(&db, input), 23);

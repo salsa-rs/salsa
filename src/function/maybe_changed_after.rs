@@ -3,9 +3,9 @@ use arc_swap::Guard;
 use crate::{
     key::DatabaseKeyIndex,
     runtime::StampedValue,
-    zalsa::Zalsa,
+    zalsa::{Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, EdgeKind, QueryOrigin, ZalsaLocal},
-    AsDynDatabase as _, Database, Id, Revision,
+    AsDynDatabase as _, Id, Revision,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};

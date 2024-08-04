@@ -1,18 +1,17 @@
 use std::sync::{Arc, Mutex};
 
-use salsa::UserData;
-
-pub type CalcDatabaseImpl = salsa::DatabaseImpl<Calc>;
-
 // ANCHOR: db_struct
+#[salsa::db]
 #[derive(Default)]
-pub struct Calc {
+pub struct CalcDatabaseImpl {
+    storage: salsa::Storage<Self>,
+
     // The logs are only used for testing and demonstrating reuse:
     logs: Arc<Mutex<Option<Vec<String>>>>,
 }
 // ANCHOR_END: db_struct
 
-impl Calc {
+impl CalcDatabaseImpl {
     /// Enable logging of each salsa event.
     #[cfg(test)]
     pub fn enable_logging(&self) {
@@ -34,12 +33,13 @@ impl Calc {
 }
 
 // ANCHOR: db_impl
-impl UserData for Calc {
-    fn salsa_event(db: &CalcDatabaseImpl, event: &dyn Fn() -> salsa::Event) {
+#[salsa::db]
+impl salsa::Database for CalcDatabaseImpl {
+    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
         let event = event();
         eprintln!("Event: {event:?}");
         // Log interesting events, if logging is enabled
-        if let Some(logs) = &mut *db.logs.lock().unwrap() {
+        if let Some(logs) = &mut *self.logs.lock().unwrap() {
             // only log interesting events
             if let salsa::EventKind::WillExecute { .. } = event.kind {
                 logs.push(format!("Event: {event:?}"));

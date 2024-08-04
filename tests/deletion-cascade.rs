@@ -3,10 +3,10 @@
 //! * when we delete memoized data, also delete outputs from that data
 
 mod common;
-use common::{DiscardLogger, LogDatabase};
+use common::LogDatabase;
 
 use expect_test::expect;
-use salsa::{DatabaseImpl, Setter};
+use salsa::Setter;
 use test_log::test;
 
 #[salsa::input(singleton)]
@@ -50,7 +50,7 @@ fn copy_field<'db>(db: &'db dyn LogDatabase, tracked: MyTracked<'db>) -> u32 {
 
 #[test]
 fn basic() {
-    let mut db: DatabaseImpl<DiscardLogger> = Default::default();
+    let mut db = common::DiscardLoggerDatabase::default();
 
     // Creates 3 tracked structs
     let input = MyInput::new(&db, 3);

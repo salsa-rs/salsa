@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{ExecuteValidateLogger, LogDatabase, Logger};
+use common::{LogDatabase, Logger};
 use expect_test::expect;
 use salsa::{Database, DatabaseImpl, Durability, Event, EventKind};
 
@@ -20,7 +20,7 @@ fn tracked_fn(db: &dyn Database, input: MyInput) -> u32 {
 
 #[test]
 fn execute() {
-    let mut db: DatabaseImpl<ExecuteValidateLogger> = Default::default();
+    let mut db = common::ExecuteValidateLoggerDatabase::default();
 
     let input = MyInput::new(&db, 22);
     assert_eq!(tracked_fn(&db, input), 44);

@@ -44,7 +44,7 @@ fn contribution_from_struct<'db>(db: &'db dyn LogDatabase, tracked: MyTracked<'d
 
 #[test]
 fn basic() {
-    let mut db: salsa::DatabaseImpl<common::DiscardLogger> = Default::default();
+    let mut db = common::DiscardLoggerDatabase::default();
 
     // Creates 3 tracked structs
     let input = MyInput::new(&db, 3);

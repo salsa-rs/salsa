@@ -8,13 +8,13 @@ use notify_debouncer_mini::{
     notify::{RecommendedWatcher, RecursiveMode},
     DebounceEventResult, Debouncer,
 };
-use salsa::{Accumulator, DatabaseImpl, Setter, UserData};
+use salsa::{Accumulator, Setter, Storage};
 
 // ANCHOR: main
 fn main() -> Result<()> {
     // Create the channel to receive file change events.
     let (tx, rx) = unbounded();
-    let mut db = DatabaseImpl::with(LazyInput::new(tx));
+    let mut db = LazyInputDatabase::new(tx);
 
     let initial_file_path = std::env::args_os()
         .nth(1)
@@ -74,15 +74,18 @@ trait Db: salsa::Database {
     fn input(&self, path: PathBuf) -> Result<File>;
 }
 
-struct LazyInput {
+#[salsa::db]
+struct LazyInputDatabase {
+    storage: Storage<Self>,
     logs: Mutex<Vec<String>>,
     files: DashMap<PathBuf, File>,
     file_watcher: Mutex<Debouncer<RecommendedWatcher>>,
 }
 
-impl LazyInput {
+impl LazyInputDatabase {
     fn new(tx: Sender<DebounceEventResult>) -> Self {
         Self {
+            storage: Default::default(),
             logs: Default::default(),
             files: DashMap::new(),
             file_watcher: Mutex::new(new_debouncer(Duration::from_secs(1), tx).unwrap()),
@@ -90,18 +93,19 @@ impl LazyInput {
     }
 }
 
-impl UserData for LazyInput {
-    fn salsa_event(db: &DatabaseImpl<Self>, event: &dyn Fn() -> salsa::Event) {
+#[salsa::db]
+impl salsa::Database for LazyInputDatabase {
+    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
         // don't log boring events
         let event = event();
         if let salsa::EventKind::WillExecute { .. } = event.kind {
-            db.logs.lock().unwrap().push(format!("{:?}", event));
+            self.logs.lock().unwrap().push(format!("{:?}", event));
         }
     }
 }
 
 #[salsa::db]
-impl Db for DatabaseImpl<LazyInput> {
+impl Db for LazyInputDatabase {
     fn input(&self, path: PathBuf) -> Result<File> {
         let path = path
             .canonicalize()

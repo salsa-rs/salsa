@@ -2,8 +2,6 @@
 //! See `../cycles.rs` for a complete listing of cycle tests,
 //! both intra and cross thread.
 
-use salsa::DatabaseImpl;
-
 use crate::setup::{Knobs, KnobsDatabase};
 
 #[salsa::input]
@@ -81,8 +79,7 @@ fn recover_b3(db: &dyn KnobsDatabase, _cycle: &salsa::Cycle, key: MyInput) -> i3
 
 #[test]
 fn execute() {
-    let db = <DatabaseImpl<Knobs>>::default();
-    db.knobs().signal_on_will_block.store(3);
+    let db = Knobs::default();
 
     let input = MyInput::new(&db, 1);
 
@@ -93,6 +90,7 @@ fn execute() {
 
     let thread_b = std::thread::spawn({
         let db = db.clone();
+        db.knobs().signal_on_will_block.store(3);
         move || b1(&db, input)
     });
 

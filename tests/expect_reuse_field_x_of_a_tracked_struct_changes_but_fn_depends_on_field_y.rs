@@ -4,10 +4,10 @@
 #![allow(dead_code)]
 
 mod common;
-use common::{LogDatabase, Logger};
+use common::LogDatabase;
 
 use expect_test::expect;
-use salsa::{DatabaseImpl, Setter};
+use salsa::Setter;
 
 #[salsa::input]
 struct MyInput {
@@ -43,7 +43,7 @@ fn execute() {
     // y = input.field / 2
     // final_result_depends_on_x = x * 2 = (input.field + 1) / 2 * 2
     // final_result_depends_on_y = y * 2 = input.field / 2 * 2
-    let mut db: DatabaseImpl<Logger> = Default::default();
+    let mut db = common::LoggerDatabase::default();
 
     // intermediate results:
     // x = (22 + 1) / 2 = 11

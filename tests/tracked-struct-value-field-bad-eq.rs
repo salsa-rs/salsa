@@ -54,7 +54,7 @@ fn read_tracked_struct<'db>(db: &'db dyn Database, tracked: MyTracked<'db>) -> b
 
 #[test]
 fn execute() {
-    let mut db: salsa::DatabaseImpl<common::ExecuteValidateLogger> = Default::default();
+    let mut db = common::ExecuteValidateLoggerDatabase::default();
 
     let input = MyInput::new(&db, true);
     let result = the_fn(&db, input);

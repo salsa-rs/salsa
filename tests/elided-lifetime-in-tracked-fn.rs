@@ -2,10 +2,10 @@
 //! compiles and executes successfully.
 
 mod common;
-use common::{LogDatabase, Logger};
+use common::LogDatabase;
 
 use expect_test::expect;
-use salsa::{DatabaseImpl, Setter};
+use salsa::Setter;
 use test_log::test;
 
 #[salsa::input]
@@ -32,7 +32,7 @@ fn intermediate_result(db: &dyn LogDatabase, input: MyInput) -> MyTracked<'_> {
 
 #[test]
 fn execute() {
-    let mut db: DatabaseImpl<Logger> = Default::default();
+    let mut db = common::LoggerDatabase::default();
 
     let input = MyInput::new(&db, 22);
     assert_eq!(final_result(&db, input), 22);

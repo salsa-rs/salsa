@@ -1,5 +1,5 @@
 mod common;
-use common::{LogDatabase, Logger};
+use common::{LogDatabase, LoggerDatabase};
 
 use expect_test::expect;
 use salsa::{Accumulator, Setter};
@@ -55,7 +55,7 @@ fn push_b_logs(db: &dyn LogDatabase, input: MyInput) {
 
 #[test]
 fn accumulate_once() {
-    let db = salsa::DatabaseImpl::with(Logger::default());
+    let db = common::LoggerDatabase::default();
 
     // Just call accumulate on a base input to see what happens.
     let input = MyInput::new(&db, 2, 3);
@@ -91,7 +91,7 @@ fn accumulate_once() {
 
 #[test]
 fn change_a_from_2_to_0() {
-    let mut db = salsa::DatabaseImpl::with(Logger::default());
+    let mut db = common::LoggerDatabase::default();
 
     // Accumulate logs for `a = 2` and `b = 3`
     let input = MyInput::new(&db, 2, 3);
@@ -146,7 +146,7 @@ fn change_a_from_2_to_0() {
 
 #[test]
 fn change_a_from_2_to_1() {
-    let mut db = salsa::DatabaseImpl::with(Logger::default());
+    let mut db = LoggerDatabase::default();
 
     // Accumulate logs for `a = 2` and `b = 3`
     let input = MyInput::new(&db, 2, 3);
@@ -205,7 +205,7 @@ fn change_a_from_2_to_1() {
 
 #[test]
 fn get_a_logs_after_changing_b() {
-    let mut db = salsa::DatabaseImpl::with(Logger::default());
+    let mut db = common::LoggerDatabase::default();
 
     // Invoke `push_a_logs` with `a = 2` and `b = 3` (but `b` doesn't matter)
     let input = MyInput::new(&db, 2, 3);

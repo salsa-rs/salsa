@@ -6,7 +6,6 @@ use crate::setup::Knobs;
 use crate::setup::KnobsDatabase;
 use expect_test::expect;
 use salsa::Database;
-use salsa::DatabaseImpl;
 
 #[salsa::input]
 pub(crate) struct MyInput {
@@ -37,13 +36,13 @@ pub(crate) fn b(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
 
 #[test]
 fn execute() {
-    let db = <DatabaseImpl<Knobs>>::default();
-    db.knobs().signal_on_will_block.store(3);
+    let db = Knobs::default();
 
     let input = MyInput::new(&db, -1);
 
     let thread_a = std::thread::spawn({
         let db = db.clone();
+        db.knobs().signal_on_will_block.store(3);
         move || a(&db, input)
     });
 

@@ -1,6 +1,6 @@
 use expect_test::expect;
 mod common;
-use common::{LogDatabase, Logger};
+use common::LogDatabase;
 use salsa::Database;
 
 #[salsa::input]
@@ -29,7 +29,7 @@ fn tracked_fn_extra<'db>(db: &dyn LogDatabase, input: MyTracked<'db>) -> u32 {
 
 #[test]
 fn execute() {
-    let mut db: salsa::DatabaseImpl<Logger> = salsa::DatabaseImpl::default();
+    let mut db = common::LoggerDatabase::default();
     let input = MyInput::new(&db, 22);
     assert_eq!(tracked_fn(&db, input), 2222);
     db.assert_logs(expect![[r#"

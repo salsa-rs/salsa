@@ -1,8 +1,8 @@
 mod common;
 
-use common::{LogDatabase, Logger};
+use common::LogDatabase;
 use expect_test::expect;
-use salsa::{DatabaseImpl, Setter as _};
+use salsa::Setter as _;
 
 #[salsa::input]
 struct Input {
@@ -26,7 +26,7 @@ fn derived(db: &dyn LogDatabase, input: Input) -> u32 {
 }
 #[test]
 fn invoke() {
-    let mut db: DatabaseImpl<Logger> = Default::default();
+    let mut db = common::LoggerDatabase::default();
 
     let input = Input::new(&db, 5);
     let x = derived(&db, input);

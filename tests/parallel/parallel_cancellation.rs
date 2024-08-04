@@ -3,7 +3,6 @@
 //! both intra and cross thread.
 
 use salsa::Cancelled;
-use salsa::DatabaseImpl;
 use salsa::Setter;
 
 use crate::setup::Knobs;
@@ -43,8 +42,7 @@ fn dummy(_db: &dyn KnobsDatabase, _input: MyInput) -> MyInput {
 
 #[test]
 fn execute() {
-    let mut db = <DatabaseImpl<Knobs>>::default();
-    db.knobs().signal_on_will_block.store(3);
+    let mut db = Knobs::default();
 
     let input = MyInput::new(&db, 1);
 
@@ -53,6 +51,7 @@ fn execute() {
         move || a1(&db, input)
     });
 
+    db.signal_on_did_cancel.store(2);
     input.set_field(&mut db).to(2);
 
     // Assert thread A *should* was cancelled

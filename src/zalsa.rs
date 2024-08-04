@@ -6,13 +6,38 @@ use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 
 use crate::cycle::CycleRecoveryStrategy;
-use crate::database::UserData;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
 use crate::views::Views;
 use crate::zalsa_local::ZalsaLocal;
-use crate::{Database, DatabaseImpl, DatabaseKeyIndex, Durability, Revision};
+use crate::{Database, DatabaseKeyIndex, Durability, Revision};
+
+/// Internal plumbing trait; implemented automatically when `#[salsa::db]`(`crate::db`) is attached to your database struct.
+/// Contains methods that give access to the internal data from the `storage` field.
+///
+/// # Safety
+///
+/// The system assumes this is implemented by a salsa procedural macro
+/// which makes use of private data from the [`Storage`](`crate::storage::Storage`) struct.
+/// Do not implement this yourself, instead, apply the [`salsa::db`](`crate::db`) macro
+/// to your database.
+pub unsafe trait ZalsaDatabase: Any {
+    /// Plumbing method: Access the internal salsa methods.
+    #[doc(hidden)]
+    fn zalsa(&self) -> &Zalsa;
+
+    /// Plumbing method: Access the internal salsa methods for mutating the database.
+    ///
+    /// **WARNING:** Triggers a new revision, canceling other database handles.
+    /// This can lead to deadlock!
+    #[doc(hidden)]
+    fn zalsa_mut(&mut self) -> &mut Zalsa;
+
+    /// Access the thread-local state associated with this database
+    #[doc(hidden)]
+    fn zalsa_local(&self) -> &ZalsaLocal;
+}
 
 pub fn views<Db: ?Sized + Database>(db: &Db) -> &Views {
     db.zalsa().views()
@@ -61,8 +86,6 @@ impl IngredientIndex {
 ///
 /// **NOT SEMVER STABLE.**
 pub struct Zalsa {
-    user_data: Box<dyn Any + Send + Sync>,
-
     views_of: Views,
 
     nonce: Nonce<StorageNonce>,
@@ -89,15 +112,14 @@ pub struct Zalsa {
 }
 
 impl Zalsa {
-    pub(crate) fn with<U: UserData>(user_data: U) -> Self {
+    pub(crate) fn new<Db: Database>() -> Self {
         Self {
-            views_of: Views::new::<DatabaseImpl<U>>(),
+            views_of: Views::new::<Db>(),
             nonce: NONCE.nonce(),
             jar_map: Default::default(),
             ingredients_vec: Default::default(),
             ingredients_requiring_reset: Default::default(),
             runtime: Runtime::default(),
-            user_data: Box::new(user_data),
         }
     }
 
@@ -173,14 +195,6 @@ impl Zalsa {
 
     pub(crate) fn set_cancellation_flag(&self) {
         self.runtime.set_cancellation_flag()
-    }
-
-    pub(crate) fn user_data(&self) -> &(dyn Any + Send + Sync) {
-        &*self.user_data
-    }
-
-    pub(crate) fn user_data_mut(&mut self) -> &mut (dyn Any + Send + Sync) {
-        &mut *self.user_data
     }
 
     /// Triggers a new revision. Invoked automatically when you call `zalsa_mut`

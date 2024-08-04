@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use salsa::{DatabaseImpl, UserData};
+use salsa::{Database, Storage};
 
 /// Logging userdata: provides [`LogDatabase`][] trait.
 ///
@@ -13,10 +13,14 @@ pub struct Logger {
     logs: std::sync::Mutex<Vec<String>>,
 }
 
-impl UserData for Logger {}
+/// Trait implemented by databases that lets them log events.
+pub trait HasLogger {
+    /// Return a reference to the logger from the database.
+    fn logger(&self) -> &Logger;
+}
 
 #[salsa::db]
-pub trait LogDatabase: HasLogger + salsa::Database {
+pub trait LogDatabase: HasLogger + Database {
     /// Log an event from inside a tracked function.
     fn push_log(&self, string: String) {
         self.logger().logs.lock().unwrap().push(string);
@@ -40,84 +44,98 @@ pub trait LogDatabase: HasLogger + salsa::Database {
 }
 
 #[salsa::db]
-impl<U: HasLogger + UserData> LogDatabase for DatabaseImpl<U> {}
+impl<Db: HasLogger + Database> LogDatabase for Db {}
 
-/// Trait implemented by databases that lets them log events.
-pub trait HasLogger {
-    /// Return a reference to the logger from the database.
-    fn logger(&self) -> &Logger;
-}
-
-impl<U: HasLogger + UserData> HasLogger for DatabaseImpl<U> {
-    fn logger(&self) -> &Logger {
-        U::logger(self)
-    }
-}
-
-impl HasLogger for Logger {
-    fn logger(&self) -> &Logger {
-        self
-    }
-}
-
-/// Userdata that provides logging and logs salsa events.
+/// Database that provides logging but does not log salsa event.
+#[salsa::db]
 #[derive(Default)]
-pub struct EventLogger {
+pub struct LoggerDatabase {
+    storage: Storage<Self>,
     logger: Logger,
 }
 
-impl UserData for EventLogger {
-    fn salsa_event(db: &DatabaseImpl<Self>, event: &dyn Fn() -> salsa::Event) {
-        db.push_log(format!("{:?}", event()));
-    }
-}
-
-impl HasLogger for EventLogger {
+impl HasLogger for LoggerDatabase {
     fn logger(&self) -> &Logger {
         &self.logger
     }
 }
 
-#[derive(Default)]
-pub struct DiscardLogger(Logger);
+#[salsa::db]
+impl Database for LoggerDatabase {
+    fn salsa_event(&self, _event: &dyn Fn() -> salsa::Event) {}
+}
 
-impl UserData for DiscardLogger {
-    fn salsa_event(db: &DatabaseImpl<DiscardLogger>, event: &dyn Fn() -> salsa::Event) {
+/// Database that provides logging and logs salsa events.
+#[salsa::db]
+#[derive(Default)]
+pub struct EventLoggerDatabase {
+    storage: Storage<Self>,
+    logger: Logger,
+}
+
+#[salsa::db]
+impl Database for EventLoggerDatabase {
+    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
+        self.push_log(format!("{:?}", event()));
+    }
+}
+
+impl HasLogger for EventLoggerDatabase {
+    fn logger(&self) -> &Logger {
+        &self.logger
+    }
+}
+
+#[salsa::db]
+#[derive(Default)]
+pub struct DiscardLoggerDatabase {
+    storage: Storage<Self>,
+    logger: Logger,
+}
+
+#[salsa::db]
+impl Database for DiscardLoggerDatabase {
+    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
         let event = event();
         match event.kind {
             salsa::EventKind::WillDiscardStaleOutput { .. }
             | salsa::EventKind::DidDiscard { .. } => {
-                db.push_log(format!("salsa_event({:?})", event.kind));
+                self.push_log(format!("salsa_event({:?})", event.kind));
             }
             _ => {}
         }
     }
 }
 
-impl HasLogger for DiscardLogger {
+impl HasLogger for DiscardLoggerDatabase {
     fn logger(&self) -> &Logger {
-        &self.0
+        &self.logger
     }
 }
 
+#[salsa::db]
 #[derive(Default)]
-pub struct ExecuteValidateLogger(Logger);
+pub struct ExecuteValidateLoggerDatabase {
+    storage: Storage<Self>,
+    logger: Logger,
+}
 
-impl UserData for ExecuteValidateLogger {
-    fn salsa_event(db: &DatabaseImpl<Self>, event: &dyn Fn() -> salsa::Event) {
+#[salsa::db]
+impl Database for ExecuteValidateLoggerDatabase {
+    fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
         let event = event();
         match event.kind {
             salsa::EventKind::WillExecute { .. }
             | salsa::EventKind::DidValidateMemoizedValue { .. } => {
-                db.push_log(format!("salsa_event({:?})", event.kind));
+                self.push_log(format!("salsa_event({:?})", event.kind));
             }
             _ => {}
         }
     }
 }
 
-impl HasLogger for ExecuteValidateLogger {
+impl HasLogger for ExecuteValidateLoggerDatabase {
     fn logger(&self) -> &Logger {
-        &self.0
+        &self.logger
     }
 }

@@ -3,9 +3,9 @@
 
 use std::cell::Cell;
 
+use common::LogDatabase;
 use expect_test::expect;
 mod common;
-use common::{EventLogger, LogDatabase};
 use salsa::{Database, Setter};
 use test_log::test;
 
@@ -44,7 +44,7 @@ fn function(db: &dyn Database, input: MyInput) -> usize {
 
 #[test]
 fn test_leaked_inputs_ignored() {
-    let mut db: salsa::DatabaseImpl<EventLogger> = Default::default();
+    let mut db = common::EventLoggerDatabase::default();
 
     let input = MyInput::new(&db, 10, 20);
     let result_in_rev_1 = function(&db, input);

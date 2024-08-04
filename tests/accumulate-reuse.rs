@@ -4,10 +4,10 @@
 //! are the accumulated values from another query.
 
 mod common;
-use common::{LogDatabase, Logger};
+use common::{LogDatabase, LoggerDatabase};
 
 use expect_test::expect;
-use salsa::{prelude::*, DatabaseImpl};
+use salsa::{Accumulator, Setter};
 use test_log::test;
 
 #[salsa::input]
@@ -40,7 +40,7 @@ fn compute(db: &dyn LogDatabase, input: List) -> u32 {
 
 #[test]
 fn test1() {
-    let mut db = DatabaseImpl::with(Logger::default());
+    let mut db = LoggerDatabase::default();
 
     let l1 = List::new(&db, 1, None);
     let l2 = List::new(&db, 2, Some(l1));

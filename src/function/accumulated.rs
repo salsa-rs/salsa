@@ -1,4 +1,4 @@
-use crate::{accumulator, hash::FxHashSet, Database, DatabaseKeyIndex, Id};
+use crate::{accumulator, hash::FxHashSet, zalsa::ZalsaDatabase, DatabaseKeyIndex, Id};
 
 use super::{Configuration, IngredientImpl};
 
