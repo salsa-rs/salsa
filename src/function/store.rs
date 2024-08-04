@@ -4,7 +4,7 @@ use crossbeam::atomic::AtomicCell;
 
 use crate::{
     durability::Durability,
-    local_state::{QueryOrigin, QueryRevisions},
+    zalsa_local::{QueryOrigin, QueryRevisions},
     Id, Runtime,
 };
 

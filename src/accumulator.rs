@@ -10,8 +10,8 @@ use crate::{
     hash::FxDashMap,
     ingredient::{fmt_index, Ingredient, Jar},
     key::DependencyIndex,
-    local_state::{self, LocalState, QueryOrigin},
-    storage::IngredientIndex,
+    zalsa::IngredientIndex,
+    zalsa_local::{QueryOrigin, ZalsaLocal},
     Database, DatabaseKeyIndex, Event, EventKind, Id, Revision,
 };
 
@@ -59,8 +59,9 @@ impl<A: Accumulator> IngredientImpl<A> {
         Db: ?Sized + Database,
     {
         let jar: JarImpl<A> = Default::default();
-        let index = db.add_or_lookup_jar_by_type(&jar);
-        let ingredient = db.lookup_ingredient(index).assert_type::<Self>();
+        let zalsa = db.zalsa();
+        let index = zalsa.add_or_lookup_jar_by_type(&jar);
+        let ingredient = zalsa.lookup_ingredient(index).assert_type::<Self>();
         Some(ingredient)
     }
 
@@ -79,39 +80,36 @@ impl<A: Accumulator> IngredientImpl<A> {
     }
 
     pub fn push(&self, db: &dyn crate::Database, value: A) {
-        local_state::attach(db, |state| {
-            let runtime = db.runtime();
-            let current_revision = runtime.current_revision();
-            let (active_query, _) = match state.active_query() {
-                Some(pair) => pair,
-                None => {
-                    panic!("cannot accumulate values outside of an active query")
-                }
-            };
-
-            let mut accumulated_values =
-                self.map.entry(active_query).or_insert(AccumulatedValues {
-                    values: vec![],
-                    produced_at: current_revision,
-                });
-
-            // When we call `push' in a query, we will add the accumulator to the output of the query.
-            // If we find here that this accumulator is not the output of the query,
-            // we can say that the accumulated values we stored for this query is out of date.
-            if !state.is_output_of_active_query(self.dependency_index()) {
-                accumulated_values.values.truncate(0);
-                accumulated_values.produced_at = current_revision;
+        let state = db.zalsa_local();
+        let current_revision = db.zalsa().current_revision();
+        let (active_query, _) = match state.active_query() {
+            Some(pair) => pair,
+            None => {
+                panic!("cannot accumulate values outside of an active query")
             }
+        };
 
-            state.add_output(self.dependency_index());
-            accumulated_values.values.push(value);
-        })
+        let mut accumulated_values = self.map.entry(active_query).or_insert(AccumulatedValues {
+            values: vec![],
+            produced_at: current_revision,
+        });
+
+        // When we call `push' in a query, we will add the accumulator to the output of the query.
+        // If we find here that this accumulator is not the output of the query,
+        // we can say that the accumulated values we stored for this query is out of date.
+        if !state.is_output_of_active_query(self.dependency_index()) {
+            accumulated_values.values.truncate(0);
+            accumulated_values.produced_at = current_revision;
+        }
+
+        state.add_output(self.dependency_index());
+        accumulated_values.values.push(value);
     }
 
     pub(crate) fn produced_by(
         &self,
         current_revision: Revision,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         query: DatabaseKeyIndex,
         output: &mut Vec<A>,
     ) {
@@ -162,7 +160,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         output_key: Option<crate::Id>,
     ) {
         assert!(output_key.is_none());
-        let current_revision = db.runtime().current_revision();
+        let current_revision = db.zalsa().current_revision();
         if let Some(mut v) = self.map.get_mut(&executor) {
             // The value is still valid in the new revision.
             v.produced_at = current_revision;
@@ -177,7 +175,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
     ) {
         assert!(stale_output_key.is_none());
         if self.map.remove(&executor).is_some() {
-            db.salsa_event(Event {
+            db.salsa_event(&|| Event {
                 thread_id: std::thread::current().id(),
                 kind: EventKind::DidDiscardAccumulated {
                     executor_key: executor,

@@ -1,4 +1,4 @@
-use crate::{key::DatabaseKeyIndex, local_state, Database};
+use crate::{key::DatabaseKeyIndex, Database};
 use std::{panic::AssertUnwindSafe, sync::Arc};
 
 /// Captures the participants of a cycle that occurred when executing a query.
@@ -74,7 +74,7 @@ impl Cycle {
 
 impl std::fmt::Debug for Cycle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        local_state::with_attached_database(|db| {
+        crate::attach::with_attached_database(|db| {
             f.debug_struct("UnexpectedCycle")
                 .field("all_participants", &self.all_participants(db))
                 .field("unexpected_participants", &self.unexpected_participants(db))

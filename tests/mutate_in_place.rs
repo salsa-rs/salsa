@@ -1,9 +1,6 @@
 //! Test that a setting a field on a `#[salsa::input]`
 //! overwrites and returns the old value.
 
-mod common;
-use common::{HasLogger, Logger};
-
 use salsa::Setter;
 use test_log::test;
 
@@ -12,25 +9,9 @@ struct MyInput {
     field: String,
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-}
-
 #[test]
 fn execute() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
 
     let input = MyInput::new(&db, "Hello".to_string());
 

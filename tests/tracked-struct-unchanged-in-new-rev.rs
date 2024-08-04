@@ -16,18 +16,9 @@ fn tracked_fn(db: &dyn Db, input: MyInput) -> MyTracked<'_> {
     MyTracked::new(db, input.field(db) / 2)
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
 #[test]
 fn execute() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
 
     let input1 = MyInput::new(&db, 22);
     let input2 = MyInput::new(&db, 44);

@@ -43,7 +43,7 @@ impl<'db1> ItemName<'db1> for SourceTree<'db1> {
 
 #[test]
 fn test_inherent() {
-    salsa::default_database().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let input = Input::new(db, "foo".to_string());
         let source_tree = input.source_tree(db);
         expect_test::expect![[r#"
@@ -55,7 +55,7 @@ fn test_inherent() {
 
 #[test]
 fn test_trait() {
-    salsa::default_database().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let input = Input::new(db, "foo".to_string());
         let source_tree = input.source_tree(db);
         expect_test::expect![[r#"

@@ -2,10 +2,10 @@ use arc_swap::Guard;
 
 use crate::{
     key::DatabaseKeyIndex,
-    local_state::{self, ActiveQueryGuard, EdgeKind, LocalState, QueryOrigin},
     runtime::StampedValue,
-    storage::DatabaseGen,
-    Id, Revision, Runtime,
+    zalsa::{Zalsa, ZalsaDatabase},
+    zalsa_local::{ActiveQueryGuard, EdgeKind, QueryOrigin, ZalsaLocal},
+    AsDynDatabase as _, Id, Revision,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};
@@ -20,42 +20,38 @@ where
         key: Id,
         revision: Revision,
     ) -> bool {
-        local_state::attach(db.as_salsa_database(), |local_state| {
-            let runtime = db.runtime();
-            local_state.unwind_if_revision_cancelled(db.as_salsa_database());
+        let zalsa_local = db.zalsa_local();
+        let zalsa = db.zalsa();
+        zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
 
-            loop {
-                let database_key_index = self.database_key_index(key);
+        loop {
+            let database_key_index = self.database_key_index(key);
 
-                tracing::debug!(
-                    "{database_key_index:?}: maybe_changed_after(revision = {revision:?})"
-                );
+            tracing::debug!("{database_key_index:?}: maybe_changed_after(revision = {revision:?})");
 
-                // Check if we have a verified version: this is the hot path.
-                let memo_guard = self.memo_map.get(key);
-                if let Some(memo) = &memo_guard {
-                    if self.shallow_verify_memo(db, runtime, database_key_index, memo) {
-                        return memo.revisions.changed_at > revision;
-                    }
-                    drop(memo_guard); // release the arc-swap guard before cold path
-                    if let Some(mcs) = self.maybe_changed_after_cold(db, local_state, key, revision)
-                    {
-                        return mcs;
-                    } else {
-                        // We failed to claim, have to retry.
-                    }
-                } else {
-                    // No memo? Assume has changed.
-                    return true;
+            // Check if we have a verified version: this is the hot path.
+            let memo_guard = self.memo_map.get(key);
+            if let Some(memo) = &memo_guard {
+                if self.shallow_verify_memo(db, zalsa, database_key_index, memo) {
+                    return memo.revisions.changed_at > revision;
                 }
+                drop(memo_guard); // release the arc-swap guard before cold path
+                if let Some(mcs) = self.maybe_changed_after_cold(db, zalsa_local, key, revision) {
+                    return mcs;
+                } else {
+                    // We failed to claim, have to retry.
+                }
+            } else {
+                // No memo? Assume has changed.
+                return true;
             }
-        })
+        }
     }
 
     fn maybe_changed_after_cold<'db>(
         &'db self,
         db: &'db C::DbView,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         key_index: Id,
         revision: Revision,
     ) -> Option<bool> {
@@ -63,7 +59,7 @@ where
 
         let _claim_guard =
             self.sync_map
-                .claim(db.as_salsa_database(), local_state, database_key_index)?;
+                .claim(db.as_dyn_database(), local_state, database_key_index)?;
         let active_query = local_state.push_query(database_key_index);
 
         // Load the current memo, if any. Use a real arc, not an arc-swap guard,
@@ -102,12 +98,12 @@ where
     pub(super) fn shallow_verify_memo(
         &self,
         db: &C::DbView,
-        runtime: &Runtime,
+        zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
         let verified_at = memo.verified_at.load();
-        let revision_now = runtime.current_revision();
+        let revision_now = zalsa.current_revision();
 
         tracing::debug!("{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",);
 
@@ -116,10 +112,10 @@ where
             return true;
         }
 
-        if memo.check_durability(runtime) {
+        if memo.check_durability(zalsa) {
             // No input of the suitable durability has changed since last verified.
-            let db = db.as_salsa_database();
-            memo.mark_as_verified(db, runtime, database_key_index);
+            let db = db.as_dyn_database();
+            memo.mark_as_verified(db, revision_now, database_key_index);
             memo.mark_outputs_as_verified(db, database_key_index);
             return true;
         }
@@ -141,12 +137,12 @@ where
         old_memo: &Memo<C::Output<'_>>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> bool {
-        let runtime = db.runtime();
+        let zalsa = db.zalsa();
         let database_key_index = active_query.database_key_index;
 
         tracing::debug!("{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",);
 
-        if self.shallow_verify_memo(db, runtime, database_key_index, old_memo) {
+        if self.shallow_verify_memo(db, zalsa, database_key_index, old_memo) {
             return true;
         }
 
@@ -185,7 +181,7 @@ where
                     match edge_kind {
                         EdgeKind::Input => {
                             if dependency_index
-                                .maybe_changed_after(db.as_salsa_database(), last_verified_at)
+                                .maybe_changed_after(db.as_dyn_database(), last_verified_at)
                             {
                                 return false;
                             }
@@ -208,14 +204,18 @@ where
                             // so even if we mark them as valid here, the function will re-execute
                             // and overwrite the contents.
                             dependency_index
-                                .mark_validated_output(db.as_salsa_database(), database_key_index);
+                                .mark_validated_output(db.as_dyn_database(), database_key_index);
                         }
                     }
                 }
             }
         }
 
-        old_memo.mark_as_verified(db.as_salsa_database(), runtime, database_key_index);
+        old_memo.mark_as_verified(
+            db.as_dyn_database(),
+            zalsa.current_revision(),
+            database_key_index,
+        );
         true
     }
 }

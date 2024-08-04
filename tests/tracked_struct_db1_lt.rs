@@ -20,14 +20,5 @@ struct MyTracked2<'db2> {
     field: u32,
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
 #[test]
 fn create_db() {}

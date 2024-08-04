@@ -3,40 +3,14 @@
 
 use std::cell::Cell;
 
+use common::LogDatabase;
 use expect_test::expect;
 mod common;
-use common::{HasLogger, Logger};
-use salsa::Setter;
+use salsa::{Database, Setter};
 use test_log::test;
 
 thread_local! {
     static COUNTER: Cell<usize> = const { Cell::new(0) };
-}
-
-#[salsa::db]
-trait Db: salsa::Database + HasLogger {}
-
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {
-    fn salsa_event(&self, event: salsa::Event) {
-        self.push_log(format!("{event:?}"));
-    }
-}
-
-#[salsa::db]
-impl Db for Database {}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
 }
 
 #[salsa::input]
@@ -51,7 +25,7 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn function(db: &dyn Db, input: MyInput) -> usize {
+fn function(db: &dyn Database, input: MyInput) -> usize {
     // Read input 1
     let _field1 = input.field1(db);
 
@@ -70,7 +44,7 @@ fn function(db: &dyn Db, input: MyInput) -> usize {
 
 #[test]
 fn test_leaked_inputs_ignored() {
-    let mut db = Database::default();
+    let mut db = common::EventLoggerDatabase::default();
 
     let input = MyInput::new(&db, 10, 20);
     let result_in_rev_1 = function(&db, input);
@@ -92,6 +66,7 @@ fn test_leaked_inputs_ignored() {
     let result_in_rev_2 = function(&db, input);
     db.assert_logs(expect![[r#"
         [
+            "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
             "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(0) } }",
         ]"#]]);

@@ -82,15 +82,17 @@ macro_rules! setup_input_struct {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
                     CACHE.get_or_create(db, || {
-                        db.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
+                        db.zalsa().add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
                     })
                 }
 
-                pub fn ingredient_mut(db: &mut dyn $zalsa::Database) -> (&mut $zalsa_struct::IngredientImpl<Self>, &mut $zalsa::Runtime) {
-                    let index = db.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default());
-                    let (ingredient, runtime) = db.lookup_ingredient_mut(index);
+                pub fn ingredient_mut(db: &mut dyn $zalsa::Database) -> (&mut $zalsa_struct::IngredientImpl<Self>, $zalsa::Revision) {
+                    let zalsa_mut = db.zalsa_mut();
+                    let index = zalsa_mut.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default());
+                    let current_revision = zalsa_mut.current_revision();
+                    let ingredient = zalsa_mut.lookup_ingredient_mut(index);
                     let ingredient = ingredient.assert_type_mut::<$zalsa_struct::IngredientImpl<Self>>();
-                    (ingredient, runtime)
+                    (ingredient, current_revision)
                 }
             }
 
@@ -128,7 +130,7 @@ macro_rules! setup_input_struct {
                 {
                     let current_revision = $zalsa::current_revision(db);
                     let stamps = $zalsa::Array::new([$zalsa::stamp(current_revision, Default::default()); $N]);
-                    $Configuration::ingredient(db.as_salsa_database()).new_input(($($field_id,)*), stamps)
+                    $Configuration::ingredient(db.as_dyn_database()).new_input(($($field_id,)*), stamps)
                 }
 
                 $(
@@ -137,8 +139,8 @@ macro_rules! setup_input_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let fields = $Configuration::ingredient(db.as_salsa_database()).field(
-                            db.as_salsa_database(),
+                        let fields = $Configuration::ingredient(db.as_dyn_database()).field(
+                            db.as_dyn_database(),
                             self,
                             $field_index,
                         );
@@ -157,9 +159,9 @@ macro_rules! setup_input_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let (ingredient, runtime) = $Configuration::ingredient_mut(db.as_salsa_database_mut());
+                        let (ingredient, revision) = $Configuration::ingredient_mut(db.as_dyn_database_mut());
                         $zalsa::input::SetterImpl::new(
-                            runtime,
+                            revision,
                             self,
                             $field_index,
                             ingredient,
@@ -174,7 +176,7 @@ macro_rules! setup_input_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + salsa::Database,
                     {
-                        $Configuration::ingredient(db.as_salsa_database()).get_singleton_input()
+                        $Configuration::ingredient(db.as_dyn_database()).get_singleton_input()
                     }
 
                     #[track_caller]

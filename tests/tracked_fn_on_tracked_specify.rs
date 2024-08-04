@@ -26,18 +26,9 @@ fn tracked_fn_extra<'db>(_db: &'db dyn salsa::Database, _input: MyTracked<'db>) 
     0
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
 #[test]
 fn execute_when_specified() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, 22);
     let tracked = tracked_fn(&db, input);
     assert_eq!(tracked.field(&db), 44);
@@ -46,7 +37,7 @@ fn execute_when_specified() {
 
 #[test]
 fn execute_when_not_specified() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, 0);
     let tracked = tracked_fn(&db, input);
     assert_eq!(tracked.field(&db), 0);

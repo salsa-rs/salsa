@@ -3,10 +3,11 @@ use crate::{
     hash::{FxIndexMap, FxIndexSet},
     key::{DatabaseKeyIndex, DependencyIndex},
     tracked_struct::Disambiguator,
-    Cycle, Revision, Runtime,
+    zalsa_local::EMPTY_DEPENDENCIES,
+    Cycle, Revision,
 };
 
-use super::local_state::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
+use super::zalsa_local::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
 
 #[derive(Debug)]
 pub(crate) struct ActiveQuery {
@@ -86,9 +87,9 @@ impl ActiveQuery {
         self.input_outputs.contains(&(EdgeKind::Output, key))
     }
 
-    pub(crate) fn revisions(&self, runtime: &Runtime) -> QueryRevisions {
+    pub(crate) fn revisions(&self) -> QueryRevisions {
         let input_outputs = if self.input_outputs.is_empty() {
-            runtime.empty_dependencies()
+            EMPTY_DEPENDENCIES.clone()
         } else {
             self.input_outputs.iter().copied().collect()
         };

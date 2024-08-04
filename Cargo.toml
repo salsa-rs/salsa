@@ -8,19 +8,20 @@ repository = "https://github.com/salsa-rs/salsa"
 description = "A generic framework for on-demand, incrementalized computation (experimental)"
 
 [dependencies]
-arc-swap = "1.6.0"
-boomphf = "0.6.0"
-crossbeam = "0.8.1"
-dashmap = "6.0.1"
-hashlink = "0.9.1"
+arc-swap = "1"
+boomphf = "0.6"
+crossbeam = "0.8"
+dashmap = "6"
+hashlink = "0.9"
 indexmap = "2"
-orx-concurrent-vec = "2.2.0"
+orx-concurrent-vec = "2"
 tracing = "0.1"
-parking_lot = "0.12.1"
-rustc-hash = "2.0.0"
+parking_lot = "0.12"
+rustc-hash = "2"
 salsa-macro-rules = { version = "0.1.0", path = "components/salsa-macro-rules" }
 salsa-macros = { path = "components/salsa-macros" }
-smallvec = "1.0.0"
+smallvec = "1"
+lazy_static = "1"
 
 [dev-dependencies]
 annotate-snippets = "0.11.4"

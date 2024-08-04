@@ -3,13 +3,9 @@ use std::{any::Any, fmt, sync::Arc};
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    cycle::CycleRecoveryStrategy,
-    ingredient::fmt_index,
-    key::DatabaseKeyIndex,
-    local_state::QueryOrigin,
-    salsa_struct::SalsaStructInDb,
-    storage::{DatabaseGen, IngredientIndex},
-    Cycle, Database, Event, EventKind, Id, Revision,
+    cycle::CycleRecoveryStrategy, ingredient::fmt_index, key::DatabaseKeyIndex,
+    salsa_struct::SalsaStructInDb, zalsa::IngredientIndex, zalsa_local::QueryOrigin,
+    AsDynDatabase as _, Cycle, Database, Event, EventKind, Id, Revision,
 };
 
 use self::delete::DeletedEntries;
@@ -199,7 +195,7 @@ where
     fn register<'db>(&self, db: &'db C::DbView) {
         if !self.registered.fetch_or(true) {
             <C::SalsaStruct<'db> as SalsaStructInDb>::register_dependent_fn(
-                db.as_salsa_database(),
+                db.as_dyn_database(),
                 self.index,
             )
         }
@@ -268,15 +264,17 @@ where
 
         if let Some(origin) = self.delete_memo(id) {
             let key = self.database_key_index(id);
-            db.salsa_event(Event {
+            db.salsa_event(&|| Event {
                 thread_id: std::thread::current().id(),
                 kind: EventKind::DidDiscard { key },
             });
 
             // Anything that was output by this memoized execution
             // is now itself stale.
+            let zalsa = db.zalsa();
             for stale_output in origin.outputs() {
-                db.lookup_ingredient(stale_output.ingredient_index)
+                zalsa
+                    .lookup_ingredient(stale_output.ingredient_index)
                     .remove_stale_output(db, key, stale_output.key_index);
             }
         }

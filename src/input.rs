@@ -17,10 +17,9 @@ use crate::{
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient},
     key::{DatabaseKeyIndex, DependencyIndex},
-    local_state::{self, QueryOrigin},
     plumbing::{Jar, Stamp},
-    runtime::Runtime,
-    storage::IngredientIndex,
+    zalsa::IngredientIndex,
+    zalsa_local::QueryOrigin,
     Database, Durability, Id, Revision,
 };
 
@@ -54,7 +53,7 @@ impl<C: Configuration> Default for JarImpl<C> {
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
         &self,
-        struct_index: crate::storage::IngredientIndex,
+        struct_index: crate::zalsa::IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient: IngredientImpl<C> = IngredientImpl::new(struct_index);
         let struct_map = struct_ingredient.struct_map.clone();
@@ -121,18 +120,17 @@ impl<C: Configuration> IngredientImpl<C> {
     /// * `setter`, function that modifies the fields tuple; should only modify the element for `field_index`
     pub fn set_field<R>(
         &mut self,
-        runtime: &mut Runtime,
+        current_revision: Revision,
         id: C::Struct,
         field_index: usize,
         durability: Durability,
         setter: impl FnOnce(&mut C::Fields) -> R,
     ) -> R {
-        let revision = runtime.current_revision();
         let id: Id = id.as_id();
         let mut r = self.struct_map.update(id);
         let stamp = &mut r.stamps[field_index];
         stamp.durability = durability;
-        stamp.changed_at = revision;
+        stamp.changed_at = current_revision;
         setter(&mut r.fields)
     }
 
@@ -154,21 +152,20 @@ impl<C: Configuration> IngredientImpl<C> {
         id: C::Struct,
         field_index: usize,
     ) -> &'db C::Fields {
-        local_state::attach(db, |state| {
-            let field_ingredient_index = self.ingredient_index.successor(field_index);
-            let id = id.as_id();
-            let value = self.struct_map.get(id);
-            let stamp = &value.stamps[field_index];
-            state.report_tracked_read(
-                DependencyIndex {
-                    ingredient_index: field_ingredient_index,
-                    key_index: Some(id),
-                },
-                stamp.durability,
-                stamp.changed_at,
-            );
-            &value.fields
-        })
+        let zalsa_local = db.zalsa_local();
+        let field_ingredient_index = self.ingredient_index.successor(field_index);
+        let id = id.as_id();
+        let value = self.struct_map.get(id);
+        let stamp = &value.stamps[field_index];
+        zalsa_local.report_tracked_read(
+            DependencyIndex {
+                ingredient_index: field_ingredient_index,
+                key_index: Some(id),
+            },
+            stamp.durability,
+            stamp.changed_at,
+        );
+        &value.fields
     }
 
     /// Peek at the field values without recording any read dependency.
