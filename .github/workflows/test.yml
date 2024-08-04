@@ -61,7 +61,6 @@ jobs:
 
   miri:
     name: Miri
-    continue-on-error: true # FIXME: https://github.com/salsa-rs/salsa/issues/520
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
