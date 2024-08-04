@@ -1,6 +1,9 @@
-use std::any::Any;
+use std::{any::Any, borrow::Cow};
 
-use crate::{zalsa::ZalsaDatabase, Durability, Event, Revision};
+use crate::{
+    zalsa::{IngredientIndex, ZalsaDatabase},
+    Durability, Event, Revision,
+};
 
 /// The trait implemented by all Salsa databases.
 /// You can create your own subtraits of this trait using the `#[salsa::db]`(`crate::db`) procedural macro.
@@ -36,6 +39,19 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
         let db = self.as_dyn_database();
         let zalsa_local = db.zalsa_local();
         zalsa_local.report_untracked_read(db.zalsa().current_revision())
+    }
+
+    /// Return the "debug name" (i.e., the struct name, etc) for an "ingredient",
+    /// which are the fine-grained components we use to track data. This is intended
+    /// for debugging and the contents of the returned string are not semver-guaranteed.
+    ///
+    /// Ingredient indices can be extracted from [`DependencyIndex`](`crate::DependencyIndex`) values.
+    fn ingredient_debug_name(&self, ingredient_index: IngredientIndex) -> Cow<'_, str> {
+        Cow::Borrowed(
+            self.zalsa()
+                .lookup_ingredient(ingredient_index)
+                .debug_name(),
+        )
     }
 
     /// Execute `op` with the database in thread-local storage for debug print-outs.

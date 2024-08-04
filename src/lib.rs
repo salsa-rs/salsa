@@ -44,6 +44,7 @@ pub use self::revision::Revision;
 pub use self::runtime::Runtime;
 pub use self::storage::Storage;
 pub use self::update::Update;
+pub use self::zalsa::IngredientIndex;
 pub use crate::attach::with_attached_database;
 pub use salsa_macros::accumulator;
 pub use salsa_macros::db;
