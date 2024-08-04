@@ -159,9 +159,9 @@ macro_rules! setup_input_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let (ingredient, runtime) = $Configuration::ingredient_mut(db.as_dyn_database_mut());
+                        let (ingredient, revision) = $Configuration::ingredient_mut(db.as_dyn_database_mut());
                         $zalsa::input::SetterImpl::new(
-                            runtime,
+                            revision,
                             self,
                             $field_index,
                             ingredient,
