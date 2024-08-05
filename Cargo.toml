@@ -9,7 +9,6 @@ description = "A generic framework for on-demand, incrementalized computation (e
 
 [dependencies]
 arc-swap = "1"
-boomphf = "0.6"
 crossbeam = "0.8"
 dashmap = "6"
 hashlink = "0.9"
