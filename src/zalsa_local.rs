@@ -109,7 +109,7 @@ impl ZalsaLocal {
         changed_at: Revision,
     ) {
         debug!(
-            "report_query_read_and_unwind_if_cycle_resulted(input={:?}, durability={:?}, changed_at={:?})",
+            "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
             input, durability, changed_at
         );
         self.with_query_stack(|stack| {

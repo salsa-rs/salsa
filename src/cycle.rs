@@ -94,17 +94,15 @@ impl std::fmt::Debug for Cycle {
 pub enum CycleRecoveryStrategy {
     /// Cannot recover from cycles: panic.
     ///
-    /// This is the default. It is also what happens if a cycle
-    /// occurs and the queries involved have different recovery
-    /// strategies.
+    /// This is the default.
     ///
     /// In the case of a failure due to a cycle, the panic
-    /// value will be XXX (FIXME).
+    /// value will be the `Cycle`.
     Panic,
 
     /// Recovers from cycles by storing a sentinel value.
     ///
-    /// This value is computed by the `QueryFunction::cycle_fallback`
+    /// This value is computed by the query's `recovery_fn`
     /// function.
     Fallback,
 }

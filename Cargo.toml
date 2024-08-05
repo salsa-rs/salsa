@@ -31,7 +31,7 @@ eyre = "0.6.8"
 notify-debouncer-mini = "0.4.1"
 ordered-float = "4.2.1"
 rustversion = "1.0"
-test-log = "0.2.11"
+test-log = { version ="0.2.11", features = ["trace"] }
 trybuild = "1.0"
 
 

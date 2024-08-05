@@ -65,7 +65,7 @@ pub trait Configuration: Any {
     /// This invokes the function the user wrote.
     fn execute<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Self::Output<'db>;
 
-    /// If the cycle strategy is `Recover`, then invoked when `key` is a participant
+    /// If the cycle strategy is `Fallback`, then invoked when `key` is a participant
     /// in a cycle to find out what value it should have.
     ///
     /// This invokes the recovery function given by the user.
