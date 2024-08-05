@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::input::{Configuration, IngredientImpl};
-use crate::{Durability, Revision};
+use crate::{Durability, Runtime};
 
 /// Setter for a field of an input.
 pub trait Setter: Sized {
@@ -12,7 +12,7 @@ pub trait Setter: Sized {
 
 #[must_use]
 pub struct SetterImpl<'setter, C: Configuration, S, F> {
-    current_revision: Revision,
+    runtime: &'setter mut Runtime,
     id: C::Struct,
     ingredient: &'setter mut IngredientImpl<C>,
     durability: Durability,
@@ -27,14 +27,14 @@ where
     S: FnOnce(&mut C::Fields, F) -> F,
 {
     pub fn new(
-        current_revision: Revision,
+        runtime: &'setter mut Runtime,
         id: C::Struct,
         field_index: usize,
         ingredient: &'setter mut IngredientImpl<C>,
         setter: S,
     ) -> Self {
         SetterImpl {
-            current_revision,
+            runtime,
             id,
             field_index,
             ingredient,
@@ -59,7 +59,7 @@ where
 
     fn to(self, value: F) -> F {
         let Self {
-            current_revision,
+            runtime,
             id,
             ingredient,
             durability,
@@ -68,7 +68,7 @@ where
             phantom: _,
         } = self;
 
-        ingredient.set_field(current_revision, id, field_index, durability, |tuple| {
+        ingredient.set_field(runtime, id, field_index, durability, |tuple| {
             setter(tuple, value)
         })
     }

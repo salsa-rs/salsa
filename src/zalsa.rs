@@ -172,8 +172,14 @@ impl Zalsa {
     }
 
     /// **NOT SEMVER STABLE**
-    pub fn lookup_ingredient_mut(&mut self, index: IngredientIndex) -> &mut dyn Ingredient {
-        &mut **self.ingredients_vec.get_mut(index.as_usize()).unwrap()
+    pub fn lookup_ingredient_mut(
+        &mut self,
+        index: IngredientIndex,
+    ) -> (&mut dyn Ingredient, &mut Runtime) {
+        (
+            &mut **self.ingredients_vec.get_mut(index.as_usize()).unwrap(),
+            &mut self.runtime,
+        )
     }
 
     /// **NOT SEMVER STABLE**
