@@ -167,7 +167,7 @@ impl Zalsa {
     }
 
     pub(crate) fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
-        &**(&self.ingredients_vec[index.as_usize()])
+        &*self.ingredients_vec[index.as_usize()]
     }
 
     /// **NOT SEMVER STABLE**
@@ -176,7 +176,7 @@ impl Zalsa {
         index: IngredientIndex,
     ) -> (&mut dyn Ingredient, &mut Runtime) {
         (
-            &mut **(&mut self.ingredients_vec[index.as_usize()]),
+            &mut *self.ingredients_vec[index.as_usize()],
             &mut self.runtime,
         )
     }
