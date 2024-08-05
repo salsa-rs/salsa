@@ -20,7 +20,7 @@ use crate::{
     plumbing::{Jar, Stamp},
     zalsa::IngredientIndex,
     zalsa_local::QueryOrigin,
-    Database, Durability, Id, Revision,
+    Database, Durability, Id, Revision, Runtime,
 };
 
 pub trait Configuration: Any {
@@ -120,7 +120,7 @@ impl<C: Configuration> IngredientImpl<C> {
     /// * `setter`, function that modifies the fields tuple; should only modify the element for `field_index`
     pub fn set_field<R>(
         &mut self,
-        current_revision: Revision,
+        runtime: &mut Runtime,
         id: C::Struct,
         field_index: usize,
         durability: Durability,
@@ -129,8 +129,13 @@ impl<C: Configuration> IngredientImpl<C> {
         let id: Id = id.as_id();
         let mut r = self.struct_map.update(id);
         let stamp = &mut r.stamps[field_index];
+
+        if stamp.durability != Durability::LOW {
+            runtime.report_tracked_write(stamp.durability);
+        }
+
         stamp.durability = durability;
-        stamp.changed_at = current_revision;
+        stamp.changed_at = runtime.current_revision();
         setter(&mut r.fields)
     }
 
