@@ -10,11 +10,11 @@ description = "A generic framework for on-demand, incrementalized computation (e
 [dependencies]
 arc-swap = "1"
 boomphf = "0.6"
+boxcar = "0.2"
 crossbeam = "0.8"
 dashmap = "6"
 hashlink = "0.9"
 indexmap = "2"
-orx-concurrent-vec = "2"
 tracing = "0.1"
 parking_lot = "0.12"
 rustc-hash = "2"

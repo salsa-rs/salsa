@@ -2,7 +2,6 @@ use std::any::{Any, TypeId};
 use std::marker::PhantomData;
 use std::thread::ThreadId;
 
-use orx_concurrent_vec::ConcurrentVec;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 
@@ -102,10 +101,10 @@ pub struct Zalsa {
     /// Vector of ingredients.
     ///
     /// Immutable unless the mutex on `ingredients_map` is held.
-    ingredients_vec: ConcurrentVec<Box<dyn Ingredient>>,
+    ingredients_vec: boxcar::Vec<Box<dyn Ingredient>>,
 
     /// Indices of ingredients that require reset when a new revision starts.
-    ingredients_requiring_reset: ConcurrentVec<IngredientIndex>,
+    ingredients_requiring_reset: boxcar::Vec<IngredientIndex>,
 
     /// The runtime for this particular salsa database handle.
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
@@ -140,7 +139,7 @@ impl Zalsa {
             *jar_map
             .entry(jar_type_id)
             .or_insert_with(|| {
-                let index = IngredientIndex::from(self.ingredients_vec.len());
+                let index = IngredientIndex::from(self.ingredients_vec.count());
                 let ingredients = jar.create_ingredients(index);
                 for ingredient in ingredients {
                     let expected_index = ingredient.ingredient_index();
@@ -203,7 +202,7 @@ impl Zalsa {
     pub(crate) fn new_revision(&mut self) -> Revision {
         let new_revision = self.runtime.new_revision();
 
-        for index in self.ingredients_requiring_reset.iter() {
+        for (_, index) in self.ingredients_requiring_reset.iter() {
             self.ingredients_vec
                 .get_mut(index.as_usize())
                 .unwrap()
