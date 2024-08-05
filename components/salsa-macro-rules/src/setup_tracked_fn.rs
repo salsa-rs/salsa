@@ -225,6 +225,7 @@ macro_rules! setup_tracked_fn {
                 }
             }
 
+            #[allow(non_local_definitions)]
             impl $fn_name {
                 pub fn accumulated<$db_lt, A: salsa::Accumulator>(
                     $db: &$db_lt dyn $Db,

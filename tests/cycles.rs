@@ -49,9 +49,6 @@ use salsa::Durability;
 // | Cross  | Fallback | N/A      | Tracked   | both     | parallel/parallel_cycle_mid_recover.rs |
 // | Cross  | Fallback | N/A      | Tracked   | both     | parallel/parallel_cycle_all_recover.rs |
 
-// TODO: The following test is not yet ported.
-// | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears_durability |
-
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 struct Error {
     cycle: Vec<String>,

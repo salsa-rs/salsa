@@ -1,6 +1,7 @@
+use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Array<T, const N: usize> {
     data: [T; N],
 }
