@@ -16,7 +16,7 @@ fn new_constructor() {
 
     let input = MyInput::new(&db, true);
 
-    assert_eq!(input.required(&db), true);
+    assert!(input.required(&db));
     assert_eq!(input.optional(&db), 0);
 }
 
@@ -26,7 +26,7 @@ fn builder_specify_optional() {
 
     let input = MyInput::builder(true).optional(20).new(&db);
 
-    assert_eq!(input.required(&db), true);
+    assert!(input.required(&db));
     assert_eq!(input.optional(&db), 20);
 }
 
@@ -38,6 +38,6 @@ fn builder_default_optional_value() {
         .required_durability(Durability::HIGH)
         .new(&db);
 
-    assert_eq!(input.required(&db), true);
+    assert!(input.required(&db));
     assert_eq!(input.optional(&db), 0);
 }

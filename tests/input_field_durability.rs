@@ -19,7 +19,7 @@ fn required_field_durability() {
         .required_field_durability(Durability::HIGH)
         .new(&db);
 
-    assert_eq!(input.required_field(&db), true);
+    assert!(input.required_field(&db));
     assert_eq!(input.optional_field(&db), 0);
 }
 
@@ -32,6 +32,6 @@ fn optional_field_durability() {
         .optional_field_durability(Durability::HIGH)
         .new(&db);
 
-    assert_eq!(input.required_field(&db), true);
+    assert!(input.required_field(&db));
     assert_eq!(input.optional_field(&db), 20);
 }
