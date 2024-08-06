@@ -4,8 +4,8 @@ use arc_swap::{ArcSwap, Guard};
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    hash::FxDashMap, key::DatabaseKeyIndex, local_state::QueryRevisions, Event, EventKind, Id,
-    Revision, Runtime,
+    hash::FxDashMap, key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event,
+    EventKind, Id, Revision,
 };
 
 use super::Configuration;
@@ -78,7 +78,7 @@ impl<C: Configuration> MemoMap<C> {
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
     pub(super) fn evict(&self, key: Id) {
-        use crate::local_state::QueryOrigin;
+        use crate::zalsa_local::QueryOrigin;
         use dashmap::mapref::entry::Entry::*;
 
         if let Occupied(entry) = self.map.entry(key) {
@@ -129,8 +129,8 @@ impl<V> Memo<V> {
         }
     }
     /// True if this memo is known not to have changed based on its durability.
-    pub(super) fn check_durability(&self, runtime: &Runtime) -> bool {
-        let last_changed = runtime.last_changed_revision(self.revisions.durability);
+    pub(super) fn check_durability(&self, zalsa: &Zalsa) -> bool {
+        let last_changed = zalsa.last_changed_revision(self.revisions.durability);
         let verified_at = self.verified_at.load();
         tracing::debug!(
             "check_durability(last_changed={:?} <= verified_at={:?}) = {:?}",
@@ -146,17 +146,17 @@ impl<V> Memo<V> {
     pub(super) fn mark_as_verified(
         &self,
         db: &dyn crate::Database,
-        runtime: &crate::Runtime,
+        revision_now: Revision,
         database_key_index: DatabaseKeyIndex,
     ) {
-        db.salsa_event(Event {
+        db.salsa_event(&|| Event {
             thread_id: std::thread::current().id(),
             kind: EventKind::DidValidateMemoizedValue {
                 database_key: database_key_index,
             },
         });
 
-        self.verified_at.store(runtime.current_revision());
+        self.verified_at.store(revision_now);
     }
 
     pub(super) fn mark_outputs_as_verified(

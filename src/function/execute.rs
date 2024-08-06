@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    local_state::ActiveQueryGuard, runtime::StampedValue, storage::DatabaseGen, Cycle, Database,
+    runtime::StampedValue, zalsa::ZalsaDatabase, zalsa_local::ActiveQueryGuard, Cycle, Database,
     Event, EventKind,
 };
 
@@ -26,13 +26,13 @@ where
         active_query: ActiveQueryGuard<'_>,
         opt_old_memo: Option<Arc<Memo<C::Output<'_>>>>,
     ) -> StampedValue<&C::Output<'db>> {
-        let runtime = db.runtime();
-        let revision_now = runtime.current_revision();
+        let zalsa = db.zalsa();
+        let revision_now = zalsa.current_revision();
         let database_key_index = active_query.database_key_index;
 
         tracing::info!("{:?}: executing query", database_key_index);
 
-        db.salsa_event(Event {
+        db.salsa_event(&|| Event {
             thread_id: std::thread::current().id(),
             kind: EventKind::WillExecute {
                 database_key: database_key_index,
@@ -67,16 +67,7 @@ where
                 }
             }
         };
-        let mut revisions = active_query.pop(runtime);
-
-        // We assume that query is side-effect free -- that is, does
-        // not mutate the "inputs" to the query system. Sanity check
-        // that assumption here, at least to the best of our ability.
-        assert_eq!(
-            runtime.current_revision(),
-            revision_now,
-            "revision altered during query execution",
-        );
+        let mut revisions = active_query.pop();
 
         // If the new value is equal to the old one, then it didn't
         // really change, even if some of its inputs have. So we can

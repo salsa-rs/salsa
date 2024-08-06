@@ -1,22 +1,8 @@
 //! Test that a setting a field on a `#[salsa::input]`
 //! overwrites and returns the old value.
 
+use salsa::Database;
 use test_log::test;
-
-#[salsa::db]
-trait Db: salsa::Database {}
-
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
-#[salsa::db]
-impl Db for Database {}
 
 #[salsa::input]
 struct MyInput {
@@ -34,7 +20,7 @@ struct MyInterned<'db> {
 }
 
 #[salsa::tracked]
-fn test(db: &dyn crate::Db, input: MyInput) {
+fn test(db: &dyn Database, input: MyInput) {
     let input = is_send_sync(input);
     let interned = is_send_sync(MyInterned::new(db, input.field(db).clone()));
     let _tracked_struct = is_send_sync(MyTracked::new(db, interned));
@@ -46,7 +32,7 @@ fn is_send_sync<T: Send + Sync>(t: T) -> T {
 
 #[test]
 fn execute() {
-    let db = Database::default();
+    let db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, "Hello".to_string());
     test(&db, input);
 }

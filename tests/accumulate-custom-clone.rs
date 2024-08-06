@@ -27,7 +27,7 @@ fn push_logs(db: &dyn salsa::Database, input: MyInput) {
 
 #[test]
 fn accumulate_custom_clone() {
-    salsa::default_database().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let input = MyInput::new(db, 2);
         let logs = push_logs::accumulated::<Log>(db, input);
         expect![[r##"

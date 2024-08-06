@@ -1,4 +1,4 @@
-use crate::local_state::QueryRevisions;
+use crate::zalsa_local::QueryRevisions;
 
 use super::{memo::Memo, Configuration, IngredientImpl};
 

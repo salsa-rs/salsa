@@ -51,7 +51,7 @@ jobs:
       - name: Format
         run: cargo fmt -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-features --all-targets
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace --all-features --all-targets
       - name: Test docs
@@ -61,7 +61,6 @@ jobs:
 
   miri:
     name: Miri
-    continue-on-error: true # FIXME: https://github.com/salsa-rs/salsa/issues/520
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

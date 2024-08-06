@@ -47,12 +47,16 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
 
     /// Does this kind of struct have a `'db` lifetime?
     const HAS_LIFETIME: bool;
+
+    /// Are `#[default]` fields allowed?
+    const ALLOW_DEFAULT: bool;
 }
 
 pub(crate) struct SalsaField<'s> {
     field: &'s syn::Field,
 
     pub(crate) has_id_attr: bool,
+    pub(crate) has_default_attr: bool,
     pub(crate) has_ref_attr: bool,
     pub(crate) has_no_eq_attr: bool,
     get_name: syn::Ident,
@@ -64,6 +68,7 @@ const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 #[allow(clippy::type_complexity)]
 pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(&str, fn(&syn::Attribute, &mut SalsaField))] = &[
     ("id", |_, ef| ef.has_id_attr = true),
+    ("default", |_, ef| ef.has_default_attr = true),
     ("return_ref", |_, ef| ef.has_ref_attr = true),
     ("no_eq", |_, ef| ef.has_no_eq_attr = true),
     ("get", |attr, ef| {
@@ -99,6 +104,7 @@ where
         };
 
         this.maybe_disallow_id_fields()?;
+        this.maybe_disallow_default_fields()?;
 
         this.check_generics()?;
 
@@ -128,6 +134,31 @@ where
         // Check if any field has the `#[id]` attribute.
         for ef in &self.fields {
             if ef.has_id_attr {
+                return Err(syn::Error::new_spanned(
+                    ef.field,
+                    format!("`#[id]` cannot be used with `#[salsa::{}]`", A::KIND),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Disallow `#[default]` attributes on the fields of this struct.
+    ///
+    /// If an `#[default]` field is found, return an error.
+    ///
+    /// # Parameters
+    ///
+    /// * `kind`, the attribute name (e.g., `input` or `interned`)
+    fn maybe_disallow_default_fields(&self) -> syn::Result<()> {
+        if A::ALLOW_DEFAULT {
+            return Ok(());
+        }
+
+        // Check if any field has the `#[id]` attribute.
+        for ef in &self.fields {
+            if ef.has_default_attr {
                 return Err(syn::Error::new_spanned(
                     ef.field,
                     format!("`#[id]` cannot be used with `#[salsa::{}]`", A::KIND),
@@ -173,6 +204,21 @@ where
             .collect()
     }
 
+    pub(crate) fn required_fields(&self) -> Vec<TokenStream> {
+        self.fields
+            .iter()
+            .filter_map(|f| {
+                if f.has_default_attr {
+                    None
+                } else {
+                    let ident = f.field.ident.as_ref().unwrap();
+                    let ty = &f.field.ty;
+                    Some(quote!(#ident #ty))
+                }
+            })
+            .collect()
+    }
+
     pub(crate) fn field_vis(&self) -> Vec<&syn::Visibility> {
         self.fields.iter().map(|f| &f.field.vis).collect()
     }
@@ -183,6 +229,13 @@ where
 
     pub(crate) fn field_setter_ids(&self) -> Vec<&syn::Ident> {
         self.fields.iter().map(|f| &f.set_name).collect()
+    }
+
+    pub(crate) fn field_durability_ids(&self) -> Vec<syn::Ident> {
+        self.fields
+            .iter()
+            .map(|f| quote::format_ident!("{}_durability", f.field.ident.as_ref().unwrap()))
+            .collect()
     }
 
     pub(crate) fn field_tys(&self) -> Vec<&syn::Type> {
@@ -205,7 +258,13 @@ where
                     syn::Ident::new("backdate", Span::call_site())
                 };
 
-                quote!((#clone_ident, #backdate_ident))
+                let default_ident = if f.has_default_attr {
+                    syn::Ident::new("default", Span::call_site())
+                } else {
+                    syn::Ident::new("required", Span::call_site())
+                };
+
+                quote!((#clone_ident, #backdate_ident, #default_ident))
             })
             .collect()
     }
@@ -235,6 +294,7 @@ impl<'s> SalsaField<'s> {
             field,
             has_id_attr: false,
             has_ref_attr: false,
+            has_default_attr: false,
             has_no_eq_attr: false,
             get_name,
             set_name,

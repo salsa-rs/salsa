@@ -24,7 +24,7 @@ help: consider borrowing here
 warning: variable does not need to be mutable
   --> tests/compile-fail/span-tracked-getter.rs:13:9
    |
-13 |     let mut db = salsa::default_database();
+13 |     let mut db = salsa::DatabaseImpl::new();
    |         ----^^
    |         |
    |         help: remove this `mut`

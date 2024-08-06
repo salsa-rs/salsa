@@ -4,7 +4,7 @@
 #[macro_export]
 macro_rules! maybe_clone {
     (
-        (no_clone, $maybe_backdate:ident),
+        (no_clone, $maybe_backdate:ident, $maybe_default:ident),
         $field_ty:ty,
         $field_ref_expr:expr,
     ) => {
@@ -12,7 +12,7 @@ macro_rules! maybe_clone {
     };
 
     (
-        (clone, $maybe_backdate:ident),
+        (clone, $maybe_backdate:ident, $maybe_default:ident),
         $field_ty:ty,
         $field_ref_expr:expr,
     ) => {
@@ -23,7 +23,7 @@ macro_rules! maybe_clone {
 #[macro_export]
 macro_rules! maybe_cloned_ty {
     (
-        (no_clone, $maybe_backdate:ident),
+        (no_clone, $maybe_backdate:ident, $maybe_default:ident),
         $db_lt:lifetime,
         $field_ty:ty
     ) => {
@@ -31,7 +31,7 @@ macro_rules! maybe_cloned_ty {
     };
 
     (
-        (clone, $maybe_backdate:ident),
+        (clone, $maybe_backdate:ident, $maybe_default:ident),
         $db_lt:lifetime,
         $field_ty:ty
     ) => {

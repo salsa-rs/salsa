@@ -123,7 +123,7 @@ impl DbMacro {
             #[doc(hidden)]
             fn zalsa_db(&self) {
                 use salsa::plumbing as #zalsa;
-                #zalsa::views(self).add::<Self, dyn #TraitPath>(|t| t, |t| t);
+                #zalsa::views(self).add::<Self, dyn #TraitPath>(|t| t);
             }
         });
         Ok(())

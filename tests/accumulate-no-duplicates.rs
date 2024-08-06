@@ -73,7 +73,7 @@ fn push_e_logs(db: &dyn Database) {
 
 #[test]
 fn accumulate_no_duplicates() {
-    salsa::default_database().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let logs = push_logs::accumulated::<Log>(db);
         // Test that there aren't duplicate B logs.
         // Note that log A appears twice, because they both come

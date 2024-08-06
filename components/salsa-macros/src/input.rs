@@ -62,6 +62,8 @@ impl SalsaStructAllowedOptions for InputStruct {
     const ALLOW_ID: bool = false;
 
     const HAS_LIFETIME: bool = false;
+
+    const ALLOW_DEFAULT: bool = true;
 }
 
 struct Macro {
@@ -85,14 +87,17 @@ impl Macro {
         let field_vis = salsa_struct.field_vis();
         let field_getter_ids = salsa_struct.field_getter_ids();
         let field_setter_ids = salsa_struct.field_setter_ids();
+        let required_fields = salsa_struct.required_fields();
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
+        let field_durability_ids = salsa_struct.field_durability_ids();
         let is_singleton = self.args.singleton.is_some();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
 
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
         let Configuration = self.hygiene.ident("Configuration");
+        let Builder = self.hygiene.ident("Builder");
         let CACHE = self.hygiene.ident("CACHE");
         let Db = self.hygiene.ident("Db");
 
@@ -110,6 +115,8 @@ impl Macro {
                     field_setters: [#(#field_vis #field_setter_ids),*],
                     field_tys: [#(#field_tys),*],
                     field_indices: [#(#field_indices),*],
+                    required_fields: [#(#required_fields),*],
+                    field_durability_ids: [#(#field_durability_ids),*],
                     num_fields: #num_fields,
                     is_singleton: #is_singleton,
                     generate_debug_impl: #generate_debug_impl,
@@ -117,6 +124,7 @@ impl Macro {
                         #zalsa,
                         #zalsa_struct,
                         #Configuration,
+                        #Builder,
                         #CACHE,
                         #Db,
                     ]

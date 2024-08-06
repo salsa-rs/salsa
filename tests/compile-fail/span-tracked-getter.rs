@@ -10,6 +10,6 @@ fn my_fn(db: &dyn salsa::Database) {
 }
 
 fn main() {
-    let mut db = salsa::default_database();
+    let mut db = salsa::DatabaseImpl::new();
     my_fn(&db);
 }

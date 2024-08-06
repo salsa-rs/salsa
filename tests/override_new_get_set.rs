@@ -66,17 +66,5 @@ impl<'db> MyTracked<'db> {
 
 #[test]
 fn execute() {
-    #[salsa::db]
-    #[derive(Default)]
-    struct Database {
-        storage: salsa::Storage<Self>,
-    }
-
-    #[salsa::db]
-    impl salsa::Database for Database {}
-
-    #[salsa::db]
-    impl Db for Database {}
-
-    let mut db = Database::default();
+    salsa::DatabaseImpl::new();
 }

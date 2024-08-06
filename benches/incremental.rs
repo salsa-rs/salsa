@@ -26,7 +26,7 @@ fn many_tracked_structs(criterion: &mut Criterion) {
     criterion.bench_function("many_tracked_structs", |b| {
         b.iter_batched_ref(
             || {
-                let db = salsa::default_database();
+                let db = salsa::DatabaseImpl::new();
 
                 let input = Input::new(&db, 1_000);
                 let input2 = Input::new(&db, 1);

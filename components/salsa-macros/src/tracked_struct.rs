@@ -58,6 +58,8 @@ impl SalsaStructAllowedOptions for TrackedStruct {
     const ALLOW_ID: bool = true;
 
     const HAS_LIFETIME: bool = true;
+
+    const ALLOW_DEFAULT: bool = false;
 }
 
 struct Macro {

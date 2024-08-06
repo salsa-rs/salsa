@@ -3,8 +3,6 @@
 //! Singleton structs are created only once. Subsequent `get`s and `new`s after creation return the same `Id`.
 
 use expect_test::expect;
-mod common;
-use common::{HasLogger, Logger};
 
 use salsa::Database as _;
 use test_log::test;
@@ -15,25 +13,9 @@ struct MyInput {
     id_field: u16,
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-    logger: Logger,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
-impl HasLogger for Database {
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-}
-
 #[test]
 fn basic() {
-    let db = Database::default();
+    let db = salsa::DatabaseImpl::new();
     let input1 = MyInput::new(&db, 3, 4);
     let input2 = MyInput::get(&db);
 
@@ -46,7 +28,7 @@ fn basic() {
 #[test]
 #[should_panic]
 fn twice() {
-    let db = Database::default();
+    let db = salsa::DatabaseImpl::new();
     let input1 = MyInput::new(&db, 3, 4);
     let input2 = MyInput::get(&db);
 
@@ -58,7 +40,7 @@ fn twice() {
 
 #[test]
 fn debug() {
-    Database::default().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let input = MyInput::new(db, 3, 4);
         let actual = format!("{:?}", input);
         let expected = expect!["MyInput { [salsa id]: Id(0), field: 3, id_field: 4 }"];

@@ -1,4 +1,4 @@
-use crate::{cycle::CycleRecoveryStrategy, local_state, storage::IngredientIndex, Database, Id};
+use crate::{cycle::CycleRecoveryStrategy, zalsa::IngredientIndex, Database, Id};
 
 /// An integer that uniquely identifies a particular query instance within the
 /// database. Used to track dependencies between queries. Fully ordered and
@@ -32,7 +32,8 @@ impl DependencyIndex {
     }
 
     pub(crate) fn remove_stale_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
-        db.lookup_ingredient(self.ingredient_index)
+        db.zalsa()
+            .lookup_ingredient(self.ingredient_index)
             .remove_stale_output(db, executor, self.key_index)
     }
 
@@ -41,7 +42,8 @@ impl DependencyIndex {
         db: &dyn Database,
         database_key_index: DatabaseKeyIndex,
     ) {
-        db.lookup_ingredient(self.ingredient_index)
+        db.zalsa()
+            .lookup_ingredient(self.ingredient_index)
             .mark_validated_output(db, database_key_index, self.key_index)
     }
 
@@ -50,15 +52,16 @@ impl DependencyIndex {
         db: &dyn Database,
         last_verified_at: crate::Revision,
     ) -> bool {
-        db.lookup_ingredient(self.ingredient_index)
+        db.zalsa()
+            .lookup_ingredient(self.ingredient_index)
             .maybe_changed_after(db, self.key_index, last_verified_at)
     }
 }
 
 impl std::fmt::Debug for DependencyIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        local_state::with_attached_database(|db| {
-            let ingredient = db.lookup_ingredient(self.ingredient_index);
+        crate::attach::with_attached_database(|db| {
+            let ingredient = db.zalsa().lookup_ingredient(self.ingredient_index);
             ingredient.fmt_index(self.key_index, f)
         })
         .unwrap_or_else(|| {

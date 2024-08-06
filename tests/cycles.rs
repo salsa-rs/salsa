@@ -3,6 +3,7 @@
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use expect_test::expect;
+use salsa::DatabaseImpl;
 use salsa::Durability;
 
 // Axes:
@@ -48,9 +49,6 @@ use salsa::Durability;
 // | Cross  | Fallback | N/A      | Tracked   | both     | parallel/parallel_cycle_mid_recover.rs |
 // | Cross  | Fallback | N/A      | Tracked   | both     | parallel/parallel_cycle_all_recover.rs |
 
-// TODO: The following test is not yet ported.
-// | Intra  | Fallback | Old      | Tracked   | direct   | cycle_disappears_durability |
-
 #[derive(PartialEq, Eq, Hash, Clone, Debug)]
 struct Error {
     cycle: Vec<String>,
@@ -58,17 +56,6 @@ struct Error {
 
 use salsa::Database as Db;
 use salsa::Setter;
-
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
-impl RefUnwindSafe for Database {}
 
 #[salsa::input]
 struct MyInput {}
@@ -169,7 +156,7 @@ fn extract_cycle(f: impl FnOnce() + UnwindSafe) -> salsa::Cycle {
 
 #[test]
 fn cycle_memoized() {
-    Database::default().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let input = MyInput::new(db);
         let cycle = extract_cycle(|| memoized_a(db, input));
         let expected = expect![[r#"
@@ -184,7 +171,7 @@ fn cycle_memoized() {
 
 #[test]
 fn cycle_volatile() {
-    Database::default().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let input = MyInput::new(db);
         let cycle = extract_cycle(|| volatile_a(db, input));
         let expected = expect![[r#"
@@ -203,7 +190,7 @@ fn expect_cycle() {
     //     ^     |
     //     +-----+
 
-    Database::default().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let abc = ABC::new(db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
         assert!(cycle_a(db, abc).is_err());
     })
@@ -214,7 +201,7 @@ fn inner_cycle() {
     //     A --> B <-- C
     //     ^     |
     //     +-----+
-    Database::default().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let abc = ABC::new(db, CycleQuery::B, CycleQuery::A, CycleQuery::B);
         let err = cycle_c(db, abc);
         assert!(err.is_err());
@@ -233,7 +220,7 @@ fn cycle_revalidate() {
     //     A --> B
     //     ^     |
     //     +-----+
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
     let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
     assert!(cycle_a(&db, abc).is_err());
     abc.set_b(&mut db).to(CycleQuery::A); // same value as default
@@ -245,7 +232,7 @@ fn cycle_recovery_unchanged_twice() {
     //     A --> B
     //     ^     |
     //     +-----+
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
     let abc = ABC::new(&db, CycleQuery::B, CycleQuery::A, CycleQuery::None);
     assert!(cycle_a(&db, abc).is_err());
 
@@ -255,8 +242,7 @@ fn cycle_recovery_unchanged_twice() {
 
 #[test]
 fn cycle_appears() {
-    let mut db = Database::default();
-
+    let mut db = salsa::DatabaseImpl::new();
     //     A --> B
     let abc = ABC::new(&db, CycleQuery::B, CycleQuery::None, CycleQuery::None);
     assert!(cycle_a(&db, abc).is_ok());
@@ -270,7 +256,7 @@ fn cycle_appears() {
 
 #[test]
 fn cycle_disappears() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
 
     //     A --> B
     //     ^     |
@@ -289,7 +275,7 @@ fn cycle_disappears() {
 /// the fact that the cycle will no longer occur.
 #[test]
 fn cycle_disappears_durability() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
     let abc = ABC::new(
         &mut db,
         CycleQuery::None,
@@ -320,7 +306,7 @@ fn cycle_disappears_durability() {
 
 #[test]
 fn cycle_mixed_1() {
-    Database::default().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         //     A --> B <-- C
         //           |     ^
         //           +-----+
@@ -338,7 +324,7 @@ fn cycle_mixed_1() {
 
 #[test]
 fn cycle_mixed_2() {
-    Database::default().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         // Configuration:
         //
         //     A --> B --> C
@@ -360,7 +346,7 @@ fn cycle_mixed_2() {
 fn cycle_deterministic_order() {
     // No matter whether we start from A or B, we get the same set of participants:
     let f = || {
-        let mut db = Database::default();
+        let mut db = salsa::DatabaseImpl::new();
 
         //     A --> B
         //     ^     |
@@ -390,7 +376,7 @@ fn cycle_deterministic_order() {
 #[test]
 fn cycle_multiple() {
     // No matter whether we start from A or B, we get the same set of participants:
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
 
     // Configuration:
     //
@@ -432,7 +418,7 @@ fn cycle_multiple() {
 
 #[test]
 fn cycle_recovery_set_but_not_participating() {
-    Database::default().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         //     A --> C -+
         //           ^  |
         //           +--+

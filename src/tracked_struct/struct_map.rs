@@ -6,7 +6,7 @@ use std::{
 use crossbeam::queue::SegQueue;
 use dashmap::mapref::one::RefMut;
 
-use crate::{alloc::Alloc, hash::FxDashMap, Id, Revision, Runtime};
+use crate::{alloc::Alloc, hash::FxDashMap, Id, Revision};
 
 use super::{Configuration, KeyStruct, Value};
 
@@ -80,7 +80,7 @@ where
     ///
     /// * If value with same `value.id` is already present in the map.
     /// * If value not created in current revision.
-    pub fn insert<'db>(&'db self, current_revision: Revision, value: Value<C>) -> C::Struct<'db> {
+    pub fn insert(&self, current_revision: Revision, value: Value<C>) -> C::Struct<'_> {
         assert_eq!(value.created_at, current_revision);
 
         let id = value.id;
@@ -99,7 +99,7 @@ where
         unsafe { C::struct_from_raw(pointer) }
     }
 
-    pub fn validate<'db>(&'db self, runtime: &'db Runtime, id: Id) {
+    pub fn validate(&self, current_revision: Revision, id: Id) {
         let mut data = self.map.get_mut(&id).unwrap();
 
         // UNSAFE: We never permit `&`-access in the current revision until data.created_at
@@ -107,7 +107,6 @@ where
         let data = unsafe { data.as_mut() };
 
         // Never update a struct twice in the same revision.
-        let current_revision = runtime.current_revision();
         assert!(data.created_at < current_revision);
         data.created_at = current_revision;
     }
@@ -119,7 +118,7 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value is already updated in this revision.
-    pub fn update<'db>(&'db self, current_revision: Revision, id: Id) -> Update<'db, C> {
+    pub fn update(&self, current_revision: Revision, id: Id) -> Update<'_, C> {
         let mut data = self.map.get_mut(&id).unwrap();
 
         // UNSAFE: We never permit `&`-access in the current revision until data.created_at
@@ -164,7 +163,7 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
-    pub fn get<'db>(&'db self, current_revision: Revision, id: Id) -> C::Struct<'db> {
+    pub fn get(&self, current_revision: Revision, id: Id) -> C::Struct<'_> {
         Self::get_from_map(&self.map, current_revision, id)
     }
 
@@ -174,11 +173,11 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
-    fn get_from_map<'db>(
-        map: &'db FxDashMap<Id, Alloc<Value<C>>>,
+    fn get_from_map(
+        map: &FxDashMap<Id, Alloc<Value<C>>>,
         current_revision: Revision,
         id: Id,
-    ) -> C::Struct<'db> {
+    ) -> C::Struct<'_> {
         let data = map.get(&id).unwrap();
 
         // UNSAFE: We permit `&`-access in the current revision once data.created_at
@@ -231,7 +230,7 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
-    pub fn get<'db>(&'db self, current_revision: Revision, id: Id) -> C::Struct<'db> {
+    pub fn get(&self, current_revision: Revision, id: Id) -> C::Struct<'_> {
         StructMap::get_from_map(&self.map, current_revision, id)
     }
 }

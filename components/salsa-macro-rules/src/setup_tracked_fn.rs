@@ -131,9 +131,9 @@ macro_rules! setup_tracked_fn {
 
             impl $Configuration {
                 fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
-                    $FN_CACHE.get_or_create(db.as_salsa_database(), || {
+                    $FN_CACHE.get_or_create(db.as_dyn_database(), || {
                         <dyn $Db as $Db>::zalsa_db(db);
-                        db.add_or_lookup_jar_by_type(&$Configuration)
+                        db.zalsa().add_or_lookup_jar_by_type(&$Configuration)
                     })
                 }
 
@@ -141,8 +141,8 @@ macro_rules! setup_tracked_fn {
                     fn intern_ingredient(
                         db: &dyn $Db,
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
-                        $INTERN_CACHE.get_or_create(db.as_salsa_database(), || {
-                            db.add_or_lookup_jar_by_type(&$Configuration).successor(0)
+                        $INTERN_CACHE.get_or_create(db.as_dyn_database(), || {
+                            db.zalsa().add_or_lookup_jar_by_type(&$Configuration).successor(0)
                         })
                     }
                 }
@@ -193,7 +193,7 @@ macro_rules! setup_tracked_fn {
                         if $needs_interner {
                             $Configuration::intern_ingredient(db).data(key).clone()
                         } else {
-                            $zalsa::LookupId::lookup_id(key, db.as_salsa_database())
+                            $zalsa::LookupId::lookup_id(key, db.as_dyn_database())
                         }
                     }
                 }
@@ -225,6 +225,7 @@ macro_rules! setup_tracked_fn {
                 }
             }
 
+            #[allow(non_local_definitions)]
             impl $fn_name {
                 pub fn accumulated<$db_lt, A: salsa::Accumulator>(
                     $db: &$db_lt dyn $Db,
@@ -233,7 +234,7 @@ macro_rules! setup_tracked_fn {
                     use salsa::plumbing as $zalsa;
                     let key = $zalsa::macro_if! {
                         if $needs_interner {
-                            $Configuration::intern_ingredient($db).intern_id($db.as_salsa_database(), ($($input_id),*))
+                            $Configuration::intern_ingredient($db).intern_id($db.as_dyn_database(), ($($input_id),*))
                         } else {
                             $zalsa::AsId::as_id(&($($input_id),*))
                         }
@@ -265,24 +266,26 @@ macro_rules! setup_tracked_fn {
                 } }
             }
 
-            let result = $zalsa::macro_if! {
-                if $needs_interner {
-                    {
-                        let key = $Configuration::intern_ingredient($db).intern_id($db.as_salsa_database(), ($($input_id),*));
-                        $Configuration::fn_ingredient($db).fetch($db, key)
+            $zalsa::attach($db, || {
+                let result = $zalsa::macro_if! {
+                    if $needs_interner {
+                        {
+                            let key = $Configuration::intern_ingredient($db).intern_id($db.as_dyn_database(), ($($input_id),*));
+                            $Configuration::fn_ingredient($db).fetch($db, key)
+                        }
+                    } else {
+                        $Configuration::fn_ingredient($db).fetch($db, $zalsa::AsId::as_id(&($($input_id),*)))
                     }
-                } else {
-                    $Configuration::fn_ingredient($db).fetch($db, $zalsa::AsId::as_id(&($($input_id),*)))
-                }
-            };
+                };
 
-            $zalsa::macro_if! {
-                if $return_ref {
-                    result
-                } else {
-                    <$output_ty as std::clone::Clone>::clone(result)
+                $zalsa::macro_if! {
+                    if $return_ref {
+                        result
+                    } else {
+                        <$output_ty as std::clone::Clone>::clone(result)
+                    }
                 }
-            }
+            })
         }
     };
 }

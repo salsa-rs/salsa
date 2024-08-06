@@ -11,10 +11,9 @@ use crate::{
     ingredient::{fmt_index, Ingredient, Jar},
     ingredient_list::IngredientList,
     key::{DatabaseKeyIndex, DependencyIndex},
-    local_state::{self, QueryOrigin},
-    runtime::Runtime,
     salsa_struct::SalsaStructInDb,
-    storage::IngredientIndex,
+    zalsa::IngredientIndex,
+    zalsa_local::QueryOrigin,
     Database, Durability, Event, Id, Revision,
 };
 
@@ -114,7 +113,7 @@ impl<C: Configuration> Default for JarImpl<C> {
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
         &self,
-        struct_index: crate::storage::IngredientIndex,
+        struct_index: crate::zalsa::IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient = IngredientImpl::new(struct_index);
         let struct_map = &struct_ingredient.struct_map.view();
@@ -291,84 +290,85 @@ where
         db: &'db dyn Database,
         fields: C::Fields<'db>,
     ) -> C::Struct<'db> {
-        local_state::attach(db, |local_state| {
-            let data_hash = crate::hash::hash(&C::id_fields(&fields));
+        let zalsa = db.zalsa();
+        let zalsa_local = db.zalsa_local();
 
-            let (query_key, current_deps, disambiguator) =
-                local_state.disambiguate(self.ingredient_index, Revision::start(), data_hash);
+        let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
-            let entity_key = KeyStruct {
-                query_key,
-                disambiguator,
-                data_hash,
-            };
+        let (query_key, current_deps, disambiguator) =
+            zalsa_local.disambiguate(self.ingredient_index, Revision::start(), data_hash);
 
-            let (id, new_id) = self.intern(entity_key);
-            local_state.add_output(self.database_key_index(id).into());
+        let entity_key = KeyStruct {
+            query_key,
+            disambiguator,
+            data_hash,
+        };
 
-            let current_revision = db.runtime().current_revision();
-            if new_id {
-                // This is a new tracked struct, so create an entry in the struct map.
+        let (id, new_id) = self.intern(entity_key);
+        zalsa_local.add_output(self.database_key_index(id).into());
 
-                self.struct_map.insert(
-                    current_revision,
-                    Value {
-                        id,
-                        key: entity_key,
-                        struct_ingredient_index: self.ingredient_index,
-                        created_at: current_revision,
-                        durability: current_deps.durability,
-                        fields: unsafe { self.to_static(fields) },
-                        revisions: C::new_revisions(current_deps.changed_at),
-                    },
-                )
-            } else {
-                // The struct already exists in the intern map.
-                // Note that we assume there is at most one executing copy of
-                // the current query at a time, which implies that the
-                // struct must exist in `self.struct_map` already
-                // (if the same query could execute twice in parallel,
-                // then it would potentially create the same struct twice in parallel,
-                // which means the interned key could exist but `struct_map` not yet have
-                // been updated).
+        let current_revision = zalsa.current_revision();
+        if new_id {
+            // This is a new tracked struct, so create an entry in the struct map.
 
-                match self.struct_map.update(current_revision, id) {
-                    Update::Current(r) => {
-                        // All inputs up to this point were previously
-                        // observed to be green and this struct was already
-                        // verified. Therefore, the durability ought not to have
-                        // changed (nor the field values, but the user could've
-                        // done something stupid, so we can't *assert* this is true).
-                        assert!(C::deref_struct(r).durability == current_deps.durability);
+            self.struct_map.insert(
+                current_revision,
+                Value {
+                    id,
+                    key: entity_key,
+                    struct_ingredient_index: self.ingredient_index,
+                    created_at: current_revision,
+                    durability: current_deps.durability,
+                    fields: unsafe { self.to_static(fields) },
+                    revisions: C::new_revisions(current_deps.changed_at),
+                },
+            )
+        } else {
+            // The struct already exists in the intern map.
+            // Note that we assume there is at most one executing copy of
+            // the current query at a time, which implies that the
+            // struct must exist in `self.struct_map` already
+            // (if the same query could execute twice in parallel,
+            // then it would potentially create the same struct twice in parallel,
+            // which means the interned key could exist but `struct_map` not yet have
+            // been updated).
 
-                        r
+            match self.struct_map.update(current_revision, id) {
+                Update::Current(r) => {
+                    // All inputs up to this point were previously
+                    // observed to be green and this struct was already
+                    // verified. Therefore, the durability ought not to have
+                    // changed (nor the field values, but the user could've
+                    // done something stupid, so we can't *assert* this is true).
+                    assert!(C::deref_struct(r).durability == current_deps.durability);
+
+                    r
+                }
+                Update::Outdated(mut data_ref) => {
+                    let data = &mut *data_ref;
+
+                    // SAFETY: We assert that the pointer to `data.revisions`
+                    // is a pointer into the database referencing a value
+                    // from a previous revision. As such, it continues to meet
+                    // its validity invariant and any owned content also continues
+                    // to meet its safety invariant.
+                    unsafe {
+                        C::update_fields(
+                            current_revision,
+                            &mut data.revisions,
+                            self.to_self_ptr(std::ptr::addr_of_mut!(data.fields)),
+                            fields,
+                        );
                     }
-                    Update::Outdated(mut data_ref) => {
-                        let data = &mut *data_ref;
-
-                        // SAFETY: We assert that the pointer to `data.revisions`
-                        // is a pointer into the database referencing a value
-                        // from a previous revision. As such, it continues to meet
-                        // its validity invariant and any owned content also continues
-                        // to meet its safety invariant.
-                        unsafe {
-                            C::update_fields(
-                                current_revision,
-                                &mut data.revisions,
-                                self.to_self_ptr(std::ptr::addr_of_mut!(data.fields)),
-                                fields,
-                            );
-                        }
-                        if current_deps.durability < data.durability {
-                            data.revisions = C::new_revisions(current_revision);
-                        }
-                        data.durability = current_deps.durability;
-                        data.created_at = current_revision;
-                        data_ref.freeze()
+                    if current_deps.durability < data.durability {
+                        data.revisions = C::new_revisions(current_revision);
                     }
+                    data.durability = current_deps.durability;
+                    data.created_at = current_revision;
+                    data_ref.freeze()
                 }
             }
-        })
+        }
     }
 
     /// Given the id of a tracked struct created in this revision,
@@ -377,8 +377,8 @@ where
     /// # Panics
     ///
     /// If the struct has not been created in this revision.
-    pub fn lookup_struct<'db>(&'db self, runtime: &'db Runtime, id: Id) -> C::Struct<'db> {
-        let current_revision = runtime.current_revision();
+    pub fn lookup_struct<'db>(&'db self, db: &'db dyn Database, id: Id) -> C::Struct<'db> {
+        let current_revision = db.zalsa().current_revision();
         self.struct_map.get(current_revision, id)
     }
 
@@ -393,7 +393,7 @@ where
     /// unspecified results (but not UB). See [`InternedIngredient::delete_index`] for more
     /// discussion and important considerations.
     pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id) {
-        db.salsa_event(Event {
+        db.salsa_event(&|| Event {
             thread_id: std::thread::current().id(),
             kind: crate::EventKind::DidDiscard {
                 key: self.database_key_index(id),
@@ -405,7 +405,8 @@ where
         }
 
         for dependent_fn in self.dependent_fns.iter() {
-            db.lookup_ingredient(dependent_fn)
+            db.zalsa()
+                .lookup_ingredient(dependent_fn)
                 .salsa_struct_deleted(db, id);
         }
     }
@@ -456,9 +457,9 @@ where
         _executor: DatabaseKeyIndex,
         output_key: Option<crate::Id>,
     ) {
-        let runtime = db.runtime();
+        let current_revision = db.zalsa().current_revision();
         let output_key = output_key.unwrap();
-        self.struct_map.validate(runtime, output_key);
+        self.struct_map.validate(current_revision, output_key);
     }
 
     fn remove_stale_output(
@@ -471,7 +472,7 @@ where
         // `executor` creates a tracked struct `salsa_output_key`,
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
-        self.delete_entity(db.as_salsa_database(), stale_output_key.unwrap());
+        self.delete_entity(db.as_dyn_database(), stale_output_key.unwrap());
     }
 
     fn requires_reset_for_new_revision(&self) -> bool {
@@ -518,21 +519,20 @@ where
         db: &dyn crate::Database,
         field_index: usize,
     ) -> &'db C::Fields<'db> {
-        local_state::attach(db, |local_state| {
-            let field_ingredient_index = self.struct_ingredient_index.successor(field_index);
-            let changed_at = self.revisions[field_index];
+        let zalsa_local = db.zalsa_local();
+        let field_ingredient_index = self.struct_ingredient_index.successor(field_index);
+        let changed_at = self.revisions[field_index];
 
-            local_state.report_tracked_read(
-                DependencyIndex {
-                    ingredient_index: field_ingredient_index,
-                    key_index: Some(self.id.as_id()),
-                },
-                self.durability,
-                changed_at,
-            );
+        zalsa_local.report_tracked_read(
+            DependencyIndex {
+                ingredient_index: field_ingredient_index,
+                key_index: Some(self.id.as_id()),
+            },
+            self.durability,
+            changed_at,
+        );
 
-            unsafe { self.to_self_ref(&self.fields) }
-        })
+        unsafe { self.to_self_ref(&self.fields) }
     }
 
     unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Fields<'static>) -> &'db C::Fields<'db> {

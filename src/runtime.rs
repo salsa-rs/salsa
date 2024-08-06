@@ -8,13 +8,9 @@ use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 
 use crate::{
-    active_query::ActiveQuery,
-    cycle::CycleRecoveryStrategy,
-    durability::Durability,
-    key::{DatabaseKeyIndex, DependencyIndex},
-    local_state::{EdgeKind, LocalState},
-    revision::AtomicRevision,
-    Cancelled, Cycle, Database, Event, EventKind, Revision,
+    active_query::ActiveQuery, cycle::CycleRecoveryStrategy, durability::Durability,
+    key::DatabaseKeyIndex, revision::AtomicRevision, zalsa_local::ZalsaLocal, Cancelled, Cycle,
+    Database, Event, EventKind, Revision,
 };
 
 use self::dependency_graph::DependencyGraph;
@@ -24,9 +20,6 @@ mod dependency_graph;
 pub struct Runtime {
     /// Stores the next id to use for a snapshotted runtime (starts at 1).
     next_id: AtomicUsize,
-
-    /// Vector we can clone
-    empty_dependencies: Arc<[(EdgeKind, DependencyIndex)]>,
 
     /// Set to true when the current revision has been canceled.
     /// This is done when we an input is being changed. The flag
@@ -89,7 +82,6 @@ impl Default for Runtime {
                 .map(|_| AtomicRevision::start())
                 .collect(),
             next_id: AtomicUsize::new(1),
-            empty_dependencies: None.into_iter().collect(),
             revision_canceled: Default::default(),
             dependency_graph: Default::default(),
         }
@@ -110,10 +102,6 @@ impl std::fmt::Debug for Runtime {
 impl Runtime {
     pub(crate) fn current_revision(&self) -> Revision {
         self.revisions[0].load()
-    }
-
-    pub(crate) fn empty_dependencies(&self) -> Arc<[(EdgeKind, DependencyIndex)]> {
-        self.empty_dependencies.clone()
     }
 
     /// Reports that an input with durability `durability` changed.
@@ -189,7 +177,7 @@ impl Runtime {
     pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
         &self,
         db: &dyn Database,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
@@ -205,7 +193,7 @@ impl Runtime {
             assert!(!dg.depends_on(other_id, thread_id));
         }
 
-        db.salsa_event(Event {
+        db.salsa_event(&|| Event {
             thread_id,
             kind: EventKind::WillBlockOn {
                 other_thread_id: other_id,
@@ -249,7 +237,7 @@ impl Runtime {
     fn unblock_cycle_and_maybe_throw(
         &self,
         db: &dyn Database,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         dg: &mut DependencyGraph,
         database_key_index: DatabaseKeyIndex,
         to_id: ThreadId,
@@ -316,6 +304,7 @@ impl Runtime {
             aqs.iter_mut()
                 .skip_while(|aq| {
                     match db
+                        .zalsa()
                         .lookup_ingredient(aq.database_key_index.ingredient_index)
                         .cycle_recovery_strategy()
                     {

@@ -134,14 +134,14 @@ macro_rules! setup_tracked_struct {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
                     CACHE.get_or_create(db, || {
-                        db.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl::<$Configuration>>::default())
+                        db.zalsa().add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl::<$Configuration>>::default())
                     })
                 }
             }
 
             impl<$db_lt> $zalsa::LookupId<$db_lt> for $Struct<$db_lt> {
                 fn lookup_id(id: salsa::Id, db: &$db_lt dyn $zalsa::Database) -> Self {
-                    $Configuration::ingredient(db).lookup_struct(db.runtime(), id)
+                    $Configuration::ingredient(db).lookup_struct(db, id)
                 }
             }
 
@@ -192,8 +192,8 @@ macro_rules! setup_tracked_struct {
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + $zalsa::Database,
                 {
-                    $Configuration::ingredient(db.as_salsa_database()).new_struct(
-                        db.as_salsa_database(),
+                    $Configuration::ingredient(db.as_dyn_database()).new_struct(
+                        db.as_dyn_database(),
                         ($($field_id,)*)
                     )
                 }
@@ -204,7 +204,7 @@ macro_rules! setup_tracked_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let fields = unsafe { self.0.as_ref() }.field(db.as_salsa_database(), $field_index);
+                        let fields = unsafe { self.0.as_ref() }.field(db.as_dyn_database(), $field_index);
                         $crate::maybe_clone!(
                             $field_option,
                             $field_ty,

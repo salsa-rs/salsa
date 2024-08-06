@@ -56,7 +56,7 @@ impl MyInput {
 
 #[test]
 fn deletion_drops() {
-    let mut db = salsa::default_database();
+    let mut db = salsa::DatabaseImpl::new();
 
     let input = MyInput::new(&db, 22);
 

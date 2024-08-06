@@ -41,7 +41,7 @@ fn push_d_logs(db: &dyn Database) {
 
 #[test]
 fn accumulate_execution_order() {
-    salsa::default_database().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let logs = push_logs::accumulated::<Log>(db);
         // Check that we get logs in execution order
         expect![[r#"

@@ -5,47 +5,16 @@ use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::key::DependencyIndex;
 use crate::runtime::StampedValue;
-use crate::storage::IngredientIndex;
 use crate::tracked_struct::Disambiguator;
+use crate::zalsa::IngredientIndex;
 use crate::Cancelled;
 use crate::Cycle;
 use crate::Database;
 use crate::Event;
 use crate::EventKind;
 use crate::Revision;
-use crate::Runtime;
-use std::cell::Cell;
 use std::cell::RefCell;
-use std::ptr::NonNull;
 use std::sync::Arc;
-
-thread_local! {
-    /// The thread-local state salsa requires for a given thread
-    static LOCAL_STATE: LocalState = const { LocalState::new() }
-}
-
-/// Attach the database to the current thread and execute `op`.
-/// Panics if a different database has already been attached.
-pub(crate) fn attach<R, DB>(db: &DB, op: impl FnOnce(&LocalState) -> R) -> R
-where
-    DB: ?Sized + Database,
-{
-    LOCAL_STATE.with(|state| state.attach(db.as_salsa_database(), || op(state)))
-}
-
-/// Access the "attached" database. Returns `None` if no database is attached.
-/// Databases are attached with `attach_database`.
-pub fn with_attached_database<R>(op: impl FnOnce(&dyn Database) -> R) -> Option<R> {
-    LOCAL_STATE.with(|state| {
-        if let Some(db) = state.database.get() {
-            // SAFETY: We always attach the database in for the entire duration of a function,
-            // so it cannot become "unattached" while this function is running.
-            Some(op(unsafe { db.as_ref() }))
-        } else {
-            None
-        }
-    })
-}
 
 /// State that is specific to a single execution thread.
 ///
@@ -53,10 +22,7 @@ pub fn with_attached_database<R>(op: impl FnOnce(&dyn Database) -> R) -> Option<
 ///
 /// **Note also that all mutations to the database handle (and hence
 /// to the local-state) must be undone during unwinding.**
-pub(crate) struct LocalState {
-    /// Pointer to the currently attached database.
-    database: Cell<Option<NonNull<dyn Database>>>,
-
+pub struct ZalsaLocal {
     /// Vector of active queries.
     ///
     /// This is normally `Some`, but it is set to `None`
@@ -67,55 +33,11 @@ pub(crate) struct LocalState {
     query_stack: RefCell<Option<Vec<ActiveQuery>>>,
 }
 
-impl LocalState {
-    const fn new() -> Self {
-        LocalState {
-            database: Cell::new(None),
+impl ZalsaLocal {
+    pub(crate) fn new() -> Self {
+        ZalsaLocal {
             query_stack: RefCell::new(Some(vec![])),
         }
-    }
-
-    fn attach<R>(&self, db: &dyn Database, op: impl FnOnce() -> R) -> R {
-        struct DbGuard<'s> {
-            state: Option<&'s LocalState>,
-        }
-
-        impl<'s> DbGuard<'s> {
-            fn new(state: &'s LocalState, db: &dyn Database) -> Self {
-                if let Some(current_db) = state.database.get() {
-                    let new_db = NonNull::from(db);
-
-                    // Already attached? Assert that the database has not changed.
-                    // NOTE: It's important to use `addr_eq` here because `NonNull::eq` not only compares the address but also the type's metadata.
-                    if !std::ptr::addr_eq(current_db.as_ptr(), new_db.as_ptr()) {
-                        panic!(
-                            "Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}",
-                        );
-                    }
-
-                    Self { state: None }
-                } else {
-                    // Otherwise, set the database.
-                    state.database.set(Some(NonNull::from(db)));
-                    Self { state: Some(state) }
-                }
-            }
-        }
-
-        impl Drop for DbGuard<'_> {
-            fn drop(&mut self) {
-                // Reset database to null if we did anything in `DbGuard::new`.
-                if let Some(state) = self.state {
-                    state.database.set(None);
-
-                    // All stack frames should have been popped from the local stack.
-                    assert!(state.query_stack.borrow().as_ref().unwrap().is_empty());
-                }
-            }
-        }
-
-        let _guard = DbGuard::new(self, db);
-        op()
     }
 
     #[inline]
@@ -187,7 +109,7 @@ impl LocalState {
         changed_at: Revision,
     ) {
         debug!(
-            "report_query_read_and_unwind_if_cycle_resulted(input={:?}, durability={:?}, changed_at={:?})",
+            "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
             input, durability, changed_at
         );
         self.with_query_stack(|stack| {
@@ -321,27 +243,26 @@ impl LocalState {
     /// `salsa_event` is emitted when this method is called, so that should be
     /// used instead.
     pub(crate) fn unwind_if_revision_cancelled(&self, db: &dyn Database) {
-        let runtime = db.runtime();
         let thread_id = std::thread::current().id();
-        db.salsa_event(Event {
+        db.salsa_event(&|| Event {
             thread_id,
 
             kind: EventKind::WillCheckCancellation,
         });
-        if runtime.load_cancellation_flag() {
-            self.unwind_cancelled(runtime);
+        let zalsa = db.zalsa();
+        if zalsa.load_cancellation_flag() {
+            self.unwind_cancelled(zalsa.current_revision());
         }
     }
 
     #[cold]
-    pub(crate) fn unwind_cancelled(&self, runtime: &Runtime) {
-        let current_revision = runtime.current_revision();
+    pub(crate) fn unwind_cancelled(&self, current_revision: Revision) {
         self.report_untracked_read(current_revision);
         Cancelled::PendingWrite.throw();
     }
 }
 
-impl std::panic::RefUnwindSafe for LocalState {}
+impl std::panic::RefUnwindSafe for ZalsaLocal {}
 
 /// Summarizes "all the inputs that a query used"
 #[derive(Debug, Clone)]
@@ -414,6 +335,10 @@ pub enum EdgeKind {
     Output,
 }
 
+lazy_static::lazy_static! {
+    pub(crate) static ref EMPTY_DEPENDENCIES: Arc<[(EdgeKind, DependencyIndex)]> = Arc::new([]);
+}
+
 /// The edges between a memoized value and other queries in the dependency graph.
 /// These edges include both dependency edges
 /// e.g., when creating the memoized value for Q0 executed another function Q1)
@@ -468,7 +393,7 @@ impl QueryEdges {
 /// the query from the stack -- in the case of unwinding, the guard's
 /// destructor will also remove the query.
 pub(crate) struct ActiveQueryGuard<'me> {
-    local_state: &'me LocalState,
+    local_state: &'me ZalsaLocal,
     push_len: usize,
     pub(crate) database_key_index: DatabaseKeyIndex,
 }
@@ -497,14 +422,14 @@ impl ActiveQueryGuard<'_> {
     /// which summarizes the other queries that were accessed during this
     /// query's execution.
     #[inline]
-    pub(crate) fn pop(self, runtime: &Runtime) -> QueryRevisions {
+    pub(crate) fn pop(self) -> QueryRevisions {
         // Extract accumulated inputs.
         let popped_query = self.complete();
 
         // If this frame were a cycle participant, it would have unwound.
         assert!(popped_query.cycle.is_none());
 
-        popped_query.revisions(runtime)
+        popped_query.revisions()
     }
 
     /// If the active query is registered as a cycle participant, remove and

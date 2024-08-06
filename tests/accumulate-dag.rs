@@ -39,7 +39,7 @@ fn push_b_logs(db: &dyn Database, input: MyInput) {
 
 #[test]
 fn accumulate_a_called_twice() {
-    salsa::default_database().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let input = MyInput::new(db, 2, 3);
         let logs = push_logs::accumulated::<Log>(db, input);
         // Check that we don't see logs from `a` appearing twice in the input.

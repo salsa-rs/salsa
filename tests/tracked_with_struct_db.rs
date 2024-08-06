@@ -1,17 +1,8 @@
 //! Test that a setting a field on a `#[salsa::input]`
 //! overwrites and returns the old value.
 
-use salsa::Database as _;
+use salsa::{Database, DatabaseImpl};
 use test_log::test;
-
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
 
 #[salsa::input]
 struct MyInput {
@@ -31,7 +22,7 @@ enum MyList<'db> {
 }
 
 #[salsa::tracked]
-fn create_tracked_list(db: &dyn salsa::Database, input: MyInput) -> MyTracked<'_> {
+fn create_tracked_list(db: &dyn Database, input: MyInput) -> MyTracked<'_> {
     let t0 = MyTracked::new(db, input, MyList::None);
     let t1 = MyTracked::new(db, input, MyList::Next(t0));
     t1
@@ -39,7 +30,7 @@ fn create_tracked_list(db: &dyn salsa::Database, input: MyInput) -> MyTracked<'_
 
 #[test]
 fn execute() {
-    Database::default().attach(|db| {
+    DatabaseImpl::new().attach(|db| {
         let input = MyInput::new(db, "foo".to_string());
         let t0: MyTracked = create_tracked_list(db, input);
         let t1 = create_tracked_list(db, input);

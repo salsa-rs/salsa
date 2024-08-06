@@ -3,10 +3,11 @@ use crate::{
     hash::{FxIndexMap, FxIndexSet},
     key::{DatabaseKeyIndex, DependencyIndex},
     tracked_struct::Disambiguator,
-    Cycle, Revision, Runtime,
+    zalsa_local::EMPTY_DEPENDENCIES,
+    Cycle, Revision,
 };
 
-use super::local_state::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
+use super::zalsa_local::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
 
 #[derive(Debug)]
 pub(crate) struct ActiveQuery {
@@ -86,9 +87,9 @@ impl ActiveQuery {
         self.input_outputs.contains(&(EdgeKind::Output, key))
     }
 
-    pub(crate) fn revisions(&self, runtime: &Runtime) -> QueryRevisions {
+    pub(crate) fn revisions(&self) -> QueryRevisions {
         let input_outputs = if self.input_outputs.is_empty() {
-            runtime.empty_dependencies()
+            EMPTY_DEPENDENCIES.clone()
         } else {
             self.input_outputs.iter().copied().collect()
         };
@@ -109,7 +110,7 @@ impl ActiveQuery {
     }
 
     /// Adds any dependencies from `other` into `self`.
-    /// Used during cycle recovery, see [`Runtime::create_cycle_error`].
+    /// Used during cycle recovery, see [`Runtime::unblock_cycle_and_maybe_throw`].
     pub(super) fn add_from(&mut self, other: &ActiveQuery) {
         self.changed_at = self.changed_at.max(other.changed_at);
         self.durability = self.durability.min(other.durability);
@@ -119,7 +120,7 @@ impl ActiveQuery {
     }
 
     /// Removes the participants in `cycle` from my dependencies.
-    /// Used during cycle recovery, see [`Runtime::create_cycle_error`].
+    /// Used during cycle recovery, see [`Runtime::unblock_cycle_and_maybe_throw`].
     pub(super) fn remove_cycle_participants(&mut self, cycle: &Cycle) {
         for p in cycle.participant_keys() {
             let p: DependencyIndex = p.into();
@@ -128,7 +129,7 @@ impl ActiveQuery {
     }
 
     /// Copy the changed-at, durability, and dependencies from `cycle_query`.
-    /// Used during cycle recovery, see [`Runtime::create_cycle_error`].
+    /// Used during cycle recovery, see [`Runtime::unblock_cycle_and_maybe_throw`].
     pub(crate) fn take_inputs_from(&mut self, cycle_query: &ActiveQuery) {
         self.changed_at = cycle_query.changed_at;
         self.durability = cycle_query.durability;

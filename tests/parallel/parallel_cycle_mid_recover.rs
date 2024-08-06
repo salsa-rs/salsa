@@ -2,16 +2,7 @@
 //! See `../cycles.rs` for a complete listing of cycle tests,
 //! both intra and cross thread.
 
-use salsa::Handle;
-
-use crate::setup::Database;
-use crate::setup::Knobs;
-
-#[salsa::db]
-pub(crate) trait Db: salsa::Database + Knobs {}
-
-#[salsa::db]
-impl<T: salsa::Database + Knobs> Db for T {}
+use crate::setup::{Knobs, KnobsDatabase};
 
 #[salsa::input]
 pub(crate) struct MyInput {
@@ -19,7 +10,7 @@ pub(crate) struct MyInput {
 }
 
 #[salsa::tracked]
-pub(crate) fn a1(db: &dyn Db, input: MyInput) -> i32 {
+pub(crate) fn a1(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
     // tell thread b we have started
     db.signal(1);
 
@@ -30,25 +21,25 @@ pub(crate) fn a1(db: &dyn Db, input: MyInput) -> i32 {
 }
 
 #[salsa::tracked]
-pub(crate) fn a2(db: &dyn Db, input: MyInput) -> i32 {
+pub(crate) fn a2(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
     // create the cycle
     b1(db, input)
 }
 
 #[salsa::tracked(recovery_fn=recover_b1)]
-pub(crate) fn b1(db: &dyn Db, input: MyInput) -> i32 {
+pub(crate) fn b1(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
     // wait for thread a to have started
     db.wait_for(1);
     b2(db, input)
 }
 
-fn recover_b1(db: &dyn Db, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
+fn recover_b1(db: &dyn KnobsDatabase, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
     dbg!("recover_b1");
     key.field(db) * 20 + 2
 }
 
 #[salsa::tracked]
-pub(crate) fn b2(db: &dyn Db, input: MyInput) -> i32 {
+pub(crate) fn b2(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
     // will encounter a cycle but recover
     b3(db, input);
     b1(db, input); // hasn't recovered yet
@@ -56,12 +47,12 @@ pub(crate) fn b2(db: &dyn Db, input: MyInput) -> i32 {
 }
 
 #[salsa::tracked(recovery_fn=recover_b3)]
-pub(crate) fn b3(db: &dyn Db, input: MyInput) -> i32 {
+pub(crate) fn b3(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
     // will block on thread a, signaling stage 2
     a1(db, input)
 }
 
-fn recover_b3(db: &dyn Db, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
+fn recover_b3(db: &dyn KnobsDatabase, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
     dbg!("recover_b3");
     key.field(db) * 200 + 2
 }
@@ -88,19 +79,19 @@ fn recover_b3(db: &dyn Db, _cycle: &salsa::Cycle, key: MyInput) -> i32 {
 
 #[test]
 fn execute() {
-    let db = Handle::new(Database::default());
-    db.knobs().signal_on_will_block.store(3);
+    let db = Knobs::default();
 
-    let input = MyInput::new(&*db, 1);
+    let input = MyInput::new(&db, 1);
 
     let thread_a = std::thread::spawn({
         let db = db.clone();
-        move || a1(&*db, input)
+        move || a1(&db, input)
     });
 
     let thread_b = std::thread::spawn({
         let db = db.clone();
-        move || b1(&*db, input)
+        db.knobs().signal_on_will_block.store(3);
+        move || b1(&db, input)
     });
 
     // We expect that the recovery function yields

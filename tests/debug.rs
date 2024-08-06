@@ -1,7 +1,7 @@
 //! Test that `DeriveWithDb` is correctly derived.
 
 use expect_test::expect;
-use salsa::{Database as _, Setter};
+use salsa::{Database, Setter};
 
 #[salsa::input]
 struct MyInput {
@@ -19,18 +19,9 @@ struct ComplexStruct {
     not_salsa: NotSalsa,
 }
 
-#[salsa::db]
-#[derive(Default)]
-struct Database {
-    storage: salsa::Storage<Self>,
-}
-
-#[salsa::db]
-impl salsa::Database for Database {}
-
 #[test]
 fn input() {
-    Database::default().attach(|db| {
+    salsa::DatabaseImpl::new().attach(|db| {
         let input = MyInput::new(db, 22);
         let not_salsa = NotSalsa {
             field: "it's salsa time".to_string(),
@@ -54,7 +45,7 @@ fn leak_debug_string(_db: &dyn salsa::Database, input: MyInput) -> String {
 /// Don't try this at home, kids.
 #[test]
 fn untracked_dependencies() {
-    let mut db = Database::default();
+    let mut db = salsa::DatabaseImpl::new();
 
     let input = MyInput::new(&db, 22);
 
@@ -95,7 +86,7 @@ fn leak_derived_custom(db: &dyn salsa::Database, input: MyInput, value: u32) -> 
 
 #[test]
 fn custom_debug_impl() {
-    let db = Database::default();
+    let db = salsa::DatabaseImpl::new();
 
     let input = MyInput::new(&db, 22);
 

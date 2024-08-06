@@ -1,10 +1,7 @@
 use arc_swap::Guard;
 
 use crate::{
-    local_state::{self, LocalState},
-    runtime::StampedValue,
-    storage::DatabaseGen,
-    Id,
+    runtime::StampedValue, zalsa::ZalsaDatabase, zalsa_local::ZalsaLocal, AsDynDatabase as _, Id,
 };
 
 use super::{Configuration, IngredientImpl};
@@ -14,34 +11,33 @@ where
     C: Configuration,
 {
     pub fn fetch<'db>(&'db self, db: &'db C::DbView, key: Id) -> &C::Output<'db> {
-        local_state::attach(db.as_salsa_database(), |local_state| {
-            local_state.unwind_if_revision_cancelled(db.as_salsa_database());
+        let zalsa_local = db.zalsa_local();
+        zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
 
-            let StampedValue {
-                value,
-                durability,
-                changed_at,
-            } = self.compute_value(db, local_state, key);
+        let StampedValue {
+            value,
+            durability,
+            changed_at,
+        } = self.compute_value(db, zalsa_local, key);
 
-            if let Some(evicted) = self.lru.record_use(key) {
-                self.evict(evicted);
-            }
+        if let Some(evicted) = self.lru.record_use(key) {
+            self.evict(evicted);
+        }
 
-            local_state.report_tracked_read(
-                self.database_key_index(key).into(),
-                durability,
-                changed_at,
-            );
+        zalsa_local.report_tracked_read(
+            self.database_key_index(key).into(),
+            durability,
+            changed_at,
+        );
 
-            value
-        })
+        value
     }
 
     #[inline]
     fn compute_value<'db>(
         &'db self,
         db: &'db C::DbView,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         key: Id,
     ) -> StampedValue<&'db C::Output<'db>> {
         loop {
@@ -63,8 +59,8 @@ where
         let memo_guard = self.memo_map.get(key);
         if let Some(memo) = &memo_guard {
             if memo.value.is_some() {
-                let runtime = db.runtime();
-                if self.shallow_verify_memo(db, runtime, self.database_key_index(key), memo) {
+                let zalsa = db.zalsa();
+                if self.shallow_verify_memo(db, zalsa, self.database_key_index(key), memo) {
                     let value = unsafe {
                         // Unsafety invariant: memo is present in memo_map
                         self.extend_memo_lifetime(memo).unwrap()
@@ -79,7 +75,7 @@ where
     fn fetch_cold<'db>(
         &'db self,
         db: &'db C::DbView,
-        local_state: &LocalState,
+        local_state: &ZalsaLocal,
         key: Id,
     ) -> Option<StampedValue<&'db C::Output<'db>>> {
         let database_key_index = self.database_key_index(key);
@@ -87,7 +83,7 @@ where
         // Try to claim this query: if someone else has claimed it already, go back and start again.
         let _claim_guard =
             self.sync_map
-                .claim(db.as_salsa_database(), local_state, database_key_index)?;
+                .claim(db.as_dyn_database(), local_state, database_key_index)?;
 
         // Push the query on the stack.
         let active_query = local_state.push_query(database_key_index);
