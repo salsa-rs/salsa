@@ -276,3 +276,7 @@ where
     /// The revision and durability information for each field: when did this field last change.
     stamps: C::Stamps,
 }
+
+pub trait HasBuilder {
+    type Builder;
+}

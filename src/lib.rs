@@ -105,6 +105,8 @@ pub mod plumbing {
     pub use salsa_macro_rules::maybe_backdate;
     pub use salsa_macro_rules::maybe_clone;
     pub use salsa_macro_rules::maybe_cloned_ty;
+    pub use salsa_macro_rules::maybe_default;
+    pub use salsa_macro_rules::maybe_default_tt;
     pub use salsa_macro_rules::setup_accumulator_impl;
     pub use salsa_macro_rules::setup_input_struct;
     pub use salsa_macro_rules::setup_interned_struct;
@@ -122,6 +124,7 @@ pub mod plumbing {
         pub use crate::input::input_field::FieldIngredientImpl;
         pub use crate::input::setter::SetterImpl;
         pub use crate::input::Configuration;
+        pub use crate::input::HasBuilder;
         pub use crate::input::IngredientImpl;
         pub use crate::input::JarImpl;
     }
