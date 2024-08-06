@@ -39,7 +39,7 @@ fn execute() {
     assert_eq!(tracked_fn(&db, input_low), 44);
     assert_eq!(tracked_fn(&db, input_high), 4400);
 
-    // There's currently no good way to verify whether an input was validated using shallow or deep comparison.
+    // FIXME: There's currently no good way to verify whether an input was validated using shallow or deep comparison.
     // All we can do for now is verify that the values were validated.
     // Note: It maybe confusing why it validates `input_high` when the write has `Durability::LOW`.
     // This is because all values must be validated whenever a write occurs. It doesn't mean that it

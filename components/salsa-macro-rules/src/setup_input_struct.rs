@@ -141,23 +141,6 @@ macro_rules! setup_input_struct {
 
                 pub fn builder($($required_field_id: $required_field_ty),*) -> <Self as $zalsa_struct::HasBuilder>::Builder
                 {
-                    // Implement `new` here instead of inside the builder module
-                    // because $Configuration can't be named in `builder`.
-                    impl builder::$Builder {
-                        /// Creates the new input with the set values.
-                        #[must_use]
-                        pub fn new<$Db>(self, db: &$Db) -> $Struct
-                        where
-                            // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
-                            $Db: ?Sized + salsa::Database
-                        {
-                            let current_revision = $zalsa::current_revision(db);
-                            let ingredient = $Configuration::ingredient(db.as_dyn_database());
-                            let (fields, stamps) = builder::builder_into_inner(self, current_revision);
-                            ingredient.new_input(fields, stamps)
-                        }
-                    }
-
                     builder::new_builder($($zalsa::maybe_default!($field_option, $field_ty, $field_id,)),*)
                 }
 
@@ -237,6 +220,23 @@ macro_rules! setup_input_struct {
 
             impl $zalsa_struct::HasBuilder for $Struct {
                 type Builder = builder::$Builder;
+            }
+
+            // Implement `new` here instead of inside the builder module
+            // because $Configuration can't be named in `builder`.
+            impl builder::$Builder {
+                /// Creates the new input with the set values.
+                #[must_use]
+                pub fn new<$Db>(self, db: &$Db) -> $Struct
+                where
+                    // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
+                    $Db: ?Sized + salsa::Database
+                {
+                    let current_revision = $zalsa::current_revision(db);
+                    let ingredient = $Configuration::ingredient(db.as_dyn_database());
+                    let (fields, stamps) = builder::builder_into_inner(self, current_revision);
+                    ingredient.new_input(fields, stamps)
+                }
             }
 
             mod builder {
