@@ -15,7 +15,7 @@ pub struct SetterImpl<'setter, C: Configuration, S, F> {
     runtime: &'setter mut Runtime,
     id: C::Struct,
     ingredient: &'setter mut IngredientImpl<C>,
-    durability: Durability,
+    durability: Option<Durability>,
     field_index: usize,
     setter: S,
     phantom: PhantomData<fn(F)>,
@@ -38,7 +38,7 @@ where
             id,
             field_index,
             ingredient,
-            durability: Durability::LOW,
+            durability: None,
             setter,
             phantom: PhantomData,
         }
@@ -53,7 +53,7 @@ where
     type FieldTy = F;
 
     fn with_durability(mut self, durability: Durability) -> Self {
-        self.durability = durability;
+        self.durability = Some(durability);
         self
     }
 
