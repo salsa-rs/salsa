@@ -96,7 +96,7 @@ macro_rules! setup_tracked_fn {
                 if $needs_interner {
                     #[derive(Copy, Clone)]
                     struct $InternedData<$db_lt>(
-                        std::ptr::NonNull<$zalsa::interned::Value<$Configuration>>,
+                        salsa::Id,
                         std::marker::PhantomData<&$db_lt $zalsa::interned::Value<$Configuration>>,
                     );
 
@@ -114,14 +114,14 @@ macro_rules! setup_tracked_fn {
 
                         type Struct<$db_lt> = $InternedData<$db_lt>;
 
-                        unsafe fn struct_from_raw<$db_lt>(
-                            ptr: std::ptr::NonNull<$zalsa::interned::Value<Self>>,
+                        fn struct_from_id<$db_lt>(
+                            id: salsa::Id,
                         ) -> Self::Struct<$db_lt> {
-                            $InternedData(ptr, std::marker::PhantomData)
+                            $InternedData(id, std::marker::PhantomData)
                         }
 
-                        fn deref_struct(s: Self::Struct<'_>) -> &$zalsa::interned::Value<Self> {
-                            unsafe { s.0.as_ref() }
+                        fn deref_struct(s: Self::Struct<'_>) -> salsa::Id {
+                            s.0
                         }
                     }
                 } else {
@@ -191,7 +191,7 @@ macro_rules! setup_tracked_fn {
                 fn id_to_input<$db_lt>(db: &$db_lt Self::DbView, key: salsa::Id) -> Self::Input<$db_lt> {
                     $zalsa::macro_if! {
                         if $needs_interner {
-                            $Configuration::intern_ingredient(db).data(key).clone()
+                            $Configuration::intern_ingredient(db).data(db, key).clone()
                         } else {
                             $zalsa::LookupId::lookup_id(key, db.as_dyn_database())
                         }

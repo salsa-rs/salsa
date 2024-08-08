@@ -52,7 +52,7 @@ macro_rules! setup_interned_struct {
         $(#[$attr])*
         #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
         $vis struct $Struct<$db_lt>(
-            std::ptr::NonNull<salsa::plumbing::interned::Value < $Struct<'static> >>,
+            salsa::Id,
             std::marker::PhantomData < & $db_lt salsa::plumbing::interned::Value < $Struct<'static> > >
         );
 
@@ -66,11 +66,11 @@ macro_rules! setup_interned_struct {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
                 type Data<$db_lt> = ($($field_ty,)*);
                 type Struct<$db_lt> = $Struct<$db_lt>;
-                unsafe fn struct_from_raw<'db>(ptr: std::ptr::NonNull<$zalsa_struct::Value<Self>>) -> Self::Struct<'db> {
-                    $Struct(ptr, std::marker::PhantomData)
+                fn struct_from_id<'db>(id: salsa::Id) -> Self::Struct<'db> {
+                    $Struct(id, std::marker::PhantomData)
                 }
-                fn deref_struct(s: Self::Struct<'_>) -> &$zalsa_struct::Value<Self> {
-                    unsafe { s.0.as_ref() }
+                fn deref_struct(s: Self::Struct<'_>) -> salsa::Id {
+                    s.0
                 }
             }
 
@@ -89,13 +89,13 @@ macro_rules! setup_interned_struct {
 
             impl $zalsa::AsId for $Struct<'_> {
                 fn as_id(&self) -> salsa::Id {
-                    unsafe { self.0.as_ref() }.as_id()
+                    self.0
                 }
             }
 
             impl<$db_lt> $zalsa::LookupId<$db_lt> for $Struct<$db_lt> {
                 fn lookup_id(id: salsa::Id, db: &$db_lt dyn $zalsa::Database) -> Self {
-                    $Configuration::ingredient(db).interned_value(id)
+                    Self(id, std::marker::PhantomData)
                 }
             }
 
@@ -144,7 +144,7 @@ macro_rules! setup_interned_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let fields = $Configuration::ingredient(db).fields(self);
+                        let fields = $Configuration::ingredient(db).fields(db.as_dyn_database(), self);
                         $zalsa::maybe_clone!(
                             $field_option,
                             $field_ty,
@@ -156,7 +156,7 @@ macro_rules! setup_interned_struct {
                 /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
                 pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     $zalsa::with_attached_database(|db| {
-                        let fields = $Configuration::ingredient(db).fields(this);
+                        let fields = $Configuration::ingredient(db).fields(db.as_dyn_database(), this);
                         let mut f = f.debug_struct(stringify!($Struct));
                         $(
                             let f = f.field(stringify!($field_id), &fields.$field_index);
