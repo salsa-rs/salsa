@@ -116,14 +116,14 @@ impl<C: Configuration> IngredientImpl<C> {
     /// * `runtime`, the salsa runtiem
     /// * `id`, id of the input struct
     /// * `field_index`, index of the field that will be changed
-    /// * `durability`, durability of the new value
+    /// * `durability`, durability of the new value. If omitted, uses the durability of the previous value.
     /// * `setter`, function that modifies the fields tuple; should only modify the element for `field_index`
     pub fn set_field<R>(
         &mut self,
         runtime: &mut Runtime,
         id: C::Struct,
         field_index: usize,
-        durability: Durability,
+        durability: Option<Durability>,
         setter: impl FnOnce(&mut C::Fields) -> R,
     ) -> R {
         let id: Id = id.as_id();
@@ -134,7 +134,7 @@ impl<C: Configuration> IngredientImpl<C> {
             runtime.report_tracked_write(stamp.durability);
         }
 
-        stamp.durability = durability;
+        stamp.durability = durability.unwrap_or(stamp.durability);
         stamp.changed_at = runtime.current_revision();
         setter(&mut r.fields)
     }
