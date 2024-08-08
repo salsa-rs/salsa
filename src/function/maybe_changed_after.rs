@@ -72,6 +72,7 @@ where
         tracing::debug!(
             "{database_key_index:?}: maybe_changed_after_cold, successful claim, \
                 revision = {revision:?}, old_memo = {old_memo:#?}",
+            old_memo = old_memo.tracing_debug()
         );
 
         // Check if the inputs are still valid and we can just compare `changed_at`.
@@ -105,7 +106,10 @@ where
         let verified_at = memo.verified_at.load();
         let revision_now = zalsa.current_revision();
 
-        tracing::debug!("{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",);
+        tracing::debug!(
+            "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
+            memo = memo.tracing_debug()
+        );
 
         if verified_at == revision_now {
             // Already verified.
@@ -140,7 +144,10 @@ where
         let zalsa = db.zalsa();
         let database_key_index = active_query.database_key_index;
 
-        tracing::debug!("{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",);
+        tracing::debug!(
+            "{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",
+            old_memo = old_memo.tracing_debug()
+        );
 
         if self.shallow_verify_memo(db, zalsa, database_key_index, old_memo) {
             return true;
