@@ -33,6 +33,11 @@ ordered-float = "4.2.1"
 rustversion = "1.0"
 test-log = { version ="0.2.11", features = ["trace"] }
 trybuild = "1.0"
+criterion = "0.5.1"
+
+[[bench]]
+name = "compare"
+harness = false
 
 
 [[bench]]
