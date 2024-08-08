@@ -1,10 +1,7 @@
-use crossbeam::atomic::AtomicCell;
 use std::fmt;
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::ptr::NonNull;
 
-use crate::alloc::Alloc;
 use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::fmt_index;
@@ -27,24 +24,16 @@ pub trait Configuration: Sized + 'static {
     /// The end user struct
     type Struct<'db>: Copy;
 
-    /// Create an end-user struct from the underlying raw pointer.
+    /// Create an end-user struct from the salsa id
     ///
     /// This call is an "end-step" to the tracked struct lookup/creation
     /// process in a given revision: it occurs only when the struct is newly
     /// created or, if a struct is being reused, after we have updated its
     /// fields (or confirmed it is green and no updates are required).
-    ///
-    /// # Safety
-    ///
-    /// Requires that `ptr` represents a "confirmed" value in this revision,
-    /// which means that it will remain valid and immutable for the remainder of this
-    /// revision, represented by the lifetime `'db`.
-    unsafe fn struct_from_raw<'db>(ptr: NonNull<Value<Self>>) -> Self::Struct<'db>;
+    fn struct_from_id<'db>(id: Id) -> Self::Struct<'db>;
 
-    /// Deref the struct to yield the underlying value struct.
-    /// Since we are still part of the `'db` lifetime in which the struct was created,
-    /// this deref is safe, and the value-struct fields are immutable and verified.
-    fn deref_struct(s: Self::Struct<'_>) -> &Value<Self>;
+    /// Deref the struct to yield the underlying id.
+    fn deref_struct(s: Self::Struct<'_>) -> Id;
 }
 
 pub trait InternedData: Sized + Eq + Hash + Clone {}
@@ -65,14 +54,6 @@ pub struct IngredientImpl<C: Configuration> {
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
     key_map: FxDashMap<C::Data<'static>, Id>,
-
-    /// Maps from an interned id to its data.
-    ///
-    /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
-    value_map: FxDashMap<Id, Alloc<Value<C>>>,
-
-    /// counter for the next id.
-    counter: AtomicCell<u32>,
 
     /// Stores the revision when this interned ingredient was last cleared.
     /// You can clear an interned table at any point, deleting all its entries,
@@ -112,13 +93,15 @@ where
         Self {
             ingredient_index,
             key_map: Default::default(),
-            value_map: Default::default(),
-            counter: AtomicCell::default(),
             reset_at: Revision::start(),
         }
     }
 
     unsafe fn to_internal_data<'db>(&'db self, data: C::Data<'db>) -> C::Data<'static> {
+        unsafe { std::mem::transmute(data) }
+    }
+
+    unsafe fn from_internal_data<'db>(&'db self, data: &C::Data<'static>) -> &C::Data<'db> {
         unsafe { std::mem::transmute(data) }
     }
 
@@ -149,7 +132,7 @@ where
         if let Some(guard) = self.key_map.get(&internal_data) {
             let id = *guard;
             drop(guard);
-            return self.interned_value(id);
+            return C::struct_from_id(id);
         }
 
         match self.key_map.entry(internal_data.clone()) {
@@ -157,58 +140,38 @@ where
             dashmap::mapref::entry::Entry::Occupied(entry) => {
                 let id = *entry.get();
                 drop(entry);
-                self.interned_value(id)
+                C::struct_from_id(id)
             }
 
             // We won any races so should intern the data
             dashmap::mapref::entry::Entry::Vacant(entry) => {
-                let next_id = self.counter.fetch_add(1);
-                let next_id = crate::id::Id::from_u32(next_id);
-                let value = self.value_map.entry(next_id).or_insert(Alloc::new(Value {
-                    id: next_id,
-                    fields: internal_data,
-                }));
-                let value_raw = value.as_raw();
-                drop(value);
+                let zalsa = db.zalsa();
+                let table = zalsa.table();
+                let next_id = zalsa_local.allocate(table, self.ingredient_index, internal_data);
                 entry.insert(next_id);
-                // SAFETY: Items are only removed from the `value_map` with an `&mut self` reference.
-                unsafe { C::struct_from_raw(value_raw) }
+                C::struct_from_id(next_id)
             }
         }
-    }
-
-    pub fn interned_value(&self, id: Id) -> C::Struct<'_> {
-        let r = self.value_map.get(&id).unwrap();
-
-        // SAFETY: Items are only removed from the `value_map` with an `&mut self` reference.
-        unsafe { C::struct_from_raw(r.as_raw()) }
     }
 
     /// Lookup the data for an interned value based on its id.
     /// Rarely used since end-users generally carry a struct with a pointer directly
     /// to the interned item.
-    pub fn data(&self, id: Id) -> &C::Data<'_> {
-        C::deref_struct(self.interned_value(id)).data()
+    pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Data<'db> {
+        let internal_data = db.zalsa().table().get::<C::Data<'static>>(id);
+        unsafe { self.from_internal_data(internal_data) }
     }
 
     /// Lookup the fields from an interned struct.
     /// Note that this is not "leaking" since no dependency edge is required.
-    pub fn fields<'db>(&'db self, s: C::Struct<'db>) -> &'db C::Data<'db> {
-        C::deref_struct(s).data()
-    }
-
-    /// Variant of `data` that takes a (unnecessary) database argument.
-    /// This exists because tracked functions sometimes use true interning and sometimes use
-    /// [`IdentityInterner`][], which requires the database argument.
-    pub fn data_with_db<'db, DB: ?Sized>(&'db self, id: Id, _db: &'db DB) -> &'db C::Data<'db> {
-        self.data(id)
+    pub fn fields<'db>(&'db self, db: &'db dyn Database, s: C::Struct<'db>) -> &'db C::Data<'db> {
+        self.data(db, C::deref_struct(s))
     }
 
     pub fn reset(&mut self, revision: Revision) {
         assert!(revision > self.reset_at);
         self.reset_at = revision;
         self.key_map.clear();
-        self.value_map.clear();
     }
 }
 

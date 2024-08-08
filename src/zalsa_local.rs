@@ -1,3 +1,4 @@
+use rustc_hash::FxHashMap;
 use tracing::debug;
 
 use crate::active_query::ActiveQuery;
@@ -5,6 +6,8 @@ use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::key::DependencyIndex;
 use crate::runtime::StampedValue;
+use crate::table::PageIndex;
+use crate::table::Table;
 use crate::tracked_struct::Disambiguator;
 use crate::zalsa::IngredientIndex;
 use crate::Cancelled;
@@ -12,7 +15,9 @@ use crate::Cycle;
 use crate::Database;
 use crate::Event;
 use crate::EventKind;
+use crate::Id;
 use crate::Revision;
+use std::any::Any;
 use std::cell::RefCell;
 use std::sync::Arc;
 
@@ -31,12 +36,50 @@ pub struct ZalsaLocal {
     /// Unwinding note: pushes onto this vector must be popped -- even
     /// during unwinding.
     query_stack: RefCell<Option<Vec<ActiveQuery>>>,
+
+    /// Stores the most recent page for a given ingredient.
+    /// This is thread-local to avoid contention.
+    most_recent_pages: RefCell<FxHashMap<IngredientIndex, PageIndex>>,
 }
 
 impl ZalsaLocal {
     pub(crate) fn new() -> Self {
         ZalsaLocal {
             query_stack: RefCell::new(Some(vec![])),
+            most_recent_pages: RefCell::new(FxHashMap::default()),
+        }
+    }
+
+    /// Allocate a new id in `table` for the given ingredient
+    /// storing `value`. Remembers the most recent page from this
+    /// thread and attempts to reuse it.
+    pub(crate) fn allocate<'t, T: Any + Send + Sync>(
+        &self,
+        table: &Table,
+        ingredient: IngredientIndex,
+        mut value: T,
+    ) -> Id {
+        // Find the most recent page, pushing a page if needed
+        let mut page = *self
+            .most_recent_pages
+            .borrow_mut()
+            .entry(ingredient)
+            .or_insert_with(|| table.push_page::<T>(ingredient));
+
+        loop {
+            // Try to allocate an entry on that page
+            let page_ref = table.page::<T>(page);
+            match page_ref.allocate(page, value) {
+                // If succesful, return
+                Ok(id) => return id,
+
+                // Otherwise, create a new page and try again
+                Err(v) => {
+                    value = v;
+                    page = table.push_page::<T>(ingredient);
+                    self.most_recent_pages.borrow_mut().insert(ingredient, page);
+                }
+            }
         }
     }
 
