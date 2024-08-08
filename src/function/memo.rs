@@ -1,3 +1,4 @@
+use std::fmt::Formatter;
 use std::sync::Arc;
 
 use arc_swap::{ArcSwap, Guard};
@@ -167,5 +168,30 @@ impl<V> Memo<V> {
         for output in self.revisions.origin.outputs() {
             output.mark_validated_output(db, database_key_index);
         }
+    }
+
+    pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + '_ {
+        struct TracingDebug<'a, T> {
+            memo: &'a Memo<T>,
+        }
+
+        impl<T> std::fmt::Debug for TracingDebug<'_, T> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct("Memo")
+                    .field(
+                        "value",
+                        if self.memo.value.is_some() {
+                            &"Some(<value>)"
+                        } else {
+                            &"None"
+                        },
+                    )
+                    .field("verified_at", &self.memo.verified_at)
+                    .field("revisions", &self.memo.revisions)
+                    .finish()
+            }
+        }
+
+        TracingDebug { memo: self }
     }
 }

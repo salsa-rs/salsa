@@ -81,7 +81,11 @@ where
             revisions,
         };
 
-        tracing::debug!("specify: about to add memo {:#?} for key {:?}", memo, key);
+        tracing::debug!(
+            "specify: about to add memo {:#?} for key {:?}",
+            memo.tracing_debug(),
+            key
+        );
         self.insert_memo(db, key, memo);
 
         // Record that the current query *specified* a value for this cell.
