@@ -24,6 +24,13 @@ use crate::{Database, DatabaseKeyIndex, Durability, Revision};
 /// Do not implement this yourself, instead, apply the [`salsa::db`](`crate::db`) macro
 /// to your database.
 pub unsafe trait ZalsaDatabase: Any {
+    /// Plumbing method: access both zalsa and zalsa-local at once.
+    /// More efficient if you need both as it does only a single vtable dispatch.
+    #[doc(hidden)]
+    fn zalsas(&self) -> (&Zalsa, &ZalsaLocal) {
+        (self.zalsa(), self.zalsa_local())
+    }
+
     /// Plumbing method: Access the internal salsa methods.
     #[doc(hidden)]
     fn zalsa(&self) -> &Zalsa;

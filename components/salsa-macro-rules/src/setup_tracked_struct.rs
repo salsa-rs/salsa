@@ -63,7 +63,7 @@ macro_rules! setup_tracked_struct {
         $(#[$attr])*
         #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
         $vis struct $Struct<$db_lt>(
-            std::ptr::NonNull<salsa::plumbing::tracked_struct::Value < $Struct<'static> >>,
+            salsa::Id,
             std::marker::PhantomData < & $db_lt salsa::plumbing::tracked_struct::Value < $Struct<'static> > >
         );
 
@@ -90,12 +90,12 @@ macro_rules! setup_tracked_struct {
 
                 type Struct<$db_lt> = $Struct<$db_lt>;
 
-                unsafe fn struct_from_raw<$db_lt>(ptr: $NonNull<$zalsa_struct::Value<Self>>) -> Self::Struct<$db_lt> {
-                    $Struct(ptr, std::marker::PhantomData)
+                fn struct_from_id<$db_lt>(id: salsa::Id) -> Self::Struct<$db_lt> {
+                    $Struct(id, std::marker::PhantomData)
                 }
 
-                fn deref_struct(s: Self::Struct<'_>) -> &$zalsa_struct::Value<Self> {
-                    unsafe { s.0.as_ref() }
+                fn deref_struct(s: Self::Struct<'_>) -> salsa::Id {
+                    s.0
                 }
 
                 fn id_fields(fields: &Self::Fields<'_>) -> impl std::hash::Hash {
@@ -141,13 +141,13 @@ macro_rules! setup_tracked_struct {
 
             impl<$db_lt> $zalsa::LookupId<$db_lt> for $Struct<$db_lt> {
                 fn lookup_id(id: salsa::Id, db: &$db_lt dyn $zalsa::Database) -> Self {
-                    $Configuration::ingredient(db).lookup_struct(db, id)
+                    $Struct(id, std::marker::PhantomData)
                 }
             }
 
             impl $zalsa::AsId for $Struct<'_> {
                 fn as_id(&self) -> $zalsa::Id {
-                    unsafe { self.0.as_ref() }.as_id()
+                    self.0
                 }
             }
 
@@ -199,12 +199,13 @@ macro_rules! setup_tracked_struct {
                 }
 
                 $(
-                    $field_getter_vis fn $field_getter_id<$Db>(&self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($field_option, $db_lt, $field_ty)
+                    $field_getter_vis fn $field_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($field_option, $db_lt, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let fields = unsafe { self.0.as_ref() }.field(db.as_dyn_database(), $field_index);
+                        let db = db.as_dyn_database();
+                        let fields = $Configuration::ingredient(db).field(db, self, $field_index);
                         $crate::maybe_clone!(
                             $field_option,
                             $field_ty,
@@ -216,7 +217,7 @@ macro_rules! setup_tracked_struct {
                 /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
                 pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     $zalsa::with_attached_database(|db| {
-                        let fields = $Configuration::ingredient(db).leak_fields(this);
+                        let fields = $Configuration::ingredient(db).leak_fields(db, this);
                         let mut f = f.debug_struct(stringify!($Struct));
                         let f = f.field("[salsa id]", &$zalsa::AsId::as_id(&this));
                         $(

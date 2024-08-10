@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crossbeam::atomic::AtomicCell;
+use rustc_hash::FxHashMap;
 
 use crate::{
     durability::Durability,
@@ -29,6 +30,7 @@ where
                 changed_at: revision,
                 durability,
                 origin: QueryOrigin::BaseInput,
+                tracked_struct_ids: FxHashMap::default(),
             },
         };
 

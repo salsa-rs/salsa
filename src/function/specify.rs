@@ -68,6 +68,7 @@ where
             changed_at: current_deps.changed_at,
             durability: current_deps.durability,
             origin: QueryOrigin::Assigned(active_query_key),
+            tracked_struct_ids: Default::default(),
         };
 
         if let Some(old_memo) = self.memo_map.get(key) {

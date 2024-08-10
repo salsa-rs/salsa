@@ -37,7 +37,7 @@ fn function(db: &dyn Database, input: MyInput) -> (usize, usize) {
     let tracked = MyTracked::new(db, counter);
 
     // Read the tracked field
-    let result = counter_field(db, tracked);
+    let result = counter_field(db, input, tracked);
 
     // Read input 2. This will cause us to re-execute on revision 2.
     let _field2 = input.field2(db);
@@ -46,7 +46,10 @@ fn function(db: &dyn Database, input: MyInput) -> (usize, usize) {
 }
 
 #[salsa::tracked]
-fn counter_field<'db>(db: &'db dyn Database, tracked: MyTracked<'db>) -> usize {
+fn counter_field<'db>(db: &'db dyn Database, input: MyInput, tracked: MyTracked<'db>) -> usize {
+    // Read input 2. This will cause us to re-execute on revision 2.
+    let _field2 = input.field2(db);
+
     tracked.counter(db)
 }
 
@@ -61,7 +64,7 @@ fn test_leaked_inputs_ignored() {
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
             "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: counter_field(Id(0)) } }",
+            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: counter_field(Id(400)) } }",
         ]"#]]);
 
     assert_eq!(result_in_rev_1, (0, 0));
@@ -79,16 +82,19 @@ fn test_leaked_inputs_ignored() {
             "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: DidValidateMemoizedValue { database_key: counter_field(Id(0)) } }",
+            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: counter_field(Id(400)) } }",
             "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
         ]"#]]);
 
-    // Because salsa does not see any way for the tracked
-    // struct to have changed, it will re-use the cached return value
-    // from `counter_field` (`0`) but when we actually recreate
-    // the cached struct we get the new value (`100`).
+    // Salsa will re-execute `counter_field` before re-executing
+    // `function` since, from what it can see, no inputs have changed
+    // before `counter_field` is called. This will read the field of
+    // the tracked struct which means it will be *fixed* at `0`.
+    // When we re-execute `counter_field` later, we ignore the new
+    // value of 100 since the struct has already been read during
+    // this revision.
     //
     // Contrast with preverify-struct-with-leaked-data-2.rs.
-    assert_eq!(result_in_rev_2, (0, 100));
+    assert_eq!(result_in_rev_2, (0, 0));
 }

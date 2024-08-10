@@ -1,25 +1,22 @@
-use std::{fmt, hash::Hash, marker::PhantomData, ops::DerefMut, ptr::NonNull};
+use std::{fmt, hash::Hash, marker::PhantomData, ops::DerefMut};
 
-use crossbeam::atomic::AtomicCell;
-use dashmap::mapref::entry::Entry;
+use crossbeam::{atomic::AtomicCell, queue::SegQueue};
 use tracked_field::FieldIngredientImpl;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    hash::FxDashMap,
-    id::AsId,
     ingredient::{fmt_index, Ingredient, Jar},
     ingredient_list::IngredientList,
     key::{DatabaseKeyIndex, DependencyIndex},
+    plumbing::ZalsaLocal,
+    runtime::StampedValue,
     salsa_struct::SalsaStructInDb,
-    zalsa::IngredientIndex,
+    table::Table,
+    zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Database, Durability, Event, Id, Revision,
 };
 
-use self::struct_map::{StructMap, Update};
-
-mod struct_map;
 pub mod tracked_field;
 
 // ANCHOR: Configuration
@@ -47,18 +44,10 @@ pub trait Configuration: Sized + 'static {
     /// process in a given revision: it occurs only when the struct is newly
     /// created or, if a struct is being reused, after we have updated its
     /// fields (or confirmed it is green and no updates are required).
-    ///
-    /// # Safety
-    ///
-    /// Requires that `ptr` represents a "confirmed" value in this revision,
-    /// which means that it will remain valid and immutable for the remainder of this
-    /// revision, represented by the lifetime `'db`.
-    unsafe fn struct_from_raw<'db>(ptr: NonNull<Value<Self>>) -> Self::Struct<'db>;
+    fn struct_from_id<'db>(id: Id) -> Self::Struct<'db>;
 
-    /// Deref the struct to yield the underlying value struct.
-    /// Since we are still part of the `'db` lifetime in which the struct was created,
-    /// this deref is safe, and the value-struct fields are immutable and verified.
-    fn deref_struct(s: Self::Struct<'_>) -> &Value<Self>;
+    /// Deref the struct to yield the underlying id.
+    fn deref_struct(s: Self::Struct<'_>) -> Id;
 
     fn id_fields(fields: &Self::Fields<'_>) -> impl Hash;
 
@@ -115,16 +104,11 @@ impl<C: Configuration> Jar for JarImpl<C> {
         &self,
         struct_index: crate::zalsa::IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>> {
-        let struct_ingredient = IngredientImpl::new(struct_index);
-        let struct_map = &struct_ingredient.struct_map.view();
+        let struct_ingredient = <IngredientImpl<C>>::new(struct_index);
 
         std::iter::once(Box::new(struct_ingredient) as _)
             .chain((0..C::FIELD_DEBUG_NAMES.len()).map(|field_index| {
-                Box::new(FieldIngredientImpl::<C>::new(
-                    struct_index,
-                    field_index,
-                    struct_map,
-                )) as _
+                Box::new(<FieldIngredientImpl<C>>::new(struct_index, field_index)) as _
             }))
             .collect()
     }
@@ -150,18 +134,6 @@ where
     /// Our index in the database.
     ingredient_index: IngredientIndex,
 
-    /// Defines the set of live tracked structs.
-    /// Entries are added to this map when a new struct is created.
-    /// They are removed when that struct is deleted
-    /// (i.e., a query completes without having recreated the struct).
-    keys: FxDashMap<KeyStruct, Id>,
-
-    /// The number of tracked structs created.
-    counter: AtomicCell<u32>,
-
-    /// Map from the [`Id`][] of each struct to its fields/values.
-    struct_map: struct_map::StructMap<C>,
-
     /// A list of each tracked function `f` whose key is this
     /// tracked struct.
     ///
@@ -169,14 +141,20 @@ where
     /// each of these functions will be notified
     /// so they can remove any data tied to that instance.
     dependent_fns: IngredientList,
+
+    /// Phantom data: we fetch `Value<C>` out from `Table`
+    phantom: PhantomData<fn() -> Value<C>>,
+
+    /// Store freed ids
+    free_list: SegQueue<Id>,
 }
 
 /// Defines the identity of a tracked struct.
+/// This is the key to a hashmap that is (initially)
+/// stored in the [`ActiveQuery`](`crate::active_query::ActiveQuery`)
+/// struct and later moved to the [`Memo`](`crate::function::memo::Memo`).
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
-struct KeyStruct {
-    /// The active query (i.e., tracked function) that created this tracked struct.
-    query_key: DatabaseKeyIndex,
-
+pub(crate) struct KeyStruct {
     /// The hash of the `#[id]` fields of this struct.
     /// Note that multiple structs may share the same hash.
     data_hash: u64,
@@ -192,29 +170,32 @@ pub struct Value<C>
 where
     C: Configuration,
 {
-    /// Index of the struct ingredient.
-    struct_ingredient_index: IngredientIndex,
-
-    /// The id of this struct in the ingredient.
-    id: Id,
-
-    /// The key used to create the id.
-    key: KeyStruct,
-
     /// The durability minimum durability of all inputs consumed
     /// by the creator query prior to creating this tracked struct.
     /// If any of those inputs changes, then the creator query may
     /// create this struct with different values.
     durability: Durability,
 
-    /// The revision when this entity was most recently created.
-    /// Typically the current revision.
-    /// Used to detect "leaks" outside of the salsa system -- i.e.,
-    /// access to tracked structs that have not (yet?) been created in the
-    /// current revision. This should be impossible within salsa queries
-    /// but it can happen through "leaks" like thread-local data or storing
-    /// values outside of the root salsa query.
-    created_at: Revision,
+    /// The revision when this tracked struct was last updated.
+    /// This field also acts as a kind of "lock". Once it is equal
+    /// to `Some(current_revision)`, the fields are locked and
+    /// cannot change further. This makes it safe to give out `&`-references
+    /// so long as they do not live longer than the current revision
+    /// (which is assured by tying their lifetime to the lifetime of an `&`-ref
+    /// to the database).
+    ///
+    /// The struct is updated from an older revision `R0` to the current revision `R1`
+    /// when the struct is first accessed in `R1`, whether that be because the original
+    /// query re-created the struct (i.e., by user calling `Struct::new`) or because
+    /// the struct was read from. (Structs may not be recreated in the new revision if
+    /// the inputs to the query have not changed.)
+    ///
+    /// When re-creating the struct, the field is temporarily set to `None`.
+    /// This is signal that there is an active `&mut` modifying the other fields:
+    /// even reading from those fields in that situation would create UB.
+    /// This `None` value should never be observable by users unless they have
+    /// leaked a reference across threads somehow.
+    updated_at: AtomicCell<Option<Revision>>,
 
     /// Fields of this tracked struct. They can change across revisions,
     /// but they do not change within a particular revision.
@@ -240,6 +221,10 @@ where
         unsafe { std::mem::transmute(fields) }
     }
 
+    unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Fields<'static>) -> &'db C::Fields<'db> {
+        unsafe { std::mem::transmute(fields) }
+    }
+
     /// Convert from static back to the db lifetime; used when returning data
     /// out from this ingredient.
     unsafe fn to_self_ptr<'db>(&'db self, fields: *mut C::Fields<'static>) -> *mut C::Fields<'db> {
@@ -251,10 +236,9 @@ where
     fn new(index: IngredientIndex) -> Self {
         Self {
             ingredient_index: index,
-            keys: FxDashMap::default(),
-            counter: AtomicCell::new(0),
-            struct_map: StructMap::new(),
             dependent_fns: IngredientList::new(),
+            phantom: PhantomData,
+            free_list: Default::default(),
         }
     }
 
@@ -266,120 +250,184 @@ where
         }
     }
 
-    /// Intern a tracked struct key to get a unique tracked struct id.
-    /// Also returns a bool indicating whether this id was newly created or whether it already existed.
-    fn intern(&self, key: KeyStruct) -> (Id, bool) {
-        let (id, new_id) = if let Some(g) = self.keys.get(&key) {
-            (*g.value(), false)
-        } else {
-            match self.keys.entry(key) {
-                Entry::Occupied(o) => (*o.get(), false),
-                Entry::Vacant(v) => {
-                    let id = Id::from_u32(self.counter.fetch_add(1));
-                    v.insert(id);
-                    (id, true)
-                }
-            }
-        };
-
-        (id, new_id)
-    }
-
     pub fn new_struct<'db>(
         &'db self,
         db: &'db dyn Database,
         fields: C::Fields<'db>,
     ) -> C::Struct<'db> {
-        let zalsa = db.zalsa();
-        let zalsa_local = db.zalsa_local();
+        let (zalsa, zalsa_local) = db.zalsas();
 
         let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
-        let (query_key, current_deps, disambiguator) =
+        let (current_deps, disambiguator) =
             zalsa_local.disambiguate(self.ingredient_index, Revision::start(), data_hash);
 
-        let entity_key = KeyStruct {
-            query_key,
+        let key_struct = KeyStruct {
             disambiguator,
             data_hash,
         };
 
-        let (id, new_id) = self.intern(entity_key);
-        zalsa_local.add_output(self.database_key_index(id).into());
-
         let current_revision = zalsa.current_revision();
-        if new_id {
-            // This is a new tracked struct, so create an entry in the struct map.
+        match zalsa_local.tracked_struct_id(&key_struct) {
+            Some(id) => {
+                // The struct already exists in the intern map.
+                zalsa_local.add_output(self.database_key_index(id).into());
+                self.update(zalsa, current_revision, id, &current_deps, fields);
+                C::struct_from_id(id)
+            }
 
-            self.struct_map.insert(
-                current_revision,
-                Value {
-                    id,
-                    key: entity_key,
-                    struct_ingredient_index: self.ingredient_index,
-                    created_at: current_revision,
-                    durability: current_deps.durability,
-                    fields: unsafe { self.to_static(fields) },
-                    revisions: C::new_revisions(current_deps.changed_at),
-                },
-            )
-        } else {
-            // The struct already exists in the intern map.
-            // Note that we assume there is at most one executing copy of
-            // the current query at a time, which implies that the
-            // struct must exist in `self.struct_map` already
-            // (if the same query could execute twice in parallel,
-            // then it would potentially create the same struct twice in parallel,
-            // which means the interned key could exist but `struct_map` not yet have
-            // been updated).
-
-            match self.struct_map.update(current_revision, id) {
-                Update::Current(r) => {
-                    // All inputs up to this point were previously
-                    // observed to be green and this struct was already
-                    // verified. Therefore, the durability ought not to have
-                    // changed (nor the field values, but the user could've
-                    // done something stupid, so we can't *assert* this is true).
-                    assert!(C::deref_struct(r).durability == current_deps.durability);
-
-                    r
-                }
-                Update::Outdated(mut data_ref) => {
-                    let data = &mut *data_ref;
-
-                    // SAFETY: We assert that the pointer to `data.revisions`
-                    // is a pointer into the database referencing a value
-                    // from a previous revision. As such, it continues to meet
-                    // its validity invariant and any owned content also continues
-                    // to meet its safety invariant.
-                    unsafe {
-                        C::update_fields(
-                            current_revision,
-                            &mut data.revisions,
-                            self.to_self_ptr(std::ptr::addr_of_mut!(data.fields)),
-                            fields,
-                        );
-                    }
-                    if current_deps.durability < data.durability {
-                        data.revisions = C::new_revisions(current_revision);
-                    }
-                    data.durability = current_deps.durability;
-                    data.created_at = current_revision;
-                    data_ref.freeze()
-                }
+            None => {
+                // This is a new tracked struct, so create an entry in the struct map.
+                let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
+                zalsa_local.add_output(self.database_key_index(id).into());
+                zalsa_local.store_tracked_struct_id(key_struct, id);
+                C::struct_from_id(id)
             }
         }
     }
 
-    /// Given the id of a tracked struct created in this revision,
-    /// returns a pointer to the struct.
+    fn allocate<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        zalsa_local: &'db ZalsaLocal,
+        current_revision: Revision,
+        current_deps: &StampedValue<()>,
+        fields: C::Fields<'db>,
+    ) -> Id {
+        let value = || Value {
+            updated_at: AtomicCell::new(Some(current_revision)),
+            durability: current_deps.durability,
+            fields: unsafe { self.to_static(fields) },
+            revisions: C::new_revisions(current_deps.changed_at),
+        };
+
+        if let Some(id) = self.free_list.pop() {
+            let data_raw = Self::data_raw(zalsa.table(), id);
+            assert!(
+                unsafe { (*data_raw).updated_at.load().is_none() },
+                "free list entry for `{id:?}` does not have `None` for `updated_at`"
+            );
+
+            // Overwrite the free-list entry. Use `*foo = ` because the entry
+            // has been previously initialized and we want to free the old contents.
+            unsafe {
+                *data_raw = value();
+            }
+
+            id
+        } else {
+            zalsa_local.allocate::<Value<C>>(zalsa.table(), self.ingredient_index, value())
+        }
+    }
+
+    /// Get mutable access to the data for `id` -- this holds a write lock for the duration
+    /// of the returned value.
     ///
     /// # Panics
     ///
-    /// If the struct has not been created in this revision.
-    pub fn lookup_struct<'db>(&'db self, db: &'db dyn Database, id: Id) -> C::Struct<'db> {
-        let current_revision = db.zalsa().current_revision();
-        self.struct_map.get(current_revision, id)
+    /// * If the value is not present in the map.
+    /// * If the value is already updated in this revision.
+    fn update<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        current_revision: Revision,
+        id: Id,
+        current_deps: &StampedValue<()>,
+        fields: C::Fields<'db>,
+    ) {
+        let data_raw = Self::data_raw(zalsa.table(), id);
+
+        // The protocol is:
+        //
+        // * When we begin updating, we store `None` in the `created_at` field
+        // * When completed, we store `Some(current_revision)` in `created_at`
+        //
+        // No matter what mischief users get up to, it should be impossible for us to
+        // observe `None` in `created_at`. The `id` should only be associated with one
+        // query and that query can only be running in one thread at a time.
+        //
+        // We *can* observe `Some(current_revision)` however, which means that this
+        // tracked struct is already updated for this revision in two ways.
+        // In that case we should not modify or touch it because there may be
+        // `&`-references to its contents floating around.
+        //
+        // Observing `Some(current_revision)` can happen in two scenarios: leaks (tsk tsk)
+        // but also the scenario embodied by the test test `test_run_5_then_20` in `specify_tracked_fn_in_rev_1_but_not_2.rs`:
+        //
+        // * Revision 1:
+        //   * Tracked function F creates tracked struct S
+        //   * F reads input I
+        // * Revision 2: I is changed, F is re-executed
+        //
+        // When F is re-executed in rev 2, we first try to validate F's inputs/outputs,
+        // which is the list [output: S, input: I]. As no inputs have changed by the time
+        // we reach S, we mark it as verified. But then input I is seen to hvae changed,
+        // and so we re-execute F. Note that we *know* that S will have the same value
+        // (barring program bugs).
+        //
+        // Further complicating things: it is possible that F calls F2
+        // and gives it (e.g.) S as one of its arguments. Validating F2 may cause F2 to
+        // re-execute which means that it may indeed have read from S's fields
+        // during the current revision and thus obtained an `&` reference to those fields
+        // that is still live.
+
+        // UNSAFE: Marking as mut requires exclusive access for the duration of
+        // the `mut`. We have now *claimed* this data by swapping in `None`,
+        // any attempt to read concurrently will panic.
+        let last_updated_at = unsafe { (*data_raw).updated_at.load() };
+        assert!(
+            last_updated_at.is_some(),
+            "two concurrent writers to {id:?}, should not be possible"
+        );
+        if last_updated_at == Some(current_revision) {
+            // already read-locked
+            return;
+        }
+
+        // Acquire the write-lock. This can only fail if there is a parallel thread
+        // reading from this same `id`, which can only happen if the user has leaked it.
+        // Tsk tsk.
+        let swapped_out = unsafe { (*data_raw).updated_at.swap(None) };
+        if swapped_out != last_updated_at {
+            panic!(
+                "failed to acquire write lock, id `{id:?}` must have been leaked across threads"
+            );
+        }
+
+        // UNSAFE: Marking as mut requires exclusive access for the duration of
+        // the `mut`. We have now *claimed* this data by swapping in `None`,
+        // any attempt to read concurrently will panic.
+        let data = unsafe { &mut *data_raw };
+
+        // SAFETY: We assert that the pointer to `data.revisions`
+        // is a pointer into the database referencing a value
+        // from a previous revision. As such, it continues to meet
+        // its validity invariant and any owned content also continues
+        // to meet its safety invariant.
+        unsafe {
+            C::update_fields(
+                current_revision,
+                &mut data.revisions,
+                self.to_self_ptr(std::ptr::addr_of_mut!(data.fields)),
+                fields,
+            );
+        }
+        if current_deps.durability < data.durability {
+            data.revisions = C::new_revisions(current_revision);
+        }
+        data.durability = current_deps.durability;
+        let swapped_out = data.updated_at.swap(Some(current_revision));
+        assert!(swapped_out.is_none());
+    }
+
+    /// Fetch the data for a given id created by this ingredient from the table,
+    /// -giving it the appropriate type.
+    fn data<'t>(table: &'t Table, id: Id) -> &'t Value<C> {
+        table.get(id)
+    }
+
+    fn data_raw(table: &Table, id: Id) -> *mut Value<C> {
+        table.get_raw(id)
     }
 
     /// Deletes the given entities. This is used after a query `Q` executes and we can compare
@@ -400,8 +448,29 @@ where
             },
         });
 
-        if let Some(key) = self.struct_map.delete(id) {
-            self.keys.remove(&key);
+        let zalsa = db.zalsa();
+        let current_revision = zalsa.current_revision();
+        let data = Self::data(zalsa.table(), id);
+
+        // We want to set `updated_at` to `None`, signalling that other field values
+        // cannot be read. The current vaue should be `Some(R0)` for some older revision.
+        match data.updated_at.load() {
+            None => {
+                panic!("cannot delete write-locked id `{id:?}`; value leaked across threads");
+            }
+
+            Some(r) => {
+                if r == current_revision {
+                    panic!(
+                        "cannot delete read-locked id `{id:?}`; \
+                        value leaked across threads or user functions not deterministic"
+                    )
+                }
+
+                if data.updated_at.compare_exchange(Some(r), None).is_err() {
+                    panic!("race occurred when deleting value `{id:?}`")
+                }
+            }
         }
 
         for dependent_fn in self.dependent_fns.iter() {
@@ -409,6 +478,9 @@ where
                 .lookup_ingredient(dependent_fn)
                 .salsa_struct_deleted(db, id);
         }
+
+        // now that all cleanup has occurred, make available for re-use
+        self.free_list.push(id);
     }
 
     /// Adds a dependent function (one keyed by this tracked struct) to our list.
@@ -420,9 +492,67 @@ where
 
     /// Return reference to the field data ignoring dependency tracking.
     /// Used for debugging.
-    pub fn leak_fields<'db>(&'db self, s: C::Struct<'db>) -> &'db C::Fields<'db> {
-        let value = C::deref_struct(s);
-        unsafe { value.to_self_ref(&value.fields) }
+    pub fn leak_fields<'db>(
+        &'db self,
+        db: &'db dyn Database,
+        s: C::Struct<'db>,
+    ) -> &'db C::Fields<'db> {
+        let id = C::deref_struct(s);
+        let value = Self::data(db.zalsa().table(), id);
+        unsafe { self.to_self_ref(&value.fields) }
+    }
+
+    /// Access to this value field.
+    /// Note that this function returns the entire tuple of value fields.
+    /// The caller is responible for selecting the appropriate element.
+    pub fn field<'db>(
+        &'db self,
+        db: &'db dyn crate::Database,
+        s: C::Struct<'db>,
+        field_index: usize,
+    ) -> &'db C::Fields<'db> {
+        let (zalsa, zalsa_local) = db.zalsas();
+        let id = C::deref_struct(s);
+        let field_ingredient_index = self.ingredient_index.successor(field_index);
+        let data = Self::data(zalsa.table(), id);
+
+        self.read_lock(data, zalsa.current_revision());
+
+        let field_changed_at = data.revisions[field_index];
+
+        zalsa_local.report_tracked_read(
+            DependencyIndex {
+                ingredient_index: field_ingredient_index,
+                key_index: Some(id),
+            },
+            data.durability,
+            field_changed_at,
+        );
+
+        unsafe { self.to_self_ref(&data.fields) }
+    }
+
+    fn read_lock(&self, data: &Value<C>, current_revision: Revision) {
+        loop {
+            match data.updated_at.load() {
+                None => {
+                    panic!("access to field whilst the value is being initialized");
+                }
+                Some(r) => {
+                    if r == current_revision {
+                        return;
+                    }
+
+                    if data
+                        .updated_at
+                        .compare_exchange(Some(r), Some(current_revision))
+                        .is_ok()
+                    {
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -453,13 +583,13 @@ where
 
     fn mark_validated_output<'db>(
         &'db self,
-        db: &'db dyn Database,
+        _db: &'db dyn Database,
         _executor: DatabaseKeyIndex,
-        output_key: Option<crate::Id>,
+        _output_key: Option<crate::Id>,
     ) {
-        let current_revision = db.zalsa().current_revision();
-        let output_key = output_key.unwrap();
-        self.struct_map.validate(current_revision, output_key);
+        // we used to update `update_at` field but now we do it lazilly when data is accessed
+        //
+        // FIXME: delete this method
     }
 
     fn remove_stale_output(
@@ -475,14 +605,6 @@ where
         self.delete_entity(db.as_dyn_database(), stale_output_key.unwrap());
     }
 
-    fn requires_reset_for_new_revision(&self) -> bool {
-        true
-    }
-
-    fn reset_for_new_revision(&mut self) {
-        self.struct_map.drop_deleted_entries();
-    }
-
     fn salsa_struct_deleted(&self, _db: &dyn Database, _id: crate::Id) {
         panic!("unexpected call: interned ingredients do not register for salsa struct deletion events");
     }
@@ -494,6 +616,12 @@ where
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
     }
+
+    fn requires_reset_for_new_revision(&self) -> bool {
+        false
+    }
+
+    fn reset_for_new_revision(&mut self) {}
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>
@@ -504,47 +632,5 @@ where
         f.debug_struct(std::any::type_name::<Self>())
             .field("ingredient_index", &self.ingredient_index)
             .finish()
-    }
-}
-
-impl<C> Value<C>
-where
-    C: Configuration,
-{
-    /// Access to this value field.
-    /// Note that this function returns the entire tuple of value fields.
-    /// The caller is responible for selecting the appropriate element.
-    pub fn field<'db>(
-        &'db self,
-        db: &dyn crate::Database,
-        field_index: usize,
-    ) -> &'db C::Fields<'db> {
-        let zalsa_local = db.zalsa_local();
-        let field_ingredient_index = self.struct_ingredient_index.successor(field_index);
-        let changed_at = self.revisions[field_index];
-
-        zalsa_local.report_tracked_read(
-            DependencyIndex {
-                ingredient_index: field_ingredient_index,
-                key_index: Some(self.id.as_id()),
-            },
-            self.durability,
-            changed_at,
-        );
-
-        unsafe { self.to_self_ref(&self.fields) }
-    }
-
-    unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Fields<'static>) -> &'db C::Fields<'db> {
-        unsafe { std::mem::transmute(fields) }
-    }
-}
-
-impl<C> AsId for Value<C>
-where
-    C: Configuration,
-{
-    fn as_id(&self) -> Id {
-        self.id
     }
 }

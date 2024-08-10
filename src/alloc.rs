@@ -14,10 +14,6 @@ impl<T> Alloc<T> {
         }
     }
 
-    pub fn as_raw(&self) -> NonNull<T> {
-        self.data
-    }
-
     pub unsafe fn as_ref(&self) -> &T {
         unsafe { self.data.as_ref() }
     }

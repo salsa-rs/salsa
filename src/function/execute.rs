@@ -39,6 +39,12 @@ where
             },
         });
 
+        // If we already executed this query once, then use the tracked-struct ids from the
+        // previous execution as the starting point for the new one.
+        if let Some(old_memo) = &opt_old_memo {
+            active_query.seed_tracked_struct_ids(&old_memo.revisions.tracked_struct_ids);
+        }
+
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
         let database_key_index = active_query.database_key_index;

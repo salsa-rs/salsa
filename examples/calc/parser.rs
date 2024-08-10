@@ -378,7 +378,7 @@ fn parse_print() {
     let expected = expect_test::expect![[r#"
         (
             Program {
-                [salsa id]: Id(0),
+                [salsa id]: Id(400),
                 statements: [
                     Statement {
                         span: Span {
@@ -441,7 +441,7 @@ fn parse_example() {
     let expected = expect_test::expect![[r#"
         (
             Program {
-                [salsa id]: Id(0),
+                [salsa id]: Id(1000),
                 statements: [
                     Statement {
                         span: Span {
@@ -451,7 +451,7 @@ fn parse_example() {
                         },
                         data: Function(
                             Function {
-                                [salsa id]: Id(0),
+                                [salsa id]: Id(c00),
                                 name: FunctionId {
                                     text: "area_rectangle",
                                 },
@@ -513,7 +513,7 @@ fn parse_example() {
                         },
                         data: Function(
                             Function {
-                                [salsa id]: Id(1),
+                                [salsa id]: Id(c01),
                                 name: FunctionId {
                                     text: "area_circle",
                                 },
@@ -714,7 +714,7 @@ fn parse_error() {
     let expected = expect_test::expect![[r#"
         (
             Program {
-                [salsa id]: Id(0),
+                [salsa id]: Id(400),
                 statements: [],
             },
             [
@@ -736,7 +736,7 @@ fn parse_precedence() {
     let expected = expect_test::expect![[r#"
         (
             Program {
-                [salsa id]: Id(0),
+                [salsa id]: Id(400),
                 statements: [
                     Statement {
                         span: Span {

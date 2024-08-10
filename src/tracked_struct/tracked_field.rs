@@ -1,8 +1,8 @@
-use crate::{
-    id::AsId, ingredient::Ingredient, key::DependencyIndex, zalsa::IngredientIndex, Database, Id,
-};
+use std::marker::PhantomData;
 
-use super::{struct_map::StructMapView, Configuration};
+use crate::{ingredient::Ingredient, zalsa::IngredientIndex, Database, Id};
+
+use super::{Configuration, Value};
 
 /// Created for each tracked struct.
 /// This ingredient only stores the "id" fields.
@@ -19,49 +19,19 @@ where
     /// Index of this ingredient in the database (used to construct database-ids, etc).
     ingredient_index: IngredientIndex,
     field_index: usize,
-    struct_map: StructMapView<C>,
+    phantom: PhantomData<fn() -> Value<C>>,
 }
 
 impl<C> FieldIngredientImpl<C>
 where
     C: Configuration,
 {
-    pub(super) fn new(
-        struct_index: IngredientIndex,
-        field_index: usize,
-        struct_map: &StructMapView<C>,
-    ) -> Self {
+    pub(super) fn new(struct_index: IngredientIndex, field_index: usize) -> Self {
         Self {
             ingredient_index: struct_index.successor(field_index),
             field_index,
-            struct_map: struct_map.clone(),
+            phantom: PhantomData,
         }
-    }
-
-    unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Fields<'static>) -> &'db C::Fields<'db> {
-        unsafe { std::mem::transmute(fields) }
-    }
-
-    /// Access to this value field.
-    /// Note that this function returns the entire tuple of value fields.
-    /// The caller is responible for selecting the appropriate element.
-    pub fn field<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
-        let zalsa_local = db.zalsa_local();
-        let current_revision = db.zalsa().current_revision();
-        let data = self.struct_map.get(current_revision, id);
-        let data = C::deref_struct(data);
-        let changed_at = data.revisions[self.field_index];
-
-        zalsa_local.report_tracked_read(
-            DependencyIndex {
-                ingredient_index: self.ingredient_index,
-                key_index: Some(id.as_id()),
-            },
-            data.durability,
-            changed_at,
-        );
-
-        unsafe { self.to_self_ref(&data.fields) }
     }
 }
 
@@ -83,10 +53,9 @@ where
         input: Option<Id>,
         revision: crate::Revision,
     ) -> bool {
-        let current_revision = db.zalsa().current_revision();
+        let zalsa = db.zalsa();
         let id = input.unwrap();
-        let data = self.struct_map.get(current_revision, id);
-        let data = C::deref_struct(data);
+        let data = <super::IngredientImpl<C>>::data(zalsa.table(), id);
         let field_changed_at = data.revisions[self.field_index];
         field_changed_at > revision
     }

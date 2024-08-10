@@ -1,4 +1,4 @@
-use std::{any::Any, mem::MaybeUninit};
+use std::{any::Any, cell::UnsafeCell, panic::RefUnwindSafe};
 
 use append_only_vec::AppendOnlyVec;
 use crossbeam::atomic::AtomicCell;
@@ -16,7 +16,7 @@ pub struct Table {
 
 pub struct Page<T: Any + Send + Sync> {
     /// The ingredient for elements on this page.
-    #[allow(dead_code)] // pretty sure we'll need this eventually
+    #[allow(dead_code)] // pretty sure we'll need this
     ingredient: IngredientIndex,
 
     /// Number of elements of `data` that are initialized.
@@ -34,8 +34,14 @@ pub struct Page<T: Any + Send + Sync> {
 
     /// Vector with data. This is always created with the capacity/length of `PAGE_LEN`
     /// and uninitialized data. As we initialize new entries, we increment `allocated`.
-    data: Vec<MaybeUninit<T>>,
+    data: Vec<UnsafeCell<T>>,
 }
+
+unsafe impl<T: Any + Send + Sync> Send for Page<T> {}
+
+unsafe impl<T: Any + Send + Sync> Sync for Page<T> {}
+
+impl<T: Any + Send + Sync> RefUnwindSafe for Page<T> {}
 
 #[derive(Copy, Clone)]
 pub struct PageIndex(usize);
@@ -56,6 +62,12 @@ impl Table {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
         page_ref.get(slot)
+    }
+
+    pub fn get_raw<T: Any + Send + Sync>(&self, id: Id) -> *mut T {
+        let (page, slot) = split_id(id);
+        let page_ref = self.page::<T>(page);
+        page_ref.get_raw(slot)
     }
 
     pub fn page<T: Any + Send + Sync>(&self, page: PageIndex) -> &Page<T> {
@@ -85,7 +97,15 @@ impl<T: Any + Send + Sync> Page<T> {
     pub(crate) fn get(&self, slot: SlotIndex) -> &T {
         let len = self.allocated.load();
         assert!(slot.0 < len);
-        unsafe { self.data[slot.0].assume_init_ref() }
+        unsafe { &*self.data[slot.0].get() }
+    }
+
+    /// Returns a raw pointer to the given slot.
+    /// Reads/writes must be coordinated properly with calls to `get`.
+    pub(crate) fn get_raw(&self, slot: SlotIndex) -> *mut T {
+        let len = self.allocated.load();
+        assert!(slot.0 < len);
+        self.data[slot.0].get()
     }
 
     pub(crate) fn allocate(&self, page: PageIndex, value: T) -> Result<Id, T> {
@@ -95,10 +115,11 @@ impl<T: Any + Send + Sync> Page<T> {
             return Err(value);
         }
 
+        // Initialize entry `index`
         let data = &self.data[index];
-        let data = data.as_ptr() as *mut T;
-        unsafe { std::ptr::write(data, value) };
+        unsafe { std::ptr::write(data.get(), value) };
 
+        // Update the length (this must be done after initialization!)
         self.allocated.store(index + 1);
         drop(guard);
 
@@ -108,11 +129,14 @@ impl<T: Any + Send + Sync> Page<T> {
 
 impl<T: Any + Send + Sync> Drop for Page<T> {
     fn drop(&mut self) {
+        // Free `self.data` and the data within: to do this, we swap it out with an empty vector
+        // and then convert it from a `Vec<UnsafeCell<T>>` with partially uninitialized values
+        // to a `Vec<T>` with the correct length. This way the `Vec` drop impl can do its job.
         let mut data = std::mem::replace(&mut self.data, vec![]);
         let len = self.allocated.load();
         unsafe {
             data.set_len(len);
-            drop(std::mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(data));
+            drop(std::mem::transmute::<Vec<UnsafeCell<T>>, Vec<T>>(data));
         }
     }
 }

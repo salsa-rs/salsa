@@ -9,6 +9,7 @@ use crate::runtime::StampedValue;
 use crate::table::PageIndex;
 use crate::table::Table;
 use crate::tracked_struct::Disambiguator;
+use crate::tracked_struct::KeyStruct;
 use crate::zalsa::IngredientIndex;
 use crate::Cancelled;
 use crate::Cycle;
@@ -246,7 +247,7 @@ impl ZalsaLocal {
         entity_index: IngredientIndex,
         reset_at: Revision,
         data_hash: u64,
-    ) -> (DatabaseKeyIndex, StampedValue<()>, Disambiguator) {
+    ) -> (StampedValue<()>, Disambiguator) {
         assert!(
             self.query_in_progress(),
             "cannot create a tracked struct disambiguator outside of a tracked function"
@@ -262,7 +263,6 @@ impl ZalsaLocal {
             let top_query = stack.last_mut().unwrap();
             let disambiguator = top_query.disambiguate(data_hash);
             (
-                top_query.database_key_index,
                 StampedValue {
                     value: (),
                     durability: top_query.durability,
@@ -270,6 +270,34 @@ impl ZalsaLocal {
                 },
                 disambiguator,
             )
+        })
+    }
+
+    #[track_caller]
+    pub(crate) fn tracked_struct_id(&self, key_struct: &KeyStruct) -> Option<Id> {
+        debug_assert!(
+            self.query_in_progress(),
+            "cannot create a tracked struct disambiguator outside of a tracked function"
+        );
+        self.with_query_stack(|stack| {
+            let top_query = stack.last().unwrap();
+            top_query.tracked_struct_ids.get(&key_struct).cloned()
+        })
+    }
+
+    #[track_caller]
+    pub(crate) fn store_tracked_struct_id(&self, key_struct: KeyStruct, id: Id) {
+        debug_assert!(
+            self.query_in_progress(),
+            "cannot create a tracked struct disambiguator outside of a tracked function"
+        );
+        self.with_query_stack(|stack| {
+            let top_query = stack.last_mut().unwrap();
+            let old_id = top_query.tracked_struct_ids.insert(key_struct, id);
+            assert!(
+                old_id.is_none(),
+                "overwrote a previous id for `{key_struct:?}`"
+            );
         })
     }
 
@@ -308,6 +336,7 @@ impl ZalsaLocal {
 impl std::panic::RefUnwindSafe for ZalsaLocal {}
 
 /// Summarizes "all the inputs that a query used"
+/// and "all the outputs its wrote to"
 #[derive(Debug, Clone)]
 pub(crate) struct QueryRevisions {
     /// The most revision in which some input changed.
@@ -318,6 +347,11 @@ pub(crate) struct QueryRevisions {
 
     /// How was this query computed?
     pub(crate) origin: QueryOrigin,
+
+    /// The ids of tracked structs created by this query.
+    /// This is used to seed the next round if the query is
+    /// re-executed.
+    pub(super) tracked_struct_ids: FxHashMap<KeyStruct, Id>,
 }
 
 impl QueryRevisions {
@@ -451,6 +485,16 @@ impl ActiveQueryGuard<'_> {
                 self.database_key_index
             );
             stack.pop().unwrap()
+        })
+    }
+
+    /// Initialize the tracked struct ids with the values from the prior execution.
+    pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &FxHashMap<KeyStruct, Id>) {
+        self.local_state.with_query_stack(|stack| {
+            assert_eq!(stack.len(), self.push_len);
+            let frame = stack.last_mut().unwrap();
+            assert!(frame.tracked_struct_ids.is_empty());
+            frame.tracked_struct_ids = tracked_struct_ids.clone();
         })
     }
 

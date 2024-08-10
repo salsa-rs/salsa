@@ -268,7 +268,7 @@ fn fix_bad_variable_in_function() {
             expect![[r#"
                 [
                     "Event: Event { thread_id: ThreadId(11), kind: WillExecute { database_key: parse_statements(Id(0)) } }",
-                    "Event: Event { thread_id: ThreadId(11), kind: WillExecute { database_key: type_check_function(Id(0)) } }",
+                    "Event: Event { thread_id: ThreadId(11), kind: WillExecute { database_key: type_check_function(Id(1400)) } }",
                 ]
             "#]],
         )],
