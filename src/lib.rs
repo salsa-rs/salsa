@@ -22,7 +22,6 @@ mod revision;
 mod runtime;
 mod salsa_struct;
 mod storage;
-mod table;
 mod tracked_struct;
 mod update;
 mod views;

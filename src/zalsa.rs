@@ -9,7 +9,6 @@ use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
-use crate::table::Table;
 use crate::views::Views;
 use crate::zalsa_local::ZalsaLocal;
 use crate::{Database, DatabaseKeyIndex, Durability, Revision};
@@ -110,9 +109,6 @@ pub struct Zalsa {
     /// The runtime for this particular salsa database handle.
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
     runtime: Runtime,
-
-    /// Data for instances
-    table: Table,
 }
 
 impl Zalsa {
@@ -124,7 +120,6 @@ impl Zalsa {
             ingredients_vec: AppendOnlyVec::new(),
             ingredients_requiring_reset: AppendOnlyVec::new(),
             runtime: Runtime::default(),
-            table: Table::default(),
         }
     }
 
@@ -134,10 +129,6 @@ impl Zalsa {
 
     pub(crate) fn nonce(&self) -> Nonce<StorageNonce> {
         self.nonce
-    }
-
-    pub(crate) fn table(&self) -> &Table {
-        &self.table
     }
 
     /// **NOT SEMVER STABLE**
