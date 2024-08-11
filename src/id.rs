@@ -44,7 +44,7 @@ impl Id {
 
 impl Debug for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Id({})", self.as_u32())
+        write!(f, "Id({:x})", self.as_u32())
     }
 }
 

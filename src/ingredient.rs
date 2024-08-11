@@ -129,8 +129,8 @@ pub(crate) fn fmt_index(
     fmt: &mut fmt::Formatter<'_>,
 ) -> fmt::Result {
     if let Some(i) = id {
-        write!(fmt, "{}({})", debug_name, u32::from(i))
+        write!(fmt, "{debug_name}({i:?})")
     } else {
-        write!(fmt, "{}()", debug_name)
+        write!(fmt, "{debug_name}()")
     }
 }
