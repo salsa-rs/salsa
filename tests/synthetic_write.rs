@@ -27,7 +27,7 @@ fn execute() {
 
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(WillExecute { database_key: tracked_fn(0) })",
+            "salsa_event(WillExecute { database_key: tracked_fn(Id(0)) })",
         ]"#]]);
 
     // Bumps the revision
@@ -38,6 +38,6 @@ fn execute() {
 
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(DidValidateMemoizedValue { database_key: tracked_fn(0) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: tracked_fn(Id(0)) })",
         ]"#]]);
 }

@@ -51,7 +51,7 @@ fn test_leaked_inputs_ignored() {
     db.assert_logs(expect![[r#"
         [
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(0) } }",
+            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
         ]"#]]);
 
     assert_eq!(result_in_rev_1, 0);
@@ -68,7 +68,7 @@ fn test_leaked_inputs_ignored() {
         [
             "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(0) } }",
+            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
         ]"#]]);
 
     // Because salsa did not see any way for the tracked

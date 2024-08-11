@@ -58,8 +58,8 @@ fn execute() {
         if let Some(c) = err_b.downcast_ref::<salsa::Cycle>() {
             let expected = expect![[r#"
                 [
-                    a(0),
-                    b(0),
+                    a(Id(0)),
+                    b(Id(0)),
                 ]
             "#]];
             expected.assert_debug_eq(&c.all_participants(&db));
