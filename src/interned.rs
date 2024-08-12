@@ -7,6 +7,7 @@ use crate::id::AsId;
 use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
 use crate::plumbing::Jar;
+use crate::table::memo::MemoTable;
 use crate::table::Slot;
 use crate::zalsa::IngredientIndex;
 use crate::zalsa_local::QueryOrigin;
@@ -69,6 +70,7 @@ where
     C: Configuration,
 {
     data: C::Data<'static>,
+    memos: MemoTable,
 }
 
 impl<C: Configuration> Default for JarImpl<C> {
@@ -152,6 +154,7 @@ where
                     self.ingredient_index,
                     Value::<C> {
                         data: internal_data,
+                        memos: MemoTable::default(),
                     },
                 );
                 entry.insert(next_id);
@@ -265,4 +268,11 @@ where
     }
 }
 
-impl<C> Slot for Value<C> where C: Configuration {}
+impl<C> Slot for Value<C>
+where
+    C: Configuration,
+{
+    fn memos(&self) -> Option<&MemoTable> {
+        Some(&self.memos)
+    }
+}

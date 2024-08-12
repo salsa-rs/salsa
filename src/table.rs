@@ -48,7 +48,9 @@ pub(crate) struct Page<T: Slot> {
     data: Vec<UnsafeCell<T>>,
 }
 
-pub(crate) trait Slot: Any + Send + Sync {}
+pub(crate) trait Slot: Any + Send + Sync {
+    fn memos(&self) -> Option<&MemoTable>;
+}
 
 unsafe impl<T: Slot> Send for Page<T> {}
 

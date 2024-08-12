@@ -11,7 +11,7 @@ use crate::{
     plumbing::ZalsaLocal,
     runtime::StampedValue,
     salsa_struct::SalsaStructInDb,
-    table::{Slot, Table},
+    table::{memo::MemoTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Database, Durability, Event, Id, Revision,
@@ -205,6 +205,9 @@ where
     /// When tracked structs are re-created, this revision may be updated to the
     /// current revision if the value is different.
     revisions: C::Revisions,
+
+    /// Memo table storing the results of query functions etc.
+    memos: MemoTable,
 }
 // ANCHOR_END: ValueStruct
 
@@ -299,6 +302,7 @@ where
             durability: current_deps.durability,
             fields: unsafe { self.to_static(fields) },
             revisions: C::new_revisions(current_deps.changed_at),
+            memos: MemoTable::default(),
         };
 
         if let Some(id) = self.free_list.pop() {
@@ -635,4 +639,11 @@ where
     }
 }
 
-impl<C> Slot for Value<C> where C: Configuration {}
+impl<C> Slot for Value<C>
+where
+    C: Configuration,
+{
+    fn memos(&self) -> Option<&crate::table::memo::MemoTable> {
+        Some(&self.memos)
+    }
+}
