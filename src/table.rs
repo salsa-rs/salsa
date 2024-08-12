@@ -1,20 +1,28 @@
-use std::{any::Any, cell::UnsafeCell, panic::RefUnwindSafe};
+use std::{
+    any::{Any, TypeId},
+    cell::UnsafeCell,
+    panic::RefUnwindSafe,
+};
 
 use append_only_vec::AppendOnlyVec;
 use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 
-use crate::{Id, IngredientIndex};
+use crate::{zalsa::transmute_data_ptr, Id, IngredientIndex};
 
 const PAGE_LEN_BITS: usize = 10;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
 const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
 
-pub struct Table {
-    pages: AppendOnlyVec<Box<dyn Any + Send + Sync>>,
+pub(crate) struct Table {
+    pages: AppendOnlyVec<Box<dyn TablePage>>,
 }
 
-pub struct Page<T: Any + Send + Sync> {
+pub(crate) trait TablePage: Any + Send + Sync {
+    fn hidden_type_name(&self) -> &'static str;
+}
+
+pub(crate) struct Page<T: Any + Send + Sync> {
     /// The ingredient for elements on this page.
     #[allow(dead_code)] // pretty sure we'll need this
     ingredient: IngredientIndex,
@@ -71,7 +79,7 @@ impl Table {
     }
 
     pub fn page<T: Any + Send + Sync>(&self, page: PageIndex) -> &Page<T> {
-        self.pages[page.0].downcast_ref::<Page<T>>().unwrap()
+        self.pages[page.0].assert_type::<Page<T>>()
     }
 
     pub fn push_page<T: Any + Send + Sync>(&self, ingredient: IngredientIndex) -> PageIndex {
@@ -127,6 +135,12 @@ impl<T: Any + Send + Sync> Page<T> {
     }
 }
 
+impl<T: Any + Send + Sync> TablePage for Page<T> {
+    fn hidden_type_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+}
+
 impl<T: Any + Send + Sync> Drop for Page<T> {
     fn drop(&mut self) {
         // Free `self.data` and the data within: to do this, we swap it out with an empty vector
@@ -138,6 +152,21 @@ impl<T: Any + Send + Sync> Drop for Page<T> {
             data.set_len(len);
             drop(std::mem::transmute::<Vec<UnsafeCell<T>>, Vec<T>>(data));
         }
+    }
+}
+
+impl dyn TablePage {
+    fn assert_type<T: Any>(&self) -> &T {
+        assert_eq!(
+            self.type_id(),
+            TypeId::of::<T>(),
+            "page has hidden type `{:?}` but `{:?}` was expected",
+            self.hidden_type_name(),
+            std::any::type_name::<T>(),
+        );
+
+        // SAFETY: Assertion above
+        unsafe { transmute_data_ptr::<dyn TablePage, T>(self) }
     }
 }
 
