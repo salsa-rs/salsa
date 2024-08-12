@@ -1,4 +1,5 @@
 use append_only_vec::AppendOnlyVec;
+use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use std::any::{Any, TypeId};
@@ -90,6 +91,17 @@ impl IngredientIndex {
     }
 }
 
+/// A special secondary index *just* for ingredients that attach
+/// "memos" to salsa structs (currently: just tracked functions).
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub(crate) struct MemoIngredientIndex(u32);
+
+impl MemoIngredientIndex {
+    pub(crate) fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+}
+
 /// The "plumbing interface" to the Salsa database. Stores all the ingredients and other data.
 ///
 /// **NOT SEMVER STABLE.**
@@ -97,6 +109,9 @@ pub struct Zalsa {
     views_of: Views,
 
     nonce: Nonce<StorageNonce>,
+
+    /// Number of memo ingredient indices created by calls to [`next_memo_ingredient_index`](`Self::next_memo_ingredient_index`)
+    memo_ingredient_count: AtomicCell<u32>,
 
     /// Map from the type-id of an `impl Jar` to the index of its first ingredient.
     /// This is using a `Mutex<FxHashMap>` (versus, say, a `FxDashMap`)
@@ -132,7 +147,12 @@ impl Zalsa {
             ingredients_requiring_reset: AppendOnlyVec::new(),
             runtime: Runtime::default(),
             table: Table::default(),
+            memo_ingredient_count: AtomicCell::new(0),
         }
+    }
+
+    pub(crate) fn next_memo_ingredient_index(&self) -> MemoIngredientIndex {
+        MemoIngredientIndex(self.memo_ingredient_count.fetch_add(1))
     }
 
     pub(crate) fn views(&self) -> &Views {
