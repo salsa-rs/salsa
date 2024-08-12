@@ -7,6 +7,7 @@ use crate::id::AsId;
 use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
 use crate::plumbing::Jar;
+use crate::table::Slot;
 use crate::zalsa::IngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{Database, DatabaseKeyIndex, Id};
@@ -19,7 +20,7 @@ pub trait Configuration: Sized + 'static {
     const DEBUG_NAME: &'static str;
 
     /// The type of data being interned
-    type Data<'db>: InternedData + Send + Sync;
+    type Data<'db>: InternedData;
 
     /// The end user struct
     type Struct<'db>: Copy;
@@ -36,8 +37,8 @@ pub trait Configuration: Sized + 'static {
     fn deref_struct(s: Self::Struct<'_>) -> Id;
 }
 
-pub trait InternedData: Sized + Eq + Hash + Clone {}
-impl<T: Eq + Hash + Clone> InternedData for T {}
+pub trait InternedData: Sized + Eq + Hash + Clone + Sync + Send {}
+impl<T: Eq + Hash + Clone + Sync + Send> InternedData for T {}
 
 pub struct JarImpl<C: Configuration> {
     phantom: PhantomData<C>,
@@ -67,8 +68,7 @@ pub struct Value<C>
 where
     C: Configuration,
 {
-    id: Id,
-    fields: C::Data<'static>,
+    data: C::Data<'static>,
 }
 
 impl<C: Configuration> Default for JarImpl<C> {
@@ -147,7 +147,13 @@ where
             dashmap::mapref::entry::Entry::Vacant(entry) => {
                 let zalsa = db.zalsa();
                 let table = zalsa.table();
-                let next_id = zalsa_local.allocate(table, self.ingredient_index, internal_data);
+                let next_id = zalsa_local.allocate(
+                    table,
+                    self.ingredient_index,
+                    Value::<C> {
+                        data: internal_data,
+                    },
+                );
                 entry.insert(next_id);
                 C::struct_from_id(next_id)
             }
@@ -158,8 +164,8 @@ where
     /// Rarely used since end-users generally carry a struct with a pointer directly
     /// to the interned item.
     pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Data<'db> {
-        let internal_data = db.zalsa().table().get::<C::Data<'static>>(id);
-        unsafe { self.from_internal_data(internal_data) }
+        let internal_data = db.zalsa().table().get::<Value<C>>(id);
+        unsafe { self.from_internal_data(&internal_data.data) }
     }
 
     /// Lookup the fields from an interned struct.
@@ -259,26 +265,4 @@ where
     }
 }
 
-impl<C> Value<C>
-where
-    C: Configuration,
-{
-    pub fn data(&self) -> &C::Data<'_> {
-        // SAFETY: The lifetime of `self` is tied to the interning ingredient;
-        // we never remove data without an `&mut self` access to the interning ingredient.
-        unsafe { self.to_self_ref(&self.fields) }
-    }
-
-    unsafe fn to_self_ref<'db>(&'db self, fields: &'db C::Data<'static>) -> &'db C::Data<'db> {
-        unsafe { std::mem::transmute(fields) }
-    }
-}
-
-impl<C> AsId for Value<C>
-where
-    C: Configuration,
-{
-    fn as_id(&self) -> Id {
-        self.id
-    }
-}
+impl<C> Slot for Value<C> where C: Configuration {}

@@ -7,6 +7,7 @@ use crate::key::DatabaseKeyIndex;
 use crate::key::DependencyIndex;
 use crate::runtime::StampedValue;
 use crate::table::PageIndex;
+use crate::table::Slot;
 use crate::table::Table;
 use crate::tracked_struct::Disambiguator;
 use crate::tracked_struct::KeyStruct;
@@ -18,7 +19,6 @@ use crate::Event;
 use crate::EventKind;
 use crate::Id;
 use crate::Revision;
-use std::any::Any;
 use std::cell::RefCell;
 use std::sync::Arc;
 
@@ -54,7 +54,7 @@ impl ZalsaLocal {
     /// Allocate a new id in `table` for the given ingredient
     /// storing `value`. Remembers the most recent page from this
     /// thread and attempts to reuse it.
-    pub(crate) fn allocate<'t, T: Any + Send + Sync>(
+    pub(crate) fn allocate<'t, T: Slot>(
         &self,
         table: &Table,
         ingredient: IngredientIndex,

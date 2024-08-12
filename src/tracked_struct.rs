@@ -11,7 +11,7 @@ use crate::{
     plumbing::ZalsaLocal,
     runtime::StampedValue,
     salsa_struct::SalsaStructInDb,
-    table::Table,
+    table::{Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Database, Durability, Event, Id, Revision,
@@ -634,3 +634,5 @@ where
             .finish()
     }
 }
+
+impl<C> Slot for Value<C> where C: Configuration {}

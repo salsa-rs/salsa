@@ -6,6 +6,7 @@ use std::{
 
 use append_only_vec::AppendOnlyVec;
 use crossbeam::atomic::AtomicCell;
+use memo::MemoTable;
 use parking_lot::Mutex;
 
 use crate::{zalsa::transmute_data_ptr, Id, IngredientIndex};
@@ -24,7 +25,7 @@ pub(crate) trait TablePage: Any + Send + Sync {
     fn hidden_type_name(&self) -> &'static str;
 }
 
-pub(crate) struct Page<T: Any + Send + Sync> {
+pub(crate) struct Page<T: Slot> {
     /// The ingredient for elements on this page.
     #[allow(dead_code)] // pretty sure we'll need this
     ingredient: IngredientIndex,
@@ -47,11 +48,13 @@ pub(crate) struct Page<T: Any + Send + Sync> {
     data: Vec<UnsafeCell<T>>,
 }
 
-unsafe impl<T: Any + Send + Sync> Send for Page<T> {}
+pub(crate) trait Slot: Any + Send + Sync {}
 
-unsafe impl<T: Any + Send + Sync> Sync for Page<T> {}
+unsafe impl<T: Slot> Send for Page<T> {}
 
-impl<T: Any + Send + Sync> RefUnwindSafe for Page<T> {}
+unsafe impl<T: Slot> Sync for Page<T> {}
+
+impl<T: Slot> RefUnwindSafe for Page<T> {}
 
 #[derive(Copy, Clone)]
 pub struct PageIndex(usize);
@@ -68,29 +71,29 @@ impl Default for Table {
 }
 
 impl Table {
-    pub fn get<T: Any + Send + Sync>(&self, id: Id) -> &T {
+    pub fn get<T: Slot>(&self, id: Id) -> &T {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
         page_ref.get(slot)
     }
 
-    pub fn get_raw<T: Any + Send + Sync>(&self, id: Id) -> *mut T {
+    pub fn get_raw<T: Slot>(&self, id: Id) -> *mut T {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
         page_ref.get_raw(slot)
     }
 
-    pub fn page<T: Any + Send + Sync>(&self, page: PageIndex) -> &Page<T> {
+    pub fn page<T: Slot>(&self, page: PageIndex) -> &Page<T> {
         self.pages[page.0].assert_type::<Page<T>>()
     }
 
-    pub fn push_page<T: Any + Send + Sync>(&self, ingredient: IngredientIndex) -> PageIndex {
+    pub fn push_page<T: Slot>(&self, ingredient: IngredientIndex) -> PageIndex {
         let page = Box::new(<Page<T>>::new(ingredient));
         PageIndex(self.pages.push(page))
     }
 }
 
-impl<T: Any + Send + Sync> Page<T> {
+impl<T: Slot> Page<T> {
     fn new(ingredient: IngredientIndex) -> Self {
         let mut data = Vec::with_capacity(PAGE_LEN);
         unsafe {
@@ -137,13 +140,13 @@ impl<T: Any + Send + Sync> Page<T> {
     }
 }
 
-impl<T: Any + Send + Sync> TablePage for Page<T> {
+impl<T: Slot> TablePage for Page<T> {
     fn hidden_type_name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }
 }
 
-impl<T: Any + Send + Sync> Drop for Page<T> {
+impl<T: Slot> Drop for Page<T> {
     fn drop(&mut self) {
         // Free `self.data` and the data within: to do this, we swap it out with an empty vector
         // and then convert it from a `Vec<UnsafeCell<T>>` with partially uninitialized values
