@@ -1,3 +1,5 @@
+#![allow(unreachable_patterns)]
+// FIXME(rust-lang/rust#129031): regression in nightly
 use std::{path::PathBuf, sync::Mutex, time::Duration};
 
 use crossbeam::channel::{unbounded, Sender};
