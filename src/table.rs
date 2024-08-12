@@ -10,6 +10,8 @@ use parking_lot::Mutex;
 
 use crate::{zalsa::transmute_data_ptr, Id, IngredientIndex};
 
+pub(crate) mod memo;
+
 const PAGE_LEN_BITS: usize = 10;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
 const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
