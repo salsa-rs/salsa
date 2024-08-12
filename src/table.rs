@@ -23,6 +23,8 @@ pub(crate) struct Table {
 
 pub(crate) trait TablePage: Any + Send + Sync {
     fn hidden_type_name(&self) -> &'static str;
+
+    fn memos(&self, slot: SlotIndex) -> Option<&MemoTable>;
 }
 
 pub(crate) struct Page<T: Slot> {
@@ -58,10 +60,10 @@ unsafe impl<T: Slot> Sync for Page<T> {}
 
 impl<T: Slot> RefUnwindSafe for Page<T> {}
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct PageIndex(usize);
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct SlotIndex(usize);
 
 impl Default for Table {
@@ -93,6 +95,12 @@ impl Table {
         let page = Box::new(<Page<T>>::new(ingredient));
         PageIndex(self.pages.push(page))
     }
+
+    /// Get the memo table associated with `id` (if any)
+    pub fn memos(&self, id: Id) -> Option<&MemoTable> {
+        let (page, slot) = split_id(id);
+        self.pages[page.0].memos(slot)
+    }
 }
 
 impl<T: Slot> Page<T> {
@@ -109,17 +117,23 @@ impl<T: Slot> Page<T> {
         }
     }
 
-    pub(crate) fn get(&self, slot: SlotIndex) -> &T {
+    fn check_bounds(&self, slot: SlotIndex) {
         let len = self.allocated.load();
-        assert!(slot.0 < len);
+        assert!(
+            slot.0 < len,
+            "out of bounds access `{slot:?}` (maximum slot `{len}`)"
+        );
+    }
+
+    pub(crate) fn get(&self, slot: SlotIndex) -> &T {
+        self.check_bounds(slot);
         unsafe { &*self.data[slot.0].get() }
     }
 
     /// Returns a raw pointer to the given slot.
     /// Reads/writes must be coordinated properly with calls to `get`.
     pub(crate) fn get_raw(&self, slot: SlotIndex) -> *mut T {
-        let len = self.allocated.load();
-        assert!(slot.0 < len);
+        self.check_bounds(slot);
         self.data[slot.0].get()
     }
 
@@ -145,6 +159,10 @@ impl<T: Slot> Page<T> {
 impl<T: Slot> TablePage for Page<T> {
     fn hidden_type_name(&self) -> &'static str {
         std::any::type_name::<Self>()
+    }
+
+    fn memos(&self, slot: SlotIndex) -> Option<&MemoTable> {
+        self.get(slot).memos()
     }
 }
 
