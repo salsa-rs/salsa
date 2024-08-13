@@ -62,7 +62,7 @@ where
         self.struct_map.get(input).stamps[self.field_index].changed_at > revision
     }
 
-    fn origin(&self, _key_index: Id) -> Option<QueryOrigin> {
+    fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {
         None
     }
 

@@ -209,7 +209,7 @@ where
         crate::cycle::CycleRecoveryStrategy::Panic
     }
 
-    fn origin(&self, _key_index: crate::Id) -> Option<QueryOrigin> {
+    fn origin(&self, _db: &dyn Database, _key_index: crate::Id) -> Option<QueryOrigin> {
         None
     }
 

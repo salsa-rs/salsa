@@ -234,7 +234,7 @@ where
         C::CYCLE_STRATEGY
     }
 
-    fn origin(&self, key: Id) -> Option<QueryOrigin> {
+    fn origin(&self, _db: &dyn Database, key: Id) -> Option<QueryOrigin> {
         self.origin(key)
     }
 

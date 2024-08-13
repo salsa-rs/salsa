@@ -203,7 +203,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         CycleRecoveryStrategy::Panic
     }
 
-    fn origin(&self, _key_index: Id) -> Option<QueryOrigin> {
+    fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {
         None
     }
 

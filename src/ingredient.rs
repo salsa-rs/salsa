@@ -40,7 +40,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ) -> bool;
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
-    fn origin(&self, key_index: Id) -> Option<QueryOrigin>;
+    fn origin(&self, db: &dyn Database, key_index: Id) -> Option<QueryOrigin>;
 
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
     /// This occurs because the value for `executor`, which generated it, was marked as valid
