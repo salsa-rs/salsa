@@ -34,6 +34,10 @@ rustversion = "1.0"
 test-log = { version ="0.2.11", features = ["trace"] }
 trybuild = "1.0"
 
+[[bench]]
+name = "compare"
+harness = false
+
 
 [[bench]]
 name = "incremental"
