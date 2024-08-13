@@ -47,8 +47,7 @@ where
     /// The caller is responible for selecting the appropriate element.
     pub fn field<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
         let zalsa_local = db.zalsa_local();
-        let current_revision = db.zalsa().current_revision();
-        let data = self.struct_map.get(current_revision, id);
+        let data = self.struct_map.get(db.zalsa(), id);
         let data = C::deref_struct(data);
         let changed_at = data.revisions[self.field_index];
 
@@ -84,9 +83,7 @@ where
         revision: crate::Revision,
     ) -> bool {
         let id = input.unwrap();
-        let data = self
-            .struct_map
-            .get_and_validate_last_changed(db.zalsa(), id);
+        let data = self.struct_map.get(db.zalsa(), id);
         let data = C::deref_struct(data);
         let field_changed_at = data.revisions[self.field_index];
         field_changed_at > revision

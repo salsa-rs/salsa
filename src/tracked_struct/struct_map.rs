@@ -100,22 +100,11 @@ where
     }
 
     pub fn validate(&self, current_revision: Revision, id: Id) {
-        Self::validate_in_map(&self.map, current_revision, id)
-    }
-
-    pub fn validate_in_map(
-        map: &FxDashMap<Id, Alloc<Value<C>>>,
-        current_revision: Revision,
-        id: Id,
-    ) {
-        let mut data = map.get_mut(&id).unwrap();
+        let mut data = self.map.get_mut(&id).unwrap();
 
         // UNSAFE: We never permit `&`-access in the current revision until data.created_at
         // has been updated to the current revision (which we check below).
         let data = unsafe { data.as_mut() };
-
-        // Never update a struct twice in the same revision.
-        assert!(data.created_at <= current_revision);
         data.created_at = current_revision;
     }
 
@@ -126,7 +115,7 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value is already updated in this revision.
-    pub fn update(&self, current_revision: Revision, id: Id) -> Update<'_, C> {
+    pub fn update(&self, zalsa: &Zalsa, id: Id) -> Update<'_, C> {
         let mut data = self.map.get_mut(&id).unwrap();
 
         // UNSAFE: We never permit `&`-access in the current revision until data.created_at
@@ -156,9 +145,10 @@ where
         //
         // For this reason, we just return `None` in this case, ensuring that the calling
         // code cannot violate that `&`-reference.
+        let current_revision = zalsa.current_revision();
         if data_ref.created_at == current_revision {
             drop(data);
-            return Update::Current(Self::get_from_map(&self.map, current_revision, id));
+            return Update::Current(Self::get_from_map(&self.map, zalsa, id));
         }
 
         data_ref.created_at = current_revision;
@@ -171,8 +161,8 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
-    pub fn get(&self, current_revision: Revision, id: Id) -> C::Struct<'_> {
-        Self::get_from_map(&self.map, current_revision, id)
+    pub fn get(&self, zalsa: &Zalsa, id: Id) -> C::Struct<'_> {
+        Self::get_from_map(&self.map, zalsa, id)
     }
 
     /// Helper function, provides shared functionality for [`StructMapView`][]
@@ -180,55 +170,16 @@ where
     /// # Panics
     ///
     /// * If the value is not present in the map.
-    /// * If the value has not been updated in this revision.
-    fn get_from_map(
-        map: &FxDashMap<Id, Alloc<Value<C>>>,
-        current_revision: Revision,
+    /// * If the value has not been updated since last-modified revision for its durability.
+    fn get_from_map<'a>(
+        map: &'a FxDashMap<Id, Alloc<Value<C>>>,
+        zalsa: &Zalsa,
         id: Id,
-    ) -> C::Struct<'_> {
-        let data = map.get(&id).unwrap();
+    ) -> C::Struct<'a> {
+        let mut data = map.get_mut(&id).unwrap();
 
         // UNSAFE: We permit `&`-access in the current revision once data.created_at
         // has been updated to the current revision (which we check below).
-        let data_ref: &Value<C> = unsafe { data.as_ref() };
-
-        // Before we drop the lock, check that the value has
-        // been updated in this revision. This is what allows us to return a Struct
-        let created_at = data_ref.created_at;
-        assert!(
-            created_at == current_revision,
-            "access to tracked struct from previous revision"
-        );
-
-        // Unsafety clause:
-        //
-        // * Value will not be updated again in this revision,
-        //   and revision will not change so long as runtime is shared
-        // * We only remove values from the map when we have `&mut self`
-        unsafe { C::struct_from_raw(data.as_raw()) }
-    }
-
-    /// Lookup an existing tracked struct from the map, maybe validating it to current revision.
-    ///
-    /// Validates to current revision if the struct was last created/validated in a revision that
-    /// is still current for the struct's durability. That is, if the struct is HIGH durability
-    /// (created by a HIGH durability query) and was created in R2, and we are now at R3 but no
-    /// HIGH durability input has changed since R2, the struct is still valid and we can validate
-    /// it to R3.
-    ///
-    /// # Panics
-    ///
-    /// * If the value is not present in the map.
-    /// * If the value has not been updated in the last-changed revision for its durability.
-    fn get_and_validate_last_changed<'db>(
-        map: &'db FxDashMap<Id, Alloc<Value<C>>>,
-        zalsa: &Zalsa,
-        id: Id,
-    ) -> C::Struct<'db> {
-        let data = map.get(&id).unwrap();
-
-        // UNSAFE: We permit `&`-access in the current revision once data.created_at
-        // has been updated to the current revision (which we ensure below).
         let data_ref: &Value<C> = unsafe { data.as_ref() };
 
         // Before we drop the lock, check that the value has been updated in the most recent
@@ -237,25 +188,24 @@ where
         let last_changed = zalsa.last_changed_revision(data_ref.durability);
         assert!(
             created_at >= last_changed,
-            "access to tracked struct from obsolete revision"
+            "access to tracked struct from previous revision"
         );
+
+        // Validate in current revision, if needed.
+        let current_revision = zalsa.current_revision();
+        if created_at < current_revision {
+            // UNSAFE: We never permit `&`-access in the current revision until data.created_at
+            // has been updated to the current revision (which we check below).
+            let data = unsafe { data.as_mut() };
+            data.created_at = current_revision;
+        }
 
         // Unsafety clause:
         //
         // * Value will not be updated again in this revision,
         //   and revision will not change so long as runtime is shared
         // * We only remove values from the map when we have `&mut self`
-        let ret = unsafe { C::struct_from_raw(data.as_raw()) };
-
-        drop(data);
-
-        // Validate in current revision, if necessary.
-        let current_revision = zalsa.current_revision();
-        if last_changed < current_revision {
-            Self::validate_in_map(map, current_revision, id);
-        }
-
-        ret
+        unsafe { C::struct_from_raw(data.as_raw()) }
     }
 
     /// Remove the entry for `id` from the map.
@@ -288,12 +238,8 @@ where
     ///
     /// * If the value is not present in the map.
     /// * If the value has not been updated in this revision.
-    pub fn get(&self, current_revision: Revision, id: Id) -> C::Struct<'_> {
-        StructMap::get_from_map(&self.map, current_revision, id)
-    }
-
-    pub fn get_and_validate_last_changed<'db>(&'db self, zalsa: &Zalsa, id: Id) -> C::Struct<'db> {
-        StructMap::get_and_validate_last_changed(&self.map, zalsa, id)
+    pub fn get(&self, zalsa: &Zalsa, id: Id) -> C::Struct<'_> {
+        StructMap::get_from_map(&self.map, zalsa, id)
     }
 }
 

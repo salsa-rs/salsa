@@ -333,7 +333,7 @@ where
             // which means the interned key could exist but `struct_map` not yet have
             // been updated).
 
-            match self.struct_map.update(current_revision, id) {
+            match self.struct_map.update(zalsa, id) {
                 Update::Current(r) => {
                     // All inputs up to this point were previously
                     // observed to be green and this struct was already
@@ -378,8 +378,7 @@ where
     ///
     /// If the struct has not been created in this revision.
     pub fn lookup_struct<'db>(&'db self, db: &'db dyn Database, id: Id) -> C::Struct<'db> {
-        let current_revision = db.zalsa().current_revision();
-        self.struct_map.get(current_revision, id)
+        self.struct_map.get(db.zalsa(), id)
     }
 
     /// Deletes the given entities. This is used after a query `Q` executes and we can compare
