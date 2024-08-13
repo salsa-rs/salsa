@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use std::thread::ThreadId;
 
 use crate::cycle::CycleRecoveryStrategy;
-use crate::ingredient::{Ingredient, Jar};
+use crate::ingredient::{Ingredient, Jar, JarAux};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
 use crate::table::Table;
@@ -151,10 +151,6 @@ impl Zalsa {
         }
     }
 
-    pub(crate) fn next_memo_ingredient_index(&self) -> MemoIngredientIndex {
-        MemoIngredientIndex(self.memo_ingredient_count.fetch_add(1))
-    }
-
     pub(crate) fn views(&self) -> &Views {
         &self.views_of
     }
@@ -176,7 +172,7 @@ impl Zalsa {
             .entry(jar_type_id)
             .or_insert_with(|| {
                 let index = IngredientIndex::from(self.ingredients_vec.len());
-                let ingredients = jar.create_ingredients(index);
+                let ingredients = jar.create_ingredients(self, index);
                 for ingredient in ingredients {
                     let expected_index = ingredient.ingredient_index();
 
@@ -272,6 +268,12 @@ impl Zalsa {
     ) {
         self.runtime
             .unblock_queries_blocked_on(database_key, wait_result)
+    }
+}
+
+impl JarAux for Zalsa {
+    fn next_memo_ingredient_index(&self) -> MemoIngredientIndex {
+        MemoIngredientIndex(self.memo_ingredient_count.fetch_add(1))
     }
 }
 

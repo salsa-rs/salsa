@@ -202,10 +202,12 @@ macro_rules! setup_tracked_fn {
             impl $zalsa::Jar for $Configuration {
                 fn create_ingredients(
                     &self,
+                    aux: &dyn $zalsa::JarAux,
                     first_index: $zalsa::IngredientIndex,
                 ) -> Vec<Box<dyn $zalsa::Ingredient>> {
                     let mut fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
                         first_index,
+                        aux,
                     );
                     fn_ingredient.set_capacity($lru);
                     $zalsa::macro_if! {

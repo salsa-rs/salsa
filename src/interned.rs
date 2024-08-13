@@ -6,7 +6,7 @@ use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
-use crate::plumbing::Jar;
+use crate::plumbing::{Jar, JarAux};
 use crate::table::memo::MemoTable;
 use crate::table::Slot;
 use crate::zalsa::IngredientIndex;
@@ -82,7 +82,11 @@ impl<C: Configuration> Default for JarImpl<C> {
 }
 
 impl<C: Configuration> Jar for JarImpl<C> {
-    fn create_ingredients(&self, first_index: IngredientIndex) -> Vec<Box<dyn Ingredient>> {
+    fn create_ingredients(
+        &self,
+        _aux: &dyn JarAux,
+        first_index: IngredientIndex,
+    ) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(IngredientImpl::<C>::new(first_index)) as _]
     }
 }

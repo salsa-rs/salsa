@@ -4,8 +4,10 @@ use std::{
 };
 
 use crate::{
-    cycle::CycleRecoveryStrategy, zalsa::IngredientIndex, zalsa_local::QueryOrigin, Database,
-    DatabaseKeyIndex, Id,
+    cycle::CycleRecoveryStrategy,
+    zalsa::{IngredientIndex, MemoIngredientIndex},
+    zalsa_local::QueryOrigin,
+    Database, DatabaseKeyIndex, Id,
 };
 
 use super::Revision;
@@ -15,7 +17,15 @@ use super::Revision;
 pub trait Jar: Any {
     /// Create the ingredients given the index of the first one.
     /// All subsequent ingredients will be assigned contiguous indices.
-    fn create_ingredients(&self, first_index: IngredientIndex) -> Vec<Box<dyn Ingredient>>;
+    fn create_ingredients(
+        &self,
+        aux: &dyn JarAux,
+        first_index: IngredientIndex,
+    ) -> Vec<Box<dyn Ingredient>>;
+}
+
+pub trait JarAux {
+    fn next_memo_ingredient_index(&self) -> MemoIngredientIndex;
 }
 
 pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {

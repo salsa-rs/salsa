@@ -5,7 +5,7 @@ use tracked_field::FieldIngredientImpl;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::{fmt_index, Ingredient, Jar},
+    ingredient::{fmt_index, Ingredient, Jar, JarAux},
     ingredient_list::IngredientList,
     key::{DatabaseKeyIndex, DependencyIndex},
     plumbing::ZalsaLocal,
@@ -102,6 +102,7 @@ impl<C: Configuration> Default for JarImpl<C> {
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
         &self,
+        _aux: &dyn JarAux,
         struct_index: crate::zalsa::IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient = <IngredientImpl<C>>::new(struct_index);

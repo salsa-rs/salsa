@@ -17,7 +17,7 @@ use crate::{
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient},
     key::{DatabaseKeyIndex, DependencyIndex},
-    plumbing::{Jar, Stamp},
+    plumbing::{Jar, JarAux, Stamp},
     zalsa::IngredientIndex,
     zalsa_local::QueryOrigin,
     Database, Durability, Id, Revision, Runtime,
@@ -53,6 +53,7 @@ impl<C: Configuration> Default for JarImpl<C> {
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
         &self,
+        _aux: &dyn JarAux,
         struct_index: crate::zalsa::IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient: IngredientImpl<C> = IngredientImpl::new(struct_index);

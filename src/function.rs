@@ -3,8 +3,13 @@ use std::{any::Any, fmt, sync::Arc};
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
-    cycle::CycleRecoveryStrategy, ingredient::fmt_index, key::DatabaseKeyIndex,
-    salsa_struct::SalsaStructInDb, zalsa::IngredientIndex, zalsa_local::QueryOrigin,
+    cycle::CycleRecoveryStrategy,
+    ingredient::fmt_index,
+    key::DatabaseKeyIndex,
+    plumbing::JarAux,
+    salsa_struct::SalsaStructInDb,
+    zalsa::{IngredientIndex, MemoIngredientIndex},
+    zalsa_local::QueryOrigin,
     AsDynDatabase as _, Cycle, Database, Event, EventKind, Id, Revision,
 };
 
@@ -91,6 +96,9 @@ pub struct IngredientImpl<C: Configuration> {
     /// Used to construct `DatabaseKeyIndex` values.
     index: IngredientIndex,
 
+    /// The index for memo tables
+    memo_index: MemoIngredientIndex,
+
     /// Tracks the keys for which we have memoized values.
     memo_map: memo::MemoMap<C>,
 
@@ -131,9 +139,10 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn new(index: IngredientIndex) -> Self {
+    pub fn new(index: IngredientIndex, aux: &dyn JarAux) -> Self {
         Self {
             index,
+            memo_index: aux.next_memo_ingredient_index(),
             memo_map: memo::MemoMap::default(),
             lru: Default::default(),
             sync_map: Default::default(),

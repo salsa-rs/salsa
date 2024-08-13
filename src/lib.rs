@@ -81,6 +81,7 @@ pub mod plumbing {
     pub use crate::id::LookupId;
     pub use crate::ingredient::Ingredient;
     pub use crate::ingredient::Jar;
+    pub use crate::ingredient::JarAux;
     pub use crate::key::DatabaseKeyIndex;
     pub use crate::revision::Revision;
     pub use crate::runtime::stamp;
