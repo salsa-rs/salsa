@@ -64,7 +64,7 @@ fn execute() {
         [
             "salsa_event(WillExecute { database_key: the_fn(Id(0)) })",
             "salsa_event(WillExecute { database_key: make_tracked_struct(Id(0)) })",
-            "salsa_event(WillExecute { database_key: read_tracked_struct(Id(0)) })",
+            "salsa_event(WillExecute { database_key: read_tracked_struct(Id(400)) })",
         ]"#]]);
 
     // Update the input to `false` and re-execute.
@@ -79,7 +79,7 @@ fn execute() {
     db.assert_logs(expect![[r#"
         [
             "salsa_event(WillExecute { database_key: make_tracked_struct(Id(0)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: read_tracked_struct(Id(0)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: read_tracked_struct(Id(400)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: the_fn(Id(0)) })",
         ]"#]]);
 }

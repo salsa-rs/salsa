@@ -203,7 +203,7 @@ macro_rules! setup_input_struct {
                 /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
                 pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     $zalsa::with_attached_database(|db| {
-                        let fields = $Configuration::ingredient(db).leak_fields(this);
+                        let fields = $Configuration::ingredient(db).leak_fields(db, this);
                         let mut f = f.debug_struct(stringify!($Struct));
                         let f = f.field("[salsa id]", &$zalsa::AsId::as_id(&this));
                         $(
@@ -235,7 +235,7 @@ macro_rules! setup_input_struct {
                     let current_revision = $zalsa::current_revision(db);
                     let ingredient = $Configuration::ingredient(db.as_dyn_database());
                     let (fields, stamps) = builder::builder_into_inner(self, current_revision);
-                    ingredient.new_input(fields, stamps)
+                    ingredient.new_input(db.as_dyn_database(), fields, stamps)
                 }
             }
 

@@ -9,7 +9,10 @@ use crossbeam::atomic::AtomicCell;
 use memo::MemoTable;
 use parking_lot::Mutex;
 
-use crate::{zalsa::transmute_data_ptr, Id, IngredientIndex};
+use crate::{
+    zalsa::{transmute_data_ptr, transmute_data_ptr_mut},
+    Id, IngredientIndex,
+};
 
 pub(crate) mod memo;
 
@@ -75,22 +78,62 @@ impl Default for Table {
 }
 
 impl Table {
+    /// Get a reference to the data for `id`, which must have been allocated from this table with type `T`.
+    ///
+    /// # Panics
+    ///
+    /// If `id` is out of bounds or the does not have the type `T`.
     pub fn get<T: Slot>(&self, id: Id) -> &T {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
         page_ref.get(slot)
     }
 
+    /// Get a mutable reference to the data for `id`, which must have been allocated from this table with type `T`.
+    ///
+    /// # Panics
+    ///
+    /// If `id` is out of bounds or the does not have the type `T`.
+    pub fn get_mut<T: Slot>(&mut self, id: Id) -> &mut T {
+        let (page, slot) = split_id(id);
+        let page_ref = self.page_mut::<T>(page);
+        page_ref.get_mut(slot)
+    }
+
+    /// Get a raw pointer to the data for `id`, which must have been allocated from this table.
+    ///
+    /// # Panics
+    ///
+    /// If `id` is out of bounds or the does not have the type `T`.
+    ///
+    /// # Safety
+    ///
+    /// See [`Page::get_raw`][].
     pub fn get_raw<T: Slot>(&self, id: Id) -> *mut T {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
         page_ref.get_raw(slot)
     }
 
+    /// Gets a reference to the page which has slots of type `T`
+    ///
+    /// # Panics
+    ///
+    /// If `page` is out of bounds or the type `T` is incorrect.
     pub fn page<T: Slot>(&self, page: PageIndex) -> &Page<T> {
         self.pages[page.0].assert_type::<Page<T>>()
     }
 
+    /// Gets a mutable reference to the page which has slots of type `T`
+    ///
+    /// # Panics
+    ///
+    /// If `page` is out of bounds or the type `T` is incorrect.
+    fn page_mut<T: Slot>(&mut self, page: PageIndex) -> &mut Page<T> {
+        self.pages[page.0].assert_type_mut::<Page<T>>()
+    }
+
+    /// Allocate a new page for the given ingredient and with slots of type `T`
     pub fn push_page<T: Slot>(&self, ingredient: IngredientIndex) -> PageIndex {
         let page = Box::new(<Page<T>>::new(ingredient));
         PageIndex(self.pages.push(page))
@@ -125,13 +168,36 @@ impl<T: Slot> Page<T> {
         );
     }
 
+    /// Returns a reference to the given slot.
+    ///
+    /// # Panics
+    ///
+    /// If slot is out of bounds
     pub(crate) fn get(&self, slot: SlotIndex) -> &T {
         self.check_bounds(slot);
         unsafe { &*self.data[slot.0].get() }
     }
 
+    /// Returns a mut reference to the given slot.
+    ///
+    /// # Panics
+    ///
+    /// If slot is out of bounds
+    pub(crate) fn get_mut(&mut self, slot: SlotIndex) -> &mut T {
+        self.check_bounds(slot);
+        self.data[slot.0].get_mut()
+    }
+
     /// Returns a raw pointer to the given slot.
-    /// Reads/writes must be coordinated properly with calls to `get`.
+    ///
+    /// # Panics
+    ///
+    /// If slot is out of bounds
+    ///
+    /// # Safety
+    ///
+    /// Safe to call, but reads/writes through this pointer must be coordinated
+    /// properly with calls to [`get`](`Self::get`) and [`get_mut`](`Self::get_mut`).
     pub(crate) fn get_raw(&self, slot: SlotIndex) -> *mut T {
         self.check_bounds(slot);
         self.data[slot.0].get()
@@ -183,7 +249,7 @@ impl<T: Slot> Drop for Page<T> {
 impl dyn TablePage {
     fn assert_type<T: Any>(&self) -> &T {
         assert_eq!(
-            self.type_id(),
+            Any::type_id(self),
             TypeId::of::<T>(),
             "page has hidden type `{:?}` but `{:?}` was expected",
             self.hidden_type_name(),
@@ -192,6 +258,19 @@ impl dyn TablePage {
 
         // SAFETY: Assertion above
         unsafe { transmute_data_ptr::<dyn TablePage, T>(self) }
+    }
+
+    fn assert_type_mut<T: Any>(&mut self) -> &mut T {
+        assert_eq!(
+            Any::type_id(self),
+            TypeId::of::<T>(),
+            "page has hidden type `{:?}` but `{:?}` was expected",
+            self.hidden_type_name(),
+            std::any::type_name::<T>(),
+        );
+
+        // SAFETY: Assertion above
+        unsafe { transmute_data_ptr_mut::<dyn TablePage, T>(self) }
     }
 }
 

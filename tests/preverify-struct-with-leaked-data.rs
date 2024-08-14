@@ -61,7 +61,7 @@ fn test_leaked_inputs_ignored() {
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
             "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: counter_field(Id(0)) } }",
+            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: counter_field(Id(400)) } }",
         ]"#]]);
 
     assert_eq!(result_in_rev_1, (0, 0));
@@ -79,7 +79,7 @@ fn test_leaked_inputs_ignored() {
             "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: DidValidateMemoizedValue { database_key: counter_field(Id(0)) } }",
+            "Event { thread_id: ThreadId(2), kind: DidValidateMemoizedValue { database_key: counter_field(Id(400)) } }",
             "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
         ]"#]]);

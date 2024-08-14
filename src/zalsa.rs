@@ -132,9 +132,6 @@ pub struct Zalsa {
     /// The runtime for this particular salsa database handle.
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
     runtime: Runtime,
-
-    /// Data for instances
-    table: Table,
 }
 
 impl Zalsa {
@@ -146,7 +143,6 @@ impl Zalsa {
             ingredients_vec: AppendOnlyVec::new(),
             ingredients_requiring_reset: AppendOnlyVec::new(),
             runtime: Runtime::default(),
-            table: Table::default(),
             memo_ingredient_count: AtomicCell::new(0),
         }
     }
@@ -160,7 +156,7 @@ impl Zalsa {
     }
 
     pub(crate) fn table(&self) -> &Table {
-        &self.table
+        self.runtime.table()
     }
 
     /// **NOT SEMVER STABLE**
@@ -348,4 +344,15 @@ pub(crate) unsafe fn transmute_data_ptr<T: ?Sized, U>(t: &T) -> &U {
     let t: *const T = t;
     let u: *const U = t as *const U;
     unsafe { &*u }
+}
+
+/// Given a wide pointer `T`, extracts the data pointer (typed as `U`).
+///
+/// # Safety requirement
+///
+/// `U` must be correct type for the data pointer.
+pub(crate) unsafe fn transmute_data_ptr_mut<T: ?Sized, U>(t: &mut T) -> &mut U {
+    let t: *mut T = t;
+    let u: *mut U = t as *mut U;
+    unsafe { &mut *u }
 }

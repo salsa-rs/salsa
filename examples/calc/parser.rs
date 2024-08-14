@@ -378,25 +378,25 @@ fn parse_print() {
     let expected = expect_test::expect![[r#"
         (
             Program {
-                [salsa id]: Id(400),
+                [salsa id]: Id(800),
                 statements: [
                     Statement {
                         span: Span {
-                            [salsa id]: Id(4),
+                            [salsa id]: Id(404),
                             start: 0,
                             end: 11,
                         },
                         data: Print(
                             Expression {
                                 span: Span {
-                                    [salsa id]: Id(3),
+                                    [salsa id]: Id(403),
                                     start: 6,
                                     end: 11,
                                 },
                                 data: Op(
                                     Expression {
                                         span: Span {
-                                            [salsa id]: Id(0),
+                                            [salsa id]: Id(400),
                                             start: 6,
                                             end: 7,
                                         },
@@ -407,7 +407,7 @@ fn parse_print() {
                                     Add,
                                     Expression {
                                         span: Span {
-                                            [salsa id]: Id(2),
+                                            [salsa id]: Id(402),
                                             start: 10,
                                             end: 11,
                                         },
@@ -441,22 +441,22 @@ fn parse_example() {
     let expected = expect_test::expect![[r#"
         (
             Program {
-                [salsa id]: Id(1000),
+                [salsa id]: Id(1400),
                 statements: [
                     Statement {
                         span: Span {
-                            [salsa id]: Id(9),
+                            [salsa id]: Id(409),
                             start: 13,
                             end: 57,
                         },
                         data: Function(
                             Function {
-                                [salsa id]: Id(c00),
+                                [salsa id]: Id(1000),
                                 name: FunctionId {
                                     text: "area_rectangle",
                                 },
                                 name_span: Span {
-                                    [salsa id]: Id(0),
+                                    [salsa id]: Id(400),
                                     start: 16,
                                     end: 30,
                                 },
@@ -470,14 +470,14 @@ fn parse_example() {
                                 ],
                                 body: Expression {
                                     span: Span {
-                                        [salsa id]: Id(8),
+                                        [salsa id]: Id(408),
                                         start: 39,
                                         end: 57,
                                     },
                                     data: Op(
                                         Expression {
                                             span: Span {
-                                                [salsa id]: Id(5),
+                                                [salsa id]: Id(405),
                                                 start: 39,
                                                 end: 41,
                                             },
@@ -490,7 +490,7 @@ fn parse_example() {
                                         Multiply,
                                         Expression {
                                             span: Span {
-                                                [salsa id]: Id(7),
+                                                [salsa id]: Id(407),
                                                 start: 43,
                                                 end: 57,
                                             },
@@ -507,18 +507,18 @@ fn parse_example() {
                     },
                     Statement {
                         span: Span {
-                            [salsa id]: Id(15),
+                            [salsa id]: Id(415),
                             start: 57,
                             end: 102,
                         },
                         data: Function(
                             Function {
-                                [salsa id]: Id(c01),
+                                [salsa id]: Id(1001),
                                 name: FunctionId {
                                     text: "area_circle",
                                 },
                                 name_span: Span {
-                                    [salsa id]: Id(a),
+                                    [salsa id]: Id(40a),
                                     start: 60,
                                     end: 71,
                                 },
@@ -529,21 +529,21 @@ fn parse_example() {
                                 ],
                                 body: Expression {
                                     span: Span {
-                                        [salsa id]: Id(14),
+                                        [salsa id]: Id(414),
                                         start: 77,
                                         end: 102,
                                     },
                                     data: Op(
                                         Expression {
                                             span: Span {
-                                                [salsa id]: Id(11),
+                                                [salsa id]: Id(411),
                                                 start: 77,
                                                 end: 86,
                                             },
                                             data: Op(
                                                 Expression {
                                                     span: Span {
-                                                        [salsa id]: Id(e),
+                                                        [salsa id]: Id(40e),
                                                         start: 77,
                                                         end: 81,
                                                     },
@@ -554,7 +554,7 @@ fn parse_example() {
                                                 Multiply,
                                                 Expression {
                                                     span: Span {
-                                                        [salsa id]: Id(10),
+                                                        [salsa id]: Id(410),
                                                         start: 84,
                                                         end: 86,
                                                     },
@@ -569,7 +569,7 @@ fn parse_example() {
                                         Multiply,
                                         Expression {
                                             span: Span {
-                                                [salsa id]: Id(13),
+                                                [salsa id]: Id(413),
                                                 start: 88,
                                                 end: 102,
                                             },
@@ -586,14 +586,14 @@ fn parse_example() {
                     },
                     Statement {
                         span: Span {
-                            [salsa id]: Id(1c),
+                            [salsa id]: Id(41c),
                             start: 102,
                             end: 141,
                         },
                         data: Print(
                             Expression {
                                 span: Span {
-                                    [salsa id]: Id(1b),
+                                    [salsa id]: Id(41b),
                                     start: 108,
                                     end: 128,
                                 },
@@ -604,7 +604,7 @@ fn parse_example() {
                                     [
                                         Expression {
                                             span: Span {
-                                                [salsa id]: Id(17),
+                                                [salsa id]: Id(417),
                                                 start: 123,
                                                 end: 124,
                                             },
@@ -614,7 +614,7 @@ fn parse_example() {
                                         },
                                         Expression {
                                             span: Span {
-                                                [salsa id]: Id(19),
+                                                [salsa id]: Id(419),
                                                 start: 126,
                                                 end: 127,
                                             },
@@ -629,14 +629,14 @@ fn parse_example() {
                     },
                     Statement {
                         span: Span {
-                            [salsa id]: Id(21),
+                            [salsa id]: Id(421),
                             start: 141,
                             end: 174,
                         },
                         data: Print(
                             Expression {
                                 span: Span {
-                                    [salsa id]: Id(20),
+                                    [salsa id]: Id(420),
                                     start: 147,
                                     end: 161,
                                 },
@@ -647,7 +647,7 @@ fn parse_example() {
                                     [
                                         Expression {
                                             span: Span {
-                                                [salsa id]: Id(1e),
+                                                [salsa id]: Id(41e),
                                                 start: 159,
                                                 end: 160,
                                             },
@@ -662,21 +662,21 @@ fn parse_example() {
                     },
                     Statement {
                         span: Span {
-                            [salsa id]: Id(26),
+                            [salsa id]: Id(426),
                             start: 174,
                             end: 195,
                         },
                         data: Print(
                             Expression {
                                 span: Span {
-                                    [salsa id]: Id(25),
+                                    [salsa id]: Id(425),
                                     start: 180,
                                     end: 186,
                                 },
                                 data: Op(
                                     Expression {
                                         span: Span {
-                                            [salsa id]: Id(22),
+                                            [salsa id]: Id(422),
                                             start: 180,
                                             end: 182,
                                         },
@@ -687,7 +687,7 @@ fn parse_example() {
                                     Multiply,
                                     Expression {
                                         span: Span {
-                                            [salsa id]: Id(24),
+                                            [salsa id]: Id(424),
                                             start: 185,
                                             end: 186,
                                         },
@@ -714,7 +714,7 @@ fn parse_error() {
     let expected = expect_test::expect![[r#"
         (
             Program {
-                [salsa id]: Id(400),
+                [salsa id]: Id(800),
                 statements: [],
             },
             [
@@ -736,32 +736,32 @@ fn parse_precedence() {
     let expected = expect_test::expect![[r#"
         (
             Program {
-                [salsa id]: Id(400),
+                [salsa id]: Id(800),
                 statements: [
                     Statement {
                         span: Span {
-                            [salsa id]: Id(a),
+                            [salsa id]: Id(40a),
                             start: 0,
                             end: 19,
                         },
                         data: Print(
                             Expression {
                                 span: Span {
-                                    [salsa id]: Id(9),
+                                    [salsa id]: Id(409),
                                     start: 6,
                                     end: 19,
                                 },
                                 data: Op(
                                     Expression {
                                         span: Span {
-                                            [salsa id]: Id(6),
+                                            [salsa id]: Id(406),
                                             start: 6,
                                             end: 16,
                                         },
                                         data: Op(
                                             Expression {
                                                 span: Span {
-                                                    [salsa id]: Id(0),
+                                                    [salsa id]: Id(400),
                                                     start: 6,
                                                     end: 7,
                                                 },
@@ -772,14 +772,14 @@ fn parse_precedence() {
                                             Add,
                                             Expression {
                                                 span: Span {
-                                                    [salsa id]: Id(5),
+                                                    [salsa id]: Id(405),
                                                     start: 10,
                                                     end: 15,
                                                 },
                                                 data: Op(
                                                     Expression {
                                                         span: Span {
-                                                            [salsa id]: Id(2),
+                                                            [salsa id]: Id(402),
                                                             start: 10,
                                                             end: 11,
                                                         },
@@ -790,7 +790,7 @@ fn parse_precedence() {
                                                     Multiply,
                                                     Expression {
                                                         span: Span {
-                                                            [salsa id]: Id(4),
+                                                            [salsa id]: Id(404),
                                                             start: 14,
                                                             end: 15,
                                                         },
@@ -805,7 +805,7 @@ fn parse_precedence() {
                                     Add,
                                     Expression {
                                         span: Span {
-                                            [salsa id]: Id(8),
+                                            [salsa id]: Id(408),
                                             start: 18,
                                             end: 19,
                                         },

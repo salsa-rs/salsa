@@ -1,16 +1,11 @@
-use std::{
-    any::Any,
-    fmt,
-    ops::DerefMut,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use std::{any::Any, fmt, ops::DerefMut};
 
 pub mod input_field;
 pub mod setter;
-mod struct_map;
 
+use crossbeam::atomic::AtomicCell;
 use input_field::FieldIngredientImpl;
-use struct_map::StructMap;
+use parking_lot::Mutex;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
@@ -18,7 +13,8 @@ use crate::{
     ingredient::{fmt_index, Ingredient},
     key::{DatabaseKeyIndex, DependencyIndex},
     plumbing::{Jar, JarAux, Stamp},
-    zalsa::IngredientIndex,
+    table::{memo::MemoTable, Slot, Table},
+    zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Database, Durability, Id, Revision, Runtime,
 };
@@ -57,15 +53,10 @@ impl<C: Configuration> Jar for JarImpl<C> {
         struct_index: crate::zalsa::IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient: IngredientImpl<C> = IngredientImpl::new(struct_index);
-        let struct_map = struct_ingredient.struct_map.clone();
 
         std::iter::once(Box::new(struct_ingredient) as _)
             .chain((0..C::FIELD_DEBUG_NAMES.len()).map(|field_index| {
-                Box::new(FieldIngredientImpl::new(
-                    struct_index,
-                    field_index,
-                    struct_map.clone(),
-                )) as _
+                Box::new(<FieldIngredientImpl<C>>::new(struct_index, field_index)) as _
             }))
             .collect()
     }
@@ -73,8 +64,8 @@ impl<C: Configuration> Jar for JarImpl<C> {
 
 pub struct IngredientImpl<C: Configuration> {
     ingredient_index: IngredientIndex,
-    counter: AtomicU32,
-    struct_map: StructMap<C>,
+    singleton_index: AtomicCell<Option<Id>>,
+    singleton_lock: Mutex<()>,
     _phantom: std::marker::PhantomData<C::Struct>,
 }
 
@@ -82,10 +73,18 @@ impl<C: Configuration> IngredientImpl<C> {
     pub fn new(index: IngredientIndex) -> Self {
         Self {
             ingredient_index: index,
-            counter: Default::default(),
-            struct_map: StructMap::new(),
+            singleton_index: AtomicCell::new(None),
+            singleton_lock: Default::default(),
             _phantom: std::marker::PhantomData,
         }
+    }
+
+    fn data<'db>(zalsa: &'db Zalsa, id: Id) -> &'db Value<C> {
+        zalsa.table().get(id)
+    }
+
+    fn data_raw<'db>(table: &'db Table, id: Id) -> *mut Value<C> {
+        table.get_raw(id)
     }
 
     pub fn database_key_index(&self, id: C::Struct) -> DatabaseKeyIndex {
@@ -95,19 +94,36 @@ impl<C: Configuration> IngredientImpl<C> {
         }
     }
 
-    pub fn new_input(&self, fields: C::Fields, stamps: C::Stamps) -> C::Struct {
+    pub fn new_input(&self, db: &dyn Database, fields: C::Fields, stamps: C::Stamps) -> C::Struct {
+        let (zalsa, zalsa_local) = db.zalsas();
+
         // If declared as a singleton, only allow a single instance
-        if C::IS_SINGLETON && self.counter.load(Ordering::Relaxed) >= 1 {
-            panic!("singleton struct may not be duplicated");
+        let guard = if C::IS_SINGLETON {
+            let guard = self.singleton_lock.lock();
+            if self.singleton_index.load().is_some() {
+                panic!("singleton struct may not be duplicated");
+            }
+            Some(guard)
+        } else {
+            None
+        };
+
+        let id = zalsa_local.allocate(
+            zalsa.table(),
+            self.ingredient_index,
+            Value::<C> {
+                fields,
+                stamps,
+                memos: Default::default(),
+            },
+        );
+
+        if C::IS_SINGLETON {
+            self.singleton_index.store(Some(id));
+            drop(guard);
         }
 
-        let next_id = Id::from_u32(self.counter.fetch_add(1, Ordering::Relaxed));
-        let value = Value {
-            id: next_id,
-            fields,
-            stamps,
-        };
-        self.struct_map.insert(value)
+        FromId::from_id(id)
     }
 
     /// Change the value of the field `field_index` to a new value.
@@ -128,7 +144,12 @@ impl<C: Configuration> IngredientImpl<C> {
         setter: impl FnOnce(&mut C::Fields) -> R,
     ) -> R {
         let id: Id = id.as_id();
-        let mut r = self.struct_map.update(id);
+        let r = Self::data_raw(runtime.table(), id);
+
+        // SAFETY: We hold `&mut` on the runtime so no `&`-references can be active.
+        // Also, we don't access any other data from the table while `r` is active.
+        let r = unsafe { &mut *r };
+
         let stamp = &mut r.stamps[field_index];
 
         if stamp.durability != Durability::LOW {
@@ -146,7 +167,7 @@ impl<C: Configuration> IngredientImpl<C> {
             C::IS_SINGLETON,
             "get_singleton_input invoked on a non-singleton"
         );
-        (self.counter.load(Ordering::Relaxed) > 0).then(|| C::Struct::from_id(Id::from_u32(0)))
+        self.singleton_index.load().map(FromId::from_id)
     }
 
     /// Access field of an input.
@@ -158,10 +179,10 @@ impl<C: Configuration> IngredientImpl<C> {
         id: C::Struct,
         field_index: usize,
     ) -> &'db C::Fields {
-        let zalsa_local = db.zalsa_local();
+        let (zalsa, zalsa_local) = db.zalsas();
         let field_ingredient_index = self.ingredient_index.successor(field_index);
         let id = id.as_id();
-        let value = self.struct_map.get(id);
+        let value = Self::data(zalsa, id);
         let stamp = &value.stamps[field_index];
         zalsa_local.report_tracked_read(
             DependencyIndex {
@@ -176,9 +197,10 @@ impl<C: Configuration> IngredientImpl<C> {
 
     /// Peek at the field values without recording any read dependency.
     /// Used for debug printouts.
-    pub fn leak_fields(&self, id: C::Struct) -> &C::Fields {
+    pub fn leak_fields<'db>(&'db self, db: &'db dyn Database, id: C::Struct) -> &'db C::Fields {
+        let zalsa = db.zalsa();
         let id = id.as_id();
-        let value = self.struct_map.get(id);
+        let value = Self::data(zalsa, id);
         &value.fields
     }
 }
@@ -267,17 +289,26 @@ pub struct Value<C>
 where
     C: Configuration,
 {
-    /// The id of this struct in the ingredient.
-    id: Id,
-
     /// Fields of this input struct. They can change across revisions,
     /// but they do not change within a particular revision.
     fields: C::Fields,
 
     /// The revision and durability information for each field: when did this field last change.
     stamps: C::Stamps,
+
+    /// Memos
+    memos: MemoTable,
 }
 
 pub trait HasBuilder {
     type Builder;
+}
+
+impl<C> Slot for Value<C>
+where
+    C: Configuration,
+{
+    fn memos(&self) -> Option<&crate::table::memo::MemoTable> {
+        Some(&self.memos)
+    }
 }
