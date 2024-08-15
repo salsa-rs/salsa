@@ -276,7 +276,7 @@ impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
-    fn memos(&self) -> Option<&MemoTable> {
-        Some(&self.memos)
+    fn memos(&self, _current_revision: Revision) -> &MemoTable {
+        &self.memos
     }
 }

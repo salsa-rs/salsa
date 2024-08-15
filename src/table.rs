@@ -24,7 +24,7 @@ pub(crate) struct Table {
 pub(crate) trait TablePage: Any + Send + Sync {
     fn hidden_type_name(&self) -> &'static str;
 
-    fn memos(&self, slot: SlotIndex) -> Option<&MemoTable>;
+    fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable;
 }
 
 pub(crate) struct Page<T: Slot> {
@@ -51,7 +51,7 @@ pub(crate) struct Page<T: Slot> {
 }
 
 pub(crate) trait Slot: Any + Send + Sync {
-    fn memos(&self) -> Option<&MemoTable>;
+    fn memos(&self, current_revision: Revision) -> &MemoTable;
 }
 
 unsafe impl<T: Slot> Send for Page<T> {}
@@ -117,9 +117,13 @@ impl Table {
     }
 
     /// Get the memo table associated with `id` (if any)
-    pub fn memos(&self, id: Id) -> Option<&MemoTable> {
+    ///
+    /// # Panics
+    ///
+    /// If the ingredient for `id` doesn't have associated memo-tables on its slots.
+    pub fn memos(&self, id: Id, current_revision: Revision) -> &MemoTable {
         let (page, slot) = split_id(id);
-        self.pages[page.0].memos(slot)
+        self.pages[page.0].memos(slot, current_revision)
     }
 }
 
@@ -194,8 +198,8 @@ impl<T: Slot> TablePage for Page<T> {
         std::any::type_name::<Self>()
     }
 
-    fn memos(&self, slot: SlotIndex) -> Option<&MemoTable> {
-        self.get(slot).memos()
+    fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable {
+        self.get(slot).memos(current_revision)
     }
 }
 

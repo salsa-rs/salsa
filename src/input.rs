@@ -308,7 +308,7 @@ impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
-    fn memos(&self) -> Option<&crate::table::memo::MemoTable> {
-        Some(&self.memos)
+    fn memos(&self, _current_revision: Revision) -> &crate::table::memo::MemoTable {
+        &self.memos
     }
 }

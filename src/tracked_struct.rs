@@ -521,7 +521,7 @@ where
         let field_ingredient_index = self.ingredient_index.successor(field_index);
         let data = Self::data(zalsa.table(), id);
 
-        self.read_lock(data, zalsa.current_revision());
+        data.read_lock(zalsa.current_revision());
 
         let field_changed_at = data.revisions[field_index];
 
@@ -535,29 +535,6 @@ where
         );
 
         unsafe { self.to_self_ref(&data.fields) }
-    }
-
-    fn read_lock(&self, data: &Value<C>, current_revision: Revision) {
-        loop {
-            match data.updated_at.load() {
-                None => {
-                    panic!("access to field whilst the value is being initialized");
-                }
-                Some(r) => {
-                    if r == current_revision {
-                        return;
-                    }
-
-                    if data
-                        .updated_at
-                        .compare_exchange(Some(r), Some(current_revision))
-                        .is_ok()
-                    {
-                        break;
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -640,11 +617,40 @@ where
     }
 }
 
+impl<C> Value<C>
+where
+    C: Configuration,
+{
+    fn read_lock(&self, current_revision: Revision) {
+        loop {
+            match self.updated_at.load() {
+                None => {
+                    panic!("access to field whilst the value is being initialized");
+                }
+                Some(r) => {
+                    if r == current_revision {
+                        return;
+                    }
+
+                    if self
+                        .updated_at
+                        .compare_exchange(Some(r), Some(current_revision))
+                        .is_ok()
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
-    fn memos(&self) -> Option<&crate::table::memo::MemoTable> {
-        Some(&self.memos)
+    fn memos(&self, current_revision: Revision) -> &crate::table::memo::MemoTable {
+        self.read_lock(current_revision);
+        &self.memos
     }
 }
