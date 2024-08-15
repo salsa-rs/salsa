@@ -25,7 +25,7 @@ pub trait Jar: Any {
 }
 
 pub trait JarAux {
-    fn next_memo_ingredient_index(&self) -> MemoIngredientIndex;
+    fn next_memo_ingredient_index(&self, ingredient_index: IngredientIndex) -> MemoIngredientIndex;
 }
 
 pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {

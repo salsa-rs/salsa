@@ -142,7 +142,7 @@ where
     pub fn new(index: IngredientIndex, aux: &dyn JarAux) -> Self {
         Self {
             index,
-            memo_index: aux.next_memo_ingredient_index(),
+            memo_index: aux.next_memo_ingredient_index(index),
             memo_map: memo::MemoMap::default(),
             lru: Default::default(),
             sync_map: Default::default(),

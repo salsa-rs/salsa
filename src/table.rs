@@ -9,7 +9,7 @@ use crossbeam::atomic::AtomicCell;
 use memo::MemoTable;
 use parking_lot::Mutex;
 
-use crate::{zalsa::transmute_data_ptr, Id, IngredientIndex, Revision};
+use crate::{zalsa::transmute_data_ptr, Id, IngredientIndex};
 
 pub(crate) mod memo;
 

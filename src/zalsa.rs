@@ -94,7 +94,7 @@ impl IngredientIndex {
 /// A special secondary index *just* for ingredients that attach
 /// "memos" to salsa structs (currently: just tracked functions).
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub(crate) struct MemoIngredientIndex(u32);
+pub struct MemoIngredientIndex(u32);
 
 impl MemoIngredientIndex {
     pub(crate) fn as_usize(self) -> usize {
@@ -111,7 +111,7 @@ pub struct Zalsa {
     nonce: Nonce<StorageNonce>,
 
     /// Number of memo ingredient indices created by calls to [`next_memo_ingredient_index`](`Self::next_memo_ingredient_index`)
-    memo_ingredient_count: AtomicCell<u32>,
+    memo_ingredients: Mutex<Vec<IngredientIndex>>,
 
     /// Map from the type-id of an `impl Jar` to the index of its first ingredient.
     /// This is using a `Mutex<FxHashMap>` (versus, say, a `FxDashMap`)
@@ -143,7 +143,7 @@ impl Zalsa {
             ingredients_vec: AppendOnlyVec::new(),
             ingredients_requiring_reset: AppendOnlyVec::new(),
             runtime: Runtime::default(),
-            memo_ingredient_count: AtomicCell::new(0),
+            memo_ingredients: Default::default(),
         }
     }
 
@@ -265,11 +265,21 @@ impl Zalsa {
         self.runtime
             .unblock_queries_blocked_on(database_key, wait_result)
     }
+
+    pub(crate) fn ingredient_index_for_memo(
+        &self,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> IngredientIndex {
+        self.memo_ingredients.lock()[memo_ingredient_index.as_usize()]
+    }
 }
 
 impl JarAux for Zalsa {
-    fn next_memo_ingredient_index(&self) -> MemoIngredientIndex {
-        MemoIngredientIndex(self.memo_ingredient_count.fetch_add(1))
+    fn next_memo_ingredient_index(&self, ingredient_index: IngredientIndex) -> MemoIngredientIndex {
+        let mut memo_ingredients = self.memo_ingredients.lock();
+        let mi = MemoIngredientIndex(u32::try_from(memo_ingredients.len()).unwrap());
+        memo_ingredients.push(ingredient_index);
+        mi
     }
 }
 
