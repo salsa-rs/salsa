@@ -6,11 +6,16 @@ use std::{
 use arc_swap::ArcSwap;
 use parking_lot::RwLock;
 
-use crate::zalsa::MemoIngredientIndex;
+use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
 
 #[derive(Default)]
 pub(crate) struct MemoTable {
     memos: RwLock<Vec<MemoEntry>>,
+}
+
+pub(crate) trait Memo: Any + Send + Sync {
+    /// Returns the `origin` of this memo
+    fn origin(&self) -> &QueryOrigin;
 }
 
 /// Wraps the data stored for a memoized entry.
@@ -43,7 +48,7 @@ struct MemoEntryData {
     type_id: TypeId,
 
     /// A pointer to `std::mem::drop::<Arc<M>>` for the erased memo type `M`
-    to_dyn_any_fn: fn(Arc<DummyMemo>) -> Arc<dyn Any>,
+    to_dyn_fn: fn(Arc<DummyMemo>) -> Arc<dyn Memo>,
 
     /// An [`ArcSwap`][] to a `Arc<M>` for the erased memo type `M`
     arc_swap: ArcSwap<DummyMemo>,
@@ -53,33 +58,31 @@ struct MemoEntryData {
 enum DummyMemo {}
 
 impl MemoTable {
-    fn to_dummy<M>(memo: Arc<M>) -> Arc<DummyMemo> {
+    fn to_dummy<M: Memo>(memo: Arc<M>) -> Arc<DummyMemo> {
         unsafe { std::mem::transmute::<Arc<M>, Arc<DummyMemo>>(memo) }
     }
 
-    unsafe fn from_dummy<M>(memo: Arc<DummyMemo>) -> Arc<M> {
+    unsafe fn from_dummy<M: Memo>(memo: Arc<DummyMemo>) -> Arc<M> {
         unsafe { std::mem::transmute::<Arc<DummyMemo>, Arc<M>>(memo) }
     }
 
-    fn to_dyn_any_fn<M: Any>() -> fn(Arc<DummyMemo>) -> Arc<dyn Any> {
-        let f: fn(Arc<M>) -> Arc<dyn Any> = |x| x;
+    fn to_dyn_fn<M: Memo>() -> fn(Arc<DummyMemo>) -> Arc<dyn Memo> {
+        let f: fn(Arc<M>) -> Arc<dyn Memo> = |x| x;
         unsafe {
-            std::mem::transmute::<fn(Arc<M>) -> Arc<dyn Any>, fn(Arc<DummyMemo>) -> Arc<dyn Any>>(f)
+            std::mem::transmute::<fn(Arc<M>) -> Arc<dyn Memo>, fn(Arc<DummyMemo>) -> Arc<dyn Memo>>(
+                f,
+            )
         }
     }
 
-    pub(crate) fn insert<M: Any + Send + Sync>(
-        &self,
-        memo_ingredient_index: MemoIngredientIndex,
-        memo: Arc<M>,
-    ) {
+    pub(crate) fn insert<M: Memo>(&self, memo_ingredient_index: MemoIngredientIndex, memo: Arc<M>) {
         // If the memo slot is already occupied, it must already have the
         // right type info etc, and we only need the read-lock.
         if let Some(MemoEntry {
             data:
                 Some(MemoEntryData {
                     type_id,
-                    to_dyn_any_fn: _,
+                    to_dyn_fn: _,
                     arc_swap,
                 }),
         }) = self.memos.read().get(memo_ingredient_index.as_usize())
@@ -97,24 +100,20 @@ impl MemoTable {
         self.insert_cold(memo_ingredient_index, memo)
     }
 
-    fn insert_cold<M: Any + Send + Sync>(
-        &self,
-        memo_ingredient_index: MemoIngredientIndex,
-        memo: Arc<M>,
-    ) {
+    fn insert_cold<M: Memo>(&self, memo_ingredient_index: MemoIngredientIndex, memo: Arc<M>) {
         let mut memos = self.memos.write();
         let memo_ingredient_index = memo_ingredient_index.as_usize();
         memos.resize_with(memo_ingredient_index + 1, || MemoEntry::default());
         memos[memo_ingredient_index] = MemoEntry {
             data: Some(MemoEntryData {
                 type_id: TypeId::of::<M>(),
-                to_dyn_any_fn: Self::to_dyn_any_fn::<M>(),
+                to_dyn_fn: Self::to_dyn_fn::<M>(),
                 arc_swap: ArcSwap::new(Self::to_dummy(memo)),
             }),
         };
     }
 
-    pub(crate) fn get<M: Any + Send + Sync>(
+    pub(crate) fn get<M: Memo>(
         &self,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<Arc<M>> {
@@ -124,7 +123,7 @@ impl MemoTable {
             data:
                 Some(MemoEntryData {
                     type_id,
-                    to_dyn_any_fn: _,
+                    to_dyn_fn: _,
                     arc_swap,
                 }),
         }) = memos.get(memo_ingredient_index.as_usize())
@@ -147,12 +146,12 @@ impl Drop for MemoEntry {
     fn drop(&mut self) {
         if let Some(MemoEntryData {
             type_id: _,
-            to_dyn_any_fn,
+            to_dyn_fn,
             arc_swap,
         }) = self.data.take()
         {
             let arc = arc_swap.into_inner();
-            std::mem::drop(to_dyn_any_fn(arc));
+            std::mem::drop(to_dyn_fn(arc));
         }
     }
 }
