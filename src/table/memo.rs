@@ -43,7 +43,7 @@ struct MemoEntryData {
     type_id: TypeId,
 
     /// A pointer to `std::mem::drop::<Arc<M>>` for the erased memo type `M`
-    drop_fn: fn(Arc<DummyMemo>),
+    to_dyn_any_fn: fn(Arc<DummyMemo>) -> Arc<dyn Any>,
 
     /// An [`ArcSwap`][] to a `Arc<M>` for the erased memo type `M`
     arc_swap: ArcSwap<DummyMemo>,
@@ -61,9 +61,11 @@ impl MemoTable {
         unsafe { std::mem::transmute::<Arc<DummyMemo>, Arc<M>>(memo) }
     }
 
-    fn drop_fn<M>() -> fn(Arc<DummyMemo>) {
-        let f: fn(Arc<M>) = std::mem::drop::<Arc<M>>;
-        unsafe { std::mem::transmute::<fn(Arc<M>), fn(Arc<DummyMemo>)>(f) }
+    fn to_dyn_any_fn<M: Any>() -> fn(Arc<DummyMemo>) -> Arc<dyn Any> {
+        let f: fn(Arc<M>) -> Arc<dyn Any> = |x| x;
+        unsafe {
+            std::mem::transmute::<fn(Arc<M>) -> Arc<dyn Any>, fn(Arc<DummyMemo>) -> Arc<dyn Any>>(f)
+        }
     }
 
     pub(crate) fn insert<M: Any + Send + Sync>(
@@ -77,7 +79,7 @@ impl MemoTable {
             data:
                 Some(MemoEntryData {
                     type_id,
-                    drop_fn: _,
+                    to_dyn_any_fn: _,
                     arc_swap,
                 }),
         }) = self.memos.read().get(memo_ingredient_index.as_usize())
@@ -106,7 +108,7 @@ impl MemoTable {
         memos[memo_ingredient_index] = MemoEntry {
             data: Some(MemoEntryData {
                 type_id: TypeId::of::<M>(),
-                drop_fn: Self::drop_fn::<M>(),
+                to_dyn_any_fn: Self::to_dyn_any_fn::<M>(),
                 arc_swap: ArcSwap::new(Self::to_dummy(memo)),
             }),
         };
@@ -122,7 +124,7 @@ impl MemoTable {
             data:
                 Some(MemoEntryData {
                     type_id,
-                    drop_fn: _,
+                    to_dyn_any_fn: _,
                     arc_swap,
                 }),
         }) = memos.get(memo_ingredient_index.as_usize())
@@ -145,12 +147,12 @@ impl Drop for MemoEntry {
     fn drop(&mut self) {
         if let Some(MemoEntryData {
             type_id: _,
-            drop_fn,
+            to_dyn_any_fn,
             arc_swap,
         }) = self.data.take()
         {
             let arc = arc_swap.into_inner();
-            drop_fn(arc);
+            std::mem::drop(to_dyn_any_fn(arc));
         }
     }
 }
