@@ -124,9 +124,6 @@ macro_rules! setup_input_struct {
             }
 
             impl $zalsa::SalsaStructInDb for $Struct {
-                fn register_dependent_fn(_db: &dyn $zalsa::Database, _index: $zalsa::IngredientIndex) {
-                    // Inputs don't bother with dependent functions
-                }
             }
 
             impl $Struct {

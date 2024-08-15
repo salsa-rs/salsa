@@ -1,5 +1,4 @@
 use append_only_vec::AppendOnlyVec;
-use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use std::any::{Any, TypeId};
@@ -10,10 +9,12 @@ use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{Ingredient, Jar, JarAux};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
+use crate::table::memo::MemoTable;
+use crate::table::sync::SyncTable;
 use crate::table::Table;
 use crate::views::Views;
 use crate::zalsa_local::ZalsaLocal;
-use crate::{Database, DatabaseKeyIndex, Durability, Revision};
+use crate::{Database, DatabaseKeyIndex, Durability, Id, Revision};
 
 /// Internal plumbing trait; implemented automatically when `#[salsa::db]`(`crate::db`) is attached to your database struct.
 /// Contains methods that give access to the internal data from the `storage` field.
@@ -97,6 +98,10 @@ impl IngredientIndex {
 pub struct MemoIngredientIndex(u32);
 
 impl MemoIngredientIndex {
+    pub(crate) fn from_usize(u: usize) -> Self {
+        assert!(u < std::u32::MAX as usize);
+        MemoIngredientIndex(u as u32)
+    }
     pub(crate) fn as_usize(self) -> usize {
         self.0 as usize
     }
@@ -155,8 +160,21 @@ impl Zalsa {
         self.nonce
     }
 
+    /// Returns the [`Table`][] used to store the value of salsa structs
     pub(crate) fn table(&self) -> &Table {
         self.runtime.table()
+    }
+
+    /// Returns the [`MemoTable`][] for the salsa struct with the given id
+    pub(crate) fn memo_table_for(&self, id: Id) -> &MemoTable {
+        // SAFETY: We are supply the correct current revision
+        unsafe { self.table().memos(id, self.current_revision()) }
+    }
+
+    /// Returns the [`SyncTable`][] for the salsa struct with the given id
+    pub(crate) fn sync_table_for(&self, id: Id) -> &SyncTable {
+        // SAFETY: We are supply the correct current revision
+        unsafe { self.table().syncs(id, self.current_revision()) }
     }
 
     /// **NOT SEMVER STABLE**

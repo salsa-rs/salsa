@@ -8,10 +8,13 @@ use append_only_vec::AppendOnlyVec;
 use crossbeam::atomic::AtomicCell;
 use memo::MemoTable;
 use parking_lot::Mutex;
+use sync::SyncTable;
 
 use crate::{zalsa::transmute_data_ptr, Id, IngredientIndex, Revision};
 
 pub(crate) mod memo;
+pub(crate) mod sync;
+mod util;
 
 const PAGE_LEN_BITS: usize = 10;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
@@ -24,7 +27,19 @@ pub(crate) struct Table {
 pub(crate) trait TablePage: Any + Send + Sync {
     fn hidden_type_name(&self) -> &'static str;
 
-    fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable;
+    /// Access the memos attached to `slot`.
+    ///
+    /// # Safety condition
+    ///
+    /// The `current_revision` MUST be the current revision of the database owning this table page.
+    unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable;
+
+    /// Access the syncs attached to `slot`.
+    ///
+    /// # Safety condition
+    ///
+    /// The `current_revision` MUST be the current revision of the database owning this table page.
+    unsafe fn syncs(&self, slot: SlotIndex, current_revision: Revision) -> &SyncTable;
 }
 
 pub(crate) struct Page<T: Slot> {
@@ -51,7 +66,19 @@ pub(crate) struct Page<T: Slot> {
 }
 
 pub(crate) trait Slot: Any + Send + Sync {
-    fn memos(&self, current_revision: Revision) -> &MemoTable;
+    /// Access the [`MemoTable`][] for this slot.
+    ///
+    /// # Safety condition
+    ///
+    /// The current revision MUST be the current revision of the database containing this slot.
+    unsafe fn memos(&self, current_revision: Revision) -> &MemoTable;
+
+    /// Access the [`SyncTable`][] for this slot.
+    ///
+    /// # Safety condition
+    ///
+    /// The current revision MUST be the current revision of the database containing this slot.
+    unsafe fn syncs(&self, current_revision: Revision) -> &SyncTable;
 }
 
 unsafe impl<T: Slot> Send for Page<T> {}
@@ -116,14 +143,26 @@ impl Table {
         PageIndex(self.pages.push(page))
     }
 
-    /// Get the memo table associated with `id` (if any)
+    /// Get the memo table associated with `id`
     ///
-    /// # Panics
+    /// # Safety condition
     ///
-    /// If the ingredient for `id` doesn't have associated memo-tables on its slots.
-    pub fn memos(&self, id: Id, current_revision: Revision) -> &MemoTable {
+    /// The parameter `current_revision` MUST be the current revision
+    /// of the owner of database owning this table.
+    pub unsafe fn memos(&self, id: Id, current_revision: Revision) -> &MemoTable {
         let (page, slot) = split_id(id);
         self.pages[page.0].memos(slot, current_revision)
+    }
+
+    /// Get the sync table associated with `id`
+    ///
+    /// # Safety condition
+    ///
+    /// The parameter `current_revision` MUST be the current revision
+    /// of the owner of database owning this table.
+    pub unsafe fn syncs(&self, id: Id, current_revision: Revision) -> &SyncTable {
+        let (page, slot) = split_id(id);
+        self.pages[page.0].syncs(slot, current_revision)
     }
 }
 
@@ -198,8 +237,12 @@ impl<T: Slot> TablePage for Page<T> {
         std::any::type_name::<Self>()
     }
 
-    fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable {
+    unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable {
         self.get(slot).memos(current_revision)
+    }
+
+    unsafe fn syncs(&self, slot: SlotIndex, current_revision: Revision) -> &SyncTable {
+        self.get(slot).syncs(current_revision)
     }
 }
 

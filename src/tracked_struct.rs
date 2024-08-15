@@ -6,15 +6,14 @@ use tracked_field::FieldIngredientImpl;
 use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, JarAux},
-    ingredient_list::IngredientList,
     key::{DatabaseKeyIndex, DependencyIndex},
     plumbing::ZalsaLocal,
     runtime::StampedValue,
     salsa_struct::SalsaStructInDb,
-    table::{memo::MemoTable, Slot, Table},
+    table::{memo::MemoTable, sync::SyncTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
-    Database, Durability, Event, Id, Revision,
+    Database, Durability, Event, EventKind, Id, Revision,
 };
 
 pub mod tracked_field;
@@ -135,14 +134,6 @@ where
     /// Our index in the database.
     ingredient_index: IngredientIndex,
 
-    /// A list of each tracked function `f` whose key is this
-    /// tracked struct.
-    ///
-    /// Whenever an instance `i` of this struct is deleted,
-    /// each of these functions will be notified
-    /// so they can remove any data tied to that instance.
-    dependent_fns: IngredientList,
-
     /// Phantom data: we fetch `Value<C>` out from `Table`
     phantom: PhantomData<fn() -> Value<C>>,
 
@@ -209,6 +200,9 @@ where
 
     /// Memo table storing the results of query functions etc.
     memos: MemoTable,
+
+    /// Sync table storing the results of query functions etc.
+    syncs: SyncTable,
 }
 // ANCHOR_END: ValueStruct
 
@@ -240,7 +234,6 @@ where
     fn new(index: IngredientIndex) -> Self {
         Self {
             ingredient_index: index,
-            dependent_fns: IngredientList::new(),
             phantom: PhantomData,
             free_list: Default::default(),
         }
@@ -303,7 +296,8 @@ where
             durability: current_deps.durability,
             fields: unsafe { self.to_static(fields) },
             revisions: C::new_revisions(current_deps.changed_at),
-            memos: MemoTable::default(),
+            memos: Default::default(),
+            syncs: Default::default(),
         };
 
         if let Some(id) = self.free_list.pop() {
@@ -455,11 +449,12 @@ where
 
         let zalsa = db.zalsa();
         let current_revision = zalsa.current_revision();
-        let data = Self::data(zalsa.table(), id);
+        let data = Self::data_raw(zalsa.table(), id);
 
         // We want to set `updated_at` to `None`, signalling that other field values
         // cannot be read. The current vaue should be `Some(R0)` for some older revision.
-        match data.updated_at.load() {
+        let data_ref = unsafe { &*data };
+        match data_ref.updated_at.load() {
             None => {
                 panic!("cannot delete write-locked id `{id:?}`; value leaked across threads");
             }
@@ -472,27 +467,37 @@ where
                     )
                 }
 
-                if data.updated_at.compare_exchange(Some(r), None).is_err() {
+                if data_ref.updated_at.compare_exchange(Some(r), None).is_err() {
                     panic!("race occurred when deleting value `{id:?}`")
                 }
             }
         }
 
-        for dependent_fn in self.dependent_fns.iter() {
-            db.zalsa()
-                .lookup_ingredient(dependent_fn)
-                .salsa_struct_deleted(db, id);
+        // Take the memo table. This is safe because we have modified `data_ref.updated_at` to `None`
+        // and the code that references the memo-table has a read-lock.
+        let memo_table = unsafe { (*data).take_memo_table() };
+        for (memo_ingredient_index, memo) in memo_table.into_memos() {
+            let ingredient_index = zalsa.ingredient_index_for_memo(memo_ingredient_index);
+
+            let executor = DatabaseKeyIndex {
+                ingredient_index,
+                key_index: id,
+            };
+
+            db.salsa_event(&|| Event {
+                thread_id: std::thread::current().id(),
+                kind: EventKind::DidDiscard { key: executor },
+            });
+
+            for stale_output in memo.origin().outputs() {
+                zalsa
+                    .lookup_ingredient(stale_output.ingredient_index)
+                    .remove_stale_output(db, executor, stale_output.key_index);
+            }
         }
 
         // now that all cleanup has occurred, make available for re-use
         self.free_list.push(id);
-    }
-
-    /// Adds a dependent function (one keyed by this tracked struct) to our list.
-    /// When instances of this struct are deleted, these dependent functions
-    /// will be notified.
-    pub fn register_dependent_fn(&self, index: IngredientIndex) {
-        self.dependent_fns.push(index);
     }
 
     /// Return reference to the field data ignoring dependency tracking.
@@ -587,10 +592,6 @@ where
         self.delete_entity(db.as_dyn_database(), stale_output_key.unwrap());
     }
 
-    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: crate::Id) {
-        panic!("unexpected call: interned ingredients do not register for salsa struct deletion events");
-    }
-
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
@@ -621,6 +622,15 @@ impl<C> Value<C>
 where
     C: Configuration,
 {
+    fn take_memo_table(&mut self) -> MemoTable {
+        // This fn is only called after `updated_at` has been set to `None`;
+        // this ensures that there is no concurrent access
+        // (and that the `&mut self` is accurate...).
+        assert!(self.updated_at.load().is_none());
+
+        std::mem::replace(&mut self.memos, MemoTable::default())
+    }
+
     fn read_lock(&self, current_revision: Revision) {
         loop {
             match self.updated_at.load() {
@@ -649,8 +659,19 @@ impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
-    fn memos(&self, current_revision: Revision) -> &crate::table::memo::MemoTable {
+    unsafe fn memos(&self, current_revision: Revision) -> &crate::table::memo::MemoTable {
+        // Acquiring the read lock here with the current revision
+        // ensures that there is no danger of a race
+        // when deleting a tracked struct.
         self.read_lock(current_revision);
         &self.memos
+    }
+
+    unsafe fn syncs(&self, current_revision: Revision) -> &crate::table::sync::SyncTable {
+        // Acquiring the read lock here with the current revision
+        // ensures that there is no danger of a race
+        // when deleting a tracked struct.
+        self.read_lock(current_revision);
+        &self.syncs
     }
 }

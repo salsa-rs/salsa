@@ -112,9 +112,6 @@ macro_rules! setup_interned_struct {
             }
 
             impl $zalsa::SalsaStructInDb for $Struct<'_> {
-                fn register_dependent_fn(_db: &dyn $zalsa::Database, _index: $zalsa::IngredientIndex) {
-                    // Inputs don't bother with dependent functions
-                }
             }
 
             unsafe impl $zalsa::Update for $Struct<'_> {

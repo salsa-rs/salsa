@@ -19,7 +19,7 @@ where
     where
         C::Input<'db>: TrackedStructInDb,
     {
-        let zalsa_local = db.zalsa_local();
+        let (zalsa, zalsa_local) = db.zalsas();
 
         let (active_query_key, current_deps) = match zalsa_local.active_query() {
             Some(v) => v,
@@ -71,7 +71,7 @@ where
             tracked_struct_ids: Default::default(),
         };
 
-        if let Some(old_memo) = self.memo_map.get(key) {
+        if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key) {
             self.backdate_if_appropriate(&old_memo, &mut revisions, &value);
             self.diff_outputs(db, database_key_index, &old_memo, &revisions);
         }
@@ -87,7 +87,7 @@ where
             memo.tracing_debug(),
             key
         );
-        self.insert_memo(db, key, memo);
+        self.insert_memo(zalsa, key, memo);
 
         // Record that the current query *specified* a value for this cell.
         let database_key_index = self.database_key_index(key);
@@ -106,7 +106,7 @@ where
     ) {
         let zalsa = db.zalsa();
 
-        let memo = match self.memo_map.get(key) {
+        let memo = match self.get_memo_from_table_for(zalsa, key) {
             Some(m) => m,
             None => return,
         };

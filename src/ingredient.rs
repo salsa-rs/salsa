@@ -63,12 +63,6 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         stale_output_key: Option<Id>,
     );
 
-    /// Informs the ingredient `self` that the salsa struct with id `id` has been deleted.
-    /// This gives `self` a chance to remove any memoized data dependent on `id`.
-    /// To receive this callback, `self` must register itself as a dependent function using
-    /// [`SalsaStructInDb::register_dependent_fn`](`crate::salsa_struct::SalsaStructInDb::register_dependent_fn`).
-    fn salsa_struct_deleted(&self, db: &dyn Database, id: Id);
-
     /// Returns the [`IngredientIndex`] of this ingredient.
     fn ingredient_index(&self) -> IngredientIndex;
 

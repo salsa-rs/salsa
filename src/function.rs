@@ -1,16 +1,14 @@
 use std::{any::Any, fmt, sync::Arc};
 
-use crossbeam::atomic::AtomicCell;
-
 use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::fmt_index,
     key::DatabaseKeyIndex,
     plumbing::JarAux,
     salsa_struct::SalsaStructInDb,
-    zalsa::{IngredientIndex, MemoIngredientIndex},
+    zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
-    AsDynDatabase as _, Cycle, Database, Event, EventKind, Id, Revision,
+    Cycle, Database, Id, Revision,
 };
 
 use self::delete::DeletedEntries;
@@ -28,8 +26,6 @@ mod lru;
 mod maybe_changed_after;
 mod memo;
 mod specify;
-mod store;
-mod sync;
 
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
@@ -96,15 +92,8 @@ pub struct IngredientImpl<C: Configuration> {
     /// Used to construct `DatabaseKeyIndex` values.
     index: IngredientIndex,
 
-    /// The index for memo tables
-    memo_index: MemoIngredientIndex,
-
-    /// Tracks the keys for which we have memoized values.
-    memo_map: memo::MemoMap<C>,
-
-    /// Tracks the keys that are currently being processed; used to coordinate between
-    /// worker threads.
-    sync_map: sync::SyncMap,
+    /// The index for the memo/sync tables
+    memo_ingredient_index: MemoIngredientIndex,
 
     /// Used to find memos to throw out when we have too many memoized values.
     lru: lru::Lru,
@@ -122,10 +111,6 @@ pub struct IngredientImpl<C: Configuration> {
     /// we don't know that we can trust the database to give us the same runtime
     /// everytime and so forth.
     deleted_entries: DeletedEntries<C>,
-
-    /// Set to true once we invoke `register_dependent_fn` for `C::SalsaStruct`.
-    /// Prevents us from registering more than once.
-    registered: AtomicCell<bool>,
 }
 
 /// True if `old_value == new_value`. Invoked by the generated
@@ -142,12 +127,9 @@ where
     pub fn new(index: IngredientIndex, aux: &dyn JarAux) -> Self {
         Self {
             index,
-            memo_index: aux.next_memo_ingredient_index(index),
-            memo_map: memo::MemoMap::default(),
+            memo_ingredient_index: aux.next_memo_ingredient_index(index),
             lru: Default::default(),
-            sync_map: Default::default(),
             deleted_entries: Default::default(),
-            registered: Default::default(),
         }
     }
 
@@ -179,35 +161,22 @@ where
 
     fn insert_memo<'db>(
         &'db self,
-        db: &'db C::DbView,
-        key: Id,
+        zalsa: &'db Zalsa,
+        id: Id,
         memo: memo::Memo<C::Output<'db>>,
     ) -> Option<&C::Output<'db>> {
-        self.register(db);
         let memo = Arc::new(memo);
         let value = unsafe {
             // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
             // value is returned) and anything removed from map is added to deleted entries (ensured elsewhere).
             self.extend_memo_lifetime(&memo)
         };
-        if let Some(old_value) = self.memo_map.insert(key, memo) {
+        if let Some(old_value) = self.insert_memo_into_table_for(zalsa, id, memo) {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
             self.deleted_entries.push(old_value);
         }
         value
-    }
-
-    /// Register this function as a dependent fn of the given salsa struct.
-    /// When instances of that salsa struct are deleted, we'll get a callback
-    /// so we can remove any data keyed by them.
-    fn register<'db>(&self, db: &'db C::DbView) {
-        if !self.registered.fetch_or(true) {
-            <C::SalsaStruct<'db> as SalsaStructInDb>::register_dependent_fn(
-                db.as_dyn_database(),
-                self.index,
-            )
-        }
     }
 }
 
@@ -234,8 +203,8 @@ where
         C::CYCLE_STRATEGY
     }
 
-    fn origin(&self, _db: &dyn Database, key: Id) -> Option<QueryOrigin> {
-        self.origin(key)
+    fn origin(&self, db: &dyn Database, key: Id) -> Option<QueryOrigin> {
+        self.origin(db.zalsa(), key)
     }
 
     fn mark_validated_output(
@@ -265,28 +234,6 @@ where
 
     fn reset_for_new_revision(&mut self) {
         std::mem::take(&mut self.deleted_entries);
-    }
-
-    fn salsa_struct_deleted(&self, db: &dyn Database, id: Id) {
-        // Remove any data keyed by `id`, since `id` no longer
-        // exists in this revision.
-
-        if let Some(origin) = self.delete_memo(id) {
-            let key = self.database_key_index(id);
-            db.salsa_event(&|| Event {
-                thread_id: std::thread::current().id(),
-                kind: EventKind::DidDiscard { key },
-            });
-
-            // Anything that was output by this memoized execution
-            // is now itself stale.
-            let zalsa = db.zalsa();
-            for stale_output in origin.outputs() {
-                zalsa
-                    .lookup_ingredient(stale_output.ingredient_index)
-                    .remove_stale_output(db, key, stale_output.key_index);
-            }
-        }
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

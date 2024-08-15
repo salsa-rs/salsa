@@ -104,7 +104,6 @@ macro_rules! setup_tracked_fn {
                         $zalsa::IngredientCache::new();
 
                     impl $zalsa::SalsaStructInDb for $InternedData<'_> {
-                        fn register_dependent_fn(_db: &dyn $zalsa::Database, _index: $zalsa::IngredientIndex) {}
                     }
 
                     impl $zalsa::interned::Configuration for $Configuration {

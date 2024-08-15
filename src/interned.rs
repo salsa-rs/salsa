@@ -8,6 +8,7 @@ use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
 use crate::plumbing::{Jar, JarAux};
 use crate::table::memo::MemoTable;
+use crate::table::sync::SyncTable;
 use crate::table::Slot;
 use crate::zalsa::IngredientIndex;
 use crate::zalsa_local::QueryOrigin;
@@ -71,6 +72,7 @@ where
 {
     data: C::Data<'static>,
     memos: MemoTable,
+    syncs: SyncTable,
 }
 
 impl<C: Configuration> Default for JarImpl<C> {
@@ -158,7 +160,8 @@ where
                     self.ingredient_index,
                     Value::<C> {
                         data: internal_data,
-                        memos: MemoTable::default(),
+                        memos: Default::default(),
+                        syncs: Default::default(),
                     },
                 );
                 entry.insert(next_id);
@@ -248,10 +251,6 @@ where
         panic!("unexpected call to `reset_for_new_revision`")
     }
 
-    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: crate::Id) {
-        panic!("unexpected call: interned ingredients do not register for salsa struct deletion events");
-    }
-
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
@@ -276,7 +275,11 @@ impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
-    fn memos(&self, _current_revision: Revision) -> &MemoTable {
+    unsafe fn memos(&self, _current_revision: Revision) -> &MemoTable {
         &self.memos
+    }
+
+    unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {
+        &self.syncs
     }
 }

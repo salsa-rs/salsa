@@ -86,9 +86,9 @@ fn test_leaked_inputs_ignored() {
 
     // Because salsa does not see any way for the tracked
     // struct to have changed, it will re-use the cached return value
-    // from `counter_field` (`0`) but when we actually recreate
-    // the cached struct we get the new value (`100`).
+    // from `counter_field` (`0`). This in turn "locks" the cached
+    // struct so that the new value of 100 is ignored.
     //
     // Contrast with preverify-struct-with-leaked-data-2.rs.
-    assert_eq!(result_in_rev_2, (0, 100));
+    assert_eq!(result_in_rev_2, (0, 0));
 }

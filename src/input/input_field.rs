@@ -81,10 +81,6 @@ where
     ) {
     }
 
-    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: Id) {
-        panic!("unexpected call: input fields are never deleted");
-    }
-
     fn requires_reset_for_new_revision(&self) -> bool {
         false
     }

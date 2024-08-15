@@ -1,5 +1,6 @@
 use std::{
     any::{Any, TypeId},
+    fmt::Debug,
     sync::Arc,
 };
 
@@ -8,12 +9,15 @@ use parking_lot::RwLock;
 
 use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
 
+/// The "memo table" stores the memoized results of tracked function calls.
+/// Every tracked function must take a salsa struct as its first argument
+/// and memo tables are attached to those salsa structs as auxiliary data.
 #[derive(Default)]
 pub(crate) struct MemoTable {
     memos: RwLock<Vec<MemoEntry>>,
 }
 
-pub(crate) trait Memo: Any + Send + Sync {
+pub(crate) trait Memo: Any + Send + Sync + Debug {
     /// Returns the `origin` of this memo
     fn origin(&self) -> &QueryOrigin;
 }
@@ -55,7 +59,7 @@ struct MemoEntryData {
 }
 
 /// Dummy placeholder type that we use when erasing the memo type `M` in [`MemoEntryData`][].
-enum DummyMemo {}
+struct DummyMemo {}
 
 impl MemoTable {
     fn to_dummy<M: Memo>(memo: Arc<M>) -> Arc<DummyMemo> {
@@ -75,7 +79,11 @@ impl MemoTable {
         }
     }
 
-    pub(crate) fn insert<M: Memo>(&self, memo_ingredient_index: MemoIngredientIndex, memo: Arc<M>) {
+    pub(crate) fn insert<M: Memo>(
+        &self,
+        memo_ingredient_index: MemoIngredientIndex,
+        memo: Arc<M>,
+    ) -> Option<Arc<M>> {
         // If the memo slot is already occupied, it must already have the
         // right type info etc, and we only need the read-lock.
         if let Some(MemoEntry {
@@ -92,25 +100,40 @@ impl MemoTable {
                 TypeId::of::<M>(),
                 "inconsistent type-id for `{memo_ingredient_index:?}`"
             );
-            arc_swap.store(Self::to_dummy(memo));
-            return;
+            let old_memo = arc_swap.swap(Self::to_dummy(memo));
+            return unsafe { Some(Self::from_dummy(old_memo)) };
         }
 
         // Otherwise we need the write lock.
         self.insert_cold(memo_ingredient_index, memo)
     }
 
-    fn insert_cold<M: Memo>(&self, memo_ingredient_index: MemoIngredientIndex, memo: Arc<M>) {
+    fn insert_cold<M: Memo>(
+        &self,
+        memo_ingredient_index: MemoIngredientIndex,
+        memo: Arc<M>,
+    ) -> Option<Arc<M>> {
         let mut memos = self.memos.write();
         let memo_ingredient_index = memo_ingredient_index.as_usize();
-        memos.resize_with(memo_ingredient_index + 1, || MemoEntry::default());
-        memos[memo_ingredient_index] = MemoEntry {
-            data: Some(MemoEntryData {
+        if memos.len() < memo_ingredient_index + 1 {
+            memos.resize_with(memo_ingredient_index + 1, || MemoEntry::default());
+        }
+        let old_entry = std::mem::replace(
+            &mut memos[memo_ingredient_index].data,
+            Some(MemoEntryData {
                 type_id: TypeId::of::<M>(),
                 to_dyn_fn: Self::to_dyn_fn::<M>(),
                 arc_swap: ArcSwap::new(Self::to_dummy(memo)),
             }),
-        };
+        );
+        match old_entry {
+            Some(MemoEntryData {
+                type_id: _,
+                to_dyn_fn: _,
+                arc_swap,
+            }) => Some(unsafe { Self::from_dummy(arc_swap.into_inner()) }),
+            None => None,
+        }
     }
 
     pub(crate) fn get<M: Memo>(
@@ -139,6 +162,31 @@ impl MemoTable {
 
         // SAFETY: type_id check asserted above
         unsafe { Some(Self::from_dummy(arc_swap.load_full())) }
+    }
+
+    pub(crate) fn into_memos(
+        mut self,
+    ) -> impl Iterator<Item = (MemoIngredientIndex, Arc<dyn Memo>)> {
+        let memos = std::mem::replace(self.memos.get_mut(), vec![]);
+        memos
+            .into_iter()
+            .zip(0..)
+            .filter_map(|(mut memo, index)| memo.data.take().map(|d| (d, index)))
+            .map(
+                |(
+                    MemoEntryData {
+                        type_id: _,
+                        to_dyn_fn,
+                        arc_swap,
+                    },
+                    index,
+                )| {
+                    (
+                        MemoIngredientIndex::from_usize(index),
+                        to_dyn_fn(arc_swap.into_inner()),
+                    )
+                },
+            )
     }
 }
 

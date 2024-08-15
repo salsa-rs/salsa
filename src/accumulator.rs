@@ -198,10 +198,6 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         panic!("unexpected reset on accumulator")
     }
 
-    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: crate::Id) {
-        panic!("unexpected call: accumulator is not registered as a dependent fn");
-    }
-
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(A::DEBUG_NAME, index, fmt)
     }

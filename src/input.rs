@@ -13,7 +13,7 @@ use crate::{
     ingredient::{fmt_index, Ingredient},
     key::{DatabaseKeyIndex, DependencyIndex},
     plumbing::{Jar, JarAux, Stamp},
-    table::{memo::MemoTable, Slot, Table},
+    table::{memo::MemoTable, sync::SyncTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Database, Durability, Id, Revision, Runtime,
@@ -115,6 +115,7 @@ impl<C: Configuration> IngredientImpl<C> {
                 fields,
                 stamps,
                 memos: Default::default(),
+                syncs: Default::default(),
             },
         );
 
@@ -261,12 +262,6 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         panic!("unexpected call to `reset_for_new_revision`")
     }
 
-    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: Id) {
-        panic!(
-            "unexpected call: input ingredients do not register for salsa struct deletion events"
-        );
-    }
-
     fn fmt_index(&self, index: Option<Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
@@ -298,6 +293,9 @@ where
 
     /// Memos
     memos: MemoTable,
+
+    /// Syncs
+    syncs: SyncTable,
 }
 
 pub trait HasBuilder {
@@ -308,7 +306,11 @@ impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
-    fn memos(&self, _current_revision: Revision) -> &crate::table::memo::MemoTable {
+    unsafe fn memos(&self, _current_revision: Revision) -> &crate::table::memo::MemoTable {
         &self.memos
+    }
+
+    unsafe fn syncs(&self, _current_revision: Revision) -> &SyncTable {
+        &self.syncs
     }
 }

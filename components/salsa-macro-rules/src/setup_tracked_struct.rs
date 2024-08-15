@@ -152,9 +152,6 @@ macro_rules! setup_tracked_struct {
             }
 
             impl $zalsa::SalsaStructInDb for $Struct<'_> {
-                fn register_dependent_fn(db: &dyn $zalsa::Database, index: $zalsa::IngredientIndex) {
-                    $Configuration::ingredient(db).register_dependent_fn(index)
-                }
             }
 
             impl $zalsa::TrackedStructInDb for $Struct<'_> {

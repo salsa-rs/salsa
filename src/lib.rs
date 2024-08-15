@@ -1,6 +1,5 @@
 mod accumulator;
 mod active_query;
-mod alloc;
 mod array;
 mod attach;
 mod cancelled;
@@ -13,7 +12,6 @@ mod function;
 mod hash;
 mod id;
 mod ingredient;
-mod ingredient_list;
 mod input;
 mod interned;
 mod key;
