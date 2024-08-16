@@ -7,6 +7,7 @@ where
     C: Configuration,
 {
     pub(super) fn origin(&self, zalsa: &Zalsa, key: Id) -> Option<QueryOrigin> {
-        self.get_memo_from_table_for(zalsa, key).map(|m| m.revisions.origin.clone())
+        self.get_memo_from_table_for(zalsa, key)
+            .map(|m| m.revisions.origin.clone())
     }
 }
