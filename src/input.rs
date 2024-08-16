@@ -79,11 +79,11 @@ impl<C: Configuration> IngredientImpl<C> {
         }
     }
 
-    fn data<'db>(zalsa: &'db Zalsa, id: Id) -> &'db Value<C> {
+    fn data(zalsa: &Zalsa, id: Id) -> &Value<C> {
         zalsa.table().get(id)
     }
 
-    fn data_raw<'db>(table: &'db Table, id: Id) -> *mut Value<C> {
+    fn data_raw(table: &Table, id: Id) -> *mut Value<C> {
         table.get_raw(id)
     }
 

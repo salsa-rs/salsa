@@ -47,14 +47,12 @@ where
         let zalsa = db.zalsa();
         let memo_guard = self.get_memo_from_table_for(zalsa, id);
         if let Some(memo) = &memo_guard {
-            if memo.value.is_some() {
-                if self.shallow_verify_memo(db, zalsa, self.database_key_index(id), memo) {
-                    let value = unsafe {
-                        // Unsafety invariant: memo is present in memo_map
-                        self.extend_memo_lifetime(memo).unwrap()
-                    };
-                    return Some(memo.revisions.stamped_value(value));
-                }
+            if memo.value.is_some() && self.shallow_verify_memo(db, zalsa, self.database_key_index(id), memo) {
+                let value = unsafe {
+                    // Unsafety invariant: memo is present in memo_map
+                    self.extend_memo_lifetime(memo).unwrap()
+                };
+                return Some(memo.revisions.stamped_value(value));
             }
         }
         None

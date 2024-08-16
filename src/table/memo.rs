@@ -116,7 +116,7 @@ impl MemoTable {
         let mut memos = self.memos.write();
         let memo_ingredient_index = memo_ingredient_index.as_usize();
         if memos.len() < memo_ingredient_index + 1 {
-            memos.resize_with(memo_ingredient_index + 1, || MemoEntry::default());
+            memos.resize_with(memo_ingredient_index + 1, MemoEntry::default);
         }
         let old_entry = std::mem::replace(
             &mut memos[memo_ingredient_index].data,
@@ -126,14 +126,11 @@ impl MemoTable {
                 arc_swap: ArcSwap::new(Self::to_dummy(memo)),
             }),
         );
-        match old_entry {
-            Some(MemoEntryData {
+        old_entry.map(|MemoEntryData {
                 type_id: _,
                 to_dyn_fn: _,
                 arc_swap,
-            }) => Some(unsafe { Self::from_dummy(arc_swap.into_inner()) }),
-            None => None,
-        }
+            }| unsafe { Self::from_dummy(arc_swap.into_inner()) })
     }
 
     pub(crate) fn get<M: Memo>(
@@ -167,7 +164,7 @@ impl MemoTable {
     pub(crate) fn into_memos(
         mut self,
     ) -> impl Iterator<Item = (MemoIngredientIndex, Arc<dyn Memo>)> {
-        let memos = std::mem::replace(self.memos.get_mut(), vec![]);
+        let memos = std::mem::take(self.memos.get_mut());
         memos
             .into_iter()
             .zip(0..)

@@ -52,7 +52,7 @@ impl SyncTable {
                 });
                 Some(ClaimGuard {
                     database_key_index,
-                    memo_ingredient_index: memo_ingredient_index,
+                    memo_ingredient_index,
                     zalsa,
                     sync_table: self,
                 })

@@ -421,7 +421,7 @@ where
 
     /// Fetch the data for a given id created by this ingredient from the table,
     /// -giving it the appropriate type.
-    fn data<'t>(table: &'t Table, id: Id) -> &'t Value<C> {
+    fn data(table: &Table, id: Id) -> &Value<C> {
         table.get(id)
     }
 
@@ -628,7 +628,7 @@ where
         // (and that the `&mut self` is accurate...).
         assert!(self.updated_at.load().is_none());
 
-        std::mem::replace(&mut self.memos, MemoTable::default())
+        std::mem::take(&mut self.memos)
     }
 
     fn read_lock(&self, current_revision: Revision) {

@@ -251,7 +251,7 @@ impl<T: Slot> Drop for Page<T> {
         // Free `self.data` and the data within: to do this, we swap it out with an empty vector
         // and then convert it from a `Vec<UnsafeCell<T>>` with partially uninitialized values
         // to a `Vec<T>` with the correct length. This way the `Vec` drop impl can do its job.
-        let mut data = std::mem::replace(&mut self.data, vec![]);
+        let mut data = std::mem::take(&mut self.data);
         let len = self.allocated.load();
         unsafe {
             data.set_len(len);

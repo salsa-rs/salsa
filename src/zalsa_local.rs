@@ -281,7 +281,7 @@ impl ZalsaLocal {
         );
         self.with_query_stack(|stack| {
             let top_query = stack.last().unwrap();
-            top_query.tracked_struct_ids.get(&key_struct).cloned()
+            top_query.tracked_struct_ids.get(key_struct).cloned()
         })
     }
 
