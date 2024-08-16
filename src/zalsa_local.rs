@@ -54,7 +54,7 @@ impl ZalsaLocal {
     /// Allocate a new id in `table` for the given ingredient
     /// storing `value`. Remembers the most recent page from this
     /// thread and attempts to reuse it.
-    pub(crate) fn allocate<'t, T: Slot>(
+    pub(crate) fn allocate<T: Slot>(
         &self,
         table: &Table,
         ingredient: IngredientIndex,

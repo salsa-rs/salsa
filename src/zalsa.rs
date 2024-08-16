@@ -99,7 +99,7 @@ pub struct MemoIngredientIndex(u32);
 
 impl MemoIngredientIndex {
     pub(crate) fn from_usize(u: usize) -> Self {
-        assert!(u < std::u32::MAX as usize);
+        assert!(u < u32::MAX as usize);
         MemoIngredientIndex(u as u32)
     }
     pub(crate) fn as_usize(self) -> usize {

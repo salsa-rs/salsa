@@ -109,7 +109,7 @@ where
         unsafe { std::mem::transmute(data) }
     }
 
-    unsafe fn from_internal_data<'db>(&'db self, data: &C::Data<'static>) -> &C::Data<'db> {
+    unsafe fn from_internal_data<'db>(data: &'db C::Data<'static>) -> &'db C::Data<'db> {
         unsafe { std::mem::transmute(data) }
     }
 
@@ -175,7 +175,7 @@ where
     /// to the interned item.
     pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Data<'db> {
         let internal_data = db.zalsa().table().get::<Value<C>>(id);
-        unsafe { self.from_internal_data(&internal_data.data) }
+        unsafe { Self::from_internal_data(&internal_data.data) }
     }
 
     /// Lookup the fields from an interned struct.

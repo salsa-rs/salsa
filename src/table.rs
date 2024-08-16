@@ -167,6 +167,7 @@ impl Table {
 }
 
 impl<T: Slot> Page<T> {
+    #[allow(clippy::uninit_vec)]
     fn new(ingredient: IngredientIndex) -> Self {
         let mut data = Vec::with_capacity(PAGE_LEN);
         unsafe {
