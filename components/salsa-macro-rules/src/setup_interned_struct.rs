@@ -93,8 +93,8 @@ macro_rules! setup_interned_struct {
                 }
             }
 
-            impl<$db_lt> $zalsa::LookupId<$db_lt> for $Struct<$db_lt> {
-                fn lookup_id(id: salsa::Id, db: &$db_lt dyn $zalsa::Database) -> Self {
+            impl $zalsa::FromId for $Struct<'_> {
+                fn from_id(id: salsa::Id) -> Self {
                     Self(id, std::marker::PhantomData)
                 }
             }

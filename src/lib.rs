@@ -76,7 +76,6 @@ pub mod plumbing {
     pub use crate::id::AsId;
     pub use crate::id::FromId;
     pub use crate::id::Id;
-    pub use crate::id::LookupId;
     pub use crate::ingredient::Ingredient;
     pub use crate::ingredient::Jar;
     pub use crate::ingredient::JarAux;

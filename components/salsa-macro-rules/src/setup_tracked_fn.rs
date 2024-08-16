@@ -192,7 +192,7 @@ macro_rules! setup_tracked_fn {
                         if $needs_interner {
                             $Configuration::intern_ingredient(db).data(db, key).clone()
                         } else {
-                            $zalsa::LookupId::lookup_id(key, db.as_dyn_database())
+                            $zalsa::FromId::from_id(key)
                         }
                     }
                 }

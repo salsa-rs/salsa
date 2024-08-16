@@ -139,8 +139,8 @@ macro_rules! setup_tracked_struct {
                 }
             }
 
-            impl<$db_lt> $zalsa::LookupId<$db_lt> for $Struct<$db_lt> {
-                fn lookup_id(id: salsa::Id, db: &$db_lt dyn $zalsa::Database) -> Self {
+            impl<$db_lt> $zalsa::FromId for $Struct<$db_lt> {
+                fn from_id(id: salsa::Id) -> Self {
                     $Struct(id, std::marker::PhantomData)
                 }
             }
