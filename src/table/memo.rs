@@ -126,11 +126,13 @@ impl MemoTable {
                 arc_swap: ArcSwap::new(Self::to_dummy(memo)),
             }),
         );
-        old_entry.map(|MemoEntryData {
-                type_id: _,
-                to_dyn_fn: _,
-                arc_swap,
-            }| unsafe { Self::from_dummy(arc_swap.into_inner()) })
+        old_entry.map(
+            |MemoEntryData {
+                 type_id: _,
+                 to_dyn_fn: _,
+                 arc_swap,
+             }| unsafe { Self::from_dummy(arc_swap.into_inner()) },
+        )
     }
 
     pub(crate) fn get<M: Memo>(
