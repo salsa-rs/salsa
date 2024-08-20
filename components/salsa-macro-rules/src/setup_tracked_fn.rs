@@ -190,7 +190,7 @@ macro_rules! setup_tracked_fn {
                 fn id_to_input<$db_lt>(db: &$db_lt Self::DbView, key: salsa::Id) -> Self::Input<$db_lt> {
                     $zalsa::macro_if! {
                         if $needs_interner {
-                            $Configuration::intern_ingredient(db).data(db, key).clone()
+                            $Configuration::intern_ingredient(db).data(db.as_dyn_database(), key).clone()
                         } else {
                             $zalsa::FromId::from_id(key)
                         }

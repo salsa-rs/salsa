@@ -24,6 +24,6 @@ fn execute() {
 
 #[test]
 fn execute_custom() {
-    let mut db = common::LoggerDatabase::new();
+    let mut db = common::LoggerDatabase::default();
     assert_eq!(tracked_custom_db(&db), 44);
 }
