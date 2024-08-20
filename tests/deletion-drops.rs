@@ -80,6 +80,7 @@ fn deletion_drops() {
     "#]]
     .assert_debug_eq(&dropped());
 
+    // Now that we execute with rev = 44, the old id is put on the free list
     let tracked_struct = input.create_tracked_struct(&db);
     assert_eq!(tracked_struct.field(&db).identity, 44);
 
@@ -88,7 +89,9 @@ fn deletion_drops() {
     "#]]
     .assert_debug_eq(&dropped());
 
-    input.set_identity(&mut db).to(66);
+    // When we execute again with `input1`, that id is re-used, so the old value is deleted
+    let input1 = MyInput::new(&db, 66);
+    let _tracked_struct1 = input1.create_tracked_struct(&db);
 
     expect_test::expect![[r#"
         [

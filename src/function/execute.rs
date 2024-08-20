@@ -39,11 +39,17 @@ where
             },
         });
 
+        // If we already executed this query once, then use the tracked-struct ids from the
+        // previous execution as the starting point for the new one.
+        if let Some(old_memo) = &opt_old_memo {
+            active_query.seed_tracked_struct_ids(&old_memo.revisions.tracked_struct_ids);
+        }
+
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
         let database_key_index = active_query.database_key_index;
-        let key = database_key_index.key_index;
-        let value = match Cycle::catch(|| C::execute(db, C::id_to_input(db, key))) {
+        let id = database_key_index.key_index;
+        let value = match Cycle::catch(|| C::execute(db, C::id_to_input(db, id))) {
             Ok(v) => v,
             Err(cycle) => {
                 tracing::debug!(
@@ -55,7 +61,7 @@ where
                     crate::cycle::CycleRecoveryStrategy::Fallback => {
                         if let Some(c) = active_query.take_cycle() {
                             assert!(c.is(&cycle));
-                            C::recover_from_cycle(db, &cycle, C::id_to_input(db, key))
+                            C::recover_from_cycle(db, &cycle, C::id_to_input(db, id))
                         } else {
                             // we are not a participant in this cycle
                             debug_assert!(!cycle
@@ -80,8 +86,8 @@ where
 
         let value = self
             .insert_memo(
-                db,
-                key,
+                zalsa,
+                id,
                 Memo::new(Some(value), revision_now, revisions.clone()),
             )
             .unwrap();

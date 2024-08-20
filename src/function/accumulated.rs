@@ -1,4 +1,6 @@
-use crate::{accumulator, hash::FxHashSet, zalsa::ZalsaDatabase, DatabaseKeyIndex, Id};
+use crate::{
+    accumulator, hash::FxHashSet, zalsa::ZalsaDatabase, AsDynDatabase, DatabaseKeyIndex, Id,
+};
 
 use super::{Configuration, IngredientImpl};
 
@@ -24,6 +26,7 @@ where
         // First ensure the result is up to date
         self.fetch(db, key);
 
+        let db = db.as_dyn_database();
         let db_key = self.database_key_index(key);
         let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();
         let mut stack: Vec<DatabaseKeyIndex> = vec![db_key];
@@ -34,7 +37,7 @@ where
 
                 let origin = zalsa
                     .lookup_ingredient(k.ingredient_index)
-                    .origin(k.key_index);
+                    .origin(db, k.key_index);
                 let inputs = origin.iter().flat_map(|origin| origin.inputs());
                 // Careful: we want to push in execution order, so reverse order to
                 // ensure the first child that was executed will be the first child popped

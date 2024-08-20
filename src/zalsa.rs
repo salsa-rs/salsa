@@ -6,12 +6,15 @@ use std::marker::PhantomData;
 use std::thread::ThreadId;
 
 use crate::cycle::CycleRecoveryStrategy;
-use crate::ingredient::{Ingredient, Jar};
+use crate::ingredient::{Ingredient, Jar, JarAux};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
+use crate::table::memo::MemoTable;
+use crate::table::sync::SyncTable;
+use crate::table::Table;
 use crate::views::Views;
 use crate::zalsa_local::ZalsaLocal;
-use crate::{Database, DatabaseKeyIndex, Durability, Revision};
+use crate::{Database, DatabaseKeyIndex, Durability, Id, Revision};
 
 /// Internal plumbing trait; implemented automatically when `#[salsa::db]`(`crate::db`) is attached to your database struct.
 /// Contains methods that give access to the internal data from the `storage` field.
@@ -23,6 +26,13 @@ use crate::{Database, DatabaseKeyIndex, Durability, Revision};
 /// Do not implement this yourself, instead, apply the [`salsa::db`](`crate::db`) macro
 /// to your database.
 pub unsafe trait ZalsaDatabase: Any {
+    /// Plumbing method: access both zalsa and zalsa-local at once.
+    /// More efficient if you need both as it does only a single vtable dispatch.
+    #[doc(hidden)]
+    fn zalsas(&self) -> (&Zalsa, &ZalsaLocal) {
+        (self.zalsa(), self.zalsa_local())
+    }
+
     /// Plumbing method: Access the internal salsa methods.
     #[doc(hidden)]
     fn zalsa(&self) -> &Zalsa;
@@ -82,6 +92,21 @@ impl IngredientIndex {
     }
 }
 
+/// A special secondary index *just* for ingredients that attach
+/// "memos" to salsa structs (currently: just tracked functions).
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct MemoIngredientIndex(u32);
+
+impl MemoIngredientIndex {
+    pub(crate) fn from_usize(u: usize) -> Self {
+        assert!(u < u32::MAX as usize);
+        MemoIngredientIndex(u as u32)
+    }
+    pub(crate) fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+}
+
 /// The "plumbing interface" to the Salsa database. Stores all the ingredients and other data.
 ///
 /// **NOT SEMVER STABLE.**
@@ -89,6 +114,9 @@ pub struct Zalsa {
     views_of: Views,
 
     nonce: Nonce<StorageNonce>,
+
+    /// Number of memo ingredient indices created by calls to [`next_memo_ingredient_index`](`Self::next_memo_ingredient_index`)
+    memo_ingredients: Mutex<Vec<IngredientIndex>>,
 
     /// Map from the type-id of an `impl Jar` to the index of its first ingredient.
     /// This is using a `Mutex<FxHashMap>` (versus, say, a `FxDashMap`)
@@ -120,6 +148,7 @@ impl Zalsa {
             ingredients_vec: AppendOnlyVec::new(),
             ingredients_requiring_reset: AppendOnlyVec::new(),
             runtime: Runtime::default(),
+            memo_ingredients: Default::default(),
         }
     }
 
@@ -131,6 +160,23 @@ impl Zalsa {
         self.nonce
     }
 
+    /// Returns the [`Table`][] used to store the value of salsa structs
+    pub(crate) fn table(&self) -> &Table {
+        self.runtime.table()
+    }
+
+    /// Returns the [`MemoTable`][] for the salsa struct with the given id
+    pub(crate) fn memo_table_for(&self, id: Id) -> &MemoTable {
+        // SAFETY: We are supply the correct current revision
+        unsafe { self.table().memos(id, self.current_revision()) }
+    }
+
+    /// Returns the [`SyncTable`][] for the salsa struct with the given id
+    pub(crate) fn sync_table_for(&self, id: Id) -> &SyncTable {
+        // SAFETY: We are supply the correct current revision
+        unsafe { self.table().syncs(id, self.current_revision()) }
+    }
+
     /// **NOT SEMVER STABLE**
     pub fn add_or_lookup_jar_by_type(&self, jar: &dyn Jar) -> IngredientIndex {
         {
@@ -140,7 +186,7 @@ impl Zalsa {
             .entry(jar_type_id)
             .or_insert_with(|| {
                 let index = IngredientIndex::from(self.ingredients_vec.len());
-                let ingredients = jar.create_ingredients(index);
+                let ingredients = jar.create_ingredients(self, index);
                 for ingredient in ingredients {
                     let expected_index = ingredient.ingredient_index();
 
@@ -237,6 +283,22 @@ impl Zalsa {
         self.runtime
             .unblock_queries_blocked_on(database_key, wait_result)
     }
+
+    pub(crate) fn ingredient_index_for_memo(
+        &self,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> IngredientIndex {
+        self.memo_ingredients.lock()[memo_ingredient_index.as_usize()]
+    }
+}
+
+impl JarAux for Zalsa {
+    fn next_memo_ingredient_index(&self, ingredient_index: IngredientIndex) -> MemoIngredientIndex {
+        let mut memo_ingredients = self.memo_ingredients.lock();
+        let mi = MemoIngredientIndex(u32::try_from(memo_ingredients.len()).unwrap());
+        memo_ingredients.push(ingredient_index);
+        mi
+    }
 }
 
 /// Caches a pointer to an ingredient in a database.
@@ -299,4 +361,15 @@ where
             zalsa.lookup_ingredient(index).assert_type::<I>()
         }
     }
+}
+
+/// Given a wide pointer `T`, extracts the data pointer (typed as `U`).
+///
+/// # Safety requirement
+///
+/// `U` must be correct type for the data pointer.
+pub(crate) unsafe fn transmute_data_ptr<T: ?Sized, U>(t: &T) -> &U {
+    let t: *const T = t;
+    let u: *const U = t as *const U;
+    unsafe { &*u }
 }

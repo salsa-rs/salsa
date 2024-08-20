@@ -1,10 +1,12 @@
+use rustc_hash::FxHashMap;
+
 use crate::{
     durability::Durability,
     hash::{FxIndexMap, FxIndexSet},
     key::{DatabaseKeyIndex, DependencyIndex},
-    tracked_struct::Disambiguator,
+    tracked_struct::{Disambiguator, KeyStruct},
     zalsa_local::EMPTY_DEPENDENCIES,
-    Cycle, Revision,
+    Cycle, Id, Revision,
 };
 
 use super::zalsa_local::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
@@ -35,10 +37,18 @@ pub(crate) struct ActiveQuery {
     /// Stores the entire cycle, if one is found and this query is part of it.
     pub(crate) cycle: Option<Cycle>,
 
-    /// When new entities are created, their data is hashed, and the resulting
+    /// When new tracked structs are created, their data is hashed, and the resulting
     /// hash is added to this map. If it is not present, then the disambiguator is 0.
     /// Otherwise it is 1 more than the current value (which is incremented).
+    ///
+    /// This table starts empty as the query begins and is gradually populated.
+    /// Note that if a query executes in 2 different revisions but creates the same
+    /// set of tracked structs, they will get the same disambiguator values.
     disambiguator_map: FxIndexMap<u64, Disambiguator>,
+
+    /// Map from tracked struct keys (which include the hash + disambiguator) to their
+    /// final id.
+    pub(crate) tracked_struct_ids: FxHashMap<KeyStruct, Id>,
 }
 
 impl ActiveQuery {
@@ -51,6 +61,7 @@ impl ActiveQuery {
             untracked_read: false,
             cycle: None,
             disambiguator_map: Default::default(),
+            tracked_struct_ids: Default::default(),
         }
     }
 
@@ -106,6 +117,7 @@ impl ActiveQuery {
             changed_at: self.changed_at,
             origin,
             durability: self.durability,
+            tracked_struct_ids: self.tracked_struct_ids.clone(),
         }
     }
 

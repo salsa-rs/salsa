@@ -9,8 +9,8 @@ use parking_lot::Mutex;
 
 use crate::{
     active_query::ActiveQuery, cycle::CycleRecoveryStrategy, durability::Durability,
-    key::DatabaseKeyIndex, revision::AtomicRevision, zalsa_local::ZalsaLocal, Cancelled, Cycle,
-    Database, Event, EventKind, Revision,
+    key::DatabaseKeyIndex, revision::AtomicRevision, table::Table, zalsa_local::ZalsaLocal,
+    Cancelled, Cycle, Database, Event, EventKind, Revision,
 };
 
 use self::dependency_graph::DependencyGraph;
@@ -40,6 +40,9 @@ pub struct Runtime {
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
     dependency_graph: Mutex<DependencyGraph>,
+
+    /// Data for instances
+    table: Table,
 }
 
 #[derive(Clone, Debug)]
@@ -84,6 +87,7 @@ impl Default for Runtime {
             next_id: AtomicUsize::new(1),
             revision_canceled: Default::default(),
             dependency_graph: Default::default(),
+            table: Default::default(),
         }
     }
 }
@@ -132,6 +136,10 @@ impl Runtime {
 
     pub(crate) fn set_cancellation_flag(&self) {
         self.revision_canceled.store(true);
+    }
+
+    pub(crate) fn table(&self) -> &Table {
+        &self.table
     }
 
     /// Increments the "current revision" counter and clears

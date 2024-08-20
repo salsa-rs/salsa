@@ -1,10 +1,8 @@
-use arc_swap::Guard;
-
 use crate::{
     key::DatabaseKeyIndex,
     runtime::StampedValue,
     zalsa::{Zalsa, ZalsaDatabase},
-    zalsa_local::{ActiveQueryGuard, EdgeKind, QueryOrigin, ZalsaLocal},
+    zalsa_local::{ActiveQueryGuard, EdgeKind, QueryOrigin},
     AsDynDatabase as _, Id, Revision,
 };
 
@@ -17,26 +15,25 @@ where
     pub(super) fn maybe_changed_after<'db>(
         &'db self,
         db: &'db C::DbView,
-        key: Id,
+        id: Id,
         revision: Revision,
     ) -> bool {
-        let zalsa_local = db.zalsa_local();
-        let zalsa = db.zalsa();
+        let (zalsa, zalsa_local) = db.zalsas();
         zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
 
         loop {
-            let database_key_index = self.database_key_index(key);
+            let database_key_index = self.database_key_index(id);
 
             tracing::debug!("{database_key_index:?}: maybe_changed_after(revision = {revision:?})");
 
             // Check if we have a verified version: this is the hot path.
-            let memo_guard = self.memo_map.get(key);
+            let memo_guard = self.get_memo_from_table_for(zalsa, id);
             if let Some(memo) = &memo_guard {
                 if self.shallow_verify_memo(db, zalsa, database_key_index, memo) {
                     return memo.revisions.changed_at > revision;
                 }
                 drop(memo_guard); // release the arc-swap guard before cold path
-                if let Some(mcs) = self.maybe_changed_after_cold(db, zalsa_local, key, revision) {
+                if let Some(mcs) = self.maybe_changed_after_cold(db, id, revision) {
                     return mcs;
                 } else {
                     // We failed to claim, have to retry.
@@ -51,22 +48,23 @@ where
     fn maybe_changed_after_cold<'db>(
         &'db self,
         db: &'db C::DbView,
-        local_state: &ZalsaLocal,
         key_index: Id,
         revision: Revision,
     ) -> Option<bool> {
+        let (zalsa, zalsa_local) = db.zalsas();
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard =
-            self.sync_map
-                .claim(db.as_dyn_database(), local_state, database_key_index)?;
-        let active_query = local_state.push_query(database_key_index);
+        let _claim_guard = zalsa.sync_table_for(key_index).claim(
+            db.as_dyn_database(),
+            zalsa_local,
+            database_key_index,
+            self.memo_ingredient_index,
+        )?;
+        let active_query = zalsa_local.push_query(database_key_index);
 
-        // Load the current memo, if any. Use a real arc, not an arc-swap guard,
-        // since we may recurse.
-        let old_memo = match self.memo_map.get(key_index) {
-            Some(m) => Guard::into_inner(m),
-            None => return Some(true),
+        // Load the current memo, if any.
+        let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index) else {
+            return Some(true);
         };
 
         tracing::debug!(

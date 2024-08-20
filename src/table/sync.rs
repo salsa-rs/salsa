@@ -3,14 +3,23 @@ use std::{
     thread::ThreadId,
 };
 
+use parking_lot::RwLock;
+
 use crate::{
-    hash::FxDashMap, key::DatabaseKeyIndex, runtime::WaitResult, zalsa::Zalsa,
-    zalsa_local::ZalsaLocal, Database, Id,
+    key::DatabaseKeyIndex,
+    runtime::WaitResult,
+    zalsa::{MemoIngredientIndex, Zalsa},
+    zalsa_local::ZalsaLocal,
+    Database,
 };
 
+use super::util;
+
+/// Tracks the keys that are currently being processed; used to coordinate between
+/// worker threads.
 #[derive(Default)]
-pub(super) struct SyncMap {
-    sync_map: FxDashMap<Id, SyncState>,
+pub(crate) struct SyncTable {
+    syncs: RwLock<Vec<Option<SyncState>>>,
 }
 
 struct SyncState {
@@ -21,37 +30,45 @@ struct SyncState {
     anyone_waiting: AtomicBool,
 }
 
-impl SyncMap {
-    pub(super) fn claim<'me>(
+impl SyncTable {
+    pub(crate) fn claim<'me>(
         &'me self,
         db: &'me dyn Database,
-        local_state: &ZalsaLocal,
+        zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
+        memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<ClaimGuard<'me>> {
+        let mut syncs = self.syncs.write();
         let zalsa = db.zalsa();
         let thread_id = std::thread::current().id();
-        match self.sync_map.entry(database_key_index.key_index) {
-            dashmap::mapref::entry::Entry::Vacant(entry) => {
-                entry.insert(SyncState {
+
+        util::ensure_vec_len(&mut syncs, memo_ingredient_index.as_usize() + 1);
+
+        match &syncs[memo_ingredient_index.as_usize()] {
+            None => {
+                syncs[memo_ingredient_index.as_usize()] = Some(SyncState {
                     id: thread_id,
                     anyone_waiting: AtomicBool::new(false),
                 });
                 Some(ClaimGuard {
-                    database_key: database_key_index,
+                    database_key_index,
+                    memo_ingredient_index,
                     zalsa,
-                    sync_map: &self.sync_map,
+                    sync_table: self,
                 })
             }
-            dashmap::mapref::entry::Entry::Occupied(entry) => {
+            Some(SyncState {
+                id: other_id,
+                anyone_waiting,
+            }) => {
                 // NB: `Ordering::Relaxed` is sufficient here,
                 // as there are no loads that are "gated" on this
                 // value. Everything that is written is also protected
                 // by a lock that must be acquired. The role of this
                 // boolean is to decide *whether* to acquire the lock,
                 // not to gate future atomic reads.
-                entry.get().anyone_waiting.store(true, Ordering::Relaxed);
-                let other_id = entry.get().id;
-                zalsa.block_on_or_unwind(db, local_state, database_key_index, other_id, entry);
+                anyone_waiting.store(true, Ordering::Relaxed);
+                zalsa.block_on_or_unwind(db, zalsa_local, database_key_index, *other_id, syncs);
                 None
             }
         }
@@ -61,22 +78,25 @@ impl SyncMap {
 /// Marks an active 'claim' in the synchronization map. The claim is
 /// released when this value is dropped.
 #[must_use]
-pub(super) struct ClaimGuard<'me> {
-    database_key: DatabaseKeyIndex,
+pub(crate) struct ClaimGuard<'me> {
+    database_key_index: DatabaseKeyIndex,
+    memo_ingredient_index: MemoIngredientIndex,
     zalsa: &'me Zalsa,
-    sync_map: &'me FxDashMap<Id, SyncState>,
+    sync_table: &'me SyncTable,
 }
 
 impl<'me> ClaimGuard<'me> {
     fn remove_from_map_and_unblock_queries(&self, wait_result: WaitResult) {
-        let (_, SyncState { anyone_waiting, .. }) =
-            self.sync_map.remove(&self.database_key.key_index).unwrap();
+        let mut syncs = self.sync_table.syncs.write();
+
+        let SyncState { anyone_waiting, .. } =
+            syncs[self.memo_ingredient_index.as_usize()].take().unwrap();
 
         // NB: `Ordering::Relaxed` is sufficient here,
         // see `store` above for explanation.
         if anyone_waiting.load(Ordering::Relaxed) {
             self.zalsa
-                .unblock_queries_blocked_on(self.database_key, wait_result)
+                .unblock_queries_blocked_on(self.database_key_index, wait_result)
         }
     }
 }
@@ -89,5 +109,11 @@ impl<'me> Drop for ClaimGuard<'me> {
             WaitResult::Completed
         };
         self.remove_from_map_and_unblock_queries(wait_result)
+    }
+}
+
+impl std::fmt::Debug for SyncTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SyncTable").finish()
     }
 }

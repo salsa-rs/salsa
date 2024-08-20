@@ -10,6 +10,7 @@ use crate::{
     hash::FxDashMap,
     ingredient::{fmt_index, Ingredient, Jar},
     key::DependencyIndex,
+    plumbing::JarAux,
     zalsa::IngredientIndex,
     zalsa_local::{QueryOrigin, ZalsaLocal},
     Database, DatabaseKeyIndex, Event, EventKind, Id, Revision,
@@ -37,7 +38,11 @@ impl<A: Accumulator> Default for JarImpl<A> {
 }
 
 impl<A: Accumulator> Jar for JarImpl<A> {
-    fn create_ingredients(&self, first_index: IngredientIndex) -> Vec<Box<dyn Ingredient>> {
+    fn create_ingredients(
+        &self,
+        _aux: &dyn JarAux,
+        first_index: IngredientIndex,
+    ) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(<IngredientImpl<A>>::new(first_index))]
     }
 }
@@ -149,7 +154,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         CycleRecoveryStrategy::Panic
     }
 
-    fn origin(&self, _key_index: crate::Id) -> Option<QueryOrigin> {
+    fn origin(&self, _db: &dyn Database, _key_index: crate::Id) -> Option<QueryOrigin> {
         None
     }
 
@@ -191,10 +196,6 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
 
     fn reset_for_new_revision(&mut self) {
         panic!("unexpected reset on accumulator")
-    }
-
-    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: crate::Id) {
-        panic!("unexpected call: accumulator is not registered as a dependent fn");
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

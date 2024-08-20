@@ -5,8 +5,9 @@ use crate::zalsa::IngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{Database, DatabaseKeyIndex, Id, Revision};
 use std::fmt;
+use std::marker::PhantomData;
 
-use super::struct_map::StructMap;
+use super::{IngredientImpl, Value};
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
 ///
@@ -20,22 +21,18 @@ use super::struct_map::StructMap;
 pub struct FieldIngredientImpl<C: Configuration> {
     index: IngredientIndex,
     field_index: usize,
-    struct_map: StructMap<C>,
+    phantom: PhantomData<fn() -> Value<C>>,
 }
 
 impl<C> FieldIngredientImpl<C>
 where
     C: Configuration,
 {
-    pub(super) fn new(
-        struct_index: IngredientIndex,
-        field_index: usize,
-        struct_map: StructMap<C>,
-    ) -> Self {
+    pub(super) fn new(struct_index: IngredientIndex, field_index: usize) -> Self {
         Self {
             index: struct_index.successor(field_index),
             field_index,
-            struct_map,
+            phantom: PhantomData,
         }
     }
 }
@@ -54,15 +51,17 @@ where
 
     fn maybe_changed_after(
         &self,
-        _db: &dyn Database,
+        db: &dyn Database,
         input: Option<Id>,
         revision: Revision,
     ) -> bool {
+        let zalsa = db.zalsa();
         let input = input.unwrap();
-        self.struct_map.get(input).stamps[self.field_index].changed_at > revision
+        let value = <IngredientImpl<C>>::data(zalsa, input);
+        value.stamps[self.field_index].changed_at > revision
     }
 
-    fn origin(&self, _key_index: Id) -> Option<QueryOrigin> {
+    fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {
         None
     }
 
@@ -80,10 +79,6 @@ where
         _executor: DatabaseKeyIndex,
         _stale_output_key: Option<Id>,
     ) {
-    }
-
-    fn salsa_struct_deleted(&self, _db: &dyn Database, _id: Id) {
-        panic!("unexpected call: input fields are never deleted");
     }
 
     fn requires_reset_for_new_revision(&self) -> bool {

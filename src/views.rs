@@ -1,4 +1,4 @@
-use crate::Database;
+use crate::{zalsa::transmute_data_ptr, Database};
 use append_only_vec::AppendOnlyVec;
 use std::{
     any::{Any, TypeId},
@@ -173,14 +173,6 @@ impl std::fmt::Debug for ViewCaster {
     }
 }
 
-/// Given a wide pointer `T`, extracts the data pointer (typed as `()`).
-/// This is safe because `()` gives no access to any data and has no validity requirements in particular.
-unsafe fn data_ptr<T: ?Sized, U>(t: &T) -> &U {
-    let t: *const T = t;
-    let u: *const U = t as *const U;
-    unsafe { &*u }
-}
-
 impl<Db, DbView> CastTo<DbView> for fn(&Db) -> &DbView
 where
     Db: Database,
@@ -194,7 +186,7 @@ where
         //
         // Caller guarantees that the input is of type `Db`
         // (we test it in the debug-assertion above).
-        let db = unsafe { data_ptr::<dyn Database, Db>(db) };
+        let db = unsafe { transmute_data_ptr::<dyn Database, Db>(db) };
         (*self)(db)
     }
 

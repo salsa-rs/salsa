@@ -4,8 +4,10 @@ use std::{
 };
 
 use crate::{
-    cycle::CycleRecoveryStrategy, zalsa::IngredientIndex, zalsa_local::QueryOrigin, Database,
-    DatabaseKeyIndex, Id,
+    cycle::CycleRecoveryStrategy,
+    zalsa::{IngredientIndex, MemoIngredientIndex},
+    zalsa_local::QueryOrigin,
+    Database, DatabaseKeyIndex, Id,
 };
 
 use super::Revision;
@@ -15,7 +17,15 @@ use super::Revision;
 pub trait Jar: Any {
     /// Create the ingredients given the index of the first one.
     /// All subsequent ingredients will be assigned contiguous indices.
-    fn create_ingredients(&self, first_index: IngredientIndex) -> Vec<Box<dyn Ingredient>>;
+    fn create_ingredients(
+        &self,
+        aux: &dyn JarAux,
+        first_index: IngredientIndex,
+    ) -> Vec<Box<dyn Ingredient>>;
+}
+
+pub trait JarAux {
+    fn next_memo_ingredient_index(&self, ingredient_index: IngredientIndex) -> MemoIngredientIndex;
 }
 
 pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
@@ -30,7 +40,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ) -> bool;
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
-    fn origin(&self, key_index: Id) -> Option<QueryOrigin>;
+    fn origin(&self, db: &dyn Database, key_index: Id) -> Option<QueryOrigin>;
 
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
     /// This occurs because the value for `executor`, which generated it, was marked as valid
@@ -52,12 +62,6 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         executor: DatabaseKeyIndex,
         stale_output_key: Option<Id>,
     );
-
-    /// Informs the ingredient `self` that the salsa struct with id `id` has been deleted.
-    /// This gives `self` a chance to remove any memoized data dependent on `id`.
-    /// To receive this callback, `self` must register itself as a dependent function using
-    /// [`SalsaStructInDb::register_dependent_fn`](`crate::salsa_struct::SalsaStructInDb::register_dependent_fn`).
-    fn salsa_struct_deleted(&self, db: &dyn Database, id: Id);
 
     /// Returns the [`IngredientIndex`] of this ingredient.
     fn ingredient_index(&self) -> IngredientIndex;
@@ -129,8 +133,8 @@ pub(crate) fn fmt_index(
     fmt: &mut fmt::Formatter<'_>,
 ) -> fmt::Result {
     if let Some(i) = id {
-        write!(fmt, "{}({})", debug_name, u32::from(i))
+        write!(fmt, "{debug_name}({i:?})")
     } else {
-        write!(fmt, "{}()", debug_name)
+        write!(fmt, "{debug_name}()")
     }
 }

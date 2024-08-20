@@ -104,8 +104,8 @@ impl Macro {
         }
 
         let needs_interner = match function_type {
-            FunctionType::RequiresInterning => true,
-            FunctionType::Constant | FunctionType::SalsaStruct => false,
+            FunctionType::Constant | FunctionType::RequiresInterning => true,
+            FunctionType::SalsaStruct => false,
         };
 
         let lru = Literal::usize_unsuffixed(self.args.lru.unwrap_or(0));
