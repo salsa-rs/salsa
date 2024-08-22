@@ -3,7 +3,6 @@ use tracing::debug;
 
 use crate::active_query::ActiveQuery;
 use crate::durability::Durability;
-use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
 use crate::key::DependencyIndex;
 use crate::runtime::StampedValue;
@@ -433,7 +432,7 @@ pub enum EdgeKind {
 }
 
 lazy_static::lazy_static! {
-    pub(crate) static ref EMPTY_DEPENDENCIES: Arc<indexmap::set::Slice<(EdgeKind, DependencyIndex)>> = Arc::from(FxIndexSet::default().into_boxed_slice());
+    pub(crate) static ref EMPTY_DEPENDENCIES: Arc<[(EdgeKind, DependencyIndex)]> = Arc::new([]);
 }
 
 /// The edges between a memoized value and other queries in the dependency graph.
@@ -455,7 +454,7 @@ pub struct QueryEdges {
     /// Important:
     ///
     /// * The inputs must be in **execution order** for the red-green algorithm to work.
-    pub input_outputs: Arc<indexmap::set::Slice<(EdgeKind, DependencyIndex)>>,
+    pub input_outputs: Arc<[(EdgeKind, DependencyIndex)]>,
 }
 
 impl QueryEdges {
@@ -480,9 +479,7 @@ impl QueryEdges {
     }
 
     /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.
-    pub(crate) fn new(
-        input_outputs: Arc<indexmap::set::Slice<(EdgeKind, DependencyIndex)>>,
-    ) -> Self {
+    pub(crate) fn new(input_outputs: Arc<[(EdgeKind, DependencyIndex)]>) -> Self {
         Self { input_outputs }
     }
 }
