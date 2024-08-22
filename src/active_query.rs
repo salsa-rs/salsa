@@ -1,4 +1,5 @@
 use rustc_hash::FxHashMap;
+use std::sync::Arc;
 
 use crate::{
     durability::Durability,
@@ -98,11 +99,11 @@ impl ActiveQuery {
         self.input_outputs.contains(&(EdgeKind::Output, key))
     }
 
-    pub(crate) fn revisions(&self) -> QueryRevisions {
+    pub(crate) fn into_revisions(self) -> QueryRevisions {
         let input_outputs = if self.input_outputs.is_empty() {
             EMPTY_DEPENDENCIES.clone()
         } else {
-            self.input_outputs.iter().copied().collect()
+            Arc::from(self.input_outputs.into_boxed_slice())
         };
 
         let edges = QueryEdges::new(input_outputs);
@@ -117,7 +118,7 @@ impl ActiveQuery {
             changed_at: self.changed_at,
             origin,
             durability: self.durability,
-            tracked_struct_ids: self.tracked_struct_ids.clone(),
+            tracked_struct_ids: self.tracked_struct_ids,
         }
     }
 

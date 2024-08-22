@@ -3,6 +3,7 @@ use tracing::debug;
 
 use crate::active_query::ActiveQuery;
 use crate::durability::Durability;
+use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
 use crate::key::DependencyIndex;
 use crate::runtime::StampedValue;
@@ -356,6 +357,25 @@ pub(crate) struct QueryRevisions {
 
 impl QueryRevisions {
     pub(crate) fn stamped_value<V>(&self, value: V) -> StampedValue<V> {
+        self.stamp_template().stamp(value)
+    }
+
+    pub(crate) fn stamp_template(&self) -> StampTemplate {
+        StampTemplate {
+            durability: self.durability,
+            changed_at: self.changed_at,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StampTemplate {
+    durability: Durability,
+    changed_at: Revision,
+}
+
+impl StampTemplate {
+    pub(crate) fn stamp<V>(self, value: V) -> StampedValue<V> {
         StampedValue {
             value,
             durability: self.durability,
@@ -413,7 +433,7 @@ pub enum EdgeKind {
 }
 
 lazy_static::lazy_static! {
-    pub(crate) static ref EMPTY_DEPENDENCIES: Arc<[(EdgeKind, DependencyIndex)]> = Arc::new([]);
+    pub(crate) static ref EMPTY_DEPENDENCIES: Arc<indexmap::set::Slice<(EdgeKind, DependencyIndex)>> = Arc::from(FxIndexSet::default().into_boxed_slice());
 }
 
 /// The edges between a memoized value and other queries in the dependency graph.
@@ -435,7 +455,7 @@ pub struct QueryEdges {
     /// Important:
     ///
     /// * The inputs must be in **execution order** for the red-green algorithm to work.
-    pub input_outputs: Arc<[(EdgeKind, DependencyIndex)]>,
+    pub input_outputs: Arc<indexmap::set::Slice<(EdgeKind, DependencyIndex)>>,
 }
 
 impl QueryEdges {
@@ -460,7 +480,9 @@ impl QueryEdges {
     }
 
     /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.
-    pub(crate) fn new(input_outputs: Arc<[(EdgeKind, DependencyIndex)]>) -> Self {
+    pub(crate) fn new(
+        input_outputs: Arc<indexmap::set::Slice<(EdgeKind, DependencyIndex)>>,
+    ) -> Self {
         Self { input_outputs }
     }
 }
@@ -516,7 +538,7 @@ impl ActiveQueryGuard<'_> {
         // If this frame were a cycle participant, it would have unwound.
         assert!(popped_query.cycle.is_none());
 
-        popped_query.revisions()
+        popped_query.into_revisions()
     }
 
     /// If the active query is registered as a cycle participant, remove and
