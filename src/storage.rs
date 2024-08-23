@@ -15,7 +15,7 @@ use crate::{
 ///
 /// The `storage` and `storage_mut` fields must both return a reference to the same
 /// storage field which must be owned by `self`.
-pub unsafe trait HasStorage: Database + Sized {
+pub unsafe trait HasStorage: Database + Clone + Sized {
     fn storage(&self) -> &Storage<Self>;
     fn storage_mut(&mut self) -> &mut Storage<Self>;
 }
@@ -107,6 +107,10 @@ unsafe impl<T: HasStorage> ZalsaDatabase for T {
 
     fn zalsa_local(&self) -> &ZalsaLocal {
         &self.storage().zalsa_local
+    }
+
+    fn fork_db(&self) -> Box<dyn Database> {
+        Box::new(self.clone())
     }
 }
 

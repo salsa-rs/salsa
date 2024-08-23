@@ -3,7 +3,7 @@ use crate::{self as salsa, Database, Event, Storage};
 #[salsa::db]
 /// Default database implementation that you can use if you don't
 /// require any custom user data.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DatabaseImpl {
     storage: Storage<Self>,
 }
