@@ -1,6 +1,10 @@
 #![allow(unreachable_patterns)]
 // FIXME(rust-lang/rust#129031): regression in nightly
-use std::{path::PathBuf, sync::Mutex, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use crossbeam::channel::{unbounded, Sender};
 use dashmap::{mapref::entry::Entry, DashMap};
@@ -77,11 +81,12 @@ trait Db: salsa::Database {
 }
 
 #[salsa::db]
+#[derive(Clone)]
 struct LazyInputDatabase {
     storage: Storage<Self>,
-    logs: Mutex<Vec<String>>,
+    logs: Arc<Mutex<Vec<String>>>,
     files: DashMap<PathBuf, File>,
-    file_watcher: Mutex<Debouncer<RecommendedWatcher>>,
+    file_watcher: Arc<Mutex<Debouncer<RecommendedWatcher>>>,
 }
 
 impl LazyInputDatabase {
@@ -90,7 +95,9 @@ impl LazyInputDatabase {
             storage: Default::default(),
             logs: Default::default(),
             files: DashMap::new(),
-            file_watcher: Mutex::new(new_debouncer(Duration::from_secs(1), tx).unwrap()),
+            file_watcher: Arc::new(Mutex::new(
+                new_debouncer(Duration::from_secs(1), tx).unwrap(),
+            )),
         }
     }
 }

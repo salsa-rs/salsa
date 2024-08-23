@@ -2,15 +2,17 @@
 
 #![allow(dead_code)]
 
+use std::sync::{Arc, Mutex};
+
 use salsa::{Database, Storage};
 
 /// Logging userdata: provides [`LogDatabase`][] trait.
 ///
 /// If you wish to use it along with other userdata,
 /// you can also embed it in another struct and implement [`HasLogger`][] for that struct.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Logger {
-    logs: std::sync::Mutex<Vec<String>>,
+    logs: Arc<Mutex<Vec<String>>>,
 }
 
 /// Trait implemented by databases that lets them log events.
@@ -48,7 +50,7 @@ impl<Db: HasLogger + Database> LogDatabase for Db {}
 
 /// Database that provides logging but does not log salsa event.
 #[salsa::db]
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct LoggerDatabase {
     storage: Storage<Self>,
     logger: Logger,
@@ -67,7 +69,7 @@ impl Database for LoggerDatabase {
 
 /// Database that provides logging and logs salsa events.
 #[salsa::db]
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct EventLoggerDatabase {
     storage: Storage<Self>,
     logger: Logger,
@@ -87,7 +89,7 @@ impl HasLogger for EventLoggerDatabase {
 }
 
 #[salsa::db]
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct DiscardLoggerDatabase {
     storage: Storage<Self>,
     logger: Logger,
@@ -114,7 +116,7 @@ impl HasLogger for DiscardLoggerDatabase {
 }
 
 #[salsa::db]
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct ExecuteValidateLoggerDatabase {
     storage: Storage<Self>,
     logger: Logger,
