@@ -114,7 +114,7 @@ fn union() {
     );
 }
 
-/// x = 1; loop: x = x + 0
+/// x = 1; loop { x = x + 0 }
 #[test]
 fn cycle_converges() {
     let mut db = salsa::DatabaseImpl::new();
@@ -126,11 +126,11 @@ fn cycle_converges() {
 
     let ty = infer_use(&db, u);
 
-    /// Loop converges on LiteralInt(1)
+    // Loop converges on LiteralInt(1)
     assert_eq!(ty, Type::LiteralInt(1));
 }
 
-/// x = 1; loop: x = x + 1
+/// x = 1; loop { x = x + 1 }
 #[test]
 fn cycle_diverges() {
     let mut db = salsa::DatabaseImpl::new();
@@ -142,6 +142,28 @@ fn cycle_diverges() {
 
     let ty = infer_use(&db, u);
 
-    /// Loop diverges. Cut it off and fallback from "all LiteralInt observed" to Type::Int
+    // Loop diverges. Cut it off and fallback from "all LiteralInt observed" to Type::Int
     assert_eq!(ty, Type::Int);
+}
+
+/// x = 0; y = 0; loop { x = y + 0; y = x + 0 }
+#[test]
+fn multi_symbol_cycle_converges() {
+    let mut db = salsa::DatabaseImpl::new();
+
+    let defx0 = Definition::new(&db, None, Literal::new(&db, LiteralValue::Int(0)));
+    let defy0 = Definition::new(&db, None, Literal::new(&db, LiteralValue::Int(0)));
+    let defx1 = Definition::new(&db, None, Literal::new(&db, LiteralValue::Int(0)));
+    let defy1 = Definition::new(&db, None, Literal::new(&db, LiteralValue::Int(0)));
+    let use_x = Use::new(&db, vec![defx0, defx1]);
+    let use_y = Use::new(&db, vec![defy0, defy1]);
+    defx1.set_base(&mut db).to(Some(use_y));
+    defy1.set_base(&mut db).to(Some(use_x));
+
+    let x_ty = infer_use(&db, use_x);
+    let y_ty = infer_use(&db, use_y);
+
+    // Both symbols converge on LiteralInt(0)
+    assert_eq!(x_ty, Type::LiteralInt(0));
+    assert_eq!(y_ty, Type::LiteralInt(0));
 }
