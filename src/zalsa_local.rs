@@ -356,6 +356,25 @@ pub(crate) struct QueryRevisions {
 
 impl QueryRevisions {
     pub(crate) fn stamped_value<V>(&self, value: V) -> StampedValue<V> {
+        self.stamp_template().stamp(value)
+    }
+
+    pub(crate) fn stamp_template(&self) -> StampTemplate {
+        StampTemplate {
+            durability: self.durability,
+            changed_at: self.changed_at,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StampTemplate {
+    durability: Durability,
+    changed_at: Revision,
+}
+
+impl StampTemplate {
+    pub(crate) fn stamp<V>(self, value: V) -> StampedValue<V> {
         StampedValue {
             value,
             durability: self.durability,
@@ -516,7 +535,7 @@ impl ActiveQueryGuard<'_> {
         // If this frame were a cycle participant, it would have unwound.
         assert!(popped_query.cycle.is_none());
 
-        popped_query.revisions()
+        popped_query.into_revisions()
     }
 
     /// If the active query is registered as a cycle participant, remove and

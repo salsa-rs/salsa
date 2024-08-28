@@ -84,18 +84,13 @@ where
             self.diff_outputs(db, database_key_index, old_memo, &revisions);
         }
 
-        let value = self
-            .insert_memo(
-                zalsa,
-                id,
-                Memo::new(Some(value), revision_now, revisions.clone()),
-            )
-            .unwrap();
-
-        let stamped_value = revisions.stamped_value(value);
-
         tracing::debug!("{database_key_index:?}: read_upgrade: result.revisions = {revisions:#?}");
 
-        stamped_value
+        let stamp_template = revisions.stamp_template();
+        let value = self
+            .insert_memo(zalsa, id, Memo::new(Some(value), revision_now, revisions))
+            .unwrap();
+
+        stamp_template.stamp(value)
     }
 }
