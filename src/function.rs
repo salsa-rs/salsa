@@ -78,6 +78,7 @@ pub trait Configuration: Any {
 }
 
 /// Function ingredients are the "workhorse" of salsa.
+///
 /// They are used for tracked functions, for the "value" fields of tracked structs, and for the fields of input structs.
 /// The function ingredient is fairly complex and so its code is spread across multiple modules, typically one per method.
 /// The main entry points are:

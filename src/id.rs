@@ -3,6 +3,7 @@ use std::hash::Hash;
 use std::num::NonZeroU32;
 
 /// The `Id` of a salsa struct in the database [`Table`](`crate::table::Table`).
+///
 /// The higher-order bits of an `Id` identify a [`Page`](`crate::table::Page`)
 /// and the low-order bits identify a slot within the page.
 ///

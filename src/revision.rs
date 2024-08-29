@@ -5,8 +5,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// because we want to use a `NonZeroUsize`.
 const START: usize = 1;
 
-/// A unique identifier for the current version of the database; each
-/// time an input is changed, the revision number is incremented.
+/// A unique identifier for the current version of the database.
+///
+/// Each time an input is changed, the revision number is incremented.
 /// `Revision` is used internally to track which values may need to be
 /// recomputed, but is not something you should have to interact with
 /// directly as a user of salsa.

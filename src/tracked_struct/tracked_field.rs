@@ -5,6 +5,7 @@ use crate::{ingredient::Ingredient, zalsa::IngredientIndex, Database, Id};
 use super::{Configuration, Value};
 
 /// Created for each tracked struct.
+///
 /// This ingredient only stores the "id" fields.
 /// It is a kind of "dressed up" interner;
 /// the active query + values of id fields are hashed to create the tracked struct id.

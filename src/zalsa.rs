@@ -16,14 +16,17 @@ use crate::views::Views;
 use crate::zalsa_local::ZalsaLocal;
 use crate::{Database, DatabaseKeyIndex, Durability, Id, Revision};
 
-/// Internal plumbing trait; implemented automatically when `#[salsa::db]`(`crate::db`) is attached to your database struct.
-/// Contains methods that give access to the internal data from the `storage` field.
+/// Internal plumbing trait.
+///
+/// [`ZalsaDatabase`] is created automatically when [`#[salsa::db]`](`crate::db`)
+/// is attached to a database struct. it Contains methods that give access
+/// to the internal data from the `storage` field.
 ///
 /// # Safety
 ///
 /// The system assumes this is implemented by a salsa procedural macro
 /// which makes use of private data from the [`Storage`](`crate::storage::Storage`) struct.
-/// Do not implement this yourself, instead, apply the [`salsa::db`](`crate::db`) macro
+/// Do not implement this yourself, instead, apply the [`#[salsa::db]`](`crate::db`) macro
 /// to your database.
 pub unsafe trait ZalsaDatabase: Any {
     /// Plumbing method: access both zalsa and zalsa-local at once.
@@ -61,6 +64,7 @@ pub struct StorageNonce;
 static NONCE: NonceGenerator<StorageNonce> = NonceGenerator::new();
 
 /// An ingredient index identifies a particular [`Ingredient`] in the database.
+///
 /// The database contains a number of jars, and each jar contains a number of ingredients.
 /// Each ingredient is given a unique index as the database is being created.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

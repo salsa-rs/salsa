@@ -46,7 +46,8 @@ pub struct JarImpl<C: Configuration> {
     phantom: PhantomData<C>,
 }
 
-/// The interned ingredient has the job of hashing values of type `Data` to produce an `Id`.
+/// The interned ingredient hashes values of type `Data` to produce an `Id`.
+///
 /// It used to store interned structs but also to store the id fields of a tracked struct.
 /// Interned values endure until they are explicitly removed in some way.
 pub struct IngredientImpl<C: Configuration> {
