@@ -252,13 +252,13 @@ where
         &'db self,
         db: &'db dyn Database,
         fields: C::Fields<'db>,
-    ) -> C::Struct<'db> {
+    ) -> crate::Result<C::Struct<'db>> {
         let (zalsa, zalsa_local) = db.zalsas();
 
         let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
         let (current_deps, disambiguator) =
-            zalsa_local.disambiguate(self.ingredient_index, Revision::start(), data_hash);
+            zalsa_local.disambiguate(self.ingredient_index, Revision::start(), data_hash)?;
 
         let key_struct = KeyStruct {
             disambiguator,
@@ -266,7 +266,7 @@ where
         };
 
         let current_revision = zalsa.current_revision();
-        match zalsa_local.tracked_struct_id(&key_struct) {
+        Ok(match zalsa_local.tracked_struct_id(&key_struct) {
             Some(id) => {
                 // The struct already exists in the intern map.
                 zalsa_local.add_output(self.database_key_index(id).into());
@@ -281,7 +281,7 @@ where
                 zalsa_local.store_tracked_struct_id(key_struct, id);
                 C::struct_from_id(id)
             }
-        }
+        })
     }
 
     fn allocate<'db>(
@@ -521,7 +521,7 @@ where
         db: &'db dyn crate::Database,
         s: C::Struct<'db>,
         field_index: usize,
-    ) -> &'db C::Fields<'db> {
+    ) -> crate::Result<&'db C::Fields<'db>> {
         let (zalsa, zalsa_local) = db.zalsas();
         let id = C::deref_struct(s);
         let field_ingredient_index = self.ingredient_index.successor(field_index);
@@ -538,9 +538,9 @@ where
             },
             data.durability,
             field_changed_at,
-        );
+        )?;
 
-        unsafe { self.to_self_ref(&data.fields) }
+        Ok(unsafe { self.to_self_ref(&data.fields) })
     }
 }
 
@@ -557,8 +557,8 @@ where
         _db: &dyn Database,
         _input: Option<Id>,
         _revision: Revision,
-    ) -> bool {
-        false
+    ) -> crate::Result<bool> {
+        Ok(false)
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {

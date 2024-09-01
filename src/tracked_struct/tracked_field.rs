@@ -53,12 +53,12 @@ where
         db: &'db dyn Database,
         input: Option<Id>,
         revision: crate::Revision,
-    ) -> bool {
+    ) -> crate::Result<bool> {
         let zalsa = db.zalsa();
         let id = input.unwrap();
         let data = <super::IngredientImpl<C>>::data(zalsa.table(), id);
         let field_changed_at = data.revisions[self.field_index];
-        field_changed_at > revision
+        Ok(field_changed_at > revision)
     }
 
     fn origin(

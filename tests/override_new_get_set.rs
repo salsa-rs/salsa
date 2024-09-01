@@ -22,7 +22,7 @@ impl MyInput {
         MyInput::from_string(db, s.to_string())
     }
 
-    pub fn field(self, db: &dyn Db) -> String {
+    pub fn field(self, db: &dyn Db) -> salsa::Result<String> {
         self.text(db)
     }
 
@@ -39,7 +39,7 @@ struct MyInterned<'db> {
 }
 
 impl<'db> MyInterned<'db> {
-    pub fn new(db: &'db dyn Db, s: impl Display) -> MyInterned<'db> {
+    pub fn new(db: &'db dyn Db, s: impl Display) -> salsa::Result<MyInterned<'db>> {
         MyInterned::from_string(db, s.to_string())
     }
 
@@ -55,11 +55,11 @@ struct MyTracked<'db> {
 }
 
 impl<'db> MyTracked<'db> {
-    pub fn new(db: &'db dyn Db, s: impl Display) -> MyTracked<'db> {
+    pub fn new(db: &'db dyn Db, s: impl Display) -> salsa::Result<MyTracked<'db>> {
         MyTracked::from_string(db, s.to_string())
     }
 
-    pub fn field(self, db: &'db dyn Db) -> String {
+    pub fn field(self, db: &'db dyn Db) -> salsa::Result<String> {
         self.text(db)
     }
 }

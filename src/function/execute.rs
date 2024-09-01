@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use crate::{
-    runtime::StampedValue, zalsa::ZalsaDatabase, zalsa_local::ActiveQueryGuard, Cycle, Database,
-    Event, EventKind,
-};
-
 use super::{memo::Memo, Configuration, IngredientImpl};
+use crate::result::Error;
+use crate::{
+    runtime::StampedValue, zalsa::ZalsaDatabase, zalsa_local::ActiveQueryGuard, Database, Event,
+    EventKind,
+};
 
 impl<C> IngredientImpl<C>
 where
@@ -25,7 +25,7 @@ where
         db: &'db C::DbView,
         active_query: ActiveQueryGuard<'_>,
         opt_old_memo: Option<Arc<Memo<C::Output<'_>>>>,
-    ) -> StampedValue<&C::Output<'db>> {
+    ) -> crate::Result<StampedValue<&C::Output<'db>>> {
         let zalsa = db.zalsa();
         let revision_now = zalsa.current_revision();
         let database_key_index = active_query.database_key_index;
@@ -49,29 +49,35 @@ where
         // stale, or value is absent. Let's execute!
         let database_key_index = active_query.database_key_index;
         let id = database_key_index.key_index;
-        let value = match Cycle::catch(|| C::execute(db, C::id_to_input(db, id))) {
+        let value = match C::execute(db, C::id_to_input(db, id)) {
             Ok(v) => v,
-            Err(cycle) => {
-                tracing::debug!(
-                    "{database_key_index:?}: caught cycle {cycle:?}, have strategy {:?}",
-                    C::CYCLE_STRATEGY
-                );
-                match C::CYCLE_STRATEGY {
-                    crate::cycle::CycleRecoveryStrategy::Panic => cycle.throw(),
-                    crate::cycle::CycleRecoveryStrategy::Fallback => {
-                        if let Some(c) = active_query.take_cycle() {
-                            assert!(c.is(&cycle));
-                            C::recover_from_cycle(db, &cycle, C::id_to_input(db, id))
-                        } else {
-                            // we are not a participant in this cycle
-                            debug_assert!(!cycle
-                                .participant_keys()
-                                .any(|k| k == database_key_index));
-                            cycle.throw()
+            Err(error) => match error.into_cycle() {
+                Ok(cycle) => {
+                    tracing::debug!(
+                        "{database_key_index:?}: caught cycle {cycle:?}, have strategy {:?}",
+                        C::CYCLE_STRATEGY
+                    );
+                    match C::CYCLE_STRATEGY {
+                        crate::cycle::CycleRecoveryStrategy::Panic => {
+                            // Propagate the cycle to the parent query for recovery.
+                            return Err(Error::cycle(cycle));
+                        }
+                        crate::cycle::CycleRecoveryStrategy::Fallback => {
+                            if let Some(c) = active_query.take_cycle() {
+                                assert!(c.is(&cycle));
+                                C::recover_from_cycle(db, &cycle, C::id_to_input(db, id))
+                            } else {
+                                // we are not a participant in this cycle
+                                debug_assert!(!cycle
+                                    .participant_keys()
+                                    .any(|k| k == database_key_index));
+                                return Err(Error::cycle(cycle));
+                            }
                         }
                     }
                 }
-            }
+                Err(error) => return Err(error),
+            },
         };
         let mut revisions = active_query.pop();
 
@@ -91,6 +97,6 @@ where
             .insert_memo(zalsa, id, Memo::new(Some(value), revision_now, revisions))
             .unwrap();
 
-        stamp_template.stamp(value)
+        Ok(stamp_template.stamp(value))
     }
 }

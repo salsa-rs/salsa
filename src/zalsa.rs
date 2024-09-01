@@ -187,32 +187,31 @@ impl Zalsa {
             let jar_type_id = jar.type_id();
             let mut jar_map = self.jar_map.lock();
             *jar_map
-            .entry(jar_type_id)
-            .or_insert_with(|| {
-                let index = IngredientIndex::from(self.ingredients_vec.len());
-                let ingredients = jar.create_ingredients(self, index);
-                for ingredient in ingredients {
-                    let expected_index = ingredient.ingredient_index();
+                .entry(jar_type_id)
+                .or_insert_with(|| {
+                    let index = IngredientIndex::from(self.ingredients_vec.len());
+                    let ingredients = jar.create_ingredients(self, index);
+                    for ingredient in ingredients {
+                        let expected_index = ingredient.ingredient_index();
 
-                    if ingredient.requires_reset_for_new_revision() {
-                        self.ingredients_requiring_reset.push(expected_index);
+                        if ingredient.requires_reset_for_new_revision() {
+                            self.ingredients_requiring_reset.push(expected_index);
+                        }
+
+                        let actual_index = self
+                            .ingredients_vec
+                            .push(ingredient);
+                        assert_eq!(
+                            expected_index.as_usize(),
+                            actual_index,
+                            "ingredient `{:?}` was predicted to have index `{:?}` but actually has index `{:?}`",
+                            self.ingredients_vec[actual_index],
+                            expected_index,
+                            actual_index,
+                        );
                     }
-
-                    let actual_index = self
-                        .ingredients_vec
-                        .push(ingredient);
-                    assert_eq!(
-                        expected_index.as_usize(),
-                        actual_index,
-                        "ingredient `{:?}` was predicted to have index `{:?}` but actually has index `{:?}`",
-                        self.ingredients_vec[actual_index],
-                        expected_index,
-                        actual_index,
-                    );
-
-                }
-                index
-            })
+                    index
+                })
         }
     }
 
@@ -273,7 +272,7 @@ impl Zalsa {
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
-    ) {
+    ) -> crate::Result<()> {
         self.runtime
             .block_on_or_unwind(db, local_state, database_key, other_id, query_mutex_guard)
     }

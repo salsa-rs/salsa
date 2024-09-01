@@ -142,7 +142,7 @@ macro_rules! setup_input_struct {
                 }
 
                 $(
-                    $field_getter_vis fn $field_getter_id<'db, $Db>(self, db: &'db $Db) -> $zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)
+                    $field_getter_vis fn $field_getter_id<'db, $Db>(self, db: &'db $Db) -> salsa::Result<$zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)>
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
@@ -151,12 +151,12 @@ macro_rules! setup_input_struct {
                             db.as_dyn_database(),
                             self,
                             $field_index,
-                        );
-                        $zalsa::maybe_clone!(
+                        )?;
+                        Ok($zalsa::maybe_clone!(
                             $field_option,
                             $field_ty,
                             &fields.$field_index,
-                        )
+                        ))
                     }
                 )*
 

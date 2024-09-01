@@ -7,13 +7,13 @@ use std::{
 use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 
+use self::dependency_graph::DependencyGraph;
+use crate::result::Cancelled;
 use crate::{
     active_query::ActiveQuery, cycle::CycleRecoveryStrategy, durability::Durability,
-    key::DatabaseKeyIndex, revision::AtomicRevision, table::Table, zalsa_local::ZalsaLocal,
-    Cancelled, Cycle, Database, Event, EventKind, Revision,
+    key::DatabaseKeyIndex, revision::AtomicRevision, table::Table, zalsa_local::ZalsaLocal, Cycle,
+    Database, Event, EventKind, Revision,
 };
-
-use self::dependency_graph::DependencyGraph;
 
 mod dependency_graph;
 
@@ -183,12 +183,12 @@ impl Runtime {
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
-    ) {
+    ) -> crate::Result<()> {
         let mut dg = self.dependency_graph.lock();
         let thread_id = std::thread::current().id();
 
         if dg.depends_on(other_id, thread_id) {
-            self.unblock_cycle_and_maybe_throw(db, local_state, &mut dg, database_key, other_id);
+            self.unblock_cycle_and_maybe_throw(db, local_state, &mut dg, database_key, other_id)?;
 
             // If the above fn returns, then (via cycle recovery) it has unblocked the
             // cycle, so we can continue.
@@ -217,14 +217,16 @@ impl Runtime {
         local_state.restore_query_stack(stack);
 
         match result {
-            WaitResult::Completed => (),
+            WaitResult::Completed => Ok(()),
 
             // If the other thread panicked, then we consider this thread
             // cancelled. The assumption is that the panic will be detected
             // by the other thread and responded to appropriately.
-            WaitResult::Panicked => Cancelled::PropagatedPanic.throw(),
+            WaitResult::Panicked => {
+                Err(crate::result::Error::cancelled(Cancelled::PropagatedPanic))
+            }
 
-            WaitResult::Cycle(c) => c.throw(),
+            WaitResult::Cycle(c) => Err(crate::result::Error::cycle(c)),
         }
     }
 
@@ -243,7 +245,7 @@ impl Runtime {
         dg: &mut DependencyGraph,
         database_key_index: DatabaseKeyIndex,
         to_id: ThreadId,
-    ) {
+    ) -> crate::Result<()> {
         tracing::debug!(
             "unblock_cycle_and_maybe_throw(database_key={:?})",
             database_key_index
@@ -333,9 +335,10 @@ impl Runtime {
         if me_recovered {
             // If the current thread has recovery, we want to throw
             // so that it can begin.
-            cycle.throw()
+            Err(crate::result::Error::cycle(cycle))
         } else if others_recovered {
             // If other threads have recovery but we didn't: return and we will block on them.
+            Ok(())
         } else {
             // if nobody has recover, then we panic
             panic_any(cycle);

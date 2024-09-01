@@ -7,8 +7,8 @@ pub struct Input {
 }
 
 #[salsa::tracked]
-pub fn length(db: &dyn salsa::Database, input: Input) -> usize {
-    input.text(db).len()
+pub fn length(db: &dyn salsa::Database, input: Input) -> salsa::Result<usize> {
+    Ok(input.text(db)?.len())
 }
 
 #[salsa::interned]
@@ -17,8 +17,11 @@ pub struct InternedInput<'db> {
 }
 
 #[salsa::tracked]
-pub fn interned_length<'db>(db: &'db dyn salsa::Database, input: InternedInput<'db>) -> usize {
-    input.text(db).len()
+pub fn interned_length<'db>(
+    db: &'db dyn salsa::Database,
+    input: InternedInput<'db>,
+) -> salsa::Result<usize> {
+    Ok(input.text(db).len())
 }
 
 fn mutating_inputs(c: &mut Criterion) {
@@ -38,11 +41,11 @@ fn mutating_inputs(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("mutating", n), |b| {
             b.iter(|| {
                 let input = Input::new(&db, base_string.clone());
-                let actual_len = length(&db, input);
+                let actual_len = length(&db, input).unwrap();
                 assert_eq!(base_len, actual_len);
 
                 input.set_text(&mut db).to(string.clone());
-                let actual_len = length(&db, input);
+                let actual_len = length(&db, input).unwrap();
                 assert_eq!(new_len, actual_len);
             })
         });
@@ -60,30 +63,30 @@ fn inputs(c: &mut Criterion) {
 
     group.bench_function(BenchmarkId::new("new", "InternedInput"), |b| {
         b.iter(|| {
-            let input: InternedInput = InternedInput::new(&db, "hello, world!".to_owned());
-            interned_length(&db, input);
+            let input: InternedInput = InternedInput::new(&db, "hello, world!".to_owned()).unwrap();
+            interned_length(&db, input).unwrap();
         })
     });
 
     group.bench_function(BenchmarkId::new("amortized", "InternedInput"), |b| {
-        let input = InternedInput::new(&db, "hello, world!".to_owned());
-        let _ = interned_length(&db, input);
+        let input = InternedInput::new(&db, "hello, world!".to_owned()).unwrap();
+        let _ = interned_length(&db, input).unwrap();
 
-        b.iter(|| interned_length(&db, input));
+        b.iter(|| interned_length(&db, input).unwrap());
     });
 
     group.bench_function(BenchmarkId::new("new", "Input"), |b| {
         b.iter(|| {
             let input = Input::new(&db, "hello, world!".to_owned());
-            length(&db, input);
+            length(&db, input).unwrap();
         })
     });
 
     group.bench_function(BenchmarkId::new("amortized", "Input"), |b| {
         let input = Input::new(&db, "hello, world!".to_owned());
-        let _ = length(&db, input);
+        let _ = length(&db, input).unwrap();
 
-        b.iter(|| length(&db, input));
+        b.iter(|| length(&db, input).unwrap());
     });
 
     group.finish();

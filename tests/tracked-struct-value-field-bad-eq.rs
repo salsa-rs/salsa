@@ -37,27 +37,27 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn the_fn(db: &dyn Database, input: MyInput) -> bool {
-    let tracked = make_tracked_struct(db, input);
+fn the_fn(db: &dyn Database, input: MyInput) -> salsa::Result<bool> {
+    let tracked = make_tracked_struct(db, input)?;
     read_tracked_struct(db, tracked)
 }
 
 #[salsa::tracked]
-fn make_tracked_struct(db: &dyn Database, input: MyInput) -> MyTracked<'_> {
-    MyTracked::new(db, BadEq::from(input.field(db)))
+fn make_tracked_struct(db: &dyn Database, input: MyInput) -> salsa::Result<MyTracked<'_>> {
+    MyTracked::new(db, BadEq::from(input.field(db)?))
 }
 
 #[salsa::tracked]
-fn read_tracked_struct<'db>(db: &'db dyn Database, tracked: MyTracked<'db>) -> bool {
-    tracked.field(db).field
+fn read_tracked_struct<'db>(db: &'db dyn Database, tracked: MyTracked<'db>) -> salsa::Result<bool> {
+    Ok(tracked.field(db)?.field)
 }
 
 #[test]
-fn execute() {
+fn execute() -> salsa::Result<()> {
     let mut db = common::ExecuteValidateLoggerDatabase::default();
 
     let input = MyInput::new(&db, true);
-    let result = the_fn(&db, input);
+    let result = the_fn(&db, input)?;
     assert!(result);
 
     db.assert_logs(expect![[r#"
@@ -69,7 +69,7 @@ fn execute() {
 
     // Update the input to `false` and re-execute.
     input.set_field(&mut db).to(false);
-    let result = the_fn(&db, input);
+    let result = the_fn(&db, input)?;
 
     // If the `Eq` impl were working properly, we would
     // now return `false`. But because the `Eq` is considered
@@ -82,4 +82,6 @@ fn execute() {
             "salsa_event(DidValidateMemoizedValue { database_key: read_tracked_struct(Id(400)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: the_fn(Id(0)) })",
         ]"#]]);
+
+    Ok(())
 }

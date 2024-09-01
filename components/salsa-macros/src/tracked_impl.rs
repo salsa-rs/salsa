@@ -274,7 +274,8 @@ impl Macro {
     ) -> syn::Result<()> {
         if let Some(return_ref) = &args.return_ref {
             if let syn::ReturnType::Type(_, t) = &mut sig.output {
-                **t = parse_quote!(& #db_lt #t)
+                **t =
+                    parse_quote!(salsa::Result<&#db_lt <#t as salsa::plumbing::HasOutput>::Output>)
             } else {
                 return Err(syn::Error::new_spanned(
                     return_ref,

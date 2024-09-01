@@ -51,37 +51,37 @@ struct Inference<'db> {
 }
 
 #[salsa::tracked]
-fn index<'db>(db: &'db dyn Db, file: File) -> Index<'db> {
-    let _ = file.field(db);
-    Index::new(db, Definitions::new(db, Definition::new(db, file)))
+fn index<'db>(db: &'db dyn Db, file: File) -> salsa::Result<Index<'db>> {
+    let _ = file.field(db)?;
+    Index::new(db, Definitions::new(db, Definition::new(db, file)?)?)
 }
 
 #[salsa::tracked]
-fn definitions<'db>(db: &'db dyn Db, file: File) -> Definitions<'db> {
-    index(db, file).definitions(db)
+fn definitions<'db>(db: &'db dyn Db, file: File) -> salsa::Result<Definitions<'db>> {
+    index(db, file)?.definitions(db)
 }
 
 #[salsa::tracked]
-fn infer<'db>(db: &'db dyn Db, definition: Definition<'db>) -> Inference<'db> {
-    let file = definition.file(db);
-    if file.field(db) < 1 {
+fn infer<'db>(db: &'db dyn Db, definition: Definition<'db>) -> salsa::Result<Inference<'db>> {
+    let file = definition.file(db)?;
+    if file.field(db)? < 1 {
         let dependent_file = db.file(1);
-        infer(db, definitions(db, dependent_file).definition(db))
+        infer(db, definitions(db, dependent_file)?.definition(db)?)
     } else {
-        db.file(0).field(db);
-        index(db, file);
+        db.file(0).field(db)?;
+        index(db, file)?;
         Inference::new(db, definition)
     }
 }
 
 #[salsa::tracked]
-fn check<'db>(db: &'db dyn Db, file: File) -> Inference<'db> {
-    let defs = definitions(db, file);
-    infer(db, defs.definition(db))
+fn check<'db>(db: &'db dyn Db, file: File) -> salsa::Result<Inference<'db>> {
+    let defs = definitions(db, file)?;
+    infer(db, defs.definition(db)?)
 }
 
 #[test]
-fn execute() {
+fn execute() -> salsa::Result<()> {
     #[salsa::db]
     #[derive(Default)]
     struct Database {
@@ -117,7 +117,10 @@ fn execute() {
     // check(0) -> infer(0) -> definitions(0) -> index(0)
     //                     \-> infer(1) -> definitions(1) -> index(1)
 
-    assert_eq!(check(&db, file0).definition(&db).file(&db).field(&db), 1);
+    assert_eq!(
+        check(&db, file0)?.definition(&db)?.file(&db)?.field(&db)?,
+        1
+    );
 
     // update the low durability file 0
     file0.set_field(&mut db).to(0);
@@ -127,5 +130,7 @@ fn execute() {
     // Definition(1), so we never validate Definition(1) in R2, so when we try to verify
     // Definition.file(1) (as an input of infer(1) ) we hit a panic for trying to use a struct that
     // isn't validated in R2.
-    check(&db, file0);
+    check(&db, file0)?;
+
+    Ok(())
 }

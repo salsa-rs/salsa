@@ -13,33 +13,40 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn tracked_fn<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyTracked<'db> {
-    let t = MyTracked::new(db, input.field(db) * 2);
-    if input.field(db) != 0 {
+fn tracked_fn<'db>(db: &'db dyn salsa::Database, input: MyInput) -> salsa::Result<MyTracked<'db>> {
+    let t = MyTracked::new(db, input.field(db)? * 2)?;
+    if input.field(db)? != 0 {
         tracked_fn_extra::specify(db, t, 2222);
     }
-    t
+    Ok(t)
 }
 
 #[salsa::tracked(specify)]
-fn tracked_fn_extra<'db>(_db: &'db dyn salsa::Database, _input: MyTracked<'db>) -> u32 {
-    0
+fn tracked_fn_extra<'db>(
+    _db: &'db dyn salsa::Database,
+    _input: MyTracked<'db>,
+) -> salsa::Result<u32> {
+    Ok(0)
 }
 
 #[test]
-fn execute_when_specified() {
+fn execute_when_specified() -> salsa::Result<()> {
     let mut db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, 22);
-    let tracked = tracked_fn(&db, input);
-    assert_eq!(tracked.field(&db), 44);
-    assert_eq!(tracked_fn_extra(&db, tracked), 2222);
+    let tracked = tracked_fn(&db, input)?;
+    assert_eq!(tracked.field(&db)?, 44);
+    assert_eq!(tracked_fn_extra(&db, tracked)?, 2222);
+
+    Ok(())
 }
 
 #[test]
-fn execute_when_not_specified() {
+fn execute_when_not_specified() -> salsa::Result<()> {
     let mut db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, 0);
-    let tracked = tracked_fn(&db, input);
-    assert_eq!(tracked.field(&db), 0);
-    assert_eq!(tracked_fn_extra(&db, tracked), 0);
+    let tracked = tracked_fn(&db, input)?;
+    assert_eq!(tracked.field(&db)?, 0);
+    assert_eq!(tracked_fn_extra(&db, tracked)?, 0);
+
+    Ok(())
 }

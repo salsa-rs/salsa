@@ -6,17 +6,17 @@ struct Input {
 }
 
 #[salsa::tracked(return_ref)]
-fn test(db: &dyn salsa::Database, input: Input) -> Vec<String> {
-    (0..input.number(db))
+fn test(db: &dyn salsa::Database, input: Input) -> salsa::Result<Vec<String>> {
+    Ok((0..input.number(db)?)
         .map(|i| format!("test {}", i))
-        .collect()
+        .collect())
 }
 
 #[test]
-fn invoke() {
+fn invoke() -> salsa::Result<()> {
     salsa::DatabaseImpl::new().attach(|db| {
         let input = Input::new(db, 3);
-        let x: &Vec<String> = test(db, input);
+        let x: &Vec<String> = test(db, input)?;
         expect_test::expect![[r#"
             [
                 "test 0",
@@ -25,5 +25,6 @@ fn invoke() {
             ]
         "#]]
         .assert_debug_eq(x);
+        Ok(())
     })
 }

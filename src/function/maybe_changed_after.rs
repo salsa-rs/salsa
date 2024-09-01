@@ -17,9 +17,9 @@ where
         db: &'db C::DbView,
         id: Id,
         revision: Revision,
-    ) -> bool {
+    ) -> crate::Result<bool> {
         let (zalsa, zalsa_local) = db.zalsas();
-        zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
+        zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database())?;
 
         loop {
             let database_key_index = self.database_key_index(id);
@@ -30,17 +30,17 @@ where
             let memo_guard = self.get_memo_from_table_for(zalsa, id);
             if let Some(memo) = &memo_guard {
                 if self.shallow_verify_memo(db, zalsa, database_key_index, memo) {
-                    return memo.revisions.changed_at > revision;
+                    return Ok(memo.revisions.changed_at > revision);
                 }
                 drop(memo_guard); // release the arc-swap guard before cold path
-                if let Some(mcs) = self.maybe_changed_after_cold(db, id, revision) {
-                    return mcs;
+                if let Some(mcs) = self.maybe_changed_after_cold(db, id, revision)? {
+                    return Ok(mcs);
                 } else {
                     // We failed to claim, have to retry.
                 }
             } else {
                 // No memo? Assume has changed.
-                return true;
+                return Ok(true);
             }
         }
     }
@@ -50,7 +50,7 @@ where
         db: &'db C::DbView,
         key_index: Id,
         revision: Revision,
-    ) -> Option<bool> {
+    ) -> crate::Result<Option<bool>> {
         let (zalsa, zalsa_local) = db.zalsas();
         let database_key_index = self.database_key_index(key_index);
 
@@ -64,7 +64,7 @@ where
 
         // Load the current memo, if any.
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index) else {
-            return Some(true);
+            return Ok(Some(true));
         };
 
         tracing::debug!(
@@ -74,8 +74,12 @@ where
         );
 
         // Check if the inputs are still valid and we can just compare `changed_at`.
-        if self.deep_verify_memo(db, &old_memo, &active_query) {
-            return Some(old_memo.revisions.changed_at > revision);
+        match self.deep_verify_memo(db, &old_memo, &active_query) {
+            Ok(true) => {
+                return Ok(Some(old_memo.revisions.changed_at > revision));
+            }
+            Err(error) => return Err(error),
+            _ => {}
         }
 
         // If inputs have changed, but we have an old value, we can re-execute.
@@ -83,12 +87,12 @@ where
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
         if old_memo.value.is_some() {
-            let StampedValue { changed_at, .. } = self.execute(db, active_query, Some(old_memo));
-            return Some(changed_at > revision);
+            let StampedValue { changed_at, .. } = self.execute(db, active_query, Some(old_memo))?;
+            return Ok(Some(changed_at > revision));
         }
 
         // Otherwise, nothing for it: have to consider the value to have changed.
-        Some(true)
+        Ok(Some(true))
     }
 
     /// True if the memo's value and `changed_at` time is still valid in this revision.
@@ -138,7 +142,7 @@ where
         db: &C::DbView,
         old_memo: &Memo<C::Output<'_>>,
         active_query: &ActiveQueryGuard<'_>,
-    ) -> bool {
+    ) -> crate::Result<bool> {
         let zalsa = db.zalsa();
         let database_key_index = active_query.database_key_index;
 
@@ -148,7 +152,7 @@ where
         );
 
         if self.shallow_verify_memo(db, zalsa, database_key_index, old_memo) {
-            return true;
+            return Ok(true);
         }
 
         match &old_memo.revisions.origin {
@@ -164,15 +168,15 @@ where
                 // Conditionally specified queries
                 // where the value is specified
                 // in rev 1 but not in rev 2.
-                return false;
+                return Ok(false);
             }
             QueryOrigin::BaseInput => {
                 // This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
-                return true;
+                return Ok(true);
             }
             QueryOrigin::DerivedUntracked(_) => {
                 // Untracked inputs? Have to assume that it changed.
-                return false;
+                return Ok(false);
             }
             QueryOrigin::Derived(edges) => {
                 // Fully tracked inputs? Iterate over the inputs and check them, one by one.
@@ -186,9 +190,9 @@ where
                     match edge_kind {
                         EdgeKind::Input => {
                             if dependency_index
-                                .maybe_changed_after(db.as_dyn_database(), last_verified_at)
+                                .maybe_changed_after(db.as_dyn_database(), last_verified_at)?
                             {
-                                return false;
+                                return Ok(false);
                             }
                         }
                         EdgeKind::Output => {
@@ -221,6 +225,6 @@ where
             zalsa.current_revision(),
             database_key_index,
         );
-        true
+        Ok(true)
     }
 }

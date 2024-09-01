@@ -13,7 +13,7 @@ pub(crate) struct MyInput {
 }
 
 #[salsa::tracked]
-pub(crate) fn a(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
+pub(crate) fn a(db: &dyn KnobsDatabase, input: MyInput) -> salsa::Result<i32> {
     // Wait to create the cycle until both threads have entered
     db.signal(1);
     db.wait_for(2);
@@ -22,7 +22,7 @@ pub(crate) fn a(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
 }
 
 #[salsa::tracked]
-pub(crate) fn b(db: &dyn KnobsDatabase, input: MyInput) -> i32 {
+pub(crate) fn b(db: &dyn KnobsDatabase, input: MyInput) -> salsa::Result<i32> {
     // Wait to create the cycle until both threads have entered
     db.wait_for(1);
     db.signal(2);
@@ -40,16 +40,22 @@ fn execute() {
 
     let input = MyInput::new(&db, -1);
 
-    let thread_a = std::thread::spawn({
-        let db = db.clone();
-        db.knobs().signal_on_will_block.store(3);
-        move || a(&db, input)
-    });
+    let thread_a = std::thread::Builder::new()
+        .name("a".to_string())
+        .spawn({
+            let db = db.clone();
+            db.knobs().signal_on_will_block.store(3);
+            move || a(&db, input)
+        })
+        .unwrap();
 
-    let thread_b = std::thread::spawn({
-        let db = db.clone();
-        move || b(&db, input)
-    });
+    let thread_b = std::thread::Builder::new()
+        .name("b".to_string())
+        .spawn({
+            let db = db.clone();
+            move || b(&db, input).unwrap()
+        })
+        .unwrap();
 
     // We expect B to panic because it detects a cycle (it is the one that calls A, ultimately).
     // Right now, it panics with a string.
@@ -70,9 +76,8 @@ fn execute() {
 
     // We expect A to propagate a panic, which causes us to use the sentinel
     // type `Canceled`.
-    assert!(thread_a
-        .join()
-        .unwrap_err()
-        .downcast_ref::<salsa::Cancelled>()
-        .is_some());
+    assert_eq!(
+        thread_a.join().unwrap().unwrap_err().to_string(),
+        "cancelled because of propagated panic"
+    );
 }

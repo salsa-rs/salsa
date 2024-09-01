@@ -10,13 +10,15 @@ pub struct SourceTree<'db> {}
 #[salsa::tracked]
 impl<'db> SourceTree<'db> {
     #[salsa::tracked(return_ref)]
-    pub fn all_items(self, _db: &'db dyn Db) -> Vec<Item> {
+    pub fn all_items(self, _db: &'db dyn Db) -> salsa::Result<Vec<Item>> {
         todo!()
     }
 }
 
 #[salsa::tracked(return_ref)]
-fn use_tree<'db>(_db: &'db dyn Db, _tree: SourceTree<'db>) {}
+fn use_tree<'db>(_db: &'db dyn Db, _tree: SourceTree<'db>) -> salsa::Result<()> {
+    Ok(())
+}
 
 #[allow(unused)]
 fn use_it(db: &dyn Db, tree: SourceTree) {

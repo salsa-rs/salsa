@@ -11,6 +11,7 @@ description = "A generic framework for on-demand, incrementalized computation (e
 arc-swap = "1"
 crossbeam = "0.8"
 dashmap = "6"
+drop_bomb = "0.1.5"
 hashlink = "0.9"
 indexmap = "2"
 append-only-vec = "0.1.5"

@@ -10,7 +10,7 @@ struct MyInput {
 }
 
 #[test]
-fn execute() {
+fn execute() -> salsa::Result<()> {
     let mut db = salsa::DatabaseImpl::new();
 
     let input = MyInput::new(&db, "Hello".to_string());
@@ -25,5 +25,7 @@ fn execute() {
     assert_eq!(input.set_field(&mut db).to(my_string), "");
 
     // Check if the stored String is the one we expected
-    assert_eq!(input.field(&db), "Hello World!");
+    assert_eq!(input.field(&db)?, "Hello World!");
+
+    Ok(())
 }

@@ -118,8 +118,8 @@ where
         &'db self,
         db: &'db dyn crate::Database,
         data: C::Data<'db>,
-    ) -> crate::Id {
-        C::deref_struct(self.intern(db, data)).as_id()
+    ) -> crate::Result<crate::Id> {
+        Ok(C::deref_struct(self.intern(db, data)?).as_id())
     }
 
     /// Intern data to a unique reference.
@@ -127,13 +127,13 @@ where
         &'db self,
         db: &'db dyn crate::Database,
         data: C::Data<'db>,
-    ) -> C::Struct<'db> {
+    ) -> crate::Result<C::Struct<'db>> {
         let zalsa_local = db.zalsa_local();
         zalsa_local.report_tracked_read(
             DependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
             self.reset_at,
-        );
+        )?;
 
         // Optimisation to only get read lock on the map if the data has already
         // been interned.
@@ -141,10 +141,10 @@ where
         if let Some(guard) = self.key_map.get(&internal_data) {
             let id = *guard;
             drop(guard);
-            return C::struct_from_id(id);
+            return Ok(C::struct_from_id(id));
         }
 
-        match self.key_map.entry(internal_data.clone()) {
+        Ok(match self.key_map.entry(internal_data.clone()) {
             // Data has been interned by a racing call, use that ID instead
             dashmap::mapref::entry::Entry::Occupied(entry) => {
                 let id = *entry.get();
@@ -168,7 +168,7 @@ where
                 entry.insert(next_id);
                 C::struct_from_id(next_id)
             }
-        }
+        })
     }
 
     /// Lookup the data for an interned value based on its id.
@@ -205,8 +205,8 @@ where
         _db: &dyn Database,
         _input: Option<Id>,
         revision: Revision,
-    ) -> bool {
-        revision < self.reset_at
+    ) -> crate::Result<bool> {
+        Ok(revision < self.reset_at)
     }
 
     fn cycle_recovery_strategy(&self) -> crate::cycle::CycleRecoveryStrategy {

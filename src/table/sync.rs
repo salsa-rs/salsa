@@ -37,7 +37,7 @@ impl SyncTable {
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<ClaimGuard<'me>> {
+    ) -> crate::Result<Option<ClaimGuard<'me>>> {
         let mut syncs = self.syncs.write();
         let zalsa = db.zalsa();
         let thread_id = std::thread::current().id();
@@ -50,12 +50,12 @@ impl SyncTable {
                     id: thread_id,
                     anyone_waiting: AtomicBool::new(false),
                 });
-                Some(ClaimGuard {
+                Ok(Some(ClaimGuard {
                     database_key_index,
                     memo_ingredient_index,
                     zalsa,
                     sync_table: self,
-                })
+                }))
             }
             Some(SyncState {
                 id: other_id,
@@ -68,8 +68,8 @@ impl SyncTable {
                 // boolean is to decide *whether* to acquire the lock,
                 // not to gate future atomic reads.
                 anyone_waiting.store(true, Ordering::Relaxed);
-                zalsa.block_on_or_unwind(db, zalsa_local, database_key_index, *other_id, syncs);
-                None
+                zalsa.block_on_or_unwind(db, zalsa_local, database_key_index, *other_id, syncs)?;
+                Ok(None)
             }
         }
     }

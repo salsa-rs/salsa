@@ -10,33 +10,33 @@ struct Input {
 }
 
 #[salsa::tracked(no_eq)]
-fn abs_float(db: &dyn LogDatabase, input: Input) -> f32 {
-    let number = input.number(db);
+fn abs_float(db: &dyn LogDatabase, input: Input) -> salsa::Result<f32> {
+    let number = input.number(db)?;
 
     db.push_log(format!("abs_float({number})"));
-    number.abs() as f32
+    Ok(number.abs() as f32)
 }
 
 #[salsa::tracked]
-fn derived(db: &dyn LogDatabase, input: Input) -> u32 {
-    let x = abs_float(db, input);
+fn derived(db: &dyn LogDatabase, input: Input) -> salsa::Result<u32> {
+    let x = abs_float(db, input)?;
     db.push_log("derived".to_string());
 
-    x as u32
+    Ok(x as u32)
 }
 #[test]
-fn invoke() {
+fn invoke() -> salsa::Result<()> {
     let mut db = common::LoggerDatabase::default();
 
     let input = Input::new(&db, 5);
-    let x = derived(&db, input);
+    let x = derived(&db, input)?;
 
     assert_eq!(x, 5);
 
     input.set_number(&mut db).to(-5);
 
     // Derived should re-execute even the result of `abs_float` is the same.
-    let x = derived(&db, input);
+    let x = derived(&db, input)?;
     assert_eq!(x, 5);
 
     db.assert_logs(expect![[r#"
@@ -46,4 +46,6 @@ fn invoke() {
             "abs_float(-5)",
             "derived",
         ]"#]]);
+
+    Ok(())
 }

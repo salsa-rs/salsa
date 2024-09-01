@@ -6,23 +6,27 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn fetch<'db>(&'db self, db: &'db C::DbView, id: Id) -> &C::Output<'db> {
+    pub fn fetch<'db>(&'db self, db: &'db C::DbView, id: Id) -> crate::Result<&C::Output<'db>> {
         let (zalsa, zalsa_local) = db.zalsas();
-        zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
+        zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database())?;
 
         let StampedValue {
             value,
             durability,
             changed_at,
-        } = self.compute_value(db, id);
+        } = self.compute_value(db, id)?;
 
         if let Some(evicted) = self.lru.record_use(id) {
             self.evict_value_from_memo_for(zalsa, evicted);
         }
 
-        zalsa_local.report_tracked_read(self.database_key_index(id).into(), durability, changed_at);
+        zalsa_local.report_tracked_read(
+            self.database_key_index(id).into(),
+            durability,
+            changed_at,
+        )?;
 
-        value
+        Ok(value)
     }
 
     #[inline]
@@ -30,10 +34,14 @@ where
         &'db self,
         db: &'db C::DbView,
         id: Id,
-    ) -> StampedValue<&'db C::Output<'db>> {
+    ) -> crate::Result<StampedValue<&'db C::Output<'db>>> {
         loop {
-            if let Some(value) = self.fetch_hot(db, id).or_else(|| self.fetch_cold(db, id)) {
-                return value;
+            if let Some(value) = self.fetch_hot(db, id) {
+                return Ok(value);
+            }
+
+            if let Some(value) = self.fetch_cold(db, id)? {
+                return Ok(value);
             }
         }
     }
@@ -64,11 +72,12 @@ where
         &'db self,
         db: &'db C::DbView,
         id: Id,
-    ) -> Option<StampedValue<&'db C::Output<'db>>> {
+    ) -> crate::Result<Option<StampedValue<&'db C::Output<'db>>>> {
         let (zalsa, zalsa_local) = db.zalsas();
         let database_key_index = self.database_key_index(id);
 
         // Try to claim this query: if someone else has claimed it already, go back and start again.
+        // FIXME: Handle error
         let _claim_guard = zalsa.sync_table_for(id).claim(
             db.as_dyn_database(),
             zalsa_local,
@@ -83,15 +92,21 @@ where
         let zalsa = db.zalsa();
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id);
         if let Some(old_memo) = &opt_old_memo {
-            if old_memo.value.is_some() && self.deep_verify_memo(db, old_memo, &active_query) {
-                let value = unsafe {
-                    // Unsafety invariant: memo is present in memo_map.
-                    self.extend_memo_lifetime(old_memo).unwrap()
-                };
-                return Some(old_memo.revisions.stamped_value(value));
+            if old_memo.value.is_some() {
+                match self.deep_verify_memo(db, old_memo, &active_query) {
+                    Ok(true) => {
+                        let value = unsafe {
+                            // Unsafety invariant: memo is present in memo_map.
+                            self.extend_memo_lifetime(old_memo).unwrap()
+                        };
+                        return Ok(Some(old_memo.revisions.stamped_value(value)));
+                    }
+                    Err(error) => return Err(error),
+                    _ => {}
+                }
             }
         }
 
-        Some(self.execute(db, active_query, opt_old_memo))
+        self.execute(db, active_query, opt_old_memo).map(Some)
     }
 }

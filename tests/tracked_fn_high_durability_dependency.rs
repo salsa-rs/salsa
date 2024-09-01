@@ -10,12 +10,12 @@ struct MyInput {
 }
 
 #[salsa::tracked]
-fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> u32 {
-    input.field(db) * 2
+fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> salsa::Result<u32> {
+    Ok(input.field(db)? * 2)
 }
 
 #[test]
-fn execute() {
+fn execute() -> salsa::Result<()> {
     let mut db = salsa::DatabaseImpl::default();
 
     let input_high = MyInput::new(&mut db, 0);
@@ -24,7 +24,7 @@ fn execute() {
         .with_durability(Durability::HIGH)
         .to(2200);
 
-    assert_eq!(tracked_fn(&db, input_high), 4400);
+    assert_eq!(tracked_fn(&db, input_high)?, 4400);
 
     // Changing the value should re-execute the query
     input_high
@@ -32,5 +32,7 @@ fn execute() {
         .with_durability(Durability::HIGH)
         .to(2201);
 
-    assert_eq!(tracked_fn(&db, input_high), 4402);
+    assert_eq!(tracked_fn(&db, input_high)?, 4402);
+
+    Ok(())
 }

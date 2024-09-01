@@ -8,7 +8,7 @@ use crate::{
     salsa_struct::SalsaStructInDb,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
-    Cycle, Database, Id, Revision,
+    Cycle, Database, Id, Result, Revision,
 };
 
 use self::delete::DeletedEntries;
@@ -64,7 +64,7 @@ pub trait Configuration: Any {
     /// computed it before or because the old one relied on inputs that have changed.
     ///
     /// This invokes the function the user wrote.
-    fn execute<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Self::Output<'db>;
+    fn execute<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Result<Self::Output<'db>>;
 
     /// If the cycle strategy is `Fallback`, then invoked when `key` is a participant
     /// in a cycle to find out what value it should have.
@@ -194,7 +194,7 @@ where
         db: &dyn Database,
         input: Option<Id>,
         revision: Revision,
-    ) -> bool {
+    ) -> crate::Result<bool> {
         let key = input.unwrap();
         let db = db.as_view::<C::DbView>();
         self.maybe_changed_after(db, key, revision)
@@ -255,4 +255,13 @@ where
             .field("index", &self.index)
             .finish()
     }
+}
+
+// Consider replacing with `Try` when it stabilizes.
+pub trait HasOutput {
+    type Output;
+}
+
+impl<T, E> HasOutput for std::result::Result<T, E> {
+    type Output = T;
 }

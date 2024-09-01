@@ -16,30 +16,30 @@ struct MyInput {
 }
 
 #[salsa::tracked]
-fn result_depends_on_x(db: &dyn LogDatabase, input: MyInput) -> u32 {
+fn result_depends_on_x(db: &dyn LogDatabase, input: MyInput) -> salsa::Result<u32> {
     db.push_log(format!("result_depends_on_x({:?})", input));
-    input.x(db) + 1
+    Ok(input.x(db)? + 1)
 }
 
 #[salsa::tracked]
-fn result_depends_on_y(db: &dyn LogDatabase, input: MyInput) -> u32 {
+fn result_depends_on_y(db: &dyn LogDatabase, input: MyInput) -> salsa::Result<u32> {
     db.push_log(format!("result_depends_on_y({:?})", input));
-    input.y(db) - 1
+    Ok(input.y(db)? - 1)
 }
 #[test]
-fn execute() {
+fn execute() -> salsa::Result<()> {
     // result_depends_on_x = x + 1
     // result_depends_on_y = y - 1
     let mut db = common::LoggerDatabase::default();
 
     let input = MyInput::new(&db, 22, 33);
-    assert_eq!(result_depends_on_x(&db, input), 23);
+    assert_eq!(result_depends_on_x(&db, input)?, 23);
     db.assert_logs(expect![[r#"
         [
             "result_depends_on_x(MyInput { [salsa id]: Id(0), x: 22, y: 33 })",
         ]"#]]);
 
-    assert_eq!(result_depends_on_y(&db, input), 32);
+    assert_eq!(result_depends_on_y(&db, input)?, 32);
     db.assert_logs(expect![[r#"
         [
             "result_depends_on_y(MyInput { [salsa id]: Id(0), x: 22, y: 33 })",
@@ -47,7 +47,7 @@ fn execute() {
 
     input.set_x(&mut db).to(23);
     // input x changes, so result depends on x needs to be recomputed;
-    assert_eq!(result_depends_on_x(&db, input), 24);
+    assert_eq!(result_depends_on_x(&db, input)?, 24);
     db.assert_logs(expect![[r#"
         [
             "result_depends_on_x(MyInput { [salsa id]: Id(0), x: 23, y: 33 })",
@@ -55,6 +55,8 @@ fn execute() {
 
     // input y is the same, so result depends on y
     // does not need to be recomputed;
-    assert_eq!(result_depends_on_y(&db, input), 32);
+    assert_eq!(result_depends_on_y(&db, input)?, 32);
     db.assert_logs(expect!["[]"]);
+
+    Ok(())
 }

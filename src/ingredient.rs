@@ -37,7 +37,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: &'db dyn Database,
         input: Option<Id>,
         revision: Revision,
-    ) -> bool;
+    ) -> crate::Result<bool>;
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
     fn origin(&self, db: &dyn Database, key_index: Id) -> Option<QueryOrigin>;

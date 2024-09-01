@@ -146,7 +146,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _db: &dyn Database,
         _input: Option<Id>,
         _revision: Revision,
-    ) -> bool {
+    ) -> crate::Result<bool> {
         panic!("nothing should ever depend on an accumulator directly")
     }
 

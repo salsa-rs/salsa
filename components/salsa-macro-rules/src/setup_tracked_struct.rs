@@ -184,7 +184,7 @@ macro_rules! setup_tracked_struct {
             }
 
             impl<$db_lt> $Struct<$db_lt> {
-                pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self
+                pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> salsa::Result<Self>
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + $zalsa::Database,
@@ -196,18 +196,18 @@ macro_rules! setup_tracked_struct {
                 }
 
                 $(
-                    $field_getter_vis fn $field_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($field_option, $db_lt, $field_ty)
+                    $field_getter_vis fn $field_getter_id<$Db>(self, db: &$db_lt $Db) -> salsa::Result<$crate::maybe_cloned_ty!($field_option, $db_lt, $field_ty)>
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let db = db.as_dyn_database();
-                        let fields = $Configuration::ingredient(db).field(db, self, $field_index);
-                        $crate::maybe_clone!(
+                        let fields = $Configuration::ingredient(db).field(db, self, $field_index)?;
+                        Ok($crate::maybe_clone!(
                             $field_option,
                             $field_ty,
                             &fields.$field_index,
-                        )
+                        ))
                     }
                 )*
 

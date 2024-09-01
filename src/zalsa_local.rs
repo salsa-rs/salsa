@@ -5,6 +5,7 @@ use crate::active_query::ActiveQuery;
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::key::DependencyIndex;
+use crate::result::Cancelled;
 use crate::runtime::StampedValue;
 use crate::table::PageIndex;
 use crate::table::Slot;
@@ -12,7 +13,6 @@ use crate::table::Table;
 use crate::tracked_struct::Disambiguator;
 use crate::tracked_struct::KeyStruct;
 use crate::zalsa::IngredientIndex;
-use crate::Cancelled;
 use crate::Cycle;
 use crate::Database;
 use crate::Event;
@@ -151,7 +151,7 @@ impl ZalsaLocal {
         input: DependencyIndex,
         durability: Durability,
         changed_at: Revision,
-    ) {
+    ) -> crate::Result<()> {
         debug!(
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
             input, durability, changed_at
@@ -182,9 +182,10 @@ impl ZalsaLocal {
                 // stack frames, so they will just read the fallback value
                 // from `Ci+1` and continue on their merry way.
                 if let Some(cycle) = &top_query.cycle {
-                    cycle.clone().throw()
+                    return Err(crate::result::Error::cycle(cycle.clone()));
                 }
             }
+            Ok(())
         })
     }
 
@@ -247,7 +248,7 @@ impl ZalsaLocal {
         entity_index: IngredientIndex,
         reset_at: Revision,
         data_hash: u64,
-    ) -> (StampedValue<()>, Disambiguator) {
+    ) -> crate::Result<(StampedValue<()>, Disambiguator)> {
         assert!(
             self.query_in_progress(),
             "cannot create a tracked struct disambiguator outside of a tracked function"
@@ -257,9 +258,9 @@ impl ZalsaLocal {
             DependencyIndex::for_table(entity_index),
             Durability::MAX,
             reset_at,
-        );
+        )?;
 
-        self.with_query_stack(|stack| {
+        Ok(self.with_query_stack(|stack| {
             let top_query = stack.last_mut().unwrap();
             let disambiguator = top_query.disambiguate(data_hash);
             (
@@ -270,7 +271,7 @@ impl ZalsaLocal {
                 },
                 disambiguator,
             )
-        })
+        }))
     }
 
     #[track_caller]
@@ -313,23 +314,24 @@ impl ZalsaLocal {
     /// This method should not be overridden by `Database` implementors. A
     /// `salsa_event` is emitted when this method is called, so that should be
     /// used instead.
-    pub(crate) fn unwind_if_revision_cancelled(&self, db: &dyn Database) {
+    pub(crate) fn unwind_if_revision_cancelled(&self, db: &dyn Database) -> crate::Result<()> {
         let thread_id = std::thread::current().id();
         db.salsa_event(&|| Event {
             thread_id,
-
             kind: EventKind::WillCheckCancellation,
         });
         let zalsa = db.zalsa();
         if zalsa.load_cancellation_flag() {
-            self.unwind_cancelled(zalsa.current_revision());
+            return self.unwind_cancelled(zalsa.current_revision());
         }
+
+        Ok(())
     }
 
     #[cold]
-    pub(crate) fn unwind_cancelled(&self, current_revision: Revision) {
+    pub(crate) fn unwind_cancelled(&self, current_revision: Revision) -> crate::Result<()> {
         self.report_untracked_read(current_revision);
-        Cancelled::PendingWrite.throw();
+        Err(crate::result::Error::cancelled(Cancelled::PendingWrite))
     }
 }
 

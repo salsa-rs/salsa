@@ -51,7 +51,7 @@ impl DependencyIndex {
         &self,
         db: &dyn Database,
         last_verified_at: crate::Revision,
-    ) -> bool {
+    ) -> crate::Result<bool> {
         db.zalsa()
             .lookup_ingredient(self.ingredient_index)
             .maybe_changed_after(db, self.key_index, last_verified_at)

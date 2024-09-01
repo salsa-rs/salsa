@@ -54,11 +54,11 @@ where
         db: &dyn Database,
         input: Option<Id>,
         revision: Revision,
-    ) -> bool {
+    ) -> crate::Result<bool> {
         let zalsa = db.zalsa();
         let input = input.unwrap();
         let value = <IngredientImpl<C>>::data(zalsa, input);
-        value.stamps[self.field_index].changed_at > revision
+        Ok(value.stamps[self.field_index].changed_at > revision)
     }
 
     fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {

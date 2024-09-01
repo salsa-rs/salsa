@@ -43,19 +43,19 @@ impl Drop for Bomb {
 #[salsa::tracked]
 impl MyInput {
     #[salsa::tracked]
-    fn create_tracked_struct(self, db: &dyn Database) -> MyTracked<'_> {
+    fn create_tracked_struct(self, db: &dyn Database) -> salsa::Result<MyTracked<'_>> {
         MyTracked::new(
             db,
-            self.identity(db),
+            self.identity(db)?,
             Bomb {
-                identity: self.identity(db),
+                identity: self.identity(db)?,
             },
         )
     }
 }
 
 #[test]
-fn deletion_drops() {
+fn deletion_drops() -> salsa::Result<()> {
     let mut db = salsa::DatabaseImpl::new();
 
     let input = MyInput::new(&db, 22);
@@ -65,8 +65,8 @@ fn deletion_drops() {
     "#]]
     .assert_debug_eq(&dropped());
 
-    let tracked_struct = input.create_tracked_struct(&db);
-    assert_eq!(tracked_struct.field(&db).identity, 22);
+    let tracked_struct = input.create_tracked_struct(&db)?;
+    assert_eq!(tracked_struct.field(&db)?.identity, 22);
 
     expect_test::expect![[r#"
         []
@@ -81,8 +81,8 @@ fn deletion_drops() {
     .assert_debug_eq(&dropped());
 
     // Now that we execute with rev = 44, the old id is put on the free list
-    let tracked_struct = input.create_tracked_struct(&db);
-    assert_eq!(tracked_struct.field(&db).identity, 44);
+    let tracked_struct = input.create_tracked_struct(&db)?;
+    assert_eq!(tracked_struct.field(&db)?.identity, 44);
 
     expect_test::expect![[r#"
         []
@@ -91,7 +91,7 @@ fn deletion_drops() {
 
     // When we execute again with `input1`, that id is re-used, so the old value is deleted
     let input1 = MyInput::new(&db, 66);
-    let _tracked_struct1 = input1.create_tracked_struct(&db);
+    let _tracked_struct1 = input1.create_tracked_struct(&db)?;
 
     expect_test::expect![[r#"
         [
@@ -99,4 +99,6 @@ fn deletion_drops() {
         ]
     "#]]
     .assert_debug_eq(&dropped());
+
+    Ok(())
 }

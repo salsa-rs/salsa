@@ -8,9 +8,9 @@ use crate::ir::{
 
 // ANCHOR: parse_statements
 #[salsa::tracked]
-pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program<'_> {
+pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> salsa::Result<Program<'_>> {
     // Get the source text from the database
-    let source_text = source.text(db);
+    let source_text = source.text(db)?;
 
     // Create the parser
     let mut parser = Parser {
@@ -31,7 +31,7 @@ pub fn parse_statements(db: &dyn crate::Db, source: SourceProgram) -> Program<'_
         }
 
         // Otherwise, there is more input, so parse a statement.
-        if let Some(statement) = parser.parse_statement() {
+        if let Some(statement) = parser.parse_statement()? {
             result.push(statement);
         } else {
             // If we failed, report an error at whatever position the parser
@@ -98,7 +98,7 @@ impl<'db> Parser<'_, 'db> {
     }
 
     // Returns a span ranging from `start_position` until the current position (exclusive)
-    fn span_from(&self, start_position: usize) -> Span<'db> {
+    fn span_from(&self, start_position: usize) -> salsa::Result<Span<'db>> {
         Span::new(self.db, start_position, self.position)
     }
 
@@ -120,138 +120,169 @@ impl<'db> Parser<'_, 'db> {
     }
 
     // ANCHOR: parse_statement
-    fn parse_statement(&mut self) -> Option<Statement<'db>> {
+    fn parse_statement(&mut self) -> salsa::Result<Option<Statement<'db>>> {
         let start_position = self.skip_whitespace();
-        let word = self.word()?;
+        let Some(word) = self.word() else {
+            return Ok(None);
+        };
+
         if word == "fn" {
-            let func = self.parse_function()?;
-            Some(Statement::new(
-                self.span_from(start_position),
+            let Some(func) = self.parse_function()? else {
+                return Ok(None);
+            };
+            Ok(Some(Statement::new(
+                self.span_from(start_position)?,
                 StatementData::Function(func),
-            ))
+            )))
         } else if word == "print" {
-            let expr = self.parse_expression()?;
-            Some(Statement::new(
-                self.span_from(start_position),
+            let Some(expr) = self.parse_expression()? else {
+                return Ok(None);
+            };
+            Ok(Some(Statement::new(
+                self.span_from(start_position)?,
                 StatementData::Print(expr),
-            ))
+            )))
         } else {
-            None
+            Ok(None)
         }
     }
     // ANCHOR_END: parse_statement
 
     // ANCHOR: parse_function
-    fn parse_function(&mut self) -> Option<Function<'db>> {
+    fn parse_function(&mut self) -> salsa::Result<Option<Function<'db>>> {
         let start_position = self.skip_whitespace();
-        let name = self.word()?;
-        let name_span = self.span_from(start_position);
-        let name: FunctionId = FunctionId::new(self.db, name);
+        let Some(name) = self.word() else {
+            return Ok(None);
+        };
+
+        let name_span = self.span_from(start_position)?;
+        let name: FunctionId = FunctionId::new(self.db, name)?;
         //                     ^^^^^^^^^^^^^^^
         //                Create a new interned struct.
-        self.ch('(')?;
-        let args = self.parameters()?;
-        self.ch(')')?;
-        self.ch('=')?;
-        let body = self.parse_expression()?;
-        Some(Function::new(self.db, name, name_span, args, body))
+        if self.ch('(')?.is_none() {
+            return Ok(None);
+        }
+        let Some(args) = self.parameters()? else {
+            return Ok(None);
+        };
+        if self.ch(')')?.is_none() {
+            return Ok(None);
+        }
+        if self.ch('=')?.is_none() {
+            return Ok(None);
+        }
+        let Some(body) = self.parse_expression()? else {
+            return Ok(None);
+        };
+
+        Ok(Some(Function::new(self.db, name, name_span, args, body)?))
         //   ^^^^^^^^^^^^^
         // Create a new entity struct.
     }
     // ANCHOR_END: parse_function
 
-    fn parse_expression(&mut self) -> Option<Expression<'db>> {
+    fn parse_expression(&mut self) -> salsa::Result<Option<Expression<'db>>> {
         self.parse_op_expression(Self::parse_expression1, Self::low_op)
     }
 
-    fn low_op(&mut self) -> Option<Op> {
-        if self.ch('+').is_some() {
-            Some(Op::Add)
-        } else if self.ch('-').is_some() {
-            Some(Op::Subtract)
+    fn low_op(&mut self) -> salsa::Result<Option<Op>> {
+        if self.ch('+')?.is_some() {
+            Ok(Some(Op::Add))
+        } else if self.ch('-')?.is_some() {
+            Ok(Some(Op::Subtract))
         } else {
-            None
+            Ok(None)
         }
     }
 
     /// Parses a high-precedence expression (times, div).
     ///
     /// On failure, skips arbitrary tokens.
-    fn parse_expression1(&mut self) -> Option<Expression<'db>> {
+    fn parse_expression1(&mut self) -> salsa::Result<Option<Expression<'db>>> {
         self.parse_op_expression(Self::parse_expression2, Self::high_op)
     }
 
-    fn high_op(&mut self) -> Option<Op> {
-        if self.ch('*').is_some() {
+    fn high_op(&mut self) -> salsa::Result<Option<Op>> {
+        Ok(if self.ch('*')?.is_some() {
             Some(Op::Multiply)
-        } else if self.ch('/').is_some() {
+        } else if self.ch('/')?.is_some() {
             Some(Op::Divide)
         } else {
             None
-        }
+        })
     }
 
     fn parse_op_expression(
         &mut self,
-        mut parse_expr: impl FnMut(&mut Self) -> Option<Expression<'db>>,
-        mut op: impl FnMut(&mut Self) -> Option<Op>,
-    ) -> Option<Expression<'db>> {
+        mut parse_expr: impl FnMut(&mut Self) -> salsa::Result<Option<Expression<'db>>>,
+        mut op: impl FnMut(&mut Self) -> salsa::Result<Option<Op>>,
+    ) -> salsa::Result<Option<Expression<'db>>> {
         let start_position = self.skip_whitespace();
-        let mut expr1 = parse_expr(self)?;
+        let Some(mut expr1) = parse_expr(self)? else {
+            return Ok(None);
+        };
 
-        while let Some(op) = op(self) {
-            let expr2 = parse_expr(self)?;
+        while let Some(op) = op(self)? {
+            let Some(expr2) = parse_expr(self)? else {
+                return Ok(None);
+            };
             expr1 = Expression::new(
-                self.span_from(start_position),
+                self.span_from(start_position)?,
                 ExpressionData::Op(Box::new(expr1), op, Box::new(expr2)),
             );
         }
 
-        Some(expr1)
+        Ok(Some(expr1))
     }
 
     /// Parses a "base expression" (no operators).
     ///
     /// On failure, skips arbitrary tokens.
-    fn parse_expression2(&mut self) -> Option<Expression<'db>> {
+    fn parse_expression2(&mut self) -> salsa::Result<Option<Expression<'db>>> {
         let start_position = self.skip_whitespace();
         if let Some(w) = self.word() {
-            if self.ch('(').is_some() {
-                let f = FunctionId::new(self.db, w);
-                let args = self.parse_expressions()?;
+            if self.ch('(')?.is_some() {
+                let f = FunctionId::new(self.db, w)?;
+                let Some(args) = self.parse_expressions()? else {
+                    return Ok(None);
+                };
                 self.ch(')')?;
-                return Some(Expression::new(
-                    self.span_from(start_position),
+                return Ok(Some(Expression::new(
+                    self.span_from(start_position)?,
                     ExpressionData::Call(f, args),
-                ));
+                )));
             }
 
-            let v = VariableId::new(self.db, w);
-            Some(Expression::new(
-                self.span_from(start_position),
+            let v = VariableId::new(self.db, w)?;
+            Ok(Some(Expression::new(
+                self.span_from(start_position)?,
                 ExpressionData::Variable(v),
-            ))
+            )))
         } else if let Some(n) = self.number() {
-            Some(Expression::new(
-                self.span_from(start_position),
+            Ok(Some(Expression::new(
+                self.span_from(start_position)?,
                 ExpressionData::Number(OrderedFloat::from(n)),
-            ))
-        } else if self.ch('(').is_some() {
-            let expr = self.parse_expression()?;
+            )))
+        } else if self.ch('(')?.is_some() {
+            let Some(expr) = self.parse_expression()? else {
+                return Ok(None);
+            };
             self.ch(')')?;
-            Some(expr)
+            Ok(Some(expr))
         } else {
-            None
+            Ok(None)
         }
     }
 
-    fn parse_expressions(&mut self) -> Option<Vec<Expression<'db>>> {
+    fn parse_expressions(&mut self) -> salsa::Result<Option<Vec<Expression<'db>>>> {
         let mut r = vec![];
         loop {
-            let expr = self.parse_expression()?;
+            let Some(expr) = self.parse_expression()? else {
+                return Ok(None);
+            };
             r.push(expr);
-            if self.ch(',').is_none() {
-                return Some(r);
+            if self.ch(',')?.is_none() {
+                return Ok(Some(r));
             }
         }
     }
@@ -260,15 +291,18 @@ impl<'db> Parser<'_, 'db> {
     /// No trailing commas because I am lazy.
     ///
     /// On failure, skips arbitrary tokens.
-    fn parameters(&mut self) -> Option<Vec<VariableId<'db>>> {
+    fn parameters(&mut self) -> salsa::Result<Option<Vec<VariableId<'db>>>> {
         let mut r = vec![];
         loop {
-            let name = self.word()?;
-            let vid = VariableId::new(self.db, name);
+            let Some(name) = self.word() else {
+                return Ok(None);
+            };
+
+            let vid = VariableId::new(self.db, name)?;
             r.push(vid);
 
-            if self.ch(',').is_none() {
-                return Some(r);
+            if self.ch(',')?.is_none() {
+                return Ok(Some(r));
             }
         }
     }
@@ -276,14 +310,14 @@ impl<'db> Parser<'_, 'db> {
     /// Parses a single character.
     ///
     /// Even on failure, only skips whitespace.
-    fn ch(&mut self, c: char) -> Option<Span<'db>> {
+    fn ch(&mut self, c: char) -> salsa::Result<Option<Span<'db>>> {
         let start_position = self.skip_whitespace();
         match self.peek() {
             Some(p) if c == p => {
                 self.consume(c);
-                Some(self.span_from(start_position))
+                Ok(Some(self.span_from(start_position)?))
             }
-            _ => None,
+            _ => Ok(None),
         }
     }
 
@@ -350,7 +384,7 @@ impl<'db> Parser<'_, 'db> {
 /// Create a new database with the given source text and parse the result.
 /// Returns the statements and the diagnostics generated.
 #[cfg(test)]
-fn parse_string(source_text: &str) -> String {
+fn parse_string(source_text: &str) -> salsa::Result<String> {
     use salsa::Database;
 
     use crate::db::CalcDatabaseImpl;
@@ -360,21 +394,21 @@ fn parse_string(source_text: &str) -> String {
         let source_program = SourceProgram::new(db, source_text.to_string());
 
         // Invoke the parser
-        let statements = parse_statements(db, source_program);
+        let statements = parse_statements(db, source_program)?;
 
         // Read out any diagnostics
-        let accumulated = parse_statements::accumulated::<Diagnostic>(db, source_program);
+        let accumulated = parse_statements::accumulated::<Diagnostic>(db, source_program)?;
 
         // Format the result as a string and return it
-        format!("{:#?}", (statements, accumulated))
+        Ok(format!("{:#?}", (statements, accumulated)))
     })
 }
 // ANCHOR_END: parse_string
 
 // ANCHOR: parse_print
 #[test]
-fn parse_print() {
-    let actual = parse_string("print 1 + 2");
+fn parse_print() -> salsa::Result<()> {
+    let actual = parse_string("print 1 + 2")?;
     let expected = expect_test::expect![[r#"
         (
             Program {
@@ -424,11 +458,12 @@ fn parse_print() {
             [],
         )"#]];
     expected.assert_eq(&actual);
+    Ok(())
 }
 // ANCHOR_END: parse_print
 
 #[test]
-fn parse_example() {
+fn parse_example() -> salsa::Result<()> {
     let actual = parse_string(
         "
             fn area_rectangle(w, h) = w * h
@@ -437,7 +472,7 @@ fn parse_example() {
             print area_circle(1)
             print 11 * 2
         ",
-    );
+    )?;
     let expected = expect_test::expect![[r#"
         (
             Program {
@@ -704,13 +739,14 @@ fn parse_example() {
             [],
         )"#]];
     expected.assert_eq(&actual);
+    Ok(())
 }
 
 #[test]
-fn parse_error() {
+fn parse_error() -> salsa::Result<()> {
     let source_text: &str = "print 1 + + 2";
     //                       0123456789^ <-- this is the position 10, where the error is reported
-    let actual = parse_string(source_text);
+    let actual = parse_string(source_text)?;
     let expected = expect_test::expect![[r#"
         (
             Program {
@@ -726,13 +762,14 @@ fn parse_error() {
             ],
         )"#]];
     expected.assert_eq(&actual);
+    Ok(())
 }
 
 #[test]
-fn parse_precedence() {
+fn parse_precedence() -> salsa::Result<()> {
     // this parses as `(1 + (2 * 3)) + 4`
     let source_text: &str = "print 1 + 2 * 3 + 4";
-    let actual = parse_string(source_text);
+    let actual = parse_string(source_text)?;
     let expected = expect_test::expect![[r#"
         (
             Program {
@@ -822,4 +859,5 @@ fn parse_precedence() {
             [],
         )"#]];
     expected.assert_eq(&actual);
+    Ok(())
 }

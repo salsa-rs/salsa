@@ -80,7 +80,7 @@ macro_rules! setup_tracked_fn {
             $($input_id: $input_ty,)*
         ) -> salsa::plumbing::macro_if! {
             if $return_ref {
-                &$db_lt $output_ty
+                salsa::Result<&$db_lt <$output_ty as salsa::plumbing::HasOutput>::Output>
             } else {
                 $output_ty
             }
@@ -156,7 +156,7 @@ macro_rules! setup_tracked_fn {
 
                 type Input<$db_lt> = ($($input_ty),*);
 
-                type Output<$db_lt> = $output_ty;
+                type Output<$db_lt> = <$output_ty as $zalsa::HasOutput>::Output;
 
                 const CYCLE_STRATEGY: $zalsa::CycleRecoveryStrategy = $zalsa::CycleRecoveryStrategy::$cycle_recovery_strategy;
 
@@ -173,7 +173,7 @@ macro_rules! setup_tracked_fn {
                     }
                 }
 
-                fn execute<$db_lt>($db: &$db_lt Self::DbView, ($($input_id),*): ($($input_ty),*)) -> Self::Output<$db_lt> {
+                fn execute<$db_lt>($db: &$db_lt Self::DbView, ($($input_id),*): ($($input_ty),*)) -> salsa::Result<Self::Output<$db_lt>> {
                     $inner_fn
 
                     $inner($db, $($input_id),*)
@@ -231,11 +231,11 @@ macro_rules! setup_tracked_fn {
                 pub fn accumulated<$db_lt, A: salsa::Accumulator>(
                     $db: &$db_lt dyn $Db,
                     $($input_id: $input_ty,)*
-                ) -> Vec<A> {
+                ) -> salsa::Result<Vec<A>> {
                     use salsa::plumbing as $zalsa;
                     let key = $zalsa::macro_if! {
                         if $needs_interner {
-                            $Configuration::intern_ingredient($db).intern_id($db.as_dyn_database(), ($($input_id),*))
+                            $Configuration::intern_ingredient($db).intern_id($db.as_dyn_database(), ($($input_id),*))?
                         } else {
                             $zalsa::AsId::as_id(&($($input_id),*))
                         }
@@ -248,7 +248,7 @@ macro_rules! setup_tracked_fn {
                     pub fn specify<$db_lt>(
                         $db: &$db_lt dyn $Db,
                         $($input_id: $input_ty,)*
-                        value: $output_ty,
+                        value: <$Configuration as $zalsa::function::Configuration>::Output<$db_lt>,
                     ) {
                         let key = $zalsa::AsId::as_id(&($($input_id),*));
                         $Configuration::fn_ingredient($db).specify_and_record(
@@ -271,21 +271,21 @@ macro_rules! setup_tracked_fn {
                 let result = $zalsa::macro_if! {
                     if $needs_interner {
                         {
-                            let key = $Configuration::intern_ingredient($db).intern_id($db.as_dyn_database(), ($($input_id),*));
-                            $Configuration::fn_ingredient($db).fetch($db, key)
+                            let key = $Configuration::intern_ingredient($db).intern_id($db.as_dyn_database(), ($($input_id),*))?;
+                            $Configuration::fn_ingredient($db).fetch($db, key)?
                         }
                     } else {
-                        $Configuration::fn_ingredient($db).fetch($db, $zalsa::AsId::as_id(&($($input_id),*)))
+                        $Configuration::fn_ingredient($db).fetch($db, $zalsa::AsId::as_id(&($($input_id),*)))?
                     }
                 };
 
-                $zalsa::macro_if! {
+                Ok($zalsa::macro_if! {
                     if $return_ref {
                         result
                     } else {
-                        <$output_ty as std::clone::Clone>::clone(result)
+                        <<$Configuration as $zalsa::function::Configuration>::Output<$db_lt> as std::clone::Clone>::clone(result)
                     }
-                }
+                })
             })
         }
     };

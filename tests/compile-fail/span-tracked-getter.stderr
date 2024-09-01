@@ -1,7 +1,7 @@
 error[E0308]: mismatched types
  --> tests/compile-fail/span-tracked-getter.rs:9:13
   |
-9 |     x.field(22);
+9 |     x.field(22)?;
   |       ----- ^^ expected `&_`, found integer
   |       |
   |       arguments to this method are incorrect
@@ -18,13 +18,13 @@ note: method defined here
   |     ^^^^^
 help: consider borrowing here
   |
-9 |     x.field(&22);
+9 |     x.field(&22)?;
   |             +
 
 warning: variable does not need to be mutable
-  --> tests/compile-fail/span-tracked-getter.rs:13:9
+  --> tests/compile-fail/span-tracked-getter.rs:14:9
    |
-13 |     let mut db = salsa::DatabaseImpl::new();
+14 |     let mut db = salsa::DatabaseImpl::new();
    |         ----^^
    |         |
    |         help: remove this `mut`

@@ -10,7 +10,7 @@ where
 {
     /// Helper used by `accumulate` functions. Computes the results accumulated by `database_key_index`
     /// and its inputs.
-    pub fn accumulated_by<A>(&self, db: &C::DbView, key: Id) -> Vec<A>
+    pub fn accumulated_by<A>(&self, db: &C::DbView, key: Id) -> crate::Result<Vec<A>>
     where
         A: accumulator::Accumulator,
     {
@@ -19,12 +19,12 @@ where
         let current_revision = zalsa.current_revision();
 
         let Some(accumulator) = <accumulator::IngredientImpl<A>>::from_db(db) else {
-            return vec![];
+            return Ok(vec![]);
         };
         let mut output = vec![];
 
         // First ensure the result is up to date
-        self.fetch(db, key);
+        self.fetch(db, key)?;
 
         let db = db.as_dyn_database();
         let db_key = self.database_key_index(key);
@@ -50,6 +50,6 @@ where
             }
         }
 
-        output
+        Ok(output)
     }
 }

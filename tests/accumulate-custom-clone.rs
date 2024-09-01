@@ -19,17 +19,19 @@ impl Clone for Log {
 }
 
 #[salsa::tracked]
-fn push_logs(db: &dyn salsa::Database, input: MyInput) {
-    for i in 0..input.count(db) {
+fn push_logs(db: &dyn salsa::Database, input: MyInput) -> salsa::Result<()> {
+    for i in 0..input.count(db)? {
         Log(format!("#{i}")).accumulate(db);
     }
+
+    Ok(())
 }
 
 #[test]
-fn accumulate_custom_clone() {
+fn accumulate_custom_clone() -> salsa::Result<()> {
     salsa::DatabaseImpl::new().attach(|db| {
         let input = MyInput::new(db, 2);
-        let logs = push_logs::accumulated::<Log>(db, input);
+        let logs = push_logs::accumulated::<Log>(db, input)?;
         expect![[r##"
             [
                 Log(
@@ -41,5 +43,6 @@ fn accumulate_custom_clone() {
             ]
         "##]]
         .assert_debug_eq(&logs);
+        Ok(())
     })
 }

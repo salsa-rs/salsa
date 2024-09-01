@@ -11,7 +11,7 @@ mod type_check;
 pub fn main() {
     let db: CalcDatabaseImpl = Default::default();
     let source_program = SourceProgram::new(&db, String::new());
-    compile::compile(&db, source_program);
-    let diagnostics = compile::compile::accumulated::<Diagnostic>(&db, source_program);
+    compile::compile(&db, source_program).unwrap();
+    let diagnostics = compile::compile::accumulated::<Diagnostic>(&db, source_program).unwrap();
     eprintln!("{diagnostics:?}");
 }

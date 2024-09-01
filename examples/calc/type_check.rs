@@ -10,13 +10,15 @@ use test_log::test;
 
 // ANCHOR: parse_statements
 #[salsa::tracked]
-pub fn type_check_program<'db>(db: &'db dyn crate::Db, program: Program<'db>) {
-    for statement in program.statements(db) {
+pub fn type_check_program<'db>(db: &'db dyn crate::Db, program: Program<'db>) -> salsa::Result<()> {
+    for statement in program.statements(db)? {
         match &statement.data {
-            StatementData::Function(f) => type_check_function(db, *f, program),
-            StatementData::Print(e) => CheckExpression::new(db, program, &[]).check(e),
+            StatementData::Function(f) => type_check_function(db, *f, program)?,
+            StatementData::Print(e) => CheckExpression::new(db, program, &[]).check(e)?,
         }
     }
+
+    Ok(())
 }
 
 #[salsa::tracked]
@@ -24,8 +26,8 @@ pub fn type_check_function<'db>(
     db: &'db dyn crate::Db,
     function: Function<'db>,
     program: Program<'db>,
-) {
-    CheckExpression::new(db, program, function.args(db)).check(function.body(db))
+) -> salsa::Result<()> {
+    CheckExpression::new(db, program, function.args(db)?).check(function.body(db)?)
 }
 
 #[salsa::tracked]
@@ -33,15 +35,16 @@ pub fn find_function<'db>(
     db: &'db dyn crate::Db,
     program: Program<'db>,
     name: FunctionId<'db>,
-) -> Option<Function<'db>> {
-    program
-        .statements(db)
-        .iter()
-        .flat_map(|s| match &s.data {
-            StatementData::Function(f) if f.name(db) == name => Some(*f),
-            _ => None,
-        })
-        .next()
+) -> salsa::Result<Option<Function<'db>>> {
+    for s in program.statements(db)? {
+        if let StatementData::Function(f) = &s.data {
+            if f.name(db)? == name {
+                return Ok(Some(*f));
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 #[derive(new)]
@@ -52,11 +55,11 @@ struct CheckExpression<'input, 'db> {
 }
 
 impl<'db> CheckExpression<'_, 'db> {
-    fn check(&self, expression: &Expression<'db>) {
+    fn check(&self, expression: &Expression<'db>) -> salsa::Result<()> {
         match &expression.data {
             crate::ir::ExpressionData::Op(left, _, right) => {
-                self.check(left);
-                self.check(right);
+                self.check(left)?;
+                self.check(right)?;
             }
             crate::ir::ExpressionData::Number(_) => {}
             crate::ir::ExpressionData::Variable(v) => {
@@ -64,29 +67,32 @@ impl<'db> CheckExpression<'_, 'db> {
                     self.report_error(
                         expression.span,
                         format!("the variable `{}` is not declared", v.text(self.db)),
-                    );
+                    )?;
                 }
             }
             crate::ir::ExpressionData::Call(f, args) => {
-                if self.find_function(*f).is_none() {
+                if self.find_function(*f)?.is_none() {
                     self.report_error(
                         expression.span,
                         format!("the function `{}` is not declared", f.text(self.db)),
-                    );
+                    )?;
                 }
                 for arg in args {
-                    self.check(arg);
+                    self.check(arg)?;
                 }
             }
         }
+
+        Ok(())
     }
 
-    fn find_function(&self, f: FunctionId<'db>) -> Option<Function<'db>> {
+    fn find_function(&self, f: FunctionId<'db>) -> salsa::Result<Option<Function<'db>>> {
         find_function(self.db, self.program, f)
     }
 
-    fn report_error(&self, span: Span, message: String) {
-        Diagnostic::new(span.start(self.db), span.end(self.db), message).accumulate(self.db);
+    fn report_error(&self, span: Span, message: String) -> salsa::Result<()> {
+        Diagnostic::new(span.start(self.db)?, span.end(self.db)?, message).accumulate(self.db);
+        Ok(())
     }
 }
 
@@ -97,7 +103,7 @@ fn check_string(
     source_text: &str,
     expected_diagnostics: expect_test::Expect,
     edits: &[(&str, expect_test::Expect, expect_test::Expect)],
-) {
+) -> salsa::Result<()> {
     use salsa::{Database, Setter};
 
     use crate::{db::CalcDatabaseImpl, ir::SourceProgram, parser::parse_statements};
@@ -110,18 +116,19 @@ fn check_string(
     let source_program = SourceProgram::new(&db, source_text.to_string());
 
     // Invoke the parser
-    let program = parse_statements(&db, source_program);
+    let program = parse_statements(&db, source_program)?;
 
     // Read out any diagnostics
-    db.attach(|db| {
+    db.attach(|db| -> salsa::Result<()> {
         let rendered_diagnostics: String =
-            type_check_program::accumulated::<Diagnostic>(db, program)
+            type_check_program::accumulated::<Diagnostic>(db, program)?
                 .into_iter()
                 .map(|d| d.render(db, source_program))
-                .collect::<Vec<_>>()
+                .collect::<salsa::Result<Vec<_>>>()?
                 .join("\n");
         expected_diagnostics.assert_eq(&rendered_diagnostics);
-    });
+        Ok(())
+    })?;
 
     // Clear logs
     db.take_logs();
@@ -132,23 +139,26 @@ fn check_string(
             .set_text(&mut db)
             .to(new_source_text.to_string());
 
-        db.attach(|db| {
-            let program = parse_statements(db, source_program);
+        db.attach(|db| -> salsa::Result<()> {
+            let program = parse_statements(db, source_program)?;
             expected_diagnostics
-                .assert_debug_eq(&type_check_program::accumulated::<Diagnostic>(db, program));
-        });
+                .assert_debug_eq(&type_check_program::accumulated::<Diagnostic>(db, program)?);
+
+            Ok(())
+        })?;
 
         expected_logs.assert_debug_eq(&db.take_logs());
     }
+    Ok(())
 }
 
 #[test]
-fn check_print() {
-    check_string("print 1 + 2", expect![""], &[]);
+fn check_print() -> salsa::Result<()> {
+    check_string("print 1 + 2", expect![""], &[])
 }
 
 #[test]
-fn check_bad_variable_in_program() {
+fn check_bad_variable_in_program() -> salsa::Result<()> {
     check_string(
         "print a + b",
         expect![[r#"
@@ -165,11 +175,11 @@ fn check_bad_variable_in_program() {
               |           ^ here
               |"#]],
         &[],
-    );
+    )
 }
 
 #[test]
-fn check_bad_function_in_program() {
+fn check_bad_function_in_program() -> salsa::Result<()> {
     check_string(
         "print a(22)",
         expect![[r#"
@@ -180,11 +190,11 @@ fn check_bad_function_in_program() {
               |       ^^^^^ here
               |"#]],
         &[],
-    );
+    )
 }
 
 #[test]
-fn check_bad_variable_in_function() {
+fn check_bad_variable_in_function() -> salsa::Result<()> {
     check_string(
         "
             fn add_one(a) = a + b
@@ -202,11 +212,11 @@ fn check_bad_variable_in_function() {
             6 |           
               |"#]],
         &[],
-    );
+    )
 }
 
 #[test]
-fn check_bad_function_in_function() {
+fn check_bad_function_in_function() -> salsa::Result<()> {
     check_string(
         "
             fn add_one(a) = add_two(a) + b
@@ -233,11 +243,11 @@ fn check_bad_function_in_function() {
             6 |           
               |"#]],
         &[],
-    );
+    )
 }
 
 #[test]
-fn fix_bad_variable_in_function() {
+fn fix_bad_variable_in_function() -> salsa::Result<()> {
     check_string(
         "
             fn double(a) = a * b
@@ -272,5 +282,5 @@ fn fix_bad_variable_in_function() {
                 ]
             "#]],
         )],
-    );
+    )
 }

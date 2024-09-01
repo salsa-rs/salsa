@@ -25,37 +25,37 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn function(db: &dyn Database, input: MyInput) -> (usize, usize) {
+fn function(db: &dyn Database, input: MyInput) -> salsa::Result<(usize, usize)> {
     // Read input 1
-    let _field1 = input.field1(db);
+    let _field1 = input.field1(db)?;
 
     // **BAD:** Leak in the value of the counter non-deterministically
     let counter = COUNTER.with(|c| c.get());
 
     // Create the tracked struct, which (from salsa's POV), only depends on field1;
     // but which actually depends on the leaked value.
-    let tracked = MyTracked::new(db, counter);
+    let tracked = MyTracked::new(db, counter)?;
 
     // Read the tracked field
-    let result = counter_field(db, tracked);
+    let result = counter_field(db, tracked)?;
 
     // Read input 2. This will cause us to re-execute on revision 2.
     let _field2 = input.field2(db);
 
-    (result, tracked.counter(db))
+    Ok((result, tracked.counter(db)?))
 }
 
 #[salsa::tracked]
-fn counter_field<'db>(db: &'db dyn Database, tracked: MyTracked<'db>) -> usize {
+fn counter_field<'db>(db: &'db dyn Database, tracked: MyTracked<'db>) -> salsa::Result<usize> {
     tracked.counter(db)
 }
 
 #[test]
-fn test_leaked_inputs_ignored() {
+fn test_leaked_inputs_ignored() -> salsa::Result<()> {
     let mut db = common::EventLoggerDatabase::default();
 
     let input = MyInput::new(&db, 10, 20);
-    let result_in_rev_1 = function(&db, input);
+    let result_in_rev_1 = function(&db, input)?;
     db.assert_logs(expect![[r#"
         [
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
@@ -73,7 +73,7 @@ fn test_leaked_inputs_ignored() {
     // Also modify the thread-local counter
     COUNTER.with(|c| c.set(100));
 
-    let result_in_rev_2 = function(&db, input);
+    let result_in_rev_2 = function(&db, input)?;
     db.assert_logs(expect![[r#"
         [
             "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
@@ -91,4 +91,6 @@ fn test_leaked_inputs_ignored() {
     //
     // Contrast with preverify-struct-with-leaked-data-2.rs.
     assert_eq!(result_in_rev_2, (0, 0));
+
+    Ok(())
 }

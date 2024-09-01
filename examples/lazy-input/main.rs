@@ -28,8 +28,8 @@ fn main() -> Result<()> {
     loop {
         // Compile the code starting at the provided input, this will read other
         // needed files using the on-demand mechanism.
-        let sum = compile(&db, initial);
-        let diagnostics = compile::accumulated::<Diagnostic>(&db, initial);
+        let sum = compile(&db, initial)?;
+        let diagnostics = compile::accumulated::<Diagnostic>(&db, initial)?;
         if diagnostics.is_empty() {
             println!("Sum is: {}", sum);
         } else {
@@ -138,16 +138,18 @@ impl Db for LazyInputDatabase {
 struct Diagnostic(String);
 
 impl Diagnostic {
-    fn push_error(db: &dyn Db, file: File, error: Report) {
+    fn push_error(db: &dyn Db, file: File, error: Report) -> salsa::Result<()> {
         Diagnostic(format!(
             "Error in file {}: {:?}\n",
-            file.path(db)
+            file.path(db)?
                 .file_name()
                 .unwrap_or_else(|| "<unknown>".as_ref())
                 .to_string_lossy(),
             error,
         ))
         .accumulate(db);
+
+        Ok(())
     }
 }
 
@@ -159,14 +161,14 @@ struct ParsedFile<'db> {
 }
 
 #[salsa::tracked]
-fn compile(db: &dyn Db, input: File) -> u32 {
-    let parsed = parse(db, input);
+fn compile(db: &dyn Db, input: File) -> salsa::Result<u32> {
+    let parsed = parse(db, input)?;
     sum(db, parsed)
 }
 
 #[salsa::tracked]
-fn parse(db: &dyn Db, input: File) -> ParsedFile<'_> {
-    let mut lines = input.contents(db).lines();
+fn parse(db: &dyn Db, input: File) -> salsa::Result<ParsedFile<'_>> {
+    let mut lines = input.contents(db)?.lines();
     let value = match lines.next().map(|line| (line.parse::<u32>(), line)) {
         Some((Ok(num), _)) => num,
         Some((Err(e), line)) => {
@@ -177,46 +179,48 @@ fn parse(db: &dyn Db, input: File) -> ParsedFile<'_> {
                     "First line ({}) could not be parsed as an integer",
                     line
                 )),
-            );
+            )?;
             0
         }
         None => {
-            Diagnostic::push_error(db, input, eyre!("File must contain an integer"));
+            Diagnostic::push_error(db, input, eyre!("File must contain an integer"))?;
             0
         }
     };
-    let links = lines
-        .filter_map(|path| {
-            let relative_path = match path.parse::<PathBuf>() {
-                Ok(path) => path,
-                Err(err) => {
-                    Diagnostic::push_error(
-                        db,
-                        input,
-                        Report::new(err).wrap_err(format!("Failed to parse path: {}", path)),
-                    );
-                    return None;
-                }
-            };
-            let link_path = input.path(db).parent().unwrap().join(relative_path);
-            match db.input(link_path) {
-                Ok(file) => Some(parse(db, file)),
-                Err(err) => {
-                    Diagnostic::push_error(db, input, err);
-                    None
-                }
+
+    let mut links = Vec::new();
+
+    for path in lines {
+        let relative_path = match path.parse::<PathBuf>() {
+            Ok(path) => path,
+            Err(err) => {
+                Diagnostic::push_error(
+                    db,
+                    input,
+                    Report::new(err).wrap_err(format!("Failed to parse path: {}", path)),
+                )?;
+                continue;
             }
-        })
-        .collect();
+        };
+        let link_path = input.path(db)?.parent().unwrap().join(relative_path);
+        match db.input(link_path) {
+            Ok(file) => links.push(parse(db, file)?),
+            Err(err) => {
+                Diagnostic::push_error(db, input, err)?;
+            }
+        }
+    }
+
     ParsedFile::new(db, value, links)
 }
 
 #[salsa::tracked]
-fn sum<'db>(db: &'db dyn Db, input: ParsedFile<'db>) -> u32 {
-    input.value(db)
-        + input
-            .links(db)
-            .iter()
-            .map(|&file| sum(db, file))
-            .sum::<u32>()
+fn sum<'db>(db: &'db dyn Db, input: ParsedFile<'db>) -> salsa::Result<u32> {
+    let mut links_sum = 0u32;
+
+    for link in input.links(db)? {
+        links_sum += sum(db, *link)?;
+    }
+
+    Ok(input.value(db)? + links_sum)
 }

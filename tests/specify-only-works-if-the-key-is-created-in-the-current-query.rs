@@ -16,22 +16,25 @@ struct MyTracked<'db> {
 fn tracked_struct_created_in_another_query<'db>(
     db: &'db dyn salsa::Database,
     input: MyInput,
-) -> MyTracked<'db> {
-    MyTracked::new(db, input.field(db) * 2)
+) -> salsa::Result<MyTracked<'db>> {
+    MyTracked::new(db, input.field(db)? * 2)
 }
 
 #[salsa::tracked]
-fn tracked_fn<'db>(db: &'db dyn salsa::Database, input: MyInput) -> MyTracked<'db> {
-    let t = tracked_struct_created_in_another_query(db, input);
-    if input.field(db) != 0 {
+fn tracked_fn<'db>(db: &'db dyn salsa::Database, input: MyInput) -> salsa::Result<MyTracked<'db>> {
+    let t = tracked_struct_created_in_another_query(db, input)?;
+    if input.field(db)? != 0 {
         tracked_fn_extra::specify(db, t, 2222);
     }
-    t
+    Ok(t)
 }
 
 #[salsa::tracked(specify)]
-fn tracked_fn_extra<'db>(_db: &'db dyn salsa::Database, _input: MyTracked<'db>) -> u32 {
-    0
+fn tracked_fn_extra<'db>(
+    _db: &'db dyn salsa::Database,
+    _input: MyTracked<'db>,
+) -> salsa::Result<u32> {
+    Ok(0)
 }
 
 #[test]
@@ -41,5 +44,5 @@ fn tracked_fn_extra<'db>(_db: &'db dyn salsa::Database, _input: MyTracked<'db>) 
 fn execute_when_specified() {
     let mut db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, 22);
-    let tracked = tracked_fn(&db, input);
+    let tracked = tracked_fn(&db, input).unwrap();
 }

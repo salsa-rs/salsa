@@ -11,37 +11,43 @@ use test_log::test;
 struct Log(#[allow(dead_code)] String);
 
 #[salsa::tracked]
-fn push_logs(db: &dyn Database) {
-    push_a_logs(db);
+fn push_logs(db: &dyn Database) -> salsa::Result<()> {
+    push_a_logs(db)?;
+    Ok(())
 }
 
 #[salsa::tracked]
-fn push_a_logs(db: &dyn Database) {
+fn push_a_logs(db: &dyn Database) -> salsa::Result<()> {
     Log("log a".to_string()).accumulate(db);
-    push_b_logs(db);
+    push_b_logs(db)?;
+
+    Ok(())
 }
 
 #[salsa::tracked]
-fn push_b_logs(db: &dyn Database) {
+fn push_b_logs(db: &dyn Database) -> salsa::Result<()> {
     // No logs
-    push_c_logs(db);
+    push_c_logs(db)?;
+    Ok(())
 }
 
 #[salsa::tracked]
-fn push_c_logs(db: &dyn Database) {
+fn push_c_logs(db: &dyn Database) -> salsa::Result<()> {
     // No logs
-    push_d_logs(db);
+    push_d_logs(db)?;
+    Ok(())
 }
 
 #[salsa::tracked]
-fn push_d_logs(db: &dyn Database) {
+fn push_d_logs(db: &dyn Database) -> salsa::Result<()> {
     Log("log d".to_string()).accumulate(db);
+    Ok(())
 }
 
 #[test]
-fn accumulate_chain() {
+fn accumulate_chain() -> salsa::Result<()> {
     DatabaseImpl::new().attach(|db| {
-        let logs = push_logs::accumulated::<Log>(db);
+        let logs = push_logs::accumulated::<Log>(db)?;
         // Check that we get all the logs.
         expect![[r#"
             [
@@ -53,5 +59,7 @@ fn accumulate_chain() {
                 ),
             ]"#]]
         .assert_eq(&format!("{:#?}", logs));
+
+        Ok(())
     })
 }

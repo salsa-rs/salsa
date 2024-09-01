@@ -13,18 +13,18 @@ struct MyInput {
 }
 
 #[salsa::tracked]
-fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> u32 {
-    input.field(db) * 2
+fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> salsa::Result<u32> {
+    Ok(input.field(db)? * 2)
 }
 
 #[test]
-fn execute() {
+fn execute() -> salsa::Result<()> {
     let mut db = EventLoggerDatabase::default();
     let input_low = MyInput::new(&db, 22);
     let input_high = MyInput::builder(2200).durability(Durability::HIGH).new(&db);
 
-    assert_eq!(tracked_fn(&db, input_low), 44);
-    assert_eq!(tracked_fn(&db, input_high), 4400);
+    assert_eq!(tracked_fn(&db, input_low)?, 44);
+    assert_eq!(tracked_fn(&db, input_high)?, 4400);
 
     db.assert_logs(expect![[r#"
         [
@@ -36,8 +36,8 @@ fn execute() {
 
     db.synthetic_write(Durability::LOW);
 
-    assert_eq!(tracked_fn(&db, input_low), 44);
-    assert_eq!(tracked_fn(&db, input_high), 4400);
+    assert_eq!(tracked_fn(&db, input_low)?, 44);
+    assert_eq!(tracked_fn(&db, input_high)?, 4400);
 
     // FIXME: There's currently no good way to verify whether an input was validated using shallow or deep comparison.
     // All we can do for now is verify that the values were validated.
@@ -52,4 +52,6 @@ fn execute() {
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
             "Event { thread_id: ThreadId(2), kind: DidValidateMemoizedValue { database_key: tracked_fn(Id(1)) } }",
         ]"#]]);
+
+    Ok(())
 }

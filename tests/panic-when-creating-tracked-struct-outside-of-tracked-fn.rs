@@ -12,5 +12,5 @@ struct MyTracked<'db> {
 )]
 fn execute() {
     let db = salsa::DatabaseImpl::new();
-    MyTracked::new(&db, 0);
+    MyTracked::new(&db, 0).unwrap();
 }

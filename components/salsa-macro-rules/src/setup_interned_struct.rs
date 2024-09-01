@@ -126,7 +126,7 @@ macro_rules! setup_interned_struct {
             }
 
             impl<$db_lt> $Struct<$db_lt> {
-                pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self
+                pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> salsa::Result<Self>
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + salsa::Database,

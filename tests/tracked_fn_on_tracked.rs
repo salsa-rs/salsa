@@ -12,13 +12,14 @@ struct MyTracked<'db> {
 }
 
 #[salsa::tracked]
-fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> MyTracked<'_> {
-    MyTracked::new(db, input.field(db) * 2)
+fn tracked_fn(db: &dyn salsa::Database, input: MyInput) -> salsa::Result<MyTracked<'_>> {
+    MyTracked::new(db, input.field(db)? * 2)
 }
 
 #[test]
-fn execute() {
+fn execute() -> salsa::Result<()> {
     let db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, 22);
-    assert_eq!(tracked_fn(&db, input).field(&db), 44);
+    assert_eq!(tracked_fn(&db, input)?.field(&db)?, 44);
+    Ok(())
 }

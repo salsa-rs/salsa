@@ -22,18 +22,18 @@ enum MyList<'db> {
 }
 
 #[salsa::tracked]
-fn create_tracked_list(db: &dyn Database, input: MyInput) -> MyTracked<'_> {
-    let t0 = MyTracked::new(db, input, MyList::None);
-    let t1 = MyTracked::new(db, input, MyList::Next(t0));
-    t1
+fn create_tracked_list(db: &dyn Database, input: MyInput) -> salsa::Result<MyTracked<'_>> {
+    let t0 = MyTracked::new(db, input, MyList::None)?;
+    let t1 = MyTracked::new(db, input, MyList::Next(t0))?;
+    Ok(t1)
 }
 
 #[test]
-fn execute() {
+fn execute() -> salsa::Result<()> {
     DatabaseImpl::new().attach(|db| {
         let input = MyInput::new(db, "foo".to_string());
-        let t0: MyTracked = create_tracked_list(db, input);
-        let t1 = create_tracked_list(db, input);
+        let t0: MyTracked = create_tracked_list(db, input)?;
+        let t1 = create_tracked_list(db, input)?;
         expect_test::expect![[r#"
             MyTracked {
                 [salsa id]: Id(401),
@@ -55,5 +55,7 @@ fn execute() {
         "#]]
         .assert_debug_eq(&t0);
         assert_eq!(t0, t1);
+
+        Ok(())
     })
 }

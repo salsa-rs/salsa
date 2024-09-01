@@ -15,51 +15,57 @@ struct MyInput {
 struct Log(#[allow(dead_code)] String);
 
 #[salsa::tracked]
-fn push_logs(db: &dyn LogDatabase, input: MyInput) {
+fn push_logs(db: &dyn LogDatabase, input: MyInput) -> salsa::Result<()> {
     db.push_log(format!(
         "push_logs(a = {}, b = {})",
-        input.field_a(db),
-        input.field_b(db)
+        input.field_a(db)?,
+        input.field_b(db)?
     ));
 
     // We don't invoke `push_a_logs` (or `push_b_logs`) with a value of 0.
     // This allows us to test what happens a change in inputs causes a function not to be called at all.
-    if input.field_a(db) > 0 {
-        push_a_logs(db, input);
+    if input.field_a(db)? > 0 {
+        push_a_logs(db, input)?;
     }
 
-    if input.field_b(db) > 0 {
-        push_b_logs(db, input);
+    if input.field_b(db)? > 0 {
+        push_b_logs(db, input)?;
     }
+
+    Ok(())
 }
 
 #[salsa::tracked]
-fn push_a_logs(db: &dyn LogDatabase, input: MyInput) {
-    let field_a = input.field_a(db);
+fn push_a_logs(db: &dyn LogDatabase, input: MyInput) -> salsa::Result<()> {
+    let field_a = input.field_a(db)?;
     db.push_log(format!("push_a_logs({})", field_a));
 
     for i in 0..field_a {
         Log(format!("log_a({} of {})", i, field_a)).accumulate(db);
     }
+
+    Ok(())
 }
 
 #[salsa::tracked]
-fn push_b_logs(db: &dyn LogDatabase, input: MyInput) {
-    let field_a = input.field_b(db);
+fn push_b_logs(db: &dyn LogDatabase, input: MyInput) -> salsa::Result<()> {
+    let field_a = input.field_b(db)?;
     db.push_log(format!("push_b_logs({})", field_a));
 
     for i in 0..field_a {
         Log(format!("log_b({} of {})", i, field_a)).accumulate(db);
     }
+
+    Ok(())
 }
 
 #[test]
-fn accumulate_once() {
+fn accumulate_once() -> salsa::Result<()> {
     let db = common::LoggerDatabase::default();
 
     // Just call accumulate on a base input to see what happens.
     let input = MyInput::new(&db, 2, 3);
-    let logs = push_logs::accumulated::<Log>(&db, input);
+    let logs = push_logs::accumulated::<Log>(&db, input)?;
     db.assert_logs(expect![[r#"
         [
             "push_logs(a = 2, b = 3)",
@@ -87,15 +93,16 @@ fn accumulate_once() {
             ),
         ]"#]]
     .assert_eq(&format!("{:#?}", logs));
+    Ok(())
 }
 
 #[test]
-fn change_a_from_2_to_0() {
+fn change_a_from_2_to_0() -> salsa::Result<()> {
     let mut db = common::LoggerDatabase::default();
 
     // Accumulate logs for `a = 2` and `b = 3`
     let input = MyInput::new(&db, 2, 3);
-    let logs = push_logs::accumulated::<Log>(&db, input);
+    let logs = push_logs::accumulated::<Log>(&db, input)?;
     expect![[r#"
         [
             Log(
@@ -124,7 +131,7 @@ fn change_a_from_2_to_0() {
 
     // Change to `a = 0`, which means `push_logs` does not call `push_a_logs` at all
     input.set_field_a(&mut db).to(0);
-    let logs = push_logs::accumulated::<Log>(&db, input);
+    let logs = push_logs::accumulated::<Log>(&db, input)?;
     expect![[r#"
         [
             Log(
@@ -142,15 +149,16 @@ fn change_a_from_2_to_0() {
         [
             "push_logs(a = 0, b = 3)",
         ]"#]]);
+    Ok(())
 }
 
 #[test]
-fn change_a_from_2_to_1() {
+fn change_a_from_2_to_1() -> salsa::Result<()> {
     let mut db = LoggerDatabase::default();
 
     // Accumulate logs for `a = 2` and `b = 3`
     let input = MyInput::new(&db, 2, 3);
-    let logs = push_logs::accumulated::<Log>(&db, input);
+    let logs = push_logs::accumulated::<Log>(&db, input)?;
     expect![[r#"
         [
             Log(
@@ -179,7 +187,7 @@ fn change_a_from_2_to_1() {
 
     // Change to `a = 1`, which means `push_logs` does not call `push_a_logs` at all
     input.set_field_a(&mut db).to(1);
-    let logs = push_logs::accumulated::<Log>(&db, input);
+    let logs = push_logs::accumulated::<Log>(&db, input)?;
     expect![[r#"
         [
             Log(
@@ -201,15 +209,16 @@ fn change_a_from_2_to_1() {
             "push_logs(a = 1, b = 3)",
             "push_a_logs(1)",
         ]"#]]);
+    Ok(())
 }
 
 #[test]
-fn get_a_logs_after_changing_b() {
+fn get_a_logs_after_changing_b() -> salsa::Result<()> {
     let mut db = common::LoggerDatabase::default();
 
     // Invoke `push_a_logs` with `a = 2` and `b = 3` (but `b` doesn't matter)
     let input = MyInput::new(&db, 2, 3);
-    let logs = push_a_logs::accumulated::<Log>(&db, input);
+    let logs = push_a_logs::accumulated::<Log>(&db, input)?;
     expect![[r#"
         [
             Log(
@@ -228,7 +237,7 @@ fn get_a_logs_after_changing_b() {
     // Changing `b` does not cause `push_a_logs` to re-execute
     // and we still get the same result
     input.set_field_b(&mut db).to(5);
-    let logs = push_a_logs::accumulated::<Log>(&db, input);
+    let logs = push_a_logs::accumulated::<Log>(&db, input)?;
     expect![[r#"
         [
             Log(
@@ -241,4 +250,5 @@ fn get_a_logs_after_changing_b() {
     "#]]
     .assert_debug_eq(&logs);
     db.assert_logs(expect!["[]"]);
+    Ok(())
 }

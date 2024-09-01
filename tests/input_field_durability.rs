@@ -12,19 +12,21 @@ struct MyInput {
 }
 
 #[test]
-fn required_field_durability() {
+fn required_field_durability() -> salsa::Result<()> {
     let db = salsa::DatabaseImpl::new();
 
     let input = MyInput::builder(true)
         .required_field_durability(Durability::HIGH)
         .new(&db);
 
-    assert!(input.required_field(&db));
-    assert_eq!(input.optional_field(&db), 0);
+    assert!(input.required_field(&db)?);
+    assert_eq!(input.optional_field(&db)?, 0);
+
+    Ok(())
 }
 
 #[test]
-fn optional_field_durability() {
+fn optional_field_durability() -> salsa::Result<()> {
     let db = salsa::DatabaseImpl::new();
 
     let input = MyInput::builder(true)
@@ -32,6 +34,7 @@ fn optional_field_durability() {
         .optional_field_durability(Durability::HIGH)
         .new(&db);
 
-    assert!(input.required_field(&db));
-    assert_eq!(input.optional_field(&db), 20);
+    assert!(input.required_field(&db)?);
+    assert_eq!(input.optional_field(&db)?, 20);
+    Ok(())
 }

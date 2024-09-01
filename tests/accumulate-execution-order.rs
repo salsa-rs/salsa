@@ -11,38 +11,40 @@ use test_log::test;
 struct Log(#[allow(dead_code)] String);
 
 #[salsa::tracked]
-fn push_logs(db: &dyn Database) {
-    push_a_logs(db);
+fn push_logs(db: &dyn Database) -> salsa::Result<()> {
+    push_a_logs(db)
 }
 
 #[salsa::tracked]
-fn push_a_logs(db: &dyn Database) {
+fn push_a_logs(db: &dyn Database) -> salsa::Result<()> {
     Log("log a".to_string()).accumulate(db);
-    push_b_logs(db);
-    push_c_logs(db);
-    push_d_logs(db);
+    push_b_logs(db)?;
+    push_c_logs(db)?;
+    push_d_logs(db)
 }
 
 #[salsa::tracked]
-fn push_b_logs(db: &dyn Database) {
+fn push_b_logs(db: &dyn Database) -> salsa::Result<()> {
     Log("log b".to_string()).accumulate(db);
-    push_d_logs(db);
+    push_d_logs(db)
 }
 
 #[salsa::tracked]
-fn push_c_logs(db: &dyn Database) {
+fn push_c_logs(db: &dyn Database) -> salsa::Result<()> {
     Log("log c".to_string()).accumulate(db);
+    Ok(())
 }
 
 #[salsa::tracked]
-fn push_d_logs(db: &dyn Database) {
+fn push_d_logs(db: &dyn Database) -> salsa::Result<()> {
     Log("log d".to_string()).accumulate(db);
+    Ok(())
 }
 
 #[test]
-fn accumulate_execution_order() {
+fn accumulate_execution_order() -> salsa::Result<()> {
     salsa::DatabaseImpl::new().attach(|db| {
-        let logs = push_logs::accumulated::<Log>(db);
+        let logs = push_logs::accumulated::<Log>(db)?;
         // Check that we get logs in execution order
         expect![[r#"
             [
@@ -60,5 +62,7 @@ fn accumulate_execution_order() {
                 ),
             ]"#]]
         .assert_eq(&format!("{:#?}", logs));
+
+        Ok(())
     })
 }

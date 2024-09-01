@@ -179,7 +179,7 @@ impl<C: Configuration> IngredientImpl<C> {
         db: &'db dyn crate::Database,
         id: C::Struct,
         field_index: usize,
-    ) -> &'db C::Fields {
+    ) -> crate::Result<&'db C::Fields> {
         let (zalsa, zalsa_local) = db.zalsas();
         let field_ingredient_index = self.ingredient_index.successor(field_index);
         let id = id.as_id();
@@ -192,8 +192,8 @@ impl<C: Configuration> IngredientImpl<C> {
             },
             stamp.durability,
             stamp.changed_at,
-        );
-        &value.fields
+        )?;
+        Ok(&value.fields)
     }
 
     /// Peek at the field values without recording any read dependency.
@@ -216,10 +216,10 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: &dyn Database,
         _input: Option<Id>,
         _revision: Revision,
-    ) -> bool {
+    ) -> crate::Result<bool> {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
-        false
+        Ok(false)
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {

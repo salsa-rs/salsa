@@ -1,5 +1,5 @@
 use crate::{key::DatabaseKeyIndex, Database};
-use std::{panic::AssertUnwindSafe, sync::Arc};
+use std::sync::Arc;
 
 /// Captures the participants of a cycle that occurred when executing a query.
 ///
@@ -31,21 +31,6 @@ impl Cycle {
     /// True if two `Cycle` values represent the same cycle.
     pub(crate) fn is(&self, cycle: &Cycle) -> bool {
         Arc::ptr_eq(&self.participants, &cycle.participants)
-    }
-
-    pub(crate) fn throw(self) -> ! {
-        tracing::debug!("throwing cycle {:?}", self);
-        std::panic::resume_unwind(Box::new(self))
-    }
-
-    pub(crate) fn catch<T>(execute: impl FnOnce() -> T) -> Result<T, Cycle> {
-        match std::panic::catch_unwind(AssertUnwindSafe(execute)) {
-            Ok(v) => Ok(v),
-            Err(err) => match err.downcast::<Cycle>() {
-                Ok(cycle) => Err(*cycle),
-                Err(other) => std::panic::resume_unwind(other),
-            },
-        }
     }
 
     /// Iterate over the [`DatabaseKeyIndex`] for each query participating

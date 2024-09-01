@@ -14,16 +14,16 @@ struct MyInput {
 }
 
 #[salsa::tracked]
-fn tracked_fn(db: &dyn Database, input: MyInput) -> u32 {
-    input.field(db) * 2
+fn tracked_fn(db: &dyn Database, input: MyInput) -> salsa::Result<u32> {
+    Ok(input.field(db)? * 2)
 }
 
 #[test]
-fn execute() {
+fn execute() -> salsa::Result<()> {
     let mut db = common::ExecuteValidateLoggerDatabase::default();
 
     let input = MyInput::new(&db, 22);
-    assert_eq!(tracked_fn(&db, input), 44);
+    assert_eq!(tracked_fn(&db, input)?, 44);
 
     db.assert_logs(expect![[r#"
         [
@@ -34,10 +34,12 @@ fn execute() {
     db.synthetic_write(Durability::LOW);
 
     // Query should re-run
-    assert_eq!(tracked_fn(&db, input), 44);
+    assert_eq!(tracked_fn(&db, input)?, 44);
 
     db.assert_logs(expect![[r#"
         [
             "salsa_event(DidValidateMemoizedValue { database_key: tracked_fn(Id(0)) })",
         ]"#]]);
+
+    Ok(())
 }
