@@ -183,7 +183,7 @@ macro_rules! setup_tracked_fn {
                     db: &$db_lt dyn $Db,
                     cycle: &$zalsa::Cycle,
                     ($($input_id),*): ($($input_ty),*)
-                ) -> Self::Output<$db_lt> {
+                ) -> salsa::Result<Self::Output<$db_lt>> {
                     $($cycle_recovery_fn)*(db, cycle, $($input_id),*)
                 }
 

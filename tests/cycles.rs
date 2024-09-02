@@ -121,10 +121,14 @@ fn cycle_a(db: &dyn Db, abc: ABC) -> salsa::Result<Option<CycleDescription>> {
     abc.a(db)?.invoke(db, abc)
 }
 
-fn recover_a(db: &dyn Db, cycle: &salsa::Cycle, abc: ABC) -> Option<CycleDescription> {
-    Some(CycleDescription {
+fn recover_a(
+    db: &dyn Db,
+    cycle: &salsa::Cycle,
+    abc: ABC,
+) -> salsa::Result<Option<CycleDescription>> {
+    Ok(Some(CycleDescription {
         participants: cycle.participant_keys().map(|k| format!("{k:?}")).collect(),
-    })
+    }))
 }
 
 #[salsa::tracked(recovery_fn=recover_b)]
@@ -132,10 +136,14 @@ fn cycle_b(db: &dyn Db, abc: ABC) -> salsa::Result<Option<CycleDescription>> {
     abc.b(db)?.invoke(db, abc)
 }
 
-fn recover_b(db: &dyn Db, cycle: &salsa::Cycle, abc: ABC) -> Option<CycleDescription> {
-    Some(CycleDescription {
+fn recover_b(
+    db: &dyn Db,
+    cycle: &salsa::Cycle,
+    abc: ABC,
+) -> salsa::Result<Option<CycleDescription>> {
+    Ok(Some(CycleDescription {
         participants: cycle.participant_keys().map(|k| format!("{k:?}")).collect(),
-    })
+    }))
 }
 
 #[salsa::tracked]

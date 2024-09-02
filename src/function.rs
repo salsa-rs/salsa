@@ -74,7 +74,7 @@ pub trait Configuration: Any {
         db: &'db Self::DbView,
         cycle: &Cycle,
         input: Self::Input<'db>,
-    ) -> Self::Output<'db>;
+    ) -> crate::Result<Self::Output<'db>>;
 }
 
 /// Function ingredients are the "workhorse" of salsa.
