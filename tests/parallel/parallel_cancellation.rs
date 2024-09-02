@@ -53,6 +53,7 @@ fn execute() {
         })
         .unwrap();
 
+    db.wait_for(1);
     db.signal_on_did_cancel.store(2);
     input.set_field(&mut db).to(2);
 
@@ -63,7 +64,15 @@ fn execute() {
     expect_test::expect![[r#"
         Error {
             kind: Cancelled(
-                PendingWrite,
+                CancelledError {
+                    reason: PendingWrite,
+                    bomb: DropBomb(
+                        RealBomb {
+                            msg: "Cancellation errors must be propagated inside salsa queries. If you see this message outside a salsa query, please open an issue.",
+                            defused: false,
+                        },
+                    ),
+                },
             ),
         }
     "#]]

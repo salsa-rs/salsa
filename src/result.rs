@@ -1,4 +1,4 @@
-use crate::Cycle;
+use crate::{with_attached_database, Cycle};
 use drop_bomb::DropBomb;
 use std::fmt;
 use std::fmt::Debug;
@@ -20,7 +20,10 @@ pub struct Error {
 impl Error {
     pub(crate) fn cancelled(reason: Cancelled) -> Self {
         Error {
-            kind: Box::new(ErrorKind::Cancelled(reason)),
+            kind: Box::new(ErrorKind::Cancelled(CancelledError {
+                reason,
+                bomb: DropBomb::new("Cancellation errors must be propagated inside salsa queries. If you see this message outside a salsa query, please open an issue."),
+            })),
         }
     }
 
@@ -65,7 +68,7 @@ impl std::error::Error for Error {}
 #[derive(Debug)]
 pub(crate) enum ErrorKind {
     Cycle(CycleError),
-    Cancelled(Cancelled),
+    Cancelled(CancelledError),
 }
 
 #[derive(Debug)]
@@ -78,6 +81,21 @@ impl CycleError {
     pub(crate) fn take_cycle(mut self) -> Cycle {
         self.bomb.defuse();
         self.cycle
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct CancelledError {
+    reason: Cancelled,
+    bomb: DropBomb,
+}
+
+impl Drop for CancelledError {
+    fn drop(&mut self) {
+        if with_attached_database(|_| {}).is_none() {
+            // We are outside a query. It's okay if the user drops the error now
+            self.bomb.defuse();
+        }
     }
 }
 
@@ -96,9 +114,9 @@ pub(crate) enum Cancelled {
     PropagatedPanic,
 }
 
-impl std::fmt::Display for Cancelled {
+impl std::fmt::Display for CancelledError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let why = match self {
+        let why = match self.reason {
             Cancelled::PendingWrite => "pending write",
             Cancelled::PropagatedPanic => "propagated panic",
         };

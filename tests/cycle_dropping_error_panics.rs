@@ -54,14 +54,14 @@ static EVEN_COUNT: AtomicUsize = AtomicUsize::new(0);
 fn deferred_cycle_b(db: &dyn Db, input: MyInput) -> salsa::Result<String> {
     let is_even = input.field(db)? % 2 == 0;
     if is_even {
-        EVEN_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        EVEN_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     match deferred_cycle_c(db, input) {
         Ok(result) => Ok(result),
         Err(err) => {
             if is_even {
-                EVEN_COUNT.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                EVEN_COUNT.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
             }
 
             Err(err)
@@ -88,6 +88,6 @@ fn deferred_propagation() {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "recovered C");
 
-        assert_eq!(EVEN_COUNT.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(EVEN_COUNT.load(std::sync::atomic::Ordering::Relaxed), 1);
     })
 }

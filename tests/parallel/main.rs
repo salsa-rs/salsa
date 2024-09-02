@@ -1,6 +1,7 @@
 mod setup;
 
 mod parallel_cancellation;
+mod parallel_cancellation_capture_error;
 mod parallel_cycle_all_recover;
 mod parallel_cycle_mid_recover;
 mod parallel_cycle_none_recover;
