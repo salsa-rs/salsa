@@ -61,20 +61,6 @@ fn execute() {
     let cancelled = thread_a.join().unwrap().unwrap_err();
 
     // and inspect the output
-    expect_test::expect![[r#"
-        Error {
-            kind: Cancelled(
-                CancelledError {
-                    reason: PendingWrite,
-                    bomb: DropBomb(
-                        RealBomb {
-                            msg: "Cancellation errors must be propagated inside salsa queries. If you see this message outside a salsa query, please open an issue.",
-                            defused: false,
-                        },
-                    ),
-                },
-            ),
-        }
-    "#]]
-    .assert_debug_eq(&cancelled);
+    expect_test::expect![[r#"cancelled because of pending write"#]]
+        .assert_eq(&cancelled.to_string());
 }

@@ -1,5 +1,5 @@
 use crate::{with_attached_database, Cycle};
-use drop_bomb::DropBomb;
+use drop_bomb::DebugDropBomb;
 use std::fmt;
 use std::fmt::Debug;
 
@@ -22,7 +22,7 @@ impl Error {
         Error {
             kind: Box::new(ErrorKind::Cancelled(CancelledError {
                 reason,
-                bomb: DropBomb::new("Cancellation errors must be propagated inside salsa queries. If you see this message outside a salsa query, please open an issue."),
+                bomb: DebugDropBomb::new("Cancellation errors must be propagated inside salsa queries. If you see this message outside a salsa query, please open an issue."),
             })),
         }
     }
@@ -31,7 +31,7 @@ impl Error {
         Self {
             kind: Box::new(ErrorKind::Cycle(CycleError {
                 cycle,
-                bomb: DropBomb::new("Cycle errors must be propagated so that Salsa can resolve the cycle. If you see this message outside a salsa query, please open an issue."),
+                bomb: DebugDropBomb::new("Cycle errors must be propagated so that Salsa can resolve the cycle. If you see this message outside a salsa query, please open an issue."),
             })),
         }
     }
@@ -74,7 +74,7 @@ pub(crate) enum ErrorKind {
 #[derive(Debug)]
 pub(crate) struct CycleError {
     cycle: Cycle,
-    bomb: DropBomb,
+    bomb: DebugDropBomb,
 }
 
 impl CycleError {
@@ -87,12 +87,12 @@ impl CycleError {
 #[derive(Debug)]
 pub(crate) struct CancelledError {
     reason: Cancelled,
-    bomb: DropBomb,
+    bomb: DebugDropBomb,
 }
 
 impl Drop for CancelledError {
     fn drop(&mut self) {
-        if with_attached_database(|_| {}).is_none() {
+        if !self.bomb.is_defused() && with_attached_database(|_| {}).is_none() {
             // We are outside a query. It's okay if the user drops the error now
             self.bomb.defuse();
         }

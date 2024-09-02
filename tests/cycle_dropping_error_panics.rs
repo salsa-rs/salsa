@@ -31,6 +31,7 @@ fn cycle_b(db: &dyn Db, input: MyInput) -> salsa::Result<String> {
 }
 
 #[test]
+#[cfg(debug_assertions)]
 #[should_panic(expected = "Cycle errors must be propagated so that Salsa can resolve the cycle.")]
 fn execute() {
     salsa::DatabaseImpl::new().attach(|db| {

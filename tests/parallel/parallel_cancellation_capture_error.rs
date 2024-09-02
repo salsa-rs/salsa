@@ -46,6 +46,7 @@ fn dummy(_db: &dyn KnobsDatabase, _input: MyInput) -> salsa::Result<String> {
 // drops error -> panics
 
 #[test]
+#[cfg(debug_assertions)]
 fn execute() {
     let mut db = Knobs::default();
 
