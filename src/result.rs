@@ -28,7 +28,7 @@ impl Error {
         Self {
             kind: Box::new(ErrorKind::Cycle(CycleError {
                 cycle,
-                bomb: DropBomb::new("TODO"),
+                bomb: DropBomb::new("Cycle errors must be propagated so that Salsa can resolve the cycle. If you see this message outside a salsa query, please open an issue."),
             })),
         }
     }
