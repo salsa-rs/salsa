@@ -5,8 +5,14 @@ use std::fmt::Debug;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug)]
+pub fn error_as_cycle(error: &Error) -> Option<&Cycle> {
+    match &*error.kind {
+        ErrorKind::Cycle(error) => Some(&error.cycle),
+        _ => None,
+    }
+}
 
+#[derive(Debug)]
 pub struct Error {
     kind: Box<ErrorKind>,
 }
@@ -78,11 +84,6 @@ impl CycleError {
 // FIXME implement drop for Cancelled.
 
 /// A panic payload indicating that execution of a salsa query was cancelled.
-///
-/// This can occur for a few reasons:
-/// *
-/// *
-/// *
 #[derive(Debug)]
 #[non_exhaustive]
 pub(crate) enum Cancelled {
