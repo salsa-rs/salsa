@@ -8,27 +8,27 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 
 pub struct Error {
-    kind: ErrorKind,
+    kind: Box<ErrorKind>,
 }
 
 impl Error {
     pub(crate) fn cancelled(reason: Cancelled) -> Self {
         Error {
-            kind: ErrorKind::Cancelled(reason),
+            kind: Box::new(ErrorKind::Cancelled(reason)),
         }
     }
 
     pub(crate) fn cycle(cycle: Cycle) -> Self {
         Self {
-            kind: ErrorKind::Cycle(CycleError {
+            kind: Box::new(ErrorKind::Cycle(CycleError {
                 cycle,
                 bomb: DropBomb::new("TODO"),
-            }),
+            })),
         }
     }
 
     pub(crate) fn into_cycle(self) -> std::result::Result<Cycle, Self> {
-        match self.kind {
+        match *self.kind {
             ErrorKind::Cycle(cycle) => Ok(cycle.take_cycle()),
             _ => Err(self),
         }
@@ -38,14 +38,14 @@ impl Error {
 impl From<CycleError> for Error {
     fn from(value: CycleError) -> Self {
         Self {
-            kind: ErrorKind::Cycle(value),
+            kind: Box::new(ErrorKind::Cycle(value)),
         }
     }
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.kind {
+        match &*self.kind {
             ErrorKind::Cycle(cycle) => {
                 write!(f, "cycle detected: {:?}", cycle)
             }
