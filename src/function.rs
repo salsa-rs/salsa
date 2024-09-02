@@ -165,7 +165,7 @@ where
         zalsa: &'db Zalsa,
         id: Id,
         memo: memo::Memo<C::Output<'db>>,
-    ) -> Option<&C::Output<'db>> {
+    ) -> Option<&'db C::Output<'db>> {
         let memo = Arc::new(memo);
         let value = unsafe {
             // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
