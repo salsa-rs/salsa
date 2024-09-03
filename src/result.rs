@@ -5,13 +5,6 @@ use std::fmt::Debug;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub fn error_as_cycle(error: &Error) -> Option<&Cycle> {
-    match &*error.kind {
-        ErrorKind::Cycle(error) => Some(&error.cycle),
-        _ => None,
-    }
-}
-
 #[derive(Debug)]
 pub struct Error {
     kind: Box<ErrorKind>,
