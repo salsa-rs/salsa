@@ -15,19 +15,16 @@ struct MyInput {
 }
 
 #[salsa::tracked]
-fn a1(db: &dyn KnobsDatabase, input: MyInput) -> salsa::Result<String> {
+fn a1(db: &dyn KnobsDatabase, input: MyInput) -> salsa::Result<&'static str> {
     db.signal(1);
     db.wait_for(2);
 
-    match dummy(db, input) {
-        Ok(result) => Ok(result),
-        Err(_) => Ok("Suppressed cancellation".to_string()),
-    }
+    Ok(dummy(db, input).unwrap_or("Suppressed cancellation"))
 }
 
 #[salsa::tracked]
-fn dummy(_db: &dyn KnobsDatabase, _input: MyInput) -> salsa::Result<String> {
-    Ok("should never get here!".to_string())
+fn dummy(_db: &dyn KnobsDatabase, _input: MyInput) -> salsa::Result<&'static str> {
+    Ok("should never get here!")
 }
 
 // Cancellation signalling test
@@ -79,7 +76,7 @@ fn execute() {
 static EVEN_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[salsa::tracked]
-fn a1_deferred(db: &dyn KnobsDatabase, input: MyInput) -> salsa::Result<String> {
+fn a1_deferred(db: &dyn KnobsDatabase, input: MyInput) -> salsa::Result<&'static str> {
     let is_even = input.field(db)? % 2 == 0;
     if is_even {
         EVEN_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);

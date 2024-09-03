@@ -77,7 +77,6 @@ where
         let database_key_index = self.database_key_index(id);
 
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        // FIXME: Handle error
         let _claim_guard = zalsa.sync_table_for(id).claim(
             db.as_dyn_database(),
             zalsa_local,

@@ -17,17 +17,17 @@ struct MyInput {
 }
 
 #[salsa::tracked(recovery_fn = recover_a)]
-fn cycle_a(db: &dyn Db, input: MyInput) -> salsa::Result<String> {
+fn cycle_a(db: &dyn Db, input: MyInput) -> salsa::Result<&'static str> {
     cycle_b(db, input)
 }
 
-fn recover_a(db: &dyn Db, cycle: &Cycle, input: MyInput) -> salsa::Result<String> {
-    Ok("recovered".to_string())
+fn recover_a(db: &dyn Db, cycle: &Cycle, input: MyInput) -> salsa::Result<&'static str> {
+    Ok("recovered")
 }
 
 #[salsa::tracked]
-fn cycle_b(db: &dyn Db, input: MyInput) -> salsa::Result<String> {
-    Ok(cycle_a(db, input).unwrap_or_else(|error| format!("Suppressed error: {error}")))
+fn cycle_b(db: &dyn Db, input: MyInput) -> salsa::Result<&'static str> {
+    Ok(cycle_a(db, input).unwrap_or_else(|error| "Suppressed error"))
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn execute() {
 }
 
 #[salsa::tracked]
-fn deferred_cycle_a(db: &dyn Db, input: MyInput) -> salsa::Result<String> {
+fn deferred_cycle_a(db: &dyn Db, input: MyInput) -> salsa::Result<&'static str> {
     deferred_cycle_b(db, input)
 }
 
@@ -52,7 +52,7 @@ fn deferred_cycle_a(db: &dyn Db, input: MyInput) -> salsa::Result<String> {
 static EVEN_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[salsa::tracked]
-fn deferred_cycle_b(db: &dyn Db, input: MyInput) -> salsa::Result<String> {
+fn deferred_cycle_b(db: &dyn Db, input: MyInput) -> salsa::Result<&'static str> {
     let is_even = input.field(db)? % 2 == 0;
     if is_even {
         EVEN_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -71,12 +71,12 @@ fn deferred_cycle_b(db: &dyn Db, input: MyInput) -> salsa::Result<String> {
 }
 
 #[salsa::tracked(recovery_fn = recover_c)]
-fn deferred_cycle_c(db: &dyn Db, input: MyInput) -> salsa::Result<String> {
+fn deferred_cycle_c(db: &dyn Db, input: MyInput) -> salsa::Result<&'static str> {
     deferred_cycle_a(db, input)
 }
 
-fn recover_c(db: &dyn Db, cycle: &Cycle, input: MyInput) -> salsa::Result<String> {
-    Ok("recovered C".to_string())
+fn recover_c(db: &dyn Db, cycle: &Cycle, input: MyInput) -> salsa::Result<&'static str> {
+    Ok("recovered C")
 }
 
 // A query captures the error but propagates it before completion.
