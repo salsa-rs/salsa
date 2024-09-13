@@ -1,9 +1,8 @@
+use super::{memo::Memo, Configuration, IngredientImpl};
 use crate::{
     hash::FxHashSet, key::DependencyIndex, zalsa_local::QueryRevisions, AsDynDatabase as _,
     DatabaseKeyIndex, Event, EventKind,
 };
-
-use super::{memo::Memo, Configuration, IngredientImpl};
 
 impl<C> IngredientImpl<C>
 where
@@ -16,20 +15,24 @@ where
         db: &C::DbView,
         key: DatabaseKeyIndex,
         old_memo: &Memo<C::Output<'_>>,
-        revisions: &QueryRevisions,
+        revisions: &mut QueryRevisions,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset
-        let mut old_outputs = FxHashSet::default();
-        old_memo.revisions.origin.outputs().for_each(|i| {
-            old_outputs.insert(i);
-        });
+        let mut old_outputs: FxHashSet<_> = old_memo.revisions.origin.outputs().collect();
 
         // Iterate over the outputs of the current query
         // and remove elements from `old_outputs` when we find them
         for new_output in revisions.origin.outputs() {
-            if old_outputs.contains(&new_output) {
-                old_outputs.remove(&new_output);
-            }
+            old_outputs.remove(&new_output);
+        }
+
+        if !old_outputs.is_empty() {
+            revisions.tracked_struct_ids.retain(|_k, value| {
+                !old_outputs.contains(&DependencyIndex {
+                    ingredient_index: value.ingredient_index,
+                    key_index: Some(value.key_index),
+                })
+            });
         }
 
         for old_output in old_outputs {

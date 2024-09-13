@@ -277,8 +277,9 @@ where
             None => {
                 // This is a new tracked struct, so create an entry in the struct map.
                 let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
-                zalsa_local.add_output(self.database_key_index(id).into());
-                zalsa_local.store_tracked_struct_id(key_struct, id);
+                let key = self.database_key_index(id);
+                zalsa_local.add_output(key.into());
+                zalsa_local.store_tracked_struct_id(key_struct, key);
                 C::struct_from_id(id)
             }
         }

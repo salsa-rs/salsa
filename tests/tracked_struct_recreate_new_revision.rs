@@ -1,4 +1,5 @@
-//! Test that a `tracked` struct on a `salsa::input` doesn't panic when recreating a new revision.
+//! Test that re-creating a `tracked` struct after it was deleted in a previous
+//! revision doesn't panic.
 #![allow(warnings)]
 
 use salsa::Setter;
@@ -10,7 +11,6 @@ struct MyInput {
 
 #[salsa::tracked]
 struct TrackedStruct<'db> {
-    #[id]
     field: u32,
 }
 
