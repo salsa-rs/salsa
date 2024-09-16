@@ -58,7 +58,7 @@ impl ZalsaLocal {
         &self,
         table: &Table,
         ingredient: IngredientIndex,
-        mut value: T,
+        mut value: impl FnOnce() -> T,
     ) -> Id {
         // Find the most recent page, pushing a page if needed
         let mut page = *self

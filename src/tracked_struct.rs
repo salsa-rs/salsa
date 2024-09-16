@@ -316,7 +316,7 @@ where
 
             id
         } else {
-            zalsa_local.allocate::<Value<C>>(zalsa.table(), self.ingredient_index, value())
+            zalsa_local.allocate::<Value<C>>(zalsa.table(), self.ingredient_index, value)
         }
     }
 

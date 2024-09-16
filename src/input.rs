@@ -108,16 +108,12 @@ impl<C: Configuration> IngredientImpl<C> {
             None
         };
 
-        let id = zalsa_local.allocate(
-            zalsa.table(),
-            self.ingredient_index,
-            Value::<C> {
-                fields,
-                stamps,
-                memos: Default::default(),
-                syncs: Default::default(),
-            },
-        );
+        let id = zalsa_local.allocate(zalsa.table(), self.ingredient_index, || Value::<C> {
+            fields,
+            stamps,
+            memos: Default::default(),
+            syncs: Default::default(),
+        });
 
         if C::IS_SINGLETON {
             self.singleton_index.store(Some(id));
