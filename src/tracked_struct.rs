@@ -257,8 +257,7 @@ where
 
         let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
-        let (current_deps, disambiguator) =
-            zalsa_local.disambiguate(self.ingredient_index, Revision::start(), data_hash);
+        let (current_deps, disambiguator) = zalsa_local.disambiguate(data_hash);
 
         let key_struct = KeyStruct {
             disambiguator,
