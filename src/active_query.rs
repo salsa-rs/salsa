@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     durability::Durability,
-    hash::{FxIndexMap, FxIndexSet},
+    hash::FxIndexSet,
     key::{DatabaseKeyIndex, DependencyIndex},
     tracked_struct::{Disambiguator, KeyStruct},
     zalsa_local::EMPTY_DEPENDENCIES,
@@ -44,7 +44,7 @@ pub(crate) struct ActiveQuery {
     /// This table starts empty as the query begins and is gradually populated.
     /// Note that if a query executes in 2 different revisions but creates the same
     /// set of tracked structs, they will get the same disambiguator values.
-    disambiguator_map: FxIndexMap<u64, Disambiguator>,
+    disambiguator_map: FxHashMap<u64, Disambiguator>,
 
     /// Map from tracked struct keys (which include the hash + disambiguator) to their
     /// final id.
