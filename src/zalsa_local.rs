@@ -353,7 +353,12 @@ pub(crate) struct QueryRevisions {
 
     /// The ids of tracked structs created by this query.
     /// This is used to seed the next round if the query is
-    /// re-executed.
+    /// re-executed. This ensures that tracked structs
+    /// have the same id across revisions.
+    ///
+    /// [`diff_outputs`] removes tracked structs that were created
+    /// in a previous revision but no longer exist
+    /// in the new revision.
     pub(super) tracked_struct_ids: FxHashMap<KeyStruct, DatabaseKeyIndex>,
 }
 

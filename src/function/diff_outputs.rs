@@ -1,4 +1,5 @@
 use super::{memo::Memo, Configuration, IngredientImpl};
+use crate::tracked_struct::KeyStruct;
 use crate::{
     hash::FxHashSet, key::DependencyIndex, zalsa_local::QueryRevisions, AsDynDatabase as _,
     DatabaseKeyIndex, Event, EventKind,
@@ -10,6 +11,9 @@ where
 {
     /// Compute the old and new outputs and invoke the `clear_stale_output` callback
     /// for each output that was generated before but is not generated now.
+    ///
+    /// This function takes a `&mut` reference to `revisions` to remove outputs
+    /// that no longer exist in this revision from [`QueryRevisions::tracked_struct_ids`].
     pub(super) fn diff_outputs(
         &self,
         db: &C::DbView,
@@ -27,6 +31,8 @@ where
         }
 
         if !old_outputs.is_empty() {
+            // Remove the outputs that are no longer present in the current revision
+            // to prevent that the next revision is seeded with a id mapping that no longer exists.
             revisions.tracked_struct_ids.retain(|_k, value| {
                 !old_outputs.contains(&DependencyIndex {
                     ingredient_index: value.ingredient_index,
