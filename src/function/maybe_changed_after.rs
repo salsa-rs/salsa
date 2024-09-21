@@ -1,6 +1,5 @@
 use crate::{
     key::DatabaseKeyIndex,
-    runtime::StampedValue,
     zalsa::{Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, EdgeKind, QueryOrigin},
     AsDynDatabase as _, Id, Revision,
@@ -83,7 +82,8 @@ where
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
         if old_memo.value.is_some() {
-            let StampedValue { changed_at, .. } = self.execute(db, active_query, Some(old_memo));
+            let memo = self.execute(db, active_query, Some(old_memo));
+            let changed_at = memo.revisions.changed_at;
             return Some(changed_at > revision);
         }
 

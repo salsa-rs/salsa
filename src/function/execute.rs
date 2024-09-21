@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    runtime::StampedValue, zalsa::ZalsaDatabase, zalsa_local::ActiveQueryGuard, Cycle, Database,
-    Event, EventKind,
+    zalsa::ZalsaDatabase, zalsa_local::ActiveQueryGuard, Cycle, Database, Event, EventKind,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};
@@ -25,7 +24,7 @@ where
         db: &'db C::DbView,
         active_query: ActiveQueryGuard<'_>,
         opt_old_memo: Option<Arc<Memo<C::Output<'_>>>>,
-    ) -> StampedValue<&C::Output<'db>> {
+    ) -> &'db Memo<C::Output<'db>> {
         let zalsa = db.zalsa();
         let revision_now = zalsa.current_revision();
         let database_key_index = active_query.database_key_index;
@@ -86,11 +85,6 @@ where
 
         tracing::debug!("{database_key_index:?}: read_upgrade: result.revisions = {revisions:#?}");
 
-        let stamp_template = revisions.stamp_template();
-        let value = self
-            .insert_memo(zalsa, id, Memo::new(Some(value), revision_now, revisions))
-            .unwrap();
-
-        stamp_template.stamp(value)
+        self.insert_memo(zalsa, id, Memo::new(Some(value), revision_now, revisions))
     }
 }
