@@ -25,7 +25,7 @@ where
         db: &'db C::DbView,
         active_query: ActiveQueryGuard<'_>,
         opt_old_memo: Option<Arc<Memo<C::Output<'_>>>>,
-    ) -> StampedValue<&C::Output<'db>> {
+    ) -> StampedValue<&'db C::Output<'db>> {
         let zalsa = db.zalsa();
         let revision_now = zalsa.current_revision();
         let database_key_index = active_query.database_key_index;

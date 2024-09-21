@@ -1,5 +1,4 @@
 use super::{memo::Memo, Configuration, IngredientImpl};
-use crate::tracked_struct::KeyStruct;
 use crate::{
     hash::FxHashSet, key::DependencyIndex, zalsa_local::QueryRevisions, AsDynDatabase as _,
     DatabaseKeyIndex, Event, EventKind,
