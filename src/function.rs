@@ -1,6 +1,7 @@
 use std::{any::Any, fmt, sync::Arc};
 
 use crate::{
+    accumulator::accumulated_map::AccumulatedMap,
     cycle::CycleRecoveryStrategy,
     ingredient::fmt_index,
     key::DatabaseKeyIndex,
@@ -242,6 +243,15 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
+    }
+
+    fn accumulated<'db>(
+        &'db self,
+        db: &'db dyn Database,
+        key_index: Id,
+    ) -> Option<&'db AccumulatedMap> {
+        let db = db.as_view::<C::DbView>();
+        self.accumulated_map(db, key_index)
     }
 }
 

@@ -112,6 +112,14 @@ where
     fn debug_name(&self) -> &'static str {
         C::FIELD_DEBUG_NAMES[self.field_index]
     }
+
+    fn accumulated<'db>(
+        &'db self,
+        _db: &'db dyn Database,
+        _key_index: Id,
+    ) -> Option<&'db crate::accumulator::accumulated_map::AccumulatedMap> {
+        None
+    }
 }
 
 impl<C> std::fmt::Debug for FieldIngredientImpl<C>

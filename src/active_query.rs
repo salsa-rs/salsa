@@ -1,6 +1,7 @@
 use rustc_hash::FxHashMap;
 
 use crate::{
+    accumulator::accumulated_map::AccumulatedMap,
     durability::Durability,
     hash::FxIndexSet,
     key::{DatabaseKeyIndex, DependencyIndex},
@@ -49,6 +50,10 @@ pub(crate) struct ActiveQuery {
     /// Map from tracked struct keys (which include the hash + disambiguator) to their
     /// final id.
     pub(crate) tracked_struct_ids: FxHashMap<KeyStruct, Id>,
+
+    /// Stores the values accumulated to the given ingredient.
+    /// The type of accumulated value is erased but known to the ingredient.
+    pub(crate) accumulated: AccumulatedMap,
 }
 
 impl ActiveQuery {
@@ -62,6 +67,7 @@ impl ActiveQuery {
             cycle: None,
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
+            accumulated: Default::default(),
         }
     }
 
@@ -118,6 +124,7 @@ impl ActiveQuery {
             origin,
             durability: self.durability,
             tracked_struct_ids: self.tracked_struct_ids,
+            accumulated: self.accumulated,
         }
     }
 

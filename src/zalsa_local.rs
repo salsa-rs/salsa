@@ -1,6 +1,7 @@
 use rustc_hash::FxHashMap;
 use tracing::debug;
 
+use crate::accumulator::accumulated_map::AccumulatedMap;
 use crate::active_query::ActiveQuery;
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
@@ -12,6 +13,7 @@ use crate::table::Table;
 use crate::tracked_struct::Disambiguator;
 use crate::tracked_struct::KeyStruct;
 use crate::zalsa::IngredientIndex;
+use crate::Accumulator;
 use crate::Cancelled;
 use crate::Cycle;
 use crate::Database;
@@ -122,6 +124,24 @@ impl ZalsaLocal {
                     },
                 )
             })
+        })
+    }
+
+    /// Add an output to the current query's list of dependencies
+    ///
+    /// Returns `Err` if not in a query.
+    pub(crate) fn accumulate<A: Accumulator>(
+        &self,
+        index: IngredientIndex,
+        value: A,
+    ) -> Result<(), ()> {
+        self.with_query_stack(|stack| {
+            if let Some(top_query) = stack.last_mut() {
+                top_query.accumulated.accumulate(index, value);
+                Ok(())
+            } else {
+                Err(())
+            }
         })
     }
 
@@ -341,6 +361,8 @@ pub(crate) struct QueryRevisions {
     /// This is used to seed the next round if the query is
     /// re-executed.
     pub(super) tracked_struct_ids: FxHashMap<KeyStruct, Id>,
+
+    pub(super) accumulated: AccumulatedMap,
 }
 
 impl QueryRevisions {

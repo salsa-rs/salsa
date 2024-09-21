@@ -27,7 +27,11 @@ where
     }
 
     #[inline]
-    fn refresh_memo<'db>(&'db self, db: &'db C::DbView, id: Id) -> &'db Memo<C::Output<'db>> {
+    pub(super) fn refresh_memo<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        id: Id,
+    ) -> &'db Memo<C::Output<'db>> {
         loop {
             if let Some(memo) = self.fetch_hot(db, id).or_else(|| self.fetch_cold(db, id)) {
                 return memo;
