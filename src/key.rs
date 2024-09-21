@@ -100,7 +100,7 @@ impl DatabaseKeyIndex {
         self.ingredient_index.cycle_recovery_strategy(db)
     }
 
-    pub(crate) fn accumulated<'db>(self, db: &'db dyn Database) -> Option<&'db AccumulatedMap> {
+    pub(crate) fn accumulated(self, db: &dyn Database) -> Option<&AccumulatedMap> {
         db.zalsa()
             .lookup_ingredient(self.ingredient_index)
             .accumulated(db, self.key_index)

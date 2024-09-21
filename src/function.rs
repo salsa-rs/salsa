@@ -153,9 +153,9 @@ where
     /// when this function is called and (b) ensuring that any entries
     /// removed from the memo-map are added to `deleted_entries`, which is
     /// only cleared with `&mut self`.
-    unsafe fn extend_memo_lifetime<'this, 'memo>(
+    unsafe fn extend_memo_lifetime<'this>(
         &'this self,
-        memo: &'memo memo::Memo<C::Output<'this>>,
+        memo: &memo::Memo<C::Output<'this>>,
     ) -> &'this memo::Memo<C::Output<'this>> {
         std::mem::transmute(memo)
     }
