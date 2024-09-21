@@ -52,7 +52,7 @@ where
             {
                 let value = unsafe {
                     // Unsafety invariant: memo is present in memo_map
-                    self.extend_memo_lifetime(memo).unwrap()
+                    self.extend_memo_lifetime(memo).value.as_ref().unwrap()
                 };
                 return Some(memo.revisions.stamped_value(value));
             }
@@ -86,7 +86,7 @@ where
             if old_memo.value.is_some() && self.deep_verify_memo(db, old_memo, &active_query) {
                 let value = unsafe {
                     // Unsafety invariant: memo is present in memo_map.
-                    self.extend_memo_lifetime(old_memo).unwrap()
+                    self.extend_memo_lifetime(old_memo).value.as_ref().unwrap()
                 };
                 return Some(old_memo.revisions.stamped_value(value));
             }

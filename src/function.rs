@@ -155,9 +155,8 @@ where
     unsafe fn extend_memo_lifetime<'this, 'memo>(
         &'this self,
         memo: &'memo memo::Memo<C::Output<'this>>,
-    ) -> Option<&'this C::Output<'this>> {
-        let memo_value: Option<&'memo C::Output<'this>> = memo.value.as_ref();
-        std::mem::transmute(memo_value)
+    ) -> &'this memo::Memo<C::Output<'this>> {
+        std::mem::transmute(memo)
     }
 
     fn insert_memo<'db>(
@@ -170,7 +169,7 @@ where
         let value = unsafe {
             // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
             // value is returned) and anything removed from map is added to deleted entries (ensured elsewhere).
-            self.extend_memo_lifetime(&memo)
+            self.extend_memo_lifetime(&memo).value.as_ref()
         };
         if let Some(old_value) = self.insert_memo_into_table_for(zalsa, id, memo) {
             // In case there is a reference to the old memo out there, we have to store it
