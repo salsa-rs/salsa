@@ -361,13 +361,22 @@ pub(crate) struct QueryRevisions {
     pub(crate) origin: QueryOrigin,
 
     /// The ids of tracked structs created by this query.
-    /// This is used to seed the next round if the query is
-    /// re-executed. This ensures that tracked structs
-    /// have the same id across revisions.
     ///
-    /// [`diff_outputs`] removes tracked structs that were created
-    /// in a previous revision but no longer exist
-    /// in the new revision.
+    /// This table plays an important role when queries are
+    /// re-executed:
+    /// * A clone of this field is used as the initial set of
+    ///   `TrackedStructId`s for the query on the next execution.
+    /// * The query will thus re-use the same ids if it creates
+    ///   tracked structs with the same `KeyStruct` as before.
+    ///   It may also create new tracked structs.
+    /// * One tricky case involves deleted structs. If
+    ///   the old revision created a struct S but the new
+    ///   revision did not, there will still be a map entry
+    ///   for S. This is because queries only ever grow the map
+    ///   and they start with the same entries as from the
+    ///   previous revision. To handle this, `diff_outputs` compares
+    ///   the structs from the old/new revision and retains
+    ///   only entries that appeared in the new revision.
     pub(super) tracked_struct_ids: FxHashMap<KeyStruct, DatabaseKeyIndex>,
 
     pub(super) accumulated: AccumulatedMap,
