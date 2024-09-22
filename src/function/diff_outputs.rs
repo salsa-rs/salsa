@@ -1,9 +1,8 @@
+use super::{memo::Memo, Configuration, IngredientImpl};
 use crate::{
     hash::FxHashSet, key::DependencyIndex, zalsa_local::QueryRevisions, AsDynDatabase as _,
     DatabaseKeyIndex, Event, EventKind,
 };
-
-use super::{memo::Memo, Configuration, IngredientImpl};
 
 impl<C> IngredientImpl<C>
 where
@@ -11,25 +10,34 @@ where
 {
     /// Compute the old and new outputs and invoke the `clear_stale_output` callback
     /// for each output that was generated before but is not generated now.
+    ///
+    /// This function takes a `&mut` reference to `revisions` to remove outputs
+    /// that no longer exist in this revision from [`QueryRevisions::tracked_struct_ids`].
     pub(super) fn diff_outputs(
         &self,
         db: &C::DbView,
         key: DatabaseKeyIndex,
         old_memo: &Memo<C::Output<'_>>,
-        revisions: &QueryRevisions,
+        revisions: &mut QueryRevisions,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset
-        let mut old_outputs = FxHashSet::default();
-        old_memo.revisions.origin.outputs().for_each(|i| {
-            old_outputs.insert(i);
-        });
+        let mut old_outputs: FxHashSet<_> = old_memo.revisions.origin.outputs().collect();
 
         // Iterate over the outputs of the current query
         // and remove elements from `old_outputs` when we find them
         for new_output in revisions.origin.outputs() {
-            if old_outputs.contains(&new_output) {
-                old_outputs.remove(&new_output);
-            }
+            old_outputs.remove(&new_output);
+        }
+
+        if !old_outputs.is_empty() {
+            // Remove the outputs that are no longer present in the current revision
+            // to prevent that the next revision is seeded with a id mapping that no longer exists.
+            revisions.tracked_struct_ids.retain(|_k, value| {
+                !old_outputs.contains(&DependencyIndex {
+                    ingredient_index: value.ingredient_index,
+                    key_index: Some(value.key_index),
+                })
+            });
         }
 
         for old_output in old_outputs {

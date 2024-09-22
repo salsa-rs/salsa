@@ -7,7 +7,7 @@ use crate::{
     key::{DatabaseKeyIndex, DependencyIndex},
     tracked_struct::{Disambiguator, KeyStruct},
     zalsa_local::EMPTY_DEPENDENCIES,
-    Cycle, Id, Revision,
+    Cycle, Revision,
 };
 
 use super::zalsa_local::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
@@ -49,7 +49,7 @@ pub(crate) struct ActiveQuery {
 
     /// Map from tracked struct keys (which include the hash + disambiguator) to their
     /// final id.
-    pub(crate) tracked_struct_ids: FxHashMap<KeyStruct, Id>,
+    pub(crate) tracked_struct_ids: FxHashMap<KeyStruct, DatabaseKeyIndex>,
 
     /// Stores the values accumulated to the given ingredient.
     /// The type of accumulated value is erased but known to the ingredient.

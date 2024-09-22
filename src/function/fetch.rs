@@ -6,7 +6,7 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn fetch<'db>(&'db self, db: &'db C::DbView, id: Id) -> &C::Output<'db> {
+    pub fn fetch<'db>(&'db self, db: &'db C::DbView, id: Id) -> &'db C::Output<'db> {
         let (zalsa, zalsa_local) = db.zalsas();
         zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
 

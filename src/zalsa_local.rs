@@ -290,12 +290,15 @@ impl ZalsaLocal {
         );
         self.with_query_stack(|stack| {
             let top_query = stack.last().unwrap();
-            top_query.tracked_struct_ids.get(key_struct).cloned()
+            top_query
+                .tracked_struct_ids
+                .get(key_struct)
+                .map(|index| index.key_index())
         })
     }
 
     #[track_caller]
-    pub(crate) fn store_tracked_struct_id(&self, key_struct: KeyStruct, id: Id) {
+    pub(crate) fn store_tracked_struct_id(&self, key_struct: KeyStruct, id: DatabaseKeyIndex) {
         debug_assert!(
             self.query_in_progress(),
             "cannot create a tracked struct disambiguator outside of a tracked function"
@@ -358,9 +361,23 @@ pub(crate) struct QueryRevisions {
     pub(crate) origin: QueryOrigin,
 
     /// The ids of tracked structs created by this query.
-    /// This is used to seed the next round if the query is
-    /// re-executed.
-    pub(super) tracked_struct_ids: FxHashMap<KeyStruct, Id>,
+    ///
+    /// This table plays an important role when queries are
+    /// re-executed:
+    /// * A clone of this field is used as the initial set of
+    ///   `TrackedStructId`s for the query on the next execution.
+    /// * The query will thus re-use the same ids if it creates
+    ///   tracked structs with the same `KeyStruct` as before.
+    ///   It may also create new tracked structs.
+    /// * One tricky case involves deleted structs. If
+    ///   the old revision created a struct S but the new
+    ///   revision did not, there will still be a map entry
+    ///   for S. This is because queries only ever grow the map
+    ///   and they start with the same entries as from the
+    ///   previous revision. To handle this, `diff_outputs` compares
+    ///   the structs from the old/new revision and retains
+    ///   only entries that appeared in the new revision.
+    pub(super) tracked_struct_ids: FxHashMap<KeyStruct, DatabaseKeyIndex>,
 
     pub(super) accumulated: AccumulatedMap,
 }
@@ -519,7 +536,10 @@ impl ActiveQueryGuard<'_> {
     }
 
     /// Initialize the tracked struct ids with the values from the prior execution.
-    pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &FxHashMap<KeyStruct, Id>) {
+    pub(crate) fn seed_tracked_struct_ids(
+        &self,
+        tracked_struct_ids: &FxHashMap<KeyStruct, DatabaseKeyIndex>,
+    ) {
         self.local_state.with_query_stack(|stack| {
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
