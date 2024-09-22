@@ -108,16 +108,12 @@ impl<C: Configuration> IngredientImpl<C> {
             None
         };
 
-        let id = zalsa_local.allocate(
-            zalsa.table(),
-            self.ingredient_index,
-            Value::<C> {
-                fields,
-                stamps,
-                memos: Default::default(),
-                syncs: Default::default(),
-            },
-        );
+        let id = zalsa_local.allocate(zalsa.table(), self.ingredient_index, || Value::<C> {
+            fields,
+            stamps,
+            memos: Default::default(),
+            syncs: Default::default(),
+        });
 
         if C::IS_SINGLETON {
             self.singleton_index.store(Some(id));
@@ -268,6 +264,14 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
 
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
+    }
+
+    fn accumulated<'db>(
+        &'db self,
+        _db: &'db dyn Database,
+        _key_index: Id,
+    ) -> Option<&'db crate::accumulator::accumulated_map::AccumulatedMap> {
+        None
     }
 }
 

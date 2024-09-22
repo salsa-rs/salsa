@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{
+    accumulator::accumulated_map::AccumulatedMap,
     cycle::CycleRecoveryStrategy,
     zalsa::{IngredientIndex, MemoIngredientIndex},
     zalsa_local::QueryOrigin,
@@ -41,6 +42,16 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
     fn origin(&self, db: &dyn Database, key_index: Id) -> Option<QueryOrigin>;
+
+    /// What values were accumulated during the creation of the value at `key_index`
+    /// (if any).
+    ///
+    /// In practice, returns `Some` only for tracked function ingredients.
+    fn accumulated<'db>(
+        &'db self,
+        db: &'db dyn Database,
+        key_index: Id,
+    ) -> Option<&'db AccumulatedMap>;
 
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
     /// This occurs because the value for `executor`, which generated it, was marked as valid

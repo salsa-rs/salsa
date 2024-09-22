@@ -156,15 +156,11 @@ where
             dashmap::mapref::entry::Entry::Vacant(entry) => {
                 let zalsa = db.zalsa();
                 let table = zalsa.table();
-                let next_id = zalsa_local.allocate(
-                    table,
-                    self.ingredient_index,
-                    Value::<C> {
-                        data: internal_data,
-                        memos: Default::default(),
-                        syncs: Default::default(),
-                    },
-                );
+                let next_id = zalsa_local.allocate(table, self.ingredient_index, || Value::<C> {
+                    data: internal_data,
+                    memos: Default::default(),
+                    syncs: Default::default(),
+                });
                 entry.insert(next_id);
                 C::struct_from_id(next_id)
             }
@@ -258,6 +254,14 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
+    }
+
+    fn accumulated<'db>(
+        &'db self,
+        _db: &'db dyn Database,
+        _key_index: Id,
+    ) -> Option<&'db crate::accumulator::accumulated_map::AccumulatedMap> {
+        None
     }
 }
 

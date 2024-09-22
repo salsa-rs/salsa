@@ -214,7 +214,10 @@ impl<T: Slot> Page<T> {
         self.data[slot.0].get()
     }
 
-    pub(crate) fn allocate(&self, page: PageIndex, value: T) -> Result<Id, T> {
+    pub(crate) fn allocate<V>(&self, page: PageIndex, value: V) -> Result<Id, V>
+    where
+        V: FnOnce() -> T,
+    {
         let guard = self.allocation_lock.lock();
         let index = self.allocated.load();
         if index == PAGE_LEN {
@@ -223,7 +226,7 @@ impl<T: Slot> Page<T> {
 
         // Initialize entry `index`
         let data = &self.data[index];
-        unsafe { std::ptr::write(data.get(), value) };
+        unsafe { std::ptr::write(data.get(), value()) };
 
         // Update the length (this must be done after initialization!)
         self.allocated.store(index + 1);

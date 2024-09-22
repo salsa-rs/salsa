@@ -69,6 +69,7 @@ where
             durability: current_deps.durability,
             origin: QueryOrigin::Assigned(active_query_key),
             tracked_struct_ids: Default::default(),
+            accumulated: Default::default(),
         };
 
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key) {

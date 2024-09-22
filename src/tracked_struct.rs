@@ -257,8 +257,7 @@ where
 
         let data_hash = crate::hash::hash(&C::id_fields(&fields));
 
-        let (current_deps, disambiguator) =
-            zalsa_local.disambiguate(self.ingredient_index, Revision::start(), data_hash);
+        let (current_deps, disambiguator) = zalsa_local.disambiguate(data_hash);
 
         let key_struct = KeyStruct {
             disambiguator,
@@ -317,7 +316,7 @@ where
 
             id
         } else {
-            zalsa_local.allocate::<Value<C>>(zalsa.table(), self.ingredient_index, value())
+            zalsa_local.allocate::<Value<C>>(zalsa.table(), self.ingredient_index, value)
         }
     }
 
@@ -607,6 +606,14 @@ where
     }
 
     fn reset_for_new_revision(&mut self) {}
+
+    fn accumulated<'db>(
+        &'db self,
+        _db: &'db dyn Database,
+        _key_index: Id,
+    ) -> Option<&'db crate::accumulator::accumulated_map::AccumulatedMap> {
+        None
+    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>
