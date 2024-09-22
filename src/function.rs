@@ -1,6 +1,7 @@
 use std::{any::Any, fmt, sync::Arc};
 
 use crate::{
+    accumulator::accumulated_map::AccumulatedMap,
     cycle::CycleRecoveryStrategy,
     ingredient::fmt_index,
     key::DatabaseKeyIndex,
@@ -152,12 +153,11 @@ where
     /// when this function is called and (b) ensuring that any entries
     /// removed from the memo-map are added to `deleted_entries`, which is
     /// only cleared with `&mut self`.
-    unsafe fn extend_memo_lifetime<'this, 'memo>(
+    unsafe fn extend_memo_lifetime<'this>(
         &'this self,
-        memo: &'memo memo::Memo<C::Output<'this>>,
-    ) -> Option<&'this C::Output<'this>> {
-        let memo_value: Option<&'memo C::Output<'this>> = memo.value.as_ref();
-        std::mem::transmute(memo_value)
+        memo: &memo::Memo<C::Output<'this>>,
+    ) -> &'this memo::Memo<C::Output<'this>> {
+        std::mem::transmute(memo)
     }
 
     fn insert_memo<'db>(
@@ -165,9 +165,9 @@ where
         zalsa: &'db Zalsa,
         id: Id,
         memo: memo::Memo<C::Output<'db>>,
-    ) -> Option<&C::Output<'db>> {
+    ) -> &'db memo::Memo<C::Output<'db>> {
         let memo = Arc::new(memo);
-        let value = unsafe {
+        let db_memo = unsafe {
             // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
             // value is returned) and anything removed from map is added to deleted entries (ensured elsewhere).
             self.extend_memo_lifetime(&memo)
@@ -177,7 +177,7 @@ where
             // in the deleted entries. This will get cleared when a new revision starts.
             self.deleted_entries.push(old_value);
         }
-        value
+        db_memo
     }
 }
 
@@ -243,6 +243,15 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
+    }
+
+    fn accumulated<'db>(
+        &'db self,
+        db: &'db dyn Database,
+        key_index: Id,
+    ) -> Option<&'db AccumulatedMap> {
+        let db = db.as_view::<C::DbView>();
+        self.accumulated_map(db, key_index)
     }
 }
 

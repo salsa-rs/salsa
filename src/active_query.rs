@@ -1,8 +1,9 @@
 use rustc_hash::FxHashMap;
 
 use crate::{
+    accumulator::accumulated_map::AccumulatedMap,
     durability::Durability,
-    hash::{FxIndexMap, FxIndexSet},
+    hash::FxIndexSet,
     key::{DatabaseKeyIndex, DependencyIndex},
     tracked_struct::{Disambiguator, KeyStruct},
     zalsa_local::EMPTY_DEPENDENCIES,
@@ -44,11 +45,15 @@ pub(crate) struct ActiveQuery {
     /// This table starts empty as the query begins and is gradually populated.
     /// Note that if a query executes in 2 different revisions but creates the same
     /// set of tracked structs, they will get the same disambiguator values.
-    disambiguator_map: FxIndexMap<u64, Disambiguator>,
+    disambiguator_map: FxHashMap<u64, Disambiguator>,
 
     /// Map from tracked struct keys (which include the hash + disambiguator) to their
     /// final id.
     pub(crate) tracked_struct_ids: FxHashMap<KeyStruct, Id>,
+
+    /// Stores the values accumulated to the given ingredient.
+    /// The type of accumulated value is erased but known to the ingredient.
+    pub(crate) accumulated: AccumulatedMap,
 }
 
 impl ActiveQuery {
@@ -62,6 +67,7 @@ impl ActiveQuery {
             cycle: None,
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
+            accumulated: Default::default(),
         }
     }
 
@@ -118,6 +124,7 @@ impl ActiveQuery {
             origin,
             durability: self.durability,
             tracked_struct_ids: self.tracked_struct_ids,
+            accumulated: self.accumulated,
         }
     }
 
