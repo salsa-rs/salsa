@@ -156,12 +156,12 @@ where
             return Ok(());
         }
 
-        // Check if any field has the `#[id]` attribute.
+        // Check if any field has the `#[default]` attribute.
         for ef in &self.fields {
             if ef.has_default_attr {
                 return Err(syn::Error::new_spanned(
                     ef.field,
-                    format!("`#[id]` cannot be used with `#[salsa::{}]`", A::KIND),
+                    format!("`#[default]` cannot be used with `#[salsa::{}]`", A::KIND),
                 ));
             }
         }
