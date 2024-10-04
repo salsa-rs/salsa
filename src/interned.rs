@@ -151,6 +151,7 @@ where
                 let a: &C::Data<'db> = unsafe { std::mem::transmute(a) };
                 Lookup::eq(&data, a)
             }) {
+                // SAFETY: Read lock on map is held during this block
                 return C::struct_from_id(unsafe { *bucket.as_ref().1.get() });
             }
         };
@@ -310,6 +311,19 @@ where
     }
 }
 
+/// The `Lookup` trait is a more flexible variant on [`std::borrow::Borrow`]
+/// and [`std::borrow::ToOwned`]. It is implemented by "some type that can
+/// be used as the lookup key for `O`". This means that `self` 
+/// can be hashed and compared for equality with values of type `O`
+/// without actually creating an owned value. It `self` needs to be interned,
+/// it can be converted into an equivalent value of type `O`.
+///
+/// The canonical example is `&str: Lookup<String>`. However, this example
+/// alone can be handled by [`std::borrow::Borrow`][]. In our case, we may have
+/// multiple keys accumulated into a struct, like `ViewStruct: Lookup<(K1, ...)>`,
+/// where `struct ViewStruct<L1: Lookup<K1>...>(K1...)`. The `Borrow` trait
+/// requires that `&(K1...)` be convertible to `&ViewStruct` which just isn't
+/// possible. `Lookup` instead offers direct `hash` and `eq` methods.
 pub trait Lookup<O>
 {
     fn hash<H: Hasher>(&self, h: &mut H);
