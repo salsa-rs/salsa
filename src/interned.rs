@@ -1,5 +1,5 @@
 use std::fmt;
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
 
 use crate::durability::Durability;
@@ -114,19 +114,19 @@ where
         unsafe { std::mem::transmute(data) }
     }
 
-    pub fn intern_id<'db>(
+    pub fn intern_id<'db, T: Lookup<C::Data<'db>>>(
         &'db self,
         db: &'db dyn crate::Database,
-        data: C::Data<'db>,
+        data: T,
     ) -> crate::Id {
         C::deref_struct(self.intern(db, data)).as_id()
     }
 
     /// Intern data to a unique reference.
-    pub fn intern<'db>(
+    pub fn intern<'db, T: Lookup<C::Data<'db>>>(
         &'db self,
         db: &'db dyn crate::Database,
-        data: C::Data<'db>,
+        data: T,
     ) -> C::Struct<'db> {
         let zalsa_local = db.zalsa_local();
         zalsa_local.report_tracked_read(
@@ -137,7 +137,25 @@ where
 
         // Optimisation to only get read lock on the map if the data has already
         // been interned.
+        let mut hasher = self.key_map.hasher().build_hasher();
+        data.hash(&mut hasher);
+        let data_hash = hasher.finish();
+        let shard = self.key_map.determine_shard(data_hash as _);
+        {
+            let lock = self.key_map.shards()[shard].read();
+            if let Some(bucket) = lock.find(data_hash, |(a, _)| {
+                // lifetime shrink
+                let a: &C::Data<'db> = unsafe { std::mem::transmute(a) };
+                Lookup::eq(&data, a)
+            }) {
+                return C::struct_from_id(unsafe { *bucket.as_ref().1.get() });
+            }
+        };
+
+        let data = data.into_owned();
+
         let internal_data = unsafe { self.to_internal_data(data) };
+
         if let Some(guard) = self.key_map.get(&internal_data) {
             let id = *guard;
             drop(guard);
@@ -286,5 +304,60 @@ where
 
     unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {
         &self.syncs
+    }
+}
+
+pub trait Lookup<O>
+{
+    fn hash<H: Hasher>(&self, h: &mut H);
+    fn eq(&self, data: &O) -> bool;
+    fn into_owned(self) -> O;
+}
+
+impl<T> Lookup<T> for T
+where
+    T: Hash + Eq
+{
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(self, &mut *h);
+    }
+
+    fn eq(&self, data: &T) -> bool {
+        self == data
+    }
+
+    fn into_owned(self) -> T {
+        self
+    }
+}
+
+impl<T> Lookup<T> for &T
+where
+    T: Clone + Eq + Hash,
+{
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(self, &mut *h);
+    }
+
+    fn eq(&self, data: &T) -> bool {
+        *self == data
+    }
+
+    fn into_owned(self) -> T {
+        Clone::clone(self)
+    }
+}
+
+impl Lookup<String> for &str {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(self, &mut *h)
+    }
+
+    fn eq(&self, data: &String) -> bool {
+        self == data
+    }
+
+    fn into_owned(self) -> String {
+        self.to_owned()
     }
 }
