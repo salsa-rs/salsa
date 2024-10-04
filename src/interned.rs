@@ -117,7 +117,7 @@ where
     pub fn intern_id<'db, T: Lookup<C::Data<'db>>>(
         &'db self,
         db: &'db dyn crate::Database,
-        data: T,
+        data: impl Lookup<C::Data<'db>>,
     ) -> crate::Id {
         C::deref_struct(self.intern(db, data)).as_id()
     }
@@ -126,7 +126,7 @@ where
     pub fn intern<'db, T: Lookup<C::Data<'db>>>(
         &'db self,
         db: &'db dyn crate::Database,
-        data: T,
+        data: impl Lookup<C::Data<'db>>,
     ) -> C::Struct<'db> {
         let zalsa_local = db.zalsa_local();
         zalsa_local.report_tracked_read(
