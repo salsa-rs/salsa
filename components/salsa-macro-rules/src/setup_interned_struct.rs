@@ -67,7 +67,12 @@ macro_rules! setup_interned_struct {
 
             type StructData<$db_lt> = ($($field_ty,)*);
 
-            struct StructKey<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*>($($indexed_ty,)* std::marker::PhantomData<&$db_lt ()>,);
+            /// Key to use during hash lookups. Each field is some type that implements `Lookup<T>`
+            /// for the owned type. This permits interning with an `&str` when a `String` is required and so forth.
+            struct StructKey<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*>(
+                $($indexed_ty,)*
+                std::marker::PhantomData<&$db_lt ()>,
+            );
 
             impl<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*> $zalsa::interned::Lookup<StructData<$db_lt>>
                 for StructKey<$db_lt, $($indexed_ty),*> {
