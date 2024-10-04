@@ -1,6 +1,7 @@
 //! Test that a `tracked` fn on a `salsa::input`
 //! compiles and executes successfully.
 
+use std::path::{Path, PathBuf};
 use expect_test::expect;
 use test_log::test;
 
@@ -19,6 +20,16 @@ struct InternedPair<'db> {
 struct InternedTwoFields<'db> {
     data1: String,
     data2: String,
+}
+
+#[salsa::interned]
+struct InternedVec<'db> {
+    data1: Vec<String>,
+}
+
+#[salsa::interned]
+struct InternedPathBuf<'db> {
+    data1: PathBuf,
 }
 
 #[salsa::tracked]
@@ -55,6 +66,41 @@ fn interning_returns_equal_keys_for_equal_data_multi_field() {
     let s2 = InternedTwoFields::new(&db, "World, ", "Hello".to_string());
     let s1_2 = InternedTwoFields::new(&db, "Hello, ", "World");
     let s2_2 = InternedTwoFields::new(&db, "World, ", "Hello");
+    let new = InternedTwoFields::new(&db, "Hello, World", "");
+
     assert_eq!(s1, s1_2);
     assert_eq!(s2, s2_2);
+    assert_ne!(s1, s2_2);
+    assert_ne!(s1, new);
+}
+
+#[test]
+fn interning_vec() {
+    let db = salsa::DatabaseImpl::new();
+    let s1 = InternedVec::new(&db, ["Hello, ".to_string(), "World".to_string()].as_slice());
+    let s2 = InternedVec::new(&db, ["Hello, ", "World"].as_slice());
+    let s3 = InternedVec::new(&db, vec!["Hello, ".to_string(), "World".to_string()]);
+    let s4 = InternedVec::new(&db, ["Hello, ", "World"].as_slice());
+    let s5 = InternedVec::new(&db, ["Hello, ", "World", "Test"].as_slice());
+    let s6 = InternedVec::new(&db, ["Hello, ", "World", ""].as_slice());
+    let s7 = InternedVec::new(&db, ["Hello, "].as_slice());
+    assert_eq!(s1, s2);
+    assert_eq!(s1, s3);
+    assert_eq!(s1, s4);
+    assert_ne!(s1, s5);
+    assert_ne!(s1, s6);
+    assert_ne!(s5, s6);
+    assert_ne!(s6, s7);
+}
+
+#[test]
+fn interning_path_buf() {
+    let db = salsa::DatabaseImpl::new();
+    let s1 = InternedPathBuf::new(&db, PathBuf::from("test_path".to_string()));
+    let s2 = InternedPathBuf::new(&db, Path::new("test_path"));
+    let s3 = InternedPathBuf::new(&db, Path::new("test_path/"));
+    let s4 = InternedPathBuf::new(&db, Path::new("test_path/a"));
+    assert_eq!(s1, s2);
+    assert_eq!(s1, s3);
+    assert_ne!(s1, s4);
 }

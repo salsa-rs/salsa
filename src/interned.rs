@@ -391,6 +391,23 @@ impl<A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for &[A]
     }
 }
 
+impl<const N: usize, A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for [A; N] {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        for a in self {
+            Hash::hash(a, h);
+        }
+    }
+
+    fn eq(&self, data: &Vec<T>) -> bool {
+        self.len() == data.len() &&
+            data.iter().enumerate().all(|(i, a)| &self[i] == a)
+    }
+
+    fn into_owned(self) -> Vec<T> {
+        self.into_iter().map(|a| Lookup::into_owned(a.clone())).collect()
+    }
+}
+
 impl Lookup<PathBuf> for &Path {
     fn hash<H: Hasher>(&self, h: &mut H) {
         Hash::hash(self, h);
