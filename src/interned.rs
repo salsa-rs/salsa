@@ -1,7 +1,7 @@
 use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
-
+use std::path::{Path, PathBuf};
 use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::fmt_index;
@@ -147,7 +147,8 @@ where
         {
             let lock = self.key_map.shards()[shard].read();
             if let Some(bucket) = lock.find(data_hash, |(a, _)| {
-                // lifetime shrink
+                // SAFETY: it's safe to go from Data<'static> to Data<'db>
+                // shrink lifetime here to use a single lifetime in Lookup::eq(&StructKey<'db>, &C::Data<'db>)
                 let a: &C::Data<'db> = unsafe { std::mem::transmute(a) };
                 Lookup::eq(&data, a)
             }) {
@@ -159,12 +160,6 @@ where
         let data = data.into_owned();
 
         let internal_data = unsafe { self.to_internal_data(data) };
-
-        if let Some(guard) = self.key_map.get(&internal_data) {
-            let id = *guard;
-            drop(guard);
-            return C::struct_from_id(id);
-        }
 
         match self.key_map.entry(internal_data.clone()) {
             // Data has been interned by a racing call, use that ID instead
@@ -375,6 +370,37 @@ impl Lookup<String> for &str {
     }
 
     fn into_owned(self) -> String {
+        self.to_owned()
+    }
+}
+
+impl<A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for &[A] {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        for a in *self {
+            Hash::hash(a, h);
+        }
+    }
+
+    fn eq(&self, data: &Vec<T>) -> bool {
+        self.len() == data.len() &&
+            data.iter().enumerate().all(|(i, a)| &self[i] == a)
+    }
+
+    fn into_owned(self) -> Vec<T> {
+        self.into_iter().map(|a| Lookup::into_owned(a.clone())).collect()
+    }
+}
+
+impl Lookup<PathBuf> for &Path {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(self, h);
+    }
+
+    fn eq(&self, data: &PathBuf) -> bool {
+        self == data
+    }
+
+    fn into_owned(self) -> PathBuf {
         self.to_owned()
     }
 }
