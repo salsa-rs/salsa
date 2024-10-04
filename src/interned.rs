@@ -137,9 +137,12 @@ where
 
         // Optimisation to only get read lock on the map if the data has already
         // been interned.
-        let mut hasher = self.key_map.hasher().build_hasher();
-        data.hash(&mut hasher);
-        let data_hash = hasher.finish();
+        // We need to use the raw API for this lookup. See the [`Lookup`][] trait definition for an explanation of why.
+        let data_hash = {
+            let mut hasher = self.key_map.hasher().build_hasher();
+            data.hash(&mut hasher);
+            hasher.finish()
+        };
         let shard = self.key_map.determine_shard(data_hash as _);
         {
             let lock = self.key_map.shards()[shard].read();
