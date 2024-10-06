@@ -114,7 +114,7 @@ where
         unsafe { std::mem::transmute(data) }
     }
 
-    pub fn intern_id<'db, T: Lookup<C::Data<'db>>>(
+    pub fn intern_id<'db>(
         &'db self,
         db: &'db dyn crate::Database,
         data: impl Lookup<C::Data<'db>>,
@@ -123,7 +123,7 @@ where
     }
 
     /// Intern data to a unique reference.
-    pub fn intern<'db, T: Lookup<C::Data<'db>>>(
+    pub fn intern<'db>(
         &'db self,
         db: &'db dyn crate::Database,
         data: impl Lookup<C::Data<'db>>,
