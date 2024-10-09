@@ -45,7 +45,7 @@ where
     }
 }
 
-impl<'setter, C, S, F> Setter for SetterImpl<'setter, C, S, F>
+impl<C, S, F> Setter for SetterImpl<'_, C, S, F>
 where
     C: Configuration,
     S: FnOnce(&mut C::Fields, F) -> F,
