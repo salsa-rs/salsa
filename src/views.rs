@@ -168,7 +168,7 @@ where
     /// # Safety
     ///
     /// The underlying type of `caster` must be `ViewCaster::<Db, DbView>`.
-    unsafe fn erased_cast<'db>(caster: *mut (), db: &'db dyn Database) -> &'db DbView {
+    unsafe fn erased_cast(caster: *mut (), db: &dyn Database) -> &DbView {
         let caster = unsafe { &*caster.cast::<ViewCaster<Db, DbView>>() };
         caster.cast(db)
     }
