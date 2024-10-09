@@ -39,7 +39,9 @@ impl crate::options::AllowedOptions for TrackedFn {
 
     const DB: bool = false;
 
-    const RECOVERY_FN: bool = true;
+    const CYCLE_FN: bool = true;
+
+    const CYCLE_INITIAL: bool = true;
 
     const LRU: bool = true;
 
@@ -68,7 +70,8 @@ impl Macro {
         let input_ids = self.input_ids(&item);
         let input_tys = self.input_tys(&item)?;
         let output_ty = self.output_ty(&db_lt, &item)?;
-        let (cycle_recovery_fn, cycle_recovery_strategy) = self.cycle_recovery();
+        let (cycle_recovery_fn, cycle_recovery_initial, cycle_recovery_strategy) =
+            self.cycle_recovery()?;
         let is_specifiable = self.args.specify.is_some();
         let no_eq = self.args.no_eq.is_some();
 
@@ -127,6 +130,7 @@ impl Macro {
                 output_ty: #output_ty,
                 inner_fn: #inner_fn,
                 cycle_recovery_fn: #cycle_recovery_fn,
+                cycle_recovery_initial: #cycle_recovery_initial,
                 cycle_recovery_strategy: #cycle_recovery_strategy,
                 is_specifiable: #is_specifiable,
                 no_eq: #no_eq,
@@ -160,14 +164,26 @@ impl Macro {
 
         Ok(ValidFn { db_ident, db_path })
     }
-    fn cycle_recovery(&self) -> (TokenStream, TokenStream) {
-        if let Some(recovery_fn) = &self.args.recovery_fn {
-            (quote!((#recovery_fn)), quote!(Fallback))
-        } else {
-            (
+    fn cycle_recovery(&self) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
+        match (&self.args.cycle_fn, &self.args.cycle_initial) {
+            (Some(cycle_fn), Some(cycle_initial)) => Ok((
+                quote!((#cycle_fn)),
+                quote!((#cycle_initial)),
+                quote!(Recover),
+            )),
+            (None, None) => Ok((
                 quote!((salsa::plumbing::unexpected_cycle_recovery!)),
+                quote!((salsa::plumbing::unexpected_cycle_initial!)),
                 quote!(Panic),
-            )
+            )),
+            (Some(_), None) => Err(syn::Error::new_spanned(
+                self.args.cycle_fn.as_ref().unwrap(),
+                "must provide `cycle_initial` along with `cycle_fn`",
+            )),
+            (None, Some(_)) => Err(syn::Error::new_spanned(
+                self.args.cycle_initial.as_ref().unwrap(),
+                "must provide `cycle_fn` along with `cycle_initial`",
+            )),
         }
     }
 

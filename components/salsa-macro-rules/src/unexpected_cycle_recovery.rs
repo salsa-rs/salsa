@@ -1,13 +1,17 @@
 // Macro that generates the body of the cycle recovery function
-// for the case where no cycle recovery is possible. This has to be
-// a macro because it can take a variadic number of arguments.
+// for the case where no cycle recovery is possible.
 #[macro_export]
 macro_rules! unexpected_cycle_recovery {
-    ($db:ident, $cycle:ident, $($other_inputs:ident),*) => {
-        {
-            std::mem::drop($db);
-            std::mem::drop(($($other_inputs),*));
-            panic!("cannot recover from cycle `{:?}`", $cycle)
-        }
-    }
+    ($db:ident, $value:ident) => {{
+        std::mem::drop($db);
+        panic!("cannot recover from cycle")
+    }};
+}
+
+#[macro_export]
+macro_rules! unexpected_cycle_initial {
+    ($db:ident) => {{
+        std::mem::drop($db);
+        panic!("no cycle initial value")
+    }};
 }

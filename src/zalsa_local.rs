@@ -14,7 +14,6 @@ use crate::tracked_struct::{Disambiguator, Identity, IdentityHash};
 use crate::zalsa::IngredientIndex;
 use crate::Accumulator;
 use crate::Cancelled;
-use crate::Cycle;
 use crate::Database;
 use crate::Event;
 use crate::EventKind;
@@ -178,31 +177,6 @@ impl ZalsaLocal {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_read(input, durability, changed_at);
-
-                // We are a cycle participant:
-                //
-                //     C0 --> ... --> Ci --> Ci+1 -> ... -> Cn --> C0
-                //                        ^   ^
-                //                        :   |
-                //         This edge -----+   |
-                //                            |
-                //                            |
-                //                            N0
-                //
-                // In this case, the value we have just read from `Ci+1`
-                // is actually the cycle fallback value and not especially
-                // interesting. We unwind now with `CycleParticipant` to avoid
-                // executing the rest of our query function. This unwinding
-                // will be caught and our own fallback value will be used.
-                //
-                // Note that `Ci+1` may` have *other* callers who are not
-                // participants in the cycle (e.g., N0 in the graph above).
-                // They will not have the `cycle` marker set in their
-                // stack frames, so they will just read the fallback value
-                // from `Ci+1` and continue on their merry way.
-                if let Some(cycle) = &top_query.cycle {
-                    cycle.clone().throw()
-                }
             }
         })
     }
@@ -557,17 +531,7 @@ impl ActiveQueryGuard<'_> {
         // Extract accumulated inputs.
         let popped_query = self.complete();
 
-        // If this frame were a cycle participant, it would have unwound.
-        assert!(popped_query.cycle.is_none());
-
         popped_query.into_revisions()
-    }
-
-    /// If the active query is registered as a cycle participant, remove and
-    /// return that cycle.
-    pub(crate) fn take_cycle(&self) -> Option<Cycle> {
-        self.local_state
-            .with_query_stack(|stack| stack.last_mut()?.cycle.take())
     }
 }
 

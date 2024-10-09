@@ -37,6 +37,9 @@ macro_rules! setup_tracked_fn {
         // Path to the cycle recovery function to use.
         cycle_recovery_fn: ($($cycle_recovery_fn:tt)*),
 
+        // Path to function to get the initial value to use for cycle recovery.
+        cycle_recovery_initial: ($($cycle_recovery_initial:tt)*),
+
         // Name of cycle recovery strategy variant to use.
         cycle_recovery_strategy: $cycle_recovery_strategy:ident,
 
@@ -174,12 +177,15 @@ macro_rules! setup_tracked_fn {
                     $inner($db, $($input_id),*)
                 }
 
+                fn cycle_initial<$db_lt>(db: &$db_lt dyn $Db) -> Self::Output<$db_lt> {
+                    $($cycle_recovery_initial)*(db)
+                }
+
                 fn recover_from_cycle<$db_lt>(
                     db: &$db_lt dyn $Db,
-                    cycle: &$zalsa::Cycle,
-                    ($($input_id),*): ($($input_ty),*)
-                ) -> Self::Output<$db_lt> {
-                    $($cycle_recovery_fn)*(db, cycle, $($input_id),*)
+                    value: Self::Output<$db_lt>,
+                ) -> $zalsa::CycleRecoveryAction<Self::Output<$db_lt>> {
+                    $($cycle_recovery_fn)*(db, value)
                 }
 
                 fn id_to_input<$db_lt>(db: &$db_lt Self::DbView, key: salsa::Id) -> Self::Input<$db_lt> {

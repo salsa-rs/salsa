@@ -1,5 +1,5 @@
-/// Minimal(ish) example use case for fixpoint iteration cycle resolution.
-use salsa::{Database as Db, Setter};
+/// Test case for fixpoint iteration cycle resolution.
+use salsa::{CycleRecoveryAction, Database as Db, Setter};
 use std::collections::BTreeSet;
 use std::iter::IntoIterator;
 
@@ -59,7 +59,7 @@ fn infer_use<'db>(db: &'db dyn Db, u: Use) -> Type {
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(cycle_fn=recover_definition_cycle, cycle_initial=initial_definition)]
 fn infer_definition<'db>(db: &'db dyn Db, def: Definition) -> Type {
     let increment_ty = infer_literal(db, def.increment(db));
     if let Some(base) = def.base(db) {
@@ -67,6 +67,24 @@ fn infer_definition<'db>(db: &'db dyn Db, def: Definition) -> Type {
         add(&base_ty, &increment_ty)
     } else {
         increment_ty
+    }
+}
+
+fn initial_definition<'db>(_db: &'db dyn Db) -> Type {
+    Type::Bottom
+}
+
+fn recover_definition_cycle<'db>(_db: &'db dyn Db, value: Type) -> CycleRecoveryAction<Type> {
+    match value {
+        Type::Bottom => CycleRecoveryAction::Iterate,
+        Type::Values(values) => {
+            if values.len() > 4 {
+                CycleRecoveryAction::Fallback(Type::Top)
+            } else {
+                CycleRecoveryAction::Iterate
+            }
+        }
+        Type::Top => CycleRecoveryAction::Iterate,
     }
 }
 
@@ -183,7 +201,7 @@ fn multi_symbol_cycle_converges() {
     let x_ty = infer_use(&db, use_x);
     let y_ty = infer_use(&db, use_y);
 
-    // Both symbols converge on LiteralInt(0)
+    // Both symbols converge on 0
     assert_eq!(x_ty, Type::Values(Box::from([0])));
     assert_eq!(y_ty, Type::Values(Box::from([0])));
 }

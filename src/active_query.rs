@@ -9,7 +9,7 @@ use crate::{
     key::{DatabaseKeyIndex, DependencyIndex},
     tracked_struct::{Disambiguator, Identity},
     zalsa_local::EMPTY_DEPENDENCIES,
-    Cycle, Id, Revision,
+    Id, Revision,
 };
 
 #[derive(Debug)]
@@ -34,9 +34,6 @@ pub(crate) struct ActiveQuery {
 
     /// True if there was an untracked read.
     untracked_read: bool,
-
-    /// Stores the entire cycle, if one is found and this query is part of it.
-    pub(crate) cycle: Option<Cycle>,
 
     /// When new tracked structs are created, their data is hashed, and the resulting
     /// hash is added to this map. If it is not present, then the disambiguator is 0.
@@ -64,7 +61,6 @@ impl ActiveQuery {
             changed_at: Revision::start(),
             input_outputs: FxIndexSet::default(),
             untracked_read: false,
-            cycle: None,
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
@@ -126,33 +122,6 @@ impl ActiveQuery {
             tracked_struct_ids: self.tracked_struct_ids,
             accumulated: self.accumulated,
         }
-    }
-
-    /// Adds any dependencies from `other` into `self`.
-    /// Used during cycle recovery, see [`Runtime::unblock_cycle_and_maybe_throw`].
-    pub(super) fn add_from(&mut self, other: &ActiveQuery) {
-        self.changed_at = self.changed_at.max(other.changed_at);
-        self.durability = self.durability.min(other.durability);
-        self.untracked_read |= other.untracked_read;
-        self.input_outputs
-            .extend(other.input_outputs.iter().copied());
-    }
-
-    /// Removes the participants in `cycle` from my dependencies.
-    /// Used during cycle recovery, see [`Runtime::unblock_cycle_and_maybe_throw`].
-    pub(super) fn remove_cycle_participants(&mut self, cycle: &Cycle) {
-        for p in cycle.participant_keys() {
-            let p: DependencyIndex = p.into();
-            self.input_outputs.shift_remove(&(EdgeKind::Input, p));
-        }
-    }
-
-    /// Copy the changed-at, durability, and dependencies from `cycle_query`.
-    /// Used during cycle recovery, see [`Runtime::unblock_cycle_and_maybe_throw`].
-    pub(crate) fn take_inputs_from(&mut self, cycle_query: &ActiveQuery) {
-        self.changed_at = cycle_query.changed_at;
-        self.durability = cycle_query.durability;
-        self.input_outputs.clone_from(&cycle_query.input_outputs);
     }
 
     pub(super) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {

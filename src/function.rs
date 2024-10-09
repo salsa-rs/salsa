@@ -2,14 +2,14 @@ use std::{any::Any, fmt, sync::Arc};
 
 use crate::{
     accumulator::accumulated_map::AccumulatedMap,
-    cycle::CycleRecoveryStrategy,
+    cycle::{CycleRecoveryAction, CycleRecoveryStrategy},
     ingredient::fmt_index,
     key::DatabaseKeyIndex,
     plumbing::JarAux,
     salsa_struct::SalsaStructInDb,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
-    Cycle, Database, Id, Revision,
+    Database, Id, Revision,
 };
 
 use self::delete::DeletedEntries;
@@ -67,15 +67,14 @@ pub trait Configuration: Any {
     /// This invokes the function the user wrote.
     fn execute<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Self::Output<'db>;
 
-    /// If the cycle strategy is `Fallback`, then invoked when `key` is a participant
-    /// in a cycle to find out what value it should have.
-    ///
-    /// This invokes the recovery function given by the user.
+    /// Get the cycle recovery initial value.
+    fn cycle_initial(db: &Self::DbView) -> Self::Output<'_>;
+
+    /// Decide whether to iterate a cycle again or fallback.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
-        cycle: &Cycle,
-        input: Self::Input<'db>,
-    ) -> Self::Output<'db>;
+        value: Self::Output<'db>,
+    ) -> CycleRecoveryAction<Self::Output<'db>>;
 }
 
 /// Function ingredients are the "workhorse" of salsa.

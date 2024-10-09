@@ -31,7 +31,6 @@ pub(super) struct DependencyGraph {
 #[derive(Debug)]
 struct Edge {
     blocked_on_id: ThreadId,
-    blocked_on_key: DatabaseKeyIndex,
     stack: QueryStack,
 
     /// Signalled whenever a query with dependents completes.
@@ -53,131 +52,6 @@ impl DependencyGraph {
             p = q;
         }
         p == to_id
-    }
-
-    /// Invokes `closure` with a `&mut ActiveQuery` for each query that participates in the cycle.
-    /// The cycle runs as follows:
-    ///
-    /// 1. The runtime `from_id`, which has the stack `from_stack`, would like to invoke `database_key`...
-    /// 2. ...but `database_key` is already being executed by `to_id`...
-    /// 3. ...and `to_id` is transitively dependent on something which is present on `from_stack`.
-    pub(super) fn for_each_cycle_participant(
-        &mut self,
-        from_id: ThreadId,
-        from_stack: &mut QueryStack,
-        database_key: DatabaseKeyIndex,
-        to_id: ThreadId,
-        mut closure: impl FnMut(&mut [ActiveQuery]),
-    ) {
-        debug_assert!(self.depends_on(to_id, from_id));
-
-        // To understand this algorithm, consider this [drawing](https://is.gd/TGLI9v):
-        //
-        //    database_key = QB2
-        //    from_id = A
-        //    to_id = B
-        //    from_stack = [QA1, QA2, QA3]
-        //
-        //    self.edges[B] = { C, QC2, [QB1..QB3] }
-        //    self.edges[C] = { A, QA2, [QC1..QC3] }
-        //
-        //         The cyclic
-        //         edge we have
-        //         failed to add.
-        //           :
-        //    A      :    B         C
-        //           :
-        //    QA1    v    QB1       QC1
-        // ┌► QA2    ┌──► QB2   ┌─► QC2
-        // │  QA3 ───┘    QB3 ──┘   QC3 ───┐
-        // │                               │
-        // └───────────────────────────────┘
-        //
-        // Final output: [QB2, QB3, QC2, QC3, QA2, QA3]
-
-        let mut id = to_id;
-        let mut key = database_key;
-        while id != from_id {
-            // Looking at the diagram above, the idea is to
-            // take the edge from `to_id` starting at `key`
-            // (inclusive) and down to the end. We can then
-            // load up the next thread (i.e., we start at B/QB2,
-            // and then load up the dependency on C/QC2).
-            let edge = self.edges.get_mut(&id).unwrap();
-            let prefix = edge
-                .stack
-                .iter_mut()
-                .take_while(|p| p.database_key_index != key)
-                .count();
-            closure(&mut edge.stack[prefix..]);
-            id = edge.blocked_on_id;
-            key = edge.blocked_on_key;
-        }
-
-        // Finally, we copy in the results from `from_stack`.
-        let prefix = from_stack
-            .iter_mut()
-            .take_while(|p| p.database_key_index != key)
-            .count();
-        closure(&mut from_stack[prefix..]);
-    }
-
-    /// Unblock each blocked runtime (excluding the current one) if some
-    /// query executing in that runtime is participating in cycle fallback.
-    ///
-    /// Returns a boolean (Current, Others) where:
-    /// * Current is true if the current runtime has cycle participants
-    ///   with fallback;
-    /// * Others is true if other runtimes were unblocked.
-    pub(super) fn maybe_unblock_runtimes_in_cycle(
-        &mut self,
-        from_id: ThreadId,
-        from_stack: &QueryStack,
-        database_key: DatabaseKeyIndex,
-        to_id: ThreadId,
-    ) -> (bool, bool) {
-        // See diagram in `for_each_cycle_participant`.
-        let mut id = to_id;
-        let mut key = database_key;
-        let mut others_unblocked = false;
-        while id != from_id {
-            let edge = self.edges.get(&id).unwrap();
-            let prefix = edge
-                .stack
-                .iter()
-                .take_while(|p| p.database_key_index != key)
-                .count();
-            let next_id = edge.blocked_on_id;
-            let next_key = edge.blocked_on_key;
-
-            if let Some(cycle) = edge.stack[prefix..]
-                .iter()
-                .rev()
-                .find_map(|aq| aq.cycle.clone())
-            {
-                // Remove `id` from the list of runtimes blocked on `next_key`:
-                self.query_dependents
-                    .get_mut(&next_key)
-                    .unwrap()
-                    .retain(|r| *r != id);
-
-                // Unblock runtime so that it can resume execution once lock is released:
-                self.unblock_runtime(id, WaitResult::Cycle(cycle));
-
-                others_unblocked = true;
-            }
-
-            id = next_id;
-            key = next_key;
-        }
-
-        let prefix = from_stack
-            .iter()
-            .take_while(|p| p.database_key_index != key)
-            .count();
-        let this_unblocked = from_stack[prefix..].iter().any(|aq| aq.cycle.is_some());
-
-        (this_unblocked, others_unblocked)
     }
 
     /// Modifies the graph so that `from_id` is blocked
@@ -235,7 +109,6 @@ impl DependencyGraph {
             from_id,
             Edge {
                 blocked_on_id: to_id,
-                blocked_on_key: database_key,
                 stack: from_stack,
                 condvar: condvar.clone(),
             },

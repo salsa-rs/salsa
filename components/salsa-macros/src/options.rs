@@ -44,10 +44,15 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<path>`.
     pub db_path: Option<syn::Path>,
 
-    /// The `recovery_fn = <path>` option is used to indicate the recovery function.
+    /// The `cycle_fn = <path>` option is used to indicate the cycle recovery function.
     ///
     /// If this is `Some`, the value is the `<path>`.
-    pub recovery_fn: Option<syn::Path>,
+    pub cycle_fn: Option<syn::Path>,
+
+    /// The `cycle_initial = <path>` option is the initial value for cycle iteration.
+    ///
+    /// If this is `Some`, the value is the `<path>`.
+    pub cycle_initial: Option<syn::Path>,
 
     /// The `data = <ident>` option is used to define the name of the data type for an interned
     /// struct.
@@ -79,7 +84,8 @@ impl<A: AllowedOptions> Default for Options<A> {
             no_debug: Default::default(),
             no_clone: Default::default(),
             db_path: Default::default(),
-            recovery_fn: Default::default(),
+            cycle_fn: Default::default(),
+            cycle_initial: Default::default(),
             data: Default::default(),
             constructor_name: Default::default(),
             phantom: Default::default(),
@@ -99,7 +105,8 @@ pub(crate) trait AllowedOptions {
     const SINGLETON: bool;
     const DATA: bool;
     const DB: bool;
-    const RECOVERY_FN: bool;
+    const CYCLE_FN: bool;
+    const CYCLE_INITIAL: bool;
     const LRU: bool;
     const CONSTRUCTOR_NAME: bool;
 }
@@ -207,20 +214,39 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                         "`db` option not allowed here",
                     ));
                 }
-            } else if ident == "recovery_fn" {
-                if A::RECOVERY_FN {
+            } else if ident == "cycle_fn" {
+                if A::CYCLE_FN {
                     let _eq = Equals::parse(input)?;
                     let path = syn::Path::parse(input)?;
-                    if let Some(old) = std::mem::replace(&mut options.recovery_fn, Some(path)) {
+                    if let Some(old) = std::mem::replace(&mut options.cycle_fn, Some(path)) {
                         return Err(syn::Error::new(
                             old.span(),
-                            "option `recovery_fn` provided twice",
+                            "option `cycle_fn` provided twice",
                         ));
                     }
                 } else {
                     return Err(syn::Error::new(
                         ident.span(),
-                        "`recovery_fn` option not allowed here",
+                        "`cycle_fn` option not allowed here",
+                    ));
+                }
+            } else if ident == "cycle_initial" {
+                if A::CYCLE_INITIAL {
+                    // TODO(carljm) should it be an error to give cycle_initial without cycle_fn,
+                    // or should we just allow this to fall into potentially infinite iteration, if
+                    // iteration never converges?
+                    let _eq = Equals::parse(input)?;
+                    let path = syn::Path::parse(input)?;
+                    if let Some(old) = std::mem::replace(&mut options.cycle_initial, Some(path)) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `cycle_initial` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`cycle_initial` option not allowed here",
                     ));
                 }
             } else if ident == "data" {
