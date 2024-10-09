@@ -5,7 +5,7 @@ pub(crate) struct ChangeLt<'a> {
     to: String,
 }
 
-impl<'a> ChangeLt<'a> {
+impl ChangeLt<'_> {
     pub fn elided_to(db_lt: &syn::Lifetime) -> Self {
         ChangeLt {
             from: Some("_"),

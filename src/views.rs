@@ -24,65 +24,54 @@ use std::{
 #[derive(Clone)]
 pub struct Views {
     source_type_id: TypeId,
-    view_casters: Arc<AppendOnlyVec<ViewCaster>>,
+    view_casters: Arc<AppendOnlyVec<DynViewCaster>>,
 }
 
-/// A ViewCaster contains a trait object that can cast from the
+/// A DynViewCaster contains a manual trait object that can cast from the
 /// (ghost) `Db` type of `Views` to some (ghost) `DbView` type.
 ///
 /// You can think of the struct as looking like:
 ///
 /// ```rust,ignore
-/// struct ViewCaster<ghost Db, ghost DbView> {
+/// struct DynViewCaster<ghost Db, ghost DbView> {
 ///     target_type_id: TypeId,     // TypeId of DbView
 ///     type_name: &'static str,    // type name of DbView
-///     cast_to: OpaqueBoxDyn,      // a `Box<dyn CastTo<DbView>>` that expects a `Db`
-///     free_box: Box<dyn Free>,    // the same box as above, but upcast to `dyn Free`
+///     view_caster: *mut (),       // a `Box<ViewCaster<Db, DbView>>`
+///     cast: *const (),            // a `unsafe fn (&ViewCaster<Db, DbView>, &dyn Database) -> &DbView`
+///     drop: *const (),            // the destructor for the box above
 /// }
 /// ```
 ///
-/// As you can see, we have to work very hard to manage things
-/// in a way that miri is happy with. What is going on here?
-///
-/// * The `cast_to` is the cast object, but we can't actually name its type, so
-///   we transmute it into some opaque bytes. We can transmute it back once we
-///   are in a function monormophized over some function `T` that has the same type-id
-///   as `target_type_id`.
-/// * The problem is that dropping `cast_to` has no effect and we need
-///   to free the box! To do that, we *also* upcast the box to a `Box<dyn Free>`.
-///   This trait has no purpose but to carry a destructor.
-struct ViewCaster {
+/// The manual trait object and vtable allows for type erasure without
+/// transmuting between fat pointers, whose layout is undefined.
+struct DynViewCaster {
     /// The id of the target type `DbView` that we can cast to.
     target_type_id: TypeId,
 
     /// The name of the target type `DbView` that we can cast to.
     type_name: &'static str,
 
-    /// A "type-obscured" `Box<dyn CastTo<DbView>>`, where `DbView`
-    /// is the type whose id is encoded in `target_type_id`.
-    cast_to: OpaqueBoxDyn,
+    /// A pointer to a `ViewCaster<Db, DbView>`.
+    view_caster: *mut (),
 
-    /// An upcasted version of `cast_to`; the only purpose of this field is
-    /// to be dropped in the destructor, see `ViewCaster` comment.
-    #[allow(dead_code)]
-    free_box: Box<dyn Free>,
+    /// Type-erased `ViewCaster::<Db, DbView>::vtable_cast`.
+    cast: *const (),
+
+    /// Type-erased `ViewCaster::<Db, DbView>::drop`.
+    drop: unsafe fn(*mut ()),
 }
 
-type OpaqueBoxDyn = [u8; std::mem::size_of::<Box<dyn CastTo<Dummy>>>()];
-
-trait CastTo<DbView: ?Sized>: Free {
-    /// # Safety requirement
-    ///
-    /// `db` must have a data pointer whose type is the `Db` type for `Self`
-    unsafe fn cast<'db>(&self, db: &'db dyn Database) -> &'db DbView;
-
-    fn into_box_free(self: Box<Self>) -> Box<dyn Free>;
+impl Drop for DynViewCaster {
+    fn drop(&mut self) {
+        // SAFETY: We own `self.caster` and are in the destructor.
+        unsafe { (self.drop)(self.view_caster) };
+    }
 }
 
-trait Free: Send + Sync {}
-
-#[allow(dead_code)]
-enum Dummy {}
+// SAFETY: These traits can be implemented normally as the raw pointers
+// in `DynViewCaster` are only used for type-erasure.
+unsafe impl Send for DynViewCaster {}
+unsafe impl Sync for DynViewCaster {}
 
 impl Views {
     pub(crate) fn new<Db: Database>() -> Self {
@@ -107,21 +96,14 @@ impl Views {
             return;
         }
 
-        let cast_to: Box<dyn CastTo<DbView>> = Box::new(func);
-        let cast_to: OpaqueBoxDyn =
-            unsafe { std::mem::transmute::<Box<dyn CastTo<DbView>>, OpaqueBoxDyn>(cast_to) };
+        let view_caster = Box::into_raw(Box::new(ViewCaster(func)));
 
-        // Create a second copy of `cast_to` (which is now `Copy`) and upcast it to a `Box<dyn Any>`.
-        // We will drop this box to run the destructor.
-        let free_box: Box<dyn Free> = unsafe {
-            std::mem::transmute::<OpaqueBoxDyn, Box<dyn CastTo<DbView>>>(cast_to).into_box_free()
-        };
-
-        self.view_casters.push(ViewCaster {
+        self.view_casters.push(DynViewCaster {
             target_type_id,
             type_name: std::any::type_name::<DbView>(),
-            cast_to,
-            free_box,
+            view_caster: view_caster.cast(),
+            cast: ViewCaster::<Db, DbView>::erased_cast as _,
+            drop: ViewCaster::<Db, DbView>::erased_drop,
         });
     }
 
@@ -138,20 +120,17 @@ impl Views {
         assert_eq!(self.source_type_id, db_type_id, "database type mismatch");
 
         let view_type_id = TypeId::of::<DbView>();
-        for caster in self.view_casters.iter() {
-            if caster.target_type_id == view_type_id {
-                // SAFETY: We have some function that takes a thin reference to the underlying
-                // database type `X` and returns a (potentially wide) reference to `View`.
-                //
-                // While the compiler doesn't know what `X` is at this point, we know it's the
-                // same as the true type of `db_data_ptr`, and the memory representation for `()`
-                // and `&X` are the same (since `X` is `Sized`).
-                let cast_to: &OpaqueBoxDyn = &caster.cast_to;
-                unsafe {
-                    let cast_to =
-                        std::mem::transmute::<&OpaqueBoxDyn, &Box<dyn CastTo<DbView>>>(cast_to);
-                    return Some(cast_to.cast(db));
+        for view in self.view_casters.iter() {
+            if view.target_type_id == view_type_id {
+                // SAFETY: We verified that this is the view caster for the
+                // `DbView` type by checking type IDs above.
+                let view = unsafe {
+                    let caster: unsafe fn(*const (), &dyn Database) -> &DbView =
+                        std::mem::transmute(view.cast);
+                    caster(view.view_caster, db)
                 };
+
+                return Some(view);
             }
         }
 
@@ -159,25 +138,19 @@ impl Views {
     }
 }
 
-impl std::fmt::Debug for Views {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DynDowncasts")
-            .field("vec", &self.view_casters)
-            .finish()
-    }
-}
+/// A generic downcaster for specific `Db` and `DbView` types.
+struct ViewCaster<Db, DbView: ?Sized>(fn(&Db) -> &DbView);
 
-impl std::fmt::Debug for ViewCaster {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("DynDowncast").field(&self.type_name).finish()
-    }
-}
-
-impl<Db, DbView> CastTo<DbView> for fn(&Db) -> &DbView
+impl<Db, DbView> ViewCaster<Db, DbView>
 where
     Db: Database,
     DbView: ?Sized + Any,
 {
+    /// Obtain a reference of type `DbView` from a database.
+    ///
+    /// # Safety
+    ///
+    /// The input database must be of type `Db`.
     unsafe fn cast<'db>(&self, db: &'db dyn Database) -> &'db DbView {
         // This tests the safety requirement:
         debug_assert_eq!(db.type_id(), TypeId::of::<Db>());
@@ -187,12 +160,41 @@ where
         // Caller guarantees that the input is of type `Db`
         // (we test it in the debug-assertion above).
         let db = unsafe { transmute_data_ptr::<dyn Database, Db>(db) };
-        (*self)(db)
+        (self.0)(db)
     }
 
-    fn into_box_free(self: Box<Self>) -> Box<dyn Free> {
-        self
+    /// A type-erased version of `ViewCaster::<Db, DbView>::cast`.
+    ///
+    /// # Safety
+    ///
+    /// The underlying type of `caster` must be `ViewCaster::<Db, DbView>`.
+    unsafe fn erased_cast(caster: *mut (), db: &dyn Database) -> &DbView {
+        let caster = unsafe { &*caster.cast::<ViewCaster<Db, DbView>>() };
+        caster.cast(db)
+    }
+
+    /// The destructor for `Box<ViewCaster<Db, DbView>>`.
+    ///
+    /// # Safety
+    ///
+    /// All the safety requirements of `Box::<ViewCaster<Db, DbView>>::from_raw` apply.
+    unsafe fn erased_drop(caster: *mut ()) {
+        let _: Box<ViewCaster<Db, DbView>> = unsafe { Box::from_raw(caster.cast()) };
     }
 }
 
-impl<T: Send + Sync> Free for T {}
+impl std::fmt::Debug for Views {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Views")
+            .field("view_casters", &self.view_casters)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for DynViewCaster {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("DynViewCaster")
+            .field(&self.type_name)
+            .finish()
+    }
+}

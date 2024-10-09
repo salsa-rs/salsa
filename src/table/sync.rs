@@ -85,7 +85,7 @@ pub(crate) struct ClaimGuard<'me> {
     sync_table: &'me SyncTable,
 }
 
-impl<'me> ClaimGuard<'me> {
+impl ClaimGuard<'_> {
     fn remove_from_map_and_unblock_queries(&self, wait_result: WaitResult) {
         let mut syncs = self.sync_table.syncs.write();
 
@@ -101,7 +101,7 @@ impl<'me> ClaimGuard<'me> {
     }
 }
 
-impl<'me> Drop for ClaimGuard<'me> {
+impl Drop for ClaimGuard<'_> {
     fn drop(&mut self) {
         let wait_result = if std::thread::panicking() {
             WaitResult::Panicked
