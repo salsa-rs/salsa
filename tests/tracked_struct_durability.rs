@@ -83,7 +83,7 @@ fn check<'db>(db: &'db dyn Db, file: File) -> Inference<'db> {
 #[test]
 fn execute() {
     #[salsa::db]
-    #[derive(Default)]
+    #[derive(Default, Clone)]
     struct Database {
         storage: salsa::Storage<Self>,
         files: Vec<File>,
