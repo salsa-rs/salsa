@@ -85,6 +85,7 @@ macro_rules! setup_interned_struct {
                     ($($zalsa::interned::Lookup::eq(&self.$field_index, &data.$field_index) && )* true)
                 }
 
+                #[allow(unused_unit)]
                 fn into_owned(self) -> StructData<$db_lt> {
                     ($($zalsa::interned::Lookup::into_owned(self.$field_index),)*)
                 }

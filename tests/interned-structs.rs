@@ -1,15 +1,14 @@
 //! Test that a `tracked` fn on a `salsa::input`
 //! compiles and executes successfully.
 
-use std::path::{Path, PathBuf};
 use expect_test::expect;
+use std::path::{Path, PathBuf};
 use test_log::test;
 
 #[salsa::interned]
 struct InternedString<'db> {
     data: String,
 }
-
 
 #[salsa::interned]
 struct InternedPair<'db> {
