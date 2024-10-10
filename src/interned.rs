@@ -1,7 +1,3 @@
-use std::fmt;
-use std::hash::Hash;
-use std::marker::PhantomData;
-
 use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::fmt_index;
@@ -13,6 +9,10 @@ use crate::table::Slot;
 use crate::zalsa::IngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{Database, DatabaseKeyIndex, Id};
+use std::fmt;
+use std::hash::{BuildHasher, Hash, Hasher};
+use std::marker::PhantomData;
+use std::path::{Path, PathBuf};
 
 use super::hash::FxDashMap;
 use super::ingredient::Ingredient;
@@ -117,7 +117,7 @@ where
     pub fn intern_id<'db>(
         &'db self,
         db: &'db dyn crate::Database,
-        data: C::Data<'db>,
+        data: impl Lookup<C::Data<'db>>,
     ) -> crate::Id {
         C::deref_struct(self.intern(db, data)).as_id()
     }
@@ -126,7 +126,7 @@ where
     pub fn intern<'db>(
         &'db self,
         db: &'db dyn crate::Database,
-        data: C::Data<'db>,
+        data: impl Lookup<C::Data<'db>>,
     ) -> C::Struct<'db> {
         let zalsa_local = db.zalsa_local();
         zalsa_local.report_tracked_read(
@@ -137,12 +137,29 @@ where
 
         // Optimisation to only get read lock on the map if the data has already
         // been interned.
+        // We need to use the raw API for this lookup. See the [`Lookup`][] trait definition for an explanation of why.
+        let data_hash = {
+            let mut hasher = self.key_map.hasher().build_hasher();
+            data.hash(&mut hasher);
+            hasher.finish()
+        };
+        let shard = self.key_map.determine_shard(data_hash as _);
+        {
+            let lock = self.key_map.shards()[shard].read();
+            if let Some(bucket) = lock.find(data_hash, |(a, _)| {
+                // SAFETY: it's safe to go from Data<'static> to Data<'db>
+                // shrink lifetime here to use a single lifetime in Lookup::eq(&StructKey<'db>, &C::Data<'db>)
+                let a: &C::Data<'db> = unsafe { std::mem::transmute(a) };
+                Lookup::eq(&data, a)
+            }) {
+                // SAFETY: Read lock on map is held during this block
+                return C::struct_from_id(unsafe { *bucket.as_ref().1.get() });
+            }
+        };
+
+        let data = data.into_owned();
+
         let internal_data = unsafe { self.to_internal_data(data) };
-        if let Some(guard) = self.key_map.get(&internal_data) {
-            let id = *guard;
-            drop(guard);
-            return C::struct_from_id(id);
-        }
 
         match self.key_map.entry(internal_data.clone()) {
             // Data has been interned by a racing call, use that ID instead
@@ -286,5 +303,121 @@ where
 
     unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {
         &self.syncs
+    }
+}
+
+/// The `Lookup` trait is a more flexible variant on [`std::borrow::Borrow`]
+/// and [`std::borrow::ToOwned`].
+///
+/// It is implemented by "some type that can be used as the lookup key for `O`".
+/// This means that `self` can be hashed and compared for equality with values
+/// of type `O` without actually creating an owned value. It `self` needs to be interned,
+/// it can be converted into an equivalent value of type `O`.
+///
+/// The canonical example is `&str: Lookup<String>`. However, this example
+/// alone can be handled by [`std::borrow::Borrow`][]. In our case, we may have
+/// multiple keys accumulated into a struct, like `ViewStruct: Lookup<(K1, ...)>`,
+/// where `struct ViewStruct<L1: Lookup<K1>...>(K1...)`. The `Borrow` trait
+/// requires that `&(K1...)` be convertible to `&ViewStruct` which just isn't
+/// possible. `Lookup` instead offers direct `hash` and `eq` methods.
+pub trait Lookup<O> {
+    fn hash<H: Hasher>(&self, h: &mut H);
+    fn eq(&self, data: &O) -> bool;
+    fn into_owned(self) -> O;
+}
+
+impl<T> Lookup<T> for T
+where
+    T: Hash + Eq,
+{
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(self, &mut *h);
+    }
+
+    fn eq(&self, data: &T) -> bool {
+        self == data
+    }
+
+    fn into_owned(self) -> T {
+        self
+    }
+}
+
+impl<T> Lookup<T> for &T
+where
+    T: Clone + Eq + Hash,
+{
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(self, &mut *h);
+    }
+
+    fn eq(&self, data: &T) -> bool {
+        *self == data
+    }
+
+    fn into_owned(self) -> T {
+        Clone::clone(self)
+    }
+}
+
+impl Lookup<String> for &str {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(self, &mut *h)
+    }
+
+    fn eq(&self, data: &String) -> bool {
+        self == data
+    }
+
+    fn into_owned(self) -> String {
+        self.to_owned()
+    }
+}
+
+impl<A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for &[A] {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        for a in *self {
+            Hash::hash(a, h);
+        }
+    }
+
+    fn eq(&self, data: &Vec<T>) -> bool {
+        self.len() == data.len() && data.iter().enumerate().all(|(i, a)| &self[i] == a)
+    }
+
+    fn into_owned(self) -> Vec<T> {
+        self.iter().map(|a| Lookup::into_owned(a.clone())).collect()
+    }
+}
+
+impl<const N: usize, A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for [A; N] {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        for a in self {
+            Hash::hash(a, h);
+        }
+    }
+
+    fn eq(&self, data: &Vec<T>) -> bool {
+        self.len() == data.len() && data.iter().enumerate().all(|(i, a)| &self[i] == a)
+    }
+
+    fn into_owned(self) -> Vec<T> {
+        self.into_iter()
+            .map(|a| Lookup::into_owned(a.clone()))
+            .collect()
+    }
+}
+
+impl Lookup<PathBuf> for &Path {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(self, h);
+    }
+
+    fn eq(&self, data: &PathBuf) -> bool {
+        self == data
+    }
+
+    fn into_owned(self) -> PathBuf {
+        self.to_owned()
     }
 }

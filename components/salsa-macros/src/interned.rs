@@ -90,6 +90,7 @@ impl Macro {
         let field_getter_ids = salsa_struct.field_getter_ids();
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
+        let field_indexed_tys = salsa_struct.field_indexed_tys();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
 
         let zalsa = self.hygiene.ident("zalsa");
@@ -112,6 +113,7 @@ impl Macro {
                     field_getters: [#(#field_vis #field_getter_ids),*],
                     field_tys: [#(#field_tys),*],
                     field_indices: [#(#field_indices),*],
+                    field_indexed_tys: [#(#field_indexed_tys),*],
                     num_fields: #num_fields,
                     generate_debug_impl: #generate_debug_impl,
                     unused_names: [

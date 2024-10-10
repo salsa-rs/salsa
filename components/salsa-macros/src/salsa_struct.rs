@@ -242,6 +242,14 @@ where
         self.fields.iter().map(|f| &f.field.ty).collect()
     }
 
+    pub(crate) fn field_indexed_tys(&self) -> Vec<syn::Ident> {
+        self.fields
+            .iter()
+            .enumerate()
+            .map(|(i, _)| quote::format_ident!("T{i}"))
+            .collect()
+    }
+
     pub(crate) fn field_options(&self) -> Vec<TokenStream> {
         self.fields
             .iter()
