@@ -148,6 +148,9 @@ where
 /// struct and later moved to the [`Memo`](`crate::function::memo::Memo`).
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
 pub(crate) struct KeyStruct {
+    /// IngredientIndex of the tracked struct
+    ingredient_index: IngredientIndex,
+
     /// The hash of the `#[id]` fields of this struct.
     /// Note that multiple structs may share the same hash.
     data_hash: u64,
@@ -255,11 +258,13 @@ where
     ) -> C::Struct<'db> {
         let (zalsa, zalsa_local) = db.zalsas();
 
-        let data_hash = crate::hash::hash(&C::id_fields(&fields));
+        let data_hash = crate::hash::hash(&(C::id_fields(&fields)));
 
-        let (current_deps, disambiguator) = zalsa_local.disambiguate(data_hash);
+        let (current_deps, disambiguator) =
+            zalsa_local.disambiguate(self.ingredient_index, data_hash);
 
         let key_struct = KeyStruct {
+            ingredient_index: self.ingredient_index,
             disambiguator,
             data_hash,
         };

@@ -262,7 +262,11 @@ impl ZalsaLocal {
     ///   * the current dependencies (durability, changed_at) of current query
     ///   * the disambiguator index
     #[track_caller]
-    pub(crate) fn disambiguate(&self, data_hash: u64) -> (StampedValue<()>, Disambiguator) {
+    pub(crate) fn disambiguate(
+        &self,
+        ingredient_index: IngredientIndex,
+        data_hash: u64,
+    ) -> (StampedValue<()>, Disambiguator) {
         assert!(
             self.query_in_progress(),
             "cannot create a tracked struct disambiguator outside of a tracked function"
@@ -270,7 +274,7 @@ impl ZalsaLocal {
 
         self.with_query_stack(|stack| {
             let top_query = stack.last_mut().unwrap();
-            let disambiguator = top_query.disambiguate(data_hash);
+            let disambiguator = top_query.disambiguate(ingredient_index, data_hash);
             (
                 StampedValue {
                     value: (),
