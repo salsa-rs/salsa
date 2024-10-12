@@ -32,10 +32,10 @@ where
         if !old_outputs.is_empty() {
             // Remove the outputs that are no longer present in the current revision
             // to prevent that the next revision is seeded with a id mapping that no longer exists.
-            revisions.tracked_struct_ids.retain(|_k, value| {
+            revisions.tracked_struct_ids.retain(|k, value| {
                 !old_outputs.contains(&DependencyIndex {
-                    ingredient_index: value.ingredient_index,
-                    key_index: Some(value.key_index),
+                    ingredient_index: k.ingredient_index,
+                    key_index: Some(*value),
                 })
             });
         }

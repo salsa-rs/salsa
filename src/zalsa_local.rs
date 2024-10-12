@@ -292,17 +292,18 @@ impl ZalsaLocal {
             self.query_in_progress(),
             "cannot create a tracked struct disambiguator outside of a tracked function"
         );
+
         self.with_query_stack(|stack| {
             let top_query = stack.last().unwrap();
             top_query
                 .tracked_struct_ids
                 .get(key_struct)
-                .map(|index| index.key_index())
+                .map(|index| *index)
         })
     }
 
     #[track_caller]
-    pub(crate) fn store_tracked_struct_id(&self, key_struct: KeyStruct, id: DatabaseKeyIndex) {
+    pub(crate) fn store_tracked_struct_id(&self, key_struct: KeyStruct, id: Id) {
         debug_assert!(
             self.query_in_progress(),
             "cannot create a tracked struct disambiguator outside of a tracked function"
@@ -381,7 +382,7 @@ pub(crate) struct QueryRevisions {
     ///   previous revision. To handle this, `diff_outputs` compares
     ///   the structs from the old/new revision and retains
     ///   only entries that appeared in the new revision.
-    pub(super) tracked_struct_ids: FxHashMap<KeyStruct, DatabaseKeyIndex>,
+    pub(super) tracked_struct_ids: FxHashMap<KeyStruct, Id>,
 
     pub(super) accumulated: AccumulatedMap,
 }
@@ -542,7 +543,7 @@ impl ActiveQueryGuard<'_> {
     /// Initialize the tracked struct ids with the values from the prior execution.
     pub(crate) fn seed_tracked_struct_ids(
         &self,
-        tracked_struct_ids: &FxHashMap<KeyStruct, DatabaseKeyIndex>,
+        tracked_struct_ids: &FxHashMap<KeyStruct, Id>,
     ) {
         self.local_state.with_query_stack(|stack| {
             assert_eq!(stack.len(), self.push_len);

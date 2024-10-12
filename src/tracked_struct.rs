@@ -149,7 +149,7 @@ where
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
 pub(crate) struct KeyStruct {
     /// IngredientIndex of the tracked struct
-    ingredient_index: IngredientIndex,
+    pub(crate) ingredient_index: IngredientIndex,
 
     /// The hash of the `#[id]` fields of this struct.
     /// Note that multiple structs may share the same hash.
@@ -283,7 +283,7 @@ where
                 let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
                 let key = self.database_key_index(id);
                 zalsa_local.add_output(key.into());
-                zalsa_local.store_tracked_struct_id(key_struct, key);
+                zalsa_local.store_tracked_struct_id(key_struct, id);
                 C::struct_from_id(id)
             }
         }
