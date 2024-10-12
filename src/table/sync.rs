@@ -1,4 +1,6 @@
 use std::{
+    any::Any,
+    fmt::Debug,
     sync::atomic::{AtomicBool, Ordering},
     thread::ThreadId,
 };
@@ -28,6 +30,29 @@ struct SyncState {
     /// Set to true if any other queries are blocked,
     /// waiting for this query to complete.
     anyone_waiting: AtomicBool,
+
+    /// Provisional return value for fixpoint iteration
+    /// of a query, set in advance of query execution for
+    /// queries that anticipate possible cycles.
+    provisional_value: Option<ProvisionalValue>,
+}
+
+pub(crate) trait Value: Any + Send + Sync + Debug {}
+
+/// Provisional value for a query, in case of fixpoint cycle iterator.
+pub(crate) struct ProvisionalValue {
+    value: Box<dyn Value>,
+}
+
+impl<T> From<T> for ProvisionalValue
+where
+    T: Value,
+{
+    fn from(value: T) -> Self {
+        Self {
+            value: Box::new(value),
+        }
+    }
 }
 
 impl SyncTable {
@@ -37,6 +62,7 @@ impl SyncTable {
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
+        provisional_value: Option<ProvisionalValue>,
     ) -> Option<ClaimGuard<'me>> {
         let mut syncs = self.syncs.write();
         let zalsa = db.zalsa();
@@ -49,6 +75,7 @@ impl SyncTable {
                 syncs[memo_ingredient_index.as_usize()] = Some(SyncState {
                     id: thread_id,
                     anyone_waiting: AtomicBool::new(false),
+                    provisional_value,
                 });
                 Some(ClaimGuard {
                     database_key_index,
@@ -60,6 +87,7 @@ impl SyncTable {
             Some(SyncState {
                 id: other_id,
                 anyone_waiting,
+                provisional_value: _,
             }) => {
                 // NB: `Ordering::Relaxed` is sufficient here,
                 // as there are no loads that are "gated" on this

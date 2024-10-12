@@ -7,8 +7,12 @@ use crossbeam::atomic::AtomicCell;
 
 use crate::zalsa_local::QueryOrigin;
 use crate::{
-    key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event, EventKind, Id,
-    Revision,
+    cycle::{Cycle, CycleRecoveryStrategy},
+    key::DatabaseKeyIndex,
+    table::sync::ProvisionalValue,
+    zalsa::Zalsa,
+    zalsa_local::QueryRevisions,
+    Event, EventKind, Id, Revision,
 };
 
 use super::{Configuration, IngredientImpl};
@@ -86,6 +90,24 @@ impl<C: Configuration> IngredientImpl<C> {
             }
         }
     }
+
+    pub(super) fn initial_value<'db>(&'db self, db: &'db C::DbView) -> Option<ProvisionalValue> {
+        match C::CYCLE_STRATEGY {
+            CycleRecoveryStrategy::Recover => Some(self.to_provisional_value(C::cycle_initial(db))),
+            CycleRecoveryStrategy::Panic => None,
+        }
+    }
+
+    fn to_provisional_value<'db>(&'db self, value: C::Output<'db>) -> ProvisionalValue {
+        unsafe { self.value_to_static(Value { value }) }.into()
+    }
+
+    unsafe fn value_to_static<'db>(
+        &'db self,
+        value: OutputValue<'db, C>,
+    ) -> OutputValue<'static, C> {
+        unsafe { std::mem::transmute(value) }
+    }
 }
 
 #[derive(Debug)]
@@ -99,6 +121,9 @@ pub(super) struct Memo<V> {
 
     /// Revision information
     pub(super) revisions: QueryRevisions,
+
+    /// Cycle, if this result was created in cycle iteration
+    pub(super) cycle: Option<Cycle>,
 }
 
 impl<V> Memo<V> {
@@ -107,6 +132,7 @@ impl<V> Memo<V> {
             value,
             verified_at: AtomicCell::new(revision_now),
             revisions,
+            cycle: None,
         }
     }
     /// True if this memo is known not to have changed based on its durability.
@@ -181,3 +207,12 @@ impl<V: Debug + Send + Sync + Any> crate::table::memo::Memo for Memo<V> {
         &self.revisions.origin
     }
 }
+
+type OutputValue<'lt, C> = Value<<C as Configuration>::Output<'lt>>;
+
+#[derive(Debug)]
+pub(super) struct Value<V> {
+    value: V,
+}
+
+impl<V: Debug + Send + Sync + Any> crate::table::sync::Value for Value<V> {}

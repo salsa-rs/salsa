@@ -81,6 +81,7 @@ where
             value: Some(value),
             verified_at: AtomicCell::new(revision),
             revisions,
+            cycle: None,
         };
 
         tracing::debug!(
