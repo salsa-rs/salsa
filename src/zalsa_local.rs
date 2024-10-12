@@ -295,10 +295,7 @@ impl ZalsaLocal {
 
         self.with_query_stack(|stack| {
             let top_query = stack.last().unwrap();
-            top_query
-                .tracked_struct_ids
-                .get(key_struct)
-                .map(|index| *index)
+            top_query.tracked_struct_ids.get(key_struct).copied()
         })
     }
 
@@ -541,10 +538,7 @@ impl ActiveQueryGuard<'_> {
     }
 
     /// Initialize the tracked struct ids with the values from the prior execution.
-    pub(crate) fn seed_tracked_struct_ids(
-        &self,
-        tracked_struct_ids: &FxHashMap<KeyStruct, Id>,
-    ) {
+    pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &FxHashMap<KeyStruct, Id>) {
         self.local_state.with_query_stack(|stack| {
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
