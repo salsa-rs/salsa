@@ -32,6 +32,9 @@ macro_rules! setup_interned_struct {
         // Indices for each field from 0..N -- must be unsuffixed (e.g., `0`, `1`).
         field_indices: [$($field_index:tt),*],
 
+        // Indexed types for each field (T0, T1, ...)
+        field_indexed_tys: [$($indexed_ty:ident),*],
+
         // Number of fields
         num_fields: $N:literal,
 
@@ -62,10 +65,36 @@ macro_rules! setup_interned_struct {
 
             type $Configuration = $Struct<'static>;
 
+            type StructData<$db_lt> = ($($field_ty,)*);
+
+            /// Key to use during hash lookups. Each field is some type that implements `Lookup<T>`
+            /// for the owned type. This permits interning with an `&str` when a `String` is required and so forth.
+            struct StructKey<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*>(
+                $($indexed_ty,)*
+                std::marker::PhantomData<&$db_lt ()>,
+            );
+
+            impl<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*> $zalsa::interned::Lookup<StructData<$db_lt>>
+                for StructKey<$db_lt, $($indexed_ty),*> {
+
+                fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+                    $($zalsa::interned::Lookup::hash(&self.$field_index, &mut *h);)*
+                }
+
+                fn eq(&self, data: &StructData<$db_lt>) -> bool {
+                    ($($zalsa::interned::Lookup::eq(&self.$field_index, &data.$field_index) && )* true)
+                }
+
+                #[allow(unused_unit)]
+                fn into_owned(self) -> StructData<$db_lt> {
+                    ($($zalsa::interned::Lookup::into_owned(self.$field_index),)*)
+                }
+            }
+
             impl $zalsa_struct::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
-                type Data<$db_lt> = ($($field_ty,)*);
-                type Struct<$db_lt> = $Struct<$db_lt>;
+                type Data<'a> = StructData<'a>;
+                type Struct<'a> = $Struct<'a>;
                 fn struct_from_id<'db>(id: salsa::Id) -> Self::Struct<'db> {
                     $Struct(id, std::marker::PhantomData)
                 }
@@ -126,13 +155,14 @@ macro_rules! setup_interned_struct {
             }
 
             impl<$db_lt> $Struct<$db_lt> {
-                pub fn $new_fn<$Db>(db: &$db_lt $Db, $($field_id: $field_ty),*) -> Self
+                pub fn $new_fn<$Db>(db: &$db_lt $Db,  $($field_id: impl $zalsa::interned::Lookup<$field_ty>),*) -> Self
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + salsa::Database,
                 {
                     let current_revision = $zalsa::current_revision(db);
-                    $Configuration::ingredient(db).intern(db.as_dyn_database(), ($($field_id,)*))
+                    $Configuration::ingredient(db).intern(db.as_dyn_database(),
+                        StructKey::<$db_lt>($($field_id,)* std::marker::PhantomData::default()))
                 }
 
                 $(
