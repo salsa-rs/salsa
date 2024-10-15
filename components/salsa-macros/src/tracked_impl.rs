@@ -1,8 +1,10 @@
+use std::collections::HashSet;
+
 use proc_macro2::TokenStream;
 use quote::ToTokens;
-use syn::parse::Nothing;
+use syn::{parse::Nothing, visit_mut::VisitMut};
 
-use crate::{hygiene::Hygiene, tracked_fn::FnArgs};
+use crate::{hygiene::Hygiene, tracked_fn::FnArgs, xform::ChangeSelfPath};
 
 pub(crate) fn tracked_impl(
     args: proc_macro::TokenStream,
@@ -32,8 +34,19 @@ struct MethodArguments<'syn> {
 impl Macro {
     fn try_generate(&self, mut impl_item: syn::ItemImpl) -> syn::Result<TokenStream> {
         let mut member_items = std::mem::take(&mut impl_item.items);
+        let member_idents: HashSet<_> = member_items
+            .iter()
+            .filter_map(|item| match item {
+                syn::ImplItem::Const(it) => Some(it.ident.clone()),
+                syn::ImplItem::Fn(it) => Some(it.sig.ident.clone()),
+                syn::ImplItem::Type(it) => Some(it.ident.clone()),
+                syn::ImplItem::Macro(_) => None,
+                syn::ImplItem::Verbatim(_) => None,
+                _ => None,
+            })
+            .collect();
         for member_item in &mut member_items {
-            self.modify_member(&impl_item, member_item)?;
+            self.modify_member(&impl_item, member_item, &member_idents)?;
         }
         impl_item.items = member_items;
         Ok(crate::debug::dump_tokens(
@@ -47,6 +60,7 @@ impl Macro {
         &self,
         impl_item: &syn::ItemImpl,
         member_item: &mut syn::ImplItem,
+        member_idents: &HashSet<syn::Ident>,
     ) -> syn::Result<()> {
         let syn::ImplItem::Fn(fn_item) = member_item else {
             return Ok(());
@@ -58,6 +72,13 @@ impl Macro {
         else {
             return Ok(());
         };
+
+        let trait_ = match &impl_item.trait_ {
+            Some((None, path, _)) => Some((path, member_idents)),
+            _ => None,
+        };
+        let mut change = ChangeSelfPath::new(self_ty, trait_);
+        change.visit_impl_item_fn_mut(fn_item);
 
         let salsa_tracked_attr = fn_item.attrs.remove(tracked_attr_index);
         let args: FnArgs = match &salsa_tracked_attr.meta {
