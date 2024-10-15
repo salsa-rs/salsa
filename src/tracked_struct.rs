@@ -148,16 +148,32 @@ where
 /// struct and later moved to the [`Memo`](`crate::function::memo::Memo`).
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
 pub(crate) struct KeyStruct {
-    /// IngredientIndex of the tracked struct
-    pub(crate) ingredient_index: IngredientIndex,
-
-    /// The hash of the `#[id]` fields of this struct.
-    /// Note that multiple structs may share the same hash.
-    data_hash: u64,
+    /// Tracked struct key
+    disambiguation_key: DisambiguationKey,
 
     /// The unique disambiguator assigned within the active query
-    /// to distinguish distinct tracked structs with the same hash.
+    /// to distinguish distinct tracked structs with the same key.
     disambiguator: Disambiguator,
+}
+
+impl KeyStruct {
+    pub(crate) fn ingredient_index(&self) -> IngredientIndex {
+        self.disambiguation_key.ingredient_index
+    }
+}
+
+/// Stores the data that (almost) uniquely identifies a tracked struct.
+/// This includes the ingredient index of that struct type plus the hash of its id fields.
+/// This is mapped to a disambiguator -- a value that starts as 0 but increments each round,
+/// allowing for multiple tracked structs with the same hash and ingredient_index
+/// created within the query to each have a unique id.
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
+pub struct DisambiguationKey {
+    /// Index of the tracked struct ingredient.
+    ingredient_index: IngredientIndex,
+
+    /// Hash of the id fields.
+    hash: u64,
 }
 
 // ANCHOR: ValueStruct
@@ -258,15 +274,16 @@ where
     ) -> C::Struct<'db> {
         let (zalsa, zalsa_local) = db.zalsas();
 
-        let data_hash = crate::hash::hash(&(C::id_fields(&fields)));
+        let disambiguation_key = DisambiguationKey {
+            ingredient_index: self.ingredient_index,
+            hash: crate::hash::hash(&C::id_fields(&fields)),
+        };
 
-        let (current_deps, disambiguator) =
-            zalsa_local.disambiguate(self.ingredient_index, data_hash);
+        let (current_deps, disambiguator) = zalsa_local.disambiguate(disambiguation_key);
 
         let key_struct = KeyStruct {
-            ingredient_index: self.ingredient_index,
+            disambiguation_key,
             disambiguator,
-            data_hash,
         };
 
         let current_revision = zalsa.current_revision();

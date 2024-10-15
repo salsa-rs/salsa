@@ -1,8 +1,16 @@
 use rustc_hash::FxHashMap;
 
-use crate::{accumulator::accumulated_map::AccumulatedMap, durability::Durability, hash::FxIndexSet, key::{DatabaseKeyIndex, DependencyIndex}, tracked_struct::{Disambiguator, KeyStruct}, zalsa_local::EMPTY_DEPENDENCIES, Cycle, Id, IngredientIndex, Revision};
-
 use super::zalsa_local::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
+use crate::tracked_struct::DisambiguationKey;
+use crate::{
+    accumulator::accumulated_map::AccumulatedMap,
+    durability::Durability,
+    hash::FxIndexSet,
+    key::{DatabaseKeyIndex, DependencyIndex},
+    tracked_struct::{Disambiguator, KeyStruct},
+    zalsa_local::EMPTY_DEPENDENCIES,
+    Cycle, Id, Revision,
+};
 
 #[derive(Debug)]
 pub(crate) struct ActiveQuery {
@@ -37,7 +45,7 @@ pub(crate) struct ActiveQuery {
     /// This table starts empty as the query begins and is gradually populated.
     /// Note that if a query executes in 2 different revisions but creates the same
     /// set of tracked structs, they will get the same disambiguator values.
-    disambiguator_map: FxHashMap<(IngredientIndex, u64), Disambiguator>,
+    disambiguator_map: FxHashMap<DisambiguationKey, Disambiguator>,
 
     /// Map from tracked struct keys (which include the hash + disambiguator) to their
     /// final id.
@@ -147,14 +155,10 @@ impl ActiveQuery {
         self.input_outputs.clone_from(&cycle_query.input_outputs);
     }
 
-    pub(super) fn disambiguate(
-        &mut self,
-        ingredient_index: IngredientIndex,
-        hash: u64,
-    ) -> Disambiguator {
+    pub(super) fn disambiguate(&mut self, key: DisambiguationKey) -> Disambiguator {
         let disambiguator = self
             .disambiguator_map
-            .entry((ingredient_index, hash))
+            .entry(key)
             .or_insert(Disambiguator(0));
         let result = *disambiguator;
         disambiguator.0 += 1;
