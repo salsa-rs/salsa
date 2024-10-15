@@ -360,6 +360,22 @@ where
     }
 }
 
+impl<'a, T> Lookup<Box<T>> for &'a T
+where
+    T: ?Sized + Hash + Eq,
+    Box<T>: From<&'a T>,
+{
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(self, &mut *h)
+    }
+    fn eq(&self, data: &Box<T>) -> bool {
+        **self == **data
+    }
+    fn into_owned(self) -> Box<T> {
+        Box::from(self)
+    }
+}
+
 impl Lookup<String> for &str {
     fn hash<H: Hasher>(&self, h: &mut H) {
         Hash::hash(self, &mut *h)
