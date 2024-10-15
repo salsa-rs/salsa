@@ -28,6 +28,35 @@ error: only functions with a single salsa struct as their input can be specified
 29 | #[salsa::tracked(specify)]
    |                  ^^^^^^^
 
+error: must have a `'db` lifetime
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:44:9
+   |
+44 |     db: &dyn Db,
+   |         ^
+
+error: must have a `'db_lifetime` lifetime
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:52:9
+   |
+52 |     db: &dyn Db,
+   |         ^
+
+error: only a single lifetime parameter is accepted
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:67:39
+   |
+67 | fn tracked_fn_with_multiple_lts<'db1, 'db2>(db: &'db1 dyn Db, interned: MyInterned<'db2>) -> u32 {
+   |                                       ^^^^
+
+error[E0106]: missing lifetime specifier
+  --> tests/compile-fail/tracked_fn_incompatibles.rs:61:15
+   |
+61 |     interned: MyInterned,
+   |               ^^^^^^^^^^ expected named lifetime parameter
+   |
+help: consider using the `'db` lifetime
+   |
+61 |     interned: MyInterned<'db>,
+   |                         +++++
+
 error[E0308]: mismatched types
   --> tests/compile-fail/tracked_fn_incompatibles.rs:24:46
    |

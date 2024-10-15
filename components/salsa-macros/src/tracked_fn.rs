@@ -1,4 +1,5 @@
 use proc_macro2::{Literal, Span, TokenStream};
+use quote::ToTokens;
 use syn::{spanned::Spanned, ItemFn};
 
 use crate::{db_lifetime, fn_util, hygiene::Hygiene, options::Options};
@@ -154,7 +155,8 @@ impl Macro {
             ));
         }
 
-        let (db_ident, db_path) = check_db_argument(&item.sig.inputs[0])?;
+        let (db_ident, db_path) =
+            check_db_argument(&item.sig.inputs[0], item.sig.generics.lifetimes().next())?;
 
         Ok(ValidFn { db_ident, db_path })
     }
@@ -202,6 +204,7 @@ fn function_type(item_fn: &syn::ItemFn) -> FunctionType {
 
 pub fn check_db_argument<'arg>(
     fn_arg: &'arg syn::FnArg,
+    explicit_lt: Option<&'arg syn::LifetimeParam>,
 ) -> syn::Result<(&'arg syn::Ident, &'arg syn::Path)> {
     match fn_arg {
         syn::FnArg::Receiver(_) => {
@@ -256,11 +259,23 @@ pub fn check_db_argument<'arg>(
                 ));
             }
 
-            let extract_db_path = || -> Result<&'arg syn::Path, Span> {
-                let syn::Type::Reference(ref_type) = &*typed.ty else {
-                    return Err(typed.ty.span());
-                };
+            let tykind_error_msg =
+                "must have type `&dyn Db`, where `Db` is some Salsa Database trait";
 
+            let syn::Type::Reference(ref_type) = &*typed.ty else {
+                return Err(syn::Error::new(typed.ty.span(), tykind_error_msg));
+            };
+
+            if let Some(lt) = explicit_lt {
+                if ref_type.lifetime.is_none() {
+                    return Err(syn::Error::new_spanned(
+                        ref_type.and_token,
+                        format!("must have a `{}` lifetime", lt.lifetime.to_token_stream()),
+                    ));
+                }
+            }
+
+            let extract_db_path = || -> Result<&'arg syn::Path, Span> {
                 if let Some(m) = &ref_type.mutability {
                     return Err(m.span());
                 }
@@ -298,12 +313,8 @@ pub fn check_db_argument<'arg>(
                 Ok(path)
             };
 
-            let db_path = extract_db_path().map_err(|span| {
-                syn::Error::new(
-                    span,
-                    "must have type `&dyn Db`, where `Db` is some Salsa Database trait",
-                )
-            })?;
+            let db_path =
+                extract_db_path().map_err(|span| syn::Error::new(span, tykind_error_msg))?;
 
             Ok((db_ident, db_path))
         }
