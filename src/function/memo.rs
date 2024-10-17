@@ -93,7 +93,9 @@ impl<C: Configuration> IngredientImpl<C> {
 
     pub(super) fn initial_value<'db>(&'db self, db: &'db C::DbView) -> Option<ProvisionalValue> {
         match C::CYCLE_STRATEGY {
-            CycleRecoveryStrategy::Recover => Some(self.to_provisional_value(C::cycle_initial(db))),
+            CycleRecoveryStrategy::Fixpoint => {
+                Some(self.to_provisional_value(C::cycle_initial(db)))
+            }
             CycleRecoveryStrategy::Panic => None,
         }
     }

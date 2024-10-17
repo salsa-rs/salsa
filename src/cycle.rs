@@ -24,7 +24,7 @@ pub enum CycleRecoveryStrategy {
     ///
     /// This choice is computed by the query's `cycle_recovery`
     /// function and initial value.
-    Recover,
+    Fixpoint,
 }
 
 /// A query cycle.

@@ -169,7 +169,7 @@ impl Macro {
             (Some(cycle_fn), Some(cycle_initial)) => Ok((
                 quote!((#cycle_fn)),
                 quote!((#cycle_initial)),
-                quote!(Recover),
+                quote!(Fixpoint),
             )),
             (None, None) => Ok((
                 quote!((salsa::plumbing::unexpected_cycle_recovery!)),
