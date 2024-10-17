@@ -2,5 +2,9 @@
 name = "salsa-macro-rules"
 version = "0.1.0"
 edition = "2021"
+authors = ["Salsa developers"]
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/salsa-rs/salsa"
+description = "Declarative macros for the salsa crate"
 
 [dependencies]
