@@ -147,18 +147,18 @@ where
 /// stored in the [`ActiveQuery`](`crate::active_query::ActiveQuery`)
 /// struct and later moved to the [`Memo`](`crate::function::memo::Memo`).
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
-pub(crate) struct KeyStruct {
-    /// Tracked struct key
-    disambiguation_key: DisambiguationKey,
+pub(crate) struct Identity {
+    /// Hash of fields with id attribute
+    identity_hash: IdentityHash,
 
     /// The unique disambiguator assigned within the active query
-    /// to distinguish distinct tracked structs with the same key.
+    /// to distinguish distinct tracked structs with the same identity_hash.
     disambiguator: Disambiguator,
 }
 
-impl KeyStruct {
+impl Identity {
     pub(crate) fn ingredient_index(&self) -> IngredientIndex {
-        self.disambiguation_key.ingredient_index
+        self.identity_hash.ingredient_index
     }
 }
 
@@ -168,7 +168,7 @@ impl KeyStruct {
 /// allowing for multiple tracked structs with the same hash and ingredient_index
 /// created within the query to each have a unique id.
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
-pub struct DisambiguationKey {
+pub struct IdentityHash {
     /// Index of the tracked struct ingredient.
     ingredient_index: IngredientIndex,
 
@@ -274,20 +274,21 @@ where
     ) -> C::Struct<'db> {
         let (zalsa, zalsa_local) = db.zalsas();
 
-        let disambiguation_key = DisambiguationKey {
+        let identity_hash = IdentityHash {
             ingredient_index: self.ingredient_index,
             hash: crate::hash::hash(&C::id_fields(&fields)),
         };
 
-        let (current_deps, disambiguator) = zalsa_local.disambiguate(disambiguation_key);
+        let (current_deps, disambiguator) = zalsa_local.disambiguate(identity_hash);
 
-        let key_struct = KeyStruct {
-            disambiguation_key,
+        let identity = Identity {
+            identity_hash,
+
             disambiguator,
         };
 
         let current_revision = zalsa.current_revision();
-        match zalsa_local.tracked_struct_id(&key_struct) {
+        match zalsa_local.tracked_struct_id(&identity) {
             Some(id) => {
                 // The struct already exists in the intern map.
                 zalsa_local.add_output(self.database_key_index(id).into());
@@ -300,7 +301,7 @@ where
                 let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
                 let key = self.database_key_index(id);
                 zalsa_local.add_output(key.into());
-                zalsa_local.store_tracked_struct_id(key_struct, id);
+                zalsa_local.store_tracked_struct_id(identity, id);
                 C::struct_from_id(id)
             }
         }
