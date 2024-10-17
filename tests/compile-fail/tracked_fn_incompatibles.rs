@@ -34,4 +34,38 @@ fn tracked_fn_with_too_many_arguments_for_specify(
 ) -> u32 {
 }
 
+#[salsa::interned]
+struct MyInterned<'db> {
+    field: u32,
+}
+
+#[salsa::tracked]
+fn tracked_fn_with_lt_param_and_elided_lt_on_db_arg1<'db>(
+    db: &dyn Db,
+    interned: MyInterned<'db>,
+) -> u32 {
+    interned.field(db) * 2
+}
+
+#[salsa::tracked]
+fn tracked_fn_with_lt_param_and_elided_lt_on_db_arg2<'db_lifetime>(
+    db: &dyn Db,
+    interned: MyInterned<'db_lifetime>,
+) -> u32 {
+    interned.field(db) * 2
+}
+
+#[salsa::tracked]
+fn tracked_fn_with_lt_param_and_elided_lt_on_input<'db>(
+    db: &'db dyn Db,
+    interned: MyInterned,
+) -> u32 {
+    interned.field(db) * 2
+}
+
+#[salsa::tracked]
+fn tracked_fn_with_multiple_lts<'db1, 'db2>(db: &'db1 dyn Db, interned: MyInterned<'db2>) -> u32 {
+    interned.field(db) * 2
+}
+
 fn main() {}
