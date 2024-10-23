@@ -72,7 +72,7 @@ pub trait Configuration: Any {
     /// Decide whether to iterate a cycle again or fallback.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
-        value: &'db Self::Output<'db>,
+        value: &Self::Output<'db>,
         count: u32,
     ) -> CycleRecoveryAction<Self::Output<'db>>;
 }

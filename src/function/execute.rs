@@ -65,7 +65,7 @@ where
 
             // Query was not previously executed, or value is potentially
             // stale, or value is absent. Let's execute!
-            let value = C::execute(db, C::id_to_input(db, id));
+            let mut new_value = C::execute(db, C::id_to_input(db, id));
             let mut revisions = active_query.pop();
 
             // If the new value is equal to the old one, then it didn't
@@ -73,45 +73,39 @@ where
             // "backdate" its `changed_at` revision to be the same as the
             // old value.
             if let Some(old_memo) = &opt_old_memo {
-                self.backdate_if_appropriate(old_memo, &mut revisions, &value);
+                self.backdate_if_appropriate(old_memo, &mut revisions, &new_value);
                 self.diff_outputs(db, database_key_index, old_memo, &mut revisions);
             }
 
-            let mut result =
-                self.insert_memo(zalsa, id, Memo::new(Some(value), revision_now, revisions));
-
-            if result.in_cycle(database_key_index) {
+            if revisions.cycle_heads.contains(&database_key_index) {
                 if let Some(last_provisional) = opt_last_provisional {
-                    match (&result.value, &last_provisional.value) {
-                        (Some(result_value), Some(provisional_value))
-                            if !C::values_equal(result_value, provisional_value) =>
-                        {
-                            match C::recover_from_cycle(db, result_value, iteration_count) {
+                    if let Some(provisional_value) = &last_provisional.value {
+                        if !C::values_equal(&new_value, provisional_value) {
+                            match C::recover_from_cycle(db, &new_value, iteration_count) {
                                 crate::CycleRecoveryAction::Iterate => {
                                     iteration_count += 1;
-                                    opt_last_provisional = Some(result);
-                                    continue;
-                                }
-                                crate::CycleRecoveryAction::Fallback(value) => {
-                                    result = self.insert_memo(
+                                    opt_last_provisional = Some(self.insert_memo(
                                         zalsa,
                                         id,
-                                        Memo::new(
-                                            Some(value),
-                                            revision_now,
-                                            result.revisions.clone(),
-                                        ),
-                                    );
+                                        Memo::new(Some(new_value), revision_now, revisions),
+                                    ));
+                                    continue;
+                                }
+                                crate::CycleRecoveryAction::Fallback(fallback_value) => {
+                                    new_value = fallback_value;
                                 }
                             }
                         }
-                        _ => {}
                     }
                 }
                 // This is no longer a provisional result, it's our real result, so remove ourselves
                 // from the cycle heads.
             }
-            return result;
+            return self.insert_memo(
+                zalsa,
+                id,
+                Memo::new(Some(new_value), revision_now, revisions),
+            );
         }
     }
 }

@@ -183,7 +183,7 @@ macro_rules! setup_tracked_fn {
 
                 fn recover_from_cycle<$db_lt>(
                     db: &$db_lt dyn $Db,
-                    value: &$db_lt Self::Output<$db_lt>,
+                    value: &Self::Output<$db_lt>,
                     count: u32,
                 ) -> $zalsa::CycleRecoveryAction<Self::Output<$db_lt>> {
                     $($cycle_recovery_fn)*(db, value, count)
