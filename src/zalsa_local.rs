@@ -353,7 +353,8 @@ pub(crate) struct QueryRevisions {
 
     pub(super) accumulated: AccumulatedMap,
 
-    /// Active cycle heads, if this result was created in cycle iteration
+    /// This result was computed based on provisional cycle-iteration
+    /// results from these queries.
     pub(super) cycle_heads: FxHashSet<DatabaseKeyIndex>,
 }
 

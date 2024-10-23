@@ -158,7 +158,7 @@ macro_rules! setup_tracked_fn {
 
                 const CYCLE_STRATEGY: $zalsa::CycleRecoveryStrategy = $zalsa::CycleRecoveryStrategy::$cycle_recovery_strategy;
 
-                fn should_backdate_value(
+                fn values_equal(
                     old_value: &Self::Output<'_>,
                     new_value: &Self::Output<'_>,
                 ) -> bool {
@@ -166,7 +166,7 @@ macro_rules! setup_tracked_fn {
                         if $no_eq {
                             false
                         } else {
-                            $zalsa::should_backdate_value(old_value, new_value)
+                            $zalsa::values_equal(old_value, new_value)
                         }
                     }
                 }
@@ -183,7 +183,7 @@ macro_rules! setup_tracked_fn {
 
                 fn recover_from_cycle<$db_lt>(
                     db: &$db_lt dyn $Db,
-                    value: Self::Output<$db_lt>,
+                    value: &$db_lt Self::Output<$db_lt>,
                     count: u32,
                 ) -> $zalsa::CycleRecoveryAction<Self::Output<$db_lt>> {
                     $($cycle_recovery_fn)*(db, value, count)

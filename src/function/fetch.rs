@@ -76,33 +76,72 @@ where
             self.memo_ingredient_index,
         )?;
 
-        // Push the query on the stack.
-        let active_query = zalsa_local.push_query(database_key_index);
-
         // Now that we've claimed the item, check again to see if there's a "hot" value.
-        let zalsa = db.zalsa();
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id);
         if let Some(old_memo) = &opt_old_memo {
-            if old_memo.value.is_some() && self.deep_verify_memo(db, old_memo, &active_query) {
-                // Unsafety invariant: memo is present in memo_map.
-                unsafe {
-                    return Some(self.extend_memo_lifetime(old_memo));
+            if old_memo.value.is_some() {
+                let active_query = zalsa_local.push_query(database_key_index);
+                if self.deep_verify_memo(db, old_memo, &active_query) {
+                    // Unsafety invariant: memo is present in memo_map.
+                    unsafe {
+                        return Some(self.extend_memo_lifetime(old_memo));
+                    }
                 }
             }
         }
+        let revision_now = zalsa.current_revision();
 
-        if let Some(initial_value) = self.initial_value(db) {
-            self.insert_memo(
+        let mut opt_last_provisional = if let Some(initial_value) = self.initial_value(db) {
+            Some(self.insert_memo(
                 zalsa,
                 id,
                 Memo::new(
                     Some(initial_value),
-                    zalsa.current_revision(),
+                    revision_now,
                     QueryRevisions::fixpoint_initial(database_key_index),
                 ),
-            );
-        }
+            ))
+        } else {
+            None
+        };
+        let mut iteration_count = 0;
 
-        Some(self.execute(db, active_query, opt_old_memo))
+        loop {
+            let active_query = zalsa_local.push_query(database_key_index);
+            let mut result = self.execute(db, active_query, opt_old_memo.clone());
+
+            if result.in_cycle(database_key_index) {
+                if let Some(last_provisional) = opt_last_provisional {
+                    match (&result.value, &last_provisional.value) {
+                        (Some(result_value), Some(provisional_value))
+                            if !C::values_equal(result_value, provisional_value) =>
+                        {
+                            match C::recover_from_cycle(db, result_value, iteration_count) {
+                                crate::CycleRecoveryAction::Iterate => {
+                                    iteration_count += 1;
+                                    opt_last_provisional = Some(result);
+                                    continue;
+                                }
+                                crate::CycleRecoveryAction::Fallback(value) => {
+                                    result = self.insert_memo(
+                                        zalsa,
+                                        id,
+                                        Memo::new(
+                                            Some(value),
+                                            revision_now,
+                                            result.revisions.clone(),
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                // This is no longer a provisional result, it's our real result, so remove ourselves
+                // from the cycle heads.
+            }
+            return Some(result);
+        }
     }
 }

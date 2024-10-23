@@ -74,7 +74,7 @@ fn cycle_initial<'db>(_db: &'db dyn Db) -> Type {
     Type::Bottom
 }
 
-fn cycle_recover<'db>(_db: &'db dyn Db, value: Type, count: u32) -> CycleRecoveryAction<Type> {
+fn cycle_recover<'db>(_db: &'db dyn Db, value: &Type, count: u32) -> CycleRecoveryAction<Type> {
     match value {
         Type::Bottom => CycleRecoveryAction::Iterate,
         Type::Values(_) => {

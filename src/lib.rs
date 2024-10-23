@@ -72,7 +72,7 @@ pub mod plumbing {
     pub use crate::cycle::CycleRecoveryStrategy;
     pub use crate::database::current_revision;
     pub use crate::database::Database;
-    pub use crate::function::should_backdate_value;
+    pub use crate::function::values_equal;
     pub use crate::id::AsId;
     pub use crate::id::FromId;
     pub use crate::id::Id;

@@ -49,13 +49,12 @@ pub trait Configuration: Any {
     /// (and, if so, how).
     const CYCLE_STRATEGY: CycleRecoveryStrategy;
 
-    /// Invokes after a new result `new_value`` has been computed for which an older memoized
-    /// value existed `old_value`. Returns true if the new value is equal to the older one
-    /// and hence should be "backdated" (i.e., marked as having last changed in an older revision,
-    /// even though it was recomputed).
+    /// Invokes after a new result `new_value`` has been computed for which an older memoized value
+    /// existed `old_value`, or in fixpoint iteration. Returns true if the new value is equal to
+    /// the older one.
     ///
-    /// This invokes user's code in form of the `Eq` impl.
-    fn should_backdate_value(old_value: &Self::Output<'_>, new_value: &Self::Output<'_>) -> bool;
+    /// This invokes user code in form of the `Eq` impl.
+    fn values_equal(old_value: &Self::Output<'_>, new_value: &Self::Output<'_>) -> bool;
 
     /// Convert from the id used internally to the value that execute is expecting.
     /// This is a no-op if the input to the function is a salsa struct.
@@ -73,7 +72,7 @@ pub trait Configuration: Any {
     /// Decide whether to iterate a cycle again or fallback.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
-        value: Self::Output<'db>,
+        value: &'db Self::Output<'db>,
         count: u32,
     ) -> CycleRecoveryAction<Self::Output<'db>>;
 }
@@ -116,9 +115,9 @@ pub struct IngredientImpl<C: Configuration> {
 }
 
 /// True if `old_value == new_value`. Invoked by the generated
-/// code for `should_backdate_value` so as to give a better
+/// code for `values_equal` so as to give a better
 /// error message.
-pub fn should_backdate_value<V: Eq>(old_value: &V, new_value: &V) -> bool {
+pub fn values_equal<V: Eq>(old_value: &V, new_value: &V) -> bool {
     old_value == new_value
 }
 

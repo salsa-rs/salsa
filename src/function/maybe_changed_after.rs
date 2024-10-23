@@ -131,8 +131,7 @@ where
     ///
     /// Takes an [`ActiveQueryGuard`] argument because this function recursively
     /// walks dependencies of `old_memo` and may even execute them to see if their
-    /// outputs have changed. As that could lead to cycles, it is important that the
-    /// query is on the stack.
+    /// outputs have changed.
     pub(super) fn deep_verify_memo(
         &self,
         db: &C::DbView,
