@@ -52,7 +52,7 @@ pub(crate) struct ActiveQuery {
     /// The type of accumulated value is erased but known to the ingredient.
     pub(crate) accumulated: AccumulatedMap,
 
-    /// Heads of cycles that this result was generated inside.
+    /// Provisional cycle results that this query depends on.
     pub(crate) cycle_heads: FxHashSet<DatabaseKeyIndex>,
 }
 

@@ -77,10 +77,15 @@ where
                 self.diff_outputs(db, database_key_index, old_memo, &mut revisions);
             }
 
+            // Did the new result we got depend on our own provisional value, in a cycle?
             if revisions.cycle_heads.contains(&database_key_index) {
                 if let Some(last_provisional) = opt_last_provisional {
                     if let Some(provisional_value) = &last_provisional.value {
+                        // If the new result is equal to the last provisional result, the cycle has
+                        // converged and we are done.
                         if !C::values_equal(&new_value, provisional_value) {
+                            // We are in a cycle that hasn't converged; ask the user's
+                            // cycle-recovery function what to do:
                             match C::recover_from_cycle(db, &new_value, iteration_count) {
                                 crate::CycleRecoveryAction::Iterate => {
                                     iteration_count += 1;
@@ -98,8 +103,9 @@ where
                         }
                     }
                 }
-                // This is no longer a provisional result, it's our real result, so remove ourselves
-                // from the cycle heads.
+                // This is no longer a provisional result, it's our final result, so remove
+                // ourself from the cycle heads.
+                revisions.cycle_heads.remove(&database_key_index);
             }
             return self.insert_memo(
                 zalsa,
