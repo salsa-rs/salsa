@@ -74,6 +74,7 @@ pub trait Configuration: Any {
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
         value: Self::Output<'db>,
+        count: u32,
     ) -> CycleRecoveryAction<Self::Output<'db>>;
 }
 

@@ -2,7 +2,7 @@
 // for the case where no cycle recovery is possible.
 #[macro_export]
 macro_rules! unexpected_cycle_recovery {
-    ($db:ident, $value:ident) => {{
+    ($db:ident, $value:ident, $count:ident) => {{
         std::mem::drop($db);
         panic!("cannot recover from cycle")
     }};
