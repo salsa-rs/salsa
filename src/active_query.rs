@@ -142,7 +142,7 @@ impl ActiveQuery {
     /// Used during cycle recovery, see [`Runtime::unblock_cycle_and_maybe_throw`].
     pub(super) fn remove_cycle_participants(&mut self, cycle: &Cycle) {
         for p in cycle.participant_keys() {
-            let p: DatabaseKeyIndex = p.into();
+            let p: DatabaseKeyIndex = p;
             self.input_outputs.shift_remove(&(EdgeKind::Input, p));
         }
     }

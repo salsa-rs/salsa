@@ -62,3 +62,11 @@ impl AtomicRevision {
         self.data.store(r.as_usize(), Ordering::SeqCst);
     }
 }
+
+impl From<Revision> for AtomicRevision {
+    fn from(value: Revision) -> Self {
+        Self {
+            data: AtomicUsize::from(value.as_usize()),
+        }
+    }
+}

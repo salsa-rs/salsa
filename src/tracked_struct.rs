@@ -291,7 +291,7 @@ where
         match zalsa_local.tracked_struct_id(&identity) {
             Some(id) => {
                 // The struct already exists in the intern map.
-                zalsa_local.add_output(self.database_key_index(id).into());
+                zalsa_local.add_output(self.database_key_index(id));
                 self.update(zalsa, current_revision, id, &current_deps, fields);
                 C::struct_from_id(id)
             }
@@ -300,7 +300,7 @@ where
                 // This is a new tracked struct, so create an entry in the struct map.
                 let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
                 let key = self.database_key_index(id);
-                zalsa_local.add_output(key.into());
+                zalsa_local.add_output(key);
                 zalsa_local.store_tracked_struct_id(identity, id);
                 C::struct_from_id(id)
             }

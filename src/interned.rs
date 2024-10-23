@@ -2,6 +2,7 @@ use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::fmt_index;
 use crate::plumbing::{Jar, JarAux};
+use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
 use crate::table::Slot;
@@ -67,6 +68,10 @@ where
     data: C::Data<'static>,
     memos: MemoTable,
     syncs: SyncTable,
+    /// The revision the value was first interned in.
+    first_interned_at: Revision,
+    /// The most recent interned revision.
+    last_interned_at: AtomicRevision,
 }
 
 impl<C: Configuration> Default for JarImpl<C> {
@@ -120,7 +125,8 @@ where
         db: &'db dyn crate::Database,
         data: impl Lookup<C::Data<'db>>,
     ) -> C::Struct<'db> {
-        let zalsa_local = db.zalsa_local();
+        let (zalsa, zalsa_local) = db.zalsas();
+        let current_revision = zalsa.current_revision();
 
         // Optimisation to only get read lock on the map if the data has already
         // been interned.
@@ -142,9 +148,13 @@ where
                 // SAFETY: Read lock on map is held during this block
                 let id = unsafe { *bucket.as_ref().1.get() };
 
+                // Sync the value's revision.
+                let value = zalsa.table().get::<Value<C>>(id);
+                value.last_interned_at.store(current_revision);
+
                 // Record a dependency on this value.
                 let index = self.database_key_index(id);
-                zalsa_local.report_tracked_read(index, Durability::MAX, Revision::start());
+                zalsa_local.report_tracked_read(index, Durability::MAX, current_revision);
 
                 return C::struct_from_id(id);
             }
@@ -160,9 +170,13 @@ where
                 let id = *entry.get();
                 drop(entry);
 
+                // Sync the value's revision.
+                let value = zalsa.table().get::<Value<C>>(id);
+                value.last_interned_at.store(current_revision);
+
                 // Record a dependency on this value.
                 let index = self.database_key_index(id);
-                zalsa_local.report_tracked_read(index, Durability::MAX, Revision::start());
+                zalsa_local.report_tracked_read(index, Durability::MAX, current_revision);
 
                 C::struct_from_id(id)
             }
@@ -171,16 +185,19 @@ where
             dashmap::mapref::entry::Entry::Vacant(entry) => {
                 let zalsa = db.zalsa();
                 let table = zalsa.table();
+
                 let next_id = zalsa_local.allocate(table, self.ingredient_index, || Value::<C> {
                     data: internal_data,
                     memos: Default::default(),
                     syncs: Default::default(),
+                    first_interned_at: current_revision,
+                    last_interned_at: AtomicRevision::from(current_revision),
                 });
                 entry.insert(next_id);
 
                 // Record a dependency on this value.
                 let index = self.database_key_index(next_id);
-                zalsa_local.report_tracked_read(index, Durability::MAX, Revision::start());
+                zalsa_local.report_tracked_read(index, Durability::MAX, current_revision);
 
                 C::struct_from_id(next_id)
             }
@@ -188,10 +205,10 @@ where
     }
 
     /// Returns the database key index for an interned value with the given id.
-    pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
+    pub fn database_key_index(&self, key_index: Id) -> DatabaseKeyIndex {
         DatabaseKeyIndex {
+            key_index,
             ingredient_index: self.ingredient_index,
-            key_index: id,
         }
     }
 
@@ -199,14 +216,24 @@ where
     /// Rarely used since end-users generally carry a struct with a pointer directly
     /// to the interned item.
     pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Data<'db> {
-        let internal_data = db.zalsa().table().get::<Value<C>>(id);
-        unsafe { Self::from_internal_data(&internal_data.data) }
+        let value = db.zalsa().table().get::<Value<C>>(id);
+        assert!(
+            value.last_interned_at.load() >= db.zalsa().current_revision(),
+            "Data was not interned in the current revision."
+        );
+        unsafe { Self::from_internal_data(&value.data) }
     }
 
     /// Lookup the fields from an interned struct.
     /// Note that this is not "leaking" since no dependency edge is required.
     pub fn fields<'db>(&'db self, db: &'db dyn Database, s: C::Struct<'db>) -> &'db C::Data<'db> {
         self.data(db, C::deref_struct(s))
+    }
+
+    pub fn reset(&mut self, db: &mut dyn Database) {
+        // Trigger a new revision.
+        let _zalsa_mut = db.zalsa_mut();
+        self.key_map.clear();
     }
 }
 
@@ -218,8 +245,16 @@ where
         self.ingredient_index
     }
 
-    fn maybe_changed_after(&self, _db: &dyn Database, _input: Id, _revision: Revision) -> bool {
-        // Interned data currently never changes.
+    fn maybe_changed_after(&self, db: &dyn Database, input: Id, revision: Revision) -> bool {
+        let value = db.zalsa().table().get::<Value<C>>(input);
+        if value.first_interned_at > revision {
+            // The slot was reused.
+            return true;
+        }
+
+        // The slot is valid in this revision but we have to sync the value's revision.
+        value.last_interned_at.store(db.zalsa().current_revision());
+
         false
     }
 
