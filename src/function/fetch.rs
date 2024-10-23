@@ -1,9 +1,6 @@
 use crate::{runtime::StampedValue, zalsa::ZalsaDatabase, AsDynDatabase as _, Id};
 
-use super::{
-    memo::{Memo, Value},
-    Configuration, IngredientImpl,
-};
+use super::{memo::Memo, Configuration, IngredientImpl};
 
 impl<C> IngredientImpl<C>
 where
@@ -69,7 +66,6 @@ where
             zalsa_local,
             database_key_index,
             self.memo_ingredient_index,
-            self.initial_value(db),
         )?;
 
         // Push the query on the stack.

@@ -58,7 +58,6 @@ where
             zalsa_local,
             database_key_index,
             self.memo_ingredient_index,
-            self.initial_value(db),
         )?;
         let active_query = zalsa_local.push_query(database_key_index);
 

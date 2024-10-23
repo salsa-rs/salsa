@@ -9,7 +9,6 @@ use crate::zalsa_local::QueryOrigin;
 use crate::{
     cycle::{Cycle, CycleRecoveryStrategy},
     key::DatabaseKeyIndex,
-    table::sync::ProvisionalValue,
     zalsa::Zalsa,
     zalsa_local::QueryRevisions,
     Event, EventKind, Id, Revision,
@@ -91,24 +90,11 @@ impl<C: Configuration> IngredientImpl<C> {
         }
     }
 
-    pub(super) fn initial_value<'db>(&'db self, db: &'db C::DbView) -> Option<ProvisionalValue> {
+    pub(super) fn initial_value<'db>(&'db self, db: &'db C::DbView) -> Option<C::Output<'db>> {
         match C::CYCLE_STRATEGY {
-            CycleRecoveryStrategy::Fixpoint => {
-                Some(self.to_provisional_value(C::cycle_initial(db)))
-            }
+            CycleRecoveryStrategy::Fixpoint => Some(C::cycle_initial(db)),
             CycleRecoveryStrategy::Panic => None,
         }
-    }
-
-    fn to_provisional_value<'db>(&'db self, value: C::Output<'db>) -> ProvisionalValue {
-        unsafe { self.value_to_static(Value { value }) }.into()
-    }
-
-    unsafe fn value_to_static<'db>(
-        &'db self,
-        value: OutputValue<'db, C>,
-    ) -> OutputValue<'static, C> {
-        unsafe { std::mem::transmute(value) }
     }
 }
 
@@ -209,12 +195,3 @@ impl<V: Debug + Send + Sync + Any> crate::table::memo::Memo for Memo<V> {
         &self.revisions.origin
     }
 }
-
-type OutputValue<'lt, C> = Value<<C as Configuration>::Output<'lt>>;
-
-#[derive(Debug)]
-pub(super) struct Value<V> {
-    value: V,
-}
-
-impl<V: Debug + Send + Sync + Any> crate::table::sync::Value for Value<V> {}
