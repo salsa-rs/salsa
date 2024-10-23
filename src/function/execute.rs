@@ -1,10 +1,6 @@
 use std::sync::Arc;
 
-use crate::{
-    zalsa::ZalsaDatabase,
-    zalsa_local::{ActiveQueryGuard, QueryRevisions},
-    Database, Event, EventKind,
-};
+use crate::{zalsa::ZalsaDatabase, zalsa_local::ActiveQueryGuard, Database, Event, EventKind};
 
 use super::{memo::Memo, Configuration, IngredientImpl};
 
@@ -40,20 +36,6 @@ where
                 database_key: database_key_index,
             },
         });
-
-        // If this tracked function supports fixpoint iteration, pre-insert a provisional-value
-        // memo for its initial iteration value.
-        if let Some(initial_value) = self.initial_value(db) {
-            self.insert_memo(
-                zalsa,
-                id,
-                Memo::new(
-                    Some(initial_value),
-                    revision_now,
-                    QueryRevisions::fixpoint_initial(database_key_index),
-                ),
-            );
-        }
 
         // If we already executed this query once, then use the tracked-struct ids from the
         // previous execution as the starting point for the new one.
