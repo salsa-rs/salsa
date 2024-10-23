@@ -1,7 +1,4 @@
-use crate::{
-    runtime::StampedValue, zalsa::ZalsaDatabase, zalsa_local::QueryRevisions, AsDynDatabase as _,
-    Id,
-};
+use crate::{runtime::StampedValue, zalsa::ZalsaDatabase, AsDynDatabase as _, Id};
 
 use super::{memo::Memo, Configuration, IngredientImpl};
 
@@ -89,59 +86,7 @@ where
                 }
             }
         }
-        let revision_now = zalsa.current_revision();
 
-        let mut opt_last_provisional = if let Some(initial_value) = self.initial_value(db) {
-            Some(self.insert_memo(
-                zalsa,
-                id,
-                Memo::new(
-                    Some(initial_value),
-                    revision_now,
-                    QueryRevisions::fixpoint_initial(database_key_index),
-                ),
-            ))
-        } else {
-            None
-        };
-        let mut iteration_count = 0;
-
-        loop {
-            let active_query = zalsa_local.push_query(database_key_index);
-            let mut result = self.execute(db, active_query, opt_old_memo.clone());
-
-            if result.in_cycle(database_key_index) {
-                if let Some(last_provisional) = opt_last_provisional {
-                    match (&result.value, &last_provisional.value) {
-                        (Some(result_value), Some(provisional_value))
-                            if !C::values_equal(result_value, provisional_value) =>
-                        {
-                            match C::recover_from_cycle(db, result_value, iteration_count) {
-                                crate::CycleRecoveryAction::Iterate => {
-                                    iteration_count += 1;
-                                    opt_last_provisional = Some(result);
-                                    continue;
-                                }
-                                crate::CycleRecoveryAction::Fallback(value) => {
-                                    result = self.insert_memo(
-                                        zalsa,
-                                        id,
-                                        Memo::new(
-                                            Some(value),
-                                            revision_now,
-                                            result.revisions.clone(),
-                                        ),
-                                    );
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                // This is no longer a provisional result, it's our real result, so remove ourselves
-                // from the cycle heads.
-            }
-            return Some(result);
-        }
+        Some(self.execute(db, database_key_index, opt_old_memo))
     }
 }

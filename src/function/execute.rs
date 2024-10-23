@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::{zalsa::ZalsaDatabase, zalsa_local::ActiveQueryGuard, Database, Event, EventKind};
+use crate::{
+    zalsa::ZalsaDatabase, zalsa_local::QueryRevisions, Database, DatabaseKeyIndex, Event, EventKind,
+};
 
 use super::{memo::Memo, Configuration, IngredientImpl};
 
@@ -20,12 +22,11 @@ where
     pub(super) fn execute<'db>(
         &'db self,
         db: &'db C::DbView,
-        active_query: ActiveQueryGuard<'_>,
+        database_key_index: DatabaseKeyIndex,
         opt_old_memo: Option<Arc<Memo<C::Output<'_>>>>,
     ) -> &'db Memo<C::Output<'db>> {
-        let zalsa = db.zalsa();
+        let (zalsa, zalsa_local) = db.zalsas();
         let revision_now = zalsa.current_revision();
-        let database_key_index = active_query.database_key_index;
         let id = database_key_index.key_index;
 
         tracing::info!("{:?}: executing query", database_key_index);
@@ -37,28 +38,80 @@ where
             },
         });
 
-        // If we already executed this query once, then use the tracked-struct ids from the
-        // previous execution as the starting point for the new one.
-        if let Some(old_memo) = &opt_old_memo {
-            active_query.seed_tracked_struct_ids(&old_memo.revisions.tracked_struct_ids);
+        let mut opt_last_provisional = if let Some(initial_value) = self.initial_value(db) {
+            Some(self.insert_memo(
+                zalsa,
+                id,
+                Memo::new(
+                    Some(initial_value),
+                    revision_now,
+                    QueryRevisions::fixpoint_initial(database_key_index),
+                ),
+            ))
+        } else {
+            None
+        };
+
+        let mut iteration_count = 0;
+
+        loop {
+            let active_query = zalsa_local.push_query(database_key_index);
+
+            // If we already executed this query once, then use the tracked-struct ids from the
+            // previous execution as the starting point for the new one.
+            if let Some(old_memo) = &opt_old_memo {
+                active_query.seed_tracked_struct_ids(&old_memo.revisions.tracked_struct_ids);
+            }
+
+            // Query was not previously executed, or value is potentially
+            // stale, or value is absent. Let's execute!
+            let value = C::execute(db, C::id_to_input(db, id));
+            let mut revisions = active_query.pop();
+
+            // If the new value is equal to the old one, then it didn't
+            // really change, even if some of its inputs have. So we can
+            // "backdate" its `changed_at` revision to be the same as the
+            // old value.
+            if let Some(old_memo) = &opt_old_memo {
+                self.backdate_if_appropriate(old_memo, &mut revisions, &value);
+                self.diff_outputs(db, database_key_index, old_memo, &mut revisions);
+            }
+
+            let mut result =
+                self.insert_memo(zalsa, id, Memo::new(Some(value), revision_now, revisions));
+
+            if result.in_cycle(database_key_index) {
+                if let Some(last_provisional) = opt_last_provisional {
+                    match (&result.value, &last_provisional.value) {
+                        (Some(result_value), Some(provisional_value))
+                            if !C::values_equal(result_value, provisional_value) =>
+                        {
+                            match C::recover_from_cycle(db, result_value, iteration_count) {
+                                crate::CycleRecoveryAction::Iterate => {
+                                    iteration_count += 1;
+                                    opt_last_provisional = Some(result);
+                                    continue;
+                                }
+                                crate::CycleRecoveryAction::Fallback(value) => {
+                                    result = self.insert_memo(
+                                        zalsa,
+                                        id,
+                                        Memo::new(
+                                            Some(value),
+                                            revision_now,
+                                            result.revisions.clone(),
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                // This is no longer a provisional result, it's our real result, so remove ourselves
+                // from the cycle heads.
+            }
+            return result;
         }
-
-        // Query was not previously executed, or value is potentially
-        // stale, or value is absent. Let's execute!
-        let value = C::execute(db, C::id_to_input(db, id));
-        let mut revisions = active_query.pop();
-
-        // If the new value is equal to the old one, then it didn't
-        // really change, even if some of its inputs have. So we can
-        // "backdate" its `changed_at` revision to be the same as the
-        // old value.
-        if let Some(old_memo) = &opt_old_memo {
-            self.backdate_if_appropriate(old_memo, &mut revisions, &value);
-            self.diff_outputs(db, database_key_index, old_memo, &mut revisions);
-        }
-
-        tracing::debug!("{database_key_index:?}: read_upgrade: result.revisions = {revisions:#?}");
-
-        self.insert_memo(zalsa, id, Memo::new(Some(value), revision_now, revisions))
     }
 }

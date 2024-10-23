@@ -59,8 +59,6 @@ where
             database_key_index,
             self.memo_ingredient_index,
         )?;
-        let active_query = zalsa_local.push_query(database_key_index);
-
         // Load the current memo, if any.
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index) else {
             return Some(true);
@@ -73,6 +71,7 @@ where
         );
 
         // Check if the inputs are still valid and we can just compare `changed_at`.
+        let active_query = zalsa_local.push_query(database_key_index);
         if self.deep_verify_memo(db, &old_memo, &active_query) {
             return Some(old_memo.revisions.changed_at > revision);
         }
@@ -82,7 +81,7 @@ where
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
         if old_memo.value.is_some() {
-            let memo = self.execute(db, active_query, Some(old_memo));
+            let memo = self.execute(db, database_key_index, Some(old_memo));
             let changed_at = memo.revisions.changed_at;
             return Some(changed_at > revision);
         }
