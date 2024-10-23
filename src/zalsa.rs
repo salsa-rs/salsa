@@ -5,7 +5,6 @@ use std::any::{Any, TypeId};
 use std::marker::PhantomData;
 use std::thread::ThreadId;
 
-use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{Ingredient, Jar, JarAux};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
@@ -82,17 +81,8 @@ impl IngredientIndex {
         self.0 as usize
     }
 
-    pub(crate) fn cycle_recovery_strategy(self, db: &dyn Database) -> CycleRecoveryStrategy {
-        db.zalsa().lookup_ingredient(self).cycle_recovery_strategy()
-    }
-
     pub fn successor(self, index: usize) -> Self {
         IngredientIndex(self.0 + 1 + index as u32)
-    }
-
-    /// Return the "debug name" of this ingredient (e.g., the name of the tracked struct it represents)
-    pub(crate) fn debug_name(self, db: &dyn Database) -> &'static str {
-        db.zalsa().lookup_ingredient(self).debug_name()
     }
 }
 

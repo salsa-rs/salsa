@@ -38,8 +38,8 @@ where
             },
         });
 
-        let mut opt_last_provisional = if let Some(initial_value) = self.initial_value(db) {
-            Some(self.insert_memo(
+        let mut opt_last_provisional = self.initial_value(db).map(|initial_value| {
+            self.insert_memo(
                 zalsa,
                 id,
                 Memo::new(
@@ -47,10 +47,8 @@ where
                     revision_now,
                     QueryRevisions::fixpoint_initial(database_key_index),
                 ),
-            ))
-        } else {
-            None
-        };
+            )
+        });
 
         let mut iteration_count = 0;
 

@@ -158,10 +158,6 @@ impl<V> Memo<V> {
         }
     }
 
-    pub(super) fn in_cycle(&self, database_key_index: DatabaseKeyIndex) -> bool {
-        self.revisions.cycle_heads.contains(&database_key_index)
-    }
-
     pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + '_ {
         struct TracingDebug<'a, T> {
             memo: &'a Memo<T>,

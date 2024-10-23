@@ -9,8 +9,6 @@ use crate::signal::Signal;
 /// a certain behavior.
 #[salsa::db]
 pub(crate) trait KnobsDatabase: Database {
-    fn knobs(&self) -> &Knobs;
-
     fn signal(&self, stage: usize);
 
     fn wait_for(&self, stage: usize);
@@ -68,10 +66,6 @@ impl salsa::Database for Knobs {
 
 #[salsa::db]
 impl KnobsDatabase for Knobs {
-    fn knobs(&self) -> &Knobs {
-        self
-    }
-
     fn signal(&self, stage: usize) {
         self.signal.signal(stage);
     }

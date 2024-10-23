@@ -70,11 +70,11 @@ fn infer_definition<'db>(db: &'db dyn Db, def: Definition) -> Type {
     }
 }
 
-fn cycle_initial<'db>(_db: &'db dyn Db) -> Type {
+fn cycle_initial(_db: &dyn Db) -> Type {
     Type::Bottom
 }
 
-fn cycle_recover<'db>(_db: &'db dyn Db, value: &Type, count: u32) -> CycleRecoveryAction<Type> {
+fn cycle_recover(_db: &dyn Db, value: &Type, count: u32) -> CycleRecoveryAction<Type> {
     match value {
         Type::Bottom => CycleRecoveryAction::Iterate,
         Type::Values(_) => {

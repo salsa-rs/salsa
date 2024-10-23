@@ -1,7 +1,4 @@
-use crate::{
-    accumulator::accumulated_map::AccumulatedMap, cycle::CycleRecoveryStrategy,
-    zalsa::IngredientIndex, Database, Id,
-};
+use crate::{accumulator::accumulated_map::AccumulatedMap, zalsa::IngredientIndex, Database, Id};
 
 /// An integer that uniquely identifies a particular query instance within the
 /// database. Used to track dependencies between queries. Fully ordered and
@@ -94,10 +91,6 @@ impl DatabaseKeyIndex {
 
     pub fn key_index(self) -> Id {
         self.key_index
-    }
-
-    pub(crate) fn cycle_recovery_strategy(self, db: &dyn Database) -> CycleRecoveryStrategy {
-        self.ingredient_index.cycle_recovery_strategy(db)
     }
 
     pub(crate) fn accumulated(self, db: &dyn Database) -> Option<&AccumulatedMap> {
