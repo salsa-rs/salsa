@@ -70,6 +70,7 @@ where
             origin: QueryOrigin::Assigned(active_query_key),
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
+            cycle_heads: Default::default(),
         };
 
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key) {
@@ -81,7 +82,6 @@ where
             value: Some(value),
             verified_at: AtomicCell::new(revision),
             revisions,
-            cycle: None,
         };
 
         tracing::debug!(

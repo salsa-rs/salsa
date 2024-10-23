@@ -21,7 +21,12 @@ where
             self.evict_value_from_memo_for(zalsa, evicted);
         }
 
-        zalsa_local.report_tracked_read(self.database_key_index(id).into(), durability, changed_at);
+        zalsa_local.report_tracked_read(
+            self.database_key_index(id).into(),
+            durability,
+            changed_at,
+            &memo.revisions.cycle_heads,
+        );
 
         value
     }

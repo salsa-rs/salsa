@@ -49,7 +49,7 @@ impl Type {
     }
 }
 
-#[salsa::tracked]
+#[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=cycle_initial)]
 fn infer_use<'db>(db: &'db dyn Db, u: Use) -> Type {
     let defs = u.reaching_definitions(db);
     match defs[..] {
@@ -59,7 +59,7 @@ fn infer_use<'db>(db: &'db dyn Db, u: Use) -> Type {
     }
 }
 
-#[salsa::tracked(cycle_fn=recover_definition_cycle, cycle_initial=initial_definition)]
+#[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=cycle_initial)]
 fn infer_definition<'db>(db: &'db dyn Db, def: Definition) -> Type {
     let increment_ty = infer_literal(db, def.increment(db));
     if let Some(base) = def.base(db) {
@@ -70,11 +70,11 @@ fn infer_definition<'db>(db: &'db dyn Db, def: Definition) -> Type {
     }
 }
 
-fn initial_definition<'db>(_db: &'db dyn Db) -> Type {
+fn cycle_initial<'db>(_db: &'db dyn Db) -> Type {
     Type::Bottom
 }
 
-fn recover_definition_cycle<'db>(_db: &'db dyn Db, value: Type) -> CycleRecoveryAction<Type> {
+fn cycle_recover<'db>(_db: &'db dyn Db, value: Type) -> CycleRecoveryAction<Type> {
     match value {
         Type::Bottom => CycleRecoveryAction::Iterate,
         Type::Values(values) => {
@@ -90,7 +90,7 @@ fn recover_definition_cycle<'db>(_db: &'db dyn Db, value: Type) -> CycleRecovery
 
 fn add(a: &Type, b: &Type) -> Type {
     match (a, b) {
-        (Type::Bottom, _) | (_, Type::Bottom) => panic!("unbound use"),
+        (Type::Bottom, _) | (_, Type::Bottom) => Type::Bottom,
         (Type::Top, _) | (_, Type::Top) => Type::Top,
         (Type::Values(a_ints), Type::Values(b_ints)) => {
             let mut set = BTreeSet::new();

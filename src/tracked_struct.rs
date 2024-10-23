@@ -561,6 +561,7 @@ where
             },
             data.durability,
             field_changed_at,
+            &Default::default(),
         );
 
         unsafe { self.to_self_ref(&data.fields) }

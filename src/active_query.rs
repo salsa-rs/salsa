@@ -1,4 +1,4 @@
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::zalsa_local::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
 use crate::tracked_struct::IdentityHash;
@@ -51,6 +51,9 @@ pub(crate) struct ActiveQuery {
     /// Stores the values accumulated to the given ingredient.
     /// The type of accumulated value is erased but known to the ingredient.
     pub(crate) accumulated: AccumulatedMap,
+
+    /// Heads of cycles that this result was generated inside.
+    pub(crate) cycle_heads: FxHashSet<DatabaseKeyIndex>,
 }
 
 impl ActiveQuery {
@@ -64,6 +67,7 @@ impl ActiveQuery {
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
+            cycle_heads: Default::default(),
         }
     }
 
@@ -72,10 +76,12 @@ impl ActiveQuery {
         input: DependencyIndex,
         durability: Durability,
         revision: Revision,
+        cycle_heads: &FxHashSet<DatabaseKeyIndex>,
     ) {
         self.input_outputs.insert((EdgeKind::Input, input));
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(revision);
+        self.cycle_heads.extend(cycle_heads);
     }
 
     pub(super) fn add_untracked_read(&mut self, changed_at: Revision) {
@@ -121,6 +127,7 @@ impl ActiveQuery {
             durability: self.durability,
             tracked_struct_ids: self.tracked_struct_ids,
             accumulated: self.accumulated,
+            cycle_heads: self.cycle_heads,
         }
     }
 

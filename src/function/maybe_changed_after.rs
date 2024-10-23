@@ -166,7 +166,7 @@ where
                 // in rev 1 but not in rev 2.
                 return false;
             }
-            QueryOrigin::BaseInput => {
+            QueryOrigin::BaseInput | QueryOrigin::FixpointInitial => {
                 // This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
                 return true;
             }

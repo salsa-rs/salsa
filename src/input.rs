@@ -188,6 +188,7 @@ impl<C: Configuration> IngredientImpl<C> {
             },
             stamp.durability,
             stamp.changed_at,
+            &Default::default(),
         );
         &value.fields
     }

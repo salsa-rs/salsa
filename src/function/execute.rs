@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use crate::{zalsa::ZalsaDatabase, zalsa_local::ActiveQueryGuard, Database, Event, EventKind};
+use crate::{
+    zalsa::ZalsaDatabase,
+    zalsa_local::{ActiveQueryGuard, QueryRevisions},
+    Database, Event, EventKind,
+};
 
 use super::{memo::Memo, Configuration, IngredientImpl};
 
@@ -26,6 +30,7 @@ where
         let zalsa = db.zalsa();
         let revision_now = zalsa.current_revision();
         let database_key_index = active_query.database_key_index;
+        let id = database_key_index.key_index;
 
         tracing::info!("{:?}: executing query", database_key_index);
 
@@ -36,6 +41,20 @@ where
             },
         });
 
+        // If this tracked function supports fixpoint iteration, pre-insert a provisional-value
+        // memo for its initial iteration value.
+        if let Some(initial_value) = self.initial_value(db) {
+            self.insert_memo(
+                zalsa,
+                id,
+                Memo::new(
+                    Some(initial_value),
+                    revision_now,
+                    QueryRevisions::fixpoint_initial(database_key_index),
+                ),
+            );
+        }
+
         // If we already executed this query once, then use the tracked-struct ids from the
         // previous execution as the starting point for the new one.
         if let Some(old_memo) = &opt_old_memo {
@@ -44,8 +63,6 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let database_key_index = active_query.database_key_index;
-        let id = database_key_index.key_index;
         let value = C::execute(db, C::id_to_input(db, id));
         let mut revisions = active_query.pop();
 

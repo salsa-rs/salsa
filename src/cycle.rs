@@ -1,5 +1,3 @@
-use crate::DatabaseKeyIndex;
-
 /// Return value from a cycle recovery function.
 #[derive(Debug)]
 pub enum CycleRecoveryAction<T> {
@@ -25,13 +23,4 @@ pub enum CycleRecoveryStrategy {
     /// This choice is computed by the query's `cycle_recovery`
     /// function and initial value.
     Fixpoint,
-}
-
-/// A query cycle.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Cycle {
-    /// The head of the cycle.
-    ///
-    /// The query whose execution ultimately resulted in calling itself again.
-    head: DatabaseKeyIndex,
 }

@@ -133,6 +133,7 @@ where
             DependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
             self.reset_at,
+            &Default::default(),
         );
 
         // Optimisation to only get read lock on the map if the data has already

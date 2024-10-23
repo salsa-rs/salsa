@@ -7,10 +7,7 @@ use crossbeam::atomic::AtomicCell;
 
 use crate::zalsa_local::QueryOrigin;
 use crate::{
-    cycle::{Cycle, CycleRecoveryStrategy},
-    key::DatabaseKeyIndex,
-    zalsa::Zalsa,
-    zalsa_local::QueryRevisions,
+    cycle::CycleRecoveryStrategy, key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions,
     Event, EventKind, Id, Revision,
 };
 
@@ -71,7 +68,8 @@ impl<C: Configuration> IngredientImpl<C> {
         match memo.revisions.origin {
             QueryOrigin::Assigned(_)
             | QueryOrigin::DerivedUntracked(_)
-            | QueryOrigin::BaseInput => {
+            | QueryOrigin::BaseInput
+            | QueryOrigin::FixpointInitial => {
                 // Careful: Cannot evict memos whose values were
                 // assigned as output of another query
                 // or those with untracked inputs
@@ -109,9 +107,6 @@ pub(super) struct Memo<V> {
 
     /// Revision information
     pub(super) revisions: QueryRevisions,
-
-    /// Cycle, if this result was created in cycle iteration
-    pub(super) cycle: Option<Cycle>,
 }
 
 impl<V> Memo<V> {
@@ -120,7 +115,6 @@ impl<V> Memo<V> {
             value,
             verified_at: AtomicCell::new(revision_now),
             revisions,
-            cycle: None,
         }
     }
     /// True if this memo is known not to have changed based on its durability.

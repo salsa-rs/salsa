@@ -1,4 +1,4 @@
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use tracing::debug;
 
 use crate::accumulator::accumulated_map::AccumulatedMap;
@@ -169,6 +169,7 @@ impl ZalsaLocal {
         input: DependencyIndex,
         durability: Durability,
         changed_at: Revision,
+        cycle_heads: &FxHashSet<DatabaseKeyIndex>,
     ) {
         debug!(
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
@@ -176,7 +177,7 @@ impl ZalsaLocal {
         );
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.add_read(input, durability, changed_at);
+                top_query.add_read(input, durability, changed_at, cycle_heads);
             }
         })
     }
@@ -351,9 +352,25 @@ pub(crate) struct QueryRevisions {
     pub(super) tracked_struct_ids: FxHashMap<Identity, Id>,
 
     pub(super) accumulated: AccumulatedMap,
+
+    /// Active cycle heads, if this result was created in cycle iteration
+    pub(super) cycle_heads: FxHashSet<DatabaseKeyIndex>,
 }
 
 impl QueryRevisions {
+    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
+        let mut cycle_heads = FxHashSet::default();
+        cycle_heads.insert(query);
+        Self {
+            changed_at: Revision::start(),
+            durability: Durability::MAX,
+            origin: QueryOrigin::FixpointInitial,
+            tracked_struct_ids: Default::default(),
+            accumulated: Default::default(),
+            cycle_heads,
+        }
+    }
+
     pub(crate) fn stamped_value<V>(&self, value: V) -> StampedValue<V> {
         self.stamp_template().stamp(value)
     }
@@ -402,6 +419,9 @@ pub enum QueryOrigin {
     /// The [`QueryEdges`] argument contains a listing of all the inputs we saw
     /// (but we know there were more).
     DerivedUntracked(QueryEdges),
+
+    /// The value is an initial provisional value for a query that supports fixpoint iteration.
+    FixpointInitial,
 }
 
 impl QueryOrigin {
@@ -409,7 +429,9 @@ impl QueryOrigin {
     pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
-            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => None,
+            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput | QueryOrigin::FixpointInitial => {
+                None
+            }
         };
         opt_edges.into_iter().flat_map(|edges| edges.inputs())
     }
@@ -418,7 +440,9 @@ impl QueryOrigin {
     pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
-            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => None,
+            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput | QueryOrigin::FixpointInitial => {
+                None
+            }
         };
         opt_edges.into_iter().flat_map(|edges| edges.outputs())
     }
