@@ -356,6 +356,10 @@ pub(crate) struct QueryRevisions {
     /// This result was computed based on provisional cycle-iteration
     /// results from these queries.
     pub(super) cycle_heads: FxHashSet<DatabaseKeyIndex>,
+
+    /// True if this result is based on provisional results, and is not itself a cycle head; this
+    /// should not be used as a cached result.
+    pub(super) cycle_ignore: bool,
 }
 
 impl QueryRevisions {
@@ -369,6 +373,7 @@ impl QueryRevisions {
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             cycle_heads,
+            cycle_ignore: false,
         }
     }
 

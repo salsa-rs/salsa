@@ -89,6 +89,7 @@ where
                             match C::recover_from_cycle(db, &new_value, iteration_count) {
                                 crate::CycleRecoveryAction::Iterate => {
                                     iteration_count += 1;
+                                    revisions.cycle_ignore = false;
                                     opt_last_provisional = Some(self.insert_memo(
                                         zalsa,
                                         id,
@@ -103,9 +104,17 @@ where
                         }
                     }
                 }
-                // This is no longer a provisional result, it's our final result, so remove
-                // ourself from the cycle heads.
+                // This is no longer a provisional result, it's our final result, so remove ourself
+                // from the cycle heads, and iterate one last time to remove ourself from all other
+                // results in the cycle as well.
                 revisions.cycle_heads.remove(&database_key_index);
+                revisions.cycle_ignore = false;
+                self.insert_memo(
+                    zalsa,
+                    id,
+                    Memo::new(Some(new_value), revision_now, revisions),
+                );
+                continue;
             }
             return self.insert_memo(
                 zalsa,

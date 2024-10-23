@@ -1,6 +1,4 @@
 use std::{
-    any::Any,
-    fmt::Debug,
     sync::atomic::{AtomicBool, Ordering},
     thread::ThreadId,
 };

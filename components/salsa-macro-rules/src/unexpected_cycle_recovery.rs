@@ -1,5 +1,6 @@
 // Macro that generates the body of the cycle recovery function
-// for the case where no cycle recovery is possible.
+// for the case where no cycle recovery is possible. Must be a macro
+// because the signature types must match the particular tracked function.
 #[macro_export]
 macro_rules! unexpected_cycle_recovery {
     ($db:ident, $value:ident, $count:ident) => {{

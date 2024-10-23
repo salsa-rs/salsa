@@ -127,6 +127,7 @@ impl ActiveQuery {
             durability: self.durability,
             tracked_struct_ids: self.tracked_struct_ids,
             accumulated: self.accumulated,
+            cycle_ignore: !self.cycle_heads.is_empty(),
             cycle_heads: self.cycle_heads,
         }
     }

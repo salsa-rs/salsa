@@ -100,6 +100,9 @@ where
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
+        if memo.revisions.cycle_ignore {
+            return false;
+        }
         let verified_at = memo.verified_at.load();
         let revision_now = zalsa.current_revision();
 
@@ -137,6 +140,9 @@ where
         old_memo: &Memo<C::Output<'_>>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> bool {
+        if old_memo.revisions.cycle_ignore {
+            return false;
+        }
         let zalsa = db.zalsa();
         let database_key_index = active_query.database_key_index;
 
