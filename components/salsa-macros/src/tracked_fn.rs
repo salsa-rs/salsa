@@ -73,7 +73,17 @@ impl Macro {
         let (cycle_recovery_fn, cycle_recovery_initial, cycle_recovery_strategy) =
             self.cycle_recovery()?;
         let is_specifiable = self.args.specify.is_some();
-        let no_eq = self.args.no_eq.is_some();
+        let no_eq = if let Some(token) = &self.args.no_eq {
+            if self.args.cycle_fn.is_some() {
+                return Err(syn::Error::new_spanned(
+                    token,
+                    "the `no_eq` option cannot be used with `cycle_fn`",
+                ));
+            }
+            true
+        } else {
+            false
+        };
 
         let mut inner_fn = item.clone();
         inner_fn.vis = syn::Visibility::Inherited;
