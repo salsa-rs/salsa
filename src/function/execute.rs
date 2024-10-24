@@ -80,37 +80,36 @@ where
             // Did the new result we got depend on our own provisional value, in a cycle?
             if revisions.cycle_heads.contains(&database_key_index) {
                 if let Some(last_provisional) = opt_last_provisional {
-                    if let Some(provisional_value) = &last_provisional.value {
-                        tracing::debug!(
-                            "{database_key_index:?}: execute: \
+                    // Memo value can only be `None` if LRU evicted; TODO should we explicitly
+                    // prevent LRU eviction of cycle-head provisional memos?
+                    let provisional_value = last_provisional.value.as_ref().unwrap();
+                    tracing::debug!(
+                        "{database_key_index:?}: execute: \
                             I am a cycle head, comparing last provisional value \
                             {provisional_value:#?} with new value {new_value:#?}"
-                        );
-                        // If the new result is equal to the last provisional result, the cycle has
-                        // converged and we are done.
-                        if !C::values_equal(&new_value, provisional_value) {
-                            // We are in a cycle that hasn't converged; ask the user's
-                            // cycle-recovery function what to do:
-                            match C::recover_from_cycle(db, &new_value, iteration_count) {
-                                crate::CycleRecoveryAction::Iterate => {
-                                    tracing::debug!(
-                                        "{database_key_index:?}: execute: iterate again"
-                                    );
-                                    iteration_count += 1;
-                                    revisions.cycle_ignore = false;
-                                    opt_last_provisional = Some(self.insert_memo(
-                                        zalsa,
-                                        id,
-                                        Memo::new(Some(new_value), revision_now, revisions),
-                                    ));
-                                    continue;
-                                }
-                                crate::CycleRecoveryAction::Fallback(fallback_value) => {
-                                    tracing::debug!(
+                    );
+                    // If the new result is equal to the last provisional result, the cycle has
+                    // converged and we are done.
+                    if !C::values_equal(&new_value, provisional_value) {
+                        // We are in a cycle that hasn't converged; ask the user's
+                        // cycle-recovery function what to do:
+                        match C::recover_from_cycle(db, &new_value, iteration_count) {
+                            crate::CycleRecoveryAction::Iterate => {
+                                tracing::debug!("{database_key_index:?}: execute: iterate again");
+                                iteration_count += 1;
+                                revisions.cycle_ignore = false;
+                                opt_last_provisional = Some(self.insert_memo(
+                                    zalsa,
+                                    id,
+                                    Memo::new(Some(new_value), revision_now, revisions),
+                                ));
+                                continue;
+                            }
+                            crate::CycleRecoveryAction::Fallback(fallback_value) => {
+                                tracing::debug!(
                                         "{database_key_index:?}: execute: fall back to {fallback_value:#?}"
                                     );
-                                    new_value = fallback_value;
-                                }
+                                new_value = fallback_value;
                             }
                         }
                     }
