@@ -2,7 +2,8 @@ use crate::{
     db_lifetime,
     hygiene::Hygiene,
     options::Options,
-    salsa_struct::{SalsaStruct, SalsaStructAllowedOptions}, token_stream_with_error,
+    salsa_struct::{SalsaStruct, SalsaStructAllowedOptions},
+    token_stream_with_error,
 };
 use proc_macro2::TokenStream;
 
