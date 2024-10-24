@@ -81,6 +81,11 @@ where
             if revisions.cycle_heads.contains(&database_key_index) {
                 if let Some(last_provisional) = opt_last_provisional {
                     if let Some(provisional_value) = &last_provisional.value {
+                        tracing::debug!(
+                            "{database_key_index:?}: execute: \
+                            I am a cycle head, comparing last provisional value \
+                            {provisional_value:#?} with new value {new_value:#?}"
+                        );
                         // If the new result is equal to the last provisional result, the cycle has
                         // converged and we are done.
                         if !C::values_equal(&new_value, provisional_value) {
@@ -88,6 +93,9 @@ where
                             // cycle-recovery function what to do:
                             match C::recover_from_cycle(db, &new_value, iteration_count) {
                                 crate::CycleRecoveryAction::Iterate => {
+                                    tracing::debug!(
+                                        "{database_key_index:?}: execute: iterate again"
+                                    );
                                     iteration_count += 1;
                                     revisions.cycle_ignore = false;
                                     opt_last_provisional = Some(self.insert_memo(
@@ -98,6 +106,9 @@ where
                                     continue;
                                 }
                                 crate::CycleRecoveryAction::Fallback(fallback_value) => {
+                                    tracing::debug!(
+                                        "{database_key_index:?}: execute: fall back to {fallback_value:#?}"
+                                    );
                                     new_value = fallback_value;
                                 }
                             }
@@ -106,7 +117,7 @@ where
                 }
                 // This is no longer a provisional result, it's our final result, so remove ourself
                 // from the cycle heads, and iterate one last time to remove ourself from all other
-                // results in the cycle as well.
+                // results in the cycle as well and turn them into usable cached results.
                 revisions.cycle_heads.remove(&database_key_index);
                 revisions.cycle_ignore = false;
                 self.insert_memo(
@@ -116,6 +127,9 @@ where
                 );
                 continue;
             }
+
+            tracing::debug!("{database_key_index:?}: execute: result.revisions = {revisions:#?}");
+
             return self.insert_memo(
                 zalsa,
                 id,
