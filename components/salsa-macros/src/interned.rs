@@ -2,7 +2,7 @@ use crate::{
     db_lifetime,
     hygiene::Hygiene,
     options::Options,
-    salsa_struct::{SalsaStruct, SalsaStructAllowedOptions},
+    salsa_struct::{SalsaStruct, SalsaStructAllowedOptions}, token_stream_with_error,
 };
 use proc_macro2::TokenStream;
 
@@ -17,7 +17,7 @@ pub(crate) fn interned(
 ) -> proc_macro::TokenStream {
     let args = syn::parse_macro_input!(args as InternedArgs);
     let hygiene = Hygiene::from1(&input);
-    let struct_item = syn::parse_macro_input!(input as syn::ItemStruct);
+    let struct_item = parse_macro_input!(input as syn::ItemStruct);
     let m = Macro {
         hygiene,
         args,
@@ -25,7 +25,7 @@ pub(crate) fn interned(
     };
     match m.try_macro() {
         Ok(v) => v.into(),
-        Err(e) => e.to_compile_error().into(),
+        Err(e) => token_stream_with_error(input, e),
     }
 }
 

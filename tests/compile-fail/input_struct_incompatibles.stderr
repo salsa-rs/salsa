@@ -40,3 +40,9 @@ error: `#[id]` cannot be used with `#[salsa::input]`
 21 | /     #[id]
 22 | |     field: u32,
    | |______________^
+
+error: cannot find attribute `id` in this scope
+  --> tests/compile-fail/input_struct_incompatibles.rs:21:7
+   |
+21 |     #[id]
+   |       ^^

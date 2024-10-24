@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use syn::parse::Nothing;
 
-use crate::hygiene::Hygiene;
+use crate::{hygiene::Hygiene, token_stream_with_error};
 
 // Source:
 //
@@ -16,11 +16,11 @@ pub(crate) fn db(
 ) -> proc_macro::TokenStream {
     let _nothing = syn::parse_macro_input!(args as Nothing);
     let hygiene = Hygiene::from1(&input);
-    let input = syn::parse_macro_input!(input as syn::Item);
+    let item = parse_macro_input!(input as syn::Item);
     let db_macro = DbMacro { hygiene };
-    match db_macro.try_db(input) {
+    match db_macro.try_db(item) {
         Ok(v) => crate::debug::dump_tokens("db", v).into(),
-        Err(e) => e.to_compile_error().into(),
+        Err(e) => token_stream_with_error(input, e),
     }
 }
 

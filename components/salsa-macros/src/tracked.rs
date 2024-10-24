@@ -1,10 +1,12 @@
 use syn::{spanned::Spanned, Item};
 
+use crate::token_stream_with_error;
+
 pub(crate) fn tracked(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let item = syn::parse_macro_input!(input as Item);
+    let item = parse_macro_input!(input as Item);
     let res = match item {
         syn::Item::Struct(item) => crate::tracked_struct::tracked_struct(args, item),
         syn::Item::Fn(item) => crate::tracked_fn::tracked_fn(args, item),
@@ -16,6 +18,6 @@ pub(crate) fn tracked(
     };
     match res {
         Ok(s) => s.into(),
-        Err(err) => err.into_compile_error().into(),
+        Err(err) => token_stream_with_error(input, err),
     }
 }

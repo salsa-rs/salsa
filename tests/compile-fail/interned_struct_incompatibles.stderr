@@ -40,3 +40,9 @@ error: `#[id]` cannot be used with `#[salsa::interned]`
 33 | /     #[id]
 34 | |     field: u32,
    | |______________^
+
+error: cannot find attribute `id` in this scope
+  --> tests/compile-fail/interned_struct_incompatibles.rs:33:7
+   |
+33 |     #[id]
+   |       ^^
