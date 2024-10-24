@@ -38,6 +38,8 @@ where
             },
         });
 
+        // If this query supports fixpoint iteration, populate the memo table with our initial
+        // value, in case some other query we call ends up calling us back.
         let mut opt_last_provisional = self.initial_value(db).map(|initial_value| {
             self.insert_memo(
                 zalsa,
@@ -50,7 +52,7 @@ where
             )
         });
 
-        let mut iteration_count = 0;
+        let mut iteration_count: u32 = 0;
 
         loop {
             let active_query = zalsa_local.push_query(database_key_index);

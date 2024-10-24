@@ -353,12 +353,20 @@ pub(crate) struct QueryRevisions {
 
     pub(super) accumulated: AccumulatedMap,
 
-    /// This result was computed based on provisional cycle-iteration
-    /// results from these queries.
+    /// This result was computed based on provisional values from
+    /// these cycle heads. The "cycle head" is the query responsible
+    /// for managing a fixpoint iteration. In a cycle like
+    /// `--> A --> B --> C --> A`, the cycle head is query `A`: it is
+    /// the query whose value is requested while it is executing,
+    /// which must provide the initial provisional value and decide,
+    /// after each iteration, whether the cycle has converged or must
+    /// iterate again.
     pub(super) cycle_heads: FxHashSet<DatabaseKeyIndex>,
 
-    /// True if this result is based on provisional results, and is not itself a cycle head; this
-    /// should not be used as a cached result.
+    /// True if this result is based on provisional results of other
+    /// queries, and is not created explicitly by the query managing
+    /// a fixpoint iteration (the "cycle head"); this should never be
+    /// treated as a valid cached result.
     pub(super) cycle_ignore: bool,
 }
 
