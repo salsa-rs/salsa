@@ -3,6 +3,7 @@ use proc_macro2::TokenStream;
 use crate::{
     hygiene::Hygiene,
     options::{AllowedOptions, Options},
+    token_stream_with_error,
 };
 
 // #[salsa::accumulator(jar = Jar0)]
@@ -14,7 +15,7 @@ pub(crate) fn accumulator(
 ) -> proc_macro::TokenStream {
     let hygiene = Hygiene::from1(&input);
     let args = syn::parse_macro_input!(args as Options<Accumulator>);
-    let struct_item = syn::parse_macro_input!(input as syn::ItemStruct);
+    let struct_item = parse_macro_input!(input as syn::ItemStruct);
     let ident = struct_item.ident.clone();
     let m = StructMacro {
         hygiene,
@@ -23,7 +24,7 @@ pub(crate) fn accumulator(
     };
     match m.try_expand() {
         Ok(v) => crate::debug::dump_tokens(ident, v).into(),
-        Err(e) => e.to_compile_error().into(),
+        Err(e) => token_stream_with_error(input, e),
     }
 }
 
