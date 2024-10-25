@@ -204,7 +204,7 @@ macro_rules! setup_tracked_fn {
                     aux: &dyn $zalsa::JarAux,
                     first_index: $zalsa::IngredientIndex,
                 ) -> Vec<Box<dyn $zalsa::Ingredient>> {
-                    let mut fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
+                    let fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
                         first_index,
                         aux,
                     );

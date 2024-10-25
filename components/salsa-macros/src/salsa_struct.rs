@@ -30,7 +30,6 @@ use crate::{
     options::{AllowedOptions, Options},
 };
 use proc_macro2::{Ident, Literal, Span, TokenStream};
-use syn::spanned::Spanned;
 
 pub(crate) struct SalsaStruct<'s, A: SalsaStructAllowedOptions> {
     struct_item: &'s syn::ItemStruct,
@@ -115,7 +114,7 @@ where
     pub(crate) fn constructor_name(&self) -> syn::Ident {
         match self.args.constructor_name.clone() {
             Some(name) => name,
-            None => Ident::new("new", self.struct_item.span()),
+            None => Ident::new("new", self.struct_item.ident.span()),
         }
     }
 
