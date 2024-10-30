@@ -7,7 +7,7 @@ use std::thread::ThreadId;
 
 use crate::ingredient::{Ingredient, Jar, JarAux};
 use crate::nonce::{Nonce, NonceGenerator};
-use crate::runtime::{Runtime, WaitResult};
+use crate::runtime::{BlockResult, Runtime, WaitResult};
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
 use crate::table::Table;
@@ -256,16 +256,16 @@ impl Zalsa {
     }
 
     /// See [`Runtime::block_on_or_unwind`][]
-    pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
+    pub(crate) fn block_on<QueryMutexGuard>(
         &self,
         db: &dyn Database,
         local_state: &ZalsaLocal,
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
-    ) {
+    ) -> BlockResult {
         self.runtime
-            .block_on_or_unwind(db, local_state, database_key, other_id, query_mutex_guard)
+            .block_on(db, local_state, database_key, other_id, query_mutex_guard)
     }
 
     /// See [`Runtime::unblock_queries_blocked_on`][]

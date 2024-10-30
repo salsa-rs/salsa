@@ -46,6 +46,12 @@ pub(crate) enum WaitResult {
     Panicked,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) enum BlockResult {
+    Completed,
+    Cycle,
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct StampedValue<V> {
     pub value: V,
@@ -148,8 +154,8 @@ impl Runtime {
         r_new
     }
 
-    /// Block until `other_id` completes executing `database_key`;
-    /// panic or unwind in the case of a cycle.
+    /// Block until `other_id` completes executing `database_key`, or return `BlockResult::Cycle`
+    /// immediately in case of a cycle.
     ///
     /// `query_mutex_guard` is the guard for the current query's state;
     /// it will be dropped after we have successfully registered the
@@ -159,19 +165,19 @@ impl Runtime {
     ///
     /// If the thread `other_id` panics, then our thread is considered
     /// cancelled, so this function will panic with a `Cancelled` value.
-    pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
+    pub(crate) fn block_on<QueryMutexGuard>(
         &self,
         db: &dyn Database,
         local_state: &ZalsaLocal,
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
-    ) {
+    ) -> BlockResult {
         let mut dg = self.dependency_graph.lock();
         let thread_id = std::thread::current().id();
 
         if dg.depends_on(other_id, thread_id) {
-            panic!("unexpected dependency graph cycle");
+            return BlockResult::Cycle;
         }
 
         db.salsa_event(&|| Event {
@@ -196,7 +202,7 @@ impl Runtime {
         local_state.restore_query_stack(stack);
 
         match result {
-            WaitResult::Completed => (),
+            WaitResult::Completed => BlockResult::Completed,
 
             // If the other thread panicked, then we consider this thread
             // cancelled. The assumption is that the panic will be detected

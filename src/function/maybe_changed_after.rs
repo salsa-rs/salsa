@@ -1,5 +1,7 @@
 use crate::{
+    cycle::CycleRecoveryStrategy,
     key::DatabaseKeyIndex,
+    table::sync::ClaimResult,
     zalsa::{Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, EdgeKind, QueryOrigin},
     AsDynDatabase as _, Id, Revision,
@@ -53,12 +55,24 @@ where
         let (zalsa, zalsa_local) = db.zalsas();
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = zalsa.sync_table_for(key_index).claim(
+        let _claim_guard = match zalsa.sync_table_for(key_index).claim(
             db.as_dyn_database(),
             zalsa_local,
             database_key_index,
             self.memo_ingredient_index,
-        )?;
+        ) {
+            ClaimResult::Retry => return None,
+            ClaimResult::Cycle => match C::CYCLE_STRATEGY {
+                CycleRecoveryStrategy::Panic => panic!(
+                    "dependency graph cycle validating {database_key_index:#?}; \
+                     set cycle_fn/cycle_initial to fixpoint iterate"
+                ),
+                // If we hit a cycle in memo validation, but we support fixpoint iteration, just
+                // consider the memo changed so we'll re-run the iteration in this revision.
+                CycleRecoveryStrategy::Fixpoint => return Some(true),
+            },
+            ClaimResult::Claimed(guard) => guard,
+        };
         // Load the current memo, if any.
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index) else {
             return Some(true);

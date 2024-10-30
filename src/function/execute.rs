@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use crate::{
-    zalsa::ZalsaDatabase, zalsa_local::QueryRevisions, Database, DatabaseKeyIndex, Event, EventKind,
-};
+use crate::{zalsa::ZalsaDatabase, Database, DatabaseKeyIndex, Event, EventKind};
 
 use super::{memo::Memo, Configuration, IngredientImpl};
 
@@ -38,21 +36,12 @@ where
             },
         });
 
-        // If this query supports fixpoint iteration, populate the memo table with our initial
-        // value, in case some other query we call ends up calling us back.
-        let mut opt_last_provisional = self.initial_value(db).map(|initial_value| {
-            self.insert_memo(
-                zalsa,
-                id,
-                Memo::new(
-                    Some(initial_value),
-                    revision_now,
-                    QueryRevisions::fixpoint_initial(database_key_index),
-                ),
-            )
-        });
-
         let mut iteration_count: u32 = 0;
+
+        // Our provisional value from the previous iteration, when doing fixpoint iteration.
+        // Initially it's set to None, because the initial provisional value is created lazily,
+        // only when a cycle is actually encountered.
+        let mut opt_last_provisional: Option<&Memo<<C as Configuration>::Output<'db>>> = None;
 
         loop {
             let active_query = zalsa_local.push_query(database_key_index);
@@ -79,44 +68,65 @@ where
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             if revisions.cycle_heads.contains(&database_key_index) {
-                if let Some(last_provisional) = opt_last_provisional {
-                    // Memo value can only be `None` if LRU evicted; TODO should we explicitly
-                    // prevent LRU eviction of cycle-head provisional memos?
-                    let provisional_value = last_provisional.value.as_ref().unwrap();
-                    tracing::debug!(
-                        "{database_key_index:?}: execute: \
+                let opt_owned_last_provisional;
+                let last_provisional_value = if let Some(last_provisional) = opt_last_provisional {
+                    // We have a last provisional value from our previous time around the loop.
+                    &last_provisional
+                        .value
+                        .as_ref()
+                        .expect("provisional value evicted by LRU?")
+                } else {
+                    // This is our first time around the loop; a provisional value must have been
+                    // inserted into the memo table when the cycle was hit, so let's pull our
+                    // initial provisional value from there.
+                    opt_owned_last_provisional = self.get_memo_from_table_for(zalsa, id);
+                    &opt_owned_last_provisional
+                        .as_deref()
+                        .expect(
+                            "{database_key_index:#?} is a cycle head, \
+                            but no provisional memo found",
+                        )
+                        .value
+                        .as_ref()
+                        .expect("provisional value evicted by LRU?")
+                };
+                tracing::debug!(
+                    "{database_key_index:?}: execute: \
                             I am a cycle head, comparing last provisional value \
-                            {provisional_value:#?} with new value {new_value:#?}"
-                    );
-                    // If the new result is equal to the last provisional result, the cycle has
-                    // converged and we are done.
-                    if !C::values_equal(&new_value, provisional_value) {
-                        // We are in a cycle that hasn't converged; ask the user's
-                        // cycle-recovery function what to do:
-                        match C::recover_from_cycle(db, &new_value, iteration_count) {
-                            crate::CycleRecoveryAction::Iterate => {
-                                tracing::debug!("{database_key_index:?}: execute: iterate again");
-                                iteration_count += 1;
-                                revisions.cycle_ignore = false;
-                                opt_last_provisional = Some(self.insert_memo(
-                                    zalsa,
-                                    id,
-                                    Memo::new(Some(new_value), revision_now, revisions),
-                                ));
-                                continue;
-                            }
-                            crate::CycleRecoveryAction::Fallback(fallback_value) => {
-                                tracing::debug!(
-                                        "{database_key_index:?}: execute: fall back to {fallback_value:#?}"
-                                    );
-                                new_value = fallback_value;
-                            }
+                            {last_provisional_value:#?} with new value {new_value:#?}"
+                );
+                // If the new result is equal to the last provisional result, the cycle has
+                // converged and we are done.
+                if !C::values_equal(&new_value, last_provisional_value) {
+                    // We are in a cycle that hasn't converged; ask the user's
+                    // cycle-recovery function what to do:
+                    match C::recover_from_cycle(db, &new_value, iteration_count) {
+                        crate::CycleRecoveryAction::Iterate => {
+                            tracing::debug!("{database_key_index:?}: execute: iterate again");
+                            iteration_count += 1;
+                            revisions.cycle_ignore = false;
+                            opt_last_provisional = Some(self.insert_memo(
+                                zalsa,
+                                id,
+                                Memo::new(Some(new_value), revision_now, revisions),
+                            ));
+                            continue;
+                        }
+                        crate::CycleRecoveryAction::Fallback(fallback_value) => {
+                            tracing::debug!(
+                                "{database_key_index:?}: execute: fall back to {fallback_value:#?}"
+                            );
+                            new_value = fallback_value;
                         }
                     }
                 }
                 // This is no longer a provisional result, it's our final result, so remove ourself
                 // from the cycle heads, and iterate one last time to remove ourself from all other
                 // results in the cycle as well and turn them into usable cached results.
+                // TODO Can we avoid doing this? the extra cycle is quite expensive if there is a
+                // nested cycle. Maybe track the relevant memos and replace them all with the cycle
+                // head removed? Or just let them keep the cycle head and allow cycle memos to be
+                // used when we are not actually iterating the cycle for that head?
                 revisions.cycle_heads.remove(&database_key_index);
                 revisions.cycle_ignore = false;
                 self.insert_memo(

@@ -1,4 +1,7 @@
-/// Test case for fixpoint iteration cycle resolution.
+//! Test case for fixpoint iteration cycle resolution.
+//!
+//! This test case is intended to simulate a (very simplified) version of a real dataflow analysis
+//! using fixpoint iteration.
 use salsa::{CycleRecoveryAction, Database as Db, Setter};
 use std::collections::BTreeSet;
 use std::iter::IntoIterator;

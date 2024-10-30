@@ -1,4 +1,7 @@
-use crate::{runtime::StampedValue, zalsa::ZalsaDatabase, AsDynDatabase as _, Id};
+use crate::{
+    runtime::StampedValue, table::sync::ClaimResult, zalsa::ZalsaDatabase,
+    zalsa_local::QueryRevisions, AsDynDatabase as _, Id,
+};
 
 use super::{memo::Memo, Configuration, IngredientImpl};
 
@@ -66,12 +69,36 @@ where
         let database_key_index = self.database_key_index(id);
 
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let _claim_guard = zalsa.sync_table_for(id).claim(
+        let _claim_guard = match zalsa.sync_table_for(id).claim(
             db.as_dyn_database(),
             zalsa_local,
             database_key_index,
             self.memo_ingredient_index,
-        )?;
+        ) {
+            ClaimResult::Retry => return None,
+            ClaimResult::Cycle => {
+                return self
+                    .initial_value(db)
+                    .map(|initial_value| {
+                        self.insert_memo(
+                            zalsa,
+                            id,
+                            Memo::new(
+                                Some(initial_value),
+                                zalsa.current_revision(),
+                                QueryRevisions::fixpoint_initial(database_key_index),
+                            ),
+                        )
+                    })
+                    .or_else(|| {
+                        panic!(
+                            "dependency graph cycle querying {database_key_index:#?}; \
+                             set cycle_fn/cycle_initial to fixpoint iterate"
+                        )
+                    })
+            }
+            ClaimResult::Claimed(guard) => guard,
+        };
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id);
