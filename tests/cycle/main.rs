@@ -724,9 +724,9 @@ fn nested_double_multiple_revisions() {
     a.assert(&db, 240);
 }
 
-/// a:Ni(b) -> b:Np(a)
-/// ^                |
-/// +----------------+
+/// a:Ni(b) -> b:Ni(c) -> c:Ni(a)
+/// ^                           |
+/// +---------------------------+
 ///
 /// In a cycle with some LOW durability and some HIGH durability inputs, changing a LOW durability
 /// input still re-executes the full cycle in the next revision.
@@ -735,21 +735,26 @@ fn cycle_durability() {
     let mut db = DbImpl::new();
     let a_in = Inputs::new(&db, vec![]);
     let b_in = Inputs::new(&db, vec![]);
+    let c_in = Inputs::new(&db, vec![]);
     let a = Input::MinIterate(a_in);
     let b = Input::MinIterate(b_in);
+    let c = Input::MinIterate(c_in);
     a_in.set_inputs(&mut db)
         .with_durability(Durability::LOW)
-        .to(vec![b]);
+        .to(vec![b.clone()]);
     b_in.set_inputs(&mut db)
+        .with_durability(Durability::HIGH)
+        .to(vec![c]);
+    c_in.set_inputs(&mut db)
         .with_durability(Durability::HIGH)
         .to(vec![a.clone()]);
 
     a.clone().assert(&db, 255);
 
-    // next revision, we hit max value instead
-    b_in.set_inputs(&mut db)
+    // next revision, we converge instead
+    a_in.set_inputs(&mut db)
         .with_durability(Durability::LOW)
-        .to(vec![Input::Value(45), a.clone()]);
+        .to(vec![Input::Value(45), b]);
 
     a.assert(&db, 45);
 }

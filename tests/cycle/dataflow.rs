@@ -191,7 +191,7 @@ fn cycle_diverges_then_converges() {
 }
 
 /// x = 0; y = 0; loop { x = y + 0; y = x + 0 }
-#[test_log::test]
+#[test]
 fn multi_symbol_cycle_converges_then_diverges() {
     let mut db = salsa::DatabaseImpl::new();
 
