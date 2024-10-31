@@ -90,7 +90,10 @@ where
                             Memo::new(
                                 Some(initial_value),
                                 zalsa.current_revision(),
-                                QueryRevisions::fixpoint_initial(database_key_index),
+                                QueryRevisions::fixpoint_initial(
+                                    database_key_index,
+                                    zalsa.current_revision(),
+                                ),
                             ),
                         )
                     })

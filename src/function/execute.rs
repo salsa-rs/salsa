@@ -57,15 +57,6 @@ where
             let mut new_value = C::execute(db, C::id_to_input(db, id));
             let mut revisions = active_query.pop();
 
-            // If the new value is equal to the old one, then it didn't
-            // really change, even if some of its inputs have. So we can
-            // "backdate" its `changed_at` revision to be the same as the
-            // old value.
-            if let Some(old_memo) = &opt_old_memo {
-                self.backdate_if_appropriate(old_memo, &mut revisions, &new_value);
-                self.diff_outputs(db, database_key_index, old_memo, &mut revisions);
-            }
-
             // Did the new result we got depend on our own provisional value, in a cycle?
             if revisions.cycle_heads.contains(&database_key_index) {
                 let opt_owned_last_provisional;
@@ -144,6 +135,15 @@ where
             }
 
             tracing::debug!("{database_key_index:?}: execute: result.revisions = {revisions:#?}");
+
+            // If the new value is equal to the old one, then it didn't
+            // really change, even if some of its inputs have. So we can
+            // "backdate" its `changed_at` revision to be the same as the
+            // old value.
+            if let Some(old_memo) = &opt_old_memo {
+                self.backdate_if_appropriate(old_memo, &mut revisions, &new_value);
+                self.diff_outputs(db, database_key_index, old_memo, &mut revisions);
+            }
 
             return self.insert_memo(
                 zalsa,

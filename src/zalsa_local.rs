@@ -371,10 +371,10 @@ pub(crate) struct QueryRevisions {
 }
 
 impl QueryRevisions {
-    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
+    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, revision: Revision) -> Self {
         let cycle_heads = FxHashSet::from_iter([query]);
         Self {
-            changed_at: Revision::start(),
+            changed_at: revision,
             durability: Durability::MAX,
             origin: QueryOrigin::FixpointInitial,
             tracked_struct_ids: Default::default(),
