@@ -71,16 +71,16 @@ where
                 let opt_owned_last_provisional;
                 let last_provisional_value = if let Some(last_provisional) = opt_last_provisional {
                     // We have a last provisional value from our previous time around the loop.
-                    &last_provisional
+                    last_provisional
                         .value
                         .as_ref()
-                        .expect("provisional value evicted by LRU?")
+                        .expect("provisional value should not be evicted by LRU")
                 } else {
                     // This is our first time around the loop; a provisional value must have been
                     // inserted into the memo table when the cycle was hit, so let's pull our
                     // initial provisional value from there.
                     opt_owned_last_provisional = self.get_memo_from_table_for(zalsa, id);
-                    &opt_owned_last_provisional
+                    opt_owned_last_provisional
                         .as_deref()
                         .expect(
                             "{database_key_index:#?} is a cycle head, \
@@ -88,12 +88,11 @@ where
                         )
                         .value
                         .as_ref()
-                        .expect("provisional value evicted by LRU?")
+                        .expect("provisional value should not be evicted by LRU")
                 };
                 tracing::debug!(
                     "{database_key_index:?}: execute: \
-                            I am a cycle head, comparing last provisional value \
-                            {last_provisional_value:#?} with new value {new_value:#?}"
+                    I am a cycle head, comparing last provisional value with new value"
                 );
                 // If the new result is equal to the last provisional result, the cycle has
                 // converged and we are done.
@@ -103,7 +102,10 @@ where
                     match C::recover_from_cycle(db, &new_value, iteration_count) {
                         crate::CycleRecoveryAction::Iterate => {
                             tracing::debug!("{database_key_index:?}: execute: iterate again");
-                            iteration_count += 1;
+                            iteration_count = iteration_count.checked_add(1).expect(
+                                "fixpoint iteration of {database_key_index:#?} should \
+                                converge before u32::MAX iterations",
+                            );
                             revisions.cycle_ignore = false;
                             opt_last_provisional = Some(self.insert_memo(
                                 zalsa,
@@ -114,7 +116,7 @@ where
                         }
                         crate::CycleRecoveryAction::Fallback(fallback_value) => {
                             tracing::debug!(
-                                "{database_key_index:?}: execute: fall back to {fallback_value:#?}"
+                                "{database_key_index:?}: execute: user cycle_fn says to fall back"
                             );
                             new_value = fallback_value;
                         }
@@ -127,6 +129,10 @@ where
                 // nested cycle. Maybe track the relevant memos and replace them all with the cycle
                 // head removed? Or just let them keep the cycle head and allow cycle memos to be
                 // used when we are not actually iterating the cycle for that head?
+                tracing::debug!(
+                    "{database_key_index:?}: execute: fixpoint iteration has a final value, \
+                    one more iteration to remove cycle heads from memos"
+                );
                 revisions.cycle_heads.remove(&database_key_index);
                 revisions.cycle_ignore = false;
                 self.insert_memo(

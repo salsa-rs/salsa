@@ -80,6 +80,10 @@ where
                 return self
                     .initial_value(db)
                     .map(|initial_value| {
+                        tracing::debug!(
+                            "hit cycle at {database_key_index:#?}, \
+                            inserting and returning fixpoint initial value"
+                        );
                         self.insert_memo(
                             zalsa,
                             id,
