@@ -96,8 +96,12 @@ where
         // the value has not logically changed.
         if old_memo.value.is_some() {
             let memo = self.execute(db, database_key_index, Some(old_memo));
-            let changed_at = memo.revisions.changed_at;
-            return Some(changed_at > revision);
+            // If we get back a memo that's part of a cycle and requires further iteration to
+            // resolve, we can't backdate that.
+            if !memo.revisions.cycle_ignore {
+                let changed_at = memo.revisions.changed_at;
+                return Some(changed_at > revision);
+            }
         }
 
         // Otherwise, nothing for it: have to consider the value to have changed.

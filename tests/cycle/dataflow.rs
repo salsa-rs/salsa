@@ -12,16 +12,11 @@ struct Use {
     reaching_definitions: Vec<Definition>,
 }
 
-#[salsa::input]
-struct Literal {
-    value: usize,
-}
-
 /// A Definition of a symbol, either of the form `base + increment` or `0 + increment`.
 #[salsa::input]
 struct Definition {
     base: Option<Use>,
-    increment: Literal,
+    increment: usize,
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]
@@ -64,7 +59,7 @@ fn infer_use<'db>(db: &'db dyn Db, u: Use) -> Type {
 
 #[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=cycle_initial)]
 fn infer_definition<'db>(db: &'db dyn Db, def: Definition) -> Type {
-    let increment_ty = infer_literal(db, def.increment(db));
+    let increment_ty = Type::Values(Box::from([def.increment(db)]));
     if let Some(base) = def.base(db) {
         let base_ty = infer_use(db, base);
         add(&base_ty, &increment_ty)
@@ -107,17 +102,12 @@ fn add(a: &Type, b: &Type) -> Type {
     }
 }
 
-#[salsa::tracked]
-fn infer_literal<'db>(db: &'db dyn Db, literal: Literal) -> Type {
-    Type::Values(Box::from([literal.value(db)]))
-}
-
 /// x = 1
 #[test]
 fn simple() {
     let db = salsa::DatabaseImpl::new();
 
-    let def = Definition::new(&db, None, Literal::new(&db, 1));
+    let def = Definition::new(&db, None, 1);
     let u = Use::new(&db, vec![def]);
 
     let ty = infer_use(&db, u);
@@ -130,8 +120,8 @@ fn simple() {
 fn union() {
     let db = salsa::DatabaseImpl::new();
 
-    let def1 = Definition::new(&db, None, Literal::new(&db, 1));
-    let def2 = Definition::new(&db, None, Literal::new(&db, 2));
+    let def1 = Definition::new(&db, None, 1);
+    let def2 = Definition::new(&db, None, 2);
     let u = Use::new(&db, vec![def1, def2]);
 
     let ty = infer_use(&db, u);
@@ -144,10 +134,10 @@ fn union() {
 fn union_add() {
     let db = salsa::DatabaseImpl::new();
 
-    let x1 = Definition::new(&db, None, Literal::new(&db, 1));
-    let x2 = Definition::new(&db, None, Literal::new(&db, 2));
+    let x1 = Definition::new(&db, None, 1);
+    let x2 = Definition::new(&db, None, 2);
     let x_use = Use::new(&db, vec![x1, x2]);
-    let y_def = Definition::new(&db, Some(x_use), Literal::new(&db, 1));
+    let y_def = Definition::new(&db, Some(x_use), 1);
     let y_use = Use::new(&db, vec![y_def]);
 
     let ty = infer_use(&db, y_use);
@@ -157,11 +147,11 @@ fn union_add() {
 
 /// x = 1; loop { x = x + 0 }
 #[test]
-fn cycle_converges() {
+fn cycle_converges_then_diverges() {
     let mut db = salsa::DatabaseImpl::new();
 
-    let def1 = Definition::new(&db, None, Literal::new(&db, 1));
-    let def2 = Definition::new(&db, None, Literal::new(&db, 0));
+    let def1 = Definition::new(&db, None, 1);
+    let def2 = Definition::new(&db, None, 0);
     let u = Use::new(&db, vec![def1, def2]);
     def2.set_base(&mut db).to(Some(u));
 
@@ -169,15 +159,22 @@ fn cycle_converges() {
 
     // Loop converges on 1
     assert_eq!(ty, Type::Values(Box::from([1])));
+
+    // Set the increment on x from 0 to 1
+    let new_increment = 1;
+    def2.set_increment(&mut db).to(new_increment);
+
+    // Now the loop diverges and we fall back to Top
+    assert_eq!(infer_use(&db, u), Type::Top);
 }
 
 /// x = 1; loop { x = x + 1 }
 #[test]
-fn cycle_diverges() {
+fn cycle_diverges_then_converges() {
     let mut db = salsa::DatabaseImpl::new();
 
-    let def1 = Definition::new(&db, None, Literal::new(&db, 1));
-    let def2 = Definition::new(&db, None, Literal::new(&db, 1));
+    let def1 = Definition::new(&db, None, 1);
+    let def2 = Definition::new(&db, None, 1);
     let u = Use::new(&db, vec![def1, def2]);
     def2.set_base(&mut db).to(Some(u));
 
@@ -185,26 +182,36 @@ fn cycle_diverges() {
 
     // Loop diverges. Cut it off and fallback to Type::Top
     assert_eq!(ty, Type::Top);
+
+    // Set the increment from 1 to 0.
+    def2.set_increment(&mut db).to(0);
+
+    // Now the loop converges on 1.
+    assert_eq!(infer_use(&db, u), Type::Values(Box::from([1])));
 }
 
 /// x = 0; y = 0; loop { x = y + 0; y = x + 0 }
-#[test]
-fn multi_symbol_cycle_converges() {
+#[test_log::test]
+fn multi_symbol_cycle_converges_then_diverges() {
     let mut db = salsa::DatabaseImpl::new();
 
-    let defx0 = Definition::new(&db, None, Literal::new(&db, 0));
-    let defy0 = Definition::new(&db, None, Literal::new(&db, 0));
-    let defx1 = Definition::new(&db, None, Literal::new(&db, 0));
-    let defy1 = Definition::new(&db, None, Literal::new(&db, 0));
+    let defx0 = Definition::new(&db, None, 0);
+    let defy0 = Definition::new(&db, None, 0);
+    let defx1 = Definition::new(&db, None, 0);
+    let defy1 = Definition::new(&db, None, 0);
     let use_x = Use::new(&db, vec![defx0, defx1]);
     let use_y = Use::new(&db, vec![defy0, defy1]);
     defx1.set_base(&mut db).to(Some(use_y));
     defy1.set_base(&mut db).to(Some(use_x));
 
-    let x_ty = infer_use(&db, use_x);
-    let y_ty = infer_use(&db, use_y);
-
     // Both symbols converge on 0
-    assert_eq!(x_ty, Type::Values(Box::from([0])));
-    assert_eq!(y_ty, Type::Values(Box::from([0])));
+    assert_eq!(infer_use(&db, use_x), Type::Values(Box::from([0])));
+    assert_eq!(infer_use(&db, use_y), Type::Values(Box::from([0])));
+
+    // Set the increment on x from 0 to 1.
+    defx1.set_increment(&mut db).to(1);
+
+    // Now the loop diverges and we fall back to Top.
+    assert_eq!(infer_use(&db, use_x), Type::Top);
+    assert_eq!(infer_use(&db, use_y), Type::Top);
 }
