@@ -76,7 +76,7 @@ const MIN_COUNT_FALLBACK: u8 = 100;
 const MIN_VALUE_FALLBACK: u8 = 5;
 const MIN_VALUE: u8 = 10;
 
-fn min_recover(_db: &dyn Db, value: &u8, count: u32) -> CycleRecoveryAction<u8> {
+fn min_recover(_db: &dyn Db, value: &u8, count: u32, _inputs: Inputs) -> CycleRecoveryAction<u8> {
     if *value < MIN_VALUE {
         CycleRecoveryAction::Fallback(MIN_VALUE_FALLBACK)
     } else if count > 10 {
@@ -86,7 +86,7 @@ fn min_recover(_db: &dyn Db, value: &u8, count: u32) -> CycleRecoveryAction<u8> 
     }
 }
 
-fn min_initial(_db: &dyn Db) -> u8 {
+fn min_initial(_db: &dyn Db, _inputs: Inputs) -> u8 {
     255
 }
 
@@ -99,7 +99,7 @@ const MAX_COUNT_FALLBACK: u8 = 200;
 const MAX_VALUE_FALLBACK: u8 = 250;
 const MAX_VALUE: u8 = 245;
 
-fn max_recover(_db: &dyn Db, value: &u8, count: u32) -> CycleRecoveryAction<u8> {
+fn max_recover(_db: &dyn Db, value: &u8, count: u32, _inputs: Inputs) -> CycleRecoveryAction<u8> {
     if *value > MAX_VALUE {
         CycleRecoveryAction::Fallback(MAX_VALUE_FALLBACK)
     } else if count > 10 {
@@ -109,7 +109,7 @@ fn max_recover(_db: &dyn Db, value: &u8, count: u32) -> CycleRecoveryAction<u8> 
     }
 }
 
-fn max_initial(_db: &dyn Db) -> u8 {
+fn max_initial(_db: &dyn Db, _inputs: Inputs) -> u8 {
     0
 }
 

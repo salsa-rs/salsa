@@ -90,7 +90,12 @@ where
                 if !C::values_equal(&new_value, last_provisional_value) {
                     // We are in a cycle that hasn't converged; ask the user's
                     // cycle-recovery function what to do:
-                    match C::recover_from_cycle(db, &new_value, iteration_count) {
+                    match C::recover_from_cycle(
+                        db,
+                        &new_value,
+                        iteration_count,
+                        C::id_to_input(db, id),
+                    ) {
                         crate::CycleRecoveryAction::Iterate => {
                             tracing::debug!("{database_key_index:?}: execute: iterate again");
                             iteration_count = iteration_count.checked_add(1).expect(

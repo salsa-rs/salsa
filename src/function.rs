@@ -67,13 +67,14 @@ pub trait Configuration: Any {
     fn execute<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Self::Output<'db>;
 
     /// Get the cycle recovery initial value.
-    fn cycle_initial(db: &Self::DbView) -> Self::Output<'_>;
+    fn cycle_initial<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Self::Output<'db>;
 
     /// Decide whether to iterate a cycle again or fallback.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
         value: &Self::Output<'db>,
         count: u32,
+        input: Self::Input<'db>,
     ) -> CycleRecoveryAction<Self::Output<'db>>;
 }
 

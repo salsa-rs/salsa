@@ -47,7 +47,7 @@ impl Type {
     }
 }
 
-#[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=cycle_initial)]
+#[salsa::tracked(cycle_fn=use_cycle_recover, cycle_initial=use_cycle_initial)]
 fn infer_use<'db>(db: &'db dyn Db, u: Use) -> Type {
     let defs = u.reaching_definitions(db);
     match defs[..] {
@@ -57,7 +57,7 @@ fn infer_use<'db>(db: &'db dyn Db, u: Use) -> Type {
     }
 }
 
-#[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=cycle_initial)]
+#[salsa::tracked(cycle_fn=def_cycle_recover, cycle_initial=def_cycle_initial)]
 fn infer_definition<'db>(db: &'db dyn Db, def: Definition) -> Type {
     let increment_ty = Type::Values(Box::from([def.increment(db)]));
     if let Some(base) = def.base(db) {
@@ -68,11 +68,33 @@ fn infer_definition<'db>(db: &'db dyn Db, def: Definition) -> Type {
     }
 }
 
-fn cycle_initial(_db: &dyn Db) -> Type {
+fn def_cycle_initial(_db: &dyn Db, _def: Definition) -> Type {
     Type::Bottom
 }
 
-fn cycle_recover(_db: &dyn Db, value: &Type, count: u32) -> CycleRecoveryAction<Type> {
+fn def_cycle_recover(
+    _db: &dyn Db,
+    value: &Type,
+    count: u32,
+    _def: Definition,
+) -> CycleRecoveryAction<Type> {
+    cycle_recover(value, count)
+}
+
+fn use_cycle_initial(_db: &dyn Db, _use: Use) -> Type {
+    Type::Bottom
+}
+
+fn use_cycle_recover(
+    _db: &dyn Db,
+    value: &Type,
+    count: u32,
+    _use: Use,
+) -> CycleRecoveryAction<Type> {
+    cycle_recover(value, count)
+}
+
+fn cycle_recover(value: &Type, count: u32) -> CycleRecoveryAction<Type> {
     match value {
         Type::Bottom => CycleRecoveryAction::Iterate,
         Type::Values(_) => {

@@ -177,16 +177,17 @@ macro_rules! setup_tracked_fn {
                     $inner($db, $($input_id),*)
                 }
 
-                fn cycle_initial<$db_lt>(db: &$db_lt dyn $Db) -> Self::Output<$db_lt> {
-                    $($cycle_recovery_initial)*(db)
+                fn cycle_initial<$db_lt>(db: &$db_lt dyn $Db, ($($input_id),*): ($($input_ty),*)) -> Self::Output<$db_lt> {
+                    $($cycle_recovery_initial)*(db, $($input_id),*)
                 }
 
                 fn recover_from_cycle<$db_lt>(
                     db: &$db_lt dyn $Db,
                     value: &Self::Output<$db_lt>,
                     count: u32,
+                    ($($input_id),*): ($($input_ty),*)
                 ) -> $zalsa::CycleRecoveryAction<Self::Output<$db_lt>> {
-                    $($cycle_recovery_fn)*(db, value, count)
+                    $($cycle_recovery_fn)*(db, value, count, $($input_id),*)
                 }
 
                 fn id_to_input<$db_lt>(db: &$db_lt Self::DbView, key: salsa::Id) -> Self::Input<$db_lt> {

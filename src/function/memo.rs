@@ -88,9 +88,13 @@ impl<C: Configuration> IngredientImpl<C> {
         }
     }
 
-    pub(super) fn initial_value<'db>(&'db self, db: &'db C::DbView) -> Option<C::Output<'db>> {
+    pub(super) fn initial_value<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        key: Id,
+    ) -> Option<C::Output<'db>> {
         match C::CYCLE_STRATEGY {
-            CycleRecoveryStrategy::Fixpoint => Some(C::cycle_initial(db)),
+            CycleRecoveryStrategy::Fixpoint => Some(C::cycle_initial(db, C::id_to_input(db, key))),
             CycleRecoveryStrategy::Panic => None,
         }
     }
