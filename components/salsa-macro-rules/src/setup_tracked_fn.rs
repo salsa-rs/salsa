@@ -67,11 +67,6 @@ macro_rules! setup_tracked_fn {
             $inner:ident,
         ]
     ) => {
-        #[allow(non_camel_case_types)]
-        $vis struct $fn_name {
-            _priv: std::convert::Infallible,
-        }
-
         // Suppress this clippy lint because we sometimes require `'db` where the ordinary Rust rules would not.
         #[allow(clippy::needless_lifetimes)]
         $(#[$attr])*
@@ -287,6 +282,11 @@ macro_rules! setup_tracked_fn {
                     }
                 }
             })
+        }
+
+        #[allow(non_camel_case_types)]
+        $vis struct $fn_name {
+            _priv: std::convert::Infallible,
         }
     };
 }
