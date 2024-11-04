@@ -68,9 +68,9 @@ where
     data: C::Data<'static>,
     memos: MemoTable,
     syncs: SyncTable,
-    // The revision the value was first interned in.
+    /// The revision the value was first interned in.
     first_interned_at: Revision,
-    // The most recent interned revision.
+    /// The most recent interned revision.
     last_interned_at: AtomicRevision,
 }
 
