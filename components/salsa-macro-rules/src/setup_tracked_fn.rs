@@ -67,11 +67,6 @@ macro_rules! setup_tracked_fn {
             $inner:ident,
         ]
     ) => {
-        #[allow(non_camel_case_types)]
-        $vis struct $fn_name {
-            _priv: std::convert::Infallible,
-        }
-
         // Suppress this clippy lint because we sometimes require `'db` where the ordinary Rust rules would not.
         #[allow(clippy::needless_lifetimes)]
         $(#[$attr])*
@@ -287,6 +282,13 @@ macro_rules! setup_tracked_fn {
                     }
                 }
             })
+        }
+        // The struct needs be last in the macro expansion in order to make the tracked
+        // function's ident be identified as a function, not a struct, during semantic highlighting.
+        // for more details, see https://github.com/salsa-rs/salsa/pull/612.
+        #[allow(non_camel_case_types)]
+        $vis struct $fn_name {
+            _priv: std::convert::Infallible,
         }
     };
 }
