@@ -23,10 +23,19 @@ pub trait Jar: Any {
         aux: &dyn JarAux,
         first_index: IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>>;
+
+    /// If this jar's first ingredient is a salsa struct, return its `TypeId`
+    fn salsa_struct_type_id(&self) -> Option<TypeId>;
 }
 
 pub trait JarAux {
-    fn next_memo_ingredient_index(&self, ingredient_index: IngredientIndex) -> MemoIngredientIndex;
+    fn lookup_struct_ingredient_index(&self, type_id: TypeId) -> Option<IngredientIndex>;
+
+    fn next_memo_ingredient_index(
+        &self,
+        struct_ingredient_index: IngredientIndex,
+        ingredient_index: IngredientIndex,
+    ) -> MemoIngredientIndex;
 }
 
 pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {

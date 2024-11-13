@@ -1,4 +1,4 @@
-use std::{fmt, hash::Hash, marker::PhantomData, ops::DerefMut};
+use std::{any::TypeId, fmt, hash::Hash, marker::PhantomData, ops::DerefMut};
 
 use crossbeam::{atomic::AtomicCell, queue::SegQueue};
 use tracked_field::FieldIngredientImpl;
@@ -111,6 +111,10 @@ impl<C: Configuration> Jar for JarImpl<C> {
                 Box::new(<FieldIngredientImpl<C>>::new(struct_index, field_index)) as _
             }))
             .collect()
+    }
+
+    fn salsa_struct_type_id(&self) -> Option<TypeId> {
+        Some(TypeId::of::<<C as Configuration>::Struct<'static>>())
     }
 }
 
@@ -501,7 +505,8 @@ where
         // and the code that references the memo-table has a read-lock.
         let memo_table = unsafe { (*data).take_memo_table() };
         for (memo_ingredient_index, memo) in memo_table.into_memos() {
-            let ingredient_index = zalsa.ingredient_index_for_memo(memo_ingredient_index);
+            let ingredient_index =
+                zalsa.ingredient_index_for_memo(self.ingredient_index, memo_ingredient_index);
 
             let executor = DatabaseKeyIndex {
                 ingredient_index,

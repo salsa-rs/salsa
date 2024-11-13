@@ -126,10 +126,10 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn new(index: IngredientIndex, aux: &dyn JarAux) -> Self {
+    pub fn new(struct_index: IngredientIndex, index: IngredientIndex, aux: &dyn JarAux) -> Self {
         Self {
             index,
-            memo_ingredient_index: aux.next_memo_ingredient_index(index),
+            memo_ingredient_index: aux.next_memo_ingredient_index(struct_index, index),
             lru: Default::default(),
             deleted_entries: Default::default(),
         }

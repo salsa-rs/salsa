@@ -1,4 +1,8 @@
-use std::{any::Any, fmt, ops::DerefMut};
+use std::{
+    any::{Any, TypeId},
+    fmt,
+    ops::DerefMut,
+};
 
 pub mod input_field;
 pub mod setter;
@@ -59,6 +63,10 @@ impl<C: Configuration> Jar for JarImpl<C> {
                 Box::new(<FieldIngredientImpl<C>>::new(struct_index, field_index)) as _
             }))
             .collect()
+    }
+
+    fn salsa_struct_type_id(&self) -> Option<std::any::TypeId> {
+        Some(TypeId::of::<<C as Configuration>::Struct>())
     }
 }
 

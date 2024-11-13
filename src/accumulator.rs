@@ -53,6 +53,10 @@ impl<A: Accumulator> Jar for JarImpl<A> {
     ) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(<IngredientImpl<A>>::new(first_index))]
     }
+
+    fn salsa_struct_type_id(&self) -> Option<std::any::TypeId> {
+        None
+    }
 }
 
 pub struct IngredientImpl<A: Accumulator> {

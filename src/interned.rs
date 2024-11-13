@@ -9,6 +9,7 @@ use crate::table::Slot;
 use crate::zalsa::IngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{Database, DatabaseKeyIndex, Id};
+use std::any::TypeId;
 use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
@@ -91,6 +92,10 @@ impl<C: Configuration> Jar for JarImpl<C> {
         first_index: IngredientIndex,
     ) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(IngredientImpl::<C>::new(first_index)) as _]
+    }
+
+    fn salsa_struct_type_id(&self) -> Option<std::any::TypeId> {
+        Some(TypeId::of::<<C as Configuration>::Struct<'static>>())
     }
 }
 
