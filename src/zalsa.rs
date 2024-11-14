@@ -303,7 +303,7 @@ impl Zalsa {
 
 struct JarAuxImpl<'a>(&'a Zalsa, &'a FxHashMap<TypeId, IngredientIndex>);
 
-impl<'a> JarAux for JarAuxImpl<'a> {
+impl JarAux for JarAuxImpl<'_> {
     fn lookup_jar_by_type(&self, jar: &dyn Jar) -> Option<IngredientIndex> {
         self.1.get(&jar.type_id()).map(ToOwned::to_owned)
     }
