@@ -119,10 +119,10 @@ pub struct Zalsa {
 
     nonce: Nonce<StorageNonce>,
 
-    /// Map from the [`IngredientIndex`][] of a salsa struct to a list of
-    /// [ingredient-indices](`IngredientIndex`)for tracked functions that have this salsa struct
+    /// Map from the [`IngredientIndex::as_usize`][] of a salsa struct to a list of
+    /// [ingredient-indices](`IngredientIndex`) for tracked functions that have this salsa struct
     /// as input.
-    memo_ingredients: RwLock<FxHashMap<IngredientIndex, Vec<IngredientIndex>>>,
+    memo_ingredient_indices: RwLock<Vec<Vec<IngredientIndex>>>,
 
     /// Map from the type-id of an `impl Jar` to the index of its first ingredient.
     /// This is using a `Mutex<FxHashMap>` (versus, say, a `FxDashMap`)
@@ -131,9 +131,6 @@ pub struct Zalsa {
     /// This may be worth refactoring in the future because it naturally adds more overhead to
     /// adding new kinds of ingredients.
     jar_map: Mutex<FxHashMap<TypeId, IngredientIndex>>,
-
-    /// Map from the type-id of a salsa struct to the index of its first ingredient.
-    salsa_struct_map: Mutex<FxHashMap<TypeId, IngredientIndex>>,
 
     /// Vector of ingredients.
     ///
@@ -154,11 +151,10 @@ impl Zalsa {
             views_of: Views::new::<Db>(),
             nonce: NONCE.nonce(),
             jar_map: Default::default(),
-            salsa_struct_map: Default::default(),
             ingredients_vec: AppendOnlyVec::new(),
             ingredients_requiring_reset: AppendOnlyVec::new(),
             runtime: Runtime::default(),
-            memo_ingredients: Default::default(),
+            memo_ingredient_indices: Default::default(),
         }
     }
 
@@ -192,11 +188,14 @@ impl Zalsa {
         {
             let jar_type_id = jar.type_id();
             let mut jar_map = self.jar_map.lock();
-            *jar_map
-            .entry(jar_type_id)
-            .or_insert_with(|| {
-                let index = IngredientIndex::from(self.ingredients_vec.len());
-                let ingredients = jar.create_ingredients(self, index);
+            let mut should_create = false;
+            let index = *jar_map.entry(jar_type_id).or_insert_with(|| {
+                should_create = true;
+                IngredientIndex::from(self.ingredients_vec.len())
+            });
+            if should_create {
+                let aux = JarAuxImpl(self, &jar_map);
+                let ingredients = jar.create_ingredients(&aux, index);
                 for ingredient in ingredients {
                     let expected_index = ingredient.ingredient_index();
 
@@ -204,9 +203,7 @@ impl Zalsa {
                         self.ingredients_requiring_reset.push(expected_index);
                     }
 
-                    let actual_index = self
-                        .ingredients_vec
-                        .push(ingredient);
+                    let actual_index = self.ingredients_vec.push(ingredient);
                     assert_eq!(
                         expected_index.as_usize(),
                         actual_index,
@@ -215,13 +212,10 @@ impl Zalsa {
                         expected_index,
                         actual_index,
                     );
+                }
+            }
 
-                }
-                if let Some(type_id) = jar.salsa_struct_type_id() {
-                    self.salsa_struct_map.lock().insert(type_id, index);
-                }
-                index
-            })
+            index
         }
     }
 
@@ -302,16 +296,16 @@ impl Zalsa {
         struct_ingredient_index: IngredientIndex,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> IngredientIndex {
-        self.memo_ingredients.read()[&struct_ingredient_index][memo_ingredient_index.as_usize()]
+        self.memo_ingredient_indices.read()[struct_ingredient_index.as_usize()]
+            [memo_ingredient_index.as_usize()]
     }
 }
 
-impl JarAux for Zalsa {
-    fn lookup_struct_ingredient_index(&self, type_id: TypeId) -> Option<IngredientIndex> {
-        self.salsa_struct_map
-            .lock()
-            .get(&type_id)
-            .map(ToOwned::to_owned)
+struct JarAuxImpl<'a>(&'a Zalsa, &'a FxHashMap<TypeId, IngredientIndex>);
+
+impl<'a> JarAux for JarAuxImpl<'a> {
+    fn lookup_jar_by_type(&self, jar: &dyn Jar) -> Option<IngredientIndex> {
+        self.1.get(&jar.type_id()).map(ToOwned::to_owned)
     }
 
     fn next_memo_ingredient_index(
@@ -319,8 +313,19 @@ impl JarAux for Zalsa {
         struct_ingredient_index: IngredientIndex,
         ingredient_index: IngredientIndex,
     ) -> MemoIngredientIndex {
-        let mut memo_ingredients = self.memo_ingredients.write();
-        let memo_ingredients = memo_ingredients.entry(struct_ingredient_index).or_default();
+        let mut memo_ingredients = self.0.memo_ingredient_indices.write();
+        let memo_ingredients = if let Some(memo_ingredients) =
+            memo_ingredients.get_mut(struct_ingredient_index.as_usize())
+        {
+            memo_ingredients
+        } else {
+            while memo_ingredients.len() <= struct_ingredient_index.as_usize() {
+                memo_ingredients.push(Vec::new());
+            }
+            memo_ingredients
+                .get_mut(struct_ingredient_index.as_usize())
+                .unwrap()
+        };
         let mi = MemoIngredientIndex(u32::try_from(memo_ingredients.len()).unwrap());
         memo_ingredients.push(ingredient_index);
         mi

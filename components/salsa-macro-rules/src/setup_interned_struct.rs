@@ -141,6 +141,9 @@ macro_rules! setup_interned_struct {
             }
 
             impl $zalsa::SalsaStructInDb for $Struct<'_> {
+                fn lookup_ingredient_index(aux: &dyn $zalsa::JarAux) -> core::option::Option<$zalsa::IngredientIndex> {
+                    aux.lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
+                }
             }
 
             unsafe impl $zalsa::Update for $Struct<'_> {

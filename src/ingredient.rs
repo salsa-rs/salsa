@@ -29,7 +29,7 @@ pub trait Jar: Any {
 }
 
 pub trait JarAux {
-    fn lookup_struct_ingredient_index(&self, type_id: TypeId) -> Option<IngredientIndex>;
+    fn lookup_jar_by_type(&self, jar: &dyn Jar) -> Option<IngredientIndex>;
 
     fn next_memo_ingredient_index(
         &self,

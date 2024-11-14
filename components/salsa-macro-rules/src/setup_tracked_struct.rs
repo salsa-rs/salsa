@@ -152,6 +152,9 @@ macro_rules! setup_tracked_struct {
             }
 
             impl $zalsa::SalsaStructInDb for $Struct<'_> {
+                fn lookup_ingredient_index(aux: &dyn $zalsa::JarAux) -> core::option::Option<$zalsa::IngredientIndex> {
+                    aux.lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
+                }
             }
 
             impl $zalsa::TrackedStructInDb for $Struct<'_> {
