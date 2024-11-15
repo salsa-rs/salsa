@@ -90,6 +90,9 @@ where
                 if !C::values_equal(&new_value, last_provisional_value) {
                     // We are in a cycle that hasn't converged; ask the user's
                     // cycle-recovery function what to do:
+                    // TODO do we need explicit prevention of people calling queries inside
+                    // cycle-recovery functions (some no-queries-allowed state on Runtime?)
+                    // or is this just an "if it hurts, don't do it" scenario?
                     match C::recover_from_cycle(
                         db,
                         &new_value,

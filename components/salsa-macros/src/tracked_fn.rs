@@ -175,6 +175,8 @@ impl Macro {
         Ok(ValidFn { db_ident, db_path })
     }
     fn cycle_recovery(&self) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
+        // TODO should we ask the user to specify a struct that impls a trait with two methods,
+        // rather than asking for two methods separately?
         match (&self.args.cycle_fn, &self.args.cycle_initial) {
             (Some(cycle_fn), Some(cycle_initial)) => Ok((
                 quote!((#cycle_fn)),
