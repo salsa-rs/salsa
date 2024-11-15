@@ -1,4 +1,5 @@
 use crate::cycle::CycleRecoveryStrategy;
+use crate::function::VerifyResult;
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::input::Configuration;
 use crate::zalsa::IngredientIndex;
@@ -54,11 +55,11 @@ where
         db: &dyn Database,
         input: Option<Id>,
         revision: Revision,
-    ) -> bool {
+    ) -> VerifyResult {
         let zalsa = db.zalsa();
         let input = input.unwrap();
         let value = <IngredientImpl<C>>::data(zalsa, input);
-        value.stamps[self.field_index].changed_at > revision
+        VerifyResult::changed_if(value.stamps[self.field_index].changed_at > revision)
     }
 
     fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {

@@ -2,8 +2,9 @@
 //!
 //! These test cases use a generic query setup that allows constructing arbitrary dependency
 //! graphs, and attempts to achieve good coverage of various cases.
-mod dataflow;
-
+mod common;
+use common::{ExecuteValidateLoggerDatabase, LogDatabase};
+use expect_test::expect;
 use salsa::{CycleRecoveryAction, Database as Db, DatabaseImpl as DbImpl, Durability, Setter};
 
 /// A vector of inputs a query can evaluate to get an iterator of u8 values to operate on.
@@ -755,6 +756,47 @@ fn cycle_durability() {
     a_in.set_inputs(&mut db)
         .with_durability(Durability::LOW)
         .to(vec![Input::Value(45), b]);
+
+    a.assert(&db, 45);
+}
+
+/// a:Np(v59, b) -> b:Ni(v60, c) -> c:Np(b)
+///                 ^                     |
+///                 +---------------------+
+///
+/// If nothing in a cycle changed in the new revision, no part of the cycle should re-execute.
+#[test]
+fn cycle_unchanged() {
+    let mut db = ExecuteValidateLoggerDatabase::default();
+    let a_in = Inputs::new(&db, vec![]);
+    let b_in = Inputs::new(&db, vec![]);
+    let c_in = Inputs::new(&db, vec![]);
+    let a = Input::MinPanic(a_in);
+    let b = Input::MinIterate(b_in);
+    let c = Input::MinPanic(c_in);
+    a_in.set_inputs(&mut db)
+        .to(vec![Input::Value(59), b.clone()]);
+    b_in.set_inputs(&mut db).to(vec![Input::Value(60), c]);
+    c_in.set_inputs(&mut db).to(vec![b.clone()]);
+
+    a.clone().assert(&db, 59);
+    b.clone().assert(&db, 60);
+
+    db.assert_logs_len(5);
+
+    // next revision, we change only A, which is not part of the cycle and the cycle does not
+    // depend on.
+    a_in.set_inputs(&mut db)
+        .to(vec![Input::Value(45), b.clone()]);
+
+    b.assert(&db, 60);
+
+    db.assert_logs(expect![[r#"
+        [
+            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(2)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
+        ]"#]]);
 
     a.assert(&db, 45);
 }

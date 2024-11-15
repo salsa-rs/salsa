@@ -5,6 +5,7 @@ use tracked_field::FieldIngredientImpl;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
+    function::VerifyResult,
     ingredient::{fmt_index, Ingredient, Jar, JarAux},
     key::{DatabaseKeyIndex, DependencyIndex},
     plumbing::ZalsaLocal,
@@ -581,8 +582,8 @@ where
         _db: &dyn Database,
         _input: Option<Id>,
         _revision: Revision,
-    ) -> bool {
-        false
+    ) -> VerifyResult {
+        VerifyResult::unchanged()
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {

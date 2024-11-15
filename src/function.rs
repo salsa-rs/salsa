@@ -16,6 +16,8 @@ use self::delete::DeletedEntries;
 
 use super::ingredient::Ingredient;
 
+pub(crate) use maybe_changed_after::VerifyResult;
+
 mod accumulated;
 mod backdate;
 mod delete;
@@ -194,7 +196,7 @@ where
         db: &dyn Database,
         input: Option<Id>,
         revision: Revision,
-    ) -> bool {
+    ) -> VerifyResult {
         let key = input.unwrap();
         let db = db.as_view::<C::DbView>();
         self.maybe_changed_after(db, key, revision)

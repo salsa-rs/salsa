@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{ingredient::Ingredient, zalsa::IngredientIndex, Database, Id};
+use crate::{function::VerifyResult, ingredient::Ingredient, zalsa::IngredientIndex, Database, Id};
 
 use super::{Configuration, Value};
 
@@ -53,12 +53,12 @@ where
         db: &'db dyn Database,
         input: Option<Id>,
         revision: crate::Revision,
-    ) -> bool {
+    ) -> VerifyResult {
         let zalsa = db.zalsa();
         let id = input.unwrap();
         let data = <super::IngredientImpl<C>>::data(zalsa.table(), id);
         let field_changed_at = data.revisions[self.field_index];
-        field_changed_at > revision
+        VerifyResult::changed_if(field_changed_at > revision)
     }
 
     fn origin(

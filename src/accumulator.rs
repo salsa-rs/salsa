@@ -12,6 +12,7 @@ use accumulated_map::AccumulatedMap;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
+    function::VerifyResult,
     ingredient::{fmt_index, Ingredient, Jar},
     plumbing::JarAux,
     zalsa::IngredientIndex,
@@ -102,7 +103,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _db: &dyn Database,
         _input: Option<Id>,
         _revision: Revision,
-    ) -> bool {
+    ) -> VerifyResult {
         panic!("nothing should ever depend on an accumulator directly")
     }
 

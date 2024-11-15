@@ -3,7 +3,7 @@ use crate::{
     zalsa_local::QueryRevisions, AsDynDatabase as _, Id,
 };
 
-use super::{memo::Memo, Configuration, IngredientImpl};
+use super::{memo::Memo, Configuration, IngredientImpl, VerifyResult};
 
 impl<C> IngredientImpl<C>
 where
@@ -112,10 +112,14 @@ where
         if let Some(old_memo) = &opt_old_memo {
             if old_memo.value.is_some() {
                 let active_query = zalsa_local.push_query(database_key_index);
-                if self.deep_verify_memo(db, old_memo, &active_query) {
-                    // Unsafety invariant: memo is present in memo_map.
-                    unsafe {
-                        return Some(self.extend_memo_lifetime(old_memo));
+                if let VerifyResult::Unchanged(cycle_heads) =
+                    self.deep_verify_memo(db, old_memo, &active_query)
+                {
+                    if cycle_heads.is_empty() {
+                        // Unsafety invariant: memo is present in memo_map.
+                        unsafe {
+                            return Some(self.extend_memo_lifetime(old_memo));
+                        }
                     }
                 }
             }
