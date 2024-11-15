@@ -130,7 +130,7 @@ fn max_panic<'db>(db: &'db dyn Db, inputs: Inputs) -> u8 {
 // - `Xi` for `max_iterate`
 // - `Np` for `min_panic`
 // - `Xp` for `max_panic`
-//
+//\
 // and `ii` is the inputs for that query, represented as a comma-separated list, with each
 // component representing an input:
 // - `a`, `b`, `c`... where the input is another node,
