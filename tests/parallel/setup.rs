@@ -9,8 +9,10 @@ use crate::signal::Signal;
 /// a certain behavior.
 #[salsa::db]
 pub(crate) trait KnobsDatabase: Database {
+    /// Signal that we are entering stage 1.
     fn signal(&self, stage: usize);
 
+    /// Wait until we reach stage `stage` (no-op if we have already reached that stage).
     fn wait_for(&self, stage: usize);
 }
 
