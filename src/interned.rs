@@ -1,3 +1,4 @@
+use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::fmt_index;
@@ -133,6 +134,7 @@ where
             DependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
             self.reset_at,
+            InputAccumulatedValues::Empty,
         );
 
         // Optimisation to only get read lock on the map if the data has already

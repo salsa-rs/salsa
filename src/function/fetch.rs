@@ -1,6 +1,6 @@
-use crate::{runtime::StampedValue, zalsa::ZalsaDatabase, AsDynDatabase as _, Id};
-
 use super::{memo::Memo, Configuration, IngredientImpl};
+use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::{runtime::StampedValue, zalsa::ZalsaDatabase, AsDynDatabase as _, Id};
 
 impl<C> IngredientImpl<C>
 where
@@ -21,7 +21,12 @@ where
             self.evict_value_from_memo_for(zalsa, evicted);
         }
 
-        zalsa_local.report_tracked_read(self.database_key_index(id).into(), durability, changed_at);
+        zalsa_local.report_tracked_read(
+            self.database_key_index(id).into(),
+            durability,
+            changed_at,
+            InputAccumulatedValues::from_map(&memo.revisions.accumulated),
+        );
 
         value
     }

@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap;
 use super::zalsa_local::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
 use crate::tracked_struct::IdentityHash;
 use crate::{
-    accumulator::accumulated_map::AccumulatedMap,
+    accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     durability::Durability,
     hash::FxIndexSet,
     key::{DatabaseKeyIndex, DependencyIndex},
@@ -76,10 +76,12 @@ impl ActiveQuery {
         input: DependencyIndex,
         durability: Durability,
         revision: Revision,
+        accumulated: InputAccumulatedValues,
     ) {
         self.input_outputs.insert((EdgeKind::Input, input));
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(revision);
+        self.accumulated.add_input(accumulated);
     }
 
     pub(super) fn add_untracked_read(&mut self, changed_at: Revision) {
