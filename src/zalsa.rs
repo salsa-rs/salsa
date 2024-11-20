@@ -314,17 +314,12 @@ impl JarAux for JarAuxImpl<'_> {
         ingredient_index: IngredientIndex,
     ) -> MemoIngredientIndex {
         let mut memo_ingredients = self.0.memo_ingredient_indices.write();
-        let memo_ingredients = if let Some(memo_ingredients) =
-            memo_ingredients.get_mut(struct_ingredient_index.as_usize())
-        {
+        let idx = struct_ingredient_index.as_usize();
+        let memo_ingredients = if let Some(memo_ingredients) = memo_ingredients.get_mut(idx) {
             memo_ingredients
         } else {
-            while memo_ingredients.len() <= struct_ingredient_index.as_usize() {
-                memo_ingredients.push(Vec::new());
-            }
-            memo_ingredients
-                .get_mut(struct_ingredient_index.as_usize())
-                .unwrap()
+            memo_ingredients.resize_with(idx + 1, Vec::new);
+            memo_ingredients.get_mut(idx).unwrap()
         };
         let mi = MemoIngredientIndex(u32::try_from(memo_ingredients.len()).unwrap());
         memo_ingredients.push(ingredient_index);
