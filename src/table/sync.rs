@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 
 use crate::{
     key::DatabaseKeyIndex,
-    runtime::WaitResult,
+    runtime::{BlockResult, WaitResult},
     zalsa::{MemoIngredientIndex, Zalsa},
     zalsa_local::ZalsaLocal,
     Database,
@@ -30,6 +30,12 @@ struct SyncState {
     anyone_waiting: AtomicBool,
 }
 
+pub(crate) enum ClaimResult<'a> {
+    Retry,
+    Cycle,
+    Claimed(ClaimGuard<'a>),
+}
+
 impl SyncTable {
     pub(crate) fn claim<'me>(
         &'me self,
@@ -37,7 +43,7 @@ impl SyncTable {
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<ClaimGuard<'me>> {
+    ) -> ClaimResult<'me> {
         let mut syncs = self.syncs.write();
         let zalsa = db.zalsa();
         let thread_id = std::thread::current().id();
@@ -50,7 +56,7 @@ impl SyncTable {
                     id: thread_id,
                     anyone_waiting: AtomicBool::new(false),
                 });
-                Some(ClaimGuard {
+                ClaimResult::Claimed(ClaimGuard {
                     database_key_index,
                     memo_ingredient_index,
                     zalsa,
@@ -68,8 +74,10 @@ impl SyncTable {
                 // boolean is to decide *whether* to acquire the lock,
                 // not to gate future atomic reads.
                 anyone_waiting.store(true, Ordering::Relaxed);
-                zalsa.block_on_or_unwind(db, zalsa_local, database_key_index, *other_id, syncs);
-                None
+                match zalsa.block_on(db, zalsa_local, database_key_index, *other_id, syncs) {
+                    BlockResult::Completed => ClaimResult::Retry,
+                    BlockResult::Cycle => ClaimResult::Cycle,
+                }
             }
         }
     }

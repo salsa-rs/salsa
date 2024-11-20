@@ -1,6 +1,6 @@
 use crate::{
-    accumulator::accumulated_map::AccumulatedMap, cycle::CycleRecoveryStrategy,
-    zalsa::IngredientIndex, Database, Id,
+    accumulator::accumulated_map::AccumulatedMap, function::VerifyResult, zalsa::IngredientIndex,
+    Database, Id,
 };
 
 /// An integer that uniquely identifies a particular query instance within the
@@ -54,7 +54,7 @@ impl DependencyIndex {
         &self,
         db: &dyn Database,
         last_verified_at: crate::Revision,
-    ) -> bool {
+    ) -> VerifyResult {
         db.zalsa()
             .lookup_ingredient(self.ingredient_index)
             .maybe_changed_after(db, self.key_index, last_verified_at)
@@ -94,10 +94,6 @@ impl DatabaseKeyIndex {
 
     pub fn key_index(self) -> Id {
         self.key_index
-    }
-
-    pub(crate) fn cycle_recovery_strategy(self, db: &dyn Database) -> CycleRecoveryStrategy {
-        self.ingredient_index.cycle_recovery_strategy(db)
     }
 
     pub(crate) fn accumulated(self, db: &dyn Database) -> Option<&AccumulatedMap> {

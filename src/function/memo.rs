@@ -7,8 +7,8 @@ use crossbeam::atomic::AtomicCell;
 
 use crate::zalsa_local::QueryOrigin;
 use crate::{
-    key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event, EventKind, Id,
-    Revision,
+    cycle::CycleRecoveryStrategy, key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions,
+    Event, EventKind, Id, Revision,
 };
 
 use super::{Configuration, IngredientImpl};
@@ -68,7 +68,8 @@ impl<C: Configuration> IngredientImpl<C> {
         match memo.revisions.origin {
             QueryOrigin::Assigned(_)
             | QueryOrigin::DerivedUntracked(_)
-            | QueryOrigin::BaseInput => {
+            | QueryOrigin::BaseInput
+            | QueryOrigin::FixpointInitial => {
                 // Careful: Cannot evict memos whose values were
                 // assigned as output of another query
                 // or those with untracked inputs
@@ -84,6 +85,17 @@ impl<C: Configuration> IngredientImpl<C> {
 
                 self.insert_memo_into_table_for(zalsa, id, memo_evicted);
             }
+        }
+    }
+
+    pub(super) fn initial_value<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        key: Id,
+    ) -> Option<C::Output<'db>> {
+        match C::CYCLE_STRATEGY {
+            CycleRecoveryStrategy::Fixpoint => Some(C::cycle_initial(db, C::id_to_input(db, key))),
+            CycleRecoveryStrategy::Panic => None,
         }
     }
 }

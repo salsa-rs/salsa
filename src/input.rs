@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
+    function::VerifyResult,
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient},
     key::{DatabaseKeyIndex, DependencyIndex},
@@ -188,6 +189,7 @@ impl<C: Configuration> IngredientImpl<C> {
             },
             stamp.durability,
             stamp.changed_at,
+            &Default::default(),
         );
         &value.fields
     }
@@ -212,10 +214,10 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: &dyn Database,
         _input: Option<Id>,
         _revision: Revision,
-    ) -> bool {
+    ) -> VerifyResult {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
-        false
+        VerifyResult::unchanged()
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
