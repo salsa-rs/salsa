@@ -42,6 +42,7 @@ mod fn_util;
 mod hygiene;
 mod input;
 mod interned;
+mod interned_sans_lifetime;
 mod options;
 mod salsa_struct;
 mod tracked;
@@ -64,6 +65,11 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn interned(args: TokenStream, input: TokenStream) -> TokenStream {
     interned::interned(args, input)
+}
+
+#[proc_macro_attribute]
+pub fn interned_sans_lifetime(args: TokenStream, input: TokenStream) -> TokenStream {
+    interned_sans_lifetime::interned_sans_lifetime(args, input)
 }
 
 #[proc_macro_attribute]

@@ -19,6 +19,7 @@ mod maybe_default;
 mod setup_accumulator_impl;
 mod setup_input_struct;
 mod setup_interned_struct;
+mod setup_interned_struct_sans_lifetime;
 mod setup_method_body;
 mod setup_tracked_fn;
 mod setup_tracked_struct;

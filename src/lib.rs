@@ -51,6 +51,7 @@ pub use salsa_macros::accumulator;
 pub use salsa_macros::db;
 pub use salsa_macros::input;
 pub use salsa_macros::interned;
+pub use salsa_macros::interned_sans_lifetime;
 pub use salsa_macros::tracked;
 pub use salsa_macros::Update;
 
@@ -111,6 +112,7 @@ pub mod plumbing {
     pub use salsa_macro_rules::setup_accumulator_impl;
     pub use salsa_macro_rules::setup_input_struct;
     pub use salsa_macro_rules::setup_interned_struct;
+    pub use salsa_macro_rules::setup_interned_struct_sans_lifetime;
     pub use salsa_macro_rules::setup_method_body;
     pub use salsa_macro_rules::setup_tracked_fn;
     pub use salsa_macro_rules::setup_tracked_struct;
