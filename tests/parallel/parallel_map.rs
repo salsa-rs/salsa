@@ -15,17 +15,6 @@ struct ParallelInput {
 fn tracked_fn(db: &dyn salsa::Database, input: ParallelInput) -> Vec<u32> {
     salsa::par_map(db, input.field(db), |_db, field| field + 1)
 }
-
-#[test]
-fn execute() {
-    let db = salsa::DatabaseImpl::new();
-
-    let counts = (1..=10).collect::<Vec<u32>>();
-    let input = ParallelInput::new(&db, counts);
-
-    tracked_fn(&db, input);
-}
-
 #[salsa::tracked]
 fn a1(db: &dyn KnobsDatabase, input: ParallelInput) -> Vec<u32> {
     db.signal(1);
@@ -40,8 +29,20 @@ fn dummy(_db: &dyn KnobsDatabase, _input: ParallelInput) -> ParallelInput {
     panic!("should never get here!")
 }
 
+#[test]
+#[cfg_attr(miri, ignore)]
+fn execute() {
+    let db = salsa::DatabaseImpl::new();
+
+    let counts = (1..=10).collect::<Vec<u32>>();
+    let input = ParallelInput::new(&db, counts);
+
+    tracked_fn(&db, input);
+}
+
 // we expect this to panic, as `salsa::par_map` needs to be called from a query.
 #[test]
+#[cfg_attr(miri, ignore)]
 #[should_panic]
 fn direct_calls_panic() {
     let db = salsa::DatabaseImpl::new();
@@ -67,6 +68,7 @@ fn direct_calls_panic() {
 // panics
 
 #[test]
+#[cfg_attr(miri, ignore)]
 fn execute_cancellation() {
     let mut db = Knobs::default();
 
