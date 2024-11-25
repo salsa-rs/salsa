@@ -90,7 +90,7 @@ impl dyn Database {
     ///
     /// # Panics
     ///
-    /// If the view has not been added to the database (see [`DatabaseView`][])
+    /// If the view has not been added to the database (see [`crate::views::Views`]).
     #[track_caller]
     pub fn as_view<DbView: ?Sized + Database>(&self) -> &DbView {
         self.zalsa().views().try_view_as(self).unwrap()

@@ -85,6 +85,8 @@ jobs:
         run: cargo miri setup
       - name: Test with Miri
         run: cargo miri test --no-fail-fast --all-features
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-retag-fields
       - name: Run examples with Miri
         run: |
           cargo miri run --example calc
