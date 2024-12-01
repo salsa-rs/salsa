@@ -39,7 +39,7 @@ varieties:
 
 To learn more about Salsa, try one of the following:
 
-- read the [heavily commented `hello_world` example](https://github.com/salsa-rs/salsa/blob/master/examples/hello_world/main.rs);
+- read the [heavily commented examples](https://github.com/salsa-rs/salsa/tree/master/examples);
 - check out the [Salsa book](https://salsa-rs.github.io/salsa);
     - [中文版](https://rust-chinese-translation.github.io/salsa-book)
 - watch one of our [videos](https://salsa-rs.github.io/salsa/videos.html).
