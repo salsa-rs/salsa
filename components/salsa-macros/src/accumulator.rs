@@ -42,6 +42,7 @@ impl AllowedOptions for Accumulator {
     const RECOVERY_FN: bool = false;
     const LRU: bool = false;
     const CONSTRUCTOR_NAME: bool = false;
+    const ID: bool = true;
 }
 
 struct StructMacro {

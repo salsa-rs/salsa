@@ -32,6 +32,7 @@ pub(crate) fn interned_sans_lifetime(
 
 type InternedArgs = Options<InternedStruct>;
 
+#[derive(Debug)]
 struct InternedStruct;
 
 impl crate::options::AllowedOptions for InternedStruct {
@@ -56,6 +57,8 @@ impl crate::options::AllowedOptions for InternedStruct {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = true;
+
+    const ID: bool = true;
 }
 
 impl SalsaStructAllowedOptions for InternedStruct {
@@ -93,6 +96,7 @@ impl Macro {
         let field_tys = salsa_struct.field_tys();
         let field_indexed_tys = salsa_struct.field_indexed_tys();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
+        let id = salsa_struct.id();
 
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
@@ -108,6 +112,7 @@ impl Macro {
                     vis: #vis,
                     Struct: #struct_ident,
                     db_lt: #db_lt,
+                    id: #id,
                     new_fn: #new_fn,
                     field_options: [#(#field_options),*],
                     field_ids: [#(#field_ids),*],
