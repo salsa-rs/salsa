@@ -2,23 +2,38 @@ use expect_test::expect;
 use std::path::{Path, PathBuf};
 use test_log::test;
 
-#[salsa::interned_sans_lifetime]
+#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct CustomSalsaIdWrapper(salsa::Id);
+
+impl salsa::plumbing::AsId for CustomSalsaIdWrapper {
+    fn as_id(&self) -> salsa::Id {
+        self.0
+    }
+}
+
+impl salsa::plumbing::FromId for CustomSalsaIdWrapper {
+    fn from_id(id: salsa::Id) -> Self {
+        CustomSalsaIdWrapper(id)
+    }
+}
+
+#[salsa::interned_sans_lifetime(id = CustomSalsaIdWrapper)]
 struct InternedString {
     data: String,
 }
 
-#[salsa::interned_sans_lifetime]
+#[salsa::interned_sans_lifetime(id = CustomSalsaIdWrapper)]
 struct InternedPair {
     data: (InternedString, InternedString),
 }
 
-#[salsa::interned_sans_lifetime]
+#[salsa::interned_sans_lifetime(id = CustomSalsaIdWrapper)]
 struct InternedTwoFields {
     data1: String,
     data2: String,
 }
 
-#[salsa::interned_sans_lifetime]
+#[salsa::interned_sans_lifetime(id = CustomSalsaIdWrapper)]
 struct InternedVec {
     data1: Vec<String>,
 }
