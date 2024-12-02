@@ -14,6 +14,9 @@ macro_rules! setup_interned_struct_sans_lifetime {
         // Name of the `'db` lifetime that the user gave
         db_lt: $db_lt:lifetime,
 
+        // the salsa ID
+        id: $Id:path,
+
         // Name user gave for `new`
         new_fn: $new_fn:ident,
 
@@ -55,7 +58,7 @@ macro_rules! setup_interned_struct_sans_lifetime {
         $(#[$attr])*
         #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
         $vis struct $Struct(
-            salsa::Id,
+            $Id,
             std::marker::PhantomData < &'static  salsa::plumbing::interned::Value < $Struct > >
         );
 
@@ -96,10 +99,12 @@ macro_rules! setup_interned_struct_sans_lifetime {
                 type Data<'a> = StructData<'a>;
                 type Struct<'a> = $Struct;
                 fn struct_from_id<'db>(id: salsa::Id) -> Self::Struct<'db> {
-                    $Struct(id, std::marker::PhantomData)
+                    use $zalsa::FromId;
+                    $Struct(<$Id>::from_id(id), std::marker::PhantomData)
                 }
                 fn deref_struct(s: Self::Struct<'_>) -> salsa::Id {
-                    s.0
+                    use $zalsa::AsId;
+                    s.0.as_id()
                 }
             }
 
@@ -118,13 +123,13 @@ macro_rules! setup_interned_struct_sans_lifetime {
 
             impl $zalsa::AsId for $Struct {
                 fn as_id(&self) -> salsa::Id {
-                    self.0
+                    self.0.as_id()
                 }
             }
 
             impl $zalsa::FromId for $Struct {
                 fn from_id(id: salsa::Id) -> Self {
-                    Self(id, std::marker::PhantomData)
+                    Self(<$Id>::from_id(id), std::marker::PhantomData)
                 }
             }
 
