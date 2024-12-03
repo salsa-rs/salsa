@@ -29,8 +29,9 @@ impl Id {
     /// In general, you should not need to create salsa ids yourself,
     /// but it can be useful if you are using the type as a general
     /// purpose "identifier" internally.
+    #[doc(hidden)]
     #[track_caller]
-    pub(crate) const fn from_u32(x: u32) -> Self {
+    pub const fn from_u32(x: u32) -> Self {
         Id {
             value: match NonZeroU32::new(x + 1) {
                 Some(v) => v,
