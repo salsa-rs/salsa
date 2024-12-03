@@ -97,12 +97,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         self.index
     }
 
-    fn maybe_changed_after(
-        &self,
-        _db: &dyn Database,
-        _input: Option<Id>,
-        _revision: Revision,
-    ) -> bool {
+    fn maybe_changed_after(&self, _db: &dyn Database, _input: Id, _revision: Revision) -> bool {
         panic!("nothing should ever depend on an accumulator directly")
     }
 
@@ -118,7 +113,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         &self,
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
-        _output_key: Option<crate::Id>,
+        _output_key: Id,
     ) {
     }
 
@@ -126,7 +121,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         &self,
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
-        _stale_output_key: Option<crate::Id>,
+        _stale_output_key: Id,
     ) {
     }
 
@@ -138,7 +133,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         panic!("unexpected reset on accumulator")
     }
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(A::DEBUG_NAME, index, fmt)
     }
 

@@ -6,7 +6,7 @@ use crate::{
     accumulator::accumulated_map::AccumulatedMap,
     durability::Durability,
     hash::FxIndexSet,
-    key::{DatabaseKeyIndex, DependencyIndex},
+    key::DatabaseKeyIndex,
     tracked_struct::{Disambiguator, Identity},
     zalsa_local::EMPTY_DEPENDENCIES,
     Cycle, Id, Revision,
@@ -30,7 +30,7 @@ pub(crate) struct ActiveQuery {
     /// * tracked structs created
     /// * invocations of `specify`
     /// * accumulators pushed to
-    input_outputs: FxIndexSet<(EdgeKind, DependencyIndex)>,
+    input_outputs: FxIndexSet<(EdgeKind, DatabaseKeyIndex)>,
 
     /// True if there was an untracked read.
     untracked_read: bool,
@@ -73,7 +73,7 @@ impl ActiveQuery {
 
     pub(super) fn add_read(
         &mut self,
-        input: DependencyIndex,
+        input: DatabaseKeyIndex,
         durability: Durability,
         revision: Revision,
     ) {
@@ -95,12 +95,12 @@ impl ActiveQuery {
     }
 
     /// Adds a key to our list of outputs.
-    pub(super) fn add_output(&mut self, key: DependencyIndex) {
+    pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) {
         self.input_outputs.insert((EdgeKind::Output, key));
     }
 
     /// True if the given key was output by this query.
-    pub(super) fn is_output(&self, key: DependencyIndex) -> bool {
+    pub(super) fn is_output(&self, key: DatabaseKeyIndex) -> bool {
         self.input_outputs.contains(&(EdgeKind::Output, key))
     }
 
@@ -142,7 +142,7 @@ impl ActiveQuery {
     /// Used during cycle recovery, see [`Runtime::unblock_cycle_and_maybe_throw`].
     pub(super) fn remove_cycle_participants(&mut self, cycle: &Cycle) {
         for p in cycle.participant_keys() {
-            let p: DependencyIndex = p.into();
+            let p: DatabaseKeyIndex = p;
             self.input_outputs.shift_remove(&(EdgeKind::Input, p));
         }
     }

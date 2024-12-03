@@ -189,15 +189,9 @@ where
         self.index
     }
 
-    fn maybe_changed_after(
-        &self,
-        db: &dyn Database,
-        input: Option<Id>,
-        revision: Revision,
-    ) -> bool {
-        let key = input.unwrap();
+    fn maybe_changed_after(&self, db: &dyn Database, input: Id, revision: Revision) -> bool {
         let db = db.as_view::<C::DbView>();
-        self.maybe_changed_after(db, key, revision)
+        self.maybe_changed_after(db, input, revision)
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
@@ -208,13 +202,7 @@ where
         self.origin(db.zalsa(), key)
     }
 
-    fn mark_validated_output(
-        &self,
-        db: &dyn Database,
-        executor: DatabaseKeyIndex,
-        output_key: Option<crate::Id>,
-    ) {
-        let output_key = output_key.unwrap();
+    fn mark_validated_output(&self, db: &dyn Database, executor: DatabaseKeyIndex, output_key: Id) {
         self.validate_specified_value(db, executor, output_key);
     }
 
@@ -222,7 +210,7 @@ where
         &self,
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
-        _stale_output_key: Option<crate::Id>,
+        _stale_output_key: Id,
     ) {
         // This function is invoked when a query Q specifies the value for `stale_output_key` in rev 1,
         // but not in rev 2. We don't do anything in this case, we just leave the (now stale) memo.
@@ -237,7 +225,7 @@ where
         std::mem::take(&mut self.deleted_entries);
     }
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
 

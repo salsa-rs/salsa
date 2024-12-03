@@ -36,7 +36,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     fn maybe_changed_after<'db>(
         &'db self,
         db: &'db dyn Database,
-        input: Option<Id>,
+        input: Id,
         revision: Revision,
     ) -> bool;
 
@@ -60,7 +60,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         &'db self,
         db: &'db dyn Database,
         executor: DatabaseKeyIndex,
-        output_key: Option<Id>,
+        output_key: Id,
     );
 
     /// Invoked when the value `stale_output` was output by `executor` in a previous
@@ -71,7 +71,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         &self,
         db: &dyn Database,
         executor: DatabaseKeyIndex,
-        stale_output_key: Option<Id>,
+        stale_output_key: Id,
     );
 
     /// Returns the [`IngredientIndex`] of this ingredient.
@@ -98,7 +98,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// [`IngredientRequiresReset::RESET_ON_NEW_REVISION`] to true.
     fn reset_for_new_revision(&mut self);
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
+    fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
 }
 
 impl dyn Ingredient {
@@ -138,14 +138,6 @@ impl dyn Ingredient {
 }
 
 /// A helper function to show human readable fmt.
-pub(crate) fn fmt_index(
-    debug_name: &str,
-    id: Option<Id>,
-    fmt: &mut fmt::Formatter<'_>,
-) -> fmt::Result {
-    if let Some(i) = id {
-        write!(fmt, "{debug_name}({i:?})")
-    } else {
-        write!(fmt, "{debug_name}()")
-    }
+pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(fmt, "{debug_name}({id:?})")
 }

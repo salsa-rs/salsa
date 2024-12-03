@@ -1,6 +1,6 @@
 use std::thread::ThreadId;
 
-use crate::{key::DatabaseKeyIndex, key::DependencyIndex};
+use crate::key::DatabaseKeyIndex;
 
 /// The `Event` struct identifies various notable things that can
 /// occur during salsa execution. Instances of this struct are given
@@ -64,7 +64,7 @@ pub enum EventKind {
         execute_key: DatabaseKeyIndex,
 
         /// Key for the query that is no longer output
-        output_key: DependencyIndex,
+        output_key: DatabaseKeyIndex,
     },
 
     /// Tracked structs or memoized data were discarded (freed).
@@ -79,6 +79,6 @@ pub enum EventKind {
         executor_key: DatabaseKeyIndex,
 
         /// Accumulator that was accumulated into
-        accumulator: DependencyIndex,
+        accumulator: DatabaseKeyIndex,
     },
 }

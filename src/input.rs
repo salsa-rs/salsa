@@ -11,7 +11,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient},
-    key::{DatabaseKeyIndex, DependencyIndex},
+    key::DatabaseKeyIndex,
     plumbing::{Jar, JarAux, Stamp},
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
@@ -182,9 +182,9 @@ impl<C: Configuration> IngredientImpl<C> {
         let value = Self::data(zalsa, id);
         let stamp = &value.stamps[field_index];
         zalsa_local.report_tracked_read(
-            DependencyIndex {
+            DatabaseKeyIndex {
                 ingredient_index: field_ingredient_index,
-                key_index: Some(id),
+                key_index: id,
             },
             stamp.durability,
             stamp.changed_at,
@@ -207,12 +207,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         self.ingredient_index
     }
 
-    fn maybe_changed_after(
-        &self,
-        _db: &dyn Database,
-        _input: Option<Id>,
-        _revision: Revision,
-    ) -> bool {
+    fn maybe_changed_after(&self, _db: &dyn Database, _input: Id, _revision: Revision) -> bool {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
         false
@@ -230,7 +225,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         &self,
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
-        output_key: Option<Id>,
+        output_key: Id,
     ) {
         unreachable!(
             "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
@@ -242,7 +237,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         &self,
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
-        stale_output_key: Option<Id>,
+        stale_output_key: Id,
     ) {
         unreachable!(
             "remove_stale_output({:?}, {:?}): input cannot be the output of a tracked function",
@@ -258,7 +253,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         panic!("unexpected call to `reset_for_new_revision`")
     }
 
-    fn fmt_index(&self, index: Option<Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
 

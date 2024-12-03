@@ -5,7 +5,6 @@ use crate::accumulator::accumulated_map::AccumulatedMap;
 use crate::active_query::ActiveQuery;
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
-use crate::key::DependencyIndex;
 use crate::runtime::StampedValue;
 use crate::table::PageIndex;
 use crate::table::Slot;
@@ -145,7 +144,7 @@ impl ZalsaLocal {
     }
 
     /// Add an output to the current query's list of dependencies
-    pub(crate) fn add_output(&self, entity: DependencyIndex) {
+    pub(crate) fn add_output(&self, entity: DatabaseKeyIndex) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_output(entity)
@@ -154,7 +153,7 @@ impl ZalsaLocal {
     }
 
     /// Check whether `entity` is an output of the currently active query (if any)
-    pub(crate) fn is_output_of_active_query(&self, entity: DependencyIndex) -> bool {
+    pub(crate) fn is_output_of_active_query(&self, entity: DatabaseKeyIndex) -> bool {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.is_output(entity)
@@ -167,7 +166,7 @@ impl ZalsaLocal {
     /// Register that currently active query reads the given input
     pub(crate) fn report_tracked_read(
         &self,
-        input: DependencyIndex,
+        input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
     ) {
@@ -432,7 +431,7 @@ pub enum QueryOrigin {
 
 impl QueryOrigin {
     /// Indices for queries *read* by this query
-    pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
             QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => None,
@@ -441,7 +440,7 @@ impl QueryOrigin {
     }
 
     /// Indices for queries *written* by this query (if any)
-    pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
             QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => None,
@@ -457,7 +456,7 @@ pub enum EdgeKind {
 }
 
 lazy_static::lazy_static! {
-    pub(crate) static ref EMPTY_DEPENDENCIES: Arc<[(EdgeKind, DependencyIndex)]> = Arc::new([]);
+    pub(crate) static ref EMPTY_DEPENDENCIES: Arc<[(EdgeKind, DatabaseKeyIndex)]> = Arc::new([]);
 }
 
 /// The edges between a memoized value and other queries in the dependency graph.
@@ -479,14 +478,14 @@ pub struct QueryEdges {
     /// Important:
     ///
     /// * The inputs must be in **execution order** for the red-green algorithm to work.
-    pub input_outputs: Arc<[(EdgeKind, DependencyIndex)]>,
+    pub input_outputs: Arc<[(EdgeKind, DatabaseKeyIndex)]>,
 }
 
 impl QueryEdges {
     /// Returns the (tracked) inputs that were executed in computing this memoized value.
     ///
     /// These will always be in execution order.
-    pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + '_ {
         self.input_outputs
             .iter()
             .filter(|(edge_kind, _)| *edge_kind == EdgeKind::Input)
@@ -496,7 +495,7 @@ impl QueryEdges {
     /// Returns the (tracked) outputs that were executed in computing this memoized value.
     ///
     /// These will always be in execution order.
-    pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = DatabaseKeyIndex> + '_ {
         self.input_outputs
             .iter()
             .filter(|(edge_kind, _)| *edge_kind == EdgeKind::Output)
@@ -504,7 +503,7 @@ impl QueryEdges {
     }
 
     /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.
-    pub(crate) fn new(input_outputs: Arc<[(EdgeKind, DependencyIndex)]>) -> Self {
+    pub(crate) fn new(input_outputs: Arc<[(EdgeKind, DatabaseKeyIndex)]>) -> Self {
         Self { input_outputs }
     }
 }

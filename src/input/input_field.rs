@@ -49,14 +49,8 @@ where
         CycleRecoveryStrategy::Panic
     }
 
-    fn maybe_changed_after(
-        &self,
-        db: &dyn Database,
-        input: Option<Id>,
-        revision: Revision,
-    ) -> bool {
+    fn maybe_changed_after(&self, db: &dyn Database, input: Id, revision: Revision) -> bool {
         let zalsa = db.zalsa();
-        let input = input.unwrap();
         let value = <IngredientImpl<C>>::data(zalsa, input);
         value.stamps[self.field_index].changed_at > revision
     }
@@ -69,7 +63,7 @@ where
         &self,
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
-        _output_key: Option<Id>,
+        _output_key: Id,
     ) {
     }
 
@@ -77,7 +71,7 @@ where
         &self,
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
-        _stale_output_key: Option<Id>,
+        _stale_output_key: Id,
     ) {
     }
 
@@ -89,7 +83,7 @@ where
         panic!("unexpected call: input fields don't register for resets");
     }
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::FIELD_DEBUG_NAMES[self.field_index], index, fmt)
     }
 

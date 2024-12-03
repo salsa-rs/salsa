@@ -51,12 +51,11 @@ where
     fn maybe_changed_after<'db>(
         &'db self,
         db: &'db dyn Database,
-        input: Option<Id>,
+        input: Id,
         revision: crate::Revision,
     ) -> bool {
         let zalsa = db.zalsa();
-        let id = input.unwrap();
-        let data = <super::IngredientImpl<C>>::data(zalsa.table(), id);
+        let data = <super::IngredientImpl<C>>::data(zalsa.table(), input);
         let field_changed_at = data.revisions[self.field_index];
         field_changed_at > revision
     }
@@ -73,7 +72,7 @@ where
         &self,
         _db: &dyn Database,
         _executor: crate::DatabaseKeyIndex,
-        _output_key: Option<crate::Id>,
+        _output_key: Id,
     ) {
         panic!("tracked field ingredients have no outputs")
     }
@@ -82,7 +81,7 @@ where
         &self,
         _db: &dyn Database,
         _executor: crate::DatabaseKeyIndex,
-        _stale_output_key: Option<crate::Id>,
+        _stale_output_key: Id,
     ) {
         panic!("tracked field ingredients have no outputs")
     }
@@ -95,17 +94,13 @@ where
         panic!("tracked field ingredients do not require reset")
     }
 
-    fn fmt_index(
-        &self,
-        index: Option<crate::Id>,
-        fmt: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+    fn fmt_index(&self, index: Id, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             fmt,
             "{}.{}({:?})",
             C::DEBUG_NAME,
             C::FIELD_DEBUG_NAMES[self.field_index],
-            index.unwrap()
+            index
         )
     }
 

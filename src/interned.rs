@@ -1,8 +1,8 @@
 use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::fmt_index;
-use crate::key::DependencyIndex;
 use crate::plumbing::{Jar, JarAux};
+use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
 use crate::table::Slot;
@@ -58,12 +58,6 @@ pub struct IngredientImpl<C: Configuration> {
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
     key_map: FxDashMap<C::Data<'static>, Id>,
-
-    /// Stores the revision when this interned ingredient was last cleared.
-    /// You can clear an interned table at any point, deleting all its entries,
-    /// but that will make anything dependent on those entries dirty and in need
-    /// of being recomputed.
-    reset_at: Revision,
 }
 
 /// Struct storing the interned fields.
@@ -74,6 +68,10 @@ where
     data: C::Data<'static>,
     memos: MemoTable,
     syncs: SyncTable,
+    /// The revision the value was first interned in.
+    first_interned_at: Revision,
+    /// The most recent interned revision.
+    last_interned_at: AtomicRevision,
 }
 
 impl<C: Configuration> Default for JarImpl<C> {
@@ -102,7 +100,6 @@ where
         Self {
             ingredient_index,
             key_map: Default::default(),
-            reset_at: Revision::start(),
         }
     }
 
@@ -128,12 +125,8 @@ where
         db: &'db dyn crate::Database,
         data: impl Lookup<C::Data<'db>>,
     ) -> C::Struct<'db> {
-        let zalsa_local = db.zalsa_local();
-        zalsa_local.report_tracked_read(
-            DependencyIndex::for_table(self.ingredient_index),
-            Durability::MAX,
-            self.reset_at,
-        );
+        let (zalsa, zalsa_local) = db.zalsas();
+        let current_revision = zalsa.current_revision();
 
         // Optimisation to only get read lock on the map if the data has already
         // been interned.
@@ -153,7 +146,17 @@ where
                 Lookup::eq(&data, a)
             }) {
                 // SAFETY: Read lock on map is held during this block
-                return C::struct_from_id(unsafe { *bucket.as_ref().1.get() });
+                let id = unsafe { *bucket.as_ref().1.get() };
+
+                // Sync the value's revision.
+                let value = zalsa.table().get::<Value<C>>(id);
+                value.last_interned_at.store(current_revision);
+
+                // Record a dependency on this value.
+                let index = self.database_key_index(id);
+                zalsa_local.report_tracked_read(index, Durability::MAX, value.first_interned_at);
+
+                return C::struct_from_id(id);
             }
         };
 
@@ -166,6 +169,15 @@ where
             dashmap::mapref::entry::Entry::Occupied(entry) => {
                 let id = *entry.get();
                 drop(entry);
+
+                // Sync the value's revision.
+                let value = zalsa.table().get::<Value<C>>(id);
+                value.last_interned_at.store(current_revision);
+
+                // Record a dependency on this value.
+                let index = self.database_key_index(id);
+                zalsa_local.report_tracked_read(index, Durability::MAX, value.first_interned_at);
+
                 C::struct_from_id(id)
             }
 
@@ -177,10 +189,25 @@ where
                     data: internal_data,
                     memos: Default::default(),
                     syncs: Default::default(),
+                    first_interned_at: current_revision,
+                    last_interned_at: AtomicRevision::from(current_revision),
                 });
                 entry.insert(next_id);
+
+                // Record a dependency on this value.
+                let index = self.database_key_index(next_id);
+                zalsa_local.report_tracked_read(index, Durability::MAX, current_revision);
+
                 C::struct_from_id(next_id)
             }
+        }
+    }
+
+    /// Returns the database key index for an interned value with the given id.
+    pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
+        DatabaseKeyIndex {
+            ingredient_index: self.ingredient_index,
+            key_index: id,
         }
     }
 
@@ -188,8 +215,12 @@ where
     /// Rarely used since end-users generally carry a struct with a pointer directly
     /// to the interned item.
     pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Data<'db> {
-        let internal_data = db.zalsa().table().get::<Value<C>>(id);
-        unsafe { Self::from_internal_data(&internal_data.data) }
+        let value = db.zalsa().table().get::<Value<C>>(id);
+        assert!(
+            value.last_interned_at.load() >= db.zalsa().current_revision(),
+            "Data was not interned in the current revision."
+        );
+        unsafe { Self::from_internal_data(&value.data) }
     }
 
     /// Lookup the fields from an interned struct.
@@ -198,9 +229,9 @@ where
         self.data(db, C::deref_struct(s))
     }
 
-    pub fn reset(&mut self, revision: Revision) {
-        assert!(revision > self.reset_at);
-        self.reset_at = revision;
+    pub fn reset(&mut self, db: &mut dyn Database) {
+        // Trigger a new revision.
+        let _zalsa_mut = db.zalsa_mut();
         self.key_map.clear();
     }
 }
@@ -213,13 +244,19 @@ where
         self.ingredient_index
     }
 
-    fn maybe_changed_after(
-        &self,
-        _db: &dyn Database,
-        _input: Option<Id>,
-        revision: Revision,
-    ) -> bool {
-        revision < self.reset_at
+    fn maybe_changed_after(&self, db: &dyn Database, input: Id, revision: Revision) -> bool {
+        let value = db.zalsa().table().get::<Value<C>>(input);
+        if value.first_interned_at > revision {
+            // The slot was reused.
+            return true;
+        }
+
+        if value.first_interned_at < revision {
+            // The slot is valid in this revision but we have to sync the value's revision.
+            value.last_interned_at.store(db.zalsa().current_revision());
+        }
+
+        false
     }
 
     fn cycle_recovery_strategy(&self) -> crate::cycle::CycleRecoveryStrategy {
@@ -234,7 +271,7 @@ where
         &self,
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
-        output_key: Option<crate::Id>,
+        output_key: Id,
     ) {
         unreachable!(
             "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
@@ -246,7 +283,7 @@ where
         &self,
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
-        stale_output_key: Option<crate::Id>,
+        stale_output_key: Id,
     ) {
         unreachable!(
             "remove_stale_output({:?}, {:?}): interned ids are not outputs",
@@ -265,7 +302,7 @@ where
         panic!("unexpected call to `reset_for_new_revision`")
     }
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
 
