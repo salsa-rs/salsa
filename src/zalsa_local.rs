@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 use tracing::debug;
 
-use crate::accumulator::accumulated_map::AccumulatedMap;
+use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::active_query::ActiveQuery;
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
@@ -170,6 +170,7 @@ impl ZalsaLocal {
         input: DependencyIndex,
         durability: Durability,
         changed_at: Revision,
+        accumulated: InputAccumulatedValues,
     ) {
         debug!(
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
@@ -177,7 +178,7 @@ impl ZalsaLocal {
         );
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.add_read(input, durability, changed_at);
+                top_query.add_read(input, durability, changed_at, accumulated);
 
                 // We are a cycle participant:
                 //

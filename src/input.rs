@@ -8,6 +8,7 @@ use input_field::FieldIngredientImpl;
 use parking_lot::Mutex;
 
 use crate::{
+    accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient},
@@ -188,6 +189,7 @@ impl<C: Configuration> IngredientImpl<C> {
             },
             stamp.durability,
             stamp.changed_at,
+            InputAccumulatedValues::Empty,
         );
         &value.fields
     }

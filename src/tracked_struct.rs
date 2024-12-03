@@ -4,6 +4,7 @@ use crossbeam::{atomic::AtomicCell, queue::SegQueue};
 use tracked_field::FieldIngredientImpl;
 
 use crate::{
+    accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, JarAux},
     key::{DatabaseKeyIndex, DependencyIndex},
@@ -561,6 +562,7 @@ where
             },
             data.durability,
             field_changed_at,
+            InputAccumulatedValues::Empty,
         );
 
         unsafe { self.to_self_ref(&data.fields) }

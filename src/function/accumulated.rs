@@ -56,6 +56,11 @@ where
             // Extend `output` with any values accumulated by `k`.
             if let Some(accumulated_map) = k.accumulated(db) {
                 accumulated_map.extend_with_accumulated(accumulator.index(), &mut output);
+
+                // Skip over the inputs because we know that the entire sub-graph has no accumulated values
+                if accumulated_map.inputs().is_empty() {
+                    continue;
+                }
             }
 
             // Find the inputs of `k` and push them onto the stack.
