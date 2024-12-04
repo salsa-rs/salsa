@@ -69,15 +69,31 @@ where
             // output vector, we want to push in execution order, so reverse order to
             // ensure the first child that was executed will be the first child popped
             // from the stack.
-            let origin = zalsa
+            let Some(origin) = zalsa
                 .lookup_ingredient(k.ingredient_index)
-                .origin(db, k.key_index);
-            let inputs = origin.iter().flat_map(|origin| origin.inputs());
+                .origin(db, k.key_index)
+            else {
+                continue;
+            };
+
+            let estimated_inputs = match &origin {
+                QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => 0,
+                QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => {
+                    edges.input_outputs.len()
+                }
+            };
+
+            stack.reserve(estimated_inputs);
+            visited.reserve(estimated_inputs);
+
             stack.extend(
-                inputs
-                    .flat_map(|input| TryInto::<DatabaseKeyIndex>::try_into(input).into_iter())
+                origin
+                    .inputs()
+                    .filter_map(|input| TryInto::<DatabaseKeyIndex>::try_into(input).ok())
                     .rev(),
             );
+
+            visited.reserve(stack.len());
         }
 
         output
