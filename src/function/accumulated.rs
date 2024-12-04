@@ -1,11 +1,11 @@
+use super::{Configuration, IngredientImpl};
+use crate::zalsa_local::QueryOrigin;
 use crate::{
     accumulator::{self, accumulated_map::AccumulatedMap},
     hash::FxHashSet,
     zalsa::ZalsaDatabase,
     AsDynDatabase, DatabaseKeyIndex, Id,
 };
-
-use super::{Configuration, IngredientImpl};
 
 impl<C> IngredientImpl<C>
 where
@@ -76,15 +76,9 @@ where
                 continue;
             };
 
-            let estimated_inputs = match &origin {
-                QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => 0,
-                QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => {
-                    edges.input_outputs.len()
-                }
-            };
-
-            stack.reserve(estimated_inputs);
-            visited.reserve(estimated_inputs);
+            if let QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) = &origin {
+                stack.reserve(edges.input_outputs.len());
+            }
 
             stack.extend(
                 origin
