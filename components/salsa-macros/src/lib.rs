@@ -67,6 +67,50 @@ pub fn interned(args: TokenStream, input: TokenStream) -> TokenStream {
     interned::interned(args, input)
 }
 
+/// A discouraged variant of `#[salsa::interned]`.
+///
+/// `#[salsa::interned_sans_lifetime]` is intended to be used in codebases that are migrating from
+/// the original Salsa to the current version of Salsa. New codebases that are just starting to use
+/// Salsa should avoid using this macro and prefer `#[salsa::interned]` instead.
+///
+/// `#[salsa::interned_sans_lifetime]` differs from `#[salsa::interned]` in a two key ways:
+/// 1. As the name suggests, it removes the `'db` lifetime from the interned struct. This lifetime is
+///    designed to meant to certain values as "salsa structs", but it also adds the desirable property
+///    of misuse resistance: it is difficult to embed an `#[salsa::interned]` struct into an auxiliary
+///    structures or collections collection, which can lead to subtle invalidation bugs. However, old
+///    Salsa encouraged storing keys to interned values in auxiliary structures and collections, so
+///    so converting all usage to Salsa's current API guidelines might not be desirable or feasible.
+/// 2. `#[salsa::interned_sans_lifetime]` requires specifiying the ID. In most cases, `salsa::Id`
+///    is sufficent, but in rare, performance-sensitive circumstances, it might be desireable to
+///    set the Id to a type that implements `salsa::plumbing::AsId` and `salsa::plumbing::FromId`.
+///
+/// ## Example
+///
+/// Below is an example of a struct using `#[salsa::interned_sans_lifetime]` with a custom Id:
+///
+/// ```no_compile
+/// use salsa::plumbing::{AsId, FromId};
+///
+/// #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
+/// struct CustomSalsaIdWrapper(salsa::Id);
+///
+/// impl AsId for CustomSalsaIdWrapper {
+///     fn as_id(&self) -> salsa::Id {
+///         self.0
+///     }
+/// }
+///
+/// impl FromId for CustomSalsaIdWrapper {
+///     fn from_id(id: salsa::Id) -> Self {
+///         CustomSalsaIdWrapper(id)
+///     }
+/// }
+///
+/// #[salsa::interned_sans_lifetime(id = CustomSalsaIdWrapper)]
+/// struct InternedString {
+///     data: String,
+/// }
+/// ```
 #[proc_macro_attribute]
 pub fn interned_sans_lifetime(args: TokenStream, input: TokenStream) -> TokenStream {
     interned_sans_lifetime::interned_sans_lifetime(args, input)
