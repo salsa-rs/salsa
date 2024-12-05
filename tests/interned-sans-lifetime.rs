@@ -1,17 +1,18 @@
 use expect_test::expect;
+use salsa::plumbing::{AsId, FromId};
 use std::path::{Path, PathBuf};
 use test_log::test;
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct CustomSalsaIdWrapper(salsa::Id);
 
-impl salsa::plumbing::AsId for CustomSalsaIdWrapper {
+impl AsId for CustomSalsaIdWrapper {
     fn as_id(&self) -> salsa::Id {
         self.0
     }
 }
 
-impl salsa::plumbing::FromId for CustomSalsaIdWrapper {
+impl FromId for CustomSalsaIdWrapper {
     fn from_id(id: salsa::Id) -> Self {
         CustomSalsaIdWrapper(id)
     }
@@ -45,7 +46,7 @@ struct InternedPathBuf {
 
 #[salsa::tracked]
 fn intern_stuff(db: &dyn salsa::Database) -> String {
-    let s1 = InternedString::new(db, "Hello, ".to_string());
+    let s1 = InternedString::new(db, "Hello, ");
     let s2 = InternedString::new(db, "World, ");
     let s3 = InternedPair::new(db, (s1, s2));
 
@@ -70,6 +71,7 @@ fn interning_returns_equal_keys_for_equal_data() {
     assert_eq!(s1, s1_2);
     assert_eq!(s2, s2_2);
 }
+
 #[test]
 fn interning_returns_equal_keys_for_equal_data_multi_field() {
     let db = salsa::DatabaseImpl::new();
@@ -126,4 +128,33 @@ fn tracked_static_query_works() {
     let db = salsa::DatabaseImpl::new();
     let s1 = InternedString::new(&db, "Hello, World!".to_string());
     assert_eq!(length(&db, s1), 13);
+}
+
+#[test]
+fn public_ingredient() {
+    let db = salsa::DatabaseImpl::new();
+    let s = InternedString::new(&db, String::from("Hello, world!"));
+    let underlying_id = s.0;
+
+    let data = InternedString::ingredient(&db).data(&db, underlying_id.as_id());
+    assert_eq!(data, &(String::from("Hello, world!"),));
+}
+
+#[salsa::tracked]
+fn intern_more_stuff(db: &dyn salsa::Database) -> (InternedString, InternedString, InternedPair) {
+    let s1 = InternedString::new(db, "Hello, ");
+    let s2 = InternedString::new(db, "World, ");
+    let pair = InternedPair::new(db, (s1, s2));
+    (s1, s2, pair)
+}
+
+#[test]
+fn public_ingredients() {
+    let db = salsa::DatabaseImpl::new();
+
+    let (_, _, pair) = intern_more_stuff(&db);
+    let (interned_s1, interned_s2) = InternedPair::ingredient(&db).fields(&db, pair).0;
+
+    assert_eq!(interned_s1.data(&db), "Hello, ".to_owned());
+    assert_eq!(interned_s2.data(&db), "World, ".to_owned());
 }
