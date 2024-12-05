@@ -18,7 +18,7 @@ use super::util;
 /// Tracks the keys that are currently being processed; used to coordinate between
 /// worker threads.
 #[derive(Default)]
-pub(crate) struct SyncTable {
+pub struct SyncTable {
     syncs: RwLock<Vec<Option<SyncState>>>,
 }
 

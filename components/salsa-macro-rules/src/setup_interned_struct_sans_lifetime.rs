@@ -11,6 +11,10 @@ macro_rules! setup_interned_struct_sans_lifetime {
         // Name of the struct
         Struct: $Struct:ident,
 
+        // Name of the struct data. This is a parameter because `std::concat_idents`
+        // is unstable and taking an addition dependency is unnecessary.
+        StructData: $StructDataIdent:ident,
+
         // Name of the `'db` lifetime that the user gave
         db_lt: $db_lt:lifetime,
 
@@ -62,13 +66,27 @@ macro_rules! setup_interned_struct_sans_lifetime {
             std::marker::PhantomData < &'static  salsa::plumbing::interned::Value < $Struct > >
         );
 
+        type $StructDataIdent<$db_lt> = ($($field_ty,)*);
+
+        impl salsa::plumbing::interned::Configuration for $Struct {
+            const DEBUG_NAME: &'static str = stringify!($Struct);
+            type Data<'a> = $StructDataIdent<'a>;
+            type Struct<'a> = $Struct;
+            fn struct_from_id<'db>(id: salsa::Id) -> Self::Struct<'db> {
+                use salsa::plumbing::FromId;
+                $Struct(<$Id>::from_id(id), std::marker::PhantomData)
+            }
+            fn deref_struct(s: Self::Struct<'_>) -> salsa::Id {
+                use salsa::plumbing::AsId;
+                s.0.as_id()
+            }
+        }
+
         const _: () = {
             use salsa::plumbing as $zalsa;
             use $zalsa::interned as $zalsa_struct;
 
             type $Configuration = $Struct;
-
-            type StructData<$db_lt> = ($($field_ty,)*);
 
             /// Key to use during hash lookups. Each field is some type that implements `Lookup<T>`
             /// for the owned type. This permits interning with an `&str` when a `String` is required and so forth.
@@ -77,34 +95,20 @@ macro_rules! setup_interned_struct_sans_lifetime {
                 std::marker::PhantomData<&$db_lt ()>,
             );
 
-            impl<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*> $zalsa::interned::Lookup<StructData<$db_lt>>
+            impl<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*> $zalsa::interned::Lookup<$StructDataIdent<$db_lt>>
                 for StructKey<$db_lt, $($indexed_ty),*> {
 
                 fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
                     $($zalsa::interned::Lookup::hash(&self.$field_index, &mut *h);)*
                 }
 
-                fn eq(&self, data: &StructData<$db_lt>) -> bool {
+                fn eq(&self, data: &$StructDataIdent<$db_lt>) -> bool {
                     ($($zalsa::interned::Lookup::eq(&self.$field_index, &data.$field_index) && )* true)
                 }
 
                 #[allow(unused_unit)]
-                fn into_owned(self) -> StructData<$db_lt> {
+                fn into_owned(self) -> $StructDataIdent<$db_lt> {
                     ($($zalsa::interned::Lookup::into_owned(self.$field_index),)*)
-                }
-            }
-
-            impl $zalsa_struct::Configuration for $Configuration {
-                const DEBUG_NAME: &'static str = stringify!($Struct);
-                type Data<'a> = StructData<'a>;
-                type Struct<'a> = $Struct;
-                fn struct_from_id<'db>(id: salsa::Id) -> Self::Struct<'db> {
-                    use $zalsa::FromId;
-                    $Struct(<$Id>::from_id(id), std::marker::PhantomData)
-                }
-                fn deref_struct(s: Self::Struct<'_>) -> salsa::Id {
-                    use $zalsa::AsId;
-                    s.0.as_id()
                 }
             }
 
