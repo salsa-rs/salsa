@@ -99,6 +99,9 @@ macro_rules! setup_tracked_fn {
                         $zalsa::IngredientCache::new();
 
                     impl $zalsa::SalsaStructInDb for $InternedData<'_> {
+                        fn lookup_ingredient_index(_aux: &dyn $zalsa::JarAux) -> core::option::Option<$zalsa::IngredientIndex> {
+                            None
+                        }
                     }
 
                     impl $zalsa::interned::Configuration for $Configuration {
@@ -199,7 +202,19 @@ macro_rules! setup_tracked_fn {
                     aux: &dyn $zalsa::JarAux,
                     first_index: $zalsa::IngredientIndex,
                 ) -> Vec<Box<dyn $zalsa::Ingredient>> {
+                    let struct_index = $zalsa::macro_if! {
+                        if $needs_interner {
+                            first_index.successor(0)
+                        } else {
+                            <$InternedData as $zalsa::SalsaStructInDb>::lookup_ingredient_index(aux)
+                                .expect(
+                                    "Salsa struct is passed as an argument of a tracked function, but its ingredient hasn't been added!"
+                                )
+                        }
+                    };
+
                     let fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
+                        struct_index,
                         first_index,
                         aux,
                     );
@@ -218,6 +233,10 @@ macro_rules! setup_tracked_fn {
                             ]
                         }
                     }
+                }
+
+                fn salsa_struct_type_id(&self) -> Option<core::any::TypeId> {
+                    None
                 }
             }
 
