@@ -75,6 +75,10 @@ impl Macro {
         let mut inner_fn = item.clone();
         inner_fn.vis = syn::Visibility::Inherited;
         inner_fn.sig.ident = self.hygiene.ident("inner");
+        // if the tracked_fn has a lifetime, pass it to the `inner_fn`
+        // if item.sig.generics.lifetimes().peekable().next().is_some() {
+        inner_fn.sig.generics = parse_quote!(<#db_lt>);
+        // }
 
         let zalsa = self.hygiene.ident("zalsa");
         let Configuration = self.hygiene.ident("Configuration");
