@@ -1,5 +1,4 @@
 use std::{
-    mem,
     panic::panic_any,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -201,16 +200,14 @@ impl Runtime {
         });
 
         let result = local_state.with_query_stack(|stack| {
-            let (new_stack, result) = DependencyGraph::block_on(
+            DependencyGraph::block_on(
                 dg,
                 thread_id,
                 database_key,
                 other_id,
-                mem::take(stack),
+                stack,
                 query_mutex_guard,
-            );
-            *stack = new_stack;
-            result
+            )
         });
 
         match result {
