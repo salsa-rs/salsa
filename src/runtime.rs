@@ -34,7 +34,7 @@ pub struct Runtime {
     /// revisions[i + 1]`, for all `i`. This is because when you
     /// modify a value with durability D, that implies that values
     /// with durability less than D may have changed too.
-    revisions: Vec<AtomicRevision>,
+    revisions: Box<[AtomicRevision; Durability::LEN]>,
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
@@ -80,9 +80,7 @@ impl<V> StampedValue<V> {
 impl Default for Runtime {
     fn default() -> Self {
         Runtime {
-            revisions: (0..Durability::LEN)
-                .map(|_| AtomicRevision::start())
-                .collect(),
+            revisions: Box::new([const { AtomicRevision::start() }; Durability::LEN]),
             revision_canceled: Default::default(),
             dependency_graph: Default::default(),
             table: Default::default(),
