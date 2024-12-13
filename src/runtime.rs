@@ -1,7 +1,7 @@
 use std::{
     panic::panic_any,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
     thread::ThreadId,
@@ -20,9 +20,6 @@ use self::dependency_graph::DependencyGraph;
 mod dependency_graph;
 
 pub struct Runtime {
-    /// Stores the next id to use for a snapshotted runtime (starts at 1).
-    next_id: AtomicUsize,
-
     /// Set to true when the current revision has been canceled.
     /// This is done when we an input is being changed. The flag
     /// is set back to false once the input has been changed.
@@ -86,7 +83,6 @@ impl Default for Runtime {
             revisions: (0..Durability::LEN)
                 .map(|_| AtomicRevision::start())
                 .collect(),
-            next_id: AtomicUsize::new(1),
             revision_canceled: Default::default(),
             dependency_graph: Default::default(),
             table: Default::default(),
@@ -98,7 +94,6 @@ impl std::fmt::Debug for Runtime {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fmt.debug_struct("Runtime")
             .field("revisions", &self.revisions)
-            .field("next_id", &self.next_id)
             .field("revision_canceled", &self.revision_canceled)
             .field("dependency_graph", &self.dependency_graph)
             .finish()
