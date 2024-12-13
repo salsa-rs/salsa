@@ -194,12 +194,10 @@ fn check_bad_variable_in_function() {
             error: the variable `b` is not declared
              --> input:4:33
               |
-            3 |   
             4 |               fn add_one(a) = a + b
               |  _________________________________^
             5 | |             print add_one(22)
               | |____________^ here
-            6 |           
               |"#]],
         &[],
     );
@@ -216,21 +214,16 @@ fn check_bad_function_in_function() {
             error: the function `add_two` is not declared
              --> input:4:29
               |
-            3 | 
             4 |             fn add_one(a) = add_two(a) + b
               |                             ^^^^^^^^^^ here
-            5 |             print add_one(22)
-            6 |         
               |
             error: the variable `b` is not declared
              --> input:4:42
               |
-            3 |   
             4 |               fn add_one(a) = add_two(a) + b
               |  __________________________________________^
             5 | |             print add_one(22)
               | |____________^ here
-            6 |           
               |"#]],
         &[],
     );
@@ -248,13 +241,10 @@ fn fix_bad_variable_in_function() {
             error: the variable `b` is not declared
              --> input:4:32
               |
-            3 |   
             4 |               fn double(a) = a * b
               |  ________________________________^
             5 | |             fn quadruple(a) = double(double(a))
               | |____________^ here
-            6 |               print quadruple(2)
-            7 |           
               |"#]],
         &[(
             "

@@ -117,6 +117,7 @@ impl Diagnostic {
                     Snippet::source(src.text(db))
                         .line_start(line_start)
                         .origin("input")
+                        .fold(true)
                         .annotation(Level::Error.span(self.start..self.end).label("here")),
                 ),
             )
