@@ -1,4 +1,5 @@
 use std::{
+    mem,
     panic::panic_any,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -198,18 +199,18 @@ impl Runtime {
             },
         });
 
-        let stack = local_state.take_query_stack();
-
-        let (stack, result) = DependencyGraph::block_on(
-            dg,
-            thread_id,
-            database_key,
-            other_id,
-            stack,
-            query_mutex_guard,
-        );
-
-        local_state.restore_query_stack(stack);
+        let result = local_state.with_query_stack(|stack| {
+            let (new_stack, result) = DependencyGraph::block_on(
+                dg,
+                thread_id,
+                database_key,
+                other_id,
+                mem::take(stack),
+                query_mutex_guard,
+            );
+            *stack = new_stack;
+            result
+        });
 
         match result {
             WaitResult::Completed => (),
@@ -244,83 +245,84 @@ impl Runtime {
             database_key_index
         );
 
-        let mut from_stack = local_state.take_query_stack();
-        let from_id = std::thread::current().id();
+        let (me_recovered, others_recovered, cycle) = local_state.with_query_stack(|from_stack| {
+            let from_id = std::thread::current().id();
 
-        // Make a "dummy stack frame". As we iterate through the cycle, we will collect the
-        // inputs from each participant. Then, if we are participating in cycle recovery, we
-        // will propagate those results to all participants.
-        let mut cycle_query = ActiveQuery::new(database_key_index);
+            // Make a "dummy stack frame". As we iterate through the cycle, we will collect the
+            // inputs from each participant. Then, if we are participating in cycle recovery, we
+            // will propagate those results to all participants.
+            let mut cycle_query = ActiveQuery::new(database_key_index);
 
-        // Identify the cycle participants:
-        let cycle = {
-            let mut v = vec![];
-            dg.for_each_cycle_participant(
-                from_id,
-                &mut from_stack,
-                database_key_index,
-                to_id,
-                |aqs| {
-                    aqs.iter_mut().for_each(|aq| {
-                        cycle_query.add_from(aq);
-                        v.push(aq.database_key_index);
+            // Identify the cycle participants:
+            let cycle = {
+                let mut v = vec![];
+                dg.for_each_cycle_participant(
+                    from_id,
+                    from_stack,
+                    database_key_index,
+                    to_id,
+                    |aqs| {
+                        aqs.iter_mut().for_each(|aq| {
+                            cycle_query.add_from(aq);
+                            v.push(aq.database_key_index);
+                        });
+                    },
+                );
+
+                // We want to give the participants in a deterministic order
+                // (at least for this execution, not necessarily across executions),
+                // no matter where it started on the stack. Find the minimum
+                // key and rotate it to the front.
+
+                if let Some((_, index, _)) = v
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, key)| (key.ingredient_index.debug_name(db), idx, key))
+                    .min()
+                {
+                    v.rotate_left(index);
+                }
+
+                Cycle::new(Arc::new(v.into_boxed_slice()))
+            };
+            tracing::debug!("cycle {cycle:?}, cycle_query {cycle_query:#?}");
+
+            // We can remove the cycle participants from the list of dependencies;
+            // they are a strongly connected component (SCC) and we only care about
+            // dependencies to things outside the SCC that control whether it will
+            // form again.
+            cycle_query.remove_cycle_participants(&cycle);
+
+            // Mark each cycle participant that has recovery set, along with
+            // any frames that come after them on the same thread. Those frames
+            // are going to be unwound so that fallback can occur.
+            dg.for_each_cycle_participant(from_id, from_stack, database_key_index, to_id, |aqs| {
+                aqs.iter_mut()
+                    .skip_while(|aq| {
+                        match db
+                            .zalsa()
+                            .lookup_ingredient(aq.database_key_index.ingredient_index)
+                            .cycle_recovery_strategy()
+                        {
+                            CycleRecoveryStrategy::Panic => true,
+                            CycleRecoveryStrategy::Fallback => false,
+                        }
+                    })
+                    .for_each(|aq| {
+                        tracing::debug!("marking {:?} for fallback", aq.database_key_index);
+                        aq.take_inputs_from(&cycle_query);
+                        assert!(aq.cycle.is_none());
+                        aq.cycle = Some(cycle.clone());
                     });
-                },
-            );
+            });
 
-            // We want to give the participants in a deterministic order
-            // (at least for this execution, not necessarily across executions),
-            // no matter where it started on the stack. Find the minimum
-            // key and rotate it to the front.
-            if let Some((_, index, _)) = v
-                .iter()
-                .enumerate()
-                .map(|(idx, key)| (key.ingredient_index.debug_name(db), idx, key))
-                .min()
-            {
-                v.rotate_left(index);
-            }
-
-            Cycle::new(Arc::new(v.into_boxed_slice()))
-        };
-        tracing::debug!("cycle {cycle:?}, cycle_query {cycle_query:#?}");
-
-        // We can remove the cycle participants from the list of dependencies;
-        // they are a strongly connected component (SCC) and we only care about
-        // dependencies to things outside the SCC that control whether it will
-        // form again.
-        cycle_query.remove_cycle_participants(&cycle);
-
-        // Mark each cycle participant that has recovery set, along with
-        // any frames that come after them on the same thread. Those frames
-        // are going to be unwound so that fallback can occur.
-        dg.for_each_cycle_participant(from_id, &mut from_stack, database_key_index, to_id, |aqs| {
-            aqs.iter_mut()
-                .skip_while(|aq| {
-                    match db
-                        .zalsa()
-                        .lookup_ingredient(aq.database_key_index.ingredient_index)
-                        .cycle_recovery_strategy()
-                    {
-                        CycleRecoveryStrategy::Panic => true,
-                        CycleRecoveryStrategy::Fallback => false,
-                    }
-                })
-                .for_each(|aq| {
-                    tracing::debug!("marking {:?} for fallback", aq.database_key_index);
-                    aq.take_inputs_from(&cycle_query);
-                    assert!(aq.cycle.is_none());
-                    aq.cycle = Some(cycle.clone());
-                });
+            // Unblock every thread that has cycle recovery with a `WaitResult::Cycle`.
+            // They will throw the cycle, which will be caught by the frame that has
+            // cycle recovery so that it can execute that recovery.
+            let (me_recovered, others_recovered) =
+                dg.maybe_unblock_runtimes_in_cycle(from_id, from_stack, database_key_index, to_id);
+            (me_recovered, others_recovered, cycle)
         });
-
-        // Unblock every thread that has cycle recovery with a `WaitResult::Cycle`.
-        // They will throw the cycle, which will be caught by the frame that has
-        // cycle recovery so that it can execute that recovery.
-        let (me_recovered, others_recovered) =
-            dg.maybe_unblock_runtimes_in_cycle(from_id, &from_stack, database_key_index, to_id);
-
-        local_state.restore_query_stack(from_stack);
 
         if me_recovered {
             // If the current thread has recovery, we want to throw
