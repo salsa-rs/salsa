@@ -339,6 +339,10 @@ impl DisambiguatorMap {
         disambiguator.0 += 1;
         result
     }
+
+    pub fn clear(&mut self) {
+        self.map.clear()
+    }
 }
 
 impl<C> IngredientImpl<C>

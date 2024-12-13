@@ -1,4 +1,5 @@
 use std::ops::Not;
+use std::{mem, ops};
 
 use super::zalsa_local::{QueryEdges, QueryOrigin, QueryRevisions};
 use crate::accumulator::accumulated_map::AtomicInputAccumulatedValues;
@@ -63,7 +64,7 @@ pub(crate) struct ActiveQuery {
 }
 
 impl ActiveQuery {
-    pub(super) fn new(database_key_index: DatabaseKeyIndex) -> Self {
+    pub(crate) fn new(database_key_index: DatabaseKeyIndex) -> Self {
         ActiveQuery {
             database_key_index,
             durability: Durability::MAX,
@@ -76,6 +77,32 @@ impl ActiveQuery {
             accumulated_inputs: Default::default(),
             cycle_heads: Default::default(),
         }
+    }
+
+    fn reset(&mut self, new_database_key_index: DatabaseKeyIndex) {
+        let Self {
+            database_key_index,
+            durability,
+            changed_at,
+            input_outputs,
+            untracked_read,
+            cycle_heads,
+            disambiguator_map,
+            tracked_struct_ids,
+            accumulated,
+            accumulated_inputs,
+        } = self;
+        *database_key_index = new_database_key_index;
+        *durability = Durability::MAX;
+        *changed_at = Revision::start();
+        input_outputs.clear();
+        *untracked_read = false;
+        *accumulated_inputs = Default::default();
+        disambiguator_map.clear();
+        // These three are cleared via `mem::take`` when popped off as revisions.
+        debug_assert!(tracked_struct_ids.is_empty());
+        debug_assert!(cycle_heads.is_empty());
+        debug_assert!(accumulated.is_empty());
     }
 
     pub(super) fn add_read(
@@ -126,30 +153,88 @@ impl ActiveQuery {
         self.input_outputs.contains(&QueryEdge::Output(key))
     }
 
-    pub(crate) fn into_revisions(self) -> QueryRevisions {
-        let edges = QueryEdges::new(self.input_outputs);
-        let origin = if self.untracked_read {
+    fn take_revisions(&mut self) -> QueryRevisions {
+        let &mut Self {
+            database_key_index: _,
+            disambiguator_map: _,
+            durability,
+            changed_at,
+            untracked_read,
+            accumulated_inputs,
+            ref mut cycle_heads,
+            ref mut input_outputs,
+            ref mut tracked_struct_ids,
+            ref mut accumulated,
+        } = self;
+
+        let edges = QueryEdges::new(input_outputs.drain(..));
+        let origin = if untracked_read {
             QueryOrigin::DerivedUntracked(edges)
         } else {
             QueryOrigin::Derived(edges)
         };
-        let accumulated = self
-            .accumulated
+        let accumulated = accumulated
             .is_empty()
             .not()
-            .then(|| Box::new(self.accumulated));
+            .then(|| Box::new(mem::take(accumulated)));
+        let tracked_struct_ids = mem::take(tracked_struct_ids);
+        let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
+        let cycle_heads = mem::take(cycle_heads);
         QueryRevisions {
-            changed_at: self.changed_at,
+            changed_at,
+            durability,
             origin,
-            durability: self.durability,
-            tracked_struct_ids: self.tracked_struct_ids,
-            accumulated_inputs: AtomicInputAccumulatedValues::new(self.accumulated_inputs),
+            tracked_struct_ids,
+            accumulated_inputs,
             accumulated,
-            cycle_heads: self.cycle_heads,
+            cycle_heads,
         }
     }
 
     pub(super) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {
         self.disambiguator_map.disambiguate(key)
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct QueryStack {
+    stack: Vec<ActiveQuery>,
+    len: usize,
+}
+
+impl ops::Deref for QueryStack {
+    type Target = [ActiveQuery];
+
+    fn deref(&self) -> &Self::Target {
+        &self.stack[..self.len]
+    }
+}
+
+impl ops::DerefMut for QueryStack {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.stack[..self.len]
+    }
+}
+
+impl QueryStack {
+    pub(crate) fn push_new_query(&mut self, database_key_index: DatabaseKeyIndex) {
+        if self.len < self.stack.len() {
+            self.stack[self.len].reset(database_key_index);
+        } else {
+            self.stack.push(ActiveQuery::new(database_key_index));
+        }
+        self.len += 1;
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+
+    pub(crate) fn pop_into_revisions(&mut self) -> Option<QueryRevisions> {
+        if self.len == 0 {
+            return None;
+        }
+        self.len -= 1;
+        Some(self.stack[self.len].take_revisions())
     }
 }
