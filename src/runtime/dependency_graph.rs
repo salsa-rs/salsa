@@ -104,22 +104,13 @@ impl DependencyGraph {
             // load up the next thread (i.e., we start at B/QB2,
             // and then load up the dependency on C/QC2).
             let edge = self.edges.get_mut(&id).unwrap();
-            let prefix = edge
-                .stack
-                .iter_mut()
-                .take_while(|p| p.database_key_index != key)
-                .count();
-            closure(&mut edge.stack[prefix..]);
+            closure(strip_prefix_query_stack_mut(&mut edge.stack, key));
             id = edge.blocked_on_id;
             key = edge.blocked_on_key;
         }
 
         // Finally, we copy in the results from `from_stack`.
-        let prefix = from_stack
-            .iter_mut()
-            .take_while(|p| p.database_key_index != key)
-            .count();
-        closure(&mut from_stack[prefix..]);
+        closure(strip_prefix_query_stack_mut(from_stack, key));
     }
 
     /// Unblock each blocked runtime (excluding the current one) if some
@@ -142,15 +133,10 @@ impl DependencyGraph {
         let mut others_unblocked = false;
         while id != from_id {
             let edge = self.edges.get(&id).unwrap();
-            let prefix = edge
-                .stack
-                .iter()
-                .take_while(|p| p.database_key_index != key)
-                .count();
             let next_id = edge.blocked_on_id;
             let next_key = edge.blocked_on_key;
 
-            if let Some(cycle) = edge.stack[prefix..]
+            if let Some(cycle) = strip_prefix_query_stack(&edge.stack, key)
                 .iter()
                 .rev()
                 .find_map(|aq| aq.cycle.clone())
@@ -171,11 +157,9 @@ impl DependencyGraph {
             key = next_key;
         }
 
-        let prefix = from_stack
+        let this_unblocked = strip_prefix_query_stack(from_stack, key)
             .iter()
-            .take_while(|p| p.database_key_index != key)
-            .count();
-        let this_unblocked = from_stack[prefix..].iter().any(|aq| aq.cycle.is_some());
+            .any(|aq| aq.cycle.is_some());
 
         (this_unblocked, others_unblocked)
     }
@@ -275,4 +259,23 @@ impl DependencyGraph {
         // notify the thread.
         edge.condvar.notify_one();
     }
+}
+
+fn strip_prefix_query_stack(stack_mut: &[ActiveQuery], key: DatabaseKeyIndex) -> &[ActiveQuery] {
+    let prefix = stack_mut
+        .iter()
+        .take_while(|p| p.database_key_index != key)
+        .count();
+    &stack_mut[prefix..]
+}
+
+fn strip_prefix_query_stack_mut(
+    stack_mut: &mut [ActiveQuery],
+    key: DatabaseKeyIndex,
+) -> &mut [ActiveQuery] {
+    let prefix = stack_mut
+        .iter()
+        .take_while(|p| p.database_key_index != key)
+        .count();
+    &mut stack_mut[prefix..]
 }
