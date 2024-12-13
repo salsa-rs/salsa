@@ -1,10 +1,12 @@
 use std::{
     panic::panic_any,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     thread::ThreadId,
 };
 
-use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 
 use crate::{
@@ -18,13 +20,10 @@ use self::dependency_graph::DependencyGraph;
 mod dependency_graph;
 
 pub struct Runtime {
-    /// Stores the next id to use for a snapshotted runtime (starts at 1).
-    next_id: AtomicUsize,
-
     /// Set to true when the current revision has been canceled.
     /// This is done when we an input is being changed. The flag
     /// is set back to false once the input has been changed.
-    revision_canceled: AtomicCell<bool>,
+    revision_canceled: AtomicBool,
 
     /// Stores the "last change" revision for values of each duration.
     /// This vector is always of length at least 1 (for Durability 0)
@@ -35,7 +34,7 @@ pub struct Runtime {
     /// revisions[i + 1]`, for all `i`. This is because when you
     /// modify a value with durability D, that implies that values
     /// with durability less than D may have changed too.
-    revisions: Vec<AtomicRevision>,
+    revisions: Box<[AtomicRevision; Durability::LEN]>,
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
@@ -81,10 +80,7 @@ impl<V> StampedValue<V> {
 impl Default for Runtime {
     fn default() -> Self {
         Runtime {
-            revisions: (0..Durability::LEN)
-                .map(|_| AtomicRevision::start())
-                .collect(),
-            next_id: AtomicUsize::new(1),
+            revisions: Box::new([const { AtomicRevision::start() }; Durability::LEN]),
             revision_canceled: Default::default(),
             dependency_graph: Default::default(),
             table: Default::default(),
@@ -96,7 +92,6 @@ impl std::fmt::Debug for Runtime {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fmt.debug_struct("Runtime")
             .field("revisions", &self.revisions)
-            .field("next_id", &self.next_id)
             .field("revision_canceled", &self.revision_canceled)
             .field("dependency_graph", &self.dependency_graph)
             .finish()
@@ -131,11 +126,11 @@ impl Runtime {
     }
 
     pub(crate) fn load_cancellation_flag(&self) -> bool {
-        self.revision_canceled.load()
+        self.revision_canceled.load(Ordering::Acquire)
     }
 
     pub(crate) fn set_cancellation_flag(&self) {
-        self.revision_canceled.store(true);
+        self.revision_canceled.store(true, Ordering::Release);
     }
 
     pub(crate) fn table(&self) -> &Table {
@@ -150,7 +145,7 @@ impl Runtime {
         let r_old = self.current_revision();
         let r_new = r_old.next();
         self.revisions[0].store(r_new);
-        self.revision_canceled.store(false);
+        self.revision_canceled.store(false, Ordering::Release);
         r_new
     }
 
@@ -277,19 +272,16 @@ impl Runtime {
             // (at least for this execution, not necessarily across executions),
             // no matter where it started on the stack. Find the minimum
             // key and rotate it to the front.
-            let min = v
+            if let Some((_, index, _)) = v
                 .iter()
-                .map(|key| (key.ingredient_index.debug_name(db), key))
+                .enumerate()
+                .map(|(idx, key)| (key.ingredient_index.debug_name(db), idx, key))
                 .min()
-                .unwrap()
-                .1;
-            let index = v.iter().position(|p| p == min).unwrap();
-            v.rotate_left(index);
+            {
+                v.rotate_left(index);
+            }
 
-            // No need to store extra memory.
-            v.shrink_to_fit();
-
-            Cycle::new(Arc::new(v))
+            Cycle::new(Arc::new(v.into_boxed_slice()))
         };
         tracing::debug!("cycle {cycle:?}, cycle_query {cycle_query:#?}");
 

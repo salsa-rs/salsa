@@ -48,7 +48,7 @@ pub(crate) struct AtomicRevision {
 }
 
 impl AtomicRevision {
-    pub(crate) fn start() -> Self {
+    pub(crate) const fn start() -> Self {
         Self {
             data: AtomicUsize::new(START),
         }

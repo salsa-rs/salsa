@@ -21,7 +21,8 @@ pub struct Cycle {
     participants: CycleParticipants,
 }
 
-pub(crate) type CycleParticipants = Arc<Vec<DatabaseKeyIndex>>;
+// We want `Cycle`` to be thin
+pub(crate) type CycleParticipants = Arc<Box<[DatabaseKeyIndex]>>;
 
 impl Cycle {
     pub(crate) fn new(participants: CycleParticipants) -> Self {
