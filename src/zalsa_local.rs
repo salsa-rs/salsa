@@ -37,7 +37,7 @@ pub struct ZalsaLocal {
     ///
     /// Unwinding note: pushes onto this vector must be popped -- even
     /// during unwinding.
-    query_stack: RefCell<Option<Vec<ActiveQuery>>>,
+    query_stack: RefCell<Vec<ActiveQuery>>,
 
     /// Stores the most recent page for a given ingredient.
     /// This is thread-local to avoid contention.
@@ -47,7 +47,7 @@ pub struct ZalsaLocal {
 impl ZalsaLocal {
     pub(crate) fn new() -> Self {
         ZalsaLocal {
-            query_stack: RefCell::new(Some(vec![])),
+            query_stack: RefCell::new(vec![]),
             most_recent_pages: RefCell::new(FxHashMap::default()),
         }
     }
@@ -88,7 +88,6 @@ impl ZalsaLocal {
     #[inline]
     pub(crate) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
         let mut query_stack = self.query_stack.borrow_mut();
-        let query_stack = query_stack.as_mut().expect("local stack taken");
         query_stack.push(ActiveQuery::new(database_key_index));
         ActiveQueryGuard {
             local_state: self,
@@ -97,12 +96,9 @@ impl ZalsaLocal {
         }
     }
 
-    fn with_query_stack<R>(&self, c: impl FnOnce(&mut Vec<ActiveQuery>) -> R) -> R {
-        c(self
-            .query_stack
-            .borrow_mut()
-            .as_mut()
-            .expect("query stack taken"))
+    /// Executes a closure within the context of the current active query stacks.
+    pub(crate) fn with_query_stack<R>(&self, c: impl FnOnce(&mut Vec<ActiveQuery>) -> R) -> R {
+        c(self.query_stack.borrow_mut().as_mut())
     }
 
     fn query_in_progress(&self) -> bool {
@@ -231,24 +227,6 @@ impl ZalsaLocal {
                 top_query.add_synthetic_read(durability, revision);
             }
         })
-    }
-
-    /// Takes the query stack and returns it. This is used when
-    /// the current thread is blocking. The stack must be restored
-    /// with [`Self::restore_query_stack`] when the thread unblocks.
-    pub(crate) fn take_query_stack(&self) -> Vec<ActiveQuery> {
-        assert!(
-            self.query_stack.borrow().is_some(),
-            "query stack already taken"
-        );
-        self.query_stack.take().unwrap()
-    }
-
-    /// Restores a query stack taken with [`Self::take_query_stack`] once
-    /// the thread unblocks.
-    pub(crate) fn restore_query_stack(&self, stack: Vec<ActiveQuery>) {
-        assert!(self.query_stack.borrow().is_none(), "query stack not taken");
-        self.query_stack.replace(Some(stack));
     }
 
     /// Called when the active queries creates an index from the
