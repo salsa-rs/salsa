@@ -4,10 +4,10 @@ use std::{
     mem::MaybeUninit,
     panic::RefUnwindSafe,
     ptr, slice,
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use append_only_vec::AppendOnlyVec;
-use crossbeam::atomic::AtomicCell;
 use memo::MemoTable;
 use parking_lot::Mutex;
 use sync::SyncTable;
@@ -50,7 +50,7 @@ pub(crate) struct Page<T: Slot> {
     ingredient: IngredientIndex,
 
     /// Number of elements of `data` that are initialized.
-    allocated: AtomicCell<usize>,
+    allocated: AtomicUsize,
 
     /// The "allocation lock" is held when we allocate a new entry.
     ///
@@ -179,7 +179,7 @@ impl<T: Slot> Page<T> {
     }
 
     fn check_bounds(&self, slot: SlotIndex) {
-        let len = self.allocated.load();
+        let len = self.allocated.load(Ordering::Acquire);
         assert!(
             slot.0 < len,
             "out of bounds access `{slot:?}` (maximum slot `{len}`)"
@@ -216,7 +216,7 @@ impl<T: Slot> Page<T> {
         V: FnOnce() -> T,
     {
         let guard = self.allocation_lock.lock();
-        let index = self.allocated.load();
+        let index = self.allocated.load(Ordering::Acquire);
         if index == PAGE_LEN {
             return Err(value);
         }
@@ -226,7 +226,7 @@ impl<T: Slot> Page<T> {
         unsafe { (*data.get()).write(value()) };
 
         // Update the length (this must be done after initialization!)
-        self.allocated.store(index + 1);
+        self.allocated.store(index + 1, Ordering::Release);
         drop(guard);
 
         Ok(make_id(page, SlotIndex(index)))
@@ -250,7 +250,7 @@ impl<T: Slot> TablePage for Page<T> {
 impl<T: Slot> Drop for Page<T> {
     fn drop(&mut self) {
         // Execute destructors for all initialized elements
-        let len = self.allocated.load();
+        let len = self.allocated.load(Ordering::Acquire);
         // SAFETY: self.data is initialized for T's up to len
         unsafe {
             // FIXME: Should be ptr::from_raw_parts_mut but that is unstable
