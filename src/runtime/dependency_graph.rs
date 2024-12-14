@@ -206,7 +206,8 @@ impl DependencyGraph {
         assert_ne!(from_id, to_id);
         debug_assert!(!self.edges.contains_key(&from_id));
         debug_assert!(!self.depends_on(to_id, from_id));
-        let (edge, guard) = edge::Edge::new(to_id, database_key, from_stack);
+        // SAFETY: The caller is responsible for ensuring that the `EdgeGuard` outlives the `Edge`.
+        let (edge, guard) = unsafe { edge::Edge::new(to_id, database_key, from_stack) };
         self.edges.insert(from_id, edge);
         self.query_dependents
             .entry(database_key)
@@ -246,7 +247,7 @@ impl DependencyGraph {
 }
 
 mod edge {
-    use std::{marker::PhantomData, ptr::NonNull, sync::Arc, thread::ThreadId};
+    use std::{marker::PhantomData, mem, sync::Arc, thread::ThreadId};
 
     use parking_lot::MutexGuard;
 
@@ -259,7 +260,8 @@ mod edge {
     pub(super) struct Edge {
         pub(super) blocked_on_id: ThreadId,
         pub(super) blocked_on_key: DatabaseKeyIndex,
-        stack: SendNonNull<[ActiveQuery]>,
+        // the 'static is a lie, we erased the actual lifetime here
+        stack: &'static mut [ActiveQuery],
 
         /// Signalled whenever a query with dependents completes.
         /// Allows those dependents to check if they are ready to unblock.
@@ -280,33 +282,21 @@ mod edge {
         }
     }
 
-    // Wrapper type to allow `Edge` to be `Send` without disregarding its other fields.
-    struct SendNonNull<T: ?Sized>(NonNull<T>);
-
-    // SAFETY: `Edge` is `Send` as its `stack: NonNull<[ActiveQuery]>,` field is a lifetime erased
-    // mutable reference to a `Send` type (`ActiveQuery`) that is subject to the owner of `Edge` and is
-    // guaranteed to be live according to the safety invariants of `DependencyGraph::add_edge`.`
-    unsafe impl<T: ?Sized> Send for SendNonNull<T> where for<'a> &'a mut T: Send {}
-    // unsafe impl<T> Sync for SendNonNull<T> where for<'a> &'a mut T: Sync {}
-
-    impl<T: ?Sized + std::fmt::Debug> std::fmt::Debug for SendNonNull<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            self.0.fmt(f)
-        }
-    }
-
     impl Edge {
-        pub(super) fn new(
+        pub(super) unsafe fn new<'aq>(
             blocked_on_id: ThreadId,
             blocked_on_key: DatabaseKeyIndex,
-            stack: &mut [ActiveQuery],
-        ) -> (Self, EdgeGuard<'_>) {
+            stack: &'aq mut [ActiveQuery],
+        ) -> (Self, EdgeGuard<'aq>) {
             let condvar = Arc::new(parking_lot::Condvar::new());
-            let stack = SendNonNull(NonNull::from(stack));
             let edge = Self {
                 blocked_on_id,
                 blocked_on_key,
-                stack,
+                // SAFETY: We erase the lifetime here, the caller is responsible for ensuring that
+                // the `EdgeGuard` outlives this `Edge`.
+                stack: unsafe {
+                    mem::transmute::<&'aq mut [ActiveQuery], &'static mut [ActiveQuery]>(stack)
+                },
                 condvar: condvar.clone(),
             };
             let edge_guard = EdgeGuard {
@@ -316,16 +306,12 @@ mod edge {
             (edge, edge_guard)
         }
 
-        // unerase the lifetime of the stack
         pub(super) fn stack_mut(&mut self) -> &mut [ActiveQuery] {
-            // SAFETY: This is safe due to the invariants upheld by DependencyGraph::add_edge.
-            unsafe { self.stack.0.as_mut() }
+            self.stack
         }
 
-        // unerase the lifetime of the stack
         pub(super) fn stack(&self) -> &[ActiveQuery] {
-            // SAFETY: This is safe due to the invariants upheld by DependencyGraph::add_edge.
-            unsafe { self.stack.0.as_ref() }
+            self.stack
         }
 
         pub(super) fn notify(self) {
