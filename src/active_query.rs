@@ -86,7 +86,7 @@ impl ActiveQuery {
 
     pub(super) fn add_untracked_read(&mut self, changed_at: Revision) {
         self.untracked_read = true;
-        self.durability = Durability::LOW;
+        self.durability = Durability::MIN;
         self.changed_at = changed_at;
     }
 
