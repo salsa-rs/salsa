@@ -21,6 +21,7 @@ mod util;
 const PAGE_LEN_BITS: usize = 10;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
 const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
+const MAX_PAGES: usize = 1 << (32 - PAGE_LEN_BITS);
 
 pub(crate) struct Table {
     pages: AppendOnlyVec<Box<dyn TablePage>>,
@@ -91,8 +92,22 @@ impl<T: Slot> RefUnwindSafe for Page<T> {}
 #[derive(Copy, Clone, Debug)]
 pub struct PageIndex(usize);
 
+impl PageIndex {
+    fn new(idx: usize) -> Self {
+        assert!(idx < MAX_PAGES);
+        Self(idx)
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct SlotIndex(usize);
+
+impl SlotIndex {
+    fn new(idx: usize) -> Self {
+        assert!(idx < PAGE_LEN);
+        Self(idx)
+    }
+}
 
 impl Default for Table {
     fn default() -> Self {
@@ -141,7 +156,7 @@ impl Table {
     /// Allocate a new page for the given ingredient and with slots of type `T`
     pub fn push_page<T: Slot>(&self, ingredient: IngredientIndex) -> PageIndex {
         let page = Box::new(<Page<T>>::new(ingredient));
-        PageIndex(self.pages.push(page))
+        PageIndex::new(self.pages.push(page))
     }
 
     /// Get the memo table associated with `id`
@@ -229,7 +244,7 @@ impl<T: Slot> Page<T> {
         self.allocated.store(index + 1, Ordering::Release);
         drop(guard);
 
-        Ok(make_id(page, SlotIndex(index)))
+        Ok(make_id(page, SlotIndex::new(index)))
     }
 }
 
@@ -276,8 +291,6 @@ impl dyn TablePage {
 }
 
 fn make_id(page: PageIndex, slot: SlotIndex) -> Id {
-    assert!(slot.0 < PAGE_LEN);
-    assert!(page.0 < (1 << (32 - PAGE_LEN_BITS)));
     let page = page.0 as u32;
     let slot = slot.0 as u32;
     Id::from_u32(page << PAGE_LEN_BITS | slot)
@@ -287,5 +300,5 @@ fn split_id(id: Id) -> (PageIndex, SlotIndex) {
     let id = id.as_u32() as usize;
     let slot = id & PAGE_LEN_MASK;
     let page = id >> PAGE_LEN_BITS;
-    (PageIndex(page), SlotIndex(slot))
+    (PageIndex::new(page), SlotIndex::new(slot))
 }
