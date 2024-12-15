@@ -6,16 +6,16 @@ use std::{
 
 pub mod input_field;
 pub mod setter;
+pub mod singleton;
 
-use crossbeam::atomic::AtomicCell;
 use input_field::FieldIngredientImpl;
-use parking_lot::Mutex;
 
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient},
+    input::singleton::{Singleton, SingletonChoice},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::{Jar, JarAux, Stamp},
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
@@ -27,7 +27,9 @@ use crate::{
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
     const FIELD_DEBUG_NAMES: &'static [&'static str];
-    const IS_SINGLETON: bool;
+
+    /// The singleton state for this input if any.
+    type Singleton: SingletonChoice + Send + Sync;
 
     /// The input struct (which wraps an `Id`)
     type Struct: FromId + 'static + Send + Sync;
@@ -73,8 +75,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
 
 pub struct IngredientImpl<C: Configuration> {
     ingredient_index: IngredientIndex,
-    singleton_index: AtomicCell<Option<Id>>,
-    singleton_lock: Mutex<()>,
+    singleton: C::Singleton,
     _phantom: std::marker::PhantomData<C::Struct>,
 }
 
@@ -82,8 +83,7 @@ impl<C: Configuration> IngredientImpl<C> {
     pub fn new(index: IngredientIndex) -> Self {
         Self {
             ingredient_index: index,
-            singleton_index: AtomicCell::new(None),
-            singleton_lock: Default::default(),
+            singleton: Default::default(),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -106,28 +106,14 @@ impl<C: Configuration> IngredientImpl<C> {
     pub fn new_input(&self, db: &dyn Database, fields: C::Fields, stamps: C::Stamps) -> C::Struct {
         let (zalsa, zalsa_local) = db.zalsas();
 
-        // If declared as a singleton, only allow a single instance
-        let guard = if C::IS_SINGLETON {
-            let guard = self.singleton_lock.lock();
-            if self.singleton_index.load().is_some() {
-                panic!("singleton struct may not be duplicated");
-            }
-            Some(guard)
-        } else {
-            None
-        };
-
-        let id = zalsa_local.allocate(zalsa.table(), self.ingredient_index, |_| Value::<C> {
-            fields,
-            stamps,
-            memos: Default::default(),
-            syncs: Default::default(),
+        let id = self.singleton.with_lock(|| {
+            zalsa_local.allocate(zalsa.table(), self.ingredient_index, |_| Value::<C> {
+                fields,
+                stamps,
+                memos: Default::default(),
+                syncs: Default::default(),
+            })
         });
-
-        if C::IS_SINGLETON {
-            self.singleton_index.store(Some(id));
-            drop(guard);
-        }
 
         FromId::from_id(id)
     }
@@ -167,13 +153,12 @@ impl<C: Configuration> IngredientImpl<C> {
         setter(&mut r.fields)
     }
 
-    /// Get the singleton input previously created (if any).
-    pub fn get_singleton_input(&self) -> Option<C::Struct> {
-        assert!(
-            C::IS_SINGLETON,
-            "get_singleton_input invoked on a non-singleton"
-        );
-        self.singleton_index.load().map(FromId::from_id)
+    /// Get the singleton input previously created.
+    pub fn get_singleton_input(&self) -> Option<C::Struct>
+    where
+        C: Configuration<Singleton = Singleton>,
+    {
+        self.singleton.index().map(FromId::from_id)
     }
 
     /// Access field of an input.
