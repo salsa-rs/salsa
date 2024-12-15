@@ -124,6 +124,8 @@ pub mod plumbing {
     pub mod input {
         pub use crate::input::input_field::FieldIngredientImpl;
         pub use crate::input::setter::SetterImpl;
+        pub use crate::input::singleton::NotSingleton;
+        pub use crate::input::singleton::Singleton;
         pub use crate::input::Configuration;
         pub use crate::input::HasBuilder;
         pub use crate::input::IngredientImpl;
