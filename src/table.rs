@@ -1,11 +1,13 @@
 use std::{
     any::{Any, TypeId},
     cell::UnsafeCell,
+    mem::MaybeUninit,
     panic::RefUnwindSafe,
+    ptr, slice,
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use append_only_vec::AppendOnlyVec;
-use crossbeam::atomic::AtomicCell;
 use memo::MemoTable;
 use parking_lot::Mutex;
 use sync::SyncTable;
@@ -19,6 +21,7 @@ mod util;
 const PAGE_LEN_BITS: usize = 10;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
 const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
+const MAX_PAGES: usize = 1 << (32 - PAGE_LEN_BITS);
 
 pub(crate) struct Table {
     pages: AppendOnlyVec<Box<dyn TablePage>>,
@@ -48,7 +51,7 @@ pub(crate) struct Page<T: Slot> {
     ingredient: IngredientIndex,
 
     /// Number of elements of `data` that are initialized.
-    allocated: AtomicCell<usize>,
+    allocated: AtomicUsize,
 
     /// The "allocation lock" is held when we allocate a new entry.
     ///
@@ -60,9 +63,8 @@ pub(crate) struct Page<T: Slot> {
     /// that the data is initialized).
     allocation_lock: Mutex<()>,
 
-    /// Vector with data. This is always created with the capacity/length of `PAGE_LEN`
-    /// and uninitialized data. As we initialize new entries, we increment `allocated`.
-    data: Vec<UnsafeCell<T>>,
+    /// The potentially uninitialized data of this page. As we initialize new entries, we increment `allocated`.
+    data: Box<[UnsafeCell<MaybeUninit<T>>; PAGE_LEN]>,
 }
 
 pub(crate) trait Slot: Any + Send + Sync {
@@ -90,8 +92,22 @@ impl<T: Slot> RefUnwindSafe for Page<T> {}
 #[derive(Copy, Clone, Debug)]
 pub struct PageIndex(usize);
 
+impl PageIndex {
+    fn new(idx: usize) -> Self {
+        assert!(idx < MAX_PAGES);
+        Self(idx)
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct SlotIndex(usize);
+
+impl SlotIndex {
+    fn new(idx: usize) -> Self {
+        assert!(idx < PAGE_LEN);
+        Self(idx)
+    }
+}
 
 impl Default for Table {
     fn default() -> Self {
@@ -140,7 +156,7 @@ impl Table {
     /// Allocate a new page for the given ingredient and with slots of type `T`
     pub fn push_page<T: Slot>(&self, ingredient: IngredientIndex) -> PageIndex {
         let page = Box::new(<Page<T>>::new(ingredient));
-        PageIndex(self.pages.push(page))
+        PageIndex::new(self.pages.push(page))
     }
 
     /// Get the memo table associated with `id`
@@ -169,20 +185,16 @@ impl Table {
 impl<T: Slot> Page<T> {
     #[allow(clippy::uninit_vec)]
     fn new(ingredient: IngredientIndex) -> Self {
-        let mut data = Vec::with_capacity(PAGE_LEN);
-        unsafe {
-            data.set_len(PAGE_LEN);
-        }
         Self {
             ingredient,
             allocated: Default::default(),
             allocation_lock: Default::default(),
-            data,
+            data: Box::new([const { UnsafeCell::new(MaybeUninit::uninit()) }; PAGE_LEN]),
         }
     }
 
     fn check_bounds(&self, slot: SlotIndex) {
-        let len = self.allocated.load();
+        let len = self.allocated.load(Ordering::Acquire);
         assert!(
             slot.0 < len,
             "out of bounds access `{slot:?}` (maximum slot `{len}`)"
@@ -196,7 +208,7 @@ impl<T: Slot> Page<T> {
     /// If slot is out of bounds
     pub(crate) fn get(&self, slot: SlotIndex) -> &T {
         self.check_bounds(slot);
-        unsafe { &*self.data[slot.0].get() }
+        unsafe { (*self.data[slot.0].get()).assume_init_ref() }
     }
 
     /// Returns a raw pointer to the given slot.
@@ -211,7 +223,7 @@ impl<T: Slot> Page<T> {
     /// properly with calls to [`get`](`Self::get`) and [`get_mut`](`Self::get_mut`).
     pub(crate) fn get_raw(&self, slot: SlotIndex) -> *mut T {
         self.check_bounds(slot);
-        self.data[slot.0].get()
+        self.data[slot.0].get().cast()
     }
 
     pub(crate) fn allocate<V>(&self, page: PageIndex, value: V) -> Result<Id, V>
@@ -219,20 +231,20 @@ impl<T: Slot> Page<T> {
         V: FnOnce() -> T,
     {
         let guard = self.allocation_lock.lock();
-        let index = self.allocated.load();
+        let index = self.allocated.load(Ordering::Acquire);
         if index == PAGE_LEN {
             return Err(value);
         }
 
         // Initialize entry `index`
         let data = &self.data[index];
-        unsafe { std::ptr::write(data.get(), value()) };
+        unsafe { (*data.get()).write(value()) };
 
         // Update the length (this must be done after initialization!)
-        self.allocated.store(index + 1);
+        self.allocated.store(index + 1, Ordering::Release);
         drop(guard);
 
-        Ok(make_id(page, SlotIndex(index)))
+        Ok(make_id(page, SlotIndex::new(index)))
     }
 }
 
@@ -252,14 +264,13 @@ impl<T: Slot> TablePage for Page<T> {
 
 impl<T: Slot> Drop for Page<T> {
     fn drop(&mut self) {
-        // Free `self.data` and the data within: to do this, we swap it out with an empty vector
-        // and then convert it from a `Vec<UnsafeCell<T>>` with partially uninitialized values
-        // to a `Vec<T>` with the correct length. This way the `Vec` drop impl can do its job.
-        let mut data = std::mem::take(&mut self.data);
-        let len = self.allocated.load();
+        // Execute destructors for all initialized elements
+        let len = self.allocated.load(Ordering::Acquire);
+        // SAFETY: self.data is initialized for T's up to len
         unsafe {
-            data.set_len(len);
-            drop(std::mem::transmute::<Vec<UnsafeCell<T>>, Vec<T>>(data));
+            // FIXME: Should be ptr::from_raw_parts_mut but that is unstable
+            let to_drop = slice::from_raw_parts_mut(self.data.as_mut_ptr().cast::<T>(), len);
+            ptr::drop_in_place(to_drop)
         }
     }
 }
@@ -280,8 +291,6 @@ impl dyn TablePage {
 }
 
 fn make_id(page: PageIndex, slot: SlotIndex) -> Id {
-    assert!(slot.0 < PAGE_LEN);
-    assert!(page.0 < (1 << (32 - PAGE_LEN_BITS)));
     let page = page.0 as u32;
     let slot = slot.0 as u32;
     Id::from_u32(page << PAGE_LEN_BITS | slot)
@@ -291,5 +300,5 @@ fn split_id(id: Id) -> (PageIndex, SlotIndex) {
     let id = id.as_u32() as usize;
     let slot = id & PAGE_LEN_MASK;
     let page = id >> PAGE_LEN_BITS;
-    (PageIndex(page), SlotIndex(slot))
+    (PageIndex::new(page), SlotIndex::new(slot))
 }
