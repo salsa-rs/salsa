@@ -1,3 +1,5 @@
+use dashmap::SharedValue;
+
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
 use crate::id::AsId;
@@ -120,20 +122,28 @@ where
         unsafe { std::mem::transmute(data) }
     }
 
-    pub fn intern_id<'db>(
+    pub fn intern_id<'db, Eager>(
         &'db self,
         db: &'db dyn crate::Database,
-        data: impl Lookup<C::Data<'db>>,
-    ) -> crate::Id {
-        C::deref_struct(self.intern(db, data)).as_id()
+        eager: Eager,
+        assemble: impl FnOnce(Id, Eager) -> C::Data<'db>,
+    ) -> crate::Id
+    where
+        Eager: Lookup<C::Data<'db>>,
+    {
+        C::deref_struct(self.intern(db, eager, assemble)).as_id()
     }
 
     /// Intern data to a unique reference.
-    pub fn intern<'db>(
+    pub fn intern<'db, Eager>(
         &'db self,
         db: &'db dyn crate::Database,
-        data: impl Lookup<C::Data<'db>>,
-    ) -> C::Struct<'db> {
+        eager: Eager,
+        assemble: impl FnOnce(Id, Eager) -> C::Data<'db>,
+    ) -> C::Struct<'db>
+    where
+        Eager: Lookup<C::Data<'db>>,
+    {
         let zalsa_local = db.zalsa_local();
         zalsa_local.report_tracked_read(
             DependencyIndex::for_table(self.ingredient_index),
@@ -147,46 +157,54 @@ where
         // We need to use the raw API for this lookup. See the [`Lookup`][] trait definition for an explanation of why.
         let data_hash = {
             let mut hasher = self.key_map.hasher().build_hasher();
-            data.hash(&mut hasher);
+            eager.hash(&mut hasher);
             hasher.finish()
         };
         let shard = self.key_map.determine_shard(data_hash as _);
+        let eq = |(a, _): &_| {
+            // SAFETY: it's safe to go from Data<'static> to Data<'db>
+            // shrink lifetime here to use a single lifetime in Lookup::eq(&StructKey<'db>, &C::Data<'db>)
+            let a: &C::Data<'db> = unsafe { std::mem::transmute(a) };
+            Lookup::eq(&eager, a)
+        };
+
         {
             let lock = self.key_map.shards()[shard].read();
-            if let Some(bucket) = lock.find(data_hash, |(a, _)| {
-                // SAFETY: it's safe to go from Data<'static> to Data<'db>
-                // shrink lifetime here to use a single lifetime in Lookup::eq(&StructKey<'db>, &C::Data<'db>)
-                let a: &C::Data<'db> = unsafe { std::mem::transmute(a) };
-                Lookup::eq(&data, a)
-            }) {
+            if let Some(bucket) = lock.find(data_hash, eq) {
                 // SAFETY: Read lock on map is held during this block
                 return C::struct_from_id(unsafe { *bucket.as_ref().1.get() });
             }
-        };
+        }
 
-        let data = data.into_owned();
-
-        let internal_data = unsafe { self.to_internal_data(data) };
-
-        match self.key_map.entry(internal_data.clone()) {
+        let mut lock = self.key_map.shards()[shard].write();
+        match lock.find_or_find_insert_slot(data_hash, eq, |(element, _)| {
+            self.key_map.hasher().hash_one(element)
+        }) {
             // Data has been interned by a racing call, use that ID instead
-            dashmap::mapref::entry::Entry::Occupied(entry) => {
-                let id = *entry.get();
-                drop(entry);
-                C::struct_from_id(id)
-            }
-
+            Ok(slot) => C::struct_from_id(unsafe { *slot.as_ref().1.get() }),
             // We won any races so should intern the data
-            dashmap::mapref::entry::Entry::Vacant(entry) => {
+            Err(slot) => {
                 let zalsa = db.zalsa();
                 let table = zalsa.table();
-                let next_id = zalsa_local.allocate(table, self.ingredient_index, || Value::<C> {
-                    data: internal_data,
+                let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
+                    data: unsafe { self.to_internal_data(assemble(id, eager)) },
                     memos: Default::default(),
                     syncs: Default::default(),
                 });
-                entry.insert(next_id);
-                C::struct_from_id(next_id)
+                unsafe {
+                    lock.insert_in_slot(
+                        data_hash,
+                        slot,
+                        (table.get::<Value<C>>(id).data.clone(), SharedValue::new(id)),
+                    )
+                };
+                debug_assert_eq!(
+                    data_hash,
+                    self.key_map
+                        .hasher()
+                        .hash_one(table.get::<Value<C>>(id).data.clone())
+                );
+                C::struct_from_id(id)
             }
         }
     }
