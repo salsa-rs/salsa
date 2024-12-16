@@ -150,7 +150,7 @@ impl<C: Configuration> IngredientImpl<C> {
 
         let stamp = &mut r.stamps[field_index];
 
-        if stamp.durability != Durability::LOW {
+        if stamp.durability != Durability::MIN {
             runtime.report_tracked_write(stamp.durability);
         }
 

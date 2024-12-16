@@ -16,25 +16,46 @@
 /// frequently editing. Medium or high durabilities are used for
 /// configuration, the source from library crates, or other things
 /// that are unlikely to be edited.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Durability(u8);
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Durability(DurabilityVal);
+
+impl std::fmt::Debug for Durability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Durability")
+            .field(&(self.0 as usize))
+            .finish()
+    }
+}
+
+// We use an enum here instead of a u8 for niches.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum DurabilityVal {
+    Low = 0,
+    Medium = 1,
+    High = 2,
+}
 
 impl Durability {
     /// Low durability: things that change frequently.
     ///
     /// Example: part of the crate being edited
-    pub const LOW: Durability = Durability(0);
+    pub const LOW: Durability = Durability(DurabilityVal::Low);
 
     /// Medium durability: things that change sometimes, but rarely.
     ///
     /// Example: a Cargo.toml file
-    pub const MEDIUM: Durability = Durability(1);
+    pub const MEDIUM: Durability = Durability(DurabilityVal::Medium);
 
     /// High durability: things that are not expected to change under
     /// common usage.
     ///
     /// Example: the standard library or something from crates.io
-    pub const HIGH: Durability = Durability(2);
+    pub const HIGH: Durability = Durability(DurabilityVal::High);
+
+    /// The minimum possible durability; equivalent to LOW but
+    /// "conceptually" distinct (i.e., if we add more durability
+    /// levels, this could change).
+    pub(crate) const MIN: Durability = Self::LOW;
 
     /// The maximum possible durability; equivalent to HIGH but
     /// "conceptually" distinct (i.e., if we add more durability
@@ -42,7 +63,7 @@ impl Durability {
     pub(crate) const MAX: Durability = Self::HIGH;
 
     /// Number of durability levels.
-    pub(crate) const LEN: usize = 3;
+    pub(crate) const LEN: usize = Self::HIGH.0 as usize + 1;
 
     pub(crate) fn index(self) -> usize {
         self.0 as usize
