@@ -122,27 +122,29 @@ where
         unsafe { std::mem::transmute(data) }
     }
 
-    pub fn intern_id<'db, Eager>(
+    pub fn intern_id<'db, Key>(
         &'db self,
         db: &'db dyn crate::Database,
-        eager: Eager,
-        assemble: impl FnOnce(Id, Eager) -> C::Data<'db>,
+        key: Key,
+        assemble: impl FnOnce(Id, Key) -> C::Data<'db>,
     ) -> crate::Id
     where
-        Eager: Lookup<C::Data<'db>>,
+        Key: Hash,
+        C::Data<'db>: HashEqLike<Key>,
     {
-        C::deref_struct(self.intern(db, eager, assemble)).as_id()
+        C::deref_struct(self.intern(db, key, assemble)).as_id()
     }
 
     /// Intern data to a unique reference.
-    pub fn intern<'db, Eager>(
+    pub fn intern<'db, Key>(
         &'db self,
         db: &'db dyn crate::Database,
-        eager: Eager,
-        assemble: impl FnOnce(Id, Eager) -> C::Data<'db>,
+        key: Key,
+        assemble: impl FnOnce(Id, Key) -> C::Data<'db>,
     ) -> C::Struct<'db>
     where
-        Eager: Lookup<C::Data<'db>>,
+        Key: Hash,
+        C::Data<'db>: HashEqLike<Key>,
     {
         let zalsa_local = db.zalsa_local();
         zalsa_local.report_tracked_read(
@@ -155,17 +157,13 @@ where
         // Optimisation to only get read lock on the map if the data has already
         // been interned.
         // We need to use the raw API for this lookup. See the [`Lookup`][] trait definition for an explanation of why.
-        let data_hash = {
-            let mut hasher = self.key_map.hasher().build_hasher();
-            eager.hash(&mut hasher);
-            hasher.finish()
-        };
+        let data_hash = self.key_map.hasher().hash_one(&key);
         let shard = self.key_map.determine_shard(data_hash as _);
         let eq = |(a, _): &_| {
             // SAFETY: it's safe to go from Data<'static> to Data<'db>
             // shrink lifetime here to use a single lifetime in Lookup::eq(&StructKey<'db>, &C::Data<'db>)
-            let a: &C::Data<'db> = unsafe { std::mem::transmute(a) };
-            Lookup::eq(&eager, a)
+            let data: &C::Data<'db> = unsafe { std::mem::transmute(a) };
+            HashEqLike::eq(data, &key)
         };
 
         {
@@ -187,7 +185,7 @@ where
                 let zalsa = db.zalsa();
                 let table = zalsa.table();
                 let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
-                    data: unsafe { self.to_internal_data(assemble(id, eager)) },
+                    data: unsafe { self.to_internal_data(assemble(id, key)) },
                     memos: Default::default(),
                     syncs: Default::default(),
                 });
@@ -330,7 +328,23 @@ where
         &self.syncs
     }
 }
+pub trait HashEqLike<O> {
+    fn hash<H: Hasher>(&self, h: &mut H);
+    fn eq(&self, data: &O) -> bool;
+}
 
+// impl<T, O> HashEqLike<O> for T
+// where
+//     T: Lookup<O>,
+// {
+//     fn hash<H: Hasher>(&self, h: &mut H) {
+//         Lookup::hash(self, h)
+//     }
+
+//     fn eq(&self, data: &O) -> bool {
+//         Lookup::eq(self, data)
+//     }
+// }
 /// The `Lookup` trait is a more flexible variant on [`std::borrow::Borrow`]
 /// and [`std::borrow::ToOwned`].
 ///
@@ -346,12 +360,14 @@ where
 /// requires that `&(K1...)` be convertible to `&ViewStruct` which just isn't
 /// possible. `Lookup` instead offers direct `hash` and `eq` methods.
 pub trait Lookup<O> {
-    fn hash<H: Hasher>(&self, h: &mut H);
-    fn eq(&self, data: &O) -> bool;
     fn into_owned(self) -> O;
 }
-
-impl<T> Lookup<T> for T
+impl<T> Lookup<T> for T {
+    fn into_owned(self) -> T {
+        self
+    }
+}
+impl<T> HashEqLike<T> for T
 where
     T: Hash + Eq,
 {
@@ -362,30 +378,18 @@ where
     fn eq(&self, data: &T) -> bool {
         self == data
     }
-
-    fn into_owned(self) -> T {
-        self
-    }
 }
 
 impl<T> Lookup<T> for &T
 where
-    T: Clone + Eq + Hash,
+    T: Clone,
 {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h);
-    }
-
-    fn eq(&self, data: &T) -> bool {
-        *self == data
-    }
-
     fn into_owned(self) -> T {
         Clone::clone(self)
     }
 }
 
-impl<'a, T> Lookup<Box<T>> for &'a T
+impl<'a, T> HashEqLike<Box<T>> for &'a T
 where
     T: ?Sized + Hash + Eq,
     Box<T>: From<&'a T>,
@@ -396,48 +400,58 @@ where
     fn eq(&self, data: &Box<T>) -> bool {
         **self == **data
     }
+}
+
+impl<'a, T> Lookup<Box<T>> for &'a T
+where
+    T: ?Sized + Hash + Eq,
+    Box<T>: From<&'a T>,
+{
     fn into_owned(self) -> Box<T> {
         Box::from(self)
     }
 }
 
 impl Lookup<String> for &str {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        Hash::hash(self, &mut *h)
-    }
-
-    fn eq(&self, data: &String) -> bool {
-        self == data
-    }
-
     fn into_owned(self) -> String {
         self.to_owned()
     }
 }
+impl HashEqLike<&str> for String {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(self, &mut *h)
+    }
 
-impl<A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for &[A] {
+    fn eq(&self, data: &&str) -> bool {
+        self == *data
+    }
+}
+
+impl<A, T: Hash + Eq + PartialEq<A>> HashEqLike<&[A]> for Vec<T> {
     fn hash<H: Hasher>(&self, h: &mut H) {
         Hash::hash(self, h);
     }
 
-    fn eq(&self, data: &Vec<T>) -> bool {
+    fn eq(&self, data: &&[A]) -> bool {
         self.len() == data.len() && data.iter().enumerate().all(|(i, a)| &self[i] == a)
     }
-
+}
+impl<A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for &[A] {
     fn into_owned(self) -> Vec<T> {
         self.iter().map(|a| Lookup::into_owned(a.clone())).collect()
     }
 }
 
-impl<const N: usize, A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for [A; N] {
+impl<const N: usize, A, T: Hash + Eq + PartialEq<A>> HashEqLike<[A; N]> for Vec<T> {
     fn hash<H: Hasher>(&self, h: &mut H) {
         Hash::hash(self, h);
     }
 
-    fn eq(&self, data: &Vec<T>) -> bool {
+    fn eq(&self, data: &[A; N]) -> bool {
         self.len() == data.len() && data.iter().enumerate().all(|(i, a)| &self[i] == a)
     }
-
+}
+impl<const N: usize, A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for [A; N] {
     fn into_owned(self) -> Vec<T> {
         self.into_iter()
             .map(|a| Lookup::into_owned(a.clone()))
@@ -445,16 +459,66 @@ impl<const N: usize, A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<
     }
 }
 
-impl Lookup<PathBuf> for &Path {
+impl HashEqLike<&Path> for PathBuf {
     fn hash<H: Hasher>(&self, h: &mut H) {
         Hash::hash(self, h);
     }
 
-    fn eq(&self, data: &PathBuf) -> bool {
+    fn eq(&self, data: &&Path) -> bool {
         self == data
     }
-
+}
+impl Lookup<PathBuf> for &Path {
     fn into_owned(self) -> PathBuf {
         self.to_owned()
     }
 }
+
+// pub trait LookupT<O> {
+//     fn hash<H: Hasher>(&self, h: &mut H);
+//     fn eq(&self, data: &O) -> bool;
+//     fn into_owned(self) -> O;
+// }
+
+// macro_rules! impl_zip_iter {
+//     ($($T:ident = $TO:ident),*) => (
+//         #[allow(non_snake_case)]
+//         impl<$($T, $TO,)*> LookupT<($($TO,)*)> for ($($T,)*) where $($T: Lookup<$TO>),*{
+//             fn hash<HASHER: std::hash::Hasher>(&self, h: &mut HASHER) {
+//                 let ($($T,)*) = &self;
+//                 $(
+//                     Lookup::hash($T, &mut *h);
+//                 )*
+//             }
+
+//             fn eq(&self, ($($TO,)*): &($($TO,)*)) -> bool {
+//                 let ($($T,)*) = &self;
+//                 $(Lookup::eq($T, $TO))&&*
+//             }
+
+//             fn into_owned(self) -> ($($TO,)*) {
+//                 let ($($T,)*) = self;
+//                 ($($T.into_owned(),)*)
+//             }
+//         }
+//     )
+// }
+
+// #[rustfmt::skip]
+// impl_zip_iter!(A = AO);
+// #[rustfmt::skip]
+// impl_zip_iter!(A = AO, B = BO);
+// #[rustfmt::skip]
+// impl_zip_iter!(A = AO, B = BO, C = CO);
+// #[rustfmt::skip]
+// impl_zip_iter!(A = AO, B = BO, C = CO, D = DO);
+// #[rustfmt::skip]
+// impl_zip_iter!(A = AO, B = BO, C = CO, D = DO, E = EO);
+// #[rustfmt::skip]
+// impl_zip_iter!(A = AO, B = BO, C = CO, D = DO, E = EO, F = FO);
+// #[rustfmt::skip]
+// impl_zip_iter!(A = AO, B = BO, C = CO, D = DO, E = EO, F = FO, G = GO);
+// #[rustfmt::skip]
+// impl_zip_iter!(A = AO, B = BO, C = CO, D = DO, E = EO, F = FO, G = GO, H = HO);
+// #[rustfmt::skip]
+// impl_zip_iter!(A = AO, B = BO, C = CO, D = DO, E = EO, F = FO, G = GO, H = HO, I = IO);

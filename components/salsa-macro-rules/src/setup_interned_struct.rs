@@ -69,21 +69,29 @@ macro_rules! setup_interned_struct {
 
             /// Key to use during hash lookups. Each field is some type that implements `Lookup<T>`
             /// for the owned type. This permits interning with an `&str` when a `String` is required and so forth.
-            struct StructKey<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*>(
+            #[derive(Hash)]
+            struct StructKey<$db_lt, $($indexed_ty),*>(
                 $($indexed_ty,)*
                 std::marker::PhantomData<&$db_lt ()>,
             );
 
-            impl<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*> $zalsa::interned::Lookup<StructData<$db_lt>>
-                for StructKey<$db_lt, $($indexed_ty),*> {
+            impl<$db_lt, $($indexed_ty,)*> $zalsa::interned::HashEqLike<StructKey<$db_lt, $($indexed_ty),*>>
+                for StructData<$db_lt>
+                where
+                $($field_ty: $zalsa::interned::HashEqLike<$indexed_ty>),*
+                {
 
                 fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
-                    $($zalsa::interned::Lookup::hash(&self.$field_index, &mut *h);)*
+                    $($zalsa::interned::HashEqLike::<$indexed_ty>::hash(&self.$field_index, &mut *h);)*
                 }
 
-                fn eq(&self, data: &StructData<$db_lt>) -> bool {
-                    ($($zalsa::interned::Lookup::eq(&self.$field_index, &data.$field_index) && )* true)
+                fn eq(&self, data: &StructKey<$db_lt, $($indexed_ty),*>) -> bool {
+                    ($($zalsa::interned::HashEqLike::<$indexed_ty>::eq(&self.$field_index, &data.$field_index) && )* true)
                 }
+            }
+
+            impl<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*> $zalsa::interned::Lookup<StructData<$db_lt>>
+                for StructKey<$db_lt, $($indexed_ty),*> {
 
                 #[allow(unused_unit)]
                 fn into_owned(self) -> StructData<$db_lt> {
@@ -158,10 +166,13 @@ macro_rules! setup_interned_struct {
             }
 
             impl<$db_lt> $Struct<$db_lt> {
-                pub fn $new_fn<$Db>(db: &$db_lt $Db,  $($field_id: impl $zalsa::interned::Lookup<$field_ty>),*) -> Self
+                pub fn $new_fn<$Db, $($indexed_ty: $zalsa::interned::Lookup<$field_ty> + std::hash::Hash,)*>(db: &$db_lt $Db,  $($field_id: $indexed_ty),*) -> Self
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                     $Db: ?Sized + salsa::Database,
+                    $(
+                        $field_ty: $zalsa::interned::HashEqLike<$indexed_ty>,
+                    )*
                 {
                     let current_revision = $zalsa::current_revision(db);
                     $Configuration::ingredient(db).intern(db.as_dyn_database(),
