@@ -109,7 +109,13 @@ const _: () = {
             Self::default_debug_fmt(*self, f)
         }
     }
-    impl zalsa_::SalsaStructInDb for InternedString<'_> {}
+    impl zalsa_::SalsaStructInDb for InternedString<'_> {
+        fn lookup_ingredient_index(
+            aux: &dyn zalsa_::JarAux,
+        ) -> core::option::Option<zalsa_::IngredientIndex> {
+            aux.lookup_jar_by_type(&<zalsa_struct_::JarImpl<Configuration_>>::default())
+        }
+    }
 
     unsafe impl zalsa_::Update for InternedString<'_> {
         unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {

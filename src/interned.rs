@@ -2,7 +2,6 @@ use dashmap::SharedValue;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
-use crate::id::AsId;
 use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
 use crate::plumbing::{Jar, JarAux};
@@ -122,20 +121,6 @@ where
         unsafe { std::mem::transmute(data) }
     }
 
-    pub fn intern_id<'db, Key>(
-        &'db self,
-        db: &'db dyn crate::Database,
-        key: Key,
-        assemble: impl FnOnce(Id, Key) -> C::Data<'db>,
-    ) -> crate::Id
-    where
-        Key: Hash,
-        C::Data<'db>: HashEqLike<Key>,
-    {
-        C::deref_struct(self.intern(db, key, assemble)).as_id()
-    }
-
-    /// Intern data to a unique reference.
     pub fn intern<'db, Key>(
         &'db self,
         db: &'db dyn crate::Database,
@@ -144,6 +129,24 @@ where
     ) -> C::Struct<'db>
     where
         Key: Hash,
+        C::Data<'db>: HashEqLike<Key>,
+    {
+        C::struct_from_id(self.intern_id(db, key, assemble))
+    }
+
+    /// Intern data to a unique reference.
+    pub fn intern_id<'db, Key>(
+        &'db self,
+        db: &'db dyn crate::Database,
+        key: Key,
+        assemble: impl FnOnce(Id, Key) -> C::Data<'db>,
+    ) -> crate::Id
+    where
+        Key: Hash,
+        // We'd want the following predicate, but this currently implies `'static` due to a rustc
+        // bug
+        // for<'db> C::Data<'db>: HashEqLike<Key>,
+        // so instead we go with this and transmute the lifetime in the `eq` closure
         C::Data<'db>: HashEqLike<Key>,
     {
         let zalsa_local = db.zalsa_local();
@@ -156,28 +159,28 @@ where
 
         // Optimization to only get read lock on the map if the data has already been interned.
         let data_hash = self.key_map.hasher().hash_one(&key);
-        let shard = self.key_map.determine_shard(data_hash as _);
-        let eq = |(a, _): &_| {
+        let shard = &self.key_map.shards()[self.key_map.determine_shard(data_hash as _)];
+        let eq = |(data, _): &_| {
             // SAFETY: it's safe to go from Data<'static> to Data<'db>
             // shrink lifetime here to use a single lifetime in Lookup::eq(&StructKey<'db>, &C::Data<'db>)
-            let data: &C::Data<'db> = unsafe { std::mem::transmute(a) };
+            let data: &C::Data<'db> = unsafe { std::mem::transmute(data) };
             HashEqLike::eq(data, &key)
         };
 
         {
-            let lock = self.key_map.shards()[shard].read();
+            let lock = shard.read();
             if let Some(bucket) = lock.find(data_hash, eq) {
                 // SAFETY: Read lock on map is held during this block
-                return C::struct_from_id(unsafe { *bucket.as_ref().1.get() });
+                return unsafe { *bucket.as_ref().1.get() };
             }
         }
 
-        let mut lock = self.key_map.shards()[shard].write();
+        let mut lock = shard.write();
         match lock.find_or_find_insert_slot(data_hash, eq, |(element, _)| {
             self.key_map.hasher().hash_one(element)
         }) {
             // Data has been interned by a racing call, use that ID instead
-            Ok(slot) => C::struct_from_id(unsafe { *slot.as_ref().1.get() }),
+            Ok(slot) => unsafe { *slot.as_ref().1.get() },
             // We won any races so should intern the data
             Err(slot) => {
                 let zalsa = db.zalsa();
@@ -200,7 +203,7 @@ where
                         .hasher()
                         .hash_one(table.get::<Value<C>>(id).data.clone())
                 );
-                C::struct_from_id(id)
+                id
             }
         }
     }
@@ -331,18 +334,6 @@ pub trait HashEqLike<O> {
     fn eq(&self, data: &O) -> bool;
 }
 
-// impl<T, O> HashEqLike<O> for T
-// where
-//     T: Lookup<O>,
-// {
-//     fn hash<H: Hasher>(&self, h: &mut H) {
-//         Lookup::hash(self, h)
-//     }
-
-//     fn eq(&self, data: &O) -> bool {
-//         Lookup::eq(self, data)
-//     }
-// }
 /// The `Lookup` trait is a more flexible variant on [`std::borrow::Borrow`]
 /// and [`std::borrow::ToOwned`].
 ///
@@ -471,52 +462,3 @@ impl Lookup<PathBuf> for &Path {
         self.to_owned()
     }
 }
-
-// pub trait LookupT<O> {
-//     fn hash<H: Hasher>(&self, h: &mut H);
-//     fn eq(&self, data: &O) -> bool;
-//     fn into_owned(self) -> O;
-// }
-
-// macro_rules! impl_zip_iter {
-//     ($($T:ident = $TO:ident),*) => (
-//         #[allow(non_snake_case)]
-//         impl<$($T, $TO,)*> LookupT<($($TO,)*)> for ($($T,)*) where $($T: Lookup<$TO>),*{
-//             fn hash<HASHER: std::hash::Hasher>(&self, h: &mut HASHER) {
-//                 let ($($T,)*) = &self;
-//                 $(
-//                     Lookup::hash($T, &mut *h);
-//                 )*
-//             }
-
-//             fn eq(&self, ($($TO,)*): &($($TO,)*)) -> bool {
-//                 let ($($T,)*) = &self;
-//                 $(Lookup::eq($T, $TO))&&*
-//             }
-
-//             fn into_owned(self) -> ($($TO,)*) {
-//                 let ($($T,)*) = self;
-//                 ($($T.into_owned(),)*)
-//             }
-//         }
-//     )
-// }
-
-// #[rustfmt::skip]
-// impl_zip_iter!(A = AO);
-// #[rustfmt::skip]
-// impl_zip_iter!(A = AO, B = BO);
-// #[rustfmt::skip]
-// impl_zip_iter!(A = AO, B = BO, C = CO);
-// #[rustfmt::skip]
-// impl_zip_iter!(A = AO, B = BO, C = CO, D = DO);
-// #[rustfmt::skip]
-// impl_zip_iter!(A = AO, B = BO, C = CO, D = DO, E = EO);
-// #[rustfmt::skip]
-// impl_zip_iter!(A = AO, B = BO, C = CO, D = DO, E = EO, F = FO);
-// #[rustfmt::skip]
-// impl_zip_iter!(A = AO, B = BO, C = CO, D = DO, E = EO, F = FO, G = GO);
-// #[rustfmt::skip]
-// impl_zip_iter!(A = AO, B = BO, C = CO, D = DO, E = EO, F = FO, G = GO, H = HO);
-// #[rustfmt::skip]
-// impl_zip_iter!(A = AO, B = BO, C = CO, D = DO, E = EO, F = FO, G = GO, H = HO, I = IO);
