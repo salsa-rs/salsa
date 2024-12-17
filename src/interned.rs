@@ -154,9 +154,7 @@ where
             InputAccumulatedValues::Empty,
         );
 
-        // Optimisation to only get read lock on the map if the data has already
-        // been interned.
-        // We need to use the raw API for this lookup. See the [`Lookup`][] trait definition for an explanation of why.
+        // Optimization to only get read lock on the map if the data has already been interned.
         let data_hash = self.key_map.hasher().hash_one(&key);
         let shard = self.key_map.determine_shard(data_hash as _);
         let eq = |(a, _): &_| {
