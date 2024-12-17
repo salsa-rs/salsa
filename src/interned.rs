@@ -394,9 +394,7 @@ impl Lookup<String> for &str {
 
 impl<A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for &[A] {
     fn hash<H: Hasher>(&self, h: &mut H) {
-        for a in *self {
-            Hash::hash(a, h);
-        }
+        Hash::hash(self, h);
     }
 
     fn eq(&self, data: &Vec<T>) -> bool {
@@ -410,9 +408,7 @@ impl<A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for &[A]
 
 impl<const N: usize, A: Hash + Eq + PartialEq<T> + Clone + Lookup<T>, T> Lookup<Vec<T>> for [A; N] {
     fn hash<H: Hasher>(&self, h: &mut H) {
-        for a in self {
-            Hash::hash(a, h);
-        }
+        Hash::hash(self, h);
     }
 
     fn eq(&self, data: &Vec<T>) -> bool {
