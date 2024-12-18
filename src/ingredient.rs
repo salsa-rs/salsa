@@ -31,7 +31,7 @@ pub trait Jar: Any {
 /// Methods on the Salsa database available to jars while they are creating their ingredients.
 pub trait JarAux {
     /// Return index of first ingredient from `jar` (based on the dynamic type of `jar`).
-    /// Returns `None` if the jar has not yet been added. 
+    /// Returns `None` if the jar has not yet been added.
     /// Used by tracked functions to lookup the ingredient index for the salsa struct they take as argument.
     fn lookup_jar_by_type(&self, jar: &dyn Jar) -> Option<IngredientIndex>;
 
