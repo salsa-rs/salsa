@@ -1,4 +1,5 @@
 use crate::{
+    db_lifetime,
     hygiene::Hygiene,
     options::Options,
     salsa_struct::{SalsaStruct, SalsaStructAllowedOptions},
@@ -11,11 +12,11 @@ use proc_macro2::TokenStream;
 /// * the "id struct" `struct Foo(salsa::Id)`
 /// * the entity ingredient, which maps the id fields to the `Id`
 /// * for each value field, a function ingredient
-pub(crate) fn input(
+pub(crate) fn interned_sans_lifetime(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let args = syn::parse_macro_input!(args as InputArgs);
+    let args = syn::parse_macro_input!(args as InternedArgs);
     let hygiene = Hygiene::from1(&input);
     let struct_item = parse_macro_input!(input as syn::ItemStruct);
     let m = Macro {
@@ -29,11 +30,12 @@ pub(crate) fn input(
     }
 }
 
-type InputArgs = Options<InputStruct>;
+type InternedArgs = Options<InternedStruct>;
 
-struct InputStruct;
+#[derive(Debug)]
+struct InternedStruct;
 
-impl crate::options::AllowedOptions for InputStruct {
+impl crate::options::AllowedOptions for InternedStruct {
     const RETURN_REF: bool = false;
 
     const SPECIFY: bool = false;
@@ -59,19 +61,19 @@ impl crate::options::AllowedOptions for InputStruct {
     const ID: bool = true;
 }
 
-impl SalsaStructAllowedOptions for InputStruct {
-    const KIND: &'static str = "input";
+impl SalsaStructAllowedOptions for InternedStruct {
+    const KIND: &'static str = "interned";
 
     const ALLOW_ID: bool = false;
 
     const HAS_LIFETIME: bool = false;
 
-    const ALLOW_DEFAULT: bool = true;
+    const ALLOW_DEFAULT: bool = false;
 }
 
 struct Macro {
     hygiene: Hygiene,
-    args: InputArgs,
+    args: InternedArgs,
     struct_item: syn::ItemStruct,
 }
 
@@ -83,51 +85,49 @@ impl Macro {
         let attrs = &self.struct_item.attrs;
         let vis = &self.struct_item.vis;
         let struct_ident = &self.struct_item.ident;
+        let struct_data_ident = format_ident!("{}Data", struct_ident);
+        let db_lt = db_lifetime::db_lifetime(&self.struct_item.generics);
         let new_fn = salsa_struct.constructor_name();
         let field_ids = salsa_struct.field_ids();
         let field_indices = salsa_struct.field_indices();
         let num_fields = salsa_struct.num_fields();
         let field_vis = salsa_struct.field_vis();
         let field_getter_ids = salsa_struct.field_getter_ids();
-        let field_setter_ids = salsa_struct.field_setter_ids();
-        let required_fields = salsa_struct.required_fields();
         let field_options = salsa_struct.field_options();
         let field_tys = salsa_struct.field_tys();
-        let field_durability_ids = salsa_struct.field_durability_ids();
-        let is_singleton = self.args.singleton.is_some();
+        let field_indexed_tys = salsa_struct.field_indexed_tys();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
+        let id = salsa_struct.id();
 
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
         let Configuration = self.hygiene.ident("Configuration");
-        let Builder = self.hygiene.ident("Builder");
         let CACHE = self.hygiene.ident("CACHE");
         let Db = self.hygiene.ident("Db");
 
         Ok(crate::debug::dump_tokens(
             struct_ident,
             quote! {
-                salsa::plumbing::setup_input_struct!(
+                salsa::plumbing::setup_interned_struct_sans_lifetime!(
                     attrs: [#(#attrs),*],
                     vis: #vis,
                     Struct: #struct_ident,
+                    StructData: #struct_data_ident,
+                    db_lt: #db_lt,
+                    id: #id,
                     new_fn: #new_fn,
                     field_options: [#(#field_options),*],
                     field_ids: [#(#field_ids),*],
                     field_getters: [#(#field_vis #field_getter_ids),*],
-                    field_setters: [#(#field_vis #field_setter_ids),*],
                     field_tys: [#(#field_tys),*],
                     field_indices: [#(#field_indices),*],
-                    required_fields: [#(#required_fields),*],
-                    field_durability_ids: [#(#field_durability_ids),*],
+                    field_indexed_tys: [#(#field_indexed_tys),*],
                     num_fields: #num_fields,
-                    is_singleton: #is_singleton,
                     generate_debug_impl: #generate_debug_impl,
                     unused_names: [
                         #zalsa,
                         #zalsa_struct,
                         #Configuration,
-                        #Builder,
                         #CACHE,
                         #Db,
                     ]
