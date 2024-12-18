@@ -189,6 +189,12 @@ impl Zalsa {
             let jar_type_id = jar.type_id();
             let mut jar_map = self.jar_map.lock();
             let mut should_create = false;
+            // First record the index we will use into the map and then go and create the ingredients.
+            // Those ingredients may invoke methods on the `JarAux` trait that read from this map
+            // to lookup ingredient indices for already created jars.
+            //
+            // Note that we still hold the lock above so only one jar is being created at a time and hence
+            // ingredient indices cannot overlap.
             let index = *jar_map.entry(jar_type_id).or_insert_with(|| {
                 should_create = true;
                 IngredientIndex::from(self.ingredients_vec.len())
