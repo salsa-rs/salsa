@@ -1,3 +1,5 @@
+use std::{mem, ops};
+
 use rustc_hash::FxHashMap;
 
 use super::zalsa_local::{EdgeKind, QueryEdges, QueryOrigin, QueryRevisions};
@@ -57,7 +59,7 @@ pub(crate) struct ActiveQuery {
 }
 
 impl ActiveQuery {
-    pub(super) fn new(database_key_index: DatabaseKeyIndex) -> Self {
+    pub(crate) fn new(database_key_index: DatabaseKeyIndex) -> Self {
         ActiveQuery {
             database_key_index,
             durability: Durability::MAX,
@@ -69,6 +71,28 @@ impl ActiveQuery {
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
         }
+    }
+
+    fn reset(&mut self, new_database_key_index: DatabaseKeyIndex) {
+        let Self {
+            database_key_index,
+            durability,
+            changed_at,
+            input_outputs,
+            untracked_read,
+            cycle,
+            disambiguator_map,
+            // These two are cleared via `mem::take`` when popped off as revisions.
+            tracked_struct_ids: _,
+            accumulated: _,
+        } = self;
+        *database_key_index = new_database_key_index;
+        *durability = Durability::MAX;
+        *changed_at = Revision::start();
+        input_outputs.clear();
+        *untracked_read = false;
+        *cycle = None;
+        disambiguator_map.clear();
     }
 
     pub(super) fn add_read(
@@ -106,11 +130,11 @@ impl ActiveQuery {
         self.input_outputs.contains(&(EdgeKind::Output, key))
     }
 
-    pub(crate) fn into_revisions(self) -> QueryRevisions {
+    fn take_revisions(&mut self) -> QueryRevisions {
         let input_outputs = if self.input_outputs.is_empty() {
             EMPTY_DEPENDENCIES.clone()
         } else {
-            self.input_outputs.into_iter().collect()
+            self.input_outputs.iter().copied().collect()
         };
 
         let edges = QueryEdges::new(input_outputs);
@@ -125,8 +149,8 @@ impl ActiveQuery {
             changed_at: self.changed_at,
             origin,
             durability: self.durability,
-            tracked_struct_ids: self.tracked_struct_ids,
-            accumulated: self.accumulated,
+            tracked_struct_ids: mem::take(&mut self.tracked_struct_ids),
+            accumulated: mem::take(&mut self.accumulated),
         }
     }
 
@@ -165,5 +189,48 @@ impl ActiveQuery {
         let result = *disambiguator;
         disambiguator.0 += 1;
         result
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct QueryStack {
+    stack: Vec<ActiveQuery>,
+    len: usize,
+}
+
+impl ops::Deref for QueryStack {
+    type Target = [ActiveQuery];
+
+    fn deref(&self) -> &Self::Target {
+        &self.stack[..self.len]
+    }
+}
+
+impl ops::DerefMut for QueryStack {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.stack[..self.len]
+    }
+}
+
+impl QueryStack {
+    pub(crate) fn push_new_query(&mut self, database_key_index: DatabaseKeyIndex) {
+        if self.len < self.stack.len() {
+            self.stack[self.len].reset(database_key_index);
+        } else {
+            self.stack.push(ActiveQuery::new(database_key_index));
+        }
+        self.len += 1;
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+
+    pub(crate) fn pop_into_revisions(&mut self) -> Option<QueryRevisions> {
+        if self.len == 0 {
+            return None;
+        }
+        self.len -= 1;
+        Some(self.stack[self.len].take_revisions())
     }
 }
