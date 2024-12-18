@@ -5,10 +5,9 @@ use std::any::{Any, TypeId};
 use std::marker::PhantomData;
 use std::thread::ThreadId;
 
-use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{Ingredient, Jar, JarAux};
 use crate::nonce::{Nonce, NonceGenerator};
-use crate::runtime::{Runtime, WaitResult};
+use crate::runtime::{BlockResult, Runtime, WaitResult};
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
 use crate::table::Table;
@@ -86,17 +85,8 @@ impl IngredientIndex {
         self.0 as usize
     }
 
-    pub(crate) fn cycle_recovery_strategy(self, db: &dyn Database) -> CycleRecoveryStrategy {
-        db.zalsa().lookup_ingredient(self).cycle_recovery_strategy()
-    }
-
     pub fn successor(self, index: usize) -> Self {
         IngredientIndex(self.0 + 1 + index as u32)
-    }
-
-    /// Return the "debug name" of this ingredient (e.g., the name of the tracked struct it represents)
-    pub(crate) fn debug_name(self, db: &dyn Database) -> &'static str {
-        db.zalsa().lookup_ingredient(self).debug_name()
     }
 }
 
@@ -279,16 +269,16 @@ impl Zalsa {
     }
 
     /// See [`Runtime::block_on_or_unwind`][]
-    pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
+    pub(crate) fn block_on<QueryMutexGuard>(
         &self,
         db: &dyn Database,
         local_state: &ZalsaLocal,
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
-    ) {
+    ) -> BlockResult {
         self.runtime
-            .block_on_or_unwind(db, local_state, database_key, other_id, query_mutex_guard)
+            .block_on(db, local_state, database_key, other_id, query_mutex_guard)
     }
 
     /// See [`Runtime::unblock_queries_blocked_on`][]

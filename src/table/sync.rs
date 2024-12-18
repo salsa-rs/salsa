@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 
 use crate::{
     key::DatabaseKeyIndex,
-    runtime::WaitResult,
+    runtime::{BlockResult, WaitResult},
     zalsa::{MemoIngredientIndex, Zalsa},
     zalsa_local::ZalsaLocal,
     Database,
@@ -30,6 +30,12 @@ struct SyncState {
     anyone_waiting: AtomicBool,
 }
 
+pub(crate) enum ClaimResult<'a> {
+    Retry,
+    Cycle,
+    Claimed(ClaimGuard<'a>),
+}
+
 impl SyncTable {
     pub(crate) fn claim<'me>(
         &'me self,
@@ -37,20 +43,23 @@ impl SyncTable {
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<ClaimGuard<'me>> {
+    ) -> ClaimResult<'me> {
         let mut syncs = self.syncs.write();
         let zalsa = db.zalsa();
         let thread_id = std::thread::current().id();
 
         util::ensure_vec_len(&mut syncs, memo_ingredient_index.as_usize() + 1);
 
+        eprintln!("SyncTable::claim {database_key_index:?}, thread {thread_id:?}");
+
         match &syncs[memo_ingredient_index.as_usize()] {
             None => {
+                eprintln!("not claimed, claiming");
                 syncs[memo_ingredient_index.as_usize()] = Some(SyncState {
                     id: thread_id,
                     anyone_waiting: AtomicBool::new(false),
                 });
-                Some(ClaimGuard {
+                ClaimResult::Claimed(ClaimGuard {
                     database_key_index,
                     memo_ingredient_index,
                     zalsa,
@@ -61,6 +70,7 @@ impl SyncTable {
                 id: other_id,
                 anyone_waiting,
             }) => {
+                eprintln!("already claimed");
                 // NB: `Ordering::Relaxed` is sufficient here,
                 // as there are no loads that are "gated" on this
                 // value. Everything that is written is also protected
@@ -68,8 +78,10 @@ impl SyncTable {
                 // boolean is to decide *whether* to acquire the lock,
                 // not to gate future atomic reads.
                 anyone_waiting.store(true, Ordering::Relaxed);
-                zalsa.block_on_or_unwind(db, zalsa_local, database_key_index, *other_id, syncs);
-                None
+                match zalsa.block_on(db, zalsa_local, database_key_index, *other_id, syncs) {
+                    BlockResult::Completed => ClaimResult::Retry,
+                    BlockResult::Cycle => ClaimResult::Cycle,
+                }
             }
         }
     }

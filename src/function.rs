@@ -2,19 +2,21 @@ use std::{any::Any, fmt, sync::Arc};
 
 use crate::{
     accumulator::accumulated_map::AccumulatedMap,
-    cycle::CycleRecoveryStrategy,
+    cycle::{CycleRecoveryAction, CycleRecoveryStrategy},
     ingredient::fmt_index,
     key::DatabaseKeyIndex,
     plumbing::JarAux,
     salsa_struct::SalsaStructInDb,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
-    Cycle, Database, Id, Revision,
+    Database, Id, Revision,
 };
 
 use self::delete::DeletedEntries;
 
 use super::ingredient::Ingredient;
+
+pub(crate) use maybe_changed_after::VerifyResult;
 
 mod accumulated;
 mod backdate;
@@ -49,13 +51,12 @@ pub trait Configuration: Any {
     /// (and, if so, how).
     const CYCLE_STRATEGY: CycleRecoveryStrategy;
 
-    /// Invokes after a new result `new_value`` has been computed for which an older memoized
-    /// value existed `old_value`. Returns true if the new value is equal to the older one
-    /// and hence should be "backdated" (i.e., marked as having last changed in an older revision,
-    /// even though it was recomputed).
+    /// Invokes after a new result `new_value`` has been computed for which an older memoized value
+    /// existed `old_value`, or in fixpoint iteration. Returns true if the new value is equal to
+    /// the older one.
     ///
-    /// This invokes user's code in form of the `Eq` impl.
-    fn should_backdate_value(old_value: &Self::Output<'_>, new_value: &Self::Output<'_>) -> bool;
+    /// This invokes user code in form of the `Eq` impl.
+    fn values_equal(old_value: &Self::Output<'_>, new_value: &Self::Output<'_>) -> bool;
 
     /// Convert from the id used internally to the value that execute is expecting.
     /// This is a no-op if the input to the function is a salsa struct.
@@ -67,15 +68,16 @@ pub trait Configuration: Any {
     /// This invokes the function the user wrote.
     fn execute<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Self::Output<'db>;
 
-    /// If the cycle strategy is `Fallback`, then invoked when `key` is a participant
-    /// in a cycle to find out what value it should have.
-    ///
-    /// This invokes the recovery function given by the user.
+    /// Get the cycle recovery initial value.
+    fn cycle_initial<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Self::Output<'db>;
+
+    /// Decide whether to iterate a cycle again or fallback.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
-        cycle: &Cycle,
+        value: &Self::Output<'db>,
+        count: u32,
         input: Self::Input<'db>,
-    ) -> Self::Output<'db>;
+    ) -> CycleRecoveryAction<Self::Output<'db>>;
 }
 
 /// Function ingredients are the "workhorse" of salsa.
@@ -116,9 +118,9 @@ pub struct IngredientImpl<C: Configuration> {
 }
 
 /// True if `old_value == new_value`. Invoked by the generated
-/// code for `should_backdate_value` so as to give a better
+/// code for `values_equal` so as to give a better
 /// error message.
-pub fn should_backdate_value<V: Eq>(old_value: &V, new_value: &V) -> bool {
+pub fn values_equal<V: Eq>(old_value: &V, new_value: &V) -> bool {
     old_value == new_value
 }
 
@@ -194,10 +196,15 @@ where
         db: &dyn Database,
         input: Option<Id>,
         revision: Revision,
-    ) -> bool {
+    ) -> VerifyResult {
         let key = input.unwrap();
         let db = db.as_view::<C::DbView>();
         self.maybe_changed_after(db, key, revision)
+    }
+
+    fn is_verified_final<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool {
+        self.get_memo_from_table_for(db.zalsa(), input)
+            .is_some_and(|memo| !memo.may_be_provisional())
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {

@@ -14,6 +14,7 @@ use parking_lot::Mutex;
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
+    function::VerifyResult,
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient},
     key::{DatabaseKeyIndex, DependencyIndex},
@@ -198,6 +199,7 @@ impl<C: Configuration> IngredientImpl<C> {
             stamp.durability,
             stamp.changed_at,
             InputAccumulatedValues::Empty,
+            None,
         );
         &value.fields
     }
@@ -222,9 +224,13 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: &dyn Database,
         _input: Option<Id>,
         _revision: Revision,
-    ) -> bool {
+    ) -> VerifyResult {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
+        VerifyResult::unchanged()
+    }
+
+    fn is_verified_final<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
         false
     }
 
