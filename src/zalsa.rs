@@ -1,5 +1,5 @@
 use append_only_vec::AppendOnlyVec;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 use std::any::{Any, TypeId};
 use std::marker::PhantomData;
@@ -123,8 +123,10 @@ pub struct Zalsa {
 
     nonce: Nonce<StorageNonce>,
 
-    /// Number of memo ingredient indices created by calls to [`next_memo_ingredient_index`](`Self::next_memo_ingredient_index`)
-    memo_ingredients: Mutex<Vec<IngredientIndex>>,
+    /// Map from the [`IngredientIndex::as_usize`][] of a salsa struct to a list of
+    /// [ingredient-indices](`IngredientIndex`) for tracked functions that have this salsa struct
+    /// as input.
+    memo_ingredient_indices: RwLock<Vec<Vec<IngredientIndex>>>,
 
     /// Map from the type-id of an `impl Jar` to the index of its first ingredient.
     /// This is using a `Mutex<FxHashMap>` (versus, say, a `FxDashMap`)
@@ -156,7 +158,7 @@ impl Zalsa {
             ingredients_vec: AppendOnlyVec::new(),
             ingredients_requiring_reset: AppendOnlyVec::new(),
             runtime: Runtime::default(),
-            memo_ingredients: Default::default(),
+            memo_ingredient_indices: Default::default(),
         }
     }
 
@@ -190,11 +192,20 @@ impl Zalsa {
         {
             let jar_type_id = jar.type_id();
             let mut jar_map = self.jar_map.lock();
-            *jar_map
-            .entry(jar_type_id)
-            .or_insert_with(|| {
-                let index = IngredientIndex::from(self.ingredients_vec.len());
-                let ingredients = jar.create_ingredients(self, index);
+            let mut should_create = false;
+            // First record the index we will use into the map and then go and create the ingredients.
+            // Those ingredients may invoke methods on the `JarAux` trait that read from this map
+            // to lookup ingredient indices for already created jars.
+            //
+            // Note that we still hold the lock above so only one jar is being created at a time and hence
+            // ingredient indices cannot overlap.
+            let index = *jar_map.entry(jar_type_id).or_insert_with(|| {
+                should_create = true;
+                IngredientIndex::from(self.ingredients_vec.len())
+            });
+            if should_create {
+                let aux = JarAuxImpl(self, &jar_map);
+                let ingredients = jar.create_ingredients(&aux, index);
                 for ingredient in ingredients {
                     let expected_index = ingredient.ingredient_index();
 
@@ -202,9 +213,7 @@ impl Zalsa {
                         self.ingredients_requiring_reset.push(expected_index);
                     }
 
-                    let actual_index = self
-                        .ingredients_vec
-                        .push(ingredient);
+                    let actual_index = self.ingredients_vec.push(ingredient);
                     assert_eq!(
                         expected_index.as_usize(),
                         actual_index,
@@ -213,10 +222,10 @@ impl Zalsa {
                         expected_index,
                         actual_index,
                     );
-
                 }
-                index
-            })
+            }
+
+            index
         }
     }
 
@@ -294,15 +303,34 @@ impl Zalsa {
 
     pub(crate) fn ingredient_index_for_memo(
         &self,
+        struct_ingredient_index: IngredientIndex,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> IngredientIndex {
-        self.memo_ingredients.lock()[memo_ingredient_index.as_usize()]
+        self.memo_ingredient_indices.read()[struct_ingredient_index.as_usize()]
+            [memo_ingredient_index.as_usize()]
     }
 }
 
-impl JarAux for Zalsa {
-    fn next_memo_ingredient_index(&self, ingredient_index: IngredientIndex) -> MemoIngredientIndex {
-        let mut memo_ingredients = self.memo_ingredients.lock();
+struct JarAuxImpl<'a>(&'a Zalsa, &'a FxHashMap<TypeId, IngredientIndex>);
+
+impl JarAux for JarAuxImpl<'_> {
+    fn lookup_jar_by_type(&self, jar: &dyn Jar) -> Option<IngredientIndex> {
+        self.1.get(&jar.type_id()).map(ToOwned::to_owned)
+    }
+
+    fn next_memo_ingredient_index(
+        &self,
+        struct_ingredient_index: IngredientIndex,
+        ingredient_index: IngredientIndex,
+    ) -> MemoIngredientIndex {
+        let mut memo_ingredients = self.0.memo_ingredient_indices.write();
+        let idx = struct_ingredient_index.as_usize();
+        let memo_ingredients = if let Some(memo_ingredients) = memo_ingredients.get_mut(idx) {
+            memo_ingredients
+        } else {
+            memo_ingredients.resize_with(idx + 1, Vec::new);
+            memo_ingredients.get_mut(idx).unwrap()
+        };
         let mi = MemoIngredientIndex(u32::try_from(memo_ingredients.len()).unwrap());
         memo_ingredients.push(ingredient_index);
         mi
