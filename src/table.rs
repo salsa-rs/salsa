@@ -24,7 +24,7 @@ const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
 const MAX_PAGES: usize = 1 << (32 - PAGE_LEN_BITS);
 
 pub(crate) struct Table {
-    pages: AppendOnlyVec<Box<dyn TablePage>>,
+    pub(crate) pages: AppendOnlyVec<Box<dyn TablePage>>,
 }
 
 pub(crate) trait TablePage: Any + Send + Sync {
@@ -211,6 +211,22 @@ impl<T: Slot> Page<T> {
         unsafe { (*self.data[slot.0].get()).assume_init_ref() }
     }
 
+    pub(crate) fn slots(&self) -> impl Iterator<Item = &T> {
+        let len = self.allocated.load(std::sync::atomic::Ordering::Acquire);
+        let mut idx = 0;
+
+        std::iter::from_fn(move || {
+            let ret = if idx < len {
+                let value = self.get(crate::table::SlotIndex::new(idx));
+                Some(value)
+            } else {
+                None
+            };
+            idx += 1;
+            ret
+        })
+    }
+
     /// Returns a raw pointer to the given slot.
     ///
     /// # Panics
@@ -288,6 +304,14 @@ impl dyn TablePage {
 
         // SAFETY: Assertion above
         unsafe { transmute_data_ptr::<dyn TablePage, T>(self) }
+    }
+
+    pub(crate) fn cast_type<T: Any>(&self) -> Option<&T> {
+        if Any::type_id(self) == TypeId::of::<T>() {
+            unsafe { Some(transmute_data_ptr::<dyn TablePage, T>(self)) }
+        } else {
+            None
+        }
     }
 }
 

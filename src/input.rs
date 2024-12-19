@@ -272,8 +272,10 @@ pub struct Value<C>
 where
     C: Configuration,
 {
-    /// Fields of this input struct. They can change across revisions,
-    /// but they do not change within a particular revision.
+    /// Fields of this input struct.
+    ///
+    /// They can change across revisions, but they do not change within
+    /// a particular revision.
     fields: C::Fields,
 
     /// The revision and durability information for each field: when did this field last change.
@@ -284,6 +286,19 @@ where
 
     /// Syncs
     syncs: SyncTable,
+}
+
+impl<C> Value<C>
+where
+    C: Configuration,
+{
+    /// Fields of this tracked struct.
+    ///
+    /// They can change across revisions, but they do not change within
+    /// a particular revision.
+    pub fn fields(&self) -> &C::Fields {
+        &self.fields
+    }
 }
 
 pub trait HasBuilder {

@@ -24,8 +24,8 @@ use super::Revision;
 pub trait Configuration: Sized + 'static {
     const DEBUG_NAME: &'static str;
 
-    /// The type of data being interned
-    type Data<'db>: InternedData;
+    /// The fields of the struct being interned.
+    type Fields<'db>: InternedData;
 
     /// The end user struct
     type Struct<'db>: Copy;
@@ -60,7 +60,7 @@ pub struct IngredientImpl<C: Configuration> {
     /// Maps from data to the existing interned id for that data.
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
-    key_map: FxDashMap<C::Data<'static>, Id>,
+    key_map: FxDashMap<C::Fields<'static>, Id>,
 
     /// Stores the revision when this interned ingredient was last cleared.
     /// You can clear an interned table at any point, deleting all its entries,
@@ -74,9 +74,19 @@ pub struct Value<C>
 where
     C: Configuration,
 {
-    data: C::Data<'static>,
+    fields: C::Fields<'static>,
     memos: MemoTable,
     syncs: SyncTable,
+}
+
+impl<C> Value<C>
+where
+    C: Configuration,
+{
+    /// Fields of this interned struct.
+    pub fn fields(&self) -> &C::Fields<'static> {
+        &self.fields
+    }
 }
 
 impl<C: Configuration> Default for JarImpl<C> {
@@ -113,11 +123,11 @@ where
         }
     }
 
-    unsafe fn to_internal_data<'db>(&'db self, data: C::Data<'db>) -> C::Data<'static> {
+    unsafe fn to_internal_data<'db>(&'db self, data: C::Fields<'db>) -> C::Fields<'static> {
         unsafe { std::mem::transmute(data) }
     }
 
-    unsafe fn from_internal_data<'db>(data: &'db C::Data<'static>) -> &'db C::Data<'db> {
+    unsafe fn from_internal_data<'db>(data: &'db C::Fields<'static>) -> &'db C::Fields<'db> {
         unsafe { std::mem::transmute(data) }
     }
 
@@ -134,11 +144,11 @@ where
         &'db self,
         db: &'db dyn crate::Database,
         key: Key,
-        assemble: impl FnOnce(Id, Key) -> C::Data<'db>,
+        assemble: impl FnOnce(Id, Key) -> C::Fields<'db>,
     ) -> C::Struct<'db>
     where
         Key: Hash,
-        C::Data<'db>: HashEqLike<Key>,
+        C::Fields<'db>: HashEqLike<Key>,
     {
         C::struct_from_id(self.intern_id(db, key, assemble))
     }
@@ -156,7 +166,7 @@ where
         &'db self,
         db: &'db dyn crate::Database,
         key: Key,
-        assemble: impl FnOnce(Id, Key) -> C::Data<'db>,
+        assemble: impl FnOnce(Id, Key) -> C::Fields<'db>,
     ) -> crate::Id
     where
         Key: Hash,
@@ -164,7 +174,7 @@ where
         // bug
         // for<'db> C::Data<'db>: HashEqLike<Key>,
         // so instead we go with this and transmute the lifetime in the `eq` closure
-        C::Data<'db>: HashEqLike<Key>,
+        C::Fields<'db>: HashEqLike<Key>,
     {
         let zalsa_local = db.zalsa_local();
         zalsa_local.report_tracked_read(
@@ -180,7 +190,7 @@ where
         let eq = |(data, _): &_| {
             // SAFETY: it's safe to go from Data<'static> to Data<'db>
             // shrink lifetime here to use a single lifetime in Lookup::eq(&StructKey<'db>, &C::Data<'db>)
-            let data: &C::Data<'db> = unsafe { std::mem::transmute(data) };
+            let data: &C::Fields<'db> = unsafe { std::mem::transmute(data) };
             HashEqLike::eq(data, &key)
         };
 
@@ -203,7 +213,7 @@ where
                 let zalsa = db.zalsa();
                 let table = zalsa.table();
                 let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
-                    data: unsafe { self.to_internal_data(assemble(id, key)) },
+                    fields: unsafe { self.to_internal_data(assemble(id, key)) },
                     memos: Default::default(),
                     syncs: Default::default(),
                 });
@@ -211,14 +221,17 @@ where
                     lock.insert_in_slot(
                         data_hash,
                         slot,
-                        (table.get::<Value<C>>(id).data.clone(), SharedValue::new(id)),
+                        (
+                            table.get::<Value<C>>(id).fields.clone(),
+                            SharedValue::new(id),
+                        ),
                     )
                 };
                 debug_assert_eq!(
                     data_hash,
                     self.key_map
                         .hasher()
-                        .hash_one(table.get::<Value<C>>(id).data.clone())
+                        .hash_one(table.get::<Value<C>>(id).fields.clone())
                 );
                 id
             }
@@ -228,14 +241,14 @@ where
     /// Lookup the data for an interned value based on its id.
     /// Rarely used since end-users generally carry a struct with a pointer directly
     /// to the interned item.
-    pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Data<'db> {
+    pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
         let internal_data = db.zalsa().table().get::<Value<C>>(id);
-        unsafe { Self::from_internal_data(&internal_data.data) }
+        unsafe { Self::from_internal_data(&internal_data.fields) }
     }
 
     /// Lookup the fields from an interned struct.
     /// Note that this is not "leaking" since no dependency edge is required.
-    pub fn fields<'db>(&'db self, db: &'db dyn Database, s: C::Struct<'db>) -> &'db C::Data<'db> {
+    pub fn fields<'db>(&'db self, db: &'db dyn Database, s: C::Struct<'db>) -> &'db C::Fields<'db> {
         self.data(db, C::deref_struct(s))
     }
 

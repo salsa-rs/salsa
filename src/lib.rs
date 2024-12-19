@@ -130,6 +130,7 @@ pub mod plumbing {
         pub use crate::input::HasBuilder;
         pub use crate::input::IngredientImpl;
         pub use crate::input::JarImpl;
+        pub use crate::input::Value;
     }
 
     pub mod interned {

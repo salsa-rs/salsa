@@ -107,7 +107,7 @@ macro_rules! setup_tracked_fn {
                     impl $zalsa::interned::Configuration for $Configuration {
                         const DEBUG_NAME: &'static str = "Configuration";
 
-                        type Data<$db_lt> = ($($input_ty),*);
+                        type Fields<$db_lt> = ($($input_ty),*);
 
                         type Struct<$db_lt> = $InternedData<$db_lt>;
 
