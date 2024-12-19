@@ -300,7 +300,7 @@ where
 {
     /// Fields of this input struct. They can change across revisions,
     /// but they do not change within a particular revision.
-    fields: C::Fields,
+    pub fields: C::Fields,
 
     /// The revision and durability information for each field: when did this field last change.
     stamps: C::Stamps,

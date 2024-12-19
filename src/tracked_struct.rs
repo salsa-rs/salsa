@@ -216,7 +216,7 @@ where
 
     /// Fields of this tracked struct. They can change across revisions,
     /// but they do not change within a particular revision.
-    fields: C::Fields<'static>,
+    pub fields: C::Fields<'static>,
 
     /// The revision information for each field: when did this field last change.
     /// When tracked structs are re-created, this revision may be updated to the
