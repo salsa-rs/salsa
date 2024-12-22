@@ -1,4 +1,5 @@
 use super::{Configuration, IngredientImpl};
+use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
     accumulator::{self, accumulated_map::AccumulatedMap},
@@ -54,13 +55,13 @@ where
             }
 
             // Extend `output` with any values accumulated by `k`.
-            if let Some(accumulated_map) = k.accumulated(db) {
+            let (accumulated_map, input) = k.accumulated(db);
+            if let Some(accumulated_map) = accumulated_map {
                 accumulated_map.extend_with_accumulated(accumulator.index(), &mut output);
-
-                // Skip over the inputs because we know that the entire sub-graph has no accumulated values
-                if accumulated_map.inputs().is_empty() {
-                    continue;
-                }
+            }
+            // Skip over the inputs because we know that the entire sub-graph has no accumulated values
+            if input.is_empty() {
+                continue;
             }
 
             // Find the inputs of `k` and push them onto the stack.
@@ -97,9 +98,12 @@ where
         &'db self,
         db: &'db C::DbView,
         key: Id,
-    ) -> Option<&'db AccumulatedMap> {
+    ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
         let memo = self.refresh_memo(db, key);
-        Some(&memo.revisions.accumulated)
+        (
+            memo.revisions.accumulated.as_deref(),
+            memo.revisions.accumulated_inputs,
+        )
     }
 }
