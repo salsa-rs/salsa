@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    accumulator::accumulated_map::AccumulatedMap,
+    accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
     zalsa::{IngredientIndex, MemoIngredientIndex},
     zalsa_local::QueryOrigin,
@@ -74,7 +74,10 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         &'db self,
         db: &'db dyn Database,
         key_index: Id,
-    ) -> Option<&'db AccumulatedMap>;
+    ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
+        _ = (db, key_index);
+        (None, InputAccumulatedValues::Any)
+    }
 
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
     /// This occurs because the value for `executor`, which generated it, was marked as valid
