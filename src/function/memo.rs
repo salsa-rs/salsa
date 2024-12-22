@@ -101,6 +101,10 @@ pub(super) struct Memo<V> {
     pub(super) revisions: QueryRevisions,
 }
 
+// Memo's are stored a lot, make sure there size is doesn't randomly increase.
+// #[cfg(test)]
+const _: [(); std::mem::size_of::<Memo<()>>()] = [(); std::mem::size_of::<[usize; 12]>()];
+
 impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
         Memo {

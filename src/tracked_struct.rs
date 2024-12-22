@@ -636,14 +636,6 @@ where
     }
 
     fn reset_for_new_revision(&mut self) {}
-
-    fn accumulated<'db>(
-        &'db self,
-        _db: &'db dyn Database,
-        _key_index: Id,
-    ) -> Option<&'db crate::accumulator::accumulated_map::AccumulatedMap> {
-        None
-    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>

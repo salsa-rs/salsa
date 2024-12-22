@@ -8,7 +8,6 @@ use std::{
 
 use accumulated::Accumulated;
 use accumulated::AnyAccumulated;
-use accumulated_map::AccumulatedMap;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
@@ -148,10 +147,6 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
 
     fn debug_name(&self) -> &'static str {
         A::DEBUG_NAME
-    }
-
-    fn accumulated(&self, _db: &dyn Database, _key_index: Id) -> Option<&AccumulatedMap> {
-        None
     }
 }
 

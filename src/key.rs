@@ -1,6 +1,8 @@
 use crate::{
-    accumulator::accumulated_map::AccumulatedMap, cycle::CycleRecoveryStrategy,
-    zalsa::IngredientIndex, Database, Id,
+    accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
+    cycle::CycleRecoveryStrategy,
+    zalsa::IngredientIndex,
+    Database, Id,
 };
 
 /// An integer that uniquely identifies a particular query instance within the
@@ -100,7 +102,10 @@ impl DatabaseKeyIndex {
         self.ingredient_index.cycle_recovery_strategy(db)
     }
 
-    pub(crate) fn accumulated(self, db: &dyn Database) -> Option<&AccumulatedMap> {
+    pub(crate) fn accumulated(
+        self,
+        db: &dyn Database,
+    ) -> (Option<&AccumulatedMap>, InputAccumulatedValues) {
         db.zalsa()
             .lookup_ingredient(self.ingredient_index)
             .accumulated(db, self.key_index)
