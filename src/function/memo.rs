@@ -61,30 +61,26 @@ impl<C: Configuration> IngredientImpl<C> {
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
     pub(super) fn evict_value_from_memo_for<'db>(&'db self, zalsa: &'db Zalsa, id: Id) {
-        let Some(memo) = self.get_memo_from_table_for(zalsa, id) else {
-            return;
-        };
-
-        match memo.revisions.origin {
-            QueryOrigin::Assigned(_)
-            | QueryOrigin::DerivedUntracked(_)
-            | QueryOrigin::BaseInput => {
-                // Careful: Cannot evict memos whose values were
-                // assigned as output of another query
-                // or those with untracked inputs
-                // as their values cannot be reconstructed.
-            }
-
-            QueryOrigin::Derived(_) => {
-                let memo_evicted = Arc::new(Memo::new(
-                    None::<C::Output<'_>>,
-                    memo.verified_at.load(),
-                    memo.revisions.clone(),
-                ));
-
-                self.insert_memo_into_table_for(zalsa, id, memo_evicted);
-            }
-        }
+        zalsa
+            .memo_table_for(id)
+            .map_memo::<Memo<_>>(self.memo_ingredient_index, |memo| {
+                match memo.revisions.origin {
+                    QueryOrigin::Assigned(_)
+                    | QueryOrigin::DerivedUntracked(_)
+                    | QueryOrigin::BaseInput => {
+                        // Careful: Cannot evict memos whose values were
+                        // assigned as output of another query
+                        // or those with untracked inputs
+                        // as their values cannot be reconstructed.
+                        memo
+                    }
+                    QueryOrigin::Derived(_) => Arc::new(Memo::new(
+                        None::<C::Output<'_>>,
+                        memo.verified_at.load(),
+                        memo.revisions.clone(),
+                    )),
+                }
+            });
     }
 }
 
