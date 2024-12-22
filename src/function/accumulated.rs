@@ -53,8 +53,9 @@ where
                 continue;
             }
 
+            let ingredient = zalsa.lookup_ingredient(k.ingredient_index);
             // Extend `output` with any values accumulated by `k`.
-            if let Some(accumulated_map) = k.accumulated(db) {
+            if let Some(accumulated_map) = ingredient.accumulated(db, k.key_index) {
                 accumulated_map.extend_with_accumulated(accumulator.index(), &mut output);
 
                 // Skip over the inputs because we know that the entire sub-graph has no accumulated values
@@ -69,10 +70,7 @@ where
             // output vector, we want to push in execution order, so reverse order to
             // ensure the first child that was executed will be the first child popped
             // from the stack.
-            let Some(origin) = zalsa
-                .lookup_ingredient(k.ingredient_index)
-                .origin(db, k.key_index)
-            else {
+            let Some(origin) = ingredient.origin(db, k.key_index) else {
                 continue;
             };
 
