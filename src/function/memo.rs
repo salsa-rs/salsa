@@ -61,9 +61,9 @@ impl<C: Configuration> IngredientImpl<C> {
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
     pub(super) fn evict_value_from_memo_for<'db>(&'db self, zalsa: &'db Zalsa, id: Id) {
-        zalsa
-            .memo_table_for(id)
-            .map_memo::<Memo<_>>(self.memo_ingredient_index, |memo| {
+        zalsa.memo_table_for(id).map_memo::<Memo<C::Output<'_>>>(
+            self.memo_ingredient_index,
+            |memo| {
                 match memo.revisions.origin {
                     QueryOrigin::Assigned(_)
                     | QueryOrigin::DerivedUntracked(_)
@@ -74,13 +74,31 @@ impl<C: Configuration> IngredientImpl<C> {
                         // as their values cannot be reconstructed.
                         memo
                     }
-                    QueryOrigin::Derived(_) => Arc::new(Memo::new(
-                        None::<C::Output<'_>>,
-                        memo.verified_at.load(),
-                        memo.revisions.clone(),
-                    )),
+                    QueryOrigin::Derived(_) => {
+                        // QueryRevisions: !Clone to discourage cloning, we need it here though
+                        let QueryRevisions {
+                            changed_at,
+                            durability,
+                            origin,
+                            tracked_struct_ids,
+                            accumulated,
+                        } = &memo.revisions;
+                        // Re-assemble the memo but with the value set to `None`
+                        Arc::new(Memo::new(
+                            None,
+                            memo.verified_at.load(),
+                            QueryRevisions {
+                                changed_at: *changed_at,
+                                durability: *durability,
+                                origin: origin.clone(),
+                                tracked_struct_ids: tracked_struct_ids.clone(),
+                                accumulated: accumulated.clone(),
+                            },
+                        ))
+                    }
                 }
-            });
+            },
+        );
     }
 }
 

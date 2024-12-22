@@ -194,11 +194,9 @@ impl MemoTable {
         unsafe { Self::from_dummy::<M>(arc_swap.swap(Self::to_dummy(memo))) };
     }
 
-    pub(crate) fn into_memos(
-        mut self,
-    ) -> impl Iterator<Item = (MemoIngredientIndex, Arc<dyn Memo>)> {
-        let memos = std::mem::take(self.memos.get_mut());
-        memos
+    pub(crate) fn into_memos(self) -> impl Iterator<Item = (MemoIngredientIndex, Arc<dyn Memo>)> {
+        self.memos
+            .into_inner()
             .into_iter()
             .zip(0..)
             .filter_map(|(mut memo, index)| memo.data.take().map(|d| (d, index)))

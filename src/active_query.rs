@@ -8,7 +8,6 @@ use crate::{
     hash::FxIndexSet,
     key::{DatabaseKeyIndex, DependencyIndex},
     tracked_struct::{Disambiguator, Identity},
-    zalsa_local::EMPTY_DEPENDENCIES,
     Cycle, Id, Revision,
 };
 
@@ -108,7 +107,7 @@ impl ActiveQuery {
 
     pub(crate) fn into_revisions(self) -> QueryRevisions {
         let input_outputs = if self.input_outputs.is_empty() {
-            EMPTY_DEPENDENCIES.clone()
+            Box::default()
         } else {
             self.input_outputs.into_iter().collect()
         };
