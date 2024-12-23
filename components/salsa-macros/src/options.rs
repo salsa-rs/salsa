@@ -7,6 +7,7 @@ use syn::{ext::IdentExt, spanned::Spanned};
 /// are required and trailing commas are permitted. The options accepted
 /// for any particular location are configured via the `AllowedOptions`
 /// trait.
+#[derive(Debug)]
 pub(crate) struct Options<A: AllowedOptions> {
     /// The `return_ref` option is used to signal that field/return type is "by ref"
     ///
@@ -66,6 +67,12 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<ident>`.
     pub constructor_name: Option<syn::Ident>,
 
+    /// The `id = <path>` option is used to set a custom ID for interrned structs.
+    ///
+    /// The custom ID needs to handle
+    /// If this is `Some`, the value is the `<ident>`.
+    pub id: Option<syn::Path>,
+
     /// Remember the `A` parameter, which plays no role after parsing.
     phantom: PhantomData<A>,
 }
@@ -85,6 +92,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             phantom: Default::default(),
             lru: Default::default(),
             singleton: Default::default(),
+            id: Default::default(),
         }
     }
 }
@@ -102,6 +110,7 @@ pub(crate) trait AllowedOptions {
     const RECOVERY_FN: bool;
     const LRU: bool;
     const CONSTRUCTOR_NAME: bool;
+    const ID: bool;
 }
 
 type Equals = syn::Token![=];
@@ -252,7 +261,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 }
             } else if ident == "constructor" {
                 if A::CONSTRUCTOR_NAME {
-                    let _eq = Equals::parse(input)?;
+                    let _eq: syn::token::Eq = Equals::parse(input)?;
                     let ident = syn::Ident::parse(input)?;
                     if let Some(old) = std::mem::replace(&mut options.constructor_name, Some(ident))
                     {
@@ -265,6 +274,17 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`constructor` option not allowed here",
+                    ));
+                }
+            } else if ident == "id" {
+                if A::ID {
+                    let _eq = Equals::parse(input)?;
+                    let path = syn::Path::parse(input)?;
+                    options.id = Some(path);
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`id` option not allowed here",
                     ));
                 }
             } else {
