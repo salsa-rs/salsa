@@ -8,8 +8,6 @@ pub(crate) struct Signal {
 
 impl Signal {
     pub(crate) fn signal(&self, stage: usize) {
-        dbg!(format!("signal({})", stage));
-
         // This check avoids acquiring the lock for things that will
         // clearly be a no-op. Not *necessary* but helps to ensure we
         // are more likely to encounter weird race conditions;
@@ -27,8 +25,6 @@ impl Signal {
     /// Waits until the given condition is true; the fn is invoked
     /// with the current stage.
     pub(crate) fn wait_for(&self, stage: usize) {
-        dbg!(format!("wait_for({})", stage));
-
         // As above, avoid lock if clearly a no-op.
         if stage > 0 {
             let mut v = self.value.lock();

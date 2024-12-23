@@ -15,17 +15,18 @@ struct ParallelInput {
 fn tracked_fn(db: &dyn salsa::Database, input: ParallelInput) -> Vec<u32> {
     salsa::par_map(db, input.field(db), |_db, field| field + 1)
 }
+
 #[salsa::tracked]
 fn a1(db: &dyn KnobsDatabase, input: ParallelInput) -> Vec<u32> {
     db.signal(1);
     salsa::par_map(db, input.field(db), |db, field| {
         db.wait_for(2);
-        field + 1
+        field + dummy(db)
     })
 }
 
 #[salsa::tracked]
-fn dummy(_db: &dyn KnobsDatabase, _input: ParallelInput) -> ParallelInput {
+fn dummy(_db: &dyn KnobsDatabase) -> u32 {
     panic!("should never get here!")
 }
 
