@@ -117,7 +117,7 @@ impl<C: Configuration> IngredientImpl<C> {
             None
         };
 
-        let id = zalsa_local.allocate(zalsa.table(), self.ingredient_index, || Value::<C> {
+        let id = zalsa_local.allocate(zalsa.table(), self.ingredient_index, |_| Value::<C> {
             fields,
             stamps,
             memos: Default::default(),

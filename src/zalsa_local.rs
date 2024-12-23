@@ -58,7 +58,7 @@ impl ZalsaLocal {
         &self,
         table: &Table,
         ingredient: IngredientIndex,
-        mut value: impl FnOnce() -> T,
+        mut value: impl FnOnce(Id) -> T,
     ) -> Id {
         // Find the most recent page, pushing a page if needed
         let mut page = *self
@@ -71,7 +71,7 @@ impl ZalsaLocal {
             // Try to allocate an entry on that page
             let page_ref = table.page::<T>(page);
             match page_ref.allocate(page, value) {
-                // If succesful, return
+                // If succesfull, return
                 Ok(id) => return id,
 
                 // Otherwise, create a new page and try again

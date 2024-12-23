@@ -132,6 +132,7 @@ pub mod plumbing {
 
     pub mod interned {
         pub use crate::interned::Configuration;
+        pub use crate::interned::HashEqLike;
         pub use crate::interned::IngredientImpl;
         pub use crate::interned::JarImpl;
         pub use crate::interned::Lookup;
