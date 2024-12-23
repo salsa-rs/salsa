@@ -163,11 +163,40 @@ impl MemoTable {
         unsafe { Some(Self::from_dummy(arc_swap.load_full())) }
     }
 
-    pub(crate) fn into_memos(
-        mut self,
-    ) -> impl Iterator<Item = (MemoIngredientIndex, Arc<dyn Memo>)> {
-        let memos = std::mem::take(self.memos.get_mut());
-        memos
+    /// Calls `f` on the memo at `memo_ingredient_index` and replaces the memo with the result of `f`.
+    /// If the memo is not present, `f` is not called.
+    pub(crate) fn map_memo<M: Memo>(
+        &self,
+        memo_ingredient_index: MemoIngredientIndex,
+        f: impl FnOnce(Arc<M>) -> Arc<M>,
+    ) {
+        // If the memo slot is already occupied, it must already have the
+        // right type info etc, and we only need the read-lock.
+        let memos = self.memos.read();
+        let Some(MemoEntry {
+            data:
+                Some(MemoEntryData {
+                    type_id,
+                    to_dyn_fn: _,
+                    arc_swap,
+                }),
+        }) = memos.get(memo_ingredient_index.as_usize())
+        else {
+            return;
+        };
+        assert_eq!(
+            *type_id,
+            TypeId::of::<M>(),
+            "inconsistent type-id for `{memo_ingredient_index:?}`"
+        );
+        // SAFETY: type_id check asserted above
+        let memo = f(unsafe { Self::from_dummy(arc_swap.load_full()) });
+        unsafe { Self::from_dummy::<M>(arc_swap.swap(Self::to_dummy(memo))) };
+    }
+
+    pub(crate) fn into_memos(self) -> impl Iterator<Item = (MemoIngredientIndex, Arc<dyn Memo>)> {
+        self.memos
+            .into_inner()
             .into_iter()
             .zip(0..)
             .filter_map(|(mut memo, index)| memo.data.take().map(|d| (d, index)))

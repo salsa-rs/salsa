@@ -21,7 +21,6 @@ use crate::EventKind;
 use crate::Id;
 use crate::Revision;
 use std::cell::RefCell;
-use std::sync::Arc;
 
 /// State that is specific to a single execution thread.
 ///
@@ -325,7 +324,8 @@ impl std::panic::RefUnwindSafe for ZalsaLocal {}
 
 /// Summarizes "all the inputs that a query used"
 /// and "all the outputs its wrote to"
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+// #[derive(Clone)] cloning this is expensive, so we don't derive
 pub(crate) struct QueryRevisions {
     /// The most revision in which some input changed.
     pub(crate) changed_at: Revision,
@@ -435,10 +435,6 @@ pub enum EdgeKind {
     Output,
 }
 
-lazy_static::lazy_static! {
-    pub(crate) static ref EMPTY_DEPENDENCIES: Arc<[(EdgeKind, DependencyIndex)]> = Arc::new([]);
-}
-
 /// The edges between a memoized value and other queries in the dependency graph.
 /// These edges include both dependency edges
 /// e.g., when creating the memoized value for Q0 executed another function Q1)
@@ -458,7 +454,8 @@ pub struct QueryEdges {
     /// Important:
     ///
     /// * The inputs must be in **execution order** for the red-green algorithm to work.
-    pub input_outputs: Arc<[(EdgeKind, DependencyIndex)]>,
+    // pub input_outputs: ThinBox<[(EdgeKind, DependencyIndex)]>, once that is a thing
+    pub input_outputs: Box<[(EdgeKind, DependencyIndex)]>,
 }
 
 impl QueryEdges {
@@ -483,7 +480,7 @@ impl QueryEdges {
     }
 
     /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.
-    pub(crate) fn new(input_outputs: Arc<[(EdgeKind, DependencyIndex)]>) -> Self {
+    pub(crate) fn new(input_outputs: Box<[(EdgeKind, DependencyIndex)]>) -> Self {
         Self { input_outputs }
     }
 }

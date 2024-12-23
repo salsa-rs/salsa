@@ -65,7 +65,7 @@ pub struct IngredientImpl<A: Accumulator> {
 }
 
 impl<A: Accumulator> IngredientImpl<A> {
-    /// Find the accumulator ingrediate for `A` in the database, if any.
+    /// Find the accumulator ingredient for `A` in the database, if any.
     pub fn from_db<Db>(db: &Db) -> Option<&Self>
     where
         Db: ?Sized + Database,
