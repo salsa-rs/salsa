@@ -1,9 +1,10 @@
 //! Tests that:
-//! - a `tracked` fn on multiple salsa struct args
-//!   compiles and executes successfully.
+//! - a `tracked` fn with a single Salsa struct arg
+//!   and a single, non-Salsa struct compiles and
+//!   executes successfully.
 //! - the size and number of allocations
 //!   made by Salsa while executing a `tracked` fn
-//!   with a `salsa::input` and a `salsa::interned`.
+//!   with a `salsa::input` and non-Salsa struct.
 
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
@@ -19,8 +20,8 @@ struct MyInterned<'db> {
 }
 
 #[salsa::tracked]
-fn tracked_fn<'db>(db: &'db dyn salsa::Database, input: MyInput, interned: MyInterned<'db>) -> u32 {
-    input.field(db) + interned.field(db)
+fn tracked_fn<'db>(db: &'db dyn salsa::Database, input: MyInput, id: u32) -> u32 {
+    input.field(db) + id
 }
 
 #[test]
@@ -29,10 +30,10 @@ fn execute() {
 
     let db = salsa::DatabaseImpl::new();
     let input = MyInput::new(&db, 22);
-    let interned = MyInterned::new(&db, 33);
+    let interned = 33;
     assert_eq!(tracked_fn(&db, input, interned), 55);
 
     let stats = dhat::HeapStats::get();
-    dhat::assert_eq!(stats.total_blocks, 37);
-    dhat::assert_eq!(stats.total_bytes, 259292);
+    dhat::assert_eq!(stats.total_blocks, 31);
+    dhat::assert_eq!(stats.total_bytes, 177224);
 }
