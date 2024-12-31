@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    accumulator::accumulated_map::AccumulatedMap,
+    accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
     zalsa::{IngredientIndex, MemoIngredientIndex},
     zalsa_local::QueryOrigin,
@@ -61,7 +61,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: &'db dyn Database,
         input: Option<Id>,
         revision: Revision,
-    ) -> bool;
+    ) -> MaybeChangedAfter;
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
     fn origin(&self, db: &dyn Database, key_index: Id) -> Option<QueryOrigin>;
@@ -170,5 +170,25 @@ pub(crate) fn fmt_index(
         write!(fmt, "{debug_name}({i:?})")
     } else {
         write!(fmt, "{debug_name}()")
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum MaybeChangedAfter {
+    /// The query result hasn't changed.
+    ///
+    /// The inner value tracks whether the memo or any of its dependencies have an accumulated value.
+    No(InputAccumulatedValues),
+
+    /// The query's result has changed since the last revision or the query isn't cached yet.
+    Yes,
+}
+
+impl From<bool> for MaybeChangedAfter {
+    fn from(value: bool) -> Self {
+        match value {
+            true => MaybeChangedAfter::Yes,
+            false => MaybeChangedAfter::No(InputAccumulatedValues::Empty),
+        }
     }
 }

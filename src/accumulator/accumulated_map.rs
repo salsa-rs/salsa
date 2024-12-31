@@ -1,3 +1,6 @@
+use std::ops::{BitOr, BitOrAssign};
+
+use crossbeam::atomic::AtomicCell;
 use rustc_hash::FxHashMap;
 
 use crate::IngredientIndex;
@@ -10,7 +13,7 @@ pub struct AccumulatedMap {
 
     /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
     /// has any direct or indirect accumulated values.
-    inputs: InputAccumulatedValues,
+    inputs: AtomicCell<InputAccumulatedValues>,
 }
 
 impl AccumulatedMap {
@@ -22,10 +25,14 @@ impl AccumulatedMap {
     }
 
     /// Adds the accumulated state of an input to this accumulated map.
-    pub(crate) fn add_input(&mut self, input: InputAccumulatedValues) {
+    pub(crate) fn add_input(&self, input: InputAccumulatedValues) {
         if input.is_any() {
-            self.inputs = InputAccumulatedValues::Any;
+            self.inputs.store(InputAccumulatedValues::Any);
         }
+    }
+
+    pub(crate) fn set_inputs(&self, input: InputAccumulatedValues) {
+        self.inputs.store(input);
     }
 
     /// Returns whether an input of the associated query has any accumulated values.
@@ -33,7 +40,7 @@ impl AccumulatedMap {
     /// Note: Use [`InputAccumulatedValues::from_map`] to check if the associated query itself
     /// or any of its inputs has accumulated values.
     pub(crate) fn inputs(&self) -> InputAccumulatedValues {
-        self.inputs
+        self.inputs.load()
     }
 
     pub fn extend_with_accumulated<A: Accumulator>(
@@ -60,7 +67,7 @@ impl Clone for AccumulatedMap {
                 .iter()
                 .map(|(&key, value)| (key, value.cloned()))
                 .collect(),
-            inputs: self.inputs,
+            inputs: AtomicCell::new(self.inputs.load()),
         }
     }
 }
@@ -70,7 +77,7 @@ impl Clone for AccumulatedMap {
 /// Knowning whether any input has accumulated values makes aggregating the accumulated values
 /// cheaper because we can skip over entire subtrees.
 #[derive(Copy, Clone, Debug, Default)]
-pub(crate) enum InputAccumulatedValues {
+pub enum InputAccumulatedValues {
     /// The query nor any of its inputs have any accumulated values.
     #[default]
     Empty,
@@ -82,7 +89,7 @@ pub(crate) enum InputAccumulatedValues {
 impl InputAccumulatedValues {
     pub(crate) fn from_map(accumulated: &AccumulatedMap) -> Self {
         if accumulated.map.is_empty() {
-            accumulated.inputs
+            accumulated.inputs.load()
         } else {
             Self::Any
         }
@@ -94,5 +101,23 @@ impl InputAccumulatedValues {
 
     pub(crate) const fn is_empty(self) -> bool {
         matches!(self, Self::Empty)
+    }
+}
+
+impl BitOr for InputAccumulatedValues {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        if rhs.is_any() {
+            InputAccumulatedValues::Any
+        } else {
+            self
+        }
+    }
+}
+
+impl BitOrAssign for InputAccumulatedValues {
+    fn bitor_assign(&mut self, rhs: Self) {
+        *self = *self | rhs;
     }
 }

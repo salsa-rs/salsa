@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crossbeam::atomic::AtomicCell;
 
+use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
     key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event, EventKind, Id,
@@ -143,6 +144,7 @@ impl<V> Memo<V> {
         db: &dyn crate::Database,
         revision_now: Revision,
         database_key_index: DatabaseKeyIndex,
+        accumulated: InputAccumulatedValues,
     ) {
         db.salsa_event(&|| Event {
             thread_id: std::thread::current().id(),
@@ -152,6 +154,7 @@ impl<V> Memo<V> {
         });
 
         self.verified_at.store(revision_now);
+        self.revisions.accumulated.set_inputs(accumulated);
     }
 
     pub(super) fn mark_outputs_as_verified(

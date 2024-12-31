@@ -6,7 +6,7 @@ use tracked_field::FieldIngredientImpl;
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
-    ingredient::{fmt_index, Ingredient, Jar, JarAux},
+    ingredient::{fmt_index, Ingredient, Jar, JarAux, MaybeChangedAfter},
     key::{DatabaseKeyIndex, DependencyIndex},
     plumbing::ZalsaLocal,
     runtime::StampedValue,
@@ -587,8 +587,8 @@ where
         _db: &dyn Database,
         _input: Option<Id>,
         _revision: Revision,
-    ) -> bool {
-        false
+    ) -> MaybeChangedAfter {
+        MaybeChangedAfter::No(InputAccumulatedValues::Empty)
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
