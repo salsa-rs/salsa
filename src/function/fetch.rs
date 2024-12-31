@@ -24,7 +24,7 @@ where
             self.database_key_index(id).into(),
             durability,
             changed_at,
-            memo.revisions.accumulated_inputs,
+            memo.revisions.accumulated_inputs.load(),
         );
 
         value

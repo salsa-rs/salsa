@@ -14,7 +14,7 @@ use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
     id::{AsId, FromId},
-    ingredient::{fmt_index, Ingredient},
+    ingredient::{fmt_index, Ingredient, MaybeChangedAfter},
     input::singleton::{Singleton, SingletonChoice},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::{Jar, JarAux, Stamp},
@@ -199,10 +199,15 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         self.ingredient_index
     }
 
-    fn maybe_changed_after(&self, _db: &dyn Database, _input: Id, _revision: Revision) -> bool {
+    fn maybe_changed_after(
+        &self,
+        _db: &dyn Database,
+        _input: Id,
+        _revision: Revision,
+    ) -> MaybeChangedAfter {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
-        false
+        MaybeChangedAfter::No(InputAccumulatedValues::Empty)
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {

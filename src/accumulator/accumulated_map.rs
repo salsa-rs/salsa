@@ -66,19 +66,28 @@ pub enum InputAccumulatedValues {
 }
 
 impl InputAccumulatedValues {
-    pub(crate) const fn is_any(self) -> bool {
+    pub const fn is_any(self) -> bool {
         matches!(self, Self::Any)
     }
 
-    pub(crate) const fn is_empty(self) -> bool {
+    pub const fn is_empty(self) -> bool {
         matches!(self, Self::Empty)
+    }
+}
+
+impl ops::BitOr for InputAccumulatedValues {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Self::Any, _) | (_, Self::Any) => Self::Any,
+            (Self::Empty, Self::Empty) => Self::Empty,
+        }
     }
 }
 
 impl ops::BitOrAssign for InputAccumulatedValues {
     fn bitor_assign(&mut self, rhs: Self) {
-        if rhs.is_any() {
-            *self = Self::Any;
-        }
+        *self = *self | rhs;
     }
 }

@@ -11,7 +11,7 @@ use accumulated::AnyAccumulated;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::{fmt_index, Ingredient, Jar},
+    ingredient::{fmt_index, Ingredient, Jar, MaybeChangedAfter},
     plumbing::JarAux,
     zalsa::IngredientIndex,
     zalsa_local::QueryOrigin,
@@ -100,7 +100,12 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         self.index
     }
 
-    fn maybe_changed_after(&self, _db: &dyn Database, _input: Id, _revision: Revision) -> bool {
+    fn maybe_changed_after(
+        &self,
+        _db: &dyn Database,
+        _input: Id,
+        _revision: Revision,
+    ) -> MaybeChangedAfter {
         panic!("nothing should ever depend on an accumulator directly")
     }
 
