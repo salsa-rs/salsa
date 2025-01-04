@@ -454,8 +454,30 @@ pub struct QueryEdges {
     /// Important:
     ///
     /// * The inputs must be in **execution order** for the red-green algorithm to work.
-    // pub input_outputs: ThinBox<[(EdgeKind, DependencyIndex)]>, once that is a thing
-    pub input_outputs: Box<[(EdgeKind, DependencyIndex)]>,
+    // pub input_outputs: ThinBox<[DependencyEdge]>, once that is a thing
+    pub input_outputs: Box<[QueryEdge]>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct QueryEdge {
+    pub kind: EdgeKind,
+    pub dependency_index: DependencyIndex,
+}
+
+impl QueryEdge {
+    pub(crate) fn input(input: DependencyIndex) -> QueryEdge {
+        QueryEdge {
+            kind: EdgeKind::Input,
+            dependency_index: input,
+        }
+    }
+
+    pub(crate) fn output(key: DependencyIndex) -> QueryEdge {
+        QueryEdge {
+            kind: EdgeKind::Output,
+            dependency_index: key,
+        }
+    }
 }
 
 impl QueryEdges {
@@ -465,8 +487,8 @@ impl QueryEdges {
     pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
         self.input_outputs
             .iter()
-            .filter(|(edge_kind, _)| *edge_kind == EdgeKind::Input)
-            .map(|(_, dependency_index)| *dependency_index)
+            .filter(|edge| edge.kind == EdgeKind::Input)
+            .map(|edge| edge.dependency_index)
     }
 
     /// Returns the (tracked) outputs that were executed in computing this memoized value.
@@ -475,13 +497,15 @@ impl QueryEdges {
     pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
         self.input_outputs
             .iter()
-            .filter(|(edge_kind, _)| *edge_kind == EdgeKind::Output)
-            .map(|(_, dependency_index)| *dependency_index)
+            .filter(|edge| edge.kind == EdgeKind::Output)
+            .map(|edge| edge.dependency_index)
     }
 
     /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.
-    pub(crate) fn new(input_outputs: Box<[(EdgeKind, DependencyIndex)]>) -> Self {
-        Self { input_outputs }
+    pub(crate) fn new(input_outputs: impl IntoIterator<Item = QueryEdge>) -> Self {
+        Self {
+            input_outputs: input_outputs.into_iter().collect(),
+        }
     }
 }
 
