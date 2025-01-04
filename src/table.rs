@@ -293,7 +293,7 @@ impl dyn TablePage {
 fn make_id(page: PageIndex, slot: SlotIndex) -> Id {
     let page = page.0 as u32;
     let slot = slot.0 as u32;
-    Id::from_u32(page << PAGE_LEN_BITS | slot)
+    Id::from_u32((page << PAGE_LEN_BITS) | slot)
 }
 
 fn split_id(id: Id) -> (PageIndex, SlotIndex) {
