@@ -429,12 +429,6 @@ impl QueryOrigin {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub enum EdgeKind {
-    Input,
-    Output,
-}
-
 /// The edges between a memoized value and other queries in the dependency graph.
 /// These edges include both dependency edges
 /// e.g., when creating the memoized value for Q0 executed another function Q1)
@@ -459,25 +453,9 @@ pub struct QueryEdges {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct QueryEdge {
-    pub kind: EdgeKind,
-    pub dependency_index: DependencyIndex,
-}
-
-impl QueryEdge {
-    pub(crate) fn input(input: DependencyIndex) -> QueryEdge {
-        QueryEdge {
-            kind: EdgeKind::Input,
-            dependency_index: input,
-        }
-    }
-
-    pub(crate) fn output(key: DependencyIndex) -> QueryEdge {
-        QueryEdge {
-            kind: EdgeKind::Output,
-            dependency_index: key,
-        }
-    }
+pub enum QueryEdge {
+    Input(DependencyIndex),
+    Output(DependencyIndex),
 }
 
 impl QueryEdges {
@@ -485,20 +463,20 @@ impl QueryEdges {
     ///
     /// These will always be in execution order.
     pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
-        self.input_outputs
-            .iter()
-            .filter(|edge| edge.kind == EdgeKind::Input)
-            .map(|edge| edge.dependency_index)
+        self.input_outputs.iter().filter_map(|&edge| match edge {
+            QueryEdge::Input(dependency_index) => Some(dependency_index),
+            QueryEdge::Output(_) => None,
+        })
     }
 
     /// Returns the (tracked) outputs that were executed in computing this memoized value.
     ///
     /// These will always be in execution order.
     pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
-        self.input_outputs
-            .iter()
-            .filter(|edge| edge.kind == EdgeKind::Output)
-            .map(|edge| edge.dependency_index)
+        self.input_outputs.iter().filter_map(|&edge| match edge {
+            QueryEdge::Output(dependency_index) => Some(dependency_index),
+            QueryEdge::Input(_) => None,
+        })
     }
 
     /// Creates a new `QueryEdges`; the values given for each field must meet struct invariants.

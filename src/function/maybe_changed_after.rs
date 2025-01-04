@@ -1,7 +1,7 @@
 use crate::{
     key::DatabaseKeyIndex,
     zalsa::{Zalsa, ZalsaDatabase},
-    zalsa_local::{ActiveQueryGuard, EdgeKind, QueryEdge, QueryOrigin},
+    zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
     AsDynDatabase as _, Id, Revision,
 };
 
@@ -182,20 +182,16 @@ where
                 // valid, then some later input I1 might never have executed at all, so verifying
                 // it is still up to date is meaningless.
                 let last_verified_at = old_memo.verified_at.load();
-                for &QueryEdge {
-                    kind,
-                    dependency_index,
-                } in edges.input_outputs.iter()
-                {
-                    match kind {
-                        EdgeKind::Input => {
+                for &edge in edges.input_outputs.iter() {
+                    match edge {
+                        QueryEdge::Input(dependency_index) => {
                             if dependency_index
                                 .maybe_changed_after(db.as_dyn_database(), last_verified_at)
                             {
                                 return false;
                             }
                         }
-                        EdgeKind::Output => {
+                        QueryEdge::Output(dependency_index) => {
                             // Subtle: Mark outputs as validated now, even though we may
                             // later find an input that requires us to re-execute the function.
                             // Even if it re-execute, the function will wind up writing the same value,

@@ -78,7 +78,7 @@ impl ActiveQuery {
         revision: Revision,
         accumulated: InputAccumulatedValues,
     ) {
-        self.input_outputs.insert(QueryEdge::input(input));
+        self.input_outputs.insert(QueryEdge::Input(input));
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(revision);
         self.accumulated.add_input(accumulated);
@@ -98,12 +98,12 @@ impl ActiveQuery {
 
     /// Adds a key to our list of outputs.
     pub(super) fn add_output(&mut self, key: DependencyIndex) {
-        self.input_outputs.insert(QueryEdge::output(key));
+        self.input_outputs.insert(QueryEdge::Output(key));
     }
 
     /// True if the given key was output by this query.
     pub(super) fn is_output(&self, key: DependencyIndex) -> bool {
-        self.input_outputs.contains(&QueryEdge::output(key))
+        self.input_outputs.contains(&QueryEdge::Output(key))
     }
 
     pub(crate) fn into_revisions(self) -> QueryRevisions {
@@ -138,7 +138,7 @@ impl ActiveQuery {
     pub(super) fn remove_cycle_participants(&mut self, cycle: &Cycle) {
         for p in cycle.participant_keys() {
             let p: DependencyIndex = p.into();
-            self.input_outputs.shift_remove(&QueryEdge::input(p));
+            self.input_outputs.shift_remove(&QueryEdge::Input(p));
         }
     }
 
