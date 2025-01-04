@@ -52,10 +52,9 @@ where
             if memo.value.is_some()
                 && self.shallow_verify_memo(db, zalsa, self.database_key_index(id), memo)
             {
-                // Unsafety invariant: memo is present in memo_map
-                unsafe {
-                    return Some(self.extend_memo_lifetime(memo));
-                }
+                // Unsafety invariant: memo is present in memo_map and we have verified that it is
+                // still valid for the current revision.
+                return unsafe { Some(self.extend_memo_lifetime(memo)) };
             }
         }
         None
@@ -81,10 +80,9 @@ where
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id);
         if let Some(old_memo) = &opt_old_memo {
             if old_memo.value.is_some() && self.deep_verify_memo(db, old_memo, &active_query) {
-                // Unsafety invariant: memo is present in memo_map.
-                unsafe {
-                    return Some(self.extend_memo_lifetime(old_memo));
-                }
+                // Unsafety invariant: memo is present in memo_map and we have verified that it is
+                // still valid for the current revision.
+                return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
             }
         }
 
