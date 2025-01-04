@@ -23,12 +23,14 @@ pub unsafe trait HasStorage: Database + Clone + Sized {
 /// Concrete implementation of the [`Database`][] trait.
 /// Takes an optional type parameter `U` that allows you to thread your own data.
 pub struct Storage<Db: Database> {
-    /// Reference to the database. This is always `Some` except during destruction.
-    zalsa_impl: Option<Arc<Zalsa>>,
+    // Note: Drop order is important, zalsa_impl needs to drop before coordinate
+    /// Reference to the database.
+    zalsa_impl: Arc<Zalsa>,
 
+    // Note: Drop order is important, coordinate needs to drop after zalsa_impl
     /// Coordination data for cancellation of other handles when `zalsa_mut` is called.
     /// This could be stored in Zalsa but it makes things marginally cleaner to keep it separate.
-    coordinate: Arc<Coordinate>,
+    coordinate: CoordinateDrop,
 
     /// Per-thread state
     zalsa_local: zalsa_local::ZalsaLocal,
@@ -46,11 +48,11 @@ struct Coordinate {
 impl<Db: Database> Default for Storage<Db> {
     fn default() -> Self {
         Self {
-            zalsa_impl: Some(Arc::new(Zalsa::new::<Db>())),
-            coordinate: Arc::new(Coordinate {
+            zalsa_impl: Arc::new(Zalsa::new::<Db>()),
+            coordinate: CoordinateDrop(Arc::new(Coordinate {
                 clones: Mutex::new(1),
                 cvar: Default::default(),
-            }),
+            })),
             zalsa_local: ZalsaLocal::new(),
             phantom: PhantomData,
         }
@@ -58,13 +60,6 @@ impl<Db: Database> Default for Storage<Db> {
 }
 
 impl<Db: Database> Storage<Db> {
-    /// Access the `Arc<Zalsa>`. This should always be
-    /// possible as `zalsa_impl` only becomes
-    /// `None` once we are in the `Drop` impl.
-    fn zalsa_impl(&self) -> &Arc<Zalsa> {
-        self.zalsa_impl.as_ref().unwrap()
-    }
-
     // ANCHOR: cancel_other_workers
     /// Sets cancellation flag and blocks until all other workers with access
     /// to this storage have completed.
@@ -72,12 +67,10 @@ impl<Db: Database> Storage<Db> {
     /// This could deadlock if there is a single worker with two handles to the
     /// same database!
     fn cancel_others(&self, db: &Db) {
-        let zalsa = self.zalsa_impl();
-        zalsa.set_cancellation_flag();
+        self.zalsa_impl.set_cancellation_flag();
 
         db.salsa_event(&|| Event {
             thread_id: std::thread::current().id(),
-
             kind: EventKind::DidSetCancellationFlag,
         });
 
@@ -91,16 +84,15 @@ impl<Db: Database> Storage<Db> {
 
 unsafe impl<T: HasStorage> ZalsaDatabase for T {
     fn zalsa(&self) -> &Zalsa {
-        self.storage().zalsa_impl.as_ref().unwrap()
+        &self.storage().zalsa_impl
     }
 
     fn zalsa_mut(&mut self) -> &mut Zalsa {
         self.storage().cancel_others(self);
 
-        // The ref count on the `Arc` should now be 1
         let storage = self.storage_mut();
-        let arc_zalsa_mut = storage.zalsa_impl.as_mut().unwrap();
-        let zalsa_mut = Arc::get_mut(arc_zalsa_mut).unwrap();
+        // The ref count on the `Arc` should now be 1
+        let zalsa_mut = Arc::get_mut(&mut storage.zalsa_impl).unwrap();
         zalsa_mut.new_revision();
         zalsa_mut
     }
@@ -122,20 +114,26 @@ impl<Db: Database> Clone for Storage<Db> {
 
         Self {
             zalsa_impl: self.zalsa_impl.clone(),
-            coordinate: Arc::clone(&self.coordinate),
+            coordinate: CoordinateDrop(Arc::clone(&self.coordinate)),
             zalsa_local: ZalsaLocal::new(),
             phantom: PhantomData,
         }
     }
 }
 
-impl<Db: Database> Drop for Storage<Db> {
-    fn drop(&mut self) {
-        // Drop the database handle *first*
-        self.zalsa_impl.take();
+struct CoordinateDrop(Arc<Coordinate>);
 
-        // *Now* decrement the number of clones and notify once we have completed
-        *self.coordinate.clones.lock() -= 1;
-        self.coordinate.cvar.notify_all();
+impl std::ops::Deref for CoordinateDrop {
+    type Target = Arc<Coordinate>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for CoordinateDrop {
+    fn drop(&mut self) {
+        *self.0.clones.lock() -= 1;
+        self.0.cvar.notify_all();
     }
 }
