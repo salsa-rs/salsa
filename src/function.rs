@@ -212,9 +212,8 @@ where
         &self,
         db: &dyn Database,
         executor: DatabaseKeyIndex,
-        output_key: Option<crate::Id>,
+        output_key: crate::Id,
     ) {
-        let output_key = output_key.unwrap();
         self.validate_specified_value(db, executor, output_key);
     }
 
@@ -222,7 +221,7 @@ where
         &self,
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
-        _stale_output_key: Option<crate::Id>,
+        _stale_output_key: crate::Id,
     ) {
         // This function is invoked when a query Q specifies the value for `stale_output_key` in rev 1,
         // but not in rev 2. We don't do anything in this case, we just leave the (now stale) memo.

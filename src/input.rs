@@ -191,10 +191,7 @@ impl<C: Configuration> IngredientImpl<C> {
         let value = Self::data(zalsa, id);
         let stamp = &value.stamps[field_index];
         zalsa_local.report_tracked_read(
-            DependencyIndex {
-                ingredient_index: field_ingredient_index,
-                key_index: Some(id),
-            },
+            DependencyIndex::new(field_ingredient_index, id),
             stamp.durability,
             stamp.changed_at,
             InputAccumulatedValues::Empty,
@@ -240,7 +237,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         &self,
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
-        output_key: Option<Id>,
+        output_key: Id,
     ) {
         unreachable!(
             "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
@@ -252,7 +249,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         &self,
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
-        stale_output_key: Option<Id>,
+        stale_output_key: Id,
     ) {
         unreachable!(
             "remove_stale_output({:?}, {:?}): input cannot be the output of a tracked function",

@@ -6,13 +6,13 @@ use crate::{cycle::CycleRecoveryStrategy, zalsa::IngredientIndex, Database, Id};
 /// inserting into maps and the like.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DependencyIndex {
-    pub(crate) ingredient_index: IngredientIndex,
-    pub(crate) key_index: Option<Id>,
+    ingredient_index: IngredientIndex,
+    key_index: Option<Id>,
 }
 
 impl DependencyIndex {
     /// Create a database-key-index for an interning or entity table.
-    /// The `key_index` here is always zero, which deliberately corresponds to
+    /// The `key_index` here is always `None`, which deliberately corresponds to
     /// no particular id or entry. This is because the data in such tables
     /// remains valid until the table as a whole is reset. Using a single id avoids
     /// creating tons of dependencies in the dependency listings.
@@ -23,18 +23,17 @@ impl DependencyIndex {
         }
     }
 
-    pub fn ingredient_index(self) -> IngredientIndex {
-        self.ingredient_index
-    }
-
-    pub fn key_index(self) -> Option<Id> {
-        self.key_index
+    pub(crate) fn new(ingredient_index: IngredientIndex, key_index: Id) -> Self {
+        Self {
+            ingredient_index,
+            key_index: Some(key_index),
+        }
     }
 
     pub(crate) fn remove_stale_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
         db.zalsa()
             .lookup_ingredient(self.ingredient_index)
-            .remove_stale_output(db, executor, self.key_index)
+            .remove_stale_output(db, executor, self.key_index.unwrap())
     }
 
     pub(crate) fn mark_validated_output(
@@ -44,7 +43,7 @@ impl DependencyIndex {
     ) {
         db.zalsa()
             .lookup_ingredient(self.ingredient_index)
-            .mark_validated_output(db, database_key_index, self.key_index)
+            .mark_validated_output(db, database_key_index, self.key_index.unwrap())
     }
 
     pub(crate) fn maybe_changed_after(
@@ -55,6 +54,10 @@ impl DependencyIndex {
         db.zalsa()
             .lookup_ingredient(self.ingredient_index)
             .maybe_changed_after(db, self.key_index, last_verified_at)
+    }
+
+    pub fn set_key_index(&mut self, key_index: Id) {
+        self.key_index = Some(key_index);
     }
 }
 

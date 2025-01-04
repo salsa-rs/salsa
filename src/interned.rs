@@ -241,7 +241,7 @@ where
         &self,
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
-        output_key: Option<crate::Id>,
+        output_key: crate::Id,
     ) {
         unreachable!(
             "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
@@ -253,7 +253,7 @@ where
         &self,
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
-        stale_output_key: Option<crate::Id>,
+        stale_output_key: crate::Id,
     ) {
         unreachable!(
             "remove_stale_output({:?}, {:?}): interned ids are not outputs",

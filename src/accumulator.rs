@@ -122,7 +122,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         &self,
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
-        _output_key: Option<crate::Id>,
+        _output_key: crate::Id,
     ) {
     }
 
@@ -130,7 +130,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         &self,
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
-        _stale_output_key: Option<crate::Id>,
+        _stale_output_key: crate::Id,
     ) {
     }
 
