@@ -2,7 +2,7 @@ use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::fmt_index;
-use crate::key::DependencyIndex;
+use crate::key::InputDependencyIndex;
 use crate::plumbing::{Jar, JarAux};
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
@@ -136,7 +136,7 @@ where
     ) -> C::Struct<'db> {
         let zalsa_local = db.zalsa_local();
         zalsa_local.report_tracked_read(
-            DependencyIndex::for_table(self.ingredient_index),
+            InputDependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
             self.reset_at,
             InputAccumulatedValues::Empty,

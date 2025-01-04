@@ -4,8 +4,7 @@ use tracing::debug;
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::active_query::ActiveQuery;
 use crate::durability::Durability;
-use crate::key::DatabaseKeyIndex;
-use crate::key::DependencyIndex;
+use crate::key::{DatabaseKeyIndex, InputDependencyIndex, OutputDependencyIndex};
 use crate::runtime::StampedValue;
 use crate::table::PageIndex;
 use crate::table::Slot;
@@ -140,7 +139,7 @@ impl ZalsaLocal {
     }
 
     /// Add an output to the current query's list of dependencies
-    pub(crate) fn add_output(&self, entity: DependencyIndex) {
+    pub(crate) fn add_output(&self, entity: OutputDependencyIndex) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_output(entity)
@@ -149,7 +148,7 @@ impl ZalsaLocal {
     }
 
     /// Check whether `entity` is an output of the currently active query (if any)
-    pub(crate) fn is_output_of_active_query(&self, entity: DependencyIndex) -> bool {
+    pub(crate) fn is_output_of_active_query(&self, entity: OutputDependencyIndex) -> bool {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.is_output(entity)
@@ -162,7 +161,7 @@ impl ZalsaLocal {
     /// Register that currently active query reads the given input
     pub(crate) fn report_tracked_read(
         &self,
-        input: DependencyIndex,
+        input: InputDependencyIndex,
         durability: Durability,
         changed_at: Revision,
         accumulated: InputAccumulatedValues,
@@ -411,7 +410,7 @@ pub enum QueryOrigin {
 
 impl QueryOrigin {
     /// Indices for queries *read* by this query
-    pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = InputDependencyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
             QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => None,
@@ -420,7 +419,7 @@ impl QueryOrigin {
     }
 
     /// Indices for queries *written* by this query (if any)
-    pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = OutputDependencyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
             QueryOrigin::Assigned(_) | QueryOrigin::BaseInput => None,
@@ -454,15 +453,15 @@ pub struct QueryEdges {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum QueryEdge {
-    Input(DependencyIndex),
-    Output(DependencyIndex),
+    Input(InputDependencyIndex),
+    Output(OutputDependencyIndex),
 }
 
 impl QueryEdges {
     /// Returns the (tracked) inputs that were executed in computing this memoized value.
     ///
     /// These will always be in execution order.
-    pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = InputDependencyIndex> + '_ {
         self.input_outputs.iter().filter_map(|&edge| match edge {
             QueryEdge::Input(dependency_index) => Some(dependency_index),
             QueryEdge::Output(_) => None,
@@ -472,7 +471,7 @@ impl QueryEdges {
     /// Returns the (tracked) outputs that were executed in computing this memoized value.
     ///
     /// These will always be in execution order.
-    pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = DependencyIndex> + '_ {
+    pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = OutputDependencyIndex> + '_ {
         self.input_outputs.iter().filter_map(|&edge| match edge {
             QueryEdge::Output(dependency_index) => Some(dependency_index),
             QueryEdge::Input(_) => None,

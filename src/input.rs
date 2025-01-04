@@ -16,7 +16,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient},
-    key::{DatabaseKeyIndex, DependencyIndex},
+    key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::{Jar, JarAux, Stamp},
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
@@ -191,7 +191,7 @@ impl<C: Configuration> IngredientImpl<C> {
         let value = Self::data(zalsa, id);
         let stamp = &value.stamps[field_index];
         zalsa_local.report_tracked_read(
-            DependencyIndex::new(field_ingredient_index, id),
+            InputDependencyIndex::new(field_ingredient_index, id),
             stamp.durability,
             stamp.changed_at,
             InputAccumulatedValues::Empty,

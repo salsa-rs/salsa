@@ -1,16 +1,68 @@
+use core::fmt;
+
 use crate::{cycle::CycleRecoveryStrategy, zalsa::IngredientIndex, Database, Id};
 
 /// An integer that uniquely identifies a particular query instance within the
-/// database. Used to track dependencies between queries. Fully ordered and
+/// database. Used to track output dependencies between queries. Fully ordered and
 /// equatable but those orderings are arbitrary, and meant to be used only for
 /// inserting into maps and the like.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DependencyIndex {
+pub struct OutputDependencyIndex {
+    ingredient_index: IngredientIndex,
+    key_index: Id,
+}
+
+/// An integer that uniquely identifies a particular query instance within the
+/// database. Used to track input dependencies between queries. Fully ordered and
+/// equatable but those orderings are arbitrary, and meant to be used only for
+/// inserting into maps and the like.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InputDependencyIndex {
     ingredient_index: IngredientIndex,
     key_index: Option<Id>,
 }
 
-impl DependencyIndex {
+impl OutputDependencyIndex {
+    pub(crate) fn new(ingredient_index: IngredientIndex, key_index: Id) -> Self {
+        Self {
+            ingredient_index,
+            key_index,
+        }
+    }
+
+    pub(crate) fn remove_stale_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
+        db.zalsa()
+            .lookup_ingredient(self.ingredient_index)
+            .remove_stale_output(db, executor, self.key_index)
+    }
+
+    pub(crate) fn mark_validated_output(
+        &self,
+        db: &dyn Database,
+        database_key_index: DatabaseKeyIndex,
+    ) {
+        db.zalsa()
+            .lookup_ingredient(self.ingredient_index)
+            .mark_validated_output(db, database_key_index, self.key_index)
+    }
+}
+
+impl fmt::Debug for OutputDependencyIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        crate::attach::with_attached_database(|db| {
+            let ingredient = db.zalsa().lookup_ingredient(self.ingredient_index);
+            ingredient.fmt_index(Some(self.key_index), f)
+        })
+        .unwrap_or_else(|| {
+            f.debug_tuple("OutputDependencyIndex")
+                .field(&self.ingredient_index)
+                .field(&self.key_index)
+                .finish()
+        })
+    }
+}
+
+impl InputDependencyIndex {
     /// Create a database-key-index for an interning or entity table.
     /// The `key_index` here is always `None`, which deliberately corresponds to
     /// no particular id or entry. This is because the data in such tables
@@ -30,22 +82,6 @@ impl DependencyIndex {
         }
     }
 
-    pub(crate) fn remove_stale_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
-        db.zalsa()
-            .lookup_ingredient(self.ingredient_index)
-            .remove_stale_output(db, executor, self.key_index.unwrap())
-    }
-
-    pub(crate) fn mark_validated_output(
-        &self,
-        db: &dyn Database,
-        database_key_index: DatabaseKeyIndex,
-    ) {
-        db.zalsa()
-            .lookup_ingredient(self.ingredient_index)
-            .mark_validated_output(db, database_key_index, self.key_index.unwrap())
-    }
-
     pub(crate) fn maybe_changed_after(
         &self,
         db: &dyn Database,
@@ -61,14 +97,14 @@ impl DependencyIndex {
     }
 }
 
-impl std::fmt::Debug for DependencyIndex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for InputDependencyIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         crate::attach::with_attached_database(|db| {
             let ingredient = db.zalsa().lookup_ingredient(self.ingredient_index);
             ingredient.fmt_index(self.key_index, f)
         })
         .unwrap_or_else(|| {
-            f.debug_tuple("DependencyIndex")
+            f.debug_tuple("InputDependencyIndex")
                 .field(&self.ingredient_index)
                 .field(&self.key_index)
                 .finish()
@@ -103,12 +139,20 @@ impl DatabaseKeyIndex {
 
 impl std::fmt::Debug for DatabaseKeyIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let i: DependencyIndex = (*self).into();
-        std::fmt::Debug::fmt(&i, f)
+        crate::attach::with_attached_database(|db| {
+            let ingredient = db.zalsa().lookup_ingredient(self.ingredient_index);
+            ingredient.fmt_index(Some(self.key_index), f)
+        })
+        .unwrap_or_else(|| {
+            f.debug_tuple("DatabaseKeyIndex")
+                .field(&self.ingredient_index)
+                .field(&self.key_index)
+                .finish()
+        })
     }
 }
 
-impl From<DatabaseKeyIndex> for DependencyIndex {
+impl From<DatabaseKeyIndex> for InputDependencyIndex {
     fn from(value: DatabaseKeyIndex) -> Self {
         Self {
             ingredient_index: value.ingredient_index,
@@ -117,10 +161,19 @@ impl From<DatabaseKeyIndex> for DependencyIndex {
     }
 }
 
-impl TryFrom<DependencyIndex> for DatabaseKeyIndex {
+impl From<DatabaseKeyIndex> for OutputDependencyIndex {
+    fn from(value: DatabaseKeyIndex) -> Self {
+        Self {
+            ingredient_index: value.ingredient_index,
+            key_index: value.key_index,
+        }
+    }
+}
+
+impl TryFrom<InputDependencyIndex> for DatabaseKeyIndex {
     type Error = ();
 
-    fn try_from(value: DependencyIndex) -> Result<Self, Self::Error> {
+    fn try_from(value: InputDependencyIndex) -> Result<Self, Self::Error> {
         let key_index = value.key_index.ok_or(())?;
         Ok(Self {
             ingredient_index: value.ingredient_index,

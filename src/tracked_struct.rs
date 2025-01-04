@@ -7,7 +7,7 @@ use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, JarAux},
-    key::{DatabaseKeyIndex, DependencyIndex},
+    key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::ZalsaLocal,
     runtime::StampedValue,
     salsa_struct::SalsaStructInDb,
@@ -559,7 +559,7 @@ where
         let field_changed_at = data.revisions[field_index];
 
         zalsa_local.report_tracked_read(
-            DependencyIndex::new(field_ingredient_index, id),
+            InputDependencyIndex::new(field_ingredient_index, id),
             data.durability,
             field_changed_at,
             InputAccumulatedValues::Empty,
