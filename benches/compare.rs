@@ -26,9 +26,8 @@ fn mutating_inputs(c: &mut Criterion) {
         codspeed_criterion_compat::measurement::WallTime,
     > = c.benchmark_group("Mutating Inputs");
 
-    let mut db = salsa::DatabaseImpl::default();
-
     for n in &[10, 20, 30] {
+        let mut db = salsa::DatabaseImpl::default();
         let base_string = "hello, world!".to_owned();
         let base_len = base_string.len();
 
@@ -57,7 +56,6 @@ fn inputs(c: &mut Criterion) {
     > = c.benchmark_group("Mutating Inputs");
 
     let db = salsa::DatabaseImpl::default();
-
     group.bench_function(BenchmarkId::new("new", "InternedInput"), |b| {
         b.iter(|| {
             let input: InternedInput = InternedInput::new(&db, "hello, world!".to_owned());
@@ -65,6 +63,7 @@ fn inputs(c: &mut Criterion) {
         })
     });
 
+    let db = salsa::DatabaseImpl::default();
     group.bench_function(BenchmarkId::new("amortized", "InternedInput"), |b| {
         let input = InternedInput::new(&db, "hello, world!".to_owned());
         let _ = interned_length(&db, input);
@@ -72,6 +71,7 @@ fn inputs(c: &mut Criterion) {
         b.iter(|| interned_length(&db, input));
     });
 
+    let db = salsa::DatabaseImpl::default();
     group.bench_function(BenchmarkId::new("new", "Input"), |b| {
         b.iter(|| {
             let input = Input::new(&db, "hello, world!".to_owned());
@@ -79,6 +79,7 @@ fn inputs(c: &mut Criterion) {
         })
     });
 
+    let db = salsa::DatabaseImpl::default();
     group.bench_function(BenchmarkId::new("amortized", "Input"), |b| {
         let input = Input::new(&db, "hello, world!".to_owned());
         let _ = length(&db, input);
