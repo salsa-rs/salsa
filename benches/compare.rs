@@ -40,13 +40,14 @@ fn mutating_inputs(c: &mut Criterion) {
 
                     let string = base_string.clone().repeat(*n);
                     let new_len = string.len();
-                    (db, base_string, base_len, string, new_len)
-                },
-                |&mut (ref mut db, ref base_string, base_len, ref string, new_len)| {
-                    let input = Input::new(db, base_string.clone());
-                    let actual_len = length(db, input);
+
+                    let input = Input::new(&db, base_string.clone());
+                    let actual_len = length(&db, input);
                     assert_eq!(base_len, actual_len);
 
+                    (db, input, string, new_len)
+                },
+                |&mut (ref mut db, input, ref string, new_len)| {
                     input.set_text(db).to(string.clone());
                     let actual_len = length(db, input);
                     assert_eq!(new_len, actual_len);
