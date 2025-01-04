@@ -87,9 +87,14 @@ impl InputDependencyIndex {
         db: &dyn Database,
         last_verified_at: crate::Revision,
     ) -> bool {
-        db.zalsa()
-            .lookup_ingredient(self.ingredient_index)
-            .maybe_changed_after(db, self.key_index, last_verified_at)
+        match self.key_index {
+            Some(key_index) => db
+                .zalsa()
+                .lookup_ingredient(self.ingredient_index)
+                .maybe_changed_after(db, key_index, last_verified_at),
+            // Data in tables themselves remain valid until the table as a whole is reset.
+            None => false,
+        }
     }
 
     pub fn set_key_index(&mut self, key_index: Id) {

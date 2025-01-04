@@ -51,12 +51,11 @@ where
     fn maybe_changed_after<'db>(
         &'db self,
         db: &'db dyn Database,
-        input: Option<Id>,
+        input: Id,
         revision: crate::Revision,
     ) -> bool {
         let zalsa = db.zalsa();
-        let id = input.unwrap();
-        let data = <super::IngredientImpl<C>>::data(zalsa.table(), id);
+        let data = <super::IngredientImpl<C>>::data(zalsa.table(), input);
         let field_changed_at = data.revisions[self.field_index];
         field_changed_at > revision
     }

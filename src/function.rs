@@ -189,15 +189,9 @@ where
         self.index
     }
 
-    fn maybe_changed_after(
-        &self,
-        db: &dyn Database,
-        input: Option<Id>,
-        revision: Revision,
-    ) -> bool {
-        let key = input.unwrap();
+    fn maybe_changed_after(&self, db: &dyn Database, input: Id, revision: Revision) -> bool {
         let db = db.as_view::<C::DbView>();
-        self.maybe_changed_after(db, key, revision)
+        self.maybe_changed_after(db, input, revision)
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {

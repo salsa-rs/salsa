@@ -101,12 +101,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         self.index
     }
 
-    fn maybe_changed_after(
-        &self,
-        _db: &dyn Database,
-        _input: Option<Id>,
-        _revision: Revision,
-    ) -> bool {
+    fn maybe_changed_after(&self, _db: &dyn Database, _input: Id, _revision: Revision) -> bool {
         panic!("nothing should ever depend on an accumulator directly")
     }
 
