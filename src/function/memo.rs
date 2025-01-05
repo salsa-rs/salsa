@@ -7,7 +7,9 @@ use std::sync::Arc;
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
+use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa_local::QueryOrigin;
+use crate::IngredientIndex;
 use crate::{
     key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event, EventKind, Id,
     Revision,
@@ -44,12 +46,13 @@ impl<C: Configuration> IngredientImpl<C> {
         zalsa: &'db Zalsa,
         id: Id,
         memo: ArcMemo<'db, C>,
+        memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<ManuallyDrop<ArcMemo<'db, C>>> {
         let static_memo = unsafe { self.to_static(memo) };
         let old_static_memo = unsafe {
             zalsa
                 .memo_table_for(id)
-                .insert(self.memo_ingredient_index, static_memo)
+                .insert(memo_ingredient_index, static_memo)
         }?;
         let old_static_memo = ManuallyDrop::into_inner(old_static_memo);
         Some(ManuallyDrop::new(unsafe { self.to_self(old_static_memo) }))
@@ -62,15 +65,20 @@ impl<C: Configuration> IngredientImpl<C> {
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
+        memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<ArcMemo<'db, C>> {
-        let static_memo = zalsa.memo_table_for(id).get(self.memo_ingredient_index)?;
+        let static_memo = zalsa.memo_table_for(id).get(memo_ingredient_index)?;
         unsafe { Some(self.to_self(static_memo)) }
     }
 
     /// Evicts the existing memo for the given key, replacing it
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
-    pub(super) fn evict_value_from_memo_for(&self, table: &mut MemoTable) {
+    pub(super) fn evict_value_from_memo_for(
+        &self,
+        table: &mut MemoTable,
+        ingredient_index: IngredientIndex,
+    ) {
         let map = |memo: ArcMemo<'static, C>| -> ArcMemo<'static, C> {
             match &memo.revisions.origin {
                 QueryOrigin::Assigned(_)
@@ -111,7 +119,12 @@ impl<C: Configuration> IngredientImpl<C> {
             }
         };
         // SAFETY: We queue the old value for deletion, delaying its drop until the next revision bump.
-        let old = unsafe { table.map_memo(self.memo_ingredient_index, map) };
+        let old = unsafe {
+            table.map_memo(
+                self.memo_ingredient_index_for_ingredient(ingredient_index),
+                map,
+            )
+        };
         if let Some(old) = old {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.

@@ -84,6 +84,12 @@ where
 
         tracing::debug!("{database_key_index:?}: read_upgrade: result.revisions = {revisions:#?}");
 
-        self.insert_memo(zalsa, id, Memo::new(Some(value), revision_now, revisions))
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
+        self.insert_memo(
+            zalsa,
+            id,
+            Memo::new(Some(value), revision_now, revisions),
+            memo_ingredient_index,
+        )
     }
 }
