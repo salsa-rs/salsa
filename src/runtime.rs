@@ -350,4 +350,8 @@ impl Runtime {
             .lock()
             .unblock_runtimes_blocked_on(database_key, wait_result);
     }
+
+    pub(crate) fn take_table(&mut self) -> Table {
+        std::mem::take(&mut self.table)
+    }
 }

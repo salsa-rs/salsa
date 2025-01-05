@@ -4,7 +4,7 @@ use crate::id::AsId;
 use crate::ingredient::fmt_index;
 use crate::key::DependencyIndex;
 use crate::plumbing::{Jar, JarAux};
-use crate::table::memo::MemoTable;
+use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::sync::SyncTable;
 use crate::table::Slot;
 use crate::zalsa::IngredientIndex;
@@ -66,6 +66,8 @@ pub struct IngredientImpl<C: Configuration> {
     /// but that will make anything dependent on those entries dirty and in need
     /// of being recomputed.
     reset_at: Revision,
+
+    memo_table_types: MemoTableTypes,
 }
 
 /// Struct storing the interned fields.
@@ -109,6 +111,7 @@ where
             ingredient_index,
             key_map: Default::default(),
             reset_at: Revision::start(),
+            memo_table_types: MemoTableTypes::default(),
         }
     }
 
@@ -280,6 +283,10 @@ where
         C::DEBUG_NAME
     }
 
+    fn memo_table_types(&self) -> &MemoTableTypes {
+        &self.memo_table_types
+    }
+
     fn accumulated<'db>(
         &'db self,
         _db: &'db dyn Database,
@@ -310,6 +317,10 @@ where
 
     unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {
         &self.syncs
+    }
+
+    unsafe fn drop_memos(&mut self, types: &MemoTableTypes) {
+        self.memos.drop(types);
     }
 }
 
