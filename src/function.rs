@@ -5,7 +5,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::fmt_index,
     key::DatabaseKeyIndex,
-    plumbing::JarAux,
+    memo_ingredient_indices::{IngredientIndices, MemoIngredientIndices},
     salsa_struct::SalsaStructInDb,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
@@ -95,7 +95,7 @@ pub struct IngredientImpl<C: Configuration> {
     index: IngredientIndex,
 
     /// The index for the memo/sync tables
-    memo_ingredient_index: MemoIngredientIndex,
+    memo_ingredient_indices: MemoIngredientIndices,
 
     /// Used to find memos to throw out when we have too many memoized values.
     lru: lru::Lru,
@@ -126,10 +126,12 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn new(struct_index: IngredientIndex, index: IngredientIndex, aux: &dyn JarAux) -> Self {
+    pub fn new(struct_indices: IngredientIndices, index: IngredientIndex, zalsa: &Zalsa) -> Self {
+        let memo_ingredient_indices = struct_indices
+            .memo_indices(|struct_index| zalsa.next_memo_ingredient_index(struct_index, index));
         Self {
             index,
-            memo_ingredient_index: aux.next_memo_ingredient_index(struct_index, index),
+            memo_ingredient_indices,
             lru: Default::default(),
             deleted_entries: Default::default(),
         }
@@ -165,6 +167,7 @@ where
         zalsa: &'db Zalsa,
         id: Id,
         memo: memo::Memo<C::Output<'db>>,
+        memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db memo::Memo<C::Output<'db>> {
         let memo = Arc::new(memo);
         let db_memo = unsafe {
@@ -172,12 +175,20 @@ where
             // value is returned) and anything removed from map is added to deleted entries (ensured elsewhere).
             self.extend_memo_lifetime(&memo)
         };
-        if let Some(old_value) = self.insert_memo_into_table_for(zalsa, id, memo) {
+        if let Some(old_value) =
+            self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index)
+        {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
             self.deleted_entries.push(old_value);
         }
         db_memo
+    }
+
+    #[inline]
+    fn memo_ingredient_index(&self, zalsa: &Zalsa, id: Id) -> MemoIngredientIndex {
+        self.memo_ingredient_indices
+            .find(zalsa.ingredient_index(id))
     }
 }
 

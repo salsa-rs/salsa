@@ -1,6 +1,6 @@
 use crate::{
     key::DatabaseKeyIndex,
-    zalsa::{Zalsa, ZalsaDatabase},
+    zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
     AsDynDatabase as _, Id, Revision,
 };
@@ -18,6 +18,7 @@ where
         revision: Revision,
     ) -> bool {
         let (zalsa, zalsa_local) = db.zalsas();
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
 
         loop {
@@ -26,13 +27,15 @@ where
             tracing::debug!("{database_key_index:?}: maybe_changed_after(revision = {revision:?})");
 
             // Check if we have a verified version: this is the hot path.
-            let memo_guard = self.get_memo_from_table_for(zalsa, id);
+            let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
             if let Some(memo) = &memo_guard {
                 if self.shallow_verify_memo(db, zalsa, database_key_index, memo) {
                     return memo.revisions.changed_at > revision;
                 }
                 drop(memo_guard); // release the arc-swap guard before cold path
-                if let Some(mcs) = self.maybe_changed_after_cold(db, id, revision) {
+                if let Some(mcs) =
+                    self.maybe_changed_after_cold(db, id, revision, memo_ingredient_index)
+                {
                     return mcs;
                 } else {
                     // We failed to claim, have to retry.
@@ -49,6 +52,7 @@ where
         db: &'db C::DbView,
         key_index: Id,
         revision: Revision,
+        memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<bool> {
         let (zalsa, zalsa_local) = db.zalsas();
         let database_key_index = self.database_key_index(key_index);
@@ -57,12 +61,13 @@ where
             db.as_dyn_database(),
             zalsa_local,
             database_key_index,
-            self.memo_ingredient_index,
+            memo_ingredient_index,
         )?;
         let active_query = zalsa_local.push_query(database_key_index);
 
         // Load the current memo, if any.
-        let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index) else {
+        let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index, memo_ingredient_index)
+        else {
             return Some(true);
         };
 

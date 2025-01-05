@@ -99,8 +99,17 @@ macro_rules! setup_tracked_fn {
                         $zalsa::IngredientCache::new();
 
                     impl $zalsa::SalsaStructInDb for $InternedData<'_> {
-                        fn lookup_ingredient_index(_aux: &dyn $zalsa::JarAux) -> core::option::Option<$zalsa::IngredientIndex> {
-                            None
+                        fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
+                            $zalsa::IngredientIndices::uninitialized()
+                        }
+
+                        #[inline]
+                        fn cast(id: $zalsa::Id, type_id: ::core::any::TypeId) -> Option<Self> {
+                            if type_id == ::core::any::TypeId::of::<$InternedData>() {
+                                Some($InternedData(id, ::core::marker::PhantomData))
+                            } else {
+                                None
+                            }
                         }
                     }
 
@@ -130,7 +139,7 @@ macro_rules! setup_tracked_fn {
                 fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
                     $FN_CACHE.get_or_create(db.as_dyn_database(), || {
                         <dyn $Db as $Db>::zalsa_db(db);
-                        db.zalsa().add_or_lookup_jar_by_type(&$Configuration)
+                        db.zalsa().add_or_lookup_jar_by_type::<$Configuration>()
                     })
                 }
 
@@ -139,7 +148,7 @@ macro_rules! setup_tracked_fn {
                         db: &dyn $Db,
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
                         $INTERN_CACHE.get_or_create(db.as_dyn_database(), || {
-                            db.zalsa().add_or_lookup_jar_by_type(&$Configuration).successor(0)
+                            db.zalsa().add_or_lookup_jar_by_type::<$Configuration>().successor(0)
                         })
                     }
                 }
@@ -190,33 +199,43 @@ macro_rules! setup_tracked_fn {
                         if $needs_interner {
                             $Configuration::intern_ingredient(db).data(db.as_dyn_database(), key).clone()
                         } else {
-                            $zalsa::FromId::from_id(key)
+                            $zalsa::FromIdWithDb::from_id(key, db)
                         }
                     }
                 }
             }
 
             impl $zalsa::Jar for $Configuration {
+                fn create_dependencies(zalsa: &$zalsa::Zalsa) -> $zalsa::IngredientIndices
+                where
+                    Self: Sized
+                {
+                    $zalsa::macro_if! {
+                        if $needs_interner {
+                            $zalsa::IngredientIndices::uninitialized()
+                        } else {
+                            <$InternedData as $zalsa::SalsaStructInDb>::lookup_or_create_ingredient_index(zalsa)
+                        }
+                    }
+                }
+
                 fn create_ingredients(
-                    &self,
-                    aux: &dyn $zalsa::JarAux,
+                    zalsa: &$zalsa::Zalsa,
                     first_index: $zalsa::IngredientIndex,
+                    struct_index: $zalsa::IngredientIndices,
                 ) -> Vec<Box<dyn $zalsa::Ingredient>> {
                     let struct_index = $zalsa::macro_if! {
                         if $needs_interner {
-                            first_index.successor(0)
+                            first_index.successor(0).into()
                         } else {
-                            <$InternedData as $zalsa::SalsaStructInDb>::lookup_ingredient_index(aux)
-                                .expect(
-                                    "Salsa struct is passed as an argument of a tracked function, but its ingredient hasn't been added!"
-                                )
+                            struct_index
                         }
                     };
 
                     let fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
                         struct_index,
                         first_index,
-                        aux,
+                        zalsa,
                     );
                     fn_ingredient.set_capacity($lru);
                     $zalsa::macro_if! {
@@ -235,8 +254,8 @@ macro_rules! setup_tracked_fn {
                     }
                 }
 
-                fn salsa_struct_type_id(&self) -> Option<core::any::TypeId> {
-                    None
+                fn id_struct_type_id() -> $zalsa::TypeId {
+                    $zalsa::TypeId::of::<$InternedData<'static>>()
                 }
             }
 

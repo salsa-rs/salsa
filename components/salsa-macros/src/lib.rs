@@ -38,6 +38,7 @@ mod accumulator;
 mod db;
 mod db_lifetime;
 mod debug;
+mod enum_;
 mod fn_util;
 mod hygiene;
 mod input;
@@ -64,6 +65,11 @@ pub fn db(args: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn interned(args: TokenStream, input: TokenStream) -> TokenStream {
     interned::interned(args, input)
+}
+
+#[proc_macro_derive(Enum)]
+pub fn enum_(input: TokenStream) -> TokenStream {
+    enum_::enum_(input)
 }
 
 #[proc_macro_attribute]

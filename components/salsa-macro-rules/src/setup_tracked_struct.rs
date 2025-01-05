@@ -134,7 +134,7 @@ macro_rules! setup_tracked_struct {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
                     CACHE.get_or_create(db, || {
-                        db.zalsa().add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl::<$Configuration>>::default())
+                        db.zalsa().add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
                     })
                 }
             }
@@ -152,8 +152,17 @@ macro_rules! setup_tracked_struct {
             }
 
             impl $zalsa::SalsaStructInDb for $Struct<'_> {
-                fn lookup_ingredient_index(aux: &dyn $zalsa::JarAux) -> core::option::Option<$zalsa::IngredientIndex> {
-                    aux.lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
+                fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
+                    aux.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().into()
+                }
+
+                #[inline]
+                fn cast(id: $zalsa::Id, type_id: $zalsa::TypeId) -> $zalsa::Option<Self> {
+                    if type_id == $zalsa::TypeId::of::<$Struct>() {
+                        $zalsa::Some(<$Struct as $zalsa::FromId>::from_id(id))
+                    } else {
+                        $zalsa::None
+                    }
                 }
             }
 

@@ -67,7 +67,7 @@ macro_rules! setup_input_struct {
             use salsa::plumbing as $zalsa;
             use $zalsa::input as $zalsa_struct;
 
-            struct $Configuration;
+            $vis struct $Configuration;
 
             impl $zalsa_struct::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
@@ -89,13 +89,13 @@ macro_rules! setup_input_struct {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
                     CACHE.get_or_create(db, || {
-                        db.zalsa().add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
+                        db.zalsa().add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>()
                     })
                 }
 
                 pub fn ingredient_mut(db: &mut dyn $zalsa::Database) -> (&mut $zalsa_struct::IngredientImpl<Self>, &mut $zalsa::Runtime) {
                     let zalsa_mut = db.zalsa_mut();
-                    let index = zalsa_mut.add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default());
+                    let index = zalsa_mut.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>();
                     let current_revision = zalsa_mut.current_revision();
                     let (ingredient, runtime) = zalsa_mut.lookup_ingredient_mut(index);
                     let ingredient = ingredient.assert_type_mut::<$zalsa_struct::IngredientImpl<Self>>();
@@ -124,8 +124,17 @@ macro_rules! setup_input_struct {
             }
 
             impl $zalsa::SalsaStructInDb for $Struct {
-                fn lookup_ingredient_index(aux: &dyn $zalsa::JarAux) -> core::option::Option<$zalsa::IngredientIndex> {
-                    aux.lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
+                fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
+                    aux.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().into()
+                }
+
+                #[inline]
+                fn cast(id: $zalsa::Id, type_id: $zalsa::TypeId) -> $zalsa::Option<Self> {
+                    if type_id == $zalsa::TypeId::of::<$Struct>() {
+                        $zalsa::Some($Struct(id))
+                    } else {
+                        $zalsa::None
+                    }
                 }
             }
 
@@ -187,7 +196,7 @@ macro_rules! setup_input_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + salsa::Database,
                     {
-                        $Configuration::ingredient(db.as_dyn_database()).get_singleton_input()
+                        $Configuration::ingredient(db.as_dyn_database()).get_singleton_input(db)
                     }
 
                     #[track_caller]

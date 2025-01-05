@@ -6,7 +6,7 @@ use tracked_field::FieldIngredientImpl;
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
-    ingredient::{fmt_index, Ingredient, Jar, JarAux},
+    ingredient::{fmt_index, Ingredient, Jar},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::ZalsaLocal,
     runtime::StampedValue,
@@ -101,9 +101,9 @@ impl<C: Configuration> Default for JarImpl<C> {
 
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
-        &self,
-        _aux: &dyn JarAux,
+        _zalsa: &Zalsa,
         struct_index: crate::zalsa::IngredientIndex,
+        _dependencies: crate::memo_ingredient_indices::IngredientIndices,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient = <IngredientImpl<C>>::new(struct_index);
 
@@ -114,8 +114,8 @@ impl<C: Configuration> Jar for JarImpl<C> {
             .collect()
     }
 
-    fn salsa_struct_type_id(&self) -> Option<TypeId> {
-        Some(TypeId::of::<<C as Configuration>::Struct<'static>>())
+    fn id_struct_type_id() -> TypeId {
+        TypeId::of::<C::Struct<'static>>()
     }
 }
 

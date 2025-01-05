@@ -6,7 +6,8 @@ use std::{
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
-    zalsa::{IngredientIndex, MemoIngredientIndex},
+    plumbing::IngredientIndices,
+    zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id,
 };
@@ -16,40 +17,33 @@ use super::Revision;
 /// A "jar" is a group of ingredients that are added atomically.
 /// Each type implementing jar can be added to the database at most once.
 pub trait Jar: Any {
+    /// This creates the ingredient dependencies of this jar. We need to split this from `create_ingredients()`
+    /// because while `create_ingredients()` is called, a lock on the ingredient map is held (to guarantee
+    /// atomicity), so other ingredients could not be created.
+    ///
+    /// Only tracked fns use this.
+    fn create_dependencies(_zalsa: &Zalsa) -> IngredientIndices
+    where
+        Self: Sized,
+    {
+        IngredientIndices::uninitialized()
+    }
+
     /// Create the ingredients given the index of the first one.
     /// All subsequent ingredients will be assigned contiguous indices.
     fn create_ingredients(
-        &self,
-        aux: &dyn JarAux,
+        zalsa: &Zalsa,
         first_index: IngredientIndex,
-    ) -> Vec<Box<dyn Ingredient>>;
+        dependencies: IngredientIndices,
+    ) -> Vec<Box<dyn Ingredient>>
+    where
+        Self: Sized;
 
-    /// If this jar's first ingredient is a salsa struct, return its `TypeId`
-    fn salsa_struct_type_id(&self) -> Option<TypeId>;
-}
-
-/// Methods on the Salsa database available to jars while they are creating their ingredients.
-pub trait JarAux {
-    /// Return index of first ingredient from `jar` (based on the dynamic type of `jar`).
-    /// Returns `None` if the jar has not yet been added.
-    /// Used by tracked functions to lookup the ingredient index for the salsa struct they take as argument.
-    fn lookup_jar_by_type(&self, jar: &dyn Jar) -> Option<IngredientIndex>;
-
-    /// Returns the memo ingredient index that should be used to attach data from the given tracked function
-    /// to the given salsa struct (which the fn accepts as argument).
-    ///
-    /// The memo ingredient indices for a given function must be distinct from the memo indices
-    /// of all other functions that take the same salsa struct.
-    ///
-    /// # Parameters
-    ///
-    /// * `struct_ingredient_index`, the index of the salsa struct the memo will be attached to
-    /// * `ingredient_index`, the index of the tracked function whose data is stored in the memo
-    fn next_memo_ingredient_index(
-        &self,
-        struct_ingredient_index: IngredientIndex,
-        ingredient_index: IngredientIndex,
-    ) -> MemoIngredientIndex;
+    /// This returns the [`TypeId`] of the ID struct, that is, the struct that wraps `salsa::Id`
+    /// and carry the name of the jar.
+    fn id_struct_type_id() -> TypeId
+    where
+        Self: Sized;
 }
 
 pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {

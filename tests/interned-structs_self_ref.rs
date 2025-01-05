@@ -1,8 +1,10 @@
 //! Test that a `tracked` fn on a `salsa::input`
 //! compiles and executes successfully.
 
+use std::any::TypeId;
 use std::convert::identity;
 
+use salsa::plumbing::Zalsa;
 use test_log::test;
 
 #[test]
@@ -86,7 +88,7 @@ const _: () = {
                 zalsa_::IngredientCache::new();
             CACHE.get_or_create(db.as_dyn_database(), || {
                 db.zalsa()
-                    .add_or_lookup_jar_by_type(&<zalsa_struct_::JarImpl<Configuration_>>::default())
+                    .add_or_lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
             })
         }
     }
@@ -110,10 +112,18 @@ const _: () = {
         }
     }
     impl zalsa_::SalsaStructInDb for InternedString<'_> {
-        fn lookup_ingredient_index(
-            aux: &dyn zalsa_::JarAux,
-        ) -> core::option::Option<zalsa_::IngredientIndex> {
-            aux.lookup_jar_by_type(&<zalsa_struct_::JarImpl<Configuration_>>::default())
+        fn lookup_or_create_ingredient_index(aux: &Zalsa) -> salsa::plumbing::IngredientIndices {
+            aux.add_or_lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
+                .into()
+        }
+
+        #[inline]
+        fn cast(id: zalsa_::Id, type_id: TypeId) -> Option<Self> {
+            if type_id == TypeId::of::<InternedString>() {
+                Some(<InternedString as zalsa_::FromId>::from_id(id))
+            } else {
+                None
+            }
         }
     }
 

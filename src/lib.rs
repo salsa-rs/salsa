@@ -15,6 +15,7 @@ mod ingredient;
 mod input;
 mod interned;
 mod key;
+mod memo_ingredient_indices;
 mod nonce;
 mod par_map;
 mod revision;
@@ -52,6 +53,7 @@ pub use salsa_macros::db;
 pub use salsa_macros::input;
 pub use salsa_macros::interned;
 pub use salsa_macros::tracked;
+pub use salsa_macros::Enum;
 pub use salsa_macros::Update;
 
 pub mod prelude {
@@ -66,6 +68,9 @@ pub mod prelude {
 ///
 /// The contents of this module are NOT subject to semver.
 pub mod plumbing {
+    pub use std::any::TypeId;
+    pub use std::option::Option::{self, None, Some};
+
     pub use crate::accumulator::Accumulator;
     pub use crate::array::Array;
     pub use crate::attach::attach;
@@ -77,11 +82,12 @@ pub mod plumbing {
     pub use crate::function::should_backdate_value;
     pub use crate::id::AsId;
     pub use crate::id::FromId;
+    pub use crate::id::FromIdWithDb;
     pub use crate::id::Id;
     pub use crate::ingredient::Ingredient;
     pub use crate::ingredient::Jar;
-    pub use crate::ingredient::JarAux;
     pub use crate::key::DatabaseKeyIndex;
+    pub use crate::memo_ingredient_indices::IngredientIndices;
     pub use crate::revision::Revision;
     pub use crate::runtime::stamp;
     pub use crate::runtime::Runtime;

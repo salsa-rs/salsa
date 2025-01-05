@@ -4,11 +4,11 @@ use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
 use crate::ingredient::fmt_index;
 use crate::key::InputDependencyIndex;
-use crate::plumbing::{Jar, JarAux};
+use crate::plumbing::{IngredientIndices, Jar};
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
 use crate::table::Slot;
-use crate::zalsa::IngredientIndex;
+use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOrigin;
 use crate::{Database, DatabaseKeyIndex, Id};
 use std::any::TypeId;
@@ -89,15 +89,15 @@ impl<C: Configuration> Default for JarImpl<C> {
 
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
-        &self,
-        _aux: &dyn JarAux,
+        _zalsa: &Zalsa,
         first_index: IngredientIndex,
+        _dependencies: IngredientIndices,
     ) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(IngredientImpl::<C>::new(first_index)) as _]
     }
 
-    fn salsa_struct_type_id(&self) -> Option<std::any::TypeId> {
-        Some(TypeId::of::<<C as Configuration>::Struct<'static>>())
+    fn id_struct_type_id() -> TypeId {
+        TypeId::of::<C::Struct<'static>>()
     }
 }
 
