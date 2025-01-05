@@ -577,12 +577,7 @@ where
         self.ingredient_index
     }
 
-    fn maybe_changed_after(
-        &self,
-        _db: &dyn Database,
-        _input: Option<Id>,
-        _revision: Revision,
-    ) -> bool {
+    fn maybe_changed_after(&self, _db: &dyn Database, _input: Id, _revision: Revision) -> bool {
         false
     }
 

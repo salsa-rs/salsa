@@ -329,7 +329,7 @@ impl JarAux for JarAuxImpl<'_> {
             memo_ingredients
         } else {
             memo_ingredients.resize_with(idx + 1, Vec::new);
-            memo_ingredients.get_mut(idx).unwrap()
+            &mut memo_ingredients[idx]
         };
         let mi = MemoIngredientIndex(u32::try_from(memo_ingredients.len()).unwrap());
         memo_ingredients.push(ingredient_index);

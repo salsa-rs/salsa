@@ -99,10 +99,6 @@ impl ZalsaLocal {
         c(self.query_stack.borrow_mut().as_mut())
     }
 
-    fn query_in_progress(&self) -> bool {
-        self.with_query_stack(|stack| !stack.is_empty())
-    }
-
     /// Returns the index of the active query along with its *current* durability/changed-at
     /// information. As the query continues to execute, naturally, that information may change.
     pub(crate) fn active_query(&self) -> Option<(DatabaseKeyIndex, StampedValue<()>)> {
@@ -239,13 +235,10 @@ impl ZalsaLocal {
     ///   * the disambiguator index
     #[track_caller]
     pub(crate) fn disambiguate(&self, key: IdentityHash) -> (StampedValue<()>, Disambiguator) {
-        assert!(
-            self.query_in_progress(),
-            "cannot create a tracked struct disambiguator outside of a tracked function"
-        );
-
         self.with_query_stack(|stack| {
-            let top_query = stack.last_mut().unwrap();
+            let top_query = stack.last_mut().expect(
+                "cannot create a tracked struct disambiguator outside of a tracked function",
+            );
             let disambiguator = top_query.disambiguate(key);
             (
                 StampedValue {
@@ -260,25 +253,20 @@ impl ZalsaLocal {
 
     #[track_caller]
     pub(crate) fn tracked_struct_id(&self, identity: &Identity) -> Option<Id> {
-        debug_assert!(
-            self.query_in_progress(),
-            "cannot create a tracked struct disambiguator outside of a tracked function"
-        );
-
         self.with_query_stack(|stack| {
-            let top_query = stack.last().unwrap();
+            let top_query = stack.last().expect(
+                "cannot create a tracked struct disambiguator outside of a tracked function",
+            );
             top_query.tracked_struct_ids.get(identity).copied()
         })
     }
 
     #[track_caller]
     pub(crate) fn store_tracked_struct_id(&self, identity: Identity, id: Id) {
-        debug_assert!(
-            self.query_in_progress(),
-            "cannot create a tracked struct disambiguator outside of a tracked function"
-        );
         self.with_query_stack(|stack| {
-            let top_query = stack.last_mut().unwrap();
+            let top_query = stack.last_mut().expect(
+                "cannot create a tracked struct disambiguator outside of a tracked function",
+            );
             let old_id = top_query.tracked_struct_ids.insert(identity, id);
             assert!(
                 old_id.is_none(),

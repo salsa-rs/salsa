@@ -59,7 +59,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     fn maybe_changed_after<'db>(
         &'db self,
         db: &'db dyn Database,
-        input: Option<Id>,
+        input: Id,
         revision: Revision,
     ) -> bool;
 

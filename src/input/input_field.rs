@@ -49,14 +49,8 @@ where
         CycleRecoveryStrategy::Panic
     }
 
-    fn maybe_changed_after(
-        &self,
-        db: &dyn Database,
-        input: Option<Id>,
-        revision: Revision,
-    ) -> bool {
+    fn maybe_changed_after(&self, db: &dyn Database, input: Id, revision: Revision) -> bool {
         let zalsa = db.zalsa();
-        let input = input.unwrap();
         let value = <IngredientImpl<C>>::data(zalsa, input);
         value.stamps[self.field_index].changed_at > revision
     }
