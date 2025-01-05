@@ -1,11 +1,13 @@
 use std::{
     any::{Any, TypeId},
     fmt,
+    sync::Arc,
 };
 
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
+    table::memo::{MemoEntryType, MemoTableTypes},
     zalsa::{IngredientIndex, MemoIngredientIndex},
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id,
@@ -35,6 +37,12 @@ pub trait JarAux {
     /// Used by tracked functions to lookup the ingredient index for the salsa struct they take as argument.
     fn lookup_jar_by_type(&self, jar: &dyn Jar) -> Option<IngredientIndex>;
 
+    /// Returns the `MemoTableTypes` of the passed ingredient.
+    fn lookup_ingredient_memo_types(
+        &self,
+        ingredient_index: IngredientIndex,
+    ) -> Arc<MemoTableTypes>;
+
     /// Returns the memo ingredient index that should be used to attach data from the given tracked function
     /// to the given salsa struct (which the fn accepts as argument).
     ///
@@ -45,10 +53,18 @@ pub trait JarAux {
     ///
     /// * `struct_ingredient_index`, the index of the salsa struct the memo will be attached to
     /// * `ingredient_index`, the index of the tracked function whose data is stored in the memo
-    fn next_memo_ingredient_index(
+    /// * `memo_type`, the type of the `Memo` implementation.
+    /// * `memo_types`, the types table of `struct_ingredient_index`.
+    ///
+    /// # Safety
+    ///
+    /// `memo_type` and `memo_types` must be correct.
+    unsafe fn next_memo_ingredient_index(
         &self,
         struct_ingredient_index: IngredientIndex,
         ingredient_index: IngredientIndex,
+        memo_type: MemoEntryType,
+        memo_types: &MemoTableTypes,
     ) -> MemoIngredientIndex;
 }
 
@@ -123,6 +139,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// **Important:** to actually receive resets, the ingredient must set
     /// [`IngredientRequiresReset::RESET_ON_NEW_REVISION`] to true.
     fn reset_for_new_revision(&mut self);
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes>;
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
 }

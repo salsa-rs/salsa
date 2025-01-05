@@ -4,7 +4,10 @@ use std::{
     mem::MaybeUninit,
     panic::RefUnwindSafe,
     ptr, slice,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use append_only_vec::AppendOnlyVec;
@@ -12,7 +15,11 @@ use memo::MemoTable;
 use parking_lot::Mutex;
 use sync::SyncTable;
 
-use crate::{zalsa::transmute_data_ptr, Id, IngredientIndex, Revision};
+use crate::{
+    table::memo::{MemoTableTypes, MemoTableWithTypes},
+    zalsa::{transmute_data_ptr, Zalsa},
+    Id, IngredientIndex, Revision,
+};
 
 pub(crate) mod memo;
 pub(crate) mod sync;
@@ -35,7 +42,7 @@ pub(crate) trait TablePage: Any + Send + Sync {
     /// # Safety condition
     ///
     /// The `current_revision` MUST be the current revision of the database owning this table page.
-    unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable;
+    unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> MemoTableWithTypes<'_>;
 
     /// Access the syncs attached to `slot`.
     ///
@@ -49,6 +56,8 @@ pub(crate) struct Page<T: Slot> {
     /// The ingredient for elements on this page.
     #[allow(dead_code)] // pretty sure we'll need this
     ingredient: IngredientIndex,
+
+    memo_types: Arc<MemoTableTypes>,
 
     /// Number of elements of `data` that are initialized.
     allocated: AtomicUsize,
@@ -81,6 +90,11 @@ pub(crate) trait Slot: Any + Send + Sync {
     ///
     /// The current revision MUST be the current revision of the database containing this slot.
     unsafe fn syncs(&self, current_revision: Revision) -> &SyncTable;
+
+    /// # Safety
+    ///
+    /// `types` must be correct.
+    unsafe fn drop_memos(&mut self, types: &MemoTableTypes);
 }
 
 unsafe impl<T: Slot> Send for Page<T> {}
@@ -154,8 +168,8 @@ impl Table {
     }
 
     /// Allocate a new page for the given ingredient and with slots of type `T`
-    pub fn push_page<T: Slot>(&self, ingredient: IngredientIndex) -> PageIndex {
-        let page = Box::new(<Page<T>>::new(ingredient));
+    pub fn push_page<T: Slot>(&self, ingredient: IngredientIndex, zalsa: &Zalsa) -> PageIndex {
+        let page = Box::new(<Page<T>>::new(ingredient, zalsa));
         PageIndex::new(self.pages.push(page))
     }
 
@@ -165,9 +179,10 @@ impl Table {
     ///
     /// The parameter `current_revision` MUST be the current revision
     /// of the owner of database owning this table.
-    pub unsafe fn memos(&self, id: Id, current_revision: Revision) -> &MemoTable {
+    pub unsafe fn memos(&self, id: Id, current_revision: Revision) -> MemoTableWithTypes<'_> {
         let (page, slot) = split_id(id);
-        self.pages[page.0].memos(slot, current_revision)
+        let page = &self.pages[page.0];
+        page.memos(slot, current_revision)
     }
 
     /// Get the sync table associated with `id`
@@ -184,12 +199,17 @@ impl Table {
 
 impl<T: Slot> Page<T> {
     #[allow(clippy::uninit_vec)]
-    fn new(ingredient: IngredientIndex) -> Self {
+    fn new(ingredient: IngredientIndex, zalsa: &Zalsa) -> Self {
+        let memo_types = zalsa
+            .lookup_ingredient(ingredient)
+            .memo_table_types()
+            .clone();
         Self {
             ingredient,
             allocated: Default::default(),
             allocation_lock: Default::default(),
             data: Box::new([const { UnsafeCell::new(MaybeUninit::uninit()) }; PAGE_LEN]),
+            memo_types,
         }
     }
 
@@ -270,8 +290,9 @@ impl<T: Slot> TablePage for Page<T> {
         std::any::type_name::<Self>()
     }
 
-    unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable {
-        self.get(slot).memos(current_revision)
+    unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> MemoTableWithTypes<'_> {
+        self.memo_types
+            .attach_memos(self.get(slot).memos(current_revision))
     }
 
     unsafe fn syncs(&self, slot: SlotIndex, current_revision: Revision) -> &SyncTable {
@@ -282,12 +303,15 @@ impl<T: Slot> TablePage for Page<T> {
 impl<T: Slot> Drop for Page<T> {
     fn drop(&mut self) {
         // Execute destructors for all initialized elements
-        let len = self.allocated.load(Ordering::Acquire);
+        let len = *self.allocated.get_mut();
         // SAFETY: self.data is initialized for T's up to len
         unsafe {
             // FIXME: Should be ptr::from_raw_parts_mut but that is unstable
             let to_drop = slice::from_raw_parts_mut(self.data.as_mut_ptr().cast::<T>(), len);
-            ptr::drop_in_place(to_drop)
+            for v in &mut *to_drop {
+                v.drop_memos(&self.memo_types);
+                ptr::drop_in_place(v);
+            }
         }
     }
 }

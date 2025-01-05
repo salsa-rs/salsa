@@ -106,7 +106,7 @@ impl<C: Configuration> IngredientImpl<C> {
 }
 
 #[derive(Debug)]
-pub(super) struct Memo<V> {
+pub struct Memo<V> {
     /// The result of the query, if we decide to memoize it.
     pub(super) value: Option<V>,
 
