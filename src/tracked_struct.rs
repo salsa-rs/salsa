@@ -153,8 +153,13 @@ where
 /// struct and later moved to the [`Memo`](`crate::function::memo::Memo`).
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub(crate) struct Identity {
-    /// Hash of fields with id attribute
-    identity_hash: IdentityHash,
+    // conceptually, this contains an `IdentityHash`, but using the type directly will grow the size
+    // of if this struct by a word due to unusable padding, so we store the fields directly instead.
+    /// Index of the tracked struct ingredient.
+    ingredient_index: IngredientIndex,
+
+    /// Hash of the id fields.
+    hash: u64,
 
     /// The unique disambiguator assigned within the active query
     /// to distinguish distinct tracked structs with the same identity_hash.
@@ -163,15 +168,7 @@ pub(crate) struct Identity {
 
 impl Identity {
     pub(crate) fn ingredient_index(&self) -> IngredientIndex {
-        self.identity_hash.ingredient_index
-    }
-
-    pub(crate) fn hash(&self) -> u64 {
-        self.identity_hash.hash
-    }
-
-    pub(crate) fn disambiguator(&self) -> Disambiguator {
-        self.disambiguator
+        self.ingredient_index
     }
 }
 
@@ -209,14 +206,13 @@ impl IdentityMap {
     pub(crate) fn insert(&mut self, key: Identity, id: Id) -> Option<Id> {
         use hashbrown::hash_map::RawEntryMut;
 
-        let entry = self.map.raw_entry_mut().from_hash(key.hash(), |k| {
-            k.ingredient_index() == key.ingredient_index()
-                && k.disambiguator() == key.disambiguator()
+        let entry = self.map.raw_entry_mut().from_hash(key.hash, |k| {
+            k.ingredient_index == key.ingredient_index && k.disambiguator == key.disambiguator
         });
         match entry {
             RawEntryMut::Occupied(mut occupied) => Some(occupied.insert(id)),
             RawEntryMut::Vacant(vacant) => {
-                vacant.insert_with_hasher(key.hash(), key, id, |k| k.hash());
+                vacant.insert_with_hasher(key.hash, key, id, |k| k.hash);
                 None
             }
         }
@@ -225,9 +221,8 @@ impl IdentityMap {
     pub(crate) fn get(&self, key: &Identity) -> Option<Id> {
         self.map
             .raw_entry()
-            .from_hash(key.hash(), |k| {
-                k.ingredient_index() == key.ingredient_index()
-                    && k.disambiguator() == key.disambiguator()
+            .from_hash(key.hash, |k| {
+                k.ingredient_index == key.ingredient_index && k.disambiguator == key.disambiguator
             })
             .map(|(_, &v)| v)
     }
@@ -374,7 +369,8 @@ where
         let (current_deps, disambiguator) = zalsa_local.disambiguate(identity_hash);
 
         let identity = Identity {
-            identity_hash,
+            hash: identity_hash.hash,
+            ingredient_index: self.ingredient_index,
             disambiguator,
         };
 
