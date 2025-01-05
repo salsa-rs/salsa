@@ -69,10 +69,7 @@ impl<Db: Database> Storage<Db> {
     fn cancel_others(&self, db: &Db) {
         self.zalsa_impl.set_cancellation_flag();
 
-        db.salsa_event(&|| Event {
-            thread_id: std::thread::current().id(),
-            kind: EventKind::DidSetCancellationFlag,
-        });
+        db.salsa_event(&|| Event::new(EventKind::DidSetCancellationFlag));
 
         let mut clones = self.coordinate.clones.lock();
         while *clones != 1 {

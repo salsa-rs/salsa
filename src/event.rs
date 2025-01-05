@@ -17,6 +17,15 @@ pub struct Event {
     pub kind: EventKind,
 }
 
+impl Event {
+    pub fn new(kind: EventKind) -> Self {
+        Self {
+            thread_id: std::thread::current().id(),
+            kind,
+        }
+    }
+}
+
 /// An enum identifying the various kinds of events that can occur.
 #[derive(Debug)]
 pub enum EventKind {

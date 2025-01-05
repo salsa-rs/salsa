@@ -469,11 +469,10 @@ where
     /// unspecified results (but not UB). See [`InternedIngredient::delete_index`] for more
     /// discussion and important considerations.
     pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id) {
-        db.salsa_event(&|| Event {
-            thread_id: std::thread::current().id(),
-            kind: crate::EventKind::DidDiscard {
+        db.salsa_event(&|| {
+            Event::new(crate::EventKind::DidDiscard {
                 key: self.database_key_index(id),
-            },
+            })
         });
 
         let zalsa = db.zalsa();
@@ -514,10 +513,7 @@ where
                 key_index: id,
             };
 
-            db.salsa_event(&|| Event {
-                thread_id: std::thread::current().id(),
-                kind: EventKind::DidDiscard { key: executor },
-            });
+            db.salsa_event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
             for stale_output in memo.origin().outputs() {
                 stale_output.remove_stale_output(db, executor);

@@ -288,12 +288,7 @@ impl ZalsaLocal {
     /// `salsa_event` is emitted when this method is called, so that should be
     /// used instead.
     pub(crate) fn unwind_if_revision_cancelled(&self, db: &dyn Database) {
-        let thread_id = std::thread::current().id();
-        db.salsa_event(&|| Event {
-            thread_id,
-
-            kind: EventKind::WillCheckCancellation,
-        });
+        db.salsa_event(&|| Event::new(EventKind::WillCheckCancellation));
         let zalsa = db.zalsa();
         if zalsa.load_cancellation_flag() {
             self.unwind_cancelled(zalsa.current_revision());

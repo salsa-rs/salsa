@@ -144,11 +144,10 @@ impl<V> Memo<V> {
         revision_now: Revision,
         database_key_index: DatabaseKeyIndex,
     ) {
-        db.salsa_event(&|| Event {
-            thread_id: std::thread::current().id(),
-            kind: EventKind::DidValidateMemoizedValue {
+        db.salsa_event(&|| {
+            Event::new(EventKind::DidValidateMemoizedValue {
                 database_key: database_key_index,
-            },
+            })
         });
 
         self.verified_at.store(revision_now);
