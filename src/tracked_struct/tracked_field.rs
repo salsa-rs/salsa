@@ -73,7 +73,7 @@ where
         &self,
         _db: &dyn Database,
         _executor: crate::DatabaseKeyIndex,
-        _output_key: Option<crate::Id>,
+        _output_key: crate::Id,
     ) {
         panic!("tracked field ingredients have no outputs")
     }
@@ -82,7 +82,7 @@ where
         &self,
         _db: &dyn Database,
         _executor: crate::DatabaseKeyIndex,
-        _stale_output_key: Option<crate::Id>,
+        _stale_output_key: crate::Id,
     ) {
         panic!("tracked field ingredients have no outputs")
     }

@@ -69,7 +69,7 @@ where
         &self,
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
-        _output_key: Option<Id>,
+        _output_key: Id,
     ) {
     }
 
@@ -77,7 +77,7 @@ where
         &self,
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
-        _stale_output_key: Option<Id>,
+        _stale_output_key: Id,
     ) {
     }
 

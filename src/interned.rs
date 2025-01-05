@@ -2,7 +2,7 @@ use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
 use crate::id::AsId;
 use crate::ingredient::fmt_index;
-use crate::key::DependencyIndex;
+use crate::key::InputDependencyIndex;
 use crate::plumbing::{Jar, JarAux};
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
@@ -136,7 +136,7 @@ where
     ) -> C::Struct<'db> {
         let zalsa_local = db.zalsa_local();
         zalsa_local.report_tracked_read(
-            DependencyIndex::for_table(self.ingredient_index),
+            InputDependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
             self.reset_at,
             InputAccumulatedValues::Empty,
@@ -241,7 +241,7 @@ where
         &self,
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
-        output_key: Option<crate::Id>,
+        output_key: crate::Id,
     ) {
         unreachable!(
             "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
@@ -253,7 +253,7 @@ where
         &self,
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
-        stale_output_key: Option<crate::Id>,
+        stale_output_key: crate::Id,
     ) {
         unreachable!(
             "remove_stale_output({:?}, {:?}): interned ids are not outputs",

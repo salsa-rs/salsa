@@ -7,7 +7,7 @@ use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, JarAux},
-    key::{DatabaseKeyIndex, DependencyIndex},
+    key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::ZalsaLocal,
     runtime::StampedValue,
     salsa_struct::SalsaStructInDb,
@@ -520,9 +520,7 @@ where
             });
 
             for stale_output in memo.origin().outputs() {
-                zalsa
-                    .lookup_ingredient(stale_output.ingredient_index)
-                    .remove_stale_output(db, executor, stale_output.key_index);
+                stale_output.remove_stale_output(db, executor);
             }
         }
 
@@ -561,10 +559,7 @@ where
         let field_changed_at = data.revisions[field_index];
 
         zalsa_local.report_tracked_read(
-            DependencyIndex {
-                ingredient_index: field_ingredient_index,
-                key_index: Some(id),
-            },
+            InputDependencyIndex::new(field_ingredient_index, id),
             data.durability,
             field_changed_at,
             InputAccumulatedValues::Empty,
@@ -603,7 +598,7 @@ where
         &'db self,
         _db: &'db dyn Database,
         _executor: DatabaseKeyIndex,
-        _output_key: Option<crate::Id>,
+        _output_key: crate::Id,
     ) {
         // we used to update `update_at` field but now we do it lazilly when data is accessed
         //
@@ -614,13 +609,13 @@ where
         &self,
         db: &dyn Database,
         _executor: DatabaseKeyIndex,
-        stale_output_key: Option<crate::Id>,
+        stale_output_key: crate::Id,
     ) {
         // This method is called when, in prior revisions,
         // `executor` creates a tracked struct `salsa_output_key`,
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
-        self.delete_entity(db.as_dyn_database(), stale_output_key.unwrap());
+        self.delete_entity(db.as_dyn_database(), stale_output_key);
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -83,7 +83,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         &'db self,
         db: &'db dyn Database,
         executor: DatabaseKeyIndex,
-        output_key: Option<Id>,
+        output_key: crate::Id,
     );
 
     /// Invoked when the value `stale_output` was output by `executor` in a previous
@@ -94,7 +94,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         &self,
         db: &dyn Database,
         executor: DatabaseKeyIndex,
-        stale_output_key: Option<Id>,
+        stale_output_key: Id,
     );
 
     /// Returns the [`IngredientIndex`] of this ingredient.
