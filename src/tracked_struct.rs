@@ -151,7 +151,7 @@ where
 /// This is the key to a hashmap that is (initially)
 /// stored in the [`ActiveQuery`](`crate::active_query::ActiveQuery`)
 /// struct and later moved to the [`Memo`](`crate::function::memo::Memo`).
-#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub(crate) struct Identity {
     /// Hash of fields with id attribute
     identity_hash: IdentityHash,
@@ -165,6 +165,14 @@ impl Identity {
     pub(crate) fn ingredient_index(&self) -> IngredientIndex {
         self.identity_hash.ingredient_index
     }
+
+    pub(crate) fn hash(&self) -> u64 {
+        self.identity_hash.hash
+    }
+
+    pub(crate) fn disambiguator(&self) -> Disambiguator {
+        self.disambiguator
+    }
 }
 
 /// Stores the data that (almost) uniquely identifies a tracked struct.
@@ -172,13 +180,65 @@ impl Identity {
 /// This is mapped to a disambiguator -- a value that starts as 0 but increments each round,
 /// allowing for multiple tracked structs with the same hash and ingredient_index
 /// created within the query to each have a unique id.
-#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct IdentityHash {
     /// Index of the tracked struct ingredient.
     ingredient_index: IngredientIndex,
 
     /// Hash of the id fields.
     hash: u64,
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct IdentityMap {
+    map: hashbrown::HashMap<Identity, Id, ()>,
+}
+
+impl Clone for IdentityMap {
+    fn clone(&self) -> Self {
+        Self {
+            map: self.map.clone(),
+        }
+    }
+    fn clone_from(&mut self, source: &Self) {
+        self.map.clone_from(&source.map);
+    }
+}
+
+impl IdentityMap {
+    pub(crate) fn insert(&mut self, key: Identity, id: Id) -> Option<Id> {
+        use hashbrown::hash_map::RawEntryMut;
+
+        let entry = self.map.raw_entry_mut().from_hash(key.hash(), |k| {
+            k.ingredient_index() == key.ingredient_index()
+                && k.disambiguator() == key.disambiguator()
+        });
+        match entry {
+            RawEntryMut::Occupied(mut occupied) => Some(occupied.insert(id)),
+            RawEntryMut::Vacant(vacant) => {
+                vacant.insert_with_hasher(key.hash(), key, id, |k| k.hash());
+                None
+            }
+        }
+    }
+
+    pub(crate) fn get(&self, key: &Identity) -> Option<Id> {
+        self.map
+            .raw_entry()
+            .from_hash(key.hash(), |k| {
+                k.ingredient_index() == key.ingredient_index()
+                    && k.disambiguator() == key.disambiguator()
+            })
+            .map(|(_, &v)| v)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    pub(crate) fn retain(&mut self, f: impl FnMut(&Identity, &mut Id) -> bool) {
+        self.map.retain(f);
+    }
 }
 
 // ANCHOR: ValueStruct
@@ -231,8 +291,35 @@ where
 }
 // ANCHOR_END: ValueStruct
 
-#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
-pub struct Disambiguator(pub u32);
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct Disambiguator(u32);
+
+#[derive(Default, Debug)]
+pub(crate) struct DisambiguatorMap {
+    map: hashbrown::HashMap<IdentityHash, Disambiguator, ()>,
+}
+
+impl DisambiguatorMap {
+    pub(crate) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {
+        use hashbrown::hash_map::RawEntryMut;
+
+        let entry = self
+            .map
+            .raw_entry_mut()
+            .from_hash(key.hash, |k| k.ingredient_index == key.ingredient_index);
+        let disambiguator = match entry {
+            RawEntryMut::Occupied(occupied) => occupied.into_mut(),
+            RawEntryMut::Vacant(vacant) => {
+                vacant
+                    .insert_with_hasher(key.hash, key, Disambiguator(0), |k| k.hash)
+                    .1
+            }
+        };
+        let result = *disambiguator;
+        disambiguator.0 += 1;
+        result
+    }
+}
 
 impl<C> IngredientImpl<C>
 where
@@ -288,7 +375,6 @@ where
 
         let identity = Identity {
             identity_hash,
-
             disambiguator,
         };
 
