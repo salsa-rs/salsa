@@ -73,7 +73,7 @@ pub struct Value<C>
 where
     C: Configuration,
 {
-    data: C::Data<'static>,
+    pub data: C::Data<'static>,
     memos: MemoTable,
     syncs: SyncTable,
 }

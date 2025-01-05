@@ -3,6 +3,7 @@ use std::{marker::PhantomData, panic::RefUnwindSafe, sync::Arc};
 use parking_lot::{Condvar, Mutex};
 
 use crate::{
+    plumbing::{input, interned, tracked_struct},
     zalsa::{Zalsa, ZalsaDatabase},
     zalsa_local::{self, ZalsaLocal},
     Database, Event, EventKind,
@@ -58,6 +59,45 @@ impl<Db: Database> Default for Storage<Db> {
 }
 
 impl<Db: Database> Storage<Db> {
+    pub fn debug_input_entries<T>(&self) -> impl Iterator<Item = &input::Value<T>>
+    where
+        T: input::Configuration,
+    {
+        let zalza = self.zalsa_impl();
+        zalza
+            .table()
+            .pages
+            .iter()
+            .filter_map(|page| page.cast_type::<crate::table::Page<input::Value<T>>>())
+            .flat_map(|page| page.slots())
+    }
+
+    pub fn debug_interned_entries<T>(&self) -> impl Iterator<Item = &interned::Value<T>>
+    where
+        T: interned::Configuration,
+    {
+        let zalza = self.zalsa_impl();
+        zalza
+            .table()
+            .pages
+            .iter()
+            .filter_map(|page| page.cast_type::<crate::table::Page<interned::Value<T>>>())
+            .flat_map(|page| page.slots())
+    }
+
+    pub fn debug_tracked_entries<T>(&self) -> impl Iterator<Item = &tracked_struct::Value<T>>
+    where
+        T: tracked_struct::Configuration,
+    {
+        let zalza = self.zalsa_impl();
+        zalza
+            .table()
+            .pages
+            .iter()
+            .filter_map(|page| page.cast_type::<crate::table::Page<tracked_struct::Value<T>>>())
+            .flat_map(|pages| pages.slots())
+    }
+
     /// Access the `Arc<Zalsa>`. This should always be
     /// possible as `zalsa_impl` only becomes
     /// `None` once we are in the `Drop` impl.
