@@ -6,7 +6,6 @@ use crate::ingredient::fmt_index;
 use crate::plumbing::{IngredientIndices, Jar};
 use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
-use crate::table::sync::SyncTable;
 use crate::table::Slot;
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOrigin;
@@ -71,7 +70,6 @@ where
 {
     fields: C::Fields<'static>,
     memos: MemoTable,
-    syncs: SyncTable,
 
     /// The revision the value was first interned in.
     first_interned_at: Revision,
@@ -291,7 +289,6 @@ where
                 let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
                     fields: unsafe { self.to_internal_data(assemble(id, key)) },
                     memos: Default::default(),
-                    syncs: Default::default(),
                     durability: AtomicU8::new(durability.as_u8()),
                     // Record the revision we are interning in.
                     first_interned_at: current_revision,
@@ -478,11 +475,6 @@ where
     #[inline]
     fn memos_mut(&mut self) -> &mut MemoTable {
         &mut self.memos
-    }
-
-    #[inline]
-    unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {
-        &self.syncs
     }
 }
 

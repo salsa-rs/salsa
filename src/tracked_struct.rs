@@ -11,7 +11,7 @@ use crate::{
     revision::OptionalAtomicRevision,
     runtime::StampedValue,
     salsa_struct::SalsaStructInDb,
-    table::{memo::MemoTable, sync::SyncTable, Slot, Table},
+    table::{memo::MemoTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Database, Durability, Event, EventKind, Id, Revision,
@@ -310,9 +310,6 @@ where
 
     /// Memo table storing the results of query functions etc.
     memos: MemoTable,
-
-    /// Sync table storing the results of query functions etc.
-    syncs: SyncTable,
 }
 // ANCHOR_END: ValueStruct
 
@@ -443,7 +440,6 @@ where
             fields: unsafe { self.to_static(fields) },
             revisions: C::new_revisions(current_deps.changed_at),
             memos: Default::default(),
-            syncs: Default::default(),
         };
 
         if let Some(id) = self.free_list.pop() {
@@ -864,15 +860,6 @@ where
     #[inline]
     fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
         &mut self.memos
-    }
-
-    #[inline]
-    unsafe fn syncs(&self, current_revision: Revision) -> &crate::table::sync::SyncTable {
-        // Acquiring the read lock here with the current revision
-        // ensures that there is no danger of a race
-        // when deleting a tracked struct.
-        self.read_lock(current_revision);
-        &self.syncs
     }
 }
 
