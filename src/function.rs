@@ -8,12 +8,12 @@ pub(crate) use maybe_changed_after::VerifyResult;
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::cycle::{CycleHeadKind, CycleRecoveryAction, CycleRecoveryStrategy};
 use crate::function::delete::DeletedEntries;
+use crate::function::sync::{ClaimResult, SyncTable};
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::MemoIngredientMap;
 use crate::salsa_struct::SalsaStructInDb;
 use crate::table::memo::MemoTableTypes;
-use crate::table::sync::ClaimResult;
 use crate::table::Table;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa};
@@ -31,6 +31,7 @@ mod lru;
 mod maybe_changed_after;
 mod memo;
 mod specify;
+mod sync;
 
 pub type Memo<C> = memo::Memo<<C as Configuration>::Output<'static>>;
 
@@ -120,6 +121,8 @@ pub struct IngredientImpl<C: Configuration> {
     /// instances that this downcaster was derived from.
     view_caster: DatabaseDownCaster<C::DbView>,
 
+    sync_table: SyncTable,
+
     /// When `fetch` and friends executes, they return a reference to the
     /// value stored in the memo that is extended to live as long as the `&self`
     /// reference we start with. This means that whenever we remove something
@@ -161,6 +164,7 @@ where
             lru: lru::Lru::new(lru),
             deleted_entries: Default::default(),
             view_caster,
+            sync_table: Default::default(),
         }
     }
 
@@ -269,12 +273,10 @@ where
     /// Attempts to claim `key_index`, returning `false` if a cycle occurs.
     fn wait_for(&self, db: &dyn Database, key_index: Id) -> bool {
         let zalsa = db.zalsa();
-        match zalsa.sync_table_for(key_index).claim(
-            db,
-            zalsa,
-            self.database_key_index(key_index),
-            self.memo_ingredient_index(zalsa, key_index),
-        ) {
+        match self
+            .sync_table
+            .try_claim(db, zalsa, self.database_key_index(key_index))
+        {
             ClaimResult::Retry | ClaimResult::Claimed(_) => true,
             ClaimResult::Cycle => false,
         }
