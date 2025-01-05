@@ -20,7 +20,6 @@ use crate::{
     plumbing::{Jar, Stamp},
     table::{
         memo::{MemoTable, MemoTableTypes},
-        sync::SyncTable,
         Slot, Table,
     },
     zalsa::{IngredientIndex, Zalsa},
@@ -127,7 +126,6 @@ impl<C: Configuration> IngredientImpl<C> {
             fields,
             stamps,
             memos: Default::default(),
-            syncs: Default::default(),
         });
 
         if C::IS_SINGLETON {
@@ -311,9 +309,6 @@ where
 
     /// Memos
     memos: MemoTable,
-
-    /// Syncs
-    syncs: SyncTable,
 }
 
 pub trait HasBuilder {
@@ -326,10 +321,6 @@ where
 {
     unsafe fn memos(&self, _current_revision: Revision) -> &crate::table::memo::MemoTable {
         &self.memos
-    }
-
-    unsafe fn syncs(&self, _current_revision: Revision) -> &SyncTable {
-        &self.syncs
     }
 
     unsafe fn drop_memos(&mut self, types: &MemoTableTypes) {

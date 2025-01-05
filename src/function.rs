@@ -3,6 +3,7 @@ use std::{any::Any, fmt, sync::Arc};
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
+    function::sync::SyncTable,
     ingredient::fmt_index,
     key::DatabaseKeyIndex,
     memo_ingredient_indices::{IngredientIndices, MemoIngredientIndices},
@@ -28,6 +29,7 @@ mod lru;
 mod maybe_changed_after;
 mod memo;
 mod specify;
+mod sync;
 
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
@@ -101,6 +103,8 @@ pub struct IngredientImpl<C: Configuration> {
     /// Used to find memos to throw out when we have too many memoized values.
     lru: lru::Lru,
 
+    sync_table: SyncTable,
+
     /// When `fetch` and friends executes, they return a reference to the
     /// value stored in the memo that is extended to live as long as the `&self`
     /// reference we start with. This means that whenever we remove something
@@ -139,6 +143,7 @@ where
             lru: Default::default(),
             deleted_entries: Default::default(),
             _memo_table_types: MemoTableTypes::default(),
+            sync_table: Default::default(),
         }
     }
 

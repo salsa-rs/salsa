@@ -79,11 +79,12 @@ where
         let database_key_index = self.database_key_index(id);
 
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let _claim_guard = zalsa.sync_table_for(id).claim(
+        let _claim_guard = self.sync_table.try_claim(
             db.as_dyn_database(),
             zalsa_local,
+            zalsa,
             database_key_index,
-            memo_ingredient_index,
+            id,
         )?;
 
         // Push the query on the stack.

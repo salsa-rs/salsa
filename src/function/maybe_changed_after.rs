@@ -57,11 +57,12 @@ where
         let (zalsa, zalsa_local) = db.zalsas();
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = zalsa.sync_table_for(key_index).claim(
+        let _claim_guard = self.sync_table.try_claim(
             db.as_dyn_database(),
             zalsa_local,
+            zalsa,
             database_key_index,
-            memo_ingredient_index,
+            key_index,
         )?;
         let active_query = zalsa_local.push_query(database_key_index);
 

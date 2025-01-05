@@ -12,7 +12,6 @@ use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
 use crate::table::memo::MemoTableWithTypes;
-use crate::table::sync::SyncTable;
 use crate::table::Table;
 use crate::views::Views;
 use crate::zalsa_local::ZalsaLocal;
@@ -192,12 +191,6 @@ impl Zalsa {
         unsafe { types.attach_memos(memos) }
     }
 
-    /// Returns the [`SyncTable`][] for the salsa struct with the given id
-    pub(crate) fn sync_table_for(&self, id: Id) -> &SyncTable {
-        // SAFETY: We are supply the correct current revision
-        unsafe { self.table().syncs(id, self.current_revision()) }
-    }
-
     pub(crate) fn next_memo_ingredient_index(
         &self,
         struct_ingredient_index: IngredientIndex,
@@ -211,7 +204,7 @@ impl Zalsa {
             memo_ingredients.resize_with(idx + 1, Vec::new);
             memo_ingredients.get_mut(idx).unwrap()
         };
-        let mi = MemoIngredientIndex(u32::try_from(memo_ingredients.len()).unwrap());
+        let mi = MemoIngredientIndex::from_usize(memo_ingredients.len());
         memo_ingredients.push(ingredient_index);
         mi
     }

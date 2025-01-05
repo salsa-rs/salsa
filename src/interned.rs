@@ -6,7 +6,6 @@ use crate::ingredient::fmt_index;
 use crate::key::InputDependencyIndex;
 use crate::plumbing::{IngredientIndices, Jar};
 use crate::table::memo::{MemoTable, MemoTableTypes};
-use crate::table::sync::SyncTable;
 use crate::table::Slot;
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOrigin;
@@ -78,7 +77,6 @@ where
 {
     data: C::Data<'static>,
     memos: MemoTable,
-    syncs: SyncTable,
 }
 
 impl<C: Configuration> Default for JarImpl<C> {
@@ -208,7 +206,6 @@ where
                 let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
                     data: unsafe { self.to_internal_data(assemble(id, key)) },
                     memos: Default::default(),
-                    syncs: Default::default(),
                 });
                 unsafe {
                     lock.insert_in_slot(
@@ -342,10 +339,6 @@ where
 {
     unsafe fn memos(&self, _current_revision: Revision) -> &MemoTable {
         &self.memos
-    }
-
-    unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {
-        &self.syncs
     }
 
     unsafe fn drop_memos(&mut self, types: &MemoTableTypes) {

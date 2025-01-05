@@ -10,7 +10,6 @@ use std::{
 use append_only_vec::AppendOnlyVec;
 use memo::MemoTable;
 use parking_lot::Mutex;
-use sync::SyncTable;
 
 use crate::{
     table::memo::MemoTableTypes,
@@ -19,8 +18,6 @@ use crate::{
 };
 
 pub(crate) mod memo;
-pub(crate) mod sync;
-mod util;
 
 const PAGE_LEN_BITS: usize = 10;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
@@ -57,13 +54,6 @@ pub(crate) trait TablePage: Any + Send + Sync {
         slot: SlotIndex,
         current_revision: Revision,
     ) -> (&MemoTable, IngredientIndex);
-
-    /// Access the syncs attached to `slot`.
-    ///
-    /// # Safety condition
-    ///
-    /// The `current_revision` MUST be the current revision of the database owning this table page.
-    unsafe fn syncs(&self, slot: SlotIndex, current_revision: Revision) -> &SyncTable;
 
     /// # Safety
     ///
@@ -102,13 +92,6 @@ pub(crate) trait Slot: Any + Send + Sync {
     ///
     /// The current revision MUST be the current revision of the database containing this slot.
     unsafe fn memos(&self, current_revision: Revision) -> &MemoTable;
-
-    /// Access the [`SyncTable`][] for this slot.
-    ///
-    /// # Safety condition
-    ///
-    /// The current revision MUST be the current revision of the database containing this slot.
-    unsafe fn syncs(&self, current_revision: Revision) -> &SyncTable;
 
     /// # Safety
     ///
@@ -214,17 +197,6 @@ impl Table {
         let page = &self.pages[page.0];
         page.memos_and_ingredient(slot, current_revision)
     }
-
-    /// Get the sync table associated with `id`
-    ///
-    /// # Safety condition
-    ///
-    /// The parameter `current_revision` MUST be the current revision
-    /// of the owner of database owning this table.
-    pub unsafe fn syncs(&self, id: Id, current_revision: Revision) -> &SyncTable {
-        let (page, slot) = split_id(id);
-        self.pages[page.0].syncs(slot, current_revision)
-    }
 }
 
 impl<T: Slot> Page<T> {
@@ -310,10 +282,6 @@ impl<T: Slot> TablePage for Page<T> {
         current_revision: Revision,
     ) -> (&MemoTable, IngredientIndex) {
         (self.get(slot).memos(current_revision), self.ingredient)
-    }
-
-    unsafe fn syncs(&self, slot: SlotIndex, current_revision: Revision) -> &SyncTable {
-        self.get(slot).syncs(current_revision)
     }
 
     unsafe fn drop(&mut self, zalsa: &Zalsa) {
