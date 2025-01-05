@@ -45,12 +45,11 @@ where
     fn report_stale_output(db: &C::DbView, key: DatabaseKeyIndex, output: OutputDependencyIndex) {
         let db = db.as_dyn_database();
 
-        db.salsa_event(&|| Event {
-            thread_id: std::thread::current().id(),
-            kind: EventKind::WillDiscardStaleOutput {
+        db.salsa_event(&|| {
+            Event::new(EventKind::WillDiscardStaleOutput {
                 execute_key: key,
                 output_key: output,
-            },
+            })
         });
 
         output.remove_stale_output(db, key);

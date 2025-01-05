@@ -31,11 +31,10 @@ where
 
         tracing::info!("{:?}: executing query", database_key_index);
 
-        db.salsa_event(&|| Event {
-            thread_id: std::thread::current().id(),
-            kind: EventKind::WillExecute {
+        db.salsa_event(&|| {
+            Event::new(EventKind::WillExecute {
                 database_key: database_key_index,
-            },
+            })
         });
 
         // If we already executed this query once, then use the tracked-struct ids from the
