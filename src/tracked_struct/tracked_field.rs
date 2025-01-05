@@ -1,6 +1,10 @@
 use std::marker::PhantomData;
 
-use crate::{ingredient::Ingredient, zalsa::IngredientIndex, Database, Id};
+use crate::{
+    ingredient::{Ingredient, MaybeChangedAfter},
+    zalsa::IngredientIndex,
+    Database, Id,
+};
 
 use super::{Configuration, Value};
 
@@ -53,12 +57,12 @@ where
         db: &'db dyn Database,
         input: Option<Id>,
         revision: crate::Revision,
-    ) -> bool {
+    ) -> MaybeChangedAfter {
         let zalsa = db.zalsa();
         let id = input.unwrap();
         let data = <super::IngredientImpl<C>>::data(zalsa.table(), id);
         let field_changed_at = data.revisions[self.field_index];
-        field_changed_at > revision
+        MaybeChangedAfter::from(field_changed_at > revision)
     }
 
     fn origin(

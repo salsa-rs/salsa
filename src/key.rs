@@ -1,4 +1,7 @@
-use crate::{cycle::CycleRecoveryStrategy, zalsa::IngredientIndex, Database, Id};
+use crate::{
+    cycle::CycleRecoveryStrategy, ingredient::MaybeChangedAfter, zalsa::IngredientIndex, Database,
+    Id,
+};
 
 /// An integer that uniquely identifies a particular query instance within the
 /// database. Used to track dependencies between queries. Fully ordered and
@@ -51,7 +54,7 @@ impl DependencyIndex {
         &self,
         db: &dyn Database,
         last_verified_at: crate::Revision,
-    ) -> bool {
+    ) -> MaybeChangedAfter {
         db.zalsa()
             .lookup_ingredient(self.ingredient_index)
             .maybe_changed_after(db, self.key_index, last_verified_at)

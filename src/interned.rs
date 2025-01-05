@@ -1,7 +1,7 @@
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
 use crate::id::AsId;
-use crate::ingredient::fmt_index;
+use crate::ingredient::{fmt_index, MaybeChangedAfter};
 use crate::key::DependencyIndex;
 use crate::plumbing::{Jar, JarAux};
 use crate::table::memo::MemoTable;
@@ -225,8 +225,8 @@ where
         _db: &dyn Database,
         _input: Option<Id>,
         revision: Revision,
-    ) -> bool {
-        revision < self.reset_at
+    ) -> MaybeChangedAfter {
+        MaybeChangedAfter::from(revision < self.reset_at)
     }
 
     fn cycle_recovery_strategy(&self) -> crate::cycle::CycleRecoveryStrategy {

@@ -3,7 +3,7 @@ use std::{any::Any, fmt, sync::Arc};
 use crate::{
     accumulator::accumulated_map::AccumulatedMap,
     cycle::CycleRecoveryStrategy,
-    ingredient::fmt_index,
+    ingredient::{fmt_index, MaybeChangedAfter},
     key::DatabaseKeyIndex,
     plumbing::JarAux,
     salsa_struct::SalsaStructInDb,
@@ -194,7 +194,7 @@ where
         db: &dyn Database,
         input: Option<Id>,
         revision: Revision,
-    ) -> bool {
+    ) -> MaybeChangedAfter {
         let key = input.unwrap();
         let db = db.as_view::<C::DbView>();
         self.maybe_changed_after(db, key, revision)
