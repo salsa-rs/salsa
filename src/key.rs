@@ -6,7 +6,7 @@ use crate::{cycle::CycleRecoveryStrategy, zalsa::IngredientIndex, Database, Id};
 /// database. Used to track output dependencies between queries. Fully ordered and
 /// equatable but those orderings are arbitrary, and meant to be used only for
 /// inserting into maps and the like.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct OutputDependencyIndex {
     ingredient_index: IngredientIndex,
     key_index: Id,
@@ -16,7 +16,7 @@ pub struct OutputDependencyIndex {
 /// database. Used to track input dependencies between queries. Fully ordered and
 /// equatable but those orderings are arbitrary, and meant to be used only for
 /// inserting into maps and the like.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct InputDependencyIndex {
     ingredient_index: IngredientIndex,
     key_index: Option<Id>,
@@ -116,7 +116,7 @@ impl fmt::Debug for InputDependencyIndex {
 /// An "active" database key index represents a database key index
 /// that is actively executing. In that case, the `key_index` cannot be
 /// None.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseKeyIndex {
     pub(crate) ingredient_index: IngredientIndex,
     pub(crate) key_index: Id,

@@ -16,7 +16,7 @@ use std::{panic::AssertUnwindSafe, sync::Arc};
 ///
 /// You can read more about cycle handling in
 /// the [salsa book](https://https://salsa-rs.github.io/salsa/cycles.html).
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Cycle {
     participants: CycleParticipants,
 }
