@@ -11,7 +11,7 @@ use crate::hash::FxDashMap;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
-use crate::table::memo::MemoTable;
+use crate::table::memo::MemoTableWithTypes;
 use crate::table::sync::SyncTable;
 use crate::table::Table;
 use crate::views::Views;
@@ -182,9 +182,14 @@ impl Zalsa {
     }
 
     /// Returns the [`MemoTable`][] for the salsa struct with the given id
-    pub(crate) fn memo_table_for(&self, id: Id) -> &MemoTable {
+    pub(crate) fn memo_table_for(&self, id: Id) -> MemoTableWithTypes<'_> {
+        let table = self.table();
         // SAFETY: We are supply the correct current revision
-        unsafe { self.table().memos(id, self.current_revision()) }
+        let (memos, ingredient) =
+            unsafe { table.memos_and_ingredient(id, self.current_revision()) };
+        let types = self.lookup_ingredient(ingredient).memo_table_types();
+        // SAFETY: The memos and the types are from the same ingredient.
+        unsafe { types.attach_memos(memos) }
     }
 
     /// Returns the [`SyncTable`][] for the salsa struct with the given id
@@ -337,6 +342,11 @@ impl Zalsa {
             .unblock_queries_blocked_on(database_key, wait_result)
     }
 
+    #[inline]
+    pub fn ingredient_index(&self, id: Id) -> IngredientIndex {
+        self.table().ingredient_index(id)
+    }
+
     pub(crate) fn ingredient_index_for_memo(
         &self,
         struct_ingredient_index: IngredientIndex,
@@ -345,12 +355,39 @@ impl Zalsa {
         self.memo_ingredient_indices.read()[struct_ingredient_index.as_usize()]
             [memo_ingredient_index.as_usize()]
     }
+}
 
-    #[inline]
-    pub fn ingredient_index(&self, id: Id) -> IngredientIndex {
-        self.table().ingredient_index(id)
+impl Drop for Zalsa {
+    fn drop(&mut self) {
+        self.runtime.take_table().drop(self);
     }
 }
+
+// struct JarAuxImpl<'a>(&'a Zalsa, &'a FxHashMap<TypeId, IngredientIndex>);
+
+// impl JarAux for JarAuxImpl<'_> {
+//     fn lookup_jar_by_type(&self, jar: &dyn Jar) -> Option<IngredientIndex> {
+//         self.1.get(&jar.type_id()).map(ToOwned::to_owned)
+//     }
+
+//     fn next_memo_ingredient_index(
+//         &self,
+//         struct_ingredient_index: IngredientIndex,
+//         ingredient_index: IngredientIndex,
+//     ) -> MemoIngredientIndex {
+//         let mut memo_ingredients = self.0.memo_ingredient_indices.write();
+//         let idx = struct_ingredient_index.as_usize();
+//         let memo_ingredients = if let Some(memo_ingredients) = memo_ingredients.get_mut(idx) {
+//             memo_ingredients
+//         } else {
+//             memo_ingredients.resize_with(idx + 1, Vec::new);
+//             &mut memo_ingredients[idx]
+//         };
+//         let mi = MemoIngredientIndex(u32::try_from(memo_ingredients.len()).unwrap());
+//         memo_ingredients.push(ingredient_index);
+//         mi
+//     }
+// }
 
 /// Caches a pointer to an ingredient in a database.
 /// Optimized for the case of a single database.

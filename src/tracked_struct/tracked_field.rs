@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
+use crate::tracked_struct::MemoTableTypes;
 use crate::{ingredient::Ingredient, zalsa::IngredientIndex, Database, Id};
 
 use super::{Configuration, Value};
@@ -20,6 +22,7 @@ where
     /// Index of this ingredient in the database (used to construct database-ids, etc).
     ingredient_index: IngredientIndex,
     field_index: usize,
+    memo_table_types: MemoTableTypes,
     phantom: PhantomData<fn() -> Value<C>>,
 }
 
@@ -31,6 +34,7 @@ where
         Self {
             ingredient_index: struct_index.successor(field_index),
             field_index,
+            memo_table_types: MemoTableTypes::default(),
             phantom: PhantomData,
         }
     }
@@ -110,6 +114,18 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::FIELD_DEBUG_NAMES[self.field_index]
+    }
+
+    fn accumulated<'db>(
+        &'db self,
+        _db: &'db dyn Database,
+        _key_index: Id,
+    ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
+        (None, InputAccumulatedValues::Any)
+    }
+
+    fn memo_table_types(&self) -> &MemoTableTypes {
+        &self.memo_table_types
     }
 }
 

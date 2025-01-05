@@ -7,6 +7,7 @@ use crate::{
     key::DatabaseKeyIndex,
     memo_ingredient_indices::{IngredientIndices, MemoIngredientIndices},
     salsa_struct::SalsaStructInDb,
+    table::memo::MemoTableTypes,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Cycle, Database, Id, Revision,
@@ -113,6 +114,9 @@ pub struct IngredientImpl<C: Configuration> {
     /// we don't know that we can trust the database to give us the same runtime
     /// everytime and so forth.
     deleted_entries: DeletedEntries<C>,
+
+    /// This is empty, but we need this for the trait and it doesn't consume a lot of memory anyway.
+    _memo_table_types: MemoTableTypes,
 }
 
 /// True if `old_value == new_value`. Invoked by the generated
@@ -134,6 +138,7 @@ where
             memo_ingredient_indices,
             lru: Default::default(),
             deleted_entries: Default::default(),
+            _memo_table_types: MemoTableTypes::default(),
         }
     }
 
@@ -247,6 +252,10 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
+    }
+
+    fn memo_table_types(&self) -> &MemoTableTypes {
+        &self._memo_table_types
     }
 
     fn accumulated<'db>(

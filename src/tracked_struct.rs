@@ -4,14 +4,18 @@ use crossbeam::{atomic::AtomicCell, queue::SegQueue};
 use tracked_field::FieldIngredientImpl;
 
 use crate::{
-    accumulator::accumulated_map::InputAccumulatedValues,
+    accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::ZalsaLocal,
     runtime::StampedValue,
     salsa_struct::SalsaStructInDb,
-    table::{memo::MemoTable, sync::SyncTable, Slot, Table},
+    table::{
+        memo::{MemoTable, MemoTableTypes},
+        sync::SyncTable,
+        Slot, Table,
+    },
     zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Database, Durability, Event, EventKind, Id, Revision,
@@ -145,6 +149,8 @@ where
 
     /// Store freed ids
     free_list: SegQueue<Id>,
+
+    memo_table_types: MemoTableTypes,
 }
 
 /// Defines the identity of a tracked struct.
@@ -261,6 +267,7 @@ where
             ingredient_index: index,
             phantom: PhantomData,
             free_list: Default::default(),
+            memo_table_types: MemoTableTypes::default(),
         }
     }
 
@@ -503,8 +510,32 @@ where
 
         // Take the memo table. This is safe because we have modified `data_ref.updated_at` to `None`
         // and the code that references the memo-table has a read-lock.
+        struct MemoTableWithTypes<'a> {
+            memo_table: MemoTable,
+            memo_table_types: &'a MemoTableTypes,
+        }
+        impl Drop for MemoTableWithTypes<'_> {
+            fn drop(&mut self) {
+                // SAFETY: We use the correct types table.
+                unsafe {
+                    self.memo_table.drop(self.memo_table_types);
+                }
+            }
+        }
+        // Keep those statements in this order, so that if the first panics we won't leak the table.
+        let memo_table_types = &self.memo_table_types;
         let memo_table = unsafe { (*data).take_memo_table() };
-        for (memo_ingredient_index, memo) in memo_table.into_memos() {
+        let memo_table = MemoTableWithTypes {
+            memo_table,
+            memo_table_types,
+        };
+        // SAFETY: We use the correct types table.
+        let memo_table_ref = unsafe {
+            memo_table
+                .memo_table_types
+                .attach_memos(&memo_table.memo_table)
+        };
+        memo_table_ref.with_memos(|memo_ingredient_index, memo| {
             let ingredient_index =
                 zalsa.ingredient_index_for_memo(self.ingredient_index, memo_ingredient_index);
 
@@ -518,7 +549,7 @@ where
             for stale_output in memo.origin().outputs() {
                 stale_output.remove_stale_output(db, executor);
             }
-        }
+        });
 
         // now that all cleanup has occurred, make available for re-use
         self.free_list.push(id);
@@ -622,6 +653,18 @@ where
     }
 
     fn reset_for_new_revision(&mut self) {}
+
+    fn accumulated<'db>(
+        &'db self,
+        _db: &'db dyn Database,
+        _key_index: Id,
+    ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
+        (None, InputAccumulatedValues::Any)
+    }
+
+    fn memo_table_types(&self) -> &MemoTableTypes {
+        &self.memo_table_types
+    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>
@@ -690,5 +733,9 @@ where
         // when deleting a tracked struct.
         self.read_lock(current_revision);
         &self.syncs
+    }
+
+    unsafe fn drop_memos(&mut self, types: &MemoTableTypes) {
+        self.memos.drop(types);
     }
 }

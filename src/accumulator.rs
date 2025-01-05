@@ -8,11 +8,13 @@ use std::{
 
 use accumulated::Accumulated;
 use accumulated::AnyAccumulated;
+use accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 
 use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar},
     plumbing::IngredientIndices,
+    table::memo::MemoTableTypes,
     zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id, Revision,
@@ -60,6 +62,7 @@ impl<A: Accumulator> Jar for JarImpl<A> {
 
 pub struct IngredientImpl<A: Accumulator> {
     index: IngredientIndex,
+    memo_table_types: MemoTableTypes,
     phantom: PhantomData<Accumulated<A>>,
 }
 
@@ -78,6 +81,7 @@ impl<A: Accumulator> IngredientImpl<A> {
     pub fn new(index: IngredientIndex) -> Self {
         Self {
             index,
+            memo_table_types: MemoTableTypes::default(),
             phantom: PhantomData,
         }
     }
@@ -141,6 +145,18 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
 
     fn debug_name(&self) -> &'static str {
         A::DEBUG_NAME
+    }
+
+    fn accumulated<'db>(
+        &'db self,
+        _db: &'db dyn Database,
+        _key_index: Id,
+    ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
+        (None, InputAccumulatedValues::Any)
+    }
+
+    fn memo_table_types(&self) -> &MemoTableTypes {
+        &self.memo_table_types
     }
 }
 
