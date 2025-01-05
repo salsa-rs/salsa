@@ -1,9 +1,9 @@
 use super::{memo::Memo, Configuration, IngredientImpl, VerifyResult};
+use crate::function::sync::ClaimResult;
 use crate::zalsa::MemoIngredientIndex;
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     runtime::StampedValue,
-    table::sync::ClaimResult,
     zalsa::{Zalsa, ZalsaDatabase},
     zalsa_local::QueryRevisions,
     AsDynDatabase as _, Id,
@@ -106,12 +106,7 @@ where
         let database_key_index = self.database_key_index(id);
 
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let _claim_guard = match zalsa.sync_table_for(id).claim(
-            db,
-            zalsa,
-            database_key_index,
-            memo_ingredient_index,
-        ) {
+        let _claim_guard = match self.sync_table.try_claim(db, zalsa, database_key_index) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => {
                 // check if there's a provisional value for this query
