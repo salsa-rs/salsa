@@ -2,6 +2,8 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::num::NonZeroU32;
 
+use crate::Database;
+
 /// The `Id` of a salsa struct in the database [`Table`](`crate::table::Table`).
 ///
 /// The higher-order bits of an `Id` identify a [`Page`](`crate::table::Page`)
@@ -70,5 +72,18 @@ impl AsId for Id {
 impl FromId for Id {
     fn from_id(id: Id) -> Self {
         id
+    }
+}
+
+/// Enums cannot use [`FromId`] because they need access to the DB to tell the `TypeId` of the variant,
+/// so they use this trait instead, that has a blanket implementation for `FromId`.
+pub trait FromIdWithDb: AsId + Copy + Eq + Hash + Debug {
+    fn from_id(id: Id, db: &(impl ?Sized + Database)) -> Self;
+}
+
+impl<T: FromId> FromIdWithDb for T {
+    #[inline]
+    fn from_id(id: Id, _db: &(impl ?Sized + Database)) -> Self {
+        FromId::from_id(id)
     }
 }
