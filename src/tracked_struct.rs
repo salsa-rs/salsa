@@ -320,7 +320,7 @@ where
         current_deps: &StampedValue<()>,
         fields: C::Fields<'db>,
     ) -> Id {
-        let value = || Value {
+        let value = |_| Value {
             updated_at: AtomicCell::new(Some(current_revision)),
             durability: current_deps.durability,
             fields: unsafe { self.to_static(fields) },
@@ -339,7 +339,7 @@ where
             // Overwrite the free-list entry. Use `*foo = ` because the entry
             // has been previously initialized and we want to free the old contents.
             unsafe {
-                *data_raw = value();
+                *data_raw = value(id);
             }
 
             id
