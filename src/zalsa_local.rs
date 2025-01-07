@@ -256,7 +256,7 @@ impl ZalsaLocal {
         self.with_query_stack(|stack| {
             let top_query = stack
                 .last()
-                .expect("cannot create a tracked struct id outside of a tracked function");
+                .expect("cannot create a tracked struct ID outside of a tracked function");
             top_query.tracked_struct_ids.get(identity)
         })
     }
@@ -266,7 +266,7 @@ impl ZalsaLocal {
         self.with_query_stack(|stack| {
             let top_query = stack
                 .last_mut()
-                .expect("cannot store a tracked struct id outside of a tracked function");
+                .expect("cannot store a tracked struct ID outside of a tracked function");
             let old_id = top_query.tracked_struct_ids.insert(identity, id);
             assert!(
                 old_id.is_none(),

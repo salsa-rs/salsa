@@ -153,8 +153,9 @@ where
 /// struct and later moved to the [`Memo`](`crate::function::memo::Memo`).
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub(crate) struct Identity {
-    // conceptually, this contains an `IdentityHash`, but using the type directly will grow the size
-    // of if this struct by a word due to unusable padding, so we store the fields directly instead.
+    // Conceptually, this contains an `IdentityHash`, but using `IdentityHash` directly will grow the size
+    // of this struct struct by a `std::mem::size_of::<usize>()` due to unusable padding. To avoid this increase
+    // in size, we inline the fields of `IdentityHash`.
     /// Index of the tracked struct ingredient.
     ingredient_index: IngredientIndex,
 
@@ -188,6 +189,8 @@ pub struct IdentityHash {
 
 #[derive(Default, Debug)]
 pub(crate) struct IdentityMap {
+    // we use a non-hasher hashmap here as our key contains its own hash (`Identity::hash`)
+    // so we use the raw entry api instead to avoid the overhead of hashing unnecessarily
     map: hashbrown::HashMap<Identity, Id, ()>,
 }
 
@@ -206,9 +209,10 @@ impl IdentityMap {
     pub(crate) fn insert(&mut self, key: Identity, id: Id) -> Option<Id> {
         use hashbrown::hash_map::RawEntryMut;
 
-        let entry = self.map.raw_entry_mut().from_hash(key.hash, |k| {
+        let eq_modulo_hash = |k: &Identity| {
             k.ingredient_index == key.ingredient_index && k.disambiguator == key.disambiguator
-        });
+        };
+        let entry = self.map.raw_entry_mut().from_hash(key.hash, eq_modulo_hash);
         match entry {
             RawEntryMut::Occupied(mut occupied) => Some(occupied.insert(id)),
             RawEntryMut::Vacant(vacant) => {
@@ -219,11 +223,12 @@ impl IdentityMap {
     }
 
     pub(crate) fn get(&self, key: &Identity) -> Option<Id> {
+        let eq_modulo_hash = |k: &Identity| {
+            k.ingredient_index == key.ingredient_index && k.disambiguator == key.disambiguator
+        };
         self.map
             .raw_entry()
-            .from_hash(key.hash, |k| {
-                k.ingredient_index == key.ingredient_index && k.disambiguator == key.disambiguator
-            })
+            .from_hash(key.hash, eq_modulo_hash)
             .map(|(_, &v)| v)
     }
 
@@ -291,6 +296,8 @@ pub struct Disambiguator(u32);
 
 #[derive(Default, Debug)]
 pub(crate) struct DisambiguatorMap {
+    // we use a non-hasher hashmap here as our key contains its own hash (in a sense)
+    // so we use the raw entry api instead to avoid the overhead of hashing unnecessarily
     map: hashbrown::HashMap<IdentityHash, Disambiguator, ()>,
 }
 
@@ -298,10 +305,8 @@ impl DisambiguatorMap {
     pub(crate) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {
         use hashbrown::hash_map::RawEntryMut;
 
-        let entry = self
-            .map
-            .raw_entry_mut()
-            .from_hash(key.hash, |k| k.ingredient_index == key.ingredient_index);
+        let eq_modulo_hash = |k: &IdentityHash| k.ingredient_index == key.ingredient_index;
+        let entry = self.map.raw_entry_mut().from_hash(key.hash, eq_modulo_hash);
         let disambiguator = match entry {
             RawEntryMut::Occupied(occupied) => occupied.into_mut(),
             RawEntryMut::Vacant(vacant) => {
