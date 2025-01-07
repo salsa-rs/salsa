@@ -121,6 +121,15 @@ where
         unsafe { std::mem::transmute(data) }
     }
 
+    /// Intern data to a unique reference.
+    ///
+    /// If `key` is already interned, returns the existing [`Id`] for the interned data without
+    /// invoking `assemble`.
+    /// Otherwise, invokes `assemble` with the given `key` and the [`Id`] to be allocated for this
+    /// interned value. The resulting [`C::Data`] will then be interned.
+    ///
+    /// Note: Using the database within the `assemble` function may result in a deadlock if
+    /// the database ends up trying to intern or allocate a new value.
     pub fn intern<'db, Key>(
         &'db self,
         db: &'db dyn crate::Database,
@@ -135,6 +144,14 @@ where
     }
 
     /// Intern data to a unique reference.
+    ///
+    /// If `key` is already interned, returns the existing [`Id`] for the interned data without
+    /// invoking `assemble`.
+    /// Otherwise, invokes `assemble` with the given `key` and the [`Id`] to be allocated for this
+    /// interned value. The resulting [`C::Data`] will then be interned.
+    ///
+    /// Note: Using the database within the `assemble` function may result in a deadlock if
+    /// the database ends up trying to intern or allocate a new value.
     pub fn intern_id<'db, Key>(
         &'db self,
         db: &'db dyn crate::Database,
@@ -324,6 +341,8 @@ where
         &self.syncs
     }
 }
+
+/// A trait for types that hash and compare like `O`.
 pub trait HashEqLike<O> {
     fn hash<H: Hasher>(&self, h: &mut H);
     fn eq(&self, data: &O) -> bool;
