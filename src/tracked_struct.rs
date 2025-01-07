@@ -188,6 +188,8 @@ pub struct IdentityHash {
 
 #[derive(Default, Debug)]
 pub(crate) struct IdentityMap {
+    // we use a non-hasher hashmap here as our key contains its own hash (in a sense)
+    // so we use the raw entry api instead to avoid the overhead of hashing unnecessarily
     map: hashbrown::HashMap<Identity, Id, ()>,
 }
 
@@ -206,9 +208,10 @@ impl IdentityMap {
     pub(crate) fn insert(&mut self, key: Identity, id: Id) -> Option<Id> {
         use hashbrown::hash_map::RawEntryMut;
 
-        let entry = self.map.raw_entry_mut().from_hash(key.hash, |k| {
+        let eq_module_hash = |k: &Identity| {
             k.ingredient_index == key.ingredient_index && k.disambiguator == key.disambiguator
-        });
+        };
+        let entry = self.map.raw_entry_mut().from_hash(key.hash, eq_module_hash);
         match entry {
             RawEntryMut::Occupied(mut occupied) => Some(occupied.insert(id)),
             RawEntryMut::Vacant(vacant) => {
@@ -219,11 +222,12 @@ impl IdentityMap {
     }
 
     pub(crate) fn get(&self, key: &Identity) -> Option<Id> {
+        let eq_module_hash = |k: &Identity| {
+            k.ingredient_index == key.ingredient_index && k.disambiguator == key.disambiguator
+        };
         self.map
             .raw_entry()
-            .from_hash(key.hash, |k| {
-                k.ingredient_index == key.ingredient_index && k.disambiguator == key.disambiguator
-            })
+            .from_hash(key.hash, eq_module_hash)
             .map(|(_, &v)| v)
     }
 
@@ -291,6 +295,8 @@ pub struct Disambiguator(u32);
 
 #[derive(Default, Debug)]
 pub(crate) struct DisambiguatorMap {
+    // we use a non-hasher hashmap here as our key contains its own hash (in a sense)
+    // so we use the raw entry api instead to avoid the overhead of hashing unnecessarily
     map: hashbrown::HashMap<IdentityHash, Disambiguator, ()>,
 }
 
@@ -298,10 +304,8 @@ impl DisambiguatorMap {
     pub(crate) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {
         use hashbrown::hash_map::RawEntryMut;
 
-        let entry = self
-            .map
-            .raw_entry_mut()
-            .from_hash(key.hash, |k| k.ingredient_index == key.ingredient_index);
+        let eq_module_hash = |k: &IdentityHash| k.ingredient_index == key.ingredient_index;
+        let entry = self.map.raw_entry_mut().from_hash(key.hash, eq_module_hash);
         let disambiguator = match entry {
             RawEntryMut::Occupied(occupied) => occupied.into_mut(),
             RawEntryMut::Vacant(vacant) => {
