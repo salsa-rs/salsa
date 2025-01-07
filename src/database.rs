@@ -54,6 +54,24 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
         )
     }
 
+    /// Starts unwinding the stack if the current revision is cancelled.
+    ///
+    /// This method can be called by query implementations that perform
+    /// potentially expensive computations, in order to speed up propagation of
+    /// cancellation.
+    ///
+    /// Cancellation will automatically be triggered by salsa on any query
+    /// invocation.
+    ///
+    /// This method should not be overridden by `Database` implementors. A
+    /// `salsa_event` is emitted when this method is called, so that should be
+    /// used instead.
+    fn unwind_if_revision_cancelled(&self) {
+        let db = self.as_dyn_database();
+        let zalsa_local = db.zalsa_local();
+        zalsa_local.unwind_if_revision_cancelled(db);
+    }
+
     /// Execute `op` with the database in thread-local storage for debug print-outs.
     fn attach<R>(&self, op: impl FnOnce(&Self) -> R) -> R
     where
