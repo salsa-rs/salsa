@@ -6,6 +6,11 @@ use std::path::{Path, PathBuf};
 use test_log::test;
 
 #[salsa::interned]
+struct InternedBoxed<'db> {
+    data: Box<str>,
+}
+
+#[salsa::interned]
 struct InternedString<'db> {
     data: String,
 }
@@ -71,6 +76,16 @@ fn interning_returns_equal_keys_for_equal_data_multi_field() {
     assert_eq!(s2, s2_2);
     assert_ne!(s1, s2_2);
     assert_ne!(s1, new);
+}
+
+#[test]
+fn interning_boxed() {
+    let db = salsa::DatabaseImpl::new();
+
+    assert_eq!(
+        InternedBoxed::new(&db, "Hello"),
+        InternedBoxed::new(&db, Box::from("Hello"))
+    );
 }
 
 #[test]
