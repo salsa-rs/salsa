@@ -392,7 +392,7 @@ where
     }
 }
 
-impl<'a, T> HashEqLike<Box<T>> for &'a T
+impl<'a, T> HashEqLike<&'a T> for Box<T>
 where
     T: ?Sized + Hash + Eq,
     Box<T>: From<&'a T>,
@@ -400,7 +400,7 @@ where
     fn hash<H: Hasher>(&self, h: &mut H) {
         Hash::hash(self, &mut *h)
     }
-    fn eq(&self, data: &Box<T>) -> bool {
+    fn eq(&self, data: &&T) -> bool {
         **self == **data
     }
 }
