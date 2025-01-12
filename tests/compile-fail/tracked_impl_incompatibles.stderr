@@ -114,10 +114,11 @@ error[E0117]: only traits defined in the current crate can be implemented for ar
    |
 47 | impl<'db> std::default::Default for [MyTracked<'db>; 12] {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^--------------------
-   | |                                   |
-   | |                                   this is not defined in the current crate because arrays are always foreign
-   | impl doesn't use only types from inside the current crate
+   |                                     |
+   |                                     this is not defined in the current crate because arrays are always foreign
    |
+   = note: impl doesn't have any local type before any uncovered type parameters
+   = note: for more information see https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules
    = note: define and implement a trait or new type instead
 
 error[E0308]: mismatched types
