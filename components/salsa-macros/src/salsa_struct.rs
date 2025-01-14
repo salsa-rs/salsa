@@ -118,6 +118,13 @@ where
         }
     }
 
+    pub(crate) fn id(&self) -> syn::Path {
+        match &self.args.id {
+            Some(id) => id.clone(),
+            None => parse_quote!(salsa::Id),
+        }
+    }
+
     /// Disallow `#[id]` attributes on the fields of this struct.
     ///
     /// If an `#[id]` field is found, return an error.
