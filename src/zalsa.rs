@@ -9,7 +9,7 @@ use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{Ingredient, Jar, JarAux};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
-use crate::table::memo::MemoTable;
+use crate::table::memo::MemoTableWithTypes;
 use crate::table::sync::SyncTable;
 use crate::table::Table;
 use crate::views::Views;
@@ -176,9 +176,14 @@ impl Zalsa {
     }
 
     /// Returns the [`MemoTable`][] for the salsa struct with the given id
-    pub(crate) fn memo_table_for(&self, id: Id) -> &MemoTable {
+    pub(crate) fn memo_table_for(&self, id: Id) -> MemoTableWithTypes<'_> {
+        let table = self.table();
         // SAFETY: We are supply the correct current revision
-        unsafe { self.table().memos(id, self.current_revision()) }
+        let (memos, ingredient) =
+            unsafe { table.memos_and_ingredient(id, self.current_revision()) };
+        let types = self.lookup_ingredient(ingredient).memo_table_types();
+        // SAFETY: The memos and the types are from the same ingredient.
+        unsafe { types.attach_memos(memos) }
     }
 
     /// Returns the [`SyncTable`][] for the salsa struct with the given id
@@ -308,6 +313,12 @@ impl Zalsa {
     ) -> IngredientIndex {
         self.memo_ingredient_indices.read()[struct_ingredient_index.as_usize()]
             [memo_ingredient_index.as_usize()]
+    }
+}
+
+impl Drop for Zalsa {
+    fn drop(&mut self) {
+        self.runtime.take_table().drop(self);
     }
 }
 

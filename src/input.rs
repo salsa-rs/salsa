@@ -18,7 +18,11 @@ use crate::{
     ingredient::{fmt_index, Ingredient},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::{Jar, JarAux, Stamp},
-    table::{memo::MemoTable, sync::SyncTable, Slot, Table},
+    table::{
+        memo::{MemoTable, MemoTableTypes},
+        sync::SyncTable,
+        Slot, Table,
+    },
     zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Database, Durability, Id, Revision, Runtime,
@@ -75,6 +79,7 @@ pub struct IngredientImpl<C: Configuration> {
     ingredient_index: IngredientIndex,
     singleton_index: AtomicCell<Option<Id>>,
     singleton_lock: Mutex<()>,
+    memo_table_types: MemoTableTypes,
     _phantom: std::marker::PhantomData<C::Struct>,
 }
 
@@ -84,6 +89,7 @@ impl<C: Configuration> IngredientImpl<C> {
             ingredient_index: index,
             singleton_index: AtomicCell::new(None),
             singleton_lock: Default::default(),
+            memo_table_types: MemoTableTypes::default(),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -275,6 +281,10 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
     ) -> Option<&'db crate::accumulator::accumulated_map::AccumulatedMap> {
         None
     }
+
+    fn memo_table_types(&self) -> &MemoTableTypes {
+        &self.memo_table_types
+    }
 }
 
 impl<C: Configuration> std::fmt::Debug for IngredientImpl<C> {
@@ -318,5 +328,9 @@ where
 
     unsafe fn syncs(&self, _current_revision: Revision) -> &SyncTable {
         &self.syncs
+    }
+
+    unsafe fn drop_memos(&mut self, types: &MemoTableTypes) {
+        self.memos.drop(types);
     }
 }
