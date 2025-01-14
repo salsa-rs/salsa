@@ -32,7 +32,7 @@ macro_rules! setup_tracked_fn {
         output_ty: $output_ty:ty,
 
         // Function body, may reference identifiers defined in `$input_pats` and the generics from `$generics`
-        inner_fn: $inner_fn:item,
+        inner_fn: {$($inner_fn:tt)*},
 
         // Path to the cycle recovery function to use.
         cycle_recovery_fn: ($($cycle_recovery_fn:tt)*),
@@ -172,7 +172,7 @@ macro_rules! setup_tracked_fn {
                 }
 
                 fn execute<$db_lt>($db: &$db_lt Self::DbView, ($($input_id),*): ($($input_ty),*)) -> Self::Output<$db_lt> {
-                    $inner_fn
+                    $($inner_fn)*
 
                     $inner($db, $($input_id),*)
                 }
