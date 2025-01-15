@@ -308,14 +308,6 @@ where
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
     }
-
-    fn accumulated<'db>(
-        &'db self,
-        _db: &'db dyn Database,
-        _key_index: Id,
-    ) -> Option<&'db crate::accumulator::accumulated_map::AccumulatedMap> {
-        None
-    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>

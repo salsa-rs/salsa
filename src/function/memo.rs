@@ -76,23 +76,25 @@ impl<C: Configuration> IngredientImpl<C> {
                     }
                     QueryOrigin::Derived(_) => {
                         // QueryRevisions: !Clone to discourage cloning, we need it here though
-                        let QueryRevisions {
+                        let &QueryRevisions {
                             changed_at,
                             durability,
-                            origin,
-                            tracked_struct_ids,
-                            accumulated,
+                            ref origin,
+                            ref tracked_struct_ids,
+                            ref accumulated,
+                            accumulated_inputs,
                         } = &memo.revisions;
                         // Re-assemble the memo but with the value set to `None`
                         Arc::new(Memo::new(
                             None,
                             memo.verified_at.load(),
                             QueryRevisions {
-                                changed_at: *changed_at,
-                                durability: *durability,
+                                changed_at,
+                                durability,
                                 origin: origin.clone(),
                                 tracked_struct_ids: tracked_struct_ids.clone(),
                                 accumulated: accumulated.clone(),
+                                accumulated_inputs,
                             },
                         ))
                     }
@@ -114,6 +116,11 @@ pub(super) struct Memo<V> {
     /// Revision information
     pub(super) revisions: QueryRevisions,
 }
+
+// Memo's are stored a lot, make sure their size is doesn't randomly increase.
+// #[cfg(test)]
+const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
+    [(); std::mem::size_of::<[usize; 12]>()];
 
 impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {

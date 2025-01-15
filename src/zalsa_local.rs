@@ -337,7 +337,10 @@ pub(crate) struct QueryRevisions {
     ///   only entries that appeared in the new revision.
     pub(super) tracked_struct_ids: FxHashMap<Identity, Id>,
 
-    pub(super) accumulated: AccumulatedMap,
+    pub(super) accumulated: Option<Box<AccumulatedMap>>,
+    /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
+    /// has any direct or indirect accumulated values.
+    pub(super) accumulated_inputs: InputAccumulatedValues,
 }
 
 impl QueryRevisions {
