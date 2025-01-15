@@ -51,7 +51,9 @@ impl crate::options::AllowedOptions for InternedStruct {
 
     const DB: bool = false;
 
-    const RECOVERY_FN: bool = false;
+    const CYCLE_FN: bool = false;
+
+    const CYCLE_INITIAL: bool = false;
 
     const LRU: bool = false;
 

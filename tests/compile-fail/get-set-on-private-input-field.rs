@@ -1,5 +1,3 @@
-use salsa::prelude::*;
-
 mod a {
     #[salsa::input]
     pub struct MyInput {

@@ -1,4 +1,5 @@
 use crate::cycle::CycleRecoveryStrategy;
+use crate::function::VerifyResult;
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::input::Configuration;
 use crate::zalsa::IngredientIndex;
@@ -49,10 +50,19 @@ where
         CycleRecoveryStrategy::Panic
     }
 
-    fn maybe_changed_after(&self, db: &dyn Database, input: Id, revision: Revision) -> bool {
+    fn maybe_changed_after(
+        &self,
+        db: &dyn Database,
+        input: Id,
+        revision: Revision,
+    ) -> VerifyResult {
         let zalsa = db.zalsa();
         let value = <IngredientImpl<C>>::data(zalsa, input);
-        value.stamps[self.field_index].changed_at > revision
+        VerifyResult::changed_if(value.stamps[self.field_index].changed_at > revision)
+    }
+
+    fn is_verified_final<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
+        false
     }
 
     fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {

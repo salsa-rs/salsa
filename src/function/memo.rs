@@ -1,3 +1,4 @@
+use rustc_hash::FxHashSet;
 use std::any::Any;
 use std::fmt::Debug;
 use std::fmt::Formatter;
@@ -7,8 +8,8 @@ use crossbeam::atomic::AtomicCell;
 
 use crate::zalsa_local::QueryOrigin;
 use crate::{
-    key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event, EventKind, Id,
-    Revision,
+    cycle::CycleRecoveryStrategy, key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions,
+    Event, EventKind, Id, Revision,
 };
 
 use super::{Configuration, IngredientImpl};
@@ -67,7 +68,8 @@ impl<C: Configuration> IngredientImpl<C> {
                 match memo.revisions.origin {
                     QueryOrigin::Assigned(_)
                     | QueryOrigin::DerivedUntracked(_)
-                    | QueryOrigin::BaseInput => {
+                    | QueryOrigin::BaseInput
+                    | QueryOrigin::FixpointInitial => {
                         // Careful: Cannot evict memos whose values were
                         // assigned as output of another query
                         // or those with untracked inputs
@@ -82,6 +84,7 @@ impl<C: Configuration> IngredientImpl<C> {
                             origin,
                             tracked_struct_ids,
                             accumulated,
+                            cycle_heads,
                         } = &memo.revisions;
                         // Re-assemble the memo but with the value set to `None`
                         Arc::new(Memo::new(
@@ -93,12 +96,24 @@ impl<C: Configuration> IngredientImpl<C> {
                                 origin: origin.clone(),
                                 tracked_struct_ids: tracked_struct_ids.clone(),
                                 accumulated: accumulated.clone(),
+                                cycle_heads: cycle_heads.clone(),
                             },
                         ))
                     }
                 }
             },
         );
+    }
+
+    pub(super) fn initial_value<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        key: Id,
+    ) -> Option<C::Output<'db>> {
+        match C::CYCLE_STRATEGY {
+            CycleRecoveryStrategy::Fixpoint => Some(C::cycle_initial(db, C::id_to_input(db, key))),
+            CycleRecoveryStrategy::Panic => None,
+        }
     }
 }
 
@@ -111,6 +126,9 @@ pub(super) struct Memo<V> {
     /// as the current revision.
     pub(super) verified_at: AtomicCell<Revision>,
 
+    /// Is this memo verified to not be a provisional cycle result?
+    pub(super) verified_final: AtomicCell<bool>,
+
     /// Revision information
     pub(super) revisions: QueryRevisions,
 }
@@ -120,9 +138,25 @@ impl<V> Memo<V> {
         Memo {
             value,
             verified_at: AtomicCell::new(revision_now),
+            verified_final: AtomicCell::new(revisions.cycle_heads.is_empty()),
             revisions,
         }
     }
+
+    /// True if this is may be a provisional cycle-iteration result.
+    pub(super) fn may_be_provisional(&self) -> bool {
+        !self.verified_final.load()
+    }
+
+    /// Cycle heads that should be propagated to dependent queries.
+    pub(super) fn cycle_heads(&self) -> Option<&FxHashSet<DatabaseKeyIndex>> {
+        if self.may_be_provisional() {
+            Some(&self.revisions.cycle_heads)
+        } else {
+            None
+        }
+    }
+
     /// True if this memo is known not to have changed based on its durability.
     pub(super) fn check_durability(&self, zalsa: &Zalsa) -> bool {
         let last_changed = zalsa.last_changed_revision(self.revisions.durability);
@@ -180,6 +214,7 @@ impl<V> Memo<V> {
                         },
                     )
                     .field("verified_at", &self.memo.verified_at)
+                    .field("verified_final", &self.memo.verified_final)
                     .field("revisions", &self.memo.revisions)
                     .finish()
             }

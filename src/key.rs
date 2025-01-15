@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::{cycle::CycleRecoveryStrategy, zalsa::IngredientIndex, Database, Id};
+use crate::{function::VerifyResult, zalsa::IngredientIndex, Database, Id};
 
 /// An integer that uniquely identifies a particular query instance within the
 /// database. Used to track output dependencies between queries. Fully ordered and
@@ -86,14 +86,13 @@ impl InputDependencyIndex {
         &self,
         db: &dyn Database,
         last_verified_at: crate::Revision,
-    ) -> bool {
+    ) -> VerifyResult {
         match self.key_index {
             Some(key_index) => db
                 .zalsa()
                 .lookup_ingredient(self.ingredient_index)
                 .maybe_changed_after(db, key_index, last_verified_at),
-            // Data in tables themselves remain valid until the table as a whole is reset.
-            None => false,
+            None => VerifyResult::unchanged(),
         }
     }
 
@@ -135,10 +134,6 @@ impl DatabaseKeyIndex {
 
     pub fn key_index(self) -> Id {
         self.key_index
-    }
-
-    pub(crate) fn cycle_recovery_strategy(self, db: &dyn Database) -> CycleRecoveryStrategy {
-        self.ingredient_index.cycle_recovery_strategy(db)
     }
 }
 
