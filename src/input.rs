@@ -18,7 +18,7 @@ use crate::{
     ingredient::{fmt_index, Ingredient},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::{Jar, JarAux, Stamp},
-    table::{memo::MemoTable, sync::SyncTable, Slot, Table},
+    table::{memo::MemoTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Database, Durability, Id, Revision, Runtime,
@@ -121,7 +121,6 @@ impl<C: Configuration> IngredientImpl<C> {
             fields,
             stamps,
             memos: Default::default(),
-            syncs: Default::default(),
         });
 
         if C::IS_SINGLETON {
@@ -291,9 +290,6 @@ where
 
     /// Memos
     memos: MemoTable,
-
-    /// Syncs
-    syncs: SyncTable,
 }
 
 pub trait HasBuilder {
@@ -306,9 +302,5 @@ where
 {
     unsafe fn memos(&self, _current_revision: Revision) -> &crate::table::memo::MemoTable {
         &self.memos
-    }
-
-    unsafe fn syncs(&self, _current_revision: Revision) -> &SyncTable {
-        &self.syncs
     }
 }
