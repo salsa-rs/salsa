@@ -1,9 +1,9 @@
-//! Test for a tracked struct where the id field has a
+//! Test for a tracked struct where an untracked field has a
 //! very poorly chosen hash impl (always returns 0).
-//! This demonstrates that the `#[id]` fields on a struct
+//! This demonstrates that the `untracked fields on a struct
 //! can change values and yet the struct can have the same
 //! id (because struct ids are based on the *hash* of the
-//! `#[id]` fields).
+//! untracked fields).
 
 use salsa::{Database as Db, Setter};
 use test_log::test;
@@ -32,7 +32,6 @@ impl std::hash::Hash for BadHash {
 
 #[salsa::tracked]
 struct MyTracked<'db> {
-    #[id]
     field: BadHash,
 }
 

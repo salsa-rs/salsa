@@ -20,19 +20,36 @@ macro_rules! setup_tracked_struct {
         // Field names
         field_ids: [$($field_id:ident),*],
 
-        // Field names
-        field_getters: [$($field_getter_vis:vis $field_getter_id:ident),*],
+        // Tracked field names
+        tracked_ids: [$($tracked_id:ident),*],
+
+        // Tracked field names
+        tracked_getters: [$($tracked_getter_vis:vis $tracked_getter_id:ident),*],
+
+        // Untracked field names
+        untracked_getters: [$($untracked_getter_vis:vis $untracked_getter_id:ident),*],
 
         // Field types, may reference `db_lt`
         field_tys: [$($field_ty:ty),*],
 
+        // Tracked field types
+        tracked_tys: [$($tracked_ty:ty),*],
+
+        // Untracked field types
+        untracked_tys: [$($untracked_ty:ty),*],
+
         // Indices for each field from 0..N -- must be unsuffixed (e.g., `0`, `1`).
         field_indices: [$($field_index:tt),*],
 
-        // Indices of fields to be used for id computations
-        id_field_indices: [$($id_field_index:tt),*],
+        // Indices of tracked fields.
+        tracked_indices: [$($tracked_index:tt),*],
 
-        // A set of "field options". Each field option is a tuple `(maybe_clone, maybe_backdate)` where:
+        // Indices of untracked fields.
+        untracked_indices: [$($untracked_index:tt),*],
+
+        // A set of "field options" for each field.
+        //
+        // Each field option is a tuple `(maybe_clone, maybe_backdate)` where:
         //
         // * `maybe_clone` is either the identifier `clone` or `no_clone`
         // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
@@ -40,6 +57,12 @@ macro_rules! setup_tracked_struct {
         // These are used to drive conditional logic for each field via recursive macro invocation
         // (see e.g. @maybe_clone below).
         field_options: [$($field_option:tt),*],
+
+        // A set of "field options" for each tracked field.
+        tracked_options: [$($tracked_option:tt),*],
+
+        // A set of "field options" for each untracked field.
+        untracked_options: [$($untracked_option:tt),*],
 
         // Number of fields
         num_fields: $N:literal,
@@ -84,6 +107,10 @@ macro_rules! setup_tracked_struct {
                     $(stringify!($field_id),)*
                 ];
 
+                const TRACKED_FIELD_DEBUG_NAMES: &'static [&'static str] = &[
+                    $(stringify!($tracked_id),)*
+                ];
+
                 type Fields<$db_lt> = ($($field_ty,)*);
 
                 type Revisions = $zalsa::Array<$Revision, $N>;
@@ -98,8 +125,8 @@ macro_rules! setup_tracked_struct {
                     s.0
                 }
 
-                fn id_fields(fields: &Self::Fields<'_>) -> impl std::hash::Hash {
-                    ( $( &fields.$id_field_index ),* )
+                fn untracked_fields(fields: &Self::Fields<'_>) -> impl std::hash::Hash {
+                    ( $( &fields.$untracked_index ),* )
                 }
 
                 fn new_revisions(current_revision: $Revision) -> Self::Revisions {
@@ -133,6 +160,7 @@ macro_rules! setup_tracked_struct {
                 pub fn ingredient(db: &dyn $zalsa::Database) -> &$zalsa_struct::IngredientImpl<$Configuration> {
                     static CACHE: $zalsa::IngredientCache<$zalsa_struct::IngredientImpl<$Configuration>> =
                         $zalsa::IngredientCache::new();
+
                     CACHE.get_or_create(db, || {
                         db.zalsa().add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl::<$Configuration>>::default())
                     })
@@ -199,17 +227,33 @@ macro_rules! setup_tracked_struct {
                 }
 
                 $(
-                    $field_getter_vis fn $field_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($field_option, $db_lt, $field_ty)
+                    $tracked_getter_vis fn $tracked_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($tracked_option, $db_lt, $tracked_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let db = db.as_dyn_database();
-                        let fields = $Configuration::ingredient(db).field(db, self, $field_index);
+                        let fields = $Configuration::ingredient(db).tracked_field(db, self, $tracked_index);
                         $crate::maybe_clone!(
-                            $field_option,
-                            $field_ty,
-                            &fields.$field_index,
+                            $tracked_option,
+                            $tracked_ty,
+                            &fields.$tracked_index,
+                        )
+                    }
+                )*
+
+                $(
+                    $untracked_getter_vis fn $untracked_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($untracked_option, $db_lt, $untracked_ty)
+                    where
+                        // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
+                        $Db: ?Sized + $zalsa::Database,
+                    {
+                        let db = db.as_dyn_database();
+                        let fields = $Configuration::ingredient(db).untracked_field(db, self, $untracked_index);
+                        $crate::maybe_clone!(
+                            $untracked_option,
+                            $untracked_ty,
+                            &fields.$untracked_index,
                         )
                     }
                 )*

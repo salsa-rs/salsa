@@ -34,15 +34,22 @@ error: `lru` option not allowed here
 16 | #[salsa::input(lru =12)]
    |                ^^^
 
-error: `#[id]` cannot be used with `#[salsa::input]`
+error: `#[tracked]` cannot be used with `#[salsa::input]`
   --> tests/compile-fail/input_struct_incompatibles.rs:21:5
    |
-21 | /     #[id]
+21 | /     #[tracked]
 22 | |     field: u32,
    | |______________^
 
-error: cannot find attribute `id` in this scope
+error: cannot find attribute `tracked` in this scope
   --> tests/compile-fail/input_struct_incompatibles.rs:21:7
    |
-21 |     #[id]
-   |       ^^
+21 |     #[tracked]
+   |       ^^^^^^^
+   |
+help: consider importing one of these attribute macros
+   |
+1  + use salsa::tracked;
+   |
+1  + use salsa_macros::tracked;
+   |

@@ -26,6 +26,7 @@ pub mod tracked_field;
 pub trait Configuration: Sized + 'static {
     const DEBUG_NAME: &'static str;
     const FIELD_DEBUG_NAMES: &'static [&'static str];
+    const TRACKED_FIELD_DEBUG_NAMES: &'static [&'static str];
 
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields<'db>: Send + Sync;
@@ -49,7 +50,7 @@ pub trait Configuration: Sized + 'static {
     /// Deref the struct to yield the underlying id.
     fn deref_struct(s: Self::Struct<'_>) -> Id;
 
-    fn id_fields(fields: &Self::Fields<'_>) -> impl Hash;
+    fn untracked_fields(fields: &Self::Fields<'_>) -> impl Hash;
 
     /// Create a new value revision array where each element is set to `current_revision`.
     fn new_revisions(current_revision: Revision) -> Self::Revisions;
@@ -108,7 +109,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
         let struct_ingredient = <IngredientImpl<C>>::new(struct_index);
 
         std::iter::once(Box::new(struct_ingredient) as _)
-            .chain((0..C::FIELD_DEBUG_NAMES.len()).map(|field_index| {
+            .chain((0..C::TRACKED_FIELD_DEBUG_NAMES.len()).map(|field_index| {
                 Box::new(<FieldIngredientImpl<C>>::new(struct_index, field_index)) as _
             }))
             .collect()
@@ -368,7 +369,7 @@ where
 
         let identity_hash = IdentityHash {
             ingredient_index: self.ingredient_index,
-            hash: crate::hash::hash(&C::id_fields(&fields)),
+            hash: crate::hash::hash(&C::untracked_fields(&fields)),
         };
 
         let (current_deps, disambiguator) = zalsa_local.disambiguate(identity_hash);
@@ -623,10 +624,11 @@ where
         unsafe { self.to_self_ref(&value.fields) }
     }
 
-    /// Access to this value field.
+    /// Access to this tracked field.
+    ///
     /// Note that this function returns the entire tuple of value fields.
     /// The caller is responible for selecting the appropriate element.
-    pub fn field<'db>(
+    pub fn tracked_field<'db>(
         &'db self,
         db: &'db dyn crate::Database,
         s: C::Struct<'db>,
@@ -647,6 +649,25 @@ where
             field_changed_at,
             InputAccumulatedValues::Empty,
         );
+
+        unsafe { self.to_self_ref(&data.fields) }
+    }
+
+    /// Access to this untracked field.
+    ///
+    /// Note that this function returns the entire tuple of value fields.
+    /// The caller is responible for selecting the appropriate element.
+    pub fn untracked_field<'db>(
+        &'db self,
+        db: &'db dyn crate::Database,
+        s: C::Struct<'db>,
+        _field_index: usize,
+    ) -> &'db C::Fields<'db> {
+        let (zalsa, _) = db.zalsas();
+        let id = C::deref_struct(s);
+        let data = Self::data(zalsa.table(), id);
+
+        data.read_lock(zalsa.current_revision());
 
         unsafe { self.to_self_ref(&data.fields) }
     }

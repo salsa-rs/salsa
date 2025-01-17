@@ -26,6 +26,7 @@ fn result_depends_on_y(db: &dyn LogDatabase, input: MyInput) -> u32 {
     db.push_log(format!("result_depends_on_y({:?})", input));
     input.y(db) - 1
 }
+
 #[test]
 fn execute() {
     // result_depends_on_x = x + 1

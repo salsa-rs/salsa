@@ -11,7 +11,9 @@ struct MyInput {
 
 #[salsa::tracked]
 struct MyTracked<'db> {
+    #[tracked]
     data: MyInput,
+    #[tracked]
     next: MyList<'db>,
 }
 
