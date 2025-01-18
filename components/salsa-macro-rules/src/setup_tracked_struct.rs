@@ -2,49 +2,49 @@
 #[macro_export]
 macro_rules! setup_tracked_struct {
     (
-        // Attributes on the function
+        // Attributes on the function.
         attrs: [$(#[$attr:meta]),*],
 
-        // Visibility of the struct
+        // Visibility of the struct.
         vis: $vis:vis,
 
-        // Name of the struct
+        // Name of the struct.
         Struct: $Struct:ident,
 
-        // Name of the `'db` lifetime that the user gave
+        // Name of the `'db` lifetime that the user gave.
         db_lt: $db_lt:lifetime,
 
-        // Name user gave for `new`
+        // Name user gave for `new`.
         new_fn: $new_fn:ident,
 
-        // Field names
+        // Field names.
         field_ids: [$($field_id:ident),*],
 
-        // Tracked field names
+        // Tracked field names.
         tracked_ids: [$($tracked_id:ident),*],
 
-        // Tracked field names
+        // Visibility and names of tracked fields.
         tracked_getters: [$($tracked_getter_vis:vis $tracked_getter_id:ident),*],
 
-        // Untracked field names
+        // Visibility and names of untracked fields.
         untracked_getters: [$($untracked_getter_vis:vis $untracked_getter_id:ident),*],
 
-        // Field types, may reference `db_lt`
+        // Field types, may reference `db_lt`.
         field_tys: [$($field_ty:ty),*],
 
-        // Tracked field types
+        // Tracked field types.
         tracked_tys: [$($tracked_ty:ty),*],
 
-        // Untracked field types
+        // Untracked field types.
         untracked_tys: [$($untracked_ty:ty),*],
 
         // Indices for each field from 0..N -- must be unsuffixed (e.g., `0`, `1`).
         field_indices: [$($field_index:tt),*],
 
-        // Indices of tracked fields.
+        // Absolute indices of any tracked fields, relative to all other fields of this struct.
         tracked_indices: [$($tracked_index:tt),*],
 
-        // Indices of untracked fields.
+        // Absolute indices of any untracked fields.
         untracked_indices: [$($untracked_index:tt),*],
 
         // A set of "field options" for each field.
@@ -64,7 +64,7 @@ macro_rules! setup_tracked_struct {
         // A set of "field options" for each untracked field.
         untracked_options: [$($untracked_option:tt),*],
 
-        // Number of fields
+        // Number of fields.
         num_fields: $N:literal,
 
         // If true, generate a debug impl.
@@ -105,10 +105,6 @@ macro_rules! setup_tracked_struct {
 
                 const FIELD_DEBUG_NAMES: &'static [&'static str] = &[
                     $(stringify!($field_id),)*
-                ];
-
-                const TRACKED_FIELD_DEBUG_NAMES: &'static [&'static str] = &[
-                    $(stringify!($tracked_id),)*
                 ];
 
                 type Fields<$db_lt> = ($($field_ty,)*);

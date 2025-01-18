@@ -84,22 +84,29 @@ impl Macro {
         let struct_ident = &self.struct_item.ident;
         let db_lt = db_lifetime::db_lifetime(&self.struct_item.generics);
         let new_fn = salsa_struct.constructor_name();
+
         let field_ids = salsa_struct.field_ids();
         let tracked_ids = salsa_struct.tracked_ids();
+
         let tracked_vis = salsa_struct.tracked_vis();
         let untracked_vis = salsa_struct.untracked_vis();
+
         let tracked_getter_ids = salsa_struct.tracked_getter_ids();
         let untracked_getter_ids = salsa_struct.untracked_getter_ids();
+
         let field_indices = salsa_struct.field_indices();
         let tracked_indices = salsa_struct.tracked_indices();
         let untracked_indices = salsa_struct.untracked_indices();
-        let num_fields = salsa_struct.num_fields();
+
         let field_options = salsa_struct.field_options();
         let tracked_options = salsa_struct.tracked_options();
         let untracked_options = salsa_struct.untracked_options();
+
         let field_tys = salsa_struct.field_tys();
         let tracked_tys = salsa_struct.tracked_tys();
         let untracked_tys = salsa_struct.untracked_tys();
+
+        let num_fields = salsa_struct.num_fields();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
 
         let zalsa = self.hygiene.ident("zalsa");

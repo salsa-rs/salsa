@@ -26,7 +26,6 @@ pub mod tracked_field;
 pub trait Configuration: Sized + 'static {
     const DEBUG_NAME: &'static str;
     const FIELD_DEBUG_NAMES: &'static [&'static str];
-    const TRACKED_FIELD_DEBUG_NAMES: &'static [&'static str];
 
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields<'db>: Send + Sync;
@@ -109,7 +108,9 @@ impl<C: Configuration> Jar for JarImpl<C> {
         let struct_ingredient = <IngredientImpl<C>>::new(struct_index);
 
         std::iter::once(Box::new(struct_ingredient) as _)
-            .chain((0..C::TRACKED_FIELD_DEBUG_NAMES.len()).map(|field_index| {
+            // Note that we create ingredients for untracked fields as well, in order to
+            // keep field indices relative to the entire struct.
+            .chain((0..C::FIELD_DEBUG_NAMES.len()).map(|field_index| {
                 Box::new(<FieldIngredientImpl<C>>::new(struct_index, field_index)) as _
             }))
             .collect()

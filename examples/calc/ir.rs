@@ -79,7 +79,6 @@ pub enum Op {
 pub struct Function<'db> {
     pub name: FunctionId<'db>,
 
-    #[tracked]
     name_span: Span<'db>,
 
     #[tracked]
