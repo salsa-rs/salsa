@@ -135,7 +135,7 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
             #from_id
             #salsa_struct_in_db
 
-            #std_traits
+            // #std_traits
         };
     };
     Ok(all_impls)
