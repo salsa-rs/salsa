@@ -97,35 +97,35 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
         }
     };
 
-    let std_traits = quote! {
-        impl #impl_generics ::core::marker::Copy for #enum_name #type_generics
-        #where_clause {}
+    // let std_traits = quote! {
+    //     impl #impl_generics ::core::marker::Copy for #enum_name #type_generics
+    //     #where_clause {}
 
-        impl #impl_generics ::core::clone::Clone for #enum_name #type_generics
-        #where_clause {
-            #[inline]
-            fn clone(&self) -> Self { *self }
-        }
+    //     impl #impl_generics ::core::clone::Clone for #enum_name #type_generics
+    //     #where_clause {
+    //         #[inline]
+    //         fn clone(&self) -> Self { *self }
+    //     }
 
-        impl #impl_generics ::core::cmp::Eq for #enum_name #type_generics
-        #where_clause {}
+    //     impl #impl_generics ::core::cmp::Eq for #enum_name #type_generics
+    //     #where_clause {}
 
-        impl #impl_generics ::core::cmp::PartialEq for #enum_name #type_generics
-        #where_clause {
-            #[inline]
-            fn eq(&self, __other: &Self) -> bool {
-                zalsa::AsId::as_id(self) == zalsa::AsId::as_id(__other)
-            }
-        }
+    //     impl #impl_generics ::core::cmp::PartialEq for #enum_name #type_generics
+    //     #where_clause {
+    //         #[inline]
+    //         fn eq(&self, __other: &Self) -> bool {
+    //             zalsa::AsId::as_id(self) == zalsa::AsId::as_id(__other)
+    //         }
+    //     }
 
-        impl #impl_generics ::core::hash::Hash for #enum_name #type_generics
-        #where_clause {
-            #[inline]
-            fn hash<__H: ::core::hash::Hasher>(&self, __state: &mut __H) {
-                ::core::hash::Hash::hash(&zalsa::AsId::as_id(self), __state);
-            }
-        }
-    };
+    //     impl #impl_generics ::core::hash::Hash for #enum_name #type_generics
+    //     #where_clause {
+    //         #[inline]
+    //         fn hash<__H: ::core::hash::Hasher>(&self, __state: &mut __H) {
+    //             ::core::hash::Hash::hash(&zalsa::AsId::as_id(self), __state);
+    //         }
+    //     }
+    // };
 
     let all_impls = quote! {
         const _: () = {
@@ -134,8 +134,6 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
             #as_id
             #from_id
             #salsa_struct_in_db
-
-            #std_traits
         };
     };
     Ok(all_impls)
