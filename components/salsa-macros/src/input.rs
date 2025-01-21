@@ -42,6 +42,8 @@ impl crate::options::AllowedOptions for InputStruct {
 
     const NO_DEBUG: bool = true;
 
+    const NO_LIFETIME: bool = false;
+
     const NO_CLONE: bool = false;
 
     const SINGLETON: bool = true;
@@ -63,6 +65,8 @@ impl SalsaStructAllowedOptions for InputStruct {
     const ALLOW_ID: bool = false;
 
     const HAS_LIFETIME: bool = false;
+
+    const ELIDABLE_LIFETIME: bool = false;
 
     const ALLOW_DEFAULT: bool = true;
 }

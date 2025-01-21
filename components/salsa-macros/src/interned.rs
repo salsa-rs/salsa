@@ -43,6 +43,8 @@ impl crate::options::AllowedOptions for InternedStruct {
 
     const NO_DEBUG: bool = true;
 
+    const NO_LIFETIME: bool = true;
+
     const NO_CLONE: bool = false;
 
     const SINGLETON: bool = true;
@@ -64,6 +66,8 @@ impl SalsaStructAllowedOptions for InternedStruct {
     const ALLOW_ID: bool = false;
 
     const HAS_LIFETIME: bool = true;
+
+    const ELIDABLE_LIFETIME: bool = true;
 
     const ALLOW_DEFAULT: bool = false;
 }
@@ -94,6 +98,23 @@ impl Macro {
         let field_tys = salsa_struct.field_tys();
         let field_indexed_tys = salsa_struct.field_indexed_tys();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
+        let has_lifetime = salsa_struct.generate_lifetime();
+
+        let (db_lt_arg, cfg, interior_lt) = if has_lifetime {
+            (
+                Some(db_lt.clone()),
+                quote!(#struct_ident<'static>),
+                db_lt.clone(),
+            )
+        } else {
+            let span = syn::spanned::Spanned::span(&self.struct_item.generics);
+            let static_lifetime = syn::Lifetime {
+                apostrophe: span,
+                ident: syn::Ident::new("static", span),
+            };
+
+            (None, quote!(#struct_ident), static_lifetime)
+        };
 
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
@@ -109,7 +130,10 @@ impl Macro {
                     vis: #vis,
                     Struct: #struct_ident,
                     StructData: #struct_data_ident,
+                    StructWithStatic: #cfg,
                     db_lt: #db_lt,
+                    db_lt_arg: #db_lt_arg,
+                    interior_lt: #interior_lt,
                     new_fn: #new_fn,
                     field_options: [#(#field_options),*],
                     field_ids: [#(#field_ids),*],

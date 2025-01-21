@@ -36,6 +36,7 @@ impl AllowedOptions for Accumulator {
     const NO_EQ: bool = false;
     const NO_DEBUG: bool = true;
     const NO_CLONE: bool = true;
+    const NO_LIFETIME: bool = false;
     const SINGLETON: bool = false;
     const DATA: bool = false;
     const DB: bool = false;

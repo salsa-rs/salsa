@@ -15,8 +15,18 @@ macro_rules! setup_interned_struct {
         // is unstable and taking an additional dependency is unnecessary.
         StructData: $StructDataIdent:ident,
 
+        StructWithStatic: $StructWithStatic:ty,
+
         // Name of the `'db` lifetime that the user gave
         db_lt: $db_lt:lifetime,
+
+        // optional db lifetime argument.
+        db_lt_arg: $($db_lt_arg:lifetime)?,
+
+        // the lifetime used in the desugared interned struct.
+        // if the `db_lt_arg`, is present, this is `db_lt_arg`, but otherwise,
+        // it is `'static`.
+        interior_lt: $interior_lt:lifetime,
 
         // Name user gave for `new`
         new_fn: $new_fn:ident,
@@ -58,16 +68,16 @@ macro_rules! setup_interned_struct {
     ) => {
         $(#[$attr])*
         #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-        $vis struct $Struct<$db_lt>(
+        $vis struct $Struct< $($db_lt_arg)? >(
             salsa::Id,
-            std::marker::PhantomData < & $db_lt salsa::plumbing::interned::Value < $Struct<'static> > >
+            std::marker::PhantomData < & $interior_lt salsa::plumbing::interned::Value <$StructWithStatic> >
         );
 
         const _: () = {
             use salsa::plumbing as $zalsa;
             use $zalsa::interned as $zalsa_struct;
 
-            type $Configuration = $Struct<'static>;
+            type $Configuration = $StructWithStatic;
 
             type $StructDataIdent<$db_lt> = ($($field_ty,)*);
 
@@ -103,10 +113,10 @@ macro_rules! setup_interned_struct {
                 }
             }
 
-            impl salsa::plumbing::interned::Configuration for $Struct<'static> {
+            impl salsa::plumbing::interned::Configuration for $StructWithStatic {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
                 type Data<'a> = $StructDataIdent<'a>;
-                type Struct<'a> = $Struct<'a>;
+                type Struct<'db> = $Struct< $($db_lt_arg)? >;
                 fn struct_from_id<'db>(id: salsa::Id) -> Self::Struct<'db> {
                     $Struct(id, std::marker::PhantomData)
                 }
@@ -128,37 +138,37 @@ macro_rules! setup_interned_struct {
                 }
             }
 
-            impl $zalsa::AsId for $Struct<'_> {
+            impl< $($db_lt_arg)? > $zalsa::AsId for $Struct< $($db_lt_arg)? > {
                 fn as_id(&self) -> salsa::Id {
                     self.0
                 }
             }
 
-            impl $zalsa::FromId for $Struct<'_> {
+            impl< $($db_lt_arg)? > $zalsa::FromId for $Struct< $($db_lt_arg)? > {
                 fn from_id(id: salsa::Id) -> Self {
                     Self(id, std::marker::PhantomData)
                 }
             }
 
-            unsafe impl Send for $Struct<'_> {}
+            unsafe impl< $($db_lt_arg)? > Send for $Struct< $($db_lt_arg)? > {}
 
-            unsafe impl Sync for $Struct<'_> {}
+            unsafe impl< $($db_lt_arg)? > Sync for $Struct< $($db_lt_arg)? > {}
 
             $zalsa::macro_if! { $generate_debug_impl =>
-                impl std::fmt::Debug for $Struct<'_> {
+                impl< $($db_lt_arg)? > std::fmt::Debug for $Struct< $($db_lt_arg)? > {
                     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                         Self::default_debug_fmt(*self, f)
                     }
                 }
             }
 
-            impl $zalsa::SalsaStructInDb for $Struct<'_> {
+            impl< $($db_lt_arg)? > $zalsa::SalsaStructInDb for $Struct< $($db_lt_arg)? > {
                 fn lookup_ingredient_index(aux: &dyn $zalsa::JarAux) -> core::option::Option<$zalsa::IngredientIndex> {
                     aux.lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Configuration>>::default())
                 }
             }
 
-            unsafe impl $zalsa::Update for $Struct<'_> {
+            unsafe impl< $($db_lt_arg)? > $zalsa::Update for $Struct< $($db_lt_arg)? > {
                 unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
                     if unsafe { *old_pointer } != new_value {
                         unsafe { *old_pointer = new_value };
@@ -169,7 +179,7 @@ macro_rules! setup_interned_struct {
                 }
             }
 
-            impl<$db_lt> $Struct<$db_lt> {
+            impl<$db_lt> $Struct< $($db_lt_arg)? >  {
                 pub fn $new_fn<$Db, $($indexed_ty: $zalsa::interned::Lookup<$field_ty> + std::hash::Hash,)*>(db: &$db_lt $Db,  $($field_id: $indexed_ty),*) -> Self
                 where
                     // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`

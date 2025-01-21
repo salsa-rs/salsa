@@ -24,6 +24,11 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `no_debug` identifier.
     pub no_debug: Option<syn::Ident>,
 
+    /// Signal we should not include the `'db` lifetime.
+    ///
+    /// If this is `Some`, the value is the `no_lifetime` identifier.
+    pub no_lifetime: Option<syn::Ident>,
+
     /// Signal we should not generate a `Clone` impl.
     ///
     /// If this is `Some`, the value is the `no_clone` identifier.
@@ -77,6 +82,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             specify: Default::default(),
             no_eq: Default::default(),
             no_debug: Default::default(),
+            no_lifetime: Default::default(),
             no_clone: Default::default(),
             db_path: Default::default(),
             recovery_fn: Default::default(),
@@ -95,6 +101,7 @@ pub(crate) trait AllowedOptions {
     const SPECIFY: bool;
     const NO_EQ: bool;
     const NO_DEBUG: bool;
+    const NO_LIFETIME: bool;
     const NO_CLONE: bool;
     const SINGLETON: bool;
     const DATA: bool;
@@ -150,6 +157,20 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`no_debug` option not allowed here",
+                    ));
+                }
+            } else if ident == "no_lifetime" {
+                if A::NO_LIFETIME {
+                    if let Some(old) = std::mem::replace(&mut options.no_lifetime, Some(ident)) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `no_lifetime` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`no_lifetime` option not allowed here",
                     ));
                 }
             } else if ident == "no_clone" {
