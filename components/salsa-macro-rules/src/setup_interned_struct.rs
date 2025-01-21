@@ -11,6 +11,10 @@ macro_rules! setup_interned_struct {
         // Name of the struct
         Struct: $Struct:ident,
 
+        // Name of the struct data. This is a parameter because `std::concat_idents`
+        // is unstable and taking an additional dependency is unnecessary.
+        StructData: $StructDataIdent:ident,
+
         // Name of the `'db` lifetime that the user gave
         db_lt: $db_lt:lifetime,
 
@@ -65,7 +69,7 @@ macro_rules! setup_interned_struct {
 
             type $Configuration = $Struct<'static>;
 
-            type StructData<$db_lt> = ($($field_ty,)*);
+            type $StructDataIdent<$db_lt> = ($($field_ty,)*);
 
             /// Key to use during hash lookups. Each field is some type that implements `Lookup<T>`
             /// for the owned type. This permits interning with an `&str` when a `String` is required and so forth.
@@ -76,7 +80,7 @@ macro_rules! setup_interned_struct {
             );
 
             impl<$db_lt, $($indexed_ty,)*> $zalsa::interned::HashEqLike<StructKey<$db_lt, $($indexed_ty),*>>
-                for StructData<$db_lt>
+                for $StructDataIdent<$db_lt>
                 where
                 $($field_ty: $zalsa::interned::HashEqLike<$indexed_ty>),*
                 {
@@ -90,18 +94,18 @@ macro_rules! setup_interned_struct {
                 }
             }
 
-            impl<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*> $zalsa::interned::Lookup<StructData<$db_lt>>
+            impl<$db_lt, $($indexed_ty: $zalsa::interned::Lookup<$field_ty>),*> $zalsa::interned::Lookup<$StructDataIdent<$db_lt>>
                 for StructKey<$db_lt, $($indexed_ty),*> {
 
                 #[allow(unused_unit)]
-                fn into_owned(self) -> StructData<$db_lt> {
+                fn into_owned(self) -> $StructDataIdent<$db_lt> {
                     ($($zalsa::interned::Lookup::into_owned(self.$field_index),)*)
                 }
             }
 
-            impl $zalsa_struct::Configuration for $Configuration {
+            impl salsa::plumbing::interned::Configuration for $Struct<'static> {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
-                type Data<'a> = StructData<'a>;
+                type Data<'a> = $StructDataIdent<'a>;
                 type Struct<'a> = $Struct<'a>;
                 fn struct_from_id<'db>(id: salsa::Id) -> Self::Struct<'db> {
                     $Struct(id, std::marker::PhantomData)
