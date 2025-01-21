@@ -89,6 +89,18 @@ fn interning_boxed() {
 }
 
 #[test]
+fn interned_structs_have_public_ingredients() {
+    use salsa::plumbing::AsId;
+
+    let db = salsa::DatabaseImpl::new();
+    let s = InternedString::new(&db, String::from("Hello, world!"));
+    let underlying_id = s.0;
+
+    let data = InternedString::ingredient(&db).data(&db, underlying_id.as_id());
+    assert_eq!(data, &(String::from("Hello, world!"),));
+}
+
+#[test]
 fn interning_vec() {
     let db = salsa::DatabaseImpl::new();
     let s1 = InternedVec::new(&db, ["Hello, ".to_string(), "World".to_string()].as_slice());
