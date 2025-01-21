@@ -163,8 +163,7 @@ struct Ast<'db> {
 }
 ```
 
-Just as with an input, new values are created by invoking `Ast::new`.
-Unlike with an input, the `new` for a tracked struct only requires a `&`-reference to the database:
+Just as with an input, new values are created by invoking `Ast::new`, and the `new` for a tracked struct only requires a `&`-reference to the database:
 
 ```rust
 #[salsa::tracked]
