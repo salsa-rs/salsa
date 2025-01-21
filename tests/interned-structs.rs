@@ -36,6 +36,11 @@ struct InternedPathBuf<'db> {
     data1: PathBuf,
 }
 
+#[salsa::interned(no_lifetime)]
+struct InternedStringNoLifetime {
+    data: String,
+}
+
 #[salsa::tracked]
 fn intern_stuff(db: &dyn salsa::Database) -> String {
     let s1 = InternedString::new(db, "Hello, ".to_string());
@@ -129,4 +134,16 @@ fn interning_path_buf() {
     assert_eq!(s1, s2);
     assert_eq!(s1, s3);
     assert_ne!(s1, s4);
+}
+
+#[test]
+fn interning_without_lifetimes() {
+    let db = salsa::DatabaseImpl::new();
+
+    let s1 = InternedStringNoLifetime::new(&db, "Hello, ".to_string());
+    let s2 = InternedStringNoLifetime::new(&db, "World, ".to_string());
+    let s1_2 = InternedStringNoLifetime::new(&db, "Hello, ");
+    let s2_2 = InternedStringNoLifetime::new(&db, "World, ");
+    assert_eq!(s1, s1_2);
+    assert_eq!(s2, s2_2);
 }

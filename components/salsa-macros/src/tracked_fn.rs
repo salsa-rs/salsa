@@ -31,6 +31,8 @@ impl crate::options::AllowedOptions for TrackedFn {
 
     const NO_DEBUG: bool = false;
 
+    const NO_LIFETIME: bool = false;
+
     const NO_CLONE: bool = false;
 
     const SINGLETON: bool = false;
@@ -160,6 +162,7 @@ impl Macro {
 
         Ok(ValidFn { db_ident, db_path })
     }
+
     fn cycle_recovery(&self) -> (TokenStream, TokenStream) {
         if let Some(recovery_fn) = &self.args.recovery_fn {
             (quote!((#recovery_fn)), quote!(Fallback))
