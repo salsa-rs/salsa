@@ -74,6 +74,7 @@ pub mod plumbing {
     pub use crate::cycle::CycleRecoveryStrategy;
     pub use crate::database::current_revision;
     pub use crate::database::Database;
+    pub use crate::function::lru;
     pub use crate::function::should_backdate_value;
     pub use crate::id::AsId;
     pub use crate::id::FromId;

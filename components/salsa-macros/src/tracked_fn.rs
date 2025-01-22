@@ -109,7 +109,11 @@ impl Macro {
             FunctionType::SalsaStruct => false,
         };
 
-        let lru = Literal::usize_unsuffixed(self.args.lru.unwrap_or(0));
+        let (has_lru, lru_capacity) = match self.args.lru {
+            Some(cap) => (true, cap),
+            None => (false, 0),
+        };
+        let lru_capacity = Literal::usize_unsuffixed(lru_capacity);
 
         let return_ref: bool = self.args.return_ref.is_some();
 
@@ -131,7 +135,8 @@ impl Macro {
                 is_specifiable: #is_specifiable,
                 no_eq: #no_eq,
                 needs_interner: #needs_interner,
-                lru: #lru,
+                lru_capacity: #lru_capacity,
+                has_lru: #has_lru,
                 return_ref: #return_ref,
                 unused_names: [
                     #zalsa,

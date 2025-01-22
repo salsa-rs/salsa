@@ -177,13 +177,13 @@ impl Zalsa {
 
     /// Returns the [`MemoTable`][] for the salsa struct with the given id
     pub(crate) fn memo_table_for(&self, id: Id) -> &MemoTable {
-        // SAFETY: We are supply the correct current revision
+        // SAFETY: We are supplying the correct current revision
         unsafe { self.table().memos(id, self.current_revision()) }
     }
 
     /// Returns the [`SyncTable`][] for the salsa struct with the given id
     pub(crate) fn sync_table_for(&self, id: Id) -> &SyncTable {
-        // SAFETY: We are supply the correct current revision
+        // SAFETY: We are supplying the correct current revision
         unsafe { self.table().syncs(id, self.current_revision()) }
     }
 
@@ -271,8 +271,12 @@ impl Zalsa {
     pub(crate) fn new_revision(&mut self) -> Revision {
         let new_revision = self.runtime.new_revision();
 
+        let table = self.runtime.table();
         for index in self.ingredients_requiring_reset.iter() {
-            self.ingredients_vec[index.as_usize()].reset_for_new_revision();
+            self.ingredients_vec[index.as_usize()].reset_for_new_revision(&|id| unsafe {
+                // SAFETY: We are supplying the correct current revision
+                table.memos(id, new_revision)
+            });
         }
 
         new_revision

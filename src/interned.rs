@@ -299,7 +299,7 @@ where
         false
     }
 
-    fn reset_for_new_revision(&mut self) {
+    fn reset_for_new_revision<'a>(&mut self, _: &'a dyn Fn(crate::Id) -> &'a MemoTable) {
         // Interned ingredients do not, normally, get deleted except when they are "reset" en masse.
         // There ARE methods (e.g., `clear_deleted_entries` and `remove`) for deleting individual
         // items, but those are only used for tracked struct ingredients.

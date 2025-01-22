@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crossbeam::atomic::AtomicCell;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::table::memo::MemoTable;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
     key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event, EventKind, Id,
@@ -61,47 +62,44 @@ impl<C: Configuration> IngredientImpl<C> {
     /// Evicts the existing memo for the given key, replacing it
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
-    pub(super) fn evict_value_from_memo_for<'db>(&'db self, zalsa: &'db Zalsa, id: Id) {
-        zalsa.memo_table_for(id).map_memo::<Memo<C::Output<'_>>>(
-            self.memo_ingredient_index,
-            |memo| {
-                match memo.revisions.origin {
-                    QueryOrigin::Assigned(_)
-                    | QueryOrigin::DerivedUntracked(_)
-                    | QueryOrigin::BaseInput => {
-                        // Careful: Cannot evict memos whose values were
-                        // assigned as output of another query
-                        // or those with untracked inputs
-                        // as their values cannot be reconstructed.
-                        memo
-                    }
-                    QueryOrigin::Derived(_) => {
-                        // QueryRevisions: !Clone to discourage cloning, we need it here though
-                        let &QueryRevisions {
+    pub(super) fn evict_value_from_memo_for(&self, table: &MemoTable) {
+        table.map_memo::<Memo<C::Output<'_>>>(self.memo_ingredient_index, |memo| {
+            match memo.revisions.origin {
+                QueryOrigin::Assigned(_)
+                | QueryOrigin::DerivedUntracked(_)
+                | QueryOrigin::BaseInput => {
+                    // Careful: Cannot evict memos whose values were
+                    // assigned as output of another query
+                    // or those with untracked inputs
+                    // as their values cannot be reconstructed.
+                    memo
+                }
+                QueryOrigin::Derived(_) => {
+                    // QueryRevisions: !Clone to discourage cloning, we need it here though
+                    let &QueryRevisions {
+                        changed_at,
+                        durability,
+                        ref origin,
+                        ref tracked_struct_ids,
+                        ref accumulated,
+                        ref accumulated_inputs,
+                    } = &memo.revisions;
+                    // Re-assemble the memo but with the value set to `None`
+                    Arc::new(Memo::new(
+                        None,
+                        memo.verified_at.load(),
+                        QueryRevisions {
                             changed_at,
                             durability,
-                            ref origin,
-                            ref tracked_struct_ids,
-                            ref accumulated,
-                            ref accumulated_inputs,
-                        } = &memo.revisions;
-                        // Re-assemble the memo but with the value set to `None`
-                        Arc::new(Memo::new(
-                            None,
-                            memo.verified_at.load(),
-                            QueryRevisions {
-                                changed_at,
-                                durability,
-                                origin: origin.clone(),
-                                tracked_struct_ids: tracked_struct_ids.clone(),
-                                accumulated: accumulated.clone(),
-                                accumulated_inputs: AtomicCell::new(accumulated_inputs.load()),
-                            },
-                        ))
-                    }
+                            origin: origin.clone(),
+                            tracked_struct_ids: tracked_struct_ids.clone(),
+                            accumulated: accumulated.clone(),
+                            accumulated_inputs: AtomicCell::new(accumulated_inputs.load()),
+                        },
+                    ))
                 }
-            },
-        );
+            }
+        });
     }
 }
 

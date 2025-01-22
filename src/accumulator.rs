@@ -13,6 +13,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, MaybeChangedAfter},
     plumbing::JarAux,
+    table::memo::MemoTable,
     zalsa::IngredientIndex,
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id, Revision,
@@ -137,7 +138,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         false
     }
 
-    fn reset_for_new_revision(&mut self) {
+    fn reset_for_new_revision<'a>(&mut self, _: &'a dyn Fn(crate::Id) -> &'a MemoTable) {
         panic!("unexpected reset on accumulator")
     }
 
