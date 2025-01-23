@@ -17,7 +17,7 @@ where
         &self,
         db: &C::DbView,
         key: DatabaseKeyIndex,
-        old_memo: &Memo<C::Output<'_>>,
+        old_memo: &Memo<C::Lru, C::Output<'_>>,
         revisions: &mut QueryRevisions,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset

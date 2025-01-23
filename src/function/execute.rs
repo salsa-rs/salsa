@@ -4,7 +4,7 @@ use crate::{
     zalsa::ZalsaDatabase, zalsa_local::ActiveQueryGuard, Cycle, Database, Event, EventKind,
 };
 
-use super::{memo::Memo, Configuration, IngredientImpl};
+use super::{memo::Memo, Configuration, IngredientImpl, LruChoice};
 
 impl<C> IngredientImpl<C>
 where
@@ -23,8 +23,8 @@ where
         &'db self,
         db: &'db C::DbView,
         active_query: ActiveQueryGuard<'_>,
-        opt_old_memo: Option<Arc<Memo<C::Output<'_>>>>,
-    ) -> &'db Memo<C::Output<'db>> {
+        opt_old_memo: Option<Arc<Memo<C::Lru, C::Output<'_>>>>,
+    ) -> &'db Memo<C::Lru, C::Output<'db>> {
         let zalsa = db.zalsa();
         let revision_now = zalsa.current_revision();
         let database_key_index = active_query.database_key_index;
@@ -84,6 +84,10 @@ where
 
         tracing::debug!("{database_key_index:?}: read_upgrade: result.revisions = {revisions:#?}");
 
-        self.insert_memo(zalsa, id, Memo::new(Some(value), revision_now, revisions))
+        self.insert_memo(
+            zalsa,
+            id,
+            Memo::new(C::Lru::make_value(value), revision_now, revisions),
+        )
     }
 }

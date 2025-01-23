@@ -17,7 +17,9 @@ where
             value,
             durability,
             changed_at,
-        } = memo.revisions.stamped_value(memo.value.as_ref().unwrap());
+        } = memo
+            .revisions
+            .stamped_value(C::Lru::assert_ref(&memo.value));
 
         self.lru.record_use(id);
 
@@ -39,7 +41,7 @@ where
         &'db self,
         db: &'db C::DbView,
         id: Id,
-    ) -> &'db Memo<C::Output<'db>> {
+    ) -> &'db Memo<C::Lru, C::Output<'db>> {
         loop {
             if let Some(memo) = self.fetch_hot(db, id).or_else(|| self.fetch_cold(db, id)) {
                 return memo;
@@ -48,11 +50,15 @@ where
     }
 
     #[inline]
-    fn fetch_hot<'db>(&'db self, db: &'db C::DbView, id: Id) -> Option<&'db Memo<C::Output<'db>>> {
+    fn fetch_hot<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        id: Id,
+    ) -> Option<&'db Memo<C::Lru, C::Output<'db>>> {
         let zalsa = db.zalsa();
         let memo_guard = self.get_memo_from_table_for(zalsa, id);
         if let Some(memo) = &memo_guard {
-            if memo.value.is_some()
+            if !C::Lru::is_evicted(&memo.value)
                 && self.shallow_verify_memo(db, zalsa, self.database_key_index(id), memo)
             {
                 // Unsafety invariant: memo is present in memo_map and we have verified that it is
@@ -63,7 +69,11 @@ where
         None
     }
 
-    fn fetch_cold<'db>(&'db self, db: &'db C::DbView, id: Id) -> Option<&'db Memo<C::Output<'db>>> {
+    fn fetch_cold<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        id: Id,
+    ) -> Option<&'db Memo<C::Lru, C::Output<'db>>> {
         let (zalsa, zalsa_local) = db.zalsas();
         let database_key_index = self.database_key_index(id);
 
@@ -82,7 +92,9 @@ where
         let zalsa = db.zalsa();
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id);
         if let Some(old_memo) = &opt_old_memo {
-            if old_memo.value.is_some() && self.deep_verify_memo(db, old_memo, &active_query) {
+            if !C::Lru::is_evicted(&old_memo.value)
+                && self.deep_verify_memo(db, old_memo, &active_query)
+            {
                 // Unsafety invariant: memo is present in memo_map and we have verified that it is
                 // still valid for the current revision.
                 return unsafe { Some(self.extend_memo_lifetime(old_memo)) };

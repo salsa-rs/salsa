@@ -1,6 +1,6 @@
 use crate::zalsa_local::QueryRevisions;
 
-use super::{memo::Memo, Configuration, IngredientImpl};
+use super::{memo::Memo, Configuration, IngredientImpl, LruChoice};
 
 impl<C> IngredientImpl<C>
 where
@@ -11,11 +11,11 @@ where
     /// on an old memo when a new memo has been produced to check whether there have been changed.
     pub(super) fn backdate_if_appropriate(
         &self,
-        old_memo: &Memo<C::Output<'_>>,
+        old_memo: &Memo<C::Lru, C::Output<'_>>,
         revisions: &mut QueryRevisions,
         value: &C::Output<'_>,
     ) {
-        if let Some(old_value) = &old_memo.value {
+        C::Lru::with_value(&old_memo.value, |old_value| {
             // Careful: if the value became less durable than it
             // used to be, that is a "breaking change" that our
             // consumers must be aware of. Becoming *more* durable
@@ -31,6 +31,6 @@ where
                 assert!(old_memo.revisions.changed_at <= revisions.changed_at);
                 revisions.changed_at = old_memo.revisions.changed_at;
             }
-        }
+        })
     }
 }
