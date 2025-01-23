@@ -2,8 +2,24 @@
 //! compiles and executes successfully.
 
 use expect_test::expect;
+use salsa::plumbing::{AsId, FromId};
 use std::path::{Path, PathBuf};
 use test_log::test;
+
+#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct CustomSalsaIdWrapper(salsa::Id);
+
+impl AsId for CustomSalsaIdWrapper {
+    fn as_id(&self) -> salsa::Id {
+        self.0
+    }
+}
+
+impl FromId for CustomSalsaIdWrapper {
+    fn from_id(id: salsa::Id) -> Self {
+        CustomSalsaIdWrapper(id)
+    }
+}
 
 #[salsa::interned]
 struct InternedBoxed<'db> {
@@ -36,7 +52,7 @@ struct InternedPathBuf<'db> {
     data1: PathBuf,
 }
 
-#[salsa::interned(no_lifetime)]
+#[salsa::interned(no_lifetime, id = CustomSalsaIdWrapper)]
 struct InternedStringNoLifetime {
     data: String,
 }

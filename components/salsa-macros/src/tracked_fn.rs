@@ -46,6 +46,8 @@ impl crate::options::AllowedOptions for TrackedFn {
     const LRU: bool = true;
 
     const CONSTRUCTOR_NAME: bool = false;
+
+    const ID: bool = false;
 }
 
 struct Macro {
