@@ -138,6 +138,10 @@ impl Runtime {
         &self.table
     }
 
+    pub(crate) fn table_mut(&mut self) -> &mut Table {
+        &mut self.table
+    }
+
     /// Increments the "current revision" counter and clears
     /// the cancellation flag.
     ///
