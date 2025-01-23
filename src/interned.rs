@@ -7,7 +7,7 @@ use crate::key::InputDependencyIndex;
 use crate::plumbing::{Jar, JarAux};
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
-use crate::table::Slot;
+use crate::table::{Slot, Table};
 use crate::zalsa::IngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{Database, DatabaseKeyIndex, Id};
@@ -327,7 +327,7 @@ where
         false
     }
 
-    fn reset_for_new_revision(&mut self) {
+    fn reset_for_new_revision(&mut self, _: &mut Table) {
         // Interned ingredients do not, normally, get deleted except when they are "reset" en masse.
         // There ARE methods (e.g., `clear_deleted_entries` and `remove`) for deleting individual
         // items, but those are only used for tracked struct ingredients.
@@ -360,6 +360,10 @@ where
 {
     unsafe fn memos(&self, _current_revision: Revision) -> &MemoTable {
         &self.memos
+    }
+
+    fn memos_mut(&mut self) -> &mut MemoTable {
+        &mut self.memos
     }
 
     unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {

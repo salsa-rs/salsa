@@ -23,7 +23,7 @@ const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
 const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
 const MAX_PAGES: usize = 1 << (32 - PAGE_LEN_BITS);
 
-pub(crate) struct Table {
+pub struct Table {
     pub(crate) pages: AppendOnlyVec<Box<dyn TablePage>>,
 }
 
@@ -36,6 +36,9 @@ pub(crate) trait TablePage: Any + Send + Sync {
     ///
     /// The `current_revision` MUST be the current revision of the database owning this table page.
     unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable;
+
+    /// Access the memos attached to `slot`.
+    fn memos_mut(&mut self, slot: SlotIndex) -> &mut MemoTable;
 
     /// Access the syncs attached to `slot`.
     ///
@@ -74,6 +77,9 @@ pub(crate) trait Slot: Any + Send + Sync {
     ///
     /// The current revision MUST be the current revision of the database containing this slot.
     unsafe fn memos(&self, current_revision: Revision) -> &MemoTable;
+
+    /// Mutably access the [`MemoTable`] for this slot.
+    fn memos_mut(&mut self) -> &mut MemoTable;
 
     /// Access the [`SyncTable`][] for this slot.
     ///
@@ -123,7 +129,7 @@ impl Table {
     /// # Panics
     ///
     /// If `id` is out of bounds or the does not have the type `T`.
-    pub fn get<T: Slot>(&self, id: Id) -> &T {
+    pub(crate) fn get<T: Slot>(&self, id: Id) -> &T {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
         page_ref.get(slot)
@@ -138,7 +144,7 @@ impl Table {
     /// # Safety
     ///
     /// See [`Page::get_raw`][].
-    pub fn get_raw<T: Slot>(&self, id: Id) -> *mut T {
+    pub(crate) fn get_raw<T: Slot>(&self, id: Id) -> *mut T {
         let (page, slot) = split_id(id);
         let page_ref = self.page::<T>(page);
         page_ref.get_raw(slot)
@@ -149,12 +155,12 @@ impl Table {
     /// # Panics
     ///
     /// If `page` is out of bounds or the type `T` is incorrect.
-    pub fn page<T: Slot>(&self, page: PageIndex) -> &Page<T> {
+    pub(crate) fn page<T: Slot>(&self, page: PageIndex) -> &Page<T> {
         self.pages[page.0].assert_type::<Page<T>>()
     }
 
     /// Allocate a new page for the given ingredient and with slots of type `T`
-    pub fn push_page<T: Slot>(&self, ingredient: IngredientIndex) -> PageIndex {
+    pub(crate) fn push_page<T: Slot>(&self, ingredient: IngredientIndex) -> PageIndex {
         let page = Box::new(<Page<T>>::new(ingredient));
         PageIndex::new(self.pages.push(page))
     }
@@ -165,9 +171,15 @@ impl Table {
     ///
     /// The parameter `current_revision` MUST be the current revision
     /// of the owner of database owning this table.
-    pub unsafe fn memos(&self, id: Id, current_revision: Revision) -> &MemoTable {
+    pub(crate) unsafe fn memos(&self, id: Id, current_revision: Revision) -> &MemoTable {
         let (page, slot) = split_id(id);
         self.pages[page.0].memos(slot, current_revision)
+    }
+
+    /// Get the memo table associated with `id`
+    pub(crate) fn memos_mut(&mut self, id: Id) -> &mut MemoTable {
+        let (page, slot) = split_id(id);
+        self.pages[page.0].memos_mut(slot)
     }
 
     /// Get the sync table associated with `id`
@@ -176,7 +188,7 @@ impl Table {
     ///
     /// The parameter `current_revision` MUST be the current revision
     /// of the owner of database owning this table.
-    pub unsafe fn syncs(&self, id: Id, current_revision: Revision) -> &SyncTable {
+    pub(crate) unsafe fn syncs(&self, id: Id, current_revision: Revision) -> &SyncTable {
         let (page, slot) = split_id(id);
         self.pages[page.0].syncs(slot, current_revision)
     }
@@ -209,6 +221,16 @@ impl<T: Slot> Page<T> {
     pub(crate) fn get(&self, slot: SlotIndex) -> &T {
         self.check_bounds(slot);
         unsafe { (*self.data[slot.0].get()).assume_init_ref() }
+    }
+
+    /// Returns a reference to the given slot.
+    ///
+    /// # Panics
+    ///
+    /// If slot is out of bounds
+    pub(crate) fn get_mut(&mut self, slot: SlotIndex) -> &mut T {
+        self.check_bounds(slot);
+        unsafe { (*self.data[slot.0].get()).assume_init_mut() }
     }
 
     pub(crate) fn slots(&self) -> impl Iterator<Item = &T> {
@@ -272,6 +294,10 @@ impl<T: Slot> TablePage for Page<T> {
 
     unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable {
         self.get(slot).memos(current_revision)
+    }
+
+    fn memos_mut(&mut self, slot: SlotIndex) -> &mut MemoTable {
+        self.get_mut(slot).memos_mut()
     }
 
     unsafe fn syncs(&self, slot: SlotIndex, current_revision: Revision) -> &SyncTable {

@@ -759,7 +759,9 @@ where
         false
     }
 
-    fn reset_for_new_revision(&mut self) {}
+    fn reset_for_new_revision(&mut self, _: &mut Table) {
+        panic!("tracked struct ingredients do not require reset")
+    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>
@@ -829,6 +831,10 @@ where
         // when deleting a tracked struct.
         self.read_lock(current_revision);
         &self.memos
+    }
+
+    fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
+        &mut self.memos
     }
 
     unsafe fn syncs(&self, current_revision: Revision) -> &crate::table::sync::SyncTable {

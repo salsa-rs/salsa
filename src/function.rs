@@ -7,6 +7,7 @@ use crate::{
     key::DatabaseKeyIndex,
     plumbing::JarAux,
     salsa_struct::SalsaStructInDb,
+    table::Table,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Cycle, Database, Id, Revision,
@@ -231,7 +232,9 @@ where
         true
     }
 
-    fn reset_for_new_revision(&mut self) {
+    fn reset_for_new_revision(&mut self, table: &mut Table) {
+        self.lru
+            .for_each_evicted(|evict| self.evict_value_from_memo_for(table.memos_mut(evict)));
         std::mem::take(&mut self.deleted_entries);
     }
 

@@ -260,7 +260,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         false
     }
 
-    fn reset_for_new_revision(&mut self) {
+    fn reset_for_new_revision(&mut self, _: &mut Table) {
         panic!("unexpected call to `reset_for_new_revision`")
     }
 
@@ -326,6 +326,10 @@ where
 {
     unsafe fn memos(&self, _current_revision: Revision) -> &crate::table::memo::MemoTable {
         &self.memos
+    }
+
+    fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
+        &mut self.memos
     }
 
     unsafe fn syncs(&self, _current_revision: Revision) -> &SyncTable {

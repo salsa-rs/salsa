@@ -272,7 +272,7 @@ impl Zalsa {
         let new_revision = self.runtime.new_revision();
 
         for index in self.ingredients_requiring_reset.iter() {
-            self.ingredients_vec[index.as_usize()].reset_for_new_revision();
+            self.ingredients_vec[index.as_usize()].reset_for_new_revision(self.runtime.table_mut());
         }
 
         new_revision

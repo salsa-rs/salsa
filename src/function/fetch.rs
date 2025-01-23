@@ -9,7 +9,7 @@ where
     C: Configuration,
 {
     pub fn fetch<'db>(&'db self, db: &'db C::DbView, id: Id) -> &'db C::Output<'db> {
-        let (zalsa, zalsa_local) = db.zalsas();
+        let zalsa_local = db.zalsa_local();
         zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
 
         let memo = self.refresh_memo(db, id);
@@ -19,9 +19,7 @@ where
             changed_at,
         } = memo.revisions.stamped_value(memo.value.as_ref().unwrap());
 
-        if let Some(evicted) = self.lru.record_use(id) {
-            self.evict_value_from_memo_for(zalsa, evicted);
-        }
+        self.lru.record_use(id);
 
         zalsa_local.report_tracked_read(
             self.database_key_index(id).into(),
