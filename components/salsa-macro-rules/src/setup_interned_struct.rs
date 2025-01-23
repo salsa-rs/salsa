@@ -23,6 +23,9 @@ macro_rules! setup_interned_struct {
         // optional db lifetime argument.
         db_lt_arg: $($db_lt_arg:lifetime)?,
 
+        // the salsa ID
+        id: $Id:path,
+
         // the lifetime used in the desugared interned struct.
         // if the `db_lt_arg`, is present, this is `db_lt_arg`, but otherwise,
         // it is `'static`.
@@ -69,7 +72,7 @@ macro_rules! setup_interned_struct {
         $(#[$attr])*
         #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
         $vis struct $Struct< $($db_lt_arg)? >(
-            salsa::Id,
+            $Id,
             std::marker::PhantomData < & $interior_lt salsa::plumbing::interned::Value <$StructWithStatic> >
         );
 
@@ -118,10 +121,13 @@ macro_rules! setup_interned_struct {
                 type Data<'a> = $StructDataIdent<'a>;
                 type Struct<'db> = $Struct< $($db_lt_arg)? >;
                 fn struct_from_id<'db>(id: salsa::Id) -> Self::Struct<'db> {
-                    $Struct(id, std::marker::PhantomData)
+                    use salsa::plumbing::FromId;
+                    $Struct(<$Id>::from_id(id), std::marker::PhantomData)
                 }
+
                 fn deref_struct(s: Self::Struct<'_>) -> salsa::Id {
-                    s.0
+                    use salsa::plumbing::AsId;
+                    s.0.as_id()
                 }
             }
 
@@ -140,13 +146,13 @@ macro_rules! setup_interned_struct {
 
             impl< $($db_lt_arg)? > $zalsa::AsId for $Struct< $($db_lt_arg)? > {
                 fn as_id(&self) -> salsa::Id {
-                    self.0
+                    self.0.as_id()
                 }
             }
 
             impl< $($db_lt_arg)? > $zalsa::FromId for $Struct< $($db_lt_arg)? > {
                 fn from_id(id: salsa::Id) -> Self {
-                    Self(id, std::marker::PhantomData)
+                    Self(<$Id>::from_id(id), std::marker::PhantomData)
                 }
             }
 

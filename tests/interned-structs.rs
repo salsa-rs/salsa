@@ -2,6 +2,7 @@
 //! compiles and executes successfully.
 
 use expect_test::expect;
+use salsa::plumbing::{AsId, FromId};
 use std::path::{Path, PathBuf};
 use test_log::test;
 
@@ -38,6 +39,31 @@ struct InternedPathBuf<'db> {
 
 #[salsa::interned(no_lifetime)]
 struct InternedStringNoLifetime {
+    data: String,
+}
+
+#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct SalsaIdWrapper(salsa::Id);
+
+impl AsId for SalsaIdWrapper {
+    fn as_id(&self) -> salsa::Id {
+        self.0
+    }
+}
+
+impl FromId for SalsaIdWrapper {
+    fn from_id(id: salsa::Id) -> Self {
+        SalsaIdWrapper(id)
+    }
+}
+
+#[salsa::interned(id = SalsaIdWrapper)]
+struct InternedStringWithCustomId<'db> {
+    data: String,
+}
+
+#[salsa::interned(id = SalsaIdWrapper, no_lifetime)]
+struct InternedStringWithCustomIdAndNoLiftime<'db> {
     data: String,
 }
 
@@ -144,6 +170,30 @@ fn interning_without_lifetimes() {
     let s2 = InternedStringNoLifetime::new(&db, "World, ".to_string());
     let s1_2 = InternedStringNoLifetime::new(&db, "Hello, ");
     let s2_2 = InternedStringNoLifetime::new(&db, "World, ");
+    assert_eq!(s1, s1_2);
+    assert_eq!(s2, s2_2);
+}
+
+#[test]
+fn interning_with_custom_ids() {
+    let db = salsa::DatabaseImpl::new();
+
+    let s1 = InternedStringWithCustomId::new(&db, "Hello, ".to_string());
+    let s2 = InternedStringWithCustomId::new(&db, "World, ".to_string());
+    let s1_2 = InternedStringWithCustomId::new(&db, "Hello, ");
+    let s2_2 = InternedStringWithCustomId::new(&db, "World, ");
+    assert_eq!(s1, s1_2);
+    assert_eq!(s2, s2_2);
+}
+
+#[test]
+fn interning_with_custom_ids_and_no_lifetime() {
+    let db = salsa::DatabaseImpl::new();
+
+    let s1 = InternedStringWithCustomIdAndNoLiftime::new(&db, "Hello, ".to_string());
+    let s2 = InternedStringWithCustomIdAndNoLiftime::new(&db, "World, ".to_string());
+    let s1_2 = InternedStringWithCustomIdAndNoLiftime::new(&db, "Hello, ");
+    let s2_2 = InternedStringWithCustomIdAndNoLiftime::new(&db, "World, ");
     assert_eq!(s1, s1_2);
     assert_eq!(s2, s2_2);
 }

@@ -57,6 +57,8 @@ impl crate::options::AllowedOptions for InputStruct {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = true;
+
+    const ID: bool = false;
 }
 
 impl SalsaStructAllowedOptions for InputStruct {
