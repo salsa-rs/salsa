@@ -160,8 +160,8 @@ where
     /// only cleared with `&mut self`.
     unsafe fn extend_memo_lifetime<'this>(
         &'this self,
-        memo: &memo::Memo<C::Lru, C::Output<'this>>,
-    ) -> &'this memo::Memo<C::Lru, C::Output<'this>> {
+        memo: &memo::MemoConfigured<'this, C>,
+    ) -> &'this memo::MemoConfigured<'this, C> {
         std::mem::transmute(memo)
     }
 
@@ -169,8 +169,8 @@ where
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
-        memo: memo::Memo<C::Lru, C::Output<'db>>,
-    ) -> &'db memo::Memo<C::Lru, C::Output<'db>> {
+        memo: memo::MemoConfigured<'db, C>,
+    ) -> &'db memo::MemoConfigured<'db, C> {
         let memo = Arc::new(memo);
         let db_memo = unsafe {
             // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this

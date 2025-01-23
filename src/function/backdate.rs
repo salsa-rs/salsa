@@ -1,6 +1,6 @@
-use crate::zalsa_local::QueryRevisions;
+use crate::{function::memo::MemoConfigured, zalsa_local::QueryRevisions};
 
-use super::{memo::Memo, Configuration, IngredientImpl, LruChoice};
+use super::{Configuration, IngredientImpl, LruChoice};
 
 impl<C> IngredientImpl<C>
 where
@@ -11,7 +11,7 @@ where
     /// on an old memo when a new memo has been produced to check whether there have been changed.
     pub(super) fn backdate_if_appropriate(
         &self,
-        old_memo: &Memo<C::Lru, C::Output<'_>>,
+        old_memo: &MemoConfigured<'_, C>,
         revisions: &mut QueryRevisions,
         value: &C::Output<'_>,
     ) {

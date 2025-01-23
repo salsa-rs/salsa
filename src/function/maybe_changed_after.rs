@@ -1,5 +1,6 @@
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
+    function::memo::MemoConfigured,
     ingredient::MaybeChangedAfter,
     key::DatabaseKeyIndex,
     zalsa::{Zalsa, ZalsaDatabase},
@@ -7,7 +8,7 @@ use crate::{
     AsDynDatabase as _, Id, Revision,
 };
 
-use super::{memo::Memo, Configuration, IngredientImpl, LruChoice};
+use super::{Configuration, IngredientImpl, LruChoice};
 
 impl<C> IngredientImpl<C>
 where
@@ -117,7 +118,7 @@ where
         db: &C::DbView,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Lru, C::Output<'_>>,
+        memo: &MemoConfigured<'_, C>,
     ) -> bool {
         let verified_at = memo.verified_at.load();
         let revision_now = zalsa.current_revision();
@@ -159,7 +160,7 @@ where
     pub(super) fn deep_verify_memo(
         &self,
         db: &C::DbView,
-        old_memo: &Memo<C::Lru, C::Output<'_>>,
+        old_memo: &MemoConfigured<'_, C>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> bool {
         let zalsa = db.zalsa();

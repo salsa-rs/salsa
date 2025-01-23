@@ -1,7 +1,8 @@
-use super::{memo::Memo, Configuration, IngredientImpl};
+use super::{Configuration, IngredientImpl};
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues, function::lru::LruChoice as _,
-    runtime::StampedValue, zalsa::ZalsaDatabase, AsDynDatabase as _, Id,
+    function::memo::MemoConfigured, runtime::StampedValue, zalsa::ZalsaDatabase,
+    AsDynDatabase as _, Id,
 };
 
 impl<C> IngredientImpl<C>
@@ -41,7 +42,7 @@ where
         &'db self,
         db: &'db C::DbView,
         id: Id,
-    ) -> &'db Memo<C::Lru, C::Output<'db>> {
+    ) -> &'db MemoConfigured<'db, C> {
         loop {
             if let Some(memo) = self.fetch_hot(db, id).or_else(|| self.fetch_cold(db, id)) {
                 return memo;
@@ -54,7 +55,7 @@ where
         &'db self,
         db: &'db C::DbView,
         id: Id,
-    ) -> Option<&'db Memo<C::Lru, C::Output<'db>>> {
+    ) -> Option<&'db MemoConfigured<'db, C>> {
         let zalsa = db.zalsa();
         let memo_guard = self.get_memo_from_table_for(zalsa, id);
         if let Some(memo) = &memo_guard {
@@ -73,7 +74,7 @@ where
         &'db self,
         db: &'db C::DbView,
         id: Id,
-    ) -> Option<&'db Memo<C::Lru, C::Output<'db>>> {
+    ) -> Option<&'db MemoConfigured<'db, C>> {
         let (zalsa, zalsa_local) = db.zalsas();
         let database_key_index = self.database_key_index(id);
 

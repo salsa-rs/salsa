@@ -67,8 +67,8 @@ impl<C: Configuration> IngredientImpl<C> {
     /// or has values assigned as output of another query, this has no effect.
     pub(super) fn evict_value_from_memo_for(&self, table: &MemoTable) {
         C::Lru::if_enabled(|| {
-            table.map_memo::<Memo<C::Lru, C::Output<'_>>>(self.memo_ingredient_index, |memo| {
-                match memo.revisions.origin {
+            table.map_memo::<MemoConfigured<'_, C>>(self.memo_ingredient_index, |memo| {
+                match &memo.revisions.origin {
                     QueryOrigin::Assigned(_)
                     | QueryOrigin::DerivedUntracked(_)
                     | QueryOrigin::BaseInput => {
@@ -107,6 +107,10 @@ impl<C: Configuration> IngredientImpl<C> {
         })
     }
 }
+
+#[allow(type_alias_bounds)]
+pub(super) type MemoConfigured<'db, C: Configuration<Lru: LruChoice>> =
+    Memo<C::Lru, C::Output<'db>>;
 
 pub(super) struct Memo<L: LruChoice, V: Send + Sync> {
     /// The result of the query, if we decide to memoize it.

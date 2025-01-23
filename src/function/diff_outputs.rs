@@ -1,7 +1,7 @@
-use super::{memo::Memo, Configuration, IngredientImpl};
+use super::{Configuration, IngredientImpl};
 use crate::{
-    hash::FxHashSet, key::OutputDependencyIndex, zalsa_local::QueryRevisions, AsDynDatabase as _,
-    DatabaseKeyIndex, Event, EventKind,
+    function::memo::MemoConfigured, hash::FxHashSet, key::OutputDependencyIndex,
+    zalsa_local::QueryRevisions, AsDynDatabase as _, DatabaseKeyIndex, Event, EventKind,
 };
 
 impl<C> IngredientImpl<C>
@@ -17,7 +17,7 @@ where
         &self,
         db: &C::DbView,
         key: DatabaseKeyIndex,
-        old_memo: &Memo<C::Lru, C::Output<'_>>,
+        old_memo: &MemoConfigured<'_, C>,
         revisions: &mut QueryRevisions,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset

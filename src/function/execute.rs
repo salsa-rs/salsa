@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use crate::{
-    zalsa::ZalsaDatabase, zalsa_local::ActiveQueryGuard, Cycle, Database, Event, EventKind,
+    function::memo::MemoConfigured, zalsa::ZalsaDatabase, zalsa_local::ActiveQueryGuard, Cycle,
+    Database, Event, EventKind,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl, LruChoice};
@@ -23,8 +24,8 @@ where
         &'db self,
         db: &'db C::DbView,
         active_query: ActiveQueryGuard<'_>,
-        opt_old_memo: Option<Arc<Memo<C::Lru, C::Output<'_>>>>,
-    ) -> &'db Memo<C::Lru, C::Output<'db>> {
+        opt_old_memo: Option<Arc<MemoConfigured<'_, C>>>,
+    ) -> &'db MemoConfigured<'db, C> {
         let zalsa = db.zalsa();
         let revision_now = zalsa.current_revision();
         let database_key_index = active_query.database_key_index;
