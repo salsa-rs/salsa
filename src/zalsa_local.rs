@@ -9,7 +9,7 @@ use crate::runtime::StampedValue;
 use crate::table::PageIndex;
 use crate::table::Slot;
 use crate::table::Table;
-use crate::tracked_struct::{Disambiguator, Identity, IdentityHash};
+use crate::tracked_struct::{Disambiguator, Identity, IdentityHash, IdentityMap};
 use crate::zalsa::IngredientIndex;
 use crate::Accumulator;
 use crate::Cancelled;
@@ -254,19 +254,19 @@ impl ZalsaLocal {
     #[track_caller]
     pub(crate) fn tracked_struct_id(&self, identity: &Identity) -> Option<Id> {
         self.with_query_stack(|stack| {
-            let top_query = stack.last().expect(
-                "cannot create a tracked struct disambiguator outside of a tracked function",
-            );
-            top_query.tracked_struct_ids.get(identity).copied()
+            let top_query = stack
+                .last()
+                .expect("cannot create a tracked struct ID outside of a tracked function");
+            top_query.tracked_struct_ids.get(identity)
         })
     }
 
     #[track_caller]
     pub(crate) fn store_tracked_struct_id(&self, identity: Identity, id: Id) {
         self.with_query_stack(|stack| {
-            let top_query = stack.last_mut().expect(
-                "cannot create a tracked struct disambiguator outside of a tracked function",
-            );
+            let top_query = stack
+                .last_mut()
+                .expect("cannot store a tracked struct ID outside of a tracked function");
             let old_id = top_query.tracked_struct_ids.insert(identity, id);
             assert!(
                 old_id.is_none(),
@@ -335,7 +335,7 @@ pub(crate) struct QueryRevisions {
     ///   previous revision. To handle this, `diff_outputs` compares
     ///   the structs from the old/new revision and retains
     ///   only entries that appeared in the new revision.
-    pub(super) tracked_struct_ids: FxHashMap<Identity, Id>,
+    pub(super) tracked_struct_ids: IdentityMap,
 
     pub(super) accumulated: Option<Box<AccumulatedMap>>,
     /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
@@ -496,12 +496,12 @@ impl ActiveQueryGuard<'_> {
     }
 
     /// Initialize the tracked struct ids with the values from the prior execution.
-    pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &FxHashMap<Identity, Id>) {
+    pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &IdentityMap) {
         self.local_state.with_query_stack(|stack| {
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
             assert!(frame.tracked_struct_ids.is_empty());
-            frame.tracked_struct_ids = tracked_struct_ids.clone();
+            frame.tracked_struct_ids.clone_from(tracked_struct_ids);
         })
     }
 

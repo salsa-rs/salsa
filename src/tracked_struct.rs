@@ -151,10 +151,16 @@ where
 /// This is the key to a hashmap that is (initially)
 /// stored in the [`ActiveQuery`](`crate::active_query::ActiveQuery`)
 /// struct and later moved to the [`Memo`](`crate::function::memo::Memo`).
-#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub(crate) struct Identity {
-    /// Hash of fields with id attribute
-    identity_hash: IdentityHash,
+    // Conceptually, this contains an `IdentityHash`, but using `IdentityHash` directly will grow the size
+    // of this struct struct by a `std::mem::size_of::<usize>()` due to unusable padding. To avoid this increase
+    // in size, we inline the fields of `IdentityHash`.
+    /// Index of the tracked struct ingredient.
+    ingredient_index: IngredientIndex,
+
+    /// Hash of the id fields.
+    hash: u64,
 
     /// The unique disambiguator assigned within the active query
     /// to distinguish distinct tracked structs with the same identity_hash.
@@ -163,7 +169,7 @@ pub(crate) struct Identity {
 
 impl Identity {
     pub(crate) fn ingredient_index(&self) -> IngredientIndex {
-        self.identity_hash.ingredient_index
+        self.ingredient_index
     }
 }
 
@@ -172,13 +178,67 @@ impl Identity {
 /// This is mapped to a disambiguator -- a value that starts as 0 but increments each round,
 /// allowing for multiple tracked structs with the same hash and ingredient_index
 /// created within the query to each have a unique id.
-#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct IdentityHash {
     /// Index of the tracked struct ingredient.
     ingredient_index: IngredientIndex,
 
     /// Hash of the id fields.
     hash: u64,
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct IdentityMap {
+    // we use a non-hasher hashmap here as our key contains its own hash (`Identity::hash`)
+    // so we use the raw entry api instead to avoid the overhead of hashing unnecessarily
+    map: hashbrown::HashMap<Identity, Id, ()>,
+}
+
+impl Clone for IdentityMap {
+    fn clone(&self) -> Self {
+        Self {
+            map: self.map.clone(),
+        }
+    }
+    fn clone_from(&mut self, source: &Self) {
+        self.map.clone_from(&source.map);
+    }
+}
+
+impl IdentityMap {
+    pub(crate) fn insert(&mut self, key: Identity, id: Id) -> Option<Id> {
+        use hashbrown::hash_map::RawEntryMut;
+
+        let eq_modulo_hash = |k: &Identity| {
+            k.ingredient_index == key.ingredient_index && k.disambiguator == key.disambiguator
+        };
+        let entry = self.map.raw_entry_mut().from_hash(key.hash, eq_modulo_hash);
+        match entry {
+            RawEntryMut::Occupied(mut occupied) => Some(occupied.insert(id)),
+            RawEntryMut::Vacant(vacant) => {
+                vacant.insert_with_hasher(key.hash, key, id, |k| k.hash);
+                None
+            }
+        }
+    }
+
+    pub(crate) fn get(&self, key: &Identity) -> Option<Id> {
+        let eq_modulo_hash = |k: &Identity| {
+            k.ingredient_index == key.ingredient_index && k.disambiguator == key.disambiguator
+        };
+        self.map
+            .raw_entry()
+            .from_hash(key.hash, eq_modulo_hash)
+            .map(|(_, &v)| v)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    pub(crate) fn retain(&mut self, f: impl FnMut(&Identity, &mut Id) -> bool) {
+        self.map.retain(f);
+    }
 }
 
 // ANCHOR: ValueStruct
@@ -231,8 +291,35 @@ where
 }
 // ANCHOR_END: ValueStruct
 
-#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Copy, Clone)]
-pub struct Disambiguator(pub u32);
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct Disambiguator(u32);
+
+#[derive(Default, Debug)]
+pub(crate) struct DisambiguatorMap {
+    // we use a non-hasher hashmap here as our key contains its own hash (in a sense)
+    // so we use the raw entry api instead to avoid the overhead of hashing unnecessarily
+    map: hashbrown::HashMap<IdentityHash, Disambiguator, ()>,
+}
+
+impl DisambiguatorMap {
+    pub(crate) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {
+        use hashbrown::hash_map::RawEntryMut;
+
+        let eq_modulo_hash = |k: &IdentityHash| k.ingredient_index == key.ingredient_index;
+        let entry = self.map.raw_entry_mut().from_hash(key.hash, eq_modulo_hash);
+        let disambiguator = match entry {
+            RawEntryMut::Occupied(occupied) => occupied.into_mut(),
+            RawEntryMut::Vacant(vacant) => {
+                vacant
+                    .insert_with_hasher(key.hash, key, Disambiguator(0), |k| k.hash)
+                    .1
+            }
+        };
+        let result = *disambiguator;
+        disambiguator.0 += 1;
+        result
+    }
+}
 
 impl<C> IngredientImpl<C>
 where
@@ -287,8 +374,8 @@ where
         let (current_deps, disambiguator) = zalsa_local.disambiguate(identity_hash);
 
         let identity = Identity {
-            identity_hash,
-
+            hash: identity_hash.hash,
+            ingredient_index: self.ingredient_index,
             disambiguator,
         };
 

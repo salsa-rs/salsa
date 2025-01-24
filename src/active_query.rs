@@ -1,18 +1,16 @@
 use std::ops::Not;
 
-use rustc_hash::FxHashMap;
-
 use super::zalsa_local::{QueryEdges, QueryOrigin, QueryRevisions};
 use crate::key::OutputDependencyIndex;
-use crate::tracked_struct::IdentityHash;
+use crate::tracked_struct::{DisambiguatorMap, IdentityHash, IdentityMap};
 use crate::zalsa_local::QueryEdge;
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     durability::Durability,
     hash::FxIndexSet,
     key::{DatabaseKeyIndex, InputDependencyIndex},
-    tracked_struct::{Disambiguator, Identity},
-    Cycle, Id, Revision,
+    tracked_struct::Disambiguator,
+    Cycle, Revision,
 };
 
 #[derive(Debug)]
@@ -48,11 +46,11 @@ pub(crate) struct ActiveQuery {
     /// This table starts empty as the query begins and is gradually populated.
     /// Note that if a query executes in 2 different revisions but creates the same
     /// set of tracked structs, they will get the same disambiguator values.
-    disambiguator_map: FxHashMap<IdentityHash, Disambiguator>,
+    disambiguator_map: DisambiguatorMap,
 
     /// Map from tracked struct keys (which include the hash + disambiguator) to their
     /// final id.
-    pub(crate) tracked_struct_ids: FxHashMap<Identity, Id>,
+    pub(crate) tracked_struct_ids: IdentityMap,
 
     /// Stores the values accumulated to the given ingredient.
     /// The type of accumulated value is erased but known to the ingredient.
@@ -167,12 +165,6 @@ impl ActiveQuery {
     }
 
     pub(super) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {
-        let disambiguator = self
-            .disambiguator_map
-            .entry(key)
-            .or_insert(Disambiguator(0));
-        let result = *disambiguator;
-        disambiguator.0 += 1;
-        result
+        self.disambiguator_map.disambiguate(key)
     }
 }
