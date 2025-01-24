@@ -1,4 +1,5 @@
 use crate::{
+    accumulator::accumulated_map::InputAccumulatedValues,
     ingredient::MaybeChangedAfter,
     key::DatabaseKeyIndex,
     zalsa::{Zalsa, ZalsaDatabase},
@@ -97,7 +98,10 @@ where
             return Some(if changed_at > revision {
                 MaybeChangedAfter::Yes
             } else {
-                MaybeChangedAfter::No(memo.revisions.accumulated_inputs.load())
+                MaybeChangedAfter::No(match &memo.revisions.accumulated {
+                    Some(_) => InputAccumulatedValues::Any,
+                    None => memo.revisions.accumulated_inputs.load(),
+                })
             });
         }
 
@@ -201,7 +205,7 @@ where
                 // valid, then some later input I1 might never have executed at all, so verifying
                 // it is still up to date is meaningless.
                 let last_verified_at = old_memo.verified_at.load();
-                let mut inputs = old_memo.revisions.accumulated_inputs.load();
+                let mut inputs = InputAccumulatedValues::Empty;
                 for &edge in edges.input_outputs.iter() {
                     match edge {
                         QueryEdge::Input(dependency_index) => {

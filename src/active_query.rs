@@ -131,10 +131,7 @@ impl ActiveQuery {
             origin,
             durability: self.durability,
             tracked_struct_ids: self.tracked_struct_ids,
-            accumulated_inputs: AtomicCell::new(match &accumulated {
-                Some(_) => InputAccumulatedValues::Any,
-                None => self.accumulated_inputs,
-            }),
+            accumulated_inputs: AtomicCell::new(self.accumulated_inputs),
             accumulated,
         }
     }

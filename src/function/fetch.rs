@@ -1,5 +1,8 @@
 use super::{memo::Memo, Configuration, IngredientImpl};
-use crate::{runtime::StampedValue, zalsa::ZalsaDatabase, AsDynDatabase as _, Id};
+use crate::{
+    accumulator::accumulated_map::InputAccumulatedValues, runtime::StampedValue,
+    zalsa::ZalsaDatabase, AsDynDatabase as _, Id,
+};
 
 impl<C> IngredientImpl<C>
 where
@@ -24,7 +27,10 @@ where
             self.database_key_index(id).into(),
             durability,
             changed_at,
-            memo.revisions.accumulated_inputs.load(),
+            match &memo.revisions.accumulated {
+                Some(_) => InputAccumulatedValues::Any,
+                None => memo.revisions.accumulated_inputs.load(),
+            },
         );
 
         value
