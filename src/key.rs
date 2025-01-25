@@ -1,6 +1,9 @@
 use core::fmt;
 
-use crate::{cycle::CycleRecoveryStrategy, zalsa::IngredientIndex, Database, Id};
+use crate::{
+    accumulator::accumulated_map::InputAccumulatedValues, cycle::CycleRecoveryStrategy,
+    ingredient::MaybeChangedAfter, zalsa::IngredientIndex, Database, Id,
+};
 
 /// An integer that uniquely identifies a particular query instance within the
 /// database. Used to track output dependencies between queries. Fully ordered and
@@ -86,14 +89,14 @@ impl InputDependencyIndex {
         &self,
         db: &dyn Database,
         last_verified_at: crate::Revision,
-    ) -> bool {
+    ) -> MaybeChangedAfter {
         match self.key_index {
             Some(key_index) => db
                 .zalsa()
                 .lookup_ingredient(self.ingredient_index)
                 .maybe_changed_after(db, key_index, last_verified_at),
             // Data in tables themselves remain valid until the table as a whole is reset.
-            None => false,
+            None => MaybeChangedAfter::No(InputAccumulatedValues::Empty),
         }
     }
 

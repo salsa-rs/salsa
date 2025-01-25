@@ -1,4 +1,6 @@
 use crate::{
+    accumulator::accumulated_map::InputAccumulatedValues,
+    ingredient::MaybeChangedAfter,
     key::DatabaseKeyIndex,
     zalsa::{Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
@@ -16,7 +18,7 @@ where
         db: &'db C::DbView,
         id: Id,
         revision: Revision,
-    ) -> bool {
+    ) -> MaybeChangedAfter {
         let (zalsa, zalsa_local) = db.zalsas();
         zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
 
@@ -29,7 +31,11 @@ where
             let memo_guard = self.get_memo_from_table_for(zalsa, id);
             if let Some(memo) = &memo_guard {
                 if self.shallow_verify_memo(db, zalsa, database_key_index, memo) {
-                    return memo.revisions.changed_at > revision;
+                    return if memo.revisions.changed_at > revision {
+                        MaybeChangedAfter::Yes
+                    } else {
+                        MaybeChangedAfter::No(memo.revisions.accumulated_inputs.load())
+                    };
                 }
                 drop(memo_guard); // release the arc-swap guard before cold path
                 if let Some(mcs) = self.maybe_changed_after_cold(db, id, revision) {
@@ -39,7 +45,7 @@ where
                 }
             } else {
                 // No memo? Assume has changed.
-                return true;
+                return MaybeChangedAfter::Yes;
             }
         }
     }
@@ -49,7 +55,7 @@ where
         db: &'db C::DbView,
         key_index: Id,
         revision: Revision,
-    ) -> Option<bool> {
+    ) -> Option<MaybeChangedAfter> {
         let (zalsa, zalsa_local) = db.zalsas();
         let database_key_index = self.database_key_index(key_index);
 
@@ -63,7 +69,7 @@ where
 
         // Load the current memo, if any.
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index) else {
-            return Some(true);
+            return Some(MaybeChangedAfter::Yes);
         };
 
         tracing::debug!(
@@ -74,7 +80,11 @@ where
 
         // Check if the inputs are still valid and we can just compare `changed_at`.
         if self.deep_verify_memo(db, &old_memo, &active_query) {
-            return Some(old_memo.revisions.changed_at > revision);
+            return Some(if old_memo.revisions.changed_at > revision {
+                MaybeChangedAfter::Yes
+            } else {
+                MaybeChangedAfter::No(old_memo.revisions.accumulated_inputs.load())
+            });
         }
 
         // If inputs have changed, but we have an old value, we can re-execute.
@@ -84,11 +94,19 @@ where
         if old_memo.value.is_some() {
             let memo = self.execute(db, active_query, Some(old_memo));
             let changed_at = memo.revisions.changed_at;
-            return Some(changed_at > revision);
+
+            return Some(if changed_at > revision {
+                MaybeChangedAfter::Yes
+            } else {
+                MaybeChangedAfter::No(match &memo.revisions.accumulated {
+                    Some(_) => InputAccumulatedValues::Any,
+                    None => memo.revisions.accumulated_inputs.load(),
+                })
+            });
         }
 
         // Otherwise, nothing for it: have to consider the value to have changed.
-        Some(true)
+        Some(MaybeChangedAfter::Yes)
     }
 
     /// True if the memo's value and `changed_at` time is still valid in this revision.
@@ -117,7 +135,12 @@ where
         if memo.check_durability(zalsa) {
             // No input of the suitable durability has changed since last verified.
             let db = db.as_dyn_database();
-            memo.mark_as_verified(db, revision_now, database_key_index);
+            memo.mark_as_verified(
+                db,
+                revision_now,
+                database_key_index,
+                memo.revisions.accumulated_inputs.load(),
+            );
             memo.mark_outputs_as_verified(db, database_key_index);
             return true;
         }
@@ -151,7 +174,7 @@ where
             return true;
         }
 
-        match &old_memo.revisions.origin {
+        let inputs = match &old_memo.revisions.origin {
             QueryOrigin::Assigned(_) => {
                 // If the value was assigneed by another query,
                 // and that query were up-to-date,
@@ -182,13 +205,19 @@ where
                 // valid, then some later input I1 might never have executed at all, so verifying
                 // it is still up to date is meaningless.
                 let last_verified_at = old_memo.verified_at.load();
+                let mut inputs = InputAccumulatedValues::Empty;
                 for &edge in edges.input_outputs.iter() {
                     match edge {
                         QueryEdge::Input(dependency_index) => {
-                            if dependency_index
+                            match dependency_index
                                 .maybe_changed_after(db.as_dyn_database(), last_verified_at)
                             {
-                                return false;
+                                MaybeChangedAfter::Yes => {
+                                    return false;
+                                }
+                                MaybeChangedAfter::No(input_accumulated) => {
+                                    inputs |= input_accumulated;
+                                }
                             }
                         }
                         QueryEdge::Output(dependency_index) => {
@@ -213,13 +242,15 @@ where
                         }
                     }
                 }
+                inputs
             }
-        }
+        };
 
         old_memo.mark_as_verified(
             db.as_dyn_database(),
             zalsa.current_revision(),
             database_key_index,
+            inputs,
         );
         true
     }

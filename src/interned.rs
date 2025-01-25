@@ -2,7 +2,7 @@ use dashmap::SharedValue;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
-use crate::ingredient::fmt_index;
+use crate::ingredient::{fmt_index, MaybeChangedAfter};
 use crate::key::InputDependencyIndex;
 use crate::plumbing::{Jar, JarAux};
 use crate::table::memo::MemoTable;
@@ -254,8 +254,13 @@ where
         self.ingredient_index
     }
 
-    fn maybe_changed_after(&self, _db: &dyn Database, _input: Id, revision: Revision) -> bool {
-        revision < self.reset_at
+    fn maybe_changed_after(
+        &self,
+        _db: &dyn Database,
+        _input: Id,
+        revision: Revision,
+    ) -> MaybeChangedAfter {
+        MaybeChangedAfter::from(revision < self.reset_at)
     }
 
     fn cycle_recovery_strategy(&self) -> crate::cycle::CycleRecoveryStrategy {

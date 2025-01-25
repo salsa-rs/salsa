@@ -101,7 +101,7 @@ where
         let memo = self.refresh_memo(db, key);
         (
             memo.revisions.accumulated.as_deref(),
-            memo.revisions.accumulated_inputs,
+            memo.revisions.accumulated_inputs.load(),
         )
     }
 }

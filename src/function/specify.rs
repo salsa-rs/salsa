@@ -1,6 +1,7 @@
 use crossbeam::atomic::AtomicCell;
 
 use crate::{
+    accumulator::accumulated_map::InputAccumulatedValues,
     tracked_struct::TrackedStructInDb,
     zalsa::ZalsaDatabase,
     zalsa_local::{QueryOrigin, QueryRevisions},
@@ -128,6 +129,7 @@ where
             db.as_dyn_database(),
             zalsa.current_revision(),
             database_key_index,
+            InputAccumulatedValues::Empty,
         );
     }
 }

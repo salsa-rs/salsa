@@ -1,5 +1,5 @@
 use crate::cycle::CycleRecoveryStrategy;
-use crate::ingredient::{fmt_index, Ingredient};
+use crate::ingredient::{fmt_index, Ingredient, MaybeChangedAfter};
 use crate::input::Configuration;
 use crate::zalsa::IngredientIndex;
 use crate::zalsa_local::QueryOrigin;
@@ -49,10 +49,16 @@ where
         CycleRecoveryStrategy::Panic
     }
 
-    fn maybe_changed_after(&self, db: &dyn Database, input: Id, revision: Revision) -> bool {
+    fn maybe_changed_after(
+        &self,
+        db: &dyn Database,
+        input: Id,
+        revision: Revision,
+    ) -> MaybeChangedAfter {
         let zalsa = db.zalsa();
         let value = <IngredientImpl<C>>::data(zalsa, input);
-        value.stamps[self.field_index].changed_at > revision
+
+        MaybeChangedAfter::from(value.stamps[self.field_index].changed_at > revision)
     }
 
     fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {

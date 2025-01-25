@@ -1,5 +1,7 @@
 use std::ops::Not;
 
+use crossbeam::atomic::AtomicCell;
+
 use super::zalsa_local::{QueryEdges, QueryOrigin, QueryRevisions};
 use crate::key::OutputDependencyIndex;
 use crate::tracked_struct::{DisambiguatorMap, IdentityHash, IdentityMap};
@@ -129,10 +131,7 @@ impl ActiveQuery {
             origin,
             durability: self.durability,
             tracked_struct_ids: self.tracked_struct_ids,
-            accumulated_inputs: match &accumulated {
-                Some(_) => InputAccumulatedValues::Any,
-                None => self.accumulated_inputs,
-            },
+            accumulated_inputs: AtomicCell::new(self.accumulated_inputs),
             accumulated,
         }
     }
