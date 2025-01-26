@@ -107,6 +107,10 @@ macro_rules! setup_tracked_struct {
                     $(stringify!($field_id),)*
                 ];
 
+                const TRACKED_FIELD_DEBUG_NAMES: &'static [&'static str] = &[
+                    $(stringify!($tracked_id),)*
+                ];
+
                 type Fields<$db_lt> = ($($field_ty,)*);
 
                 type Revisions = $zalsa::Array<$Revision, $N>;
