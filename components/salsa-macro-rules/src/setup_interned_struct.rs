@@ -15,6 +15,8 @@ macro_rules! setup_interned_struct {
         // is unstable and taking an additional dependency is unnecessary.
         StructData: $StructDataIdent:ident,
 
+        // Name of the struct type with a `'static` argument (unless this type has no db lifetime,
+        // in which case this is the same as `$Struct`)
         StructWithStatic: $StructWithStatic:ty,
 
         // Name of the `'db` lifetime that the user gave
