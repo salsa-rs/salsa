@@ -18,7 +18,7 @@ where
     ///
     /// * `db`, the database.
     /// * `active_query`, the active stack frame for the query to execute.
-    /// * `opt_old_memo`, the older memo, if any existed. Used for backdated.
+    /// * `opt_old_memo`, the older memo, if any existed. Used for backdating.
     pub(super) fn execute<'db>(
         &'db self,
         db: &'db C::DbView,
