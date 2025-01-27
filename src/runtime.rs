@@ -1,9 +1,18 @@
+use std::mem;
+
+use crossbeam_utils::sync::{Parker, Unparker};
+
 use self::dependency_graph::DependencyGraph;
 use crate::durability::Durability;
+use crate::exclusive::Exclusive;
 use crate::key::DatabaseKeyIndex;
+use crate::plumbing::MemoDropSender;
 use crate::sync::atomic::{AtomicBool, Ordering};
-use crate::sync::thread::{self, ThreadId};
+use crate::sync::thread::{self, JoinHandle, ThreadId};
 use crate::sync::Mutex;
+use crate::table::memo::{
+    memo_drop_channel, run_memo_drops, spawn_memo_drop_thread, MemoDropReceiver,
+};
 use crate::table::Table;
 use crate::{Cancelled, Event, EventKind, Revision};
 
@@ -32,6 +41,14 @@ pub struct Runtime {
 
     /// Data for instances
     table: Table,
+    // DROP ORDER: `memo_drop_sender` and `unparker` need to drop before `memo_drop_thread`
+    // as `memo_drop_thread` exits once `memo_drop_sender` drops and its last parker barrier unparks
+    memo_drop_unparker: Option<UnparkOnDrop>,
+    memo_drop_sender: MemoDropSender,
+    memo_drop_receiver: Exclusive<Option<MemoDropReceiver>>,
+    memo_drop_thread: JoinOnDrop,
+    // Replace `memo_drop_receiver` and `memo_drop_thread` with the following once TAIT are stable.
+    // memo_drop_thread: LazyCell<JoinOnDrop, impl FnOnce() -> JoinOnDrop>,
 }
 
 #[derive(Clone, Debug)]
@@ -72,17 +89,6 @@ impl<V> StampedValue<V> {
     }
 }
 
-impl Default for Runtime {
-    fn default() -> Self {
-        Runtime {
-            revisions: [Revision::start(); Durability::LEN],
-            revision_canceled: Default::default(),
-            dependency_graph: Default::default(),
-            table: Default::default(),
-        }
-    }
-}
-
 impl std::fmt::Debug for Runtime {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fmt.debug_struct("Runtime")
@@ -94,6 +100,28 @@ impl std::fmt::Debug for Runtime {
 }
 
 impl Runtime {
+    pub(crate) fn new(drop_in_thread: bool) -> Self {
+        let (memo_drop_sender, memo_drop_receiver) = memo_drop_channel();
+        let memo_drop_unparker = if drop_in_thread {
+            let parker = Parker::new();
+            let unparker = UnparkOnDrop(parker.unparker().clone());
+            memo_drop_sender.park(parker);
+            Some(unparker)
+        } else {
+            None
+        };
+        Runtime {
+            revisions: [Revision::start(); Durability::LEN],
+            revision_canceled: Default::default(),
+            dependency_graph: Default::default(),
+            table: Default::default(),
+            memo_drop_unparker,
+            memo_drop_sender,
+            memo_drop_receiver: Exclusive::new(Some(memo_drop_receiver)),
+            memo_drop_thread: JoinOnDrop(None),
+        }
+    }
+
     #[inline]
     pub(crate) fn current_revision(&self) -> Revision {
         self.revisions[0]
@@ -152,6 +180,23 @@ impl Runtime {
         self.revisions[0] = r_new;
         tracing::debug!("new_revision: {r_old:?} -> {r_new:?}");
         r_new
+    }
+
+    /// Releases the previous barrier and acquires a new one, effectively kicking off a destruction
+    /// cycle for all collected memos up to this point.
+    pub(crate) fn memo_drop_barrier(&mut self) {
+        match &mut self.memo_drop_unparker {
+            Some(UnparkOnDrop(memo_drop_unparker)) => {
+                if let Some(receiver) = self.memo_drop_receiver.get_mut().take() {
+                    tracing::trace!("Spawning memo drop thread");
+                    self.memo_drop_thread.0 = Some(spawn_memo_drop_thread(receiver));
+                }
+                let parker = Parker::new();
+                mem::replace(memo_drop_unparker, parker.unparker().clone()).unpark();
+                self.memo_drop_sender.park(parker);
+            }
+            None => run_memo_drops(self.memo_drop_receiver.get_mut().as_mut().unwrap()),
+        }
     }
 
     /// Block until `other_id` completes executing `database_key`, or return `BlockResult::Cycle`
@@ -217,5 +262,28 @@ impl Runtime {
         self.dependency_graph
             .lock()
             .unblock_runtimes_blocked_on(database_key, wait_result);
+    }
+
+    pub(crate) fn memo_drop_sender(&self) -> MemoDropSender {
+        self.memo_drop_sender.clone()
+    }
+}
+
+#[derive(Default)]
+struct JoinOnDrop(Option<JoinHandle<()>>);
+
+impl Drop for JoinOnDrop {
+    fn drop(&mut self) {
+        if let Some(drop_thread) = self.0.take() {
+            drop_thread.join().unwrap();
+        }
+    }
+}
+
+struct UnparkOnDrop(Unparker);
+
+impl Drop for UnparkOnDrop {
+    fn drop(&mut self) {
+        self.0.unpark();
     }
 }

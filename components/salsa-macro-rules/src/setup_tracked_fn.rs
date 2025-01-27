@@ -243,6 +243,7 @@ macro_rules! setup_tracked_fn {
                     zalsa: &$zalsa::Zalsa,
                     first_index: $zalsa::IngredientIndex,
                     struct_index: $zalsa::IngredientIndices,
+                    memo_drop_sender: $zalsa::MemoDropSender,
                 ) -> Vec<Box<dyn $zalsa::Ingredient>> {
                     let struct_index: $zalsa::IngredientIndices = $zalsa::macro_if! {
                         if $needs_interner {
@@ -276,12 +277,16 @@ macro_rules! setup_tracked_fn {
                         )
                     };
 
-                    let fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
-                        first_index,
-                        memo_ingredient_indices,
-                        $lru,
-                        zalsa.views().downcaster_for::<dyn $Db>(),
-                    );
+                    // SAFETY: We pass the MemoEntryType for this Configuration, and we lookup the memo types table correctly.
+                    let fn_ingredient = unsafe {
+                        <$zalsa::function::IngredientImpl<$Configuration>>::new(
+                            first_index,
+                            memo_ingredient_indices,
+                            $lru,
+                            zalsa.views().downcaster_for::<dyn $Db>(),
+                            memo_drop_sender
+                        )
+                    };
                     $zalsa::macro_if! {
                         if $needs_interner {
                             vec![

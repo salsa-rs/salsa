@@ -160,6 +160,7 @@ impl RefUnwindSafe for Zalsa {}
 
 impl Zalsa {
     pub(crate) fn new<Db: Database>(
+        drop_in_thread: bool,
         event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
     ) -> Self {
         Self {
@@ -169,7 +170,7 @@ impl Zalsa {
             ingredient_to_id_struct_type_id_map: Default::default(),
             ingredients_vec: boxcar::Vec::new(),
             ingredients_requiring_reset: boxcar::Vec::new(),
-            runtime: Runtime::default(),
+            runtime: Runtime::new(drop_in_thread),
             memo_ingredient_indices: Default::default(),
             event_callback,
         }
@@ -295,7 +296,8 @@ impl Zalsa {
             }
             hash_map::Entry::Vacant(entry) => entry.insert(index),
         };
-        let ingredients = J::create_ingredients(self, index, dependencies);
+        let ingredients =
+            J::create_ingredients(self, index, dependencies, self.runtime.memo_drop_sender());
         for ingredient in ingredients {
             let expected_index = ingredient.ingredient_index();
 
@@ -366,6 +368,10 @@ impl Zalsa {
             ingredient.reset_for_new_revision(self.runtime.table_mut());
         }
 
+        // Call `memo_drop_barrier` after having called `reset_for_new_revision` on all ingredients
+        // so that we collect all LRU evictions that happened during the reset.
+        self.runtime.memo_drop_barrier();
+
         new_revision
     }
 
@@ -379,6 +385,7 @@ impl Zalsa {
                 .unwrap_or_else(|| panic!("index `{index}` is uninitialized"))
                 .reset_for_new_revision(self.runtime.table_mut());
         }
+        self.runtime.memo_drop_barrier();
     }
 
     #[inline]

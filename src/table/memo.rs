@@ -5,9 +5,11 @@ use std::{
     ptr::{self, NonNull},
 };
 
+use crossbeam_utils::sync::Parker;
 use thin_vec::ThinVec;
 
 use crate::sync::atomic::{AtomicPtr, Ordering};
+use crate::sync::thread;
 use crate::sync::{OnceLock, RwLock};
 use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
 
@@ -22,6 +24,126 @@ pub(crate) struct MemoTable {
 pub trait Memo: Any + Send + Sync {
     /// Returns the `origin` of this memo
     fn origin(&self) -> &QueryOrigin;
+    fn clear_value(&mut self);
+}
+
+/// An untyped memo that can only be dropped.
+#[derive(Debug)]
+pub struct MemoDrop(NonNull<DummyMemo>, unsafe fn(NonNull<DummyMemo>));
+
+/// SAFETY: `MemoDrop` is `Send` because only contains `Memo` types which are `Send`
+unsafe impl Send for MemoDrop {}
+
+impl MemoDrop {
+    pub fn new<M: Memo>(memo: NonNull<M>) -> Self {
+        Self(
+            MemoEntryType::to_dummy(memo),
+            // SAFETY: `M` is the same as used in `to_dummy`
+            |memo| unsafe { drop(Box::from_raw(MemoEntryType::from_dummy::<M>(memo).as_ptr())) },
+        )
+    }
+}
+
+impl Drop for MemoDrop {
+    fn drop(&mut self) {
+        // SAFETY: We only construct this type with a valid drop function pointer
+        unsafe { self.1(self.0) };
+    }
+}
+
+/// An untyped memo whose value we can clear.
+#[derive(Debug)]
+pub struct MemoClear(NonNull<DummyMemo>, unsafe fn(NonNull<DummyMemo>));
+
+/// SAFETY: `MemoClear` is `Send` because only contains `Memo` types which are `Send`
+unsafe impl Send for MemoClear {}
+
+impl MemoClear {
+    pub fn new<M: Memo>(memo: NonNull<M>) -> Self {
+        Self(
+            MemoEntryType::to_dummy(memo),
+            // SAFETY: `M` is the same as used in `to_dummy`
+            |memo| unsafe { MemoEntryType::from_dummy::<M>(memo).as_mut() }.clear_value(),
+        )
+    }
+
+    fn clear(self) {
+        // SAFETY: We only construct this type with a valid drop function pointer
+        unsafe { self.1(self.0) };
+    }
+}
+
+pub fn spawn_memo_drop_thread(receiver: MemoDropReceiver) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        loop {
+            let res = std::panic::catch_unwind(|| {
+                receiver.0.iter().for_each(|e| match e {
+                    MemoDropAction::Drop(memo_drop) => drop(memo_drop),
+                    MemoDropAction::EvictValue(memo_clear) => memo_clear.clear(),
+                    // We were instructed to park the thread, this means we have dropped everything for the
+                    // last revision.
+                    MemoDropAction::Park(parker) => parker.park(),
+                });
+            });
+            // discard panics and continue
+            if let Ok(()) = res {
+                break;
+            }
+        }
+    })
+}
+
+pub fn run_memo_drops(receiver: &MemoDropReceiver) {
+    receiver.0.try_iter().for_each(|e| match e {
+        MemoDropAction::Drop(memo_drop) => drop(memo_drop),
+        MemoDropAction::EvictValue(memo_clear) => memo_clear.clear(),
+        MemoDropAction::Park(_) => panic!("tried to park in `run_memo_drops`"),
+    });
+}
+
+pub fn memo_drop_channel() -> (MemoDropSender, MemoDropReceiver) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    (MemoDropSender(tx), MemoDropReceiver(rx))
+}
+
+#[derive(Clone)]
+pub struct MemoDropSender(std::sync::mpsc::Sender<MemoDropAction>);
+
+impl MemoDropSender {
+    /// Put the memo into the drop queue.
+    pub(crate) fn delay<M: Memo>(&self, memo: NonNull<M>) {
+        self.0
+            .send(MemoDropAction::Drop(MemoDrop::new(memo)))
+            .expect("memo drop receiver has been dropped");
+    }
+
+    /// Put the memo into the drop queue for value clearing.
+    pub(crate) fn clear_value<M: Memo>(&self, memo: NonNull<M>) {
+        self.0
+            .send(MemoDropAction::EvictValue(MemoClear::new(memo)))
+            .expect("memo drop receiver has been dropped");
+    }
+
+    /// Emit a park barrier for the receiver side instructing it to not drop any memos following the
+    /// barrier until the given parker is unparked.
+    pub(crate) fn park(&self, parker: Parker) {
+        self.0
+            .send(MemoDropAction::Park(parker))
+            .expect("memo drop receiver has been dropped");
+    }
+}
+
+pub struct MemoDropReceiver(std::sync::mpsc::Receiver<MemoDropAction>);
+
+/// A drop action to be performed by the owner of the `MemoDropReceiver`.
+#[derive(Debug)]
+enum MemoDropAction {
+    /// Drop the contained memo.
+    Drop(MemoDrop),
+    /// Clear the value of the contained memo.
+    EvictValue(MemoClear),
+    /// Park the current thread on the given parker.
+    Park(Parker),
 }
 
 /// Data for a memoized entry.
@@ -104,6 +226,9 @@ struct DummyMemo {}
 
 impl Memo for DummyMemo {
     fn origin(&self) -> &QueryOrigin {
+        unreachable!("should not get here")
+    }
+    fn clear_value(&mut self) {
         unreachable!("should not get here")
     }
 }
@@ -263,19 +388,16 @@ impl MemoTableWithTypesMut<'_> {
     /// Calls `f` on the memo at `memo_ingredient_index`.
     ///
     /// If the memo is not present, `f` is not called.
-    pub(crate) fn map_memo<M: Memo>(
+    pub(crate) fn fetch_raw<M: Memo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
-        f: impl FnOnce(&mut M),
-    ) {
-        let Some(type_) = self
+    ) -> Option<NonNull<M>> {
+        let type_ = self
             .types
             .types
             .get(memo_ingredient_index.as_usize())
-            .and_then(MemoEntryType::load)
-        else {
-            return;
-        };
+            .and_then(MemoEntryType::load)?;
+
         assert_eq!(
             type_.type_id,
             TypeId::of::<M>(),
@@ -285,16 +407,11 @@ impl MemoTableWithTypesMut<'_> {
         // If the memo slot is already occupied, it must already have the
         // right type info etc, and we only need the read-lock.
         let memos = self.memos.memos.get_mut();
-        let Some(MemoEntry { atomic_memo }) = memos.get_mut(memo_ingredient_index.as_usize())
-        else {
-            return;
-        };
-        let Some(memo) = NonNull::new(*atomic_memo.get_mut()) else {
-            return;
-        };
+        let MemoEntry { atomic_memo } = memos.get_mut(memo_ingredient_index.as_usize())?;
+        let memo = NonNull::new(*atomic_memo.get_mut())?;
 
         // SAFETY: `type_id` check asserted above
-        f(unsafe { MemoEntryType::from_dummy(memo).as_mut() });
+        Some(unsafe { MemoEntryType::from_dummy(memo) })
     }
 
     /// To drop an entry, we need its type, so we don't implement `Drop`, and instead have this method.

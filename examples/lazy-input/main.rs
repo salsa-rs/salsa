@@ -89,15 +89,18 @@ impl LazyInputDatabase {
     fn new(tx: Sender<DebounceEventResult>) -> Self {
         let logs: Arc<Mutex<Vec<String>>> = Default::default();
         Self {
-            storage: Storage::new(Some(Box::new({
-                let logs = logs.clone();
-                move |event| {
-                    // don't log boring events
-                    if let salsa::EventKind::WillExecute { .. } = event.kind {
-                        logs.lock().unwrap().push(format!("{event:?}"));
+            storage: Storage::new(
+                false,
+                Some(Box::new({
+                    let logs = logs.clone();
+                    move |event| {
+                        // don't log boring events
+                        if let salsa::EventKind::WillExecute { .. } = event.kind {
+                            logs.lock().unwrap().push(format!("{event:?}"));
+                        }
                     }
-                }
-            }))),
+                })),
+            ),
             logs,
             files: DashMap::new(),
             file_watcher: Arc::new(Mutex::new(

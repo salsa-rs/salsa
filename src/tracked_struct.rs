@@ -14,7 +14,7 @@ use crate::function::VerifyResult;
 use crate::id::{AsId, FromId};
 use crate::ingredient::{Ingredient, Jar};
 use crate::key::DatabaseKeyIndex;
-use crate::plumbing::ZalsaLocal;
+use crate::plumbing::{MemoDropSender, ZalsaLocal};
 use crate::revision::OptionalAtomicRevision;
 use crate::runtime::StampedValue;
 use crate::salsa_struct::SalsaStructInDb;
@@ -111,6 +111,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
         _zalsa: &Zalsa,
         struct_index: crate::zalsa::IngredientIndex,
         _dependencies: crate::memo_ingredient_indices::IngredientIndices,
+        _: MemoDropSender,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient = <IngredientImpl<C>>::new(struct_index);
 

@@ -10,7 +10,7 @@ use accumulated::{Accumulated, AnyAccumulated};
 use crate::cycle::CycleHeads;
 use crate::function::VerifyResult;
 use crate::ingredient::{Ingredient, Jar};
-use crate::plumbing::{IngredientIndices, ZalsaLocal};
+use crate::plumbing::{IngredientIndices, MemoDropSender, ZalsaLocal};
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, Zalsa};
@@ -47,6 +47,7 @@ impl<A: Accumulator> Jar for JarImpl<A> {
         _zalsa: &Zalsa,
         first_index: IngredientIndex,
         _dependencies: IngredientIndices,
+        _: MemoDropSender,
     ) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(<IngredientImpl<A>>::new(first_index))]
     }
