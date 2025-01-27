@@ -4,7 +4,9 @@ use std::panic::RefUnwindSafe;
 
 use crate::database::RawDatabase;
 use crate::sync::{Arc, Condvar, Mutex};
-use crate::zalsa::{ErasedJar, HasJar, Zalsa, ZalsaDatabase};
+use crate::zalsa::{
+    drop_channel, DropChannelReceiver, DropChannelSender, ErasedJar, HasJar, Zalsa, ZalsaDatabase,
+};
 use crate::zalsa_local::{self, ZalsaLocal};
 use crate::{Database, Event, EventKind};
 
@@ -43,15 +45,27 @@ impl<Db: Database> Default for StorageHandle<Db> {
 
 impl<Db: Database> StorageHandle<Db> {
     pub fn new(event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>) -> Self {
-        Self::with_jars(event_callback, Vec::new())
+        Self::with_jars(None, event_callback, Vec::new())
+    }
+
+    pub fn new_with_drop_channel(
+        event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
+        capacity: Option<usize>,
+    ) -> (Self, DropChannelReceiver) {
+        let (sender, receiver) = drop_channel(capacity);
+        (
+            Self::with_jars(Some(sender), event_callback, Vec::new()),
+            receiver,
+        )
     }
 
     fn with_jars(
+        drop_channel_sender: Option<DropChannelSender>,
         event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
         jars: Vec<ErasedJar>,
     ) -> Self {
         Self {
-            zalsa_impl: Arc::new(Zalsa::new::<Db>(event_callback, jars)),
+            zalsa_impl: Arc::new(Zalsa::new::<Db>(drop_channel_sender, event_callback, jars)),
             coordinate: CoordinateDrop(Arc::new(Coordinate {
                 clones: Mutex::new(1),
                 cvar: Default::default(),
@@ -113,7 +127,7 @@ impl<Db: Database> Default for Storage<Db> {
 }
 
 impl<Db: Database> Storage<Db> {
-    /// Create a new database storage.
+    /// Create a new database storage that drops stale memoized results synchronously on a revision change.
     ///
     /// The `event_callback` function is invoked by the salsa runtime at various points during execution.
     pub fn new(event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>) -> Self {
@@ -121,6 +135,24 @@ impl<Db: Database> Storage<Db> {
             handle: StorageHandle::new(event_callback),
             zalsa_local: ZalsaLocal::new(),
         }
+    }
+
+    /// Create a new database storage with a drop channel that receives stale memoized results for
+    /// flexible dropping.
+    ///
+    /// The `event_callback` function is invoked by the salsa runtime at various points during execution.
+    pub fn new_with_drop_channel(
+        event_callback: Option<Box<dyn Fn(crate::Event) + Send + Sync + 'static>>,
+        capacity: Option<usize>,
+    ) -> (Self, DropChannelReceiver) {
+        let (handle, receiver) = StorageHandle::new_with_drop_channel(event_callback, capacity);
+        (
+            Self {
+                handle,
+                zalsa_local: ZalsaLocal::new(),
+            },
+            receiver,
+        )
     }
 
     /// Returns a builder for database storage.
@@ -220,10 +252,25 @@ impl<Db: Database> StorageBuilder<Db> {
         self
     }
 
+    /// Construct the [`Storage`] using the provided builder options with a drop channel.
+    pub fn build_with_drop_channel(
+        self,
+        capacity: Option<usize>,
+    ) -> (Storage<Db>, DropChannelReceiver) {
+        let (sender, receiver) = drop_channel(capacity);
+        (
+            Storage {
+                handle: StorageHandle::with_jars(Some(sender), self.event_callback, self.jars),
+                zalsa_local: ZalsaLocal::new(),
+            },
+            receiver,
+        )
+    }
+
     /// Construct the [`Storage`] using the provided builder options.
     pub fn build(self) -> Storage<Db> {
         Storage {
-            handle: StorageHandle::with_jars(self.event_callback, self.jars),
+            handle: StorageHandle::with_jars(None, self.event_callback, self.jars),
             zalsa_local: ZalsaLocal::new(),
         }
     }
