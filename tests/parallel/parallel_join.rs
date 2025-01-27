@@ -146,15 +146,18 @@ impl Default for Knobs {
         let signal_on_did_cancel = Arc::new(AtomicUsize::new(0));
 
         Self {
-            storage: Storage::new(Some(Box::new({
-                let signal = signal.clone();
-                let signal_on_did_cancel = signal_on_did_cancel.clone();
-                move |event| {
-                    if let salsa::EventKind::DidSetCancellationFlag = event.kind {
-                        signal.signal(signal_on_did_cancel.load(Ordering::Acquire));
+            storage: Storage::new(
+                false,
+                Some(Box::new({
+                    let signal = signal.clone();
+                    let signal_on_did_cancel = signal_on_did_cancel.clone();
+                    move |event| {
+                        if let salsa::EventKind::DidSetCancellationFlag = event.kind {
+                            signal.signal(signal_on_did_cancel.load(Ordering::Acquire));
+                        }
                     }
-                }
-            }))),
+                })),
+            ),
             signal,
             signal_on_did_cancel,
         }

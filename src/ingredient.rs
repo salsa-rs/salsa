@@ -6,7 +6,7 @@ use crate::cycle::{
     empty_cycle_heads, CycleHeads, CycleRecoveryStrategy, IterationCount, ProvisionalStatus,
 };
 use crate::function::VerifyResult;
-use crate::plumbing::IngredientIndices;
+use crate::plumbing::{IngredientIndices, MemoDropSender};
 use crate::runtime::Running;
 use crate::sync::Arc;
 use crate::table::memo::MemoTableTypes;
@@ -36,6 +36,7 @@ pub trait Jar: Any {
         zalsa: &Zalsa,
         first_index: IngredientIndex,
         dependencies: IngredientIndices,
+        memo_drop_sender: MemoDropSender,
     ) -> Vec<Box<dyn Ingredient>>
     where
         Self: Sized;

@@ -83,10 +83,13 @@ impl Default for EventLoggerDatabase {
     fn default() -> Self {
         let logger = Logger::default();
         Self {
-            storage: Storage::new(Some(Box::new({
-                let logger = logger.clone();
-                move |event| logger.push_log(format!("{:?}", event.kind))
-            }))),
+            storage: Storage::new(
+                false,
+                Some(Box::new({
+                    let logger = logger.clone();
+                    move |event| logger.push_log(format!("{:?}", event.kind))
+                })),
+            ),
             logger,
         }
     }
@@ -112,16 +115,19 @@ impl Default for DiscardLoggerDatabase {
     fn default() -> Self {
         let logger = Logger::default();
         Self {
-            storage: Storage::new(Some(Box::new({
-                let logger = logger.clone();
-                move |event| match event.kind {
-                    salsa::EventKind::WillDiscardStaleOutput { .. }
-                    | salsa::EventKind::DidDiscard { .. } => {
-                        logger.push_log(format!("salsa_event({:?})", event.kind));
+            storage: Storage::new(
+                false,
+                Some(Box::new({
+                    let logger = logger.clone();
+                    move |event| match event.kind {
+                        salsa::EventKind::WillDiscardStaleOutput { .. }
+                        | salsa::EventKind::DidDiscard { .. } => {
+                            logger.push_log(format!("salsa_event({:?})", event.kind));
+                        }
+                        _ => {}
                     }
-                    _ => {}
-                }
-            }))),
+                })),
+            ),
             logger,
         }
     }
@@ -147,17 +153,20 @@ impl Default for ExecuteValidateLoggerDatabase {
     fn default() -> Self {
         let logger = Logger::default();
         Self {
-            storage: Storage::new(Some(Box::new({
-                let logger = logger.clone();
-                move |event| match event.kind {
-                    salsa::EventKind::WillExecute { .. }
-                    | salsa::EventKind::WillIterateCycle { .. }
-                    | salsa::EventKind::DidValidateMemoizedValue { .. } => {
-                        logger.push_log(format!("salsa_event({:?})", event.kind));
+            storage: Storage::new(
+                false,
+                Some(Box::new({
+                    let logger = logger.clone();
+                    move |event| match event.kind {
+                        salsa::EventKind::WillExecute { .. }
+                        | salsa::EventKind::WillIterateCycle { .. }
+                        | salsa::EventKind::DidValidateMemoizedValue { .. } => {
+                            logger.push_log(format!("salsa_event({:?})", event.kind));
+                        }
+                        _ => {}
                     }
-                    _ => {}
-                }
-            }))),
+                })),
+            ),
             logger,
         }
     }

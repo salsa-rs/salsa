@@ -10,23 +10,32 @@ use common::LogDatabase;
 use salsa::Database as _;
 use test_log::test;
 
-#[derive(Debug, PartialEq, Eq)]
-struct HotPotato(u32);
+#[derive(Debug)]
+struct HotPotato(u32, Arc<AtomicUsize>);
+
+impl Eq for HotPotato {}
+impl PartialEq for HotPotato {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
 
 thread_local! {
-    static N_POTATOES: AtomicUsize = const { AtomicUsize::new(0) }
+    static N_POTATOES: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0))
 }
 
 impl HotPotato {
     fn new(id: u32) -> HotPotato {
-        N_POTATOES.with(|n| n.fetch_add(1, Ordering::SeqCst));
-        HotPotato(id)
+        N_POTATOES.with(|n| {
+            n.fetch_add(1, Ordering::SeqCst);
+            HotPotato(id, n.clone())
+        })
     }
 }
 
 impl Drop for HotPotato {
     fn drop(&mut self) {
-        N_POTATOES.with(|n| n.fetch_sub(1, Ordering::SeqCst));
+        self.1.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -51,6 +60,20 @@ fn load_n_potatoes() -> usize {
     N_POTATOES.with(|n| n.load(Ordering::SeqCst))
 }
 
+fn wait_until_n_potatoes(n: usize) {
+    let now = std::time::Instant::now();
+    while load_n_potatoes() != n {
+        std::thread::yield_now();
+        if now.elapsed().as_secs() > 10 {
+            panic!(
+                "timed out waiting for {} potatoes, we've got {} instead",
+                n,
+                load_n_potatoes()
+            );
+        }
+    }
+}
+
 #[test]
 fn lru_works() {
     let mut db = common::LoggerDatabase::default();
@@ -65,7 +88,7 @@ fn lru_works() {
     assert_eq!(load_n_potatoes(), 32);
     // trigger the GC
     db.synthetic_write(salsa::Durability::HIGH);
-    assert_eq!(load_n_potatoes(), 8);
+    wait_until_n_potatoes(8);
 }
 
 #[test]
@@ -83,10 +106,11 @@ fn lru_can_be_changed_at_runtime() {
     assert_eq!(load_n_potatoes(), 32);
     // trigger the GC
     db.synthetic_write(salsa::Durability::HIGH);
-    assert_eq!(load_n_potatoes(), 8);
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    wait_until_n_potatoes(8);
 
     get_hot_potato::set_lru_capacity(&mut db, 16);
-    assert_eq!(load_n_potatoes(), 8);
     for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);
         assert_eq!(p.0, i);
@@ -95,11 +119,10 @@ fn lru_can_be_changed_at_runtime() {
     assert_eq!(load_n_potatoes(), 32);
     // trigger the GC
     db.synthetic_write(salsa::Durability::HIGH);
-    assert_eq!(load_n_potatoes(), 16);
+    wait_until_n_potatoes(16);
 
     // Special case: setting capacity to zero disables LRU
     get_hot_potato::set_lru_capacity(&mut db, 0);
-    assert_eq!(load_n_potatoes(), 16);
     for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);
         assert_eq!(p.0, i);
@@ -108,7 +131,7 @@ fn lru_can_be_changed_at_runtime() {
     assert_eq!(load_n_potatoes(), 32);
     // trigger the GC
     db.synthetic_write(salsa::Durability::HIGH);
-    assert_eq!(load_n_potatoes(), 32);
+    wait_until_n_potatoes(32);
 
     drop(db);
     assert_eq!(load_n_potatoes(), 0);
