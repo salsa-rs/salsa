@@ -66,7 +66,7 @@ pub use self::revision::Revision;
 pub use self::runtime::Runtime;
 pub use self::storage::{Storage, StorageHandle};
 pub use self::update::Update;
-pub use self::zalsa::IngredientIndex;
+pub use self::zalsa::{DeletedEntriesDropper, DropChannelReceiver, IngredientIndex};
 pub use crate::attach::{attach, with_attached_database};
 
 pub mod prelude {

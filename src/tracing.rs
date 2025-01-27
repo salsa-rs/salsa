@@ -27,11 +27,11 @@ macro_rules! debug_span {
 
 macro_rules! event {
     ($level:ident, $($x:tt)*) => {{
-        let event = {
-            #[cold] #[inline(never)] || { ::tracing::event!(::tracing::Level::$level, $($x)*) }
-        };
-
         if ::tracing::enabled!(::tracing::Level::$level) {
+            let event = {
+                #[cold] #[inline(never)] || { ::tracing::event!(::tracing::Level::$level, $($x)*) }
+            };
+
             event();
         }
     }};
@@ -39,11 +39,11 @@ macro_rules! event {
 
 macro_rules! span {
     ($level:ident, $($x:tt)*) => {{
-        let span = {
-            #[cold] #[inline(never)] || { ::tracing::span!(::tracing::Level::$level, $($x)*) }
-        };
-
         if ::tracing::enabled!(::tracing::Level::$level) {
+            let span = {
+                #[cold] #[inline(never)] || { ::tracing::span!(::tracing::Level::$level, $($x)*) }
+            };
+
             span()
         } else {
             ::tracing::Span::none()
