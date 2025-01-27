@@ -7,7 +7,7 @@ where
     C: Configuration,
 {
     /// If the value/durability of this memo is equal to what is found in `revisions`/`value`,
-    /// then updates `revisions.changed_at` to match `self.revisions.changed_at`. This is invoked
+    /// then update `revisions.changed_at` to match `self.revisions.changed_at`. This is invoked
     /// on an old memo when a new memo has been produced to check whether there have been changed.
     pub(super) fn backdate_if_appropriate(
         &self,

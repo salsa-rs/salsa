@@ -306,7 +306,7 @@ impl ZalsaLocal {
 impl std::panic::RefUnwindSafe for ZalsaLocal {}
 
 /// Summarizes "all the inputs that a query used"
-/// and "all the outputs its wrote to"
+/// and "all the outputs it has written to"
 #[derive(Debug)]
 // #[derive(Clone)] cloning this is expensive, so we don't derive
 pub(crate) struct QueryRevisions {

@@ -78,7 +78,7 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        // Check if the inputs are still valid and we can just compare `changed_at`.
+        // Check if the inputs are still valid. We can just compare `changed_at`.
         if self.deep_verify_memo(db, &old_memo, &active_query) {
             return Some(if old_memo.revisions.changed_at > revision {
                 MaybeChangedAfter::Yes
@@ -148,7 +148,7 @@ where
         false
     }
 
-    /// True if the memo's value and `changed_at` time is up to date in the current
+    /// True if the memo's value and `changed_at` time is up-to-date in the current
     /// revision. When this returns true, it also updates the memo's `verified_at`
     /// field if needed to make future calls cheaper.
     ///
