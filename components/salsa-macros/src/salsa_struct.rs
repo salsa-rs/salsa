@@ -47,6 +47,9 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
     /// Does this kind of struct have a `'db` lifetime?
     const HAS_LIFETIME: bool;
 
+    /// Can this struct elide the `'db` lifetime?
+    const ELIDABLE_LIFETIME: bool;
+
     /// Are `#[default]` fields allowed?
     const ALLOW_DEFAULT: bool;
 }
@@ -118,6 +121,14 @@ where
         }
     }
 
+    /// Returns the `id` in `Options` if it is `Some`, else `salsa::Id`.
+    pub(crate) fn id(&self) -> syn::Path {
+        match &self.args.id {
+            Some(id) => id.clone(),
+            None => parse_quote!(salsa::Id),
+        }
+    }
+
     /// Disallow `#[id]` attributes on the fields of this struct.
     ///
     /// If an `#[id]` field is found, return an error.
@@ -171,7 +182,11 @@ where
     /// Check that the generic parameters look as expected for this kind of struct.
     fn check_generics(&self) -> syn::Result<()> {
         if A::HAS_LIFETIME {
-            db_lifetime::require_db_lifetime(&self.struct_item.generics)
+            if !A::ELIDABLE_LIFETIME {
+                db_lifetime::require_db_lifetime(&self.struct_item.generics)
+            } else {
+                Ok(())
+            }
         } else {
             db_lifetime::require_no_generics(&self.struct_item.generics)
         }
@@ -278,6 +293,10 @@ where
 
     pub fn generate_debug_impl(&self) -> bool {
         self.args.no_debug.is_none()
+    }
+
+    pub fn generate_lifetime(&self) -> bool {
+        self.args.no_lifetime.is_none()
     }
 }
 

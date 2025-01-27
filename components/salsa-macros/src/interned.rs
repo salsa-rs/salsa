@@ -43,6 +43,8 @@ impl crate::options::AllowedOptions for InternedStruct {
 
     const NO_DEBUG: bool = true;
 
+    const NO_LIFETIME: bool = true;
+
     const NO_CLONE: bool = false;
 
     const SINGLETON: bool = true;
@@ -56,6 +58,8 @@ impl crate::options::AllowedOptions for InternedStruct {
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = true;
+
+    const ID: bool = true;
 }
 
 impl SalsaStructAllowedOptions for InternedStruct {
@@ -64,6 +68,8 @@ impl SalsaStructAllowedOptions for InternedStruct {
     const ALLOW_ID: bool = false;
 
     const HAS_LIFETIME: bool = true;
+
+    const ELIDABLE_LIFETIME: bool = true;
 
     const ALLOW_DEFAULT: bool = false;
 }
@@ -82,6 +88,7 @@ impl Macro {
         let attrs = &self.struct_item.attrs;
         let vis = &self.struct_item.vis;
         let struct_ident = &self.struct_item.ident;
+        let struct_data_ident = format_ident!("{}Data", struct_ident);
         let db_lt = db_lifetime::db_lifetime(&self.struct_item.generics);
         let new_fn = salsa_struct.constructor_name();
         let field_ids = salsa_struct.field_ids();
@@ -93,6 +100,24 @@ impl Macro {
         let field_tys = salsa_struct.field_tys();
         let field_indexed_tys = salsa_struct.field_indexed_tys();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
+        let has_lifetime = salsa_struct.generate_lifetime();
+        let id = salsa_struct.id();
+
+        let (db_lt_arg, cfg, interior_lt) = if has_lifetime {
+            (
+                Some(db_lt.clone()),
+                quote!(#struct_ident<'static>),
+                db_lt.clone(),
+            )
+        } else {
+            let span = syn::spanned::Spanned::span(&self.struct_item.generics);
+            let static_lifetime = syn::Lifetime {
+                apostrophe: span,
+                ident: syn::Ident::new("static", span),
+            };
+
+            (None, quote!(#struct_ident), static_lifetime)
+        };
 
         let zalsa = self.hygiene.ident("zalsa");
         let zalsa_struct = self.hygiene.ident("zalsa_struct");
@@ -107,7 +132,12 @@ impl Macro {
                     attrs: [#(#attrs),*],
                     vis: #vis,
                     Struct: #struct_ident,
+                    StructData: #struct_data_ident,
+                    StructWithStatic: #cfg,
                     db_lt: #db_lt,
+                    db_lt_arg: #db_lt_arg,
+                    id: #id,
+                    interior_lt: #interior_lt,
                     new_fn: #new_fn,
                     field_options: [#(#field_options),*],
                     field_ids: [#(#field_ids),*],

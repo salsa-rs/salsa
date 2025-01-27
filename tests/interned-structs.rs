@@ -2,6 +2,7 @@
 //! compiles and executes successfully.
 
 use expect_test::expect;
+use salsa::plumbing::{AsId, FromId};
 use std::path::{Path, PathBuf};
 use test_log::test;
 
@@ -34,6 +35,36 @@ struct InternedVec<'db> {
 #[salsa::interned]
 struct InternedPathBuf<'db> {
     data1: PathBuf,
+}
+
+#[salsa::interned(no_lifetime)]
+struct InternedStringNoLifetime {
+    data: String,
+}
+
+#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct SalsaIdWrapper(salsa::Id);
+
+impl AsId for SalsaIdWrapper {
+    fn as_id(&self) -> salsa::Id {
+        self.0
+    }
+}
+
+impl FromId for SalsaIdWrapper {
+    fn from_id(id: salsa::Id) -> Self {
+        SalsaIdWrapper(id)
+    }
+}
+
+#[salsa::interned(id = SalsaIdWrapper)]
+struct InternedStringWithCustomId<'db> {
+    data: String,
+}
+
+#[salsa::interned(id = SalsaIdWrapper, no_lifetime)]
+struct InternedStringWithCustomIdAndNoLiftime<'db> {
+    data: String,
 }
 
 #[salsa::tracked]
@@ -89,6 +120,18 @@ fn interning_boxed() {
 }
 
 #[test]
+fn interned_structs_have_public_ingredients() {
+    use salsa::plumbing::AsId;
+
+    let db = salsa::DatabaseImpl::new();
+    let s = InternedString::new(&db, String::from("Hello, world!"));
+    let underlying_id = s.0;
+
+    let data = InternedString::ingredient(&db).data(&db, underlying_id.as_id());
+    assert_eq!(data, &(String::from("Hello, world!"),));
+}
+
+#[test]
 fn interning_vec() {
     let db = salsa::DatabaseImpl::new();
     let s1 = InternedVec::new(&db, ["Hello, ".to_string(), "World".to_string()].as_slice());
@@ -117,4 +160,40 @@ fn interning_path_buf() {
     assert_eq!(s1, s2);
     assert_eq!(s1, s3);
     assert_ne!(s1, s4);
+}
+
+#[test]
+fn interning_without_lifetimes() {
+    let db = salsa::DatabaseImpl::new();
+
+    let s1 = InternedStringNoLifetime::new(&db, "Hello, ".to_string());
+    let s2 = InternedStringNoLifetime::new(&db, "World, ".to_string());
+    let s1_2 = InternedStringNoLifetime::new(&db, "Hello, ");
+    let s2_2 = InternedStringNoLifetime::new(&db, "World, ");
+    assert_eq!(s1, s1_2);
+    assert_eq!(s2, s2_2);
+}
+
+#[test]
+fn interning_with_custom_ids() {
+    let db = salsa::DatabaseImpl::new();
+
+    let s1 = InternedStringWithCustomId::new(&db, "Hello, ".to_string());
+    let s2 = InternedStringWithCustomId::new(&db, "World, ".to_string());
+    let s1_2 = InternedStringWithCustomId::new(&db, "Hello, ");
+    let s2_2 = InternedStringWithCustomId::new(&db, "World, ");
+    assert_eq!(s1, s1_2);
+    assert_eq!(s2, s2_2);
+}
+
+#[test]
+fn interning_with_custom_ids_and_no_lifetime() {
+    let db = salsa::DatabaseImpl::new();
+
+    let s1 = InternedStringWithCustomIdAndNoLiftime::new(&db, "Hello, ".to_string());
+    let s2 = InternedStringWithCustomIdAndNoLiftime::new(&db, "World, ".to_string());
+    let s1_2 = InternedStringWithCustomIdAndNoLiftime::new(&db, "Hello, ");
+    let s2_2 = InternedStringWithCustomIdAndNoLiftime::new(&db, "World, ");
+    assert_eq!(s1, s1_2);
+    assert_eq!(s2, s2_2);
 }

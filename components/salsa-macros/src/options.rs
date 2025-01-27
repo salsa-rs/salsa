@@ -7,6 +7,7 @@ use syn::{ext::IdentExt, spanned::Spanned};
 /// are required and trailing commas are permitted. The options accepted
 /// for any particular location are configured via the `AllowedOptions`
 /// trait.
+#[derive(Debug)]
 pub(crate) struct Options<A: AllowedOptions> {
     /// The `return_ref` option is used to signal that field/return type is "by ref"
     ///
@@ -23,6 +24,11 @@ pub(crate) struct Options<A: AllowedOptions> {
     ///
     /// If this is `Some`, the value is the `no_debug` identifier.
     pub no_debug: Option<syn::Ident>,
+
+    /// Signal we should not include the `'db` lifetime.
+    ///
+    /// If this is `Some`, the value is the `no_lifetime` identifier.
+    pub no_lifetime: Option<syn::Ident>,
 
     /// Signal we should not generate a `Clone` impl.
     ///
@@ -66,6 +72,12 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<ident>`.
     pub constructor_name: Option<syn::Ident>,
 
+    /// The `id = <path>` option is used to set a custom ID for interrned structs.
+    ///
+    /// The ID must implement `salsa::plumbing::AsId` and `salsa::plumbing::FromId`.
+    /// If this is `Some`, the value is the `<ident>`.
+    pub id: Option<syn::Path>,
+
     /// Remember the `A` parameter, which plays no role after parsing.
     phantom: PhantomData<A>,
 }
@@ -77,6 +89,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             specify: Default::default(),
             no_eq: Default::default(),
             no_debug: Default::default(),
+            no_lifetime: Default::default(),
             no_clone: Default::default(),
             db_path: Default::default(),
             recovery_fn: Default::default(),
@@ -85,6 +98,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             phantom: Default::default(),
             lru: Default::default(),
             singleton: Default::default(),
+            id: Default::default(),
         }
     }
 }
@@ -95,6 +109,7 @@ pub(crate) trait AllowedOptions {
     const SPECIFY: bool;
     const NO_EQ: bool;
     const NO_DEBUG: bool;
+    const NO_LIFETIME: bool;
     const NO_CLONE: bool;
     const SINGLETON: bool;
     const DATA: bool;
@@ -102,6 +117,7 @@ pub(crate) trait AllowedOptions {
     const RECOVERY_FN: bool;
     const LRU: bool;
     const CONSTRUCTOR_NAME: bool;
+    const ID: bool;
 }
 
 type Equals = syn::Token![=];
@@ -150,6 +166,20 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`no_debug` option not allowed here",
+                    ));
+                }
+            } else if ident == "no_lifetime" {
+                if A::NO_LIFETIME {
+                    if let Some(old) = std::mem::replace(&mut options.no_lifetime, Some(ident)) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `no_lifetime` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`no_lifetime` option not allowed here",
                     ));
                 }
             } else if ident == "no_clone" {
@@ -265,6 +295,17 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`constructor` option not allowed here",
+                    ));
+                }
+            } else if ident == "id" {
+                if A::ID {
+                    let _eq = Equals::parse(input)?;
+                    let path = syn::Path::parse(input)?;
+                    options.id = Some(path);
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`id` option not allowed here",
                     ));
                 }
             } else {
