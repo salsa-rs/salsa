@@ -33,8 +33,13 @@ impl<C: Configuration> IngredientImpl<C> {
         unsafe { std::mem::transmute(memo) }
     }
 
-    /// Inserts the memo for the given key; (atomically) overwrites any previously existing memo.
-    pub(super) fn insert_memo_into_table_for<'db>(
+    /// Inserts the memo for the given key; (atomically) overwrites and returns any previously existing memo
+    ///
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not drop the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the `Arc` contents.
+    pub(super) unsafe fn insert_memo_into_table_for<'db>(
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
