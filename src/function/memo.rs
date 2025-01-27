@@ -34,22 +34,24 @@ impl<C: Configuration> IngredientImpl<C> {
     }
 
     /// Inserts the memo for the given key; (atomically) overwrites and returns any previously existing memo
-    ///
-    /// # Safety
-    ///
-    /// The caller needs to make sure to not drop the returned value until no more references into
-    /// the database exist as there may be outstanding borrows into the `Arc` contents.
-    pub(super) unsafe fn insert_memo_into_table_for<'db>(
+    pub(super) fn insert_memo_into_table_for<'db>(
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
         memo: ArcMemo<'db, C>,
-    ) -> Option<ArcMemo<'db, C>> {
+    ) {
         let static_memo = unsafe { self.to_static(memo) };
-        let old_static_memo = zalsa
-            .memo_table_for(id)
-            .insert(self.memo_ingredient_index, static_memo)?;
-        unsafe { Some(self.to_self(old_static_memo)) }
+        // SAFETY: We delay the deletion of the old memo until the next revision starts.
+        if let Some(old_static_memo) = unsafe {
+            zalsa
+                .memo_table_for(id)
+                .insert(self.memo_ingredient_index, static_memo)
+        } {
+            // In case there is a reference to the old memo out there, we have to delay its
+            // deletion.
+            // This will get cleared when a new revision starts.
+            self.delete.delay(old_static_memo);
+        }
     }
 
     /// Loads the current memo for `key_index`. This does not hold any sort of
@@ -67,7 +69,10 @@ impl<C: Configuration> IngredientImpl<C> {
     /// Evicts the existing memo for the given key, replacing it
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
-    pub(super) fn evict_value_from_memo_for(&self, table: &mut MemoTable) {
+    pub(super) fn evict_value_from_memo_for(
+        &self,
+        table: &mut MemoTable,
+    ) -> Option<ArcMemo<'static, C>> {
         table.map_memo::<Memo<C::Output<'_>>>(self.memo_ingredient_index, |memo| {
             match &memo.revisions.origin {
                 QueryOrigin::Assigned(_)
@@ -106,7 +111,7 @@ impl<C: Configuration> IngredientImpl<C> {
                     ))
                 }
             }
-        });
+        })
     }
 }
 

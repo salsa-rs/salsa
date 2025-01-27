@@ -12,7 +12,7 @@ use accumulated::AnyAccumulated;
 use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, MaybeChangedAfter},
-    plumbing::JarAux,
+    plumbing::{JarAux, MemoDropSender},
     table::Table,
     zalsa::IngredientIndex,
     zalsa_local::QueryOrigin,
@@ -50,6 +50,7 @@ impl<A: Accumulator> Jar for JarImpl<A> {
         &self,
         _aux: &dyn JarAux,
         first_index: IngredientIndex,
+        _: MemoDropSender,
     ) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(<IngredientImpl<A>>::new(first_index))]
     }
