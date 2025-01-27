@@ -1,6 +1,7 @@
 use std::{
     any::{Any, TypeId},
     fmt::Debug,
+    mem::ManuallyDrop,
     sync::Arc,
 };
 
@@ -79,11 +80,15 @@ impl MemoTable {
         }
     }
 
-    pub(crate) fn insert<M: Memo>(
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not drop the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the `Arc` contents.
+    pub(crate) unsafe fn insert<M: Memo>(
         &self,
         memo_ingredient_index: MemoIngredientIndex,
         memo: Arc<M>,
-    ) -> Option<Arc<M>> {
+    ) -> Option<ManuallyDrop<Arc<M>>> {
         // If the memo slot is already occupied, it must already have the
         // right type info etc, and we only need the read-lock.
         if let Some(MemoEntry {
@@ -101,18 +106,23 @@ impl MemoTable {
                 "inconsistent type-id for `{memo_ingredient_index:?}`"
             );
             let old_memo = arc_swap.swap(Self::to_dummy(memo));
-            return unsafe { Some(Self::from_dummy(old_memo)) };
+            return Some(ManuallyDrop::new(unsafe { Self::from_dummy(old_memo) }));
         }
 
         // Otherwise we need the write lock.
-        self.insert_cold(memo_ingredient_index, memo)
+        // SAFETY: The caller is responsible for dropping
+        unsafe { self.insert_cold(memo_ingredient_index, memo) }
     }
 
-    fn insert_cold<M: Memo>(
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not drop the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the `Arc` contents.
+    unsafe fn insert_cold<M: Memo>(
         &self,
         memo_ingredient_index: MemoIngredientIndex,
         memo: Arc<M>,
-    ) -> Option<Arc<M>> {
+    ) -> Option<ManuallyDrop<Arc<M>>> {
         let mut memos = self.memos.write();
         let memo_ingredient_index = memo_ingredient_index.as_usize();
         if memos.len() < memo_ingredient_index + 1 {
@@ -126,13 +136,15 @@ impl MemoTable {
                 arc_swap: ArcSwap::new(Self::to_dummy(memo)),
             }),
         );
-        old_entry.map(
-            |MemoEntryData {
-                 type_id: _,
-                 to_dyn_fn: _,
-                 arc_swap,
-             }| unsafe { Self::from_dummy(arc_swap.into_inner()) },
-        )
+        old_entry
+            .map(
+                |MemoEntryData {
+                     type_id: _,
+                     to_dyn_fn: _,
+                     arc_swap,
+                 }| unsafe { Self::from_dummy(arc_swap.into_inner()) },
+            )
+            .map(ManuallyDrop::new)
     }
 
     pub(crate) fn get<M: Memo>(
@@ -165,11 +177,16 @@ impl MemoTable {
 
     /// Calls `f` on the memo at `memo_ingredient_index` and replaces the memo with the result of `f`.
     /// If the memo is not present, `f` is not called.
-    pub(crate) fn map_memo<M: Memo>(
+    ///
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not drop the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the `Arc` contents.
+    pub(crate) unsafe fn map_memo<M: Memo>(
         &mut self,
         memo_ingredient_index: MemoIngredientIndex,
         f: impl FnOnce(Arc<M>) -> Arc<M>,
-    ) -> Option<Arc<M>> {
+    ) -> Option<ManuallyDrop<Arc<M>>> {
         let memos = self.memos.get_mut();
         let Some(MemoEntry {
             data:
@@ -193,10 +210,18 @@ impl MemoTable {
         // to swap out the interior
         // SAFETY: type_id check asserted above
         let memo = f(unsafe { Self::from_dummy(arc_swap.load_full()) });
-        Some(unsafe { Self::from_dummy::<M>(arc_swap.swap(Self::to_dummy(memo))) })
+        Some(ManuallyDrop::new(unsafe {
+            Self::from_dummy::<M>(arc_swap.swap(Self::to_dummy(memo)))
+        }))
     }
 
-    pub(crate) fn into_memos(self) -> impl Iterator<Item = (MemoIngredientIndex, Arc<dyn Memo>)> {
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not drop the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the `Arc` contents.
+    pub(crate) unsafe fn into_memos(
+        self,
+    ) -> impl Iterator<Item = (MemoIngredientIndex, ManuallyDrop<Arc<dyn Memo>>)> {
         self.memos
             .into_inner()
             .into_iter()
@@ -213,7 +238,7 @@ impl MemoTable {
                 )| {
                     (
                         MemoIngredientIndex::from_usize(index),
-                        to_dyn_fn(arc_swap.into_inner()),
+                        ManuallyDrop::new(to_dyn_fn(arc_swap.into_inner())),
                     )
                 },
             )

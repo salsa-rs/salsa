@@ -1,4 +1,4 @@
-use std::{any::Any, fmt, sync::Arc};
+use std::{any::Any, fmt, mem::ManuallyDrop, sync::Arc};
 
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
@@ -168,15 +168,16 @@ where
         memo: memo::Memo<C::Output<'db>>,
     ) -> &'db memo::Memo<C::Output<'db>> {
         let memo = Arc::new(memo);
-        let db_memo = unsafe {
-            // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
-            // value is returned) and anything removed from map is added to deleted entries (ensured elsewhere).
-            self.extend_memo_lifetime(&memo)
-        };
-        if let Some(old_value) = self.insert_memo_into_table_for(zalsa, id, memo) {
+        // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
+        // value is returned) and anything removed from map is added to deleted entries (ensured elsewhere).
+        let db_memo = unsafe { self.extend_memo_lifetime(&memo) };
+        // Safety: We delay the drop of `old_value` until a new revision starts which ensures no
+        // references will exist for the memo contents.
+        if let Some(old_value) = unsafe { self.insert_memo_into_table_for(zalsa, id, memo) } {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
-            self.deleted_entries.push(old_value);
+            self.deleted_entries
+                .push(ManuallyDrop::into_inner(old_value));
         }
         db_memo
     }
