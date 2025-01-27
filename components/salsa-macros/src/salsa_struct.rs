@@ -41,8 +41,8 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
     /// The kind of struct (e.g., interned, input, tracked).
     const KIND: &'static str;
 
-    /// Are `#[id]` fields allowed?
-    const ALLOW_ID: bool;
+    /// Are `#[tracked]` fields allowed?
+    const ALLOW_TRACKED: bool;
 
     /// Does this kind of struct have a `'db` lifetime?
     const HAS_LIFETIME: bool;
@@ -54,7 +54,7 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
 pub(crate) struct SalsaField<'s> {
     field: &'s syn::Field,
 
-    pub(crate) has_id_attr: bool,
+    pub(crate) has_tracked_attr: bool,
     pub(crate) has_default_attr: bool,
     pub(crate) has_ref_attr: bool,
     pub(crate) has_no_eq_attr: bool,
@@ -66,7 +66,7 @@ const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 
 #[allow(clippy::type_complexity)]
 pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(&str, fn(&syn::Attribute, &mut SalsaField))] = &[
-    ("id", |_, ef| ef.has_id_attr = true),
+    ("tracked", |_, ef| ef.has_tracked_attr = true),
     ("default", |_, ef| ef.has_default_attr = true),
     ("return_ref", |_, ef| ef.has_ref_attr = true),
     ("no_eq", |_, ef| ef.has_no_eq_attr = true),
@@ -102,7 +102,7 @@ where
             fields,
         };
 
-        this.maybe_disallow_id_fields()?;
+        this.maybe_disallow_tracked_fields()?;
         this.maybe_disallow_default_fields()?;
 
         this.check_generics()?;
@@ -118,24 +118,24 @@ where
         }
     }
 
-    /// Disallow `#[id]` attributes on the fields of this struct.
+    /// Disallow `#[tracked]` attributes on the fields of this struct.
     ///
-    /// If an `#[id]` field is found, return an error.
+    /// If an `#[tracked]` field is found, return an error.
     ///
     /// # Parameters
     ///
     /// * `kind`, the attribute name (e.g., `input` or `interned`)
-    fn maybe_disallow_id_fields(&self) -> syn::Result<()> {
-        if A::ALLOW_ID {
+    fn maybe_disallow_tracked_fields(&self) -> syn::Result<()> {
+        if A::ALLOW_TRACKED {
             return Ok(());
         }
 
-        // Check if any field has the `#[id]` attribute.
+        // Check if any field has the `#[tracked]` attribute.
         for ef in &self.fields {
-            if ef.has_id_attr {
+            if ef.has_tracked_attr {
                 return Err(syn::Error::new_spanned(
                     ef.field,
-                    format!("`#[id]` cannot be used with `#[salsa::{}]`", A::KIND),
+                    format!("`#[tracked]` cannot be used with `#[salsa::{}]`", A::KIND),
                 ));
             }
         }
@@ -184,23 +184,32 @@ where
             .collect()
     }
 
+    pub(crate) fn tracked_ids(&self) -> Vec<&syn::Ident> {
+        self.tracked_fields_iter()
+            .map(|(_, f)| f.field.ident.as_ref().unwrap())
+            .collect()
+    }
+
     pub(crate) fn field_indices(&self) -> Vec<Literal> {
         (0..self.fields.len())
             .map(Literal::usize_unsuffixed)
             .collect()
     }
 
-    pub(crate) fn num_fields(&self) -> Literal {
-        Literal::usize_unsuffixed(self.fields.len())
+    pub(crate) fn tracked_indices(&self) -> Vec<Literal> {
+        self.tracked_fields_iter()
+            .map(|(index, _)| Literal::usize_unsuffixed(index))
+            .collect()
     }
 
-    pub(crate) fn id_field_indices(&self) -> Vec<Literal> {
-        self.fields
-            .iter()
-            .zip(0..)
-            .filter_map(|(f, index)| if f.has_id_attr { Some(index) } else { None })
-            .map(Literal::usize_unsuffixed)
+    pub(crate) fn untracked_indices(&self) -> Vec<Literal> {
+        self.untracked_fields_iter()
+            .map(|(index, _)| Literal::usize_unsuffixed(index))
             .collect()
+    }
+
+    pub(crate) fn num_fields(&self) -> Literal {
+        Literal::usize_unsuffixed(self.fields.len())
     }
 
     pub(crate) fn required_fields(&self) -> Vec<TokenStream> {
@@ -222,8 +231,32 @@ where
         self.fields.iter().map(|f| &f.field.vis).collect()
     }
 
+    pub(crate) fn tracked_vis(&self) -> Vec<&syn::Visibility> {
+        self.tracked_fields_iter()
+            .map(|(_, f)| &f.field.vis)
+            .collect()
+    }
+
+    pub(crate) fn untracked_vis(&self) -> Vec<&syn::Visibility> {
+        self.untracked_fields_iter()
+            .map(|(_, f)| &f.field.vis)
+            .collect()
+    }
+
     pub(crate) fn field_getter_ids(&self) -> Vec<&syn::Ident> {
         self.fields.iter().map(|f| &f.get_name).collect()
+    }
+
+    pub(crate) fn tracked_getter_ids(&self) -> Vec<&syn::Ident> {
+        self.tracked_fields_iter()
+            .map(|(_, f)| &f.get_name)
+            .collect()
+    }
+
+    pub(crate) fn untracked_getter_ids(&self) -> Vec<&syn::Ident> {
+        self.untracked_fields_iter()
+            .map(|(_, f)| &f.get_name)
+            .collect()
     }
 
     pub(crate) fn field_setter_ids(&self) -> Vec<&syn::Ident> {
@@ -241,6 +274,18 @@ where
         self.fields.iter().map(|f| &f.field.ty).collect()
     }
 
+    pub(crate) fn tracked_tys(&self) -> Vec<&syn::Type> {
+        self.tracked_fields_iter()
+            .map(|(_, f)| &f.field.ty)
+            .collect()
+    }
+
+    pub(crate) fn untracked_tys(&self) -> Vec<&syn::Type> {
+        self.untracked_fields_iter()
+            .map(|(_, f)| &f.field.ty)
+            .collect()
+    }
+
     pub(crate) fn field_indexed_tys(&self) -> Vec<syn::Ident> {
         self.fields
             .iter()
@@ -250,34 +295,37 @@ where
     }
 
     pub(crate) fn field_options(&self) -> Vec<TokenStream> {
-        self.fields
-            .iter()
-            .map(|f| {
-                let clone_ident = if f.has_ref_attr {
-                    syn::Ident::new("no_clone", Span::call_site())
-                } else {
-                    syn::Ident::new("clone", Span::call_site())
-                };
+        self.fields.iter().map(SalsaField::options).collect()
+    }
 
-                let backdate_ident = if f.has_no_eq_attr {
-                    syn::Ident::new("no_backdate", Span::call_site())
-                } else {
-                    syn::Ident::new("backdate", Span::call_site())
-                };
+    pub(crate) fn tracked_options(&self) -> Vec<TokenStream> {
+        self.tracked_fields_iter()
+            .map(|(_, f)| f.options())
+            .collect()
+    }
 
-                let default_ident = if f.has_default_attr {
-                    syn::Ident::new("default", Span::call_site())
-                } else {
-                    syn::Ident::new("required", Span::call_site())
-                };
-
-                quote!((#clone_ident, #backdate_ident, #default_ident))
-            })
+    pub(crate) fn untracked_options(&self) -> Vec<TokenStream> {
+        self.untracked_fields_iter()
+            .map(|(_, f)| f.options())
             .collect()
     }
 
     pub fn generate_debug_impl(&self) -> bool {
         self.args.no_debug.is_none()
+    }
+
+    fn tracked_fields_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
+        self.fields
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.has_tracked_attr)
+    }
+
+    fn untracked_fields_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
+        self.fields
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| !f.has_tracked_attr)
     }
 }
 
@@ -299,7 +347,7 @@ impl<'s> SalsaField<'s> {
         let set_name = Ident::new(&format!("set_{}", field_name_str), field_name.span());
         let mut result = SalsaField {
             field,
-            has_id_attr: false,
+            has_tracked_attr: false,
             has_ref_attr: false,
             has_default_attr: false,
             has_no_eq_attr: false,
@@ -317,5 +365,27 @@ impl<'s> SalsaField<'s> {
         }
 
         Ok(result)
+    }
+
+    fn options(&self) -> TokenStream {
+        let clone_ident = if self.has_ref_attr {
+            syn::Ident::new("no_clone", Span::call_site())
+        } else {
+            syn::Ident::new("clone", Span::call_site())
+        };
+
+        let backdate_ident = if self.has_no_eq_attr {
+            syn::Ident::new("no_backdate", Span::call_site())
+        } else {
+            syn::Ident::new("backdate", Span::call_site())
+        };
+
+        let default_ident = if self.has_default_attr {
+            syn::Ident::new("default", Span::call_site())
+        } else {
+            syn::Ident::new("required", Span::call_site())
+        };
+
+        quote!((#clone_ident, #backdate_ident, #default_ident))
     }
 }

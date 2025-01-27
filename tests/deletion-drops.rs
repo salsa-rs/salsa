@@ -14,9 +14,9 @@ struct MyInput {
 
 #[salsa::tracked]
 struct MyTracked<'db> {
-    #[id]
     identifier: u32,
 
+    #[tracked]
     #[return_ref]
     field: Bomb,
 }

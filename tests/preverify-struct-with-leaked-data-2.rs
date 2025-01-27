@@ -21,6 +21,7 @@ struct MyInput {
 
 #[salsa::tracked]
 struct MyTracked<'db> {
+    #[tracked]
     counter: usize,
 }
 

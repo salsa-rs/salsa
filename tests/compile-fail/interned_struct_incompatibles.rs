@@ -29,8 +29,8 @@ struct InternedWithLru {
 }
 
 #[salsa::interned]
-struct InternedWithIdField {
-    #[id]
+struct InternedWithTrackedField {
+    #[tracked]
     field: u32,
 }
 
