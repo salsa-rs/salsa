@@ -6,6 +6,7 @@ use std::{
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
+    plumbing::MemoDropSender,
     table::Table,
     zalsa::{IngredientIndex, MemoIngredientIndex},
     zalsa_local::QueryOrigin,
@@ -23,6 +24,7 @@ pub trait Jar: Any {
         &self,
         aux: &dyn JarAux,
         first_index: IngredientIndex,
+        memo_drop_sender: MemoDropSender,
     ) -> Vec<Box<dyn Ingredient>>;
 
     /// If this jar's first ingredient is a salsa struct, return its `TypeId`

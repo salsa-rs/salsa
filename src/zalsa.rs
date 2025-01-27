@@ -205,7 +205,8 @@ impl Zalsa {
             });
             if should_create {
                 let aux = JarAuxImpl(self, &jar_map);
-                let ingredients = jar.create_ingredients(&aux, index);
+                let ingredients =
+                    jar.create_ingredients(&aux, index, self.runtime.memo_drop_sender());
                 for ingredient in ingredients {
                     let expected_index = ingredient.ingredient_index();
 
@@ -275,10 +276,14 @@ impl Zalsa {
             self.ingredients_vec[index.as_usize()].reset_for_new_revision(self.runtime.table_mut());
         }
 
+        // Call `memo_drop_barrier` after having called `reset_for_new_revision` on all ingredients
+        // so that we collect all LRU evictions that happened during the reset.
+        self.runtime.memo_drop_barrier();
+
         new_revision
     }
 
-    /// See [`Runtime::block_on_or_unwind`][]
+    /// See [`Runtime::block_on_or_unwind`]
     pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
         &self,
         db: &dyn Database,

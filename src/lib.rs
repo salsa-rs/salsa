@@ -8,6 +8,7 @@ mod database;
 mod database_impl;
 mod durability;
 mod event;
+mod exclusive;
 mod function;
 mod hash;
 mod id;
@@ -90,6 +91,7 @@ pub mod plumbing {
     pub use crate::salsa_struct::SalsaStructInDb;
     pub use crate::storage::HasStorage;
     pub use crate::storage::Storage;
+    pub use crate::table::memo::MemoDropSender;
     pub use crate::tracked_struct::TrackedStructInDb;
     pub use crate::update::always_update;
     pub use crate::update::helper::Dispatch as UpdateDispatch;

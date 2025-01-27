@@ -4,7 +4,7 @@ use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
 use crate::ingredient::{fmt_index, MaybeChangedAfter};
 use crate::key::InputDependencyIndex;
-use crate::plumbing::{Jar, JarAux};
+use crate::plumbing::{Jar, JarAux, MemoDropSender};
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
 use crate::table::{Slot, Table};
@@ -103,6 +103,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
         &self,
         _aux: &dyn JarAux,
         first_index: IngredientIndex,
+        _: MemoDropSender,
     ) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(IngredientImpl::<C>::new(first_index)) as _]
     }

@@ -12,6 +12,7 @@ rust-version = "1.76"
 arc-swap = "1"
 compact_str = { version = "0.8", optional = true }
 crossbeam-queue = "0.3.11"
+crossbeam-utils = "0.8.21"
 dashmap = { version = "6", features = ["raw-api"] }
 hashlink = "0.9"
 hashbrown = "0.14.3"

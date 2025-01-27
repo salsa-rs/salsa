@@ -8,7 +8,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, JarAux, MaybeChangedAfter},
     key::{DatabaseKeyIndex, InputDependencyIndex},
-    plumbing::ZalsaLocal,
+    plumbing::{MemoDropSender, ZalsaLocal},
     revision::OptionalAtomicRevision,
     runtime::StampedValue,
     salsa_struct::SalsaStructInDb,
@@ -111,6 +111,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
         &self,
         _aux: &dyn JarAux,
         struct_index: crate::zalsa::IngredientIndex,
+        _: MemoDropSender,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient = <IngredientImpl<C>>::new(struct_index);
 
