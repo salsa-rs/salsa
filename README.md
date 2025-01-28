@@ -46,7 +46,14 @@ To learn more about Salsa, try one of the following:
 
 ## Getting in touch
 
-The bulk of the discussion happens in the [issues](https://github.com/salsa-rs/salsa/issues) 
-and [pull requests](https://github.com/salsa-rs/salsa/pulls), 
+The bulk of the discussion happens in the [issues](https://github.com/salsa-rs/salsa/issues)
+and [pull requests](https://github.com/salsa-rs/salsa/pulls),
 but we have a [zulip chat](https://salsa.zulipchat.com/) as well.
 
+## Contributing
+
+To create a release and publish to crates.io, follow the steps:
+
+1. Update the `version` field in Cargo.toml.
+2. Create a Git tag. The tag name must follow the format like "v*.*.*".
+3. Push. GitHub Actions will publish the crate to crates.io automatically.
