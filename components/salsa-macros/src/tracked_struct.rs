@@ -95,8 +95,11 @@ impl Macro {
         let untracked_getter_ids = salsa_struct.untracked_getter_ids();
 
         let field_indices = salsa_struct.field_indices();
-        let tracked_indices = salsa_struct.tracked_indices();
-        let untracked_indices = salsa_struct.untracked_indices();
+
+        let absolute_tracked_indices = salsa_struct.tracked_field_indices();
+        let relative_tracked_indices = (0..absolute_tracked_indices.len()).collect::<Vec<_>>();
+
+        let absolute_untracked_indices = salsa_struct.untracked_field_indices();
 
         let field_options = salsa_struct.field_options();
         let tracked_options = salsa_struct.tracked_options();
@@ -126,19 +129,28 @@ impl Macro {
                     Struct: #struct_ident,
                     db_lt: #db_lt,
                     new_fn: #new_fn,
+
                     field_ids: [#(#field_ids),*],
                     tracked_ids: [#(#tracked_ids),*],
+
                     tracked_getters: [#(#tracked_vis #tracked_getter_ids),*],
                     untracked_getters: [#(#untracked_vis #untracked_getter_ids),*],
+
                     field_tys: [#(#field_tys),*],
                     tracked_tys: [#(#tracked_tys),*],
                     untracked_tys: [#(#untracked_tys),*],
+
                     field_indices: [#(#field_indices),*],
-                    tracked_indices: [#(#tracked_indices),*],
-                    untracked_indices: [#(#untracked_indices),*],
+
+                    absolute_tracked_indices: [#(#absolute_tracked_indices),*],
+                    relative_tracked_indices: [#(#relative_tracked_indices),*],
+
+                    absolute_untracked_indices: [#(#absolute_untracked_indices),*],
+
                     field_options: [#(#field_options),*],
                     tracked_options: [#(#tracked_options),*],
                     untracked_options: [#(#untracked_options),*],
+
                     num_fields: #num_fields,
                     generate_debug_impl: #generate_debug_impl,
                     unused_names: [

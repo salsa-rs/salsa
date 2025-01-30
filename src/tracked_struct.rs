@@ -24,9 +24,14 @@ pub mod tracked_field;
 /// Implemented by the `#[salsa::tracked]` macro when applied
 /// to a struct.
 pub trait Configuration: Sized + 'static {
+    /// The debug name of the tracked struct.
     const DEBUG_NAME: &'static str;
+
+    /// The debug names of any fields.
     const FIELD_DEBUG_NAMES: &'static [&'static str];
-    const TRACKED_FIELD_DEBUG_NAMES: &'static [&'static str];
+
+    /// The absolute indices of any tracked fields.
+    const TRACKED_FIELD_INDICES: &'static [usize];
 
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields<'db>: Send + Sync;
@@ -108,17 +113,17 @@ impl<C: Configuration> Jar for JarImpl<C> {
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient = <IngredientImpl<C>>::new(struct_index);
 
-        // If there are no tracked fields, we can skip creating any ingredients.
-        if C::TRACKED_FIELD_DEBUG_NAMES.is_empty() {
-            return vec![Box::new(struct_ingredient)];
-        }
+        let tracked_field_ingredients = C::TRACKED_FIELD_INDICES.iter().enumerate().map(
+            |(relative_tracked_index, &field_index)| {
+                Box::new(<FieldIngredientImpl<C>>::new(
+                    field_index,
+                    struct_index.successor(relative_tracked_index),
+                )) as _
+            },
+        );
 
         std::iter::once(Box::new(struct_ingredient) as _)
-            // Otherwise, we have to create ingredients for untracked fields as well, in
-            // order to keep field indices relative to the entire struct.
-            .chain((0..C::FIELD_DEBUG_NAMES.len()).map(|field_index| {
-                Box::new(<FieldIngredientImpl<C>>::new(struct_index, field_index)) as _
-            }))
+            .chain(tracked_field_ingredients)
             .collect()
     }
 
@@ -635,15 +640,21 @@ where
     ///
     /// Note that this function returns the entire tuple of value fields.
     /// The caller is responible for selecting the appropriate element.
+    ///
+    /// This function takes two indices:
+    /// - `field_index` is the absolute index of the field on the tracked struct.
+    /// - `relative_tracked_index` is the index of the field relative only to other
+    ///   tracked fields.
     pub fn tracked_field<'db>(
         &'db self,
         db: &'db dyn crate::Database,
         s: C::Struct<'db>,
         field_index: usize,
+        relative_tracked_index: usize,
     ) -> &'db C::Fields<'db> {
         let (zalsa, zalsa_local) = db.zalsas();
         let id = C::deref_struct(s);
-        let field_ingredient_index = self.ingredient_index.successor(field_index);
+        let field_ingredient_index = self.ingredient_index.successor(relative_tracked_index);
         let data = Self::data(zalsa.table(), id);
 
         data.read_lock(zalsa.current_revision());
@@ -668,7 +679,6 @@ where
         &'db self,
         db: &'db dyn crate::Database,
         s: C::Struct<'db>,
-        _field_index: usize,
     ) -> &'db C::Fields<'db> {
         let (zalsa, _) = db.zalsas();
         let id = C::deref_struct(s);

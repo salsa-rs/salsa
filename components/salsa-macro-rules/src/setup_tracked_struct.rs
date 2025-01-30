@@ -42,10 +42,13 @@ macro_rules! setup_tracked_struct {
         field_indices: [$($field_index:tt),*],
 
         // Absolute indices of any tracked fields, relative to all other fields of this struct.
-        tracked_indices: [$($tracked_index:tt),*],
+        absolute_tracked_indices: [$($absolute_tracked_index:tt),*],
+
+        // Indices of any tracked fields, relative to only tracked fields on this struct.
+        relative_tracked_indices: [$($relative_tracked_index:tt),*],
 
         // Absolute indices of any untracked fields.
-        untracked_indices: [$($untracked_index:tt),*],
+        absolute_untracked_indices: [$($absolute_untracked_index:tt),*],
 
         // A set of "field options" for each field.
         //
@@ -107,8 +110,8 @@ macro_rules! setup_tracked_struct {
                     $(stringify!($field_id),)*
                 ];
 
-                const TRACKED_FIELD_DEBUG_NAMES: &'static [&'static str] = &[
-                    $(stringify!($tracked_id),)*
+                const TRACKED_FIELD_INDICES: &'static [usize] = &[
+                    $($absolute_tracked_index,)*
                 ];
 
                 type Fields<$db_lt> = ($($field_ty,)*);
@@ -126,7 +129,7 @@ macro_rules! setup_tracked_struct {
                 }
 
                 fn untracked_fields(fields: &Self::Fields<'_>) -> impl std::hash::Hash {
-                    ( $( &fields.$untracked_index ),* )
+                    ( $( &fields.$absolute_untracked_index ),* )
                 }
 
                 fn new_revisions(current_revision: $Revision) -> Self::Revisions {
@@ -233,11 +236,11 @@ macro_rules! setup_tracked_struct {
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let db = db.as_dyn_database();
-                        let fields = $Configuration::ingredient(db).tracked_field(db, self, $tracked_index);
+                        let fields = $Configuration::ingredient(db).tracked_field(db, self, $absolute_tracked_index, $relative_tracked_index);
                         $crate::maybe_clone!(
                             $tracked_option,
                             $tracked_ty,
-                            &fields.$tracked_index,
+                            &fields.$absolute_tracked_index,
                         )
                     }
                 )*
@@ -249,11 +252,11 @@ macro_rules! setup_tracked_struct {
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let db = db.as_dyn_database();
-                        let fields = $Configuration::ingredient(db).untracked_field(db, self, $untracked_index);
+                        let fields = $Configuration::ingredient(db).untracked_field(db, self);
                         $crate::maybe_clone!(
                             $untracked_option,
                             $untracked_ty,
-                            &fields.$untracked_index,
+                            &fields.$absolute_untracked_index,
                         )
                     }
                 )*

@@ -211,13 +211,13 @@ where
             .collect()
     }
 
-    pub(crate) fn tracked_indices(&self) -> Vec<Literal> {
+    pub(crate) fn tracked_field_indices(&self) -> Vec<Literal> {
         self.tracked_fields_iter()
             .map(|(index, _)| Literal::usize_unsuffixed(index))
             .collect()
     }
 
-    pub(crate) fn untracked_indices(&self) -> Vec<Literal> {
+    pub(crate) fn untracked_field_indices(&self) -> Vec<Literal> {
         self.untracked_fields_iter()
             .map(|(index, _)| Literal::usize_unsuffixed(index))
             .collect()

@@ -23,7 +23,10 @@ where
 {
     /// Index of this ingredient in the database (used to construct database-ids, etc).
     ingredient_index: IngredientIndex,
+
+    /// The absolute index of this field on the tracked struct.
     field_index: usize,
+
     phantom: PhantomData<fn() -> Value<C>>,
 }
 
@@ -31,10 +34,10 @@ impl<C> FieldIngredientImpl<C>
 where
     C: Configuration,
 {
-    pub(super) fn new(struct_index: IngredientIndex, field_index: usize) -> Self {
+    pub(super) fn new(field_index: usize, ingredient_index: IngredientIndex) -> Self {
         Self {
-            ingredient_index: struct_index.successor(field_index),
             field_index,
+            ingredient_index,
             phantom: PhantomData,
         }
     }
