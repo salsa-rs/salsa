@@ -337,10 +337,8 @@ impl<'db> Parser<'_, 'db> {
 
             if s.is_empty() {
                 None
-            } else if let Ok(n) = str::parse(&s) {
-                Some(n)
             } else {
-                None
+                str::parse(&s).ok()
             }
         })
     }
