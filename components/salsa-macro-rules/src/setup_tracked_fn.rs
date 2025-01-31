@@ -50,7 +50,8 @@ macro_rules! setup_tracked_fn {
         needs_interner: $needs_interner:tt,
 
         // LRU capacity (a literal, maybe 0)
-        lru: $lru:tt,
+        lru_capacity: $lru_capacity:tt,
+        has_lru: $has_lru:tt,
 
         // True if we `return_ref` flag was given to the function
         return_ref: $return_ref:tt,
@@ -156,6 +157,14 @@ macro_rules! setup_tracked_fn {
 
                 type Output<$db_lt> = $output_ty;
 
+                type Lru = $zalsa::macro_if! {
+                    if $has_lru {
+                        $zalsa::lru::Lru
+                    } else {
+                        $zalsa::lru::NoLru
+                    }
+                };
+
                 const CYCLE_STRATEGY: $zalsa::CycleRecoveryStrategy = $zalsa::CycleRecoveryStrategy::$cycle_recovery_strategy;
 
                 fn should_backdate_value(
@@ -218,7 +227,12 @@ macro_rules! setup_tracked_fn {
                         first_index,
                         aux,
                     );
-                    fn_ingredient.set_capacity($lru);
+                    $zalsa::macro_if! {
+                        if $has_lru {
+                            fn_ingredient.set_capacity($lru_capacity);
+                        } else {
+                        }
+                    }
                     $zalsa::macro_if! {
                         if $needs_interner {
                             vec![
@@ -273,12 +287,12 @@ macro_rules! setup_tracked_fn {
                     }
                 }
 
-                $zalsa::macro_if! { if0 $lru { } else {
+                $zalsa::macro_if! { if $has_lru {
                     #[allow(dead_code)]
                     fn set_lru_capacity(db: &dyn $Db, value: usize) {
                         $Configuration::fn_ingredient(db).set_capacity(value);
                     }
-                } }
+                } else {} }
             }
 
             $zalsa::attach($db, || {

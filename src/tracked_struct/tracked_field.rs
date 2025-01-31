@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use crate::{
     ingredient::{Ingredient, MaybeChangedAfter},
+    table::memo::MemoTable,
     zalsa::IngredientIndex,
     Database, Id,
 };
@@ -94,7 +95,7 @@ where
         false
     }
 
-    fn reset_for_new_revision(&mut self) {
+    fn reset_for_new_revision<'a>(&mut self, _: &'a dyn Fn(crate::Id) -> &'a MemoTable) {
         panic!("tracked field ingredients do not require reset")
     }
 

@@ -6,6 +6,9 @@ use std::sync::Arc;
 use crossbeam::atomic::AtomicCell;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::function::lru::LruChoice;
+use crate::function::lru::NoLru;
+use crate::table::memo::MemoTable;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
     key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event, EventKind, Id,
@@ -15,7 +18,8 @@ use crate::{
 use super::{Configuration, IngredientImpl};
 
 #[allow(type_alias_bounds)]
-pub(super) type ArcMemo<'lt, C: Configuration> = Arc<Memo<<C as Configuration>::Output<'lt>>>;
+pub(super) type ArcMemo<'lt, C: Configuration> =
+    Arc<Memo<C::Lru, <C as Configuration>::Output<'lt>>>;
 
 impl<C: Configuration> IngredientImpl<C> {
     /// Memos have to be stored internally using `'static` as the database lifetime.
@@ -61,11 +65,10 @@ impl<C: Configuration> IngredientImpl<C> {
     /// Evicts the existing memo for the given key, replacing it
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
-    pub(super) fn evict_value_from_memo_for<'db>(&'db self, zalsa: &'db Zalsa, id: Id) {
-        zalsa.memo_table_for(id).map_memo::<Memo<C::Output<'_>>>(
-            self.memo_ingredient_index,
-            |memo| {
-                match memo.revisions.origin {
+    pub(super) fn evict_value_from_memo_for(&self, table: &MemoTable) {
+        C::Lru::if_enabled(|| {
+            table.map_memo::<MemoConfigured<'_, C>>(self.memo_ingredient_index, |memo| {
+                match &memo.revisions.origin {
                     QueryOrigin::Assigned(_)
                     | QueryOrigin::DerivedUntracked(_)
                     | QueryOrigin::BaseInput => {
@@ -87,7 +90,7 @@ impl<C: Configuration> IngredientImpl<C> {
                         } = &memo.revisions;
                         // Re-assemble the memo but with the value set to `None`
                         Arc::new(Memo::new(
-                            None,
+                            C::Lru::evicted(),
                             memo.verified_at.load(),
                             QueryRevisions {
                                 changed_at,
@@ -100,15 +103,18 @@ impl<C: Configuration> IngredientImpl<C> {
                         ))
                     }
                 }
-            },
-        );
+            });
+        })
     }
 }
 
-#[derive(Debug)]
-pub(super) struct Memo<V> {
+#[allow(type_alias_bounds)]
+pub(super) type MemoConfigured<'db, C: Configuration<Lru: LruChoice>> =
+    Memo<C::Lru, C::Output<'db>>;
+
+pub(super) struct Memo<L: LruChoice, V: Send + Sync> {
     /// The result of the query, if we decide to memoize it.
-    pub(super) value: Option<V>,
+    pub(super) value: L::LruCtor<V>,
 
     /// Last revision when this memo was verified; this begins
     /// as the current revision.
@@ -118,13 +124,27 @@ pub(super) struct Memo<V> {
     pub(super) revisions: QueryRevisions,
 }
 
+impl<L: LruChoice<LruCtor<V>: Send + Sync + Debug>, V: Send + Sync + Debug> Debug for Memo<L, V> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Memo")
+            .field("value", &self.value)
+            .field("verified_at", &self.verified_at)
+            .field("revisions", &self.revisions)
+            .finish()
+    }
+}
+
 // Memo's are stored a lot, make sure their size is doesn't randomly increase.
 // #[cfg(test)]
-const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
+const _: [(); std::mem::size_of::<Memo<NoLru, std::num::NonZeroUsize>>()] =
     [(); std::mem::size_of::<[usize; 12]>()];
 
-impl<V> Memo<V> {
-    pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
+impl<L: LruChoice, V: Send + Sync> Memo<L, V> {
+    pub(super) fn new(
+        value: L::LruCtor<V>,
+        revision_now: Revision,
+        revisions: QueryRevisions,
+    ) -> Self {
         Memo {
             value,
             verified_at: AtomicCell::new(revision_now),
@@ -174,16 +194,16 @@ impl<V> Memo<V> {
     }
 
     pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + '_ {
-        struct TracingDebug<'a, T> {
-            memo: &'a Memo<T>,
+        struct TracingDebug<'a, L: LruChoice, V: Send + Sync> {
+            memo: &'a Memo<L, V>,
         }
 
-        impl<T> std::fmt::Debug for TracingDebug<'_, T> {
+        impl<L: LruChoice, V: Send + Sync> std::fmt::Debug for TracingDebug<'_, L, V> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 f.debug_struct("Memo")
                     .field(
                         "value",
-                        if self.memo.value.is_some() {
+                        if L::is_evicted(&self.memo.value) {
                             &"Some(<value>)"
                         } else {
                             &"None"
@@ -199,7 +219,11 @@ impl<V> Memo<V> {
     }
 }
 
-impl<V: Debug + Send + Sync + Any> crate::table::memo::Memo for Memo<V> {
+impl<L, V> crate::table::memo::Memo for Memo<L, V>
+where
+    L: LruChoice<LruCtor<V>: Send + Sync + Any> + 'static,
+    V: Send + Sync + Any,
+{
     fn origin(&self) -> &QueryOrigin {
         &self.revisions.origin
     }

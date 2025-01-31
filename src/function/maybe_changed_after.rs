@@ -1,5 +1,6 @@
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
+    function::memo::MemoConfigured,
     ingredient::MaybeChangedAfter,
     key::DatabaseKeyIndex,
     zalsa::{Zalsa, ZalsaDatabase},
@@ -7,7 +8,7 @@ use crate::{
     AsDynDatabase as _, Id, Revision,
 };
 
-use super::{memo::Memo, Configuration, IngredientImpl};
+use super::{Configuration, IngredientImpl, LruChoice};
 
 impl<C> IngredientImpl<C>
 where
@@ -91,7 +92,7 @@ where
         // It is possible the result will be equal to the old value and hence
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
-        if old_memo.value.is_some() {
+        if !C::Lru::is_evicted(&old_memo.value) {
             let memo = self.execute(db, active_query, Some(old_memo));
             let changed_at = memo.revisions.changed_at;
 
@@ -117,7 +118,7 @@ where
         db: &C::DbView,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Output<'_>>,
+        memo: &MemoConfigured<'_, C>,
     ) -> bool {
         let verified_at = memo.verified_at.load();
         let revision_now = zalsa.current_revision();
@@ -159,7 +160,7 @@ where
     pub(super) fn deep_verify_memo(
         &self,
         db: &C::DbView,
-        old_memo: &Memo<C::Output<'_>>,
+        old_memo: &MemoConfigured<'_, C>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> bool {
         let zalsa = db.zalsa();

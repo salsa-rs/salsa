@@ -1,6 +1,5 @@
 use std::{
     any::{Any, TypeId},
-    fmt::Debug,
     sync::Arc,
 };
 
@@ -13,11 +12,11 @@ use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
 /// Every tracked function must take a salsa struct as its first argument
 /// and memo tables are attached to those salsa structs as auxiliary data.
 #[derive(Default)]
-pub(crate) struct MemoTable {
+pub struct MemoTable {
     memos: RwLock<Vec<MemoEntry>>,
 }
 
-pub(crate) trait Memo: Any + Send + Sync + Debug {
+pub(crate) trait Memo: Any + Send + Sync {
     /// Returns the `origin` of this memo
     fn origin(&self) -> &QueryOrigin;
 }

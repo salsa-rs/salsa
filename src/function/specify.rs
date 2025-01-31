@@ -2,6 +2,7 @@ use crossbeam::atomic::AtomicCell;
 
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
+    function::LruChoice,
     tracked_struct::TrackedStructInDb,
     zalsa::ZalsaDatabase,
     zalsa_local::{QueryOrigin, QueryRevisions},
@@ -80,7 +81,7 @@ where
         }
 
         let memo = Memo {
-            value: Some(value),
+            value: C::Lru::make_value(value),
             verified_at: AtomicCell::new(revision),
             revisions,
         };
