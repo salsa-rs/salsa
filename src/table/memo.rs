@@ -1,10 +1,12 @@
 use std::{
     any::{Any, TypeId},
     fmt::Debug,
+    mem::ManuallyDrop,
     sync::Arc,
 };
 
 use arc_swap::ArcSwap;
+use crossbeam::sync::Parker;
 use parking_lot::RwLock;
 
 use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
@@ -22,6 +24,71 @@ pub(crate) trait Memo: Any + Send + Sync + Debug {
     fn origin(&self) -> &QueryOrigin;
 }
 
+/// An untyped memo that can only be dropped.
+pub struct MemoDrop(ManuallyDrop<Arc<DummyMemo>>, unsafe fn(Arc<DummyMemo>));
+
+impl MemoDrop {
+    pub fn new<M: Memo>(memo: Arc<M>) -> Self {
+        Self(
+            ManuallyDrop::new(to_dummy::<M>(memo)),
+            // SAFETY: `M` is the same as used in `to_dummy`
+            |memo| unsafe {
+                from_dummy::<M>(memo);
+            },
+        )
+    }
+}
+
+impl Drop for MemoDrop {
+    fn drop(&mut self) {
+        // SAFETY: We only construct this type with a valid drop function pointer
+        unsafe { self.1(ManuallyDrop::take(&mut self.0)) };
+    }
+}
+
+pub fn spawn_memo_drop_thread(receiver: MemoDropReceiver) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(|| {
+        receiver.0.into_iter().for_each(|e| match e {
+            MemoDropAction::Drop(memo_drop) => drop(memo_drop),
+            // We were instructed to park the thread, this means we have dropped everything for the
+            // last revision.
+            MemoDropAction::Park(parker) => parker.park(),
+        });
+    })
+}
+
+pub fn memo_drop_channel() -> (MemoDropSender, MemoDropReceiver) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    (MemoDropSender(tx), MemoDropReceiver(rx))
+}
+
+#[derive(Clone)]
+pub struct MemoDropSender(std::sync::mpsc::Sender<MemoDropAction>);
+
+impl MemoDropSender {
+    /// Put the memo into the drop queue.
+    pub(crate) fn delay<M: Memo>(&self, memo: Arc<M>) {
+        self.0
+            .send(MemoDropAction::Drop(MemoDrop::new(memo)))
+            .unwrap();
+    }
+
+    /// Emit a park barrier for the receiver side instructing it to not drop any memos following the
+    /// barrier until the given parker is unparked.
+    pub(crate) fn park(&self, parker: Parker) {
+        self.0.send(MemoDropAction::Park(parker)).unwrap();
+    }
+}
+
+pub struct MemoDropReceiver(std::sync::mpsc::Receiver<MemoDropAction>);
+
+/// A drop action to be performed by the owner of the `MemoDropReceiver`.
+enum MemoDropAction {
+    /// Drop the contained memo.
+    Drop(MemoDrop),
+    /// Park the current thread on the given parker.
+    Park(Parker),
+}
 /// Wraps the data stored for a memoized entry.
 /// This struct has a customized Drop that will
 /// ensure that its `data` field is properly freed.
@@ -62,24 +129,11 @@ struct MemoEntryData {
 struct DummyMemo {}
 
 impl MemoTable {
-    fn to_dummy<M: Memo>(memo: Arc<M>) -> Arc<DummyMemo> {
-        unsafe { std::mem::transmute::<Arc<M>, Arc<DummyMemo>>(memo) }
-    }
-
-    unsafe fn from_dummy<M: Memo>(memo: Arc<DummyMemo>) -> Arc<M> {
-        unsafe { std::mem::transmute::<Arc<DummyMemo>, Arc<M>>(memo) }
-    }
-
-    fn to_dyn_fn<M: Memo>() -> fn(Arc<DummyMemo>) -> Arc<dyn Memo> {
-        let f: fn(Arc<M>) -> Arc<dyn Memo> = |x| x;
-        unsafe {
-            std::mem::transmute::<fn(Arc<M>) -> Arc<dyn Memo>, fn(Arc<DummyMemo>) -> Arc<dyn Memo>>(
-                f,
-            )
-        }
-    }
-
-    pub(crate) fn insert<M: Memo>(
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not drop the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the `Arc` contents.
+    pub(crate) unsafe fn insert<M: Memo>(
         &self,
         memo_ingredient_index: MemoIngredientIndex,
         memo: Arc<M>,
@@ -100,8 +154,8 @@ impl MemoTable {
                 TypeId::of::<M>(),
                 "inconsistent type-id for `{memo_ingredient_index:?}`"
             );
-            let old_memo = arc_swap.swap(Self::to_dummy(memo));
-            return unsafe { Some(Self::from_dummy(old_memo)) };
+            let old_memo = arc_swap.swap(to_dummy(memo));
+            return unsafe { Some(from_dummy(old_memo)) };
         }
 
         // Otherwise we need the write lock.
@@ -122,8 +176,8 @@ impl MemoTable {
             &mut memos[memo_ingredient_index].data,
             Some(MemoEntryData {
                 type_id: TypeId::of::<M>(),
-                to_dyn_fn: Self::to_dyn_fn::<M>(),
-                arc_swap: ArcSwap::new(Self::to_dummy(memo)),
+                to_dyn_fn: to_dyn_fn::<M>(),
+                arc_swap: ArcSwap::new(to_dummy(memo)),
             }),
         );
         old_entry.map(
@@ -131,7 +185,7 @@ impl MemoTable {
                  type_id: _,
                  to_dyn_fn: _,
                  arc_swap,
-             }| unsafe { Self::from_dummy(arc_swap.into_inner()) },
+             }| unsafe { from_dummy(arc_swap.into_inner()) },
         )
     }
 
@@ -160,19 +214,17 @@ impl MemoTable {
         );
 
         // SAFETY: type_id check asserted above
-        unsafe { Some(Self::from_dummy(arc_swap.load_full())) }
+        unsafe { Some(from_dummy(arc_swap.load_full())) }
     }
 
     /// Calls `f` on the memo at `memo_ingredient_index` and replaces the memo with the result of `f`.
     /// If the memo is not present, `f` is not called.
     pub(crate) fn map_memo<M: Memo>(
-        &self,
+        &mut self,
         memo_ingredient_index: MemoIngredientIndex,
         f: impl FnOnce(Arc<M>) -> Arc<M>,
-    ) {
-        // If the memo slot is already occupied, it must already have the
-        // right type info etc, and we only need the read-lock.
-        let memos = self.memos.read();
+    ) -> Option<Arc<M>> {
+        let memos = self.memos.get_mut();
         let Some(MemoEntry {
             data:
                 Some(MemoEntryData {
@@ -182,16 +234,19 @@ impl MemoTable {
                 }),
         }) = memos.get(memo_ingredient_index.as_usize())
         else {
-            return;
+            return None;
         };
         assert_eq!(
             *type_id,
             TypeId::of::<M>(),
             "inconsistent type-id for `{memo_ingredient_index:?}`"
         );
+        // arc-swap does not expose accessing the interior mutably at all unfortunately
+        // https://github.com/vorner/arc-swap/issues/131
+        // so we can only hand out the `Arc` itself
         // SAFETY: type_id check asserted above
-        let memo = f(unsafe { Self::from_dummy(arc_swap.load_full()) });
-        unsafe { Self::from_dummy::<M>(arc_swap.swap(Self::to_dummy(memo))) };
+        let memo = f(unsafe { from_dummy(arc_swap.load_full()) });
+        Some(unsafe { from_dummy::<M>(arc_swap.swap(to_dummy(memo))) })
     }
 
     pub(crate) fn into_memos(self) -> impl Iterator<Item = (MemoIngredientIndex, Arc<dyn Memo>)> {
@@ -242,4 +297,19 @@ impl std::fmt::Debug for MemoTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MemoTable").finish()
     }
+}
+
+fn to_dyn_fn<M: Memo>() -> fn(Arc<DummyMemo>) -> Arc<dyn Memo> {
+    let f: fn(Arc<M>) -> Arc<dyn Memo> = |x| x as Arc<dyn Memo>;
+    unsafe {
+        std::mem::transmute::<fn(Arc<M>) -> Arc<dyn Memo>, fn(Arc<DummyMemo>) -> Arc<dyn Memo>>(f)
+    }
+}
+
+fn to_dummy<M: Memo>(memo: Arc<M>) -> Arc<DummyMemo> {
+    unsafe { std::mem::transmute::<Arc<M>, Arc<DummyMemo>>(memo) }
+}
+
+unsafe fn from_dummy<M: Memo>(memo: Arc<DummyMemo>) -> Arc<M> {
+    unsafe { std::mem::transmute::<Arc<DummyMemo>, Arc<M>>(memo) }
 }

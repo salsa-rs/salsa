@@ -12,7 +12,8 @@ use accumulated::AnyAccumulated;
 use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, MaybeChangedAfter},
-    plumbing::JarAux,
+    plumbing::{JarAux, MemoDropSender},
+    table::Table,
     zalsa::IngredientIndex,
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id, Revision,
@@ -49,6 +50,7 @@ impl<A: Accumulator> Jar for JarImpl<A> {
         &self,
         _aux: &dyn JarAux,
         first_index: IngredientIndex,
+        _: MemoDropSender,
     ) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(<IngredientImpl<A>>::new(first_index))]
     }
@@ -137,7 +139,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         false
     }
 
-    fn reset_for_new_revision(&mut self) {
+    fn reset_for_new_revision(&mut self, _: &mut Table) {
         panic!("unexpected reset on accumulator")
     }
 

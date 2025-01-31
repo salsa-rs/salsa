@@ -8,7 +8,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, JarAux, MaybeChangedAfter},
     key::{DatabaseKeyIndex, InputDependencyIndex},
-    plumbing::ZalsaLocal,
+    plumbing::{MemoDropSender, ZalsaLocal},
     runtime::StampedValue,
     salsa_struct::SalsaStructInDb,
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
@@ -104,6 +104,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
         &self,
         _aux: &dyn JarAux,
         struct_index: crate::zalsa::IngredientIndex,
+        _: MemoDropSender,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient = <IngredientImpl<C>>::new(struct_index);
 
@@ -713,7 +714,9 @@ where
         false
     }
 
-    fn reset_for_new_revision(&mut self) {}
+    fn reset_for_new_revision(&mut self, _: &mut Table) {
+        panic!("tracked struct ingredients do not require reset")
+    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>
@@ -774,6 +777,10 @@ where
         // when deleting a tracked struct.
         self.read_lock(current_revision);
         &self.memos
+    }
+
+    fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
+        &mut self.memos
     }
 
     unsafe fn syncs(&self, current_revision: Revision) -> &crate::table::sync::SyncTable {
