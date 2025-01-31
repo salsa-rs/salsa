@@ -84,6 +84,7 @@ where
     C: Configuration,
 {
     /// Fields of this interned struct.
+    #[cfg(feature = "salsa_unstable")]
     pub fn fields(&self) -> &C::Fields<'static> {
         &self.fields
     }

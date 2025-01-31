@@ -735,6 +735,7 @@ where
     ///
     /// They can change across revisions, but they do not change within
     /// a particular revision.
+    #[cfg(feature = "salsa_unstable")]
     pub fn fields(&self) -> &C::Fields<'static> {
         &self.fields
     }
