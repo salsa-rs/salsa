@@ -34,7 +34,7 @@ struct MyTracked<'db> {
 
 #[salsa::tracked]
 fn intermediate_result(db: &dyn LogDatabase, input: MyInput) -> MyTracked<'_> {
-    MyTracked::new(db, (input.field(db) + 1) / 2, input.field(db) / 2)
+    MyTracked::new(db, input.field(db).div_ceil(2), input.field(db) / 2)
 }
 
 #[test]
