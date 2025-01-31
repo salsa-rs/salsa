@@ -67,7 +67,7 @@ macro_rules! setup_input_struct {
             use salsa::plumbing as $zalsa;
             use $zalsa::input as $zalsa_struct;
 
-            struct $Configuration;
+            type $Configuration = $Struct;
 
             impl $zalsa_struct::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($Struct);

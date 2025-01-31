@@ -731,6 +731,15 @@ impl<C> Value<C>
 where
     C: Configuration,
 {
+    /// Fields of this tracked struct.
+    ///
+    /// They can change across revisions, but they do not change within
+    /// a particular revision.
+    #[cfg(feature = "salsa_unstable")]
+    pub fn fields(&self) -> &C::Fields<'static> {
+        &self.fields
+    }
+
     fn take_memo_table(&mut self) -> MemoTable {
         // This fn is only called after `updated_at` has been set to `None`;
         // this ensures that there is no concurrent access
