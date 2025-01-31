@@ -70,18 +70,18 @@ where
         let database_key_index = self.database_key_index(id);
 
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let _claim_guard = zalsa.sync_table_for(id).claim(
+        let _claim_guard = self.sync_table.try_claim(
             db.as_dyn_database(),
             zalsa_local,
+            zalsa,
             database_key_index,
-            self.memo_ingredient_index,
+            id,
         )?;
 
         // Push the query on the stack.
         let active_query = zalsa_local.push_query(database_key_index);
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
-        let zalsa = db.zalsa();
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id);
         if let Some(old_memo) = &opt_old_memo {
             if old_memo.value.is_some() && self.deep_verify_memo(db, old_memo, &active_query) {
