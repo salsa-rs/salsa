@@ -6,6 +6,7 @@ use std::{
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
+    function::VerifyResult,
     zalsa::{IngredientIndex, MemoIngredientIndex},
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id,
@@ -61,7 +62,13 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: &'db dyn Database,
         input: Id,
         revision: Revision,
-    ) -> MaybeChangedAfter;
+    ) -> VerifyResult;
+
+    /// Is the value for `input` in this ingredient marked as possibly a provisional cycle value?
+    fn is_verified_final<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool;
+
+    /// Invoked when the current thread needs to wait for a result for the given `key_index`.
+    fn wait_for(&self, db: &dyn Database, key_index: Id) -> bool;
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
     fn origin(&self, db: &dyn Database, key_index: Id) -> Option<QueryOrigin>;
@@ -173,25 +180,5 @@ pub(crate) fn fmt_index(
         write!(fmt, "{debug_name}({i:?})")
     } else {
         write!(fmt, "{debug_name}()")
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum MaybeChangedAfter {
-    /// The query result hasn't changed.
-    ///
-    /// The inner value tracks whether the memo or any of its dependencies have an accumulated value.
-    No(InputAccumulatedValues),
-
-    /// The query's result has changed since the last revision or the query isn't cached yet.
-    Yes,
-}
-
-impl From<bool> for MaybeChangedAfter {
-    fn from(value: bool) -> Self {
-        match value {
-            true => MaybeChangedAfter::Yes,
-            false => MaybeChangedAfter::No(InputAccumulatedValues::Empty),
-        }
     }
 }

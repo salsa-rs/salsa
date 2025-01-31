@@ -1,6 +1,7 @@
 use std::ops::Not;
 
 use crossbeam::atomic::AtomicCell;
+use rustc_hash::FxHashSet;
 
 use super::zalsa_local::{QueryEdges, QueryOrigin, QueryRevisions};
 use crate::key::OutputDependencyIndex;
@@ -12,7 +13,7 @@ use crate::{
     hash::FxIndexSet,
     key::{DatabaseKeyIndex, InputDependencyIndex},
     tracked_struct::Disambiguator,
-    Cycle, Revision,
+    Revision,
 };
 
 #[derive(Debug)]
@@ -38,9 +39,6 @@ pub(crate) struct ActiveQuery {
     /// True if there was an untracked read.
     untracked_read: bool,
 
-    /// Stores the entire cycle, if one is found and this query is part of it.
-    pub(crate) cycle: Option<Cycle>,
-
     /// When new tracked structs are created, their data is hashed, and the resulting
     /// hash is added to this map. If it is not present, then the disambiguator is 0.
     /// Otherwise it is 1 more than the current value (which is incremented).
@@ -57,10 +55,13 @@ pub(crate) struct ActiveQuery {
     /// Stores the values accumulated to the given ingredient.
     /// The type of accumulated value is erased but known to the ingredient.
     pub(crate) accumulated: AccumulatedMap,
-
+    ///
     /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
     /// has any accumulated values.
     pub(super) accumulated_inputs: InputAccumulatedValues,
+
+    /// Provisional cycle results that this query depends on.
+    pub(crate) cycle_heads: FxHashSet<DatabaseKeyIndex>,
 }
 
 impl ActiveQuery {
@@ -71,11 +72,11 @@ impl ActiveQuery {
             changed_at: Revision::start(),
             input_outputs: FxIndexSet::default(),
             untracked_read: false,
-            cycle: None,
             disambiguator_map: Default::default(),
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
+            cycle_heads: Default::default(),
         }
     }
 
@@ -85,11 +86,15 @@ impl ActiveQuery {
         durability: Durability,
         revision: Revision,
         accumulated: InputAccumulatedValues,
+        cycle_heads: Option<&FxHashSet<DatabaseKeyIndex>>,
     ) {
         self.input_outputs.insert(QueryEdge::Input(input));
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(revision);
         self.accumulated_inputs |= accumulated;
+        if let Some(cycle_heads) = cycle_heads {
+            self.cycle_heads.extend(cycle_heads);
+        }
     }
 
     pub(super) fn add_untracked_read(&mut self, changed_at: Revision) {
@@ -133,34 +138,8 @@ impl ActiveQuery {
             tracked_struct_ids: self.tracked_struct_ids,
             accumulated_inputs: AtomicCell::new(self.accumulated_inputs),
             accumulated,
+            cycle_heads: self.cycle_heads,
         }
-    }
-
-    /// Adds any dependencies from `other` into `self`.
-    /// Used during cycle recovery, see [`Runtime::unblock_cycle_and_maybe_throw`].
-    pub(super) fn add_from(&mut self, other: &ActiveQuery) {
-        self.changed_at = self.changed_at.max(other.changed_at);
-        self.durability = self.durability.min(other.durability);
-        self.untracked_read |= other.untracked_read;
-        self.input_outputs
-            .extend(other.input_outputs.iter().copied());
-    }
-
-    /// Removes the participants in `cycle` from my dependencies.
-    /// Used during cycle recovery, see [`Runtime::unblock_cycle_and_maybe_throw`].
-    pub(super) fn remove_cycle_participants(&mut self, cycle: &Cycle) {
-        for p in cycle.participant_keys() {
-            let p: InputDependencyIndex = p.into();
-            self.input_outputs.shift_remove(&QueryEdge::Input(p));
-        }
-    }
-
-    /// Copy the changed-at, durability, and dependencies from `cycle_query`.
-    /// Used during cycle recovery, see [`Runtime::unblock_cycle_and_maybe_throw`].
-    pub(crate) fn take_inputs_from(&mut self, cycle_query: &ActiveQuery) {
-        self.changed_at = cycle_query.changed_at;
-        self.durability = cycle_query.durability;
-        self.input_outputs.clone_from(&cycle_query.input_outputs);
     }
 
     pub(super) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {

@@ -2,7 +2,8 @@ use dashmap::SharedValue;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
-use crate::ingredient::{fmt_index, MaybeChangedAfter};
+use crate::function::VerifyResult;
+use crate::ingredient::fmt_index;
 use crate::key::InputDependencyIndex;
 use crate::plumbing::{Jar, JarAux};
 use crate::table::memo::MemoTable;
@@ -183,6 +184,7 @@ where
             Durability::MAX,
             self.reset_at,
             InputAccumulatedValues::Empty,
+            None,
         );
 
         // Optimization to only get read lock on the map if the data has already been interned.
@@ -273,8 +275,16 @@ where
         _db: &dyn Database,
         _input: Id,
         revision: Revision,
-    ) -> MaybeChangedAfter {
-        MaybeChangedAfter::from(revision < self.reset_at)
+    ) -> VerifyResult {
+        VerifyResult::changed_if(revision < self.reset_at)
+    }
+
+    fn is_verified_final<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
+        false
+    }
+
+    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
+        false
     }
 
     fn cycle_recovery_strategy(&self) -> crate::cycle::CycleRecoveryStrategy {

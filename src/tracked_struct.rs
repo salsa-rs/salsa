@@ -6,7 +6,8 @@ use tracked_field::FieldIngredientImpl;
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
-    ingredient::{fmt_index, Ingredient, Jar, JarAux, MaybeChangedAfter},
+    function::VerifyResult,
+    ingredient::{fmt_index, Ingredient, Jar, JarAux},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::ZalsaLocal,
     runtime::StampedValue,
@@ -646,6 +647,7 @@ where
             data.durability,
             field_changed_at,
             InputAccumulatedValues::Empty,
+            None,
         );
 
         unsafe { self.to_self_ref(&data.fields) }
@@ -665,8 +667,16 @@ where
         _db: &dyn Database,
         _input: Id,
         _revision: Revision,
-    ) -> MaybeChangedAfter {
-        MaybeChangedAfter::No(InputAccumulatedValues::Empty)
+    ) -> VerifyResult {
+        VerifyResult::unchanged()
+    }
+
+    fn is_verified_final<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
+        false
+    }
+
+    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
+        false
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {

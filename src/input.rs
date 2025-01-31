@@ -13,8 +13,9 @@ use input_field::FieldIngredientImpl;
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
+    function::VerifyResult,
     id::{AsId, FromId},
-    ingredient::{fmt_index, Ingredient, MaybeChangedAfter},
+    ingredient::{fmt_index, Ingredient},
     input::singleton::{Singleton, SingletonChoice},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::{Jar, JarAux, Stamp},
@@ -180,6 +181,7 @@ impl<C: Configuration> IngredientImpl<C> {
             stamp.durability,
             stamp.changed_at,
             InputAccumulatedValues::Empty,
+            None,
         );
         &value.fields
     }
@@ -204,10 +206,18 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: &dyn Database,
         _input: Id,
         _revision: Revision,
-    ) -> MaybeChangedAfter {
+    ) -> VerifyResult {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
-        MaybeChangedAfter::No(InputAccumulatedValues::Empty)
+        VerifyResult::unchanged()
+    }
+
+    fn is_verified_final<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
+        false
+    }
+
+    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
+        false
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {

@@ -1,10 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{
-    ingredient::{Ingredient, MaybeChangedAfter},
-    zalsa::IngredientIndex,
-    Database, Id,
-};
+use crate::{function::VerifyResult, ingredient::Ingredient, zalsa::IngredientIndex, Database, Id};
 
 use super::{Configuration, Value};
 
@@ -57,11 +53,19 @@ where
         db: &'db dyn Database,
         input: Id,
         revision: crate::Revision,
-    ) -> MaybeChangedAfter {
+    ) -> VerifyResult {
         let zalsa = db.zalsa();
         let data = <super::IngredientImpl<C>>::data(zalsa.table(), input);
         let field_changed_at = data.revisions[self.field_index];
-        MaybeChangedAfter::from(field_changed_at > revision)
+        VerifyResult::changed_if(field_changed_at > revision)
+    }
+
+    fn is_verified_final<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
+        false
+    }
+
+    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
+        false
     }
 
     fn origin(

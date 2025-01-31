@@ -1,13 +1,44 @@
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
-    ingredient::MaybeChangedAfter,
+    cycle::CycleRecoveryStrategy,
     key::DatabaseKeyIndex,
+    table::sync::ClaimResult,
     zalsa::{Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
     AsDynDatabase as _, Id, Revision,
 };
+use rustc_hash::FxHashSet;
 
 use super::{memo::Memo, Configuration, IngredientImpl};
+
+/// Result of memo validation.
+pub enum VerifyResult {
+    /// Memo has changed and needs to be recomputed.
+    Changed,
+
+    /// Memo remains valid.
+    ///
+    /// The first inner value tracks whether the memo or any of its dependencies have an
+    /// accumulated value.
+    ///
+    /// Database keys in the hashset represent cycle heads encountered in validation; don't mark
+    /// memos verified until we've iterated the full cycle to ensure no inputs changed.
+    Unchanged(InputAccumulatedValues, FxHashSet<DatabaseKeyIndex>),
+}
+
+impl VerifyResult {
+    pub(crate) fn changed_if(changed: bool) -> Self {
+        if changed {
+            Self::Changed
+        } else {
+            Self::unchanged()
+        }
+    }
+
+    pub(crate) fn unchanged() -> Self {
+        Self::Unchanged(InputAccumulatedValues::Empty, FxHashSet::default())
+    }
+}
 
 impl<C> IngredientImpl<C>
 where
@@ -18,7 +49,7 @@ where
         db: &'db C::DbView,
         id: Id,
         revision: Revision,
-    ) -> MaybeChangedAfter {
+    ) -> VerifyResult {
         let (zalsa, zalsa_local) = db.zalsas();
         zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
 
@@ -30,11 +61,14 @@ where
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.get_memo_from_table_for(zalsa, id);
             if let Some(memo) = &memo_guard {
-                if self.shallow_verify_memo(db, zalsa, database_key_index, memo) {
+                if self.shallow_verify_memo(db, zalsa, database_key_index, memo, false) {
                     return if memo.revisions.changed_at > revision {
-                        MaybeChangedAfter::Yes
+                        VerifyResult::Changed
                     } else {
-                        MaybeChangedAfter::No(memo.revisions.accumulated_inputs.load())
+                        VerifyResult::Unchanged(
+                            memo.revisions.accumulated_inputs.load(),
+                            FxHashSet::default(),
+                        )
                     };
                 }
                 drop(memo_guard); // release the arc-swap guard before cold path
@@ -45,7 +79,7 @@ where
                 }
             } else {
                 // No memo? Assume has changed.
-                return MaybeChangedAfter::Yes;
+                return VerifyResult::Changed;
             }
         }
     }
@@ -55,21 +89,34 @@ where
         db: &'db C::DbView,
         key_index: Id,
         revision: Revision,
-    ) -> Option<MaybeChangedAfter> {
+    ) -> Option<VerifyResult> {
         let (zalsa, zalsa_local) = db.zalsas();
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = zalsa.sync_table_for(key_index).claim(
+        let _claim_guard = match zalsa.sync_table_for(key_index).claim(
             db.as_dyn_database(),
             zalsa_local,
             database_key_index,
             self.memo_ingredient_index,
-        )?;
-        let active_query = zalsa_local.push_query(database_key_index);
-
+        ) {
+            ClaimResult::Retry => return None,
+            ClaimResult::Cycle => match C::CYCLE_STRATEGY {
+                CycleRecoveryStrategy::Panic => panic!(
+                    "dependency graph cycle validating {database_key_index:#?}; \
+                     set cycle_fn/cycle_initial to fixpoint iterate"
+                ),
+                CycleRecoveryStrategy::Fixpoint => {
+                    return Some(VerifyResult::Unchanged(
+                        InputAccumulatedValues::Empty,
+                        FxHashSet::from_iter([database_key_index]),
+                    ))
+                }
+            },
+            ClaimResult::Claimed(guard) => guard,
+        };
         // Load the current memo, if any.
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index) else {
-            return Some(MaybeChangedAfter::Yes);
+            return Some(VerifyResult::Changed);
         };
 
         tracing::debug!(
@@ -79,11 +126,14 @@ where
         );
 
         // Check if the inputs are still valid. We can just compare `changed_at`.
-        if self.deep_verify_memo(db, &old_memo, &active_query) {
+        let active_query = zalsa_local.push_query(database_key_index);
+        if let VerifyResult::Unchanged(_, cycle_heads) =
+            self.deep_verify_memo(db, &old_memo, &active_query)
+        {
             return Some(if old_memo.revisions.changed_at > revision {
-                MaybeChangedAfter::Yes
+                VerifyResult::Changed
             } else {
-                MaybeChangedAfter::No(old_memo.revisions.accumulated_inputs.load())
+                VerifyResult::Unchanged(old_memo.revisions.accumulated_inputs.load(), cycle_heads)
             });
         }
 
@@ -96,17 +146,20 @@ where
             let changed_at = memo.revisions.changed_at;
 
             return Some(if changed_at > revision {
-                MaybeChangedAfter::Yes
+                VerifyResult::Changed
             } else {
-                MaybeChangedAfter::No(match &memo.revisions.accumulated {
-                    Some(_) => InputAccumulatedValues::Any,
-                    None => memo.revisions.accumulated_inputs.load(),
-                })
+                VerifyResult::Unchanged(
+                    match &memo.revisions.accumulated {
+                        Some(_) => InputAccumulatedValues::Any,
+                        None => memo.revisions.accumulated_inputs.load(),
+                    },
+                    FxHashSet::default(),
+                )
             });
         }
 
         // Otherwise, nothing for it: have to consider the value to have changed.
-        Some(MaybeChangedAfter::Yes)
+        Some(VerifyResult::Changed)
     }
 
     /// True if the memo's value and `changed_at` time is still valid in this revision.
@@ -118,14 +171,23 @@ where
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
+        allow_provisional: bool,
     ) -> bool {
-        let verified_at = memo.verified_at.load();
-        let revision_now = zalsa.current_revision();
-
         tracing::debug!(
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
+        if !allow_provisional && memo.may_be_provisional() {
+            tracing::debug!(
+                "{database_key_index:?}: validate_provisional(memo = {memo:#?})",
+                memo = memo.tracing_debug()
+            );
+            if !self.validate_provisional(db, zalsa, memo) {
+                return false;
+            }
+        }
+        let verified_at = memo.verified_at.load();
+        let revision_now = zalsa.current_revision();
 
         if verified_at == revision_now {
             // Already verified.
@@ -148,20 +210,39 @@ where
         false
     }
 
-    /// True if the memo's value and `changed_at` time is up-to-date in the current
-    /// revision. When this returns true, it also updates the memo's `verified_at`
-    /// field if needed to make future calls cheaper.
+    /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
+    /// return true, if not return false.
+    fn validate_provisional(
+        &self,
+        db: &C::DbView,
+        zalsa: &Zalsa,
+        memo: &Memo<C::Output<'_>>,
+    ) -> bool {
+        for cycle_head in &memo.revisions.cycle_heads {
+            if !zalsa
+                .lookup_ingredient(cycle_head.ingredient_index)
+                .is_verified_final(db.as_dyn_database(), cycle_head.key_index)
+            {
+                return false;
+            }
+        }
+        memo.verified_final.store(true);
+        true
+    }
+
+    /// VerifyResult::Unchanged if the memo's value and `changed_at` time is up-to-date in the
+    /// current revision. When this returns Unchanged with no cycle heads, it also updates the
+    /// memo's `verified_at` field if needed to make future calls cheaper.
     ///
     /// Takes an [`ActiveQueryGuard`] argument because this function recursively
     /// walks dependencies of `old_memo` and may even execute them to see if their
-    /// outputs have changed. As that could lead to cycles, it is important that the
-    /// query is on the stack.
+    /// outputs have changed.
     pub(super) fn deep_verify_memo(
         &self,
         db: &C::DbView,
         old_memo: &Memo<C::Output<'_>>,
         active_query: &ActiveQueryGuard<'_>,
-    ) -> bool {
+    ) -> VerifyResult {
         let zalsa = db.zalsa();
         let database_key_index = active_query.database_key_index;
 
@@ -170,88 +251,105 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        if self.shallow_verify_memo(db, zalsa, database_key_index, old_memo) {
-            return true;
+        if self.shallow_verify_memo(db, zalsa, database_key_index, old_memo, false) {
+            return VerifyResult::Unchanged(InputAccumulatedValues::Empty, Default::default());
+        }
+        if old_memo.may_be_provisional() {
+            return VerifyResult::Changed;
         }
 
-        let inputs = match &old_memo.revisions.origin {
-            QueryOrigin::Assigned(_) => {
-                // If the value was assigneed by another query,
-                // and that query were up-to-date,
-                // then we would have updated the `verified_at` field already.
-                // So the fact that we are here means that it was not specified
-                // during this revision or is otherwise stale.
-                //
-                // Example of how this can happen:
-                //
-                // Conditionally specified queries
-                // where the value is specified
-                // in rev 1 but not in rev 2.
-                return false;
-            }
-            QueryOrigin::BaseInput => {
-                // This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
-                return true;
-            }
-            QueryOrigin::DerivedUntracked(_) => {
-                // Untracked inputs? Have to assume that it changed.
-                return false;
-            }
-            QueryOrigin::Derived(edges) => {
-                // Fully tracked inputs? Iterate over the inputs and check them, one by one.
-                //
-                // NB: It's important here that we are iterating the inputs in the order that
-                // they executed. It's possible that if the value of some input I0 is no longer
-                // valid, then some later input I1 might never have executed at all, so verifying
-                // it is still up to date is meaningless.
-                let last_verified_at = old_memo.verified_at.load();
-                let mut inputs = InputAccumulatedValues::Empty;
-                for &edge in edges.input_outputs.iter() {
-                    match edge {
-                        QueryEdge::Input(dependency_index) => {
-                            match dependency_index
-                                .maybe_changed_after(db.as_dyn_database(), last_verified_at)
-                            {
-                                MaybeChangedAfter::Yes => {
-                                    return false;
-                                }
-                                MaybeChangedAfter::No(input_accumulated) => {
-                                    inputs |= input_accumulated;
+        let mut cycle_heads = FxHashSet::default();
+        loop {
+            let inputs = match &old_memo.revisions.origin {
+                QueryOrigin::Assigned(_) => {
+                    // If the value was assigneed by another query,
+                    // and that query were up-to-date,
+                    // then we would have updated the `verified_at` field already.
+                    // So the fact that we are here means that it was not specified
+                    // during this revision or is otherwise stale.
+                    //
+                    // Example of how this can happen:
+                    //
+                    // Conditionally specified queries
+                    // where the value is specified
+                    // in rev 1 but not in rev 2.
+                    return VerifyResult::Changed;
+                }
+                QueryOrigin::BaseInput | QueryOrigin::FixpointInitial => {
+                    // This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
+                    return VerifyResult::unchanged();
+                }
+                QueryOrigin::DerivedUntracked(_) => {
+                    // Untracked inputs? Have to assume that it changed.
+                    return VerifyResult::Changed;
+                }
+                QueryOrigin::Derived(edges) => {
+                    // Fully tracked inputs? Iterate over the inputs and check them, one by one.
+                    //
+                    // NB: It's important here that we are iterating the inputs in the order that
+                    // they executed. It's possible that if the value of some input I0 is no longer
+                    // valid, then some later input I1 might never have executed at all, so verifying
+                    // it is still up to date is meaningless.
+                    let last_verified_at = old_memo.verified_at.load();
+                    let mut inputs = InputAccumulatedValues::Empty;
+                    for &edge in edges.input_outputs.iter() {
+                        match edge {
+                            QueryEdge::Input(dependency_index) => {
+                                match dependency_index
+                                    .maybe_changed_after(db.as_dyn_database(), last_verified_at)
+                                {
+                                    VerifyResult::Changed => return VerifyResult::Changed,
+                                    VerifyResult::Unchanged(input_accumulated, cycles) => {
+                                        cycle_heads.extend(cycles);
+                                        inputs |= input_accumulated;
+                                    }
                                 }
                             }
-                        }
-                        QueryEdge::Output(dependency_index) => {
-                            // Subtle: Mark outputs as validated now, even though we may
-                            // later find an input that requires us to re-execute the function.
-                            // Even if it re-execute, the function will wind up writing the same value,
-                            // since all prior inputs were green. It's important to do this during
-                            // this loop, because it's possible that one of our input queries will
-                            // re-execute and may read one of our earlier outputs
-                            // (e.g., in a scenario where we do something like
-                            // `e = Entity::new(..); query(e);` and `query` reads a field of `e`).
-                            //
-                            // NB. Accumulators are also outputs, but the above logic doesn't
-                            // quite apply to them. Since multiple values are pushed, the first value
-                            // may be unchanged, but later values could be different.
-                            // In that case, however, the data accumulated
-                            // by this function cannot be read until this function is marked green,
-                            // so even if we mark them as valid here, the function will re-execute
-                            // and overwrite the contents.
-                            dependency_index
-                                .mark_validated_output(db.as_dyn_database(), database_key_index);
+                            QueryEdge::Output(dependency_index) => {
+                                // Subtle: Mark outputs as validated now, even though we may
+                                // later find an input that requires us to re-execute the function.
+                                // Even if it re-execute, the function will wind up writing the same value,
+                                // since all prior inputs were green. It's important to do this during
+                                // this loop, because it's possible that one of our input queries will
+                                // re-execute and may read one of our earlier outputs
+                                // (e.g., in a scenario where we do something like
+                                // `e = Entity::new(..); query(e);` and `query` reads a field of `e`).
+                                //
+                                // NB. Accumulators are also outputs, but the above logic doesn't
+                                // quite apply to them. Since multiple values are pushed, the first value
+                                // may be unchanged, but later values could be different.
+                                // In that case, however, the data accumulated
+                                // by this function cannot be read until this function is marked green,
+                                // so even if we mark them as valid here, the function will re-execute
+                                // and overwrite the contents.
+                                //
+                                // TODO not if we found a cycle head other than ourself?
+                                dependency_index.mark_validated_output(
+                                    db.as_dyn_database(),
+                                    database_key_index,
+                                );
+                            }
                         }
                     }
+                    inputs
                 }
-                inputs
-            }
-        };
+            };
 
-        old_memo.mark_as_verified(
-            db.as_dyn_database(),
-            zalsa.current_revision(),
-            database_key_index,
-            inputs,
-        );
-        true
+            let in_heads = cycle_heads.remove(&database_key_index);
+
+            if cycle_heads.is_empty() {
+                old_memo.mark_as_verified(
+                    db.as_dyn_database(),
+                    zalsa.current_revision(),
+                    database_key_index,
+                    inputs,
+                );
+            }
+            if in_heads {
+                cycle_heads.clear();
+                continue;
+            }
+            return VerifyResult::Unchanged(InputAccumulatedValues::Empty, cycle_heads);
+        }
     }
 }
