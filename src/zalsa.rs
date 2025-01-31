@@ -9,7 +9,7 @@ use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{Ingredient, Jar, JarAux};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
-use crate::table::memo::MemoTable;
+use crate::table::memo::MemoTableWithTypes;
 use crate::table::sync::SyncTable;
 use crate::table::Table;
 use crate::views::Views;
@@ -176,9 +176,10 @@ impl Zalsa {
     }
 
     /// Returns the [`MemoTable`][] for the salsa struct with the given id
-    pub(crate) fn memo_table_for(&self, id: Id) -> &MemoTable {
+    pub(crate) fn memo_table_for(&self, id: Id) -> MemoTableWithTypes<'_> {
+        let table = self.table();
         // SAFETY: We are supply the correct current revision
-        unsafe { self.table().memos(id, self.current_revision()) }
+        unsafe { table.memos(id, self.current_revision()) }
     }
 
     /// Returns the [`SyncTable`][] for the salsa struct with the given id

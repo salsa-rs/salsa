@@ -1,11 +1,13 @@
 use std::{
     any::{Any, TypeId},
     fmt,
+    sync::Arc,
 };
 
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
+    table::memo::MemoTableTypes,
     zalsa::{IngredientIndex, MemoIngredientIndex},
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id,
@@ -123,6 +125,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// **Important:** to actually receive resets, the ingredient must set
     /// [`IngredientRequiresReset::RESET_ON_NEW_REVISION`] to true.
     fn reset_for_new_revision(&mut self);
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes>;
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
 }

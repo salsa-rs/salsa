@@ -1,11 +1,12 @@
 use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{fmt_index, Ingredient, MaybeChangedAfter};
-use crate::input::Configuration;
+use crate::input::{Configuration, MemoTableTypes};
 use crate::zalsa::IngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{Database, DatabaseKeyIndex, Id, Revision};
 use std::fmt;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use super::{IngredientImpl, Value};
 
@@ -21,6 +22,7 @@ use super::{IngredientImpl, Value};
 pub struct FieldIngredientImpl<C: Configuration> {
     index: IngredientIndex,
     field_index: usize,
+    memo_table_types: Arc<MemoTableTypes>,
     phantom: PhantomData<fn() -> Value<C>>,
 }
 
@@ -32,6 +34,7 @@ where
         Self {
             index: struct_index.successor(field_index),
             field_index,
+            memo_table_types: Arc::new(MemoTableTypes::default()),
             phantom: PhantomData,
         }
     }
@@ -95,6 +98,10 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::FIELD_DEBUG_NAMES[self.field_index]
+    }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        self.memo_table_types.clone()
     }
 }
 

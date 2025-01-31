@@ -5,7 +5,7 @@ use crate::durability::Durability;
 use crate::ingredient::{fmt_index, MaybeChangedAfter};
 use crate::key::InputDependencyIndex;
 use crate::plumbing::{Jar, JarAux};
-use crate::table::memo::MemoTable;
+use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::sync::SyncTable;
 use crate::table::Slot;
 use crate::zalsa::IngredientIndex;
@@ -16,6 +16,7 @@ use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::hash::FxDashMap;
 use super::ingredient::Ingredient;
@@ -67,6 +68,8 @@ pub struct IngredientImpl<C: Configuration> {
     /// but that will make anything dependent on those entries dirty and in need
     /// of being recomputed.
     reset_at: Revision,
+
+    memo_table_types: Arc<MemoTableTypes>,
 }
 
 /// Struct storing the interned fields.
@@ -110,6 +113,7 @@ where
             ingredient_index,
             key_map: Default::default(),
             reset_at: Revision::start(),
+            memo_table_types: Arc::new(MemoTableTypes::default()),
         }
     }
 
@@ -202,11 +206,12 @@ where
             Err(slot) => {
                 let zalsa = db.zalsa();
                 let table = zalsa.table();
-                let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
-                    data: unsafe { self.to_internal_data(assemble(id, key)) },
-                    memos: Default::default(),
-                    syncs: Default::default(),
-                });
+                let id =
+                    zalsa_local.allocate(zalsa, table, self.ingredient_index, |id| Value::<C> {
+                        data: unsafe { self.to_internal_data(assemble(id, key)) },
+                        memos: Default::default(),
+                        syncs: Default::default(),
+                    });
                 unsafe {
                     lock.insert_in_slot(
                         data_hash,
@@ -313,6 +318,10 @@ where
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
     }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        self.memo_table_types.clone()
+    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>
@@ -336,6 +345,10 @@ where
 
     unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {
         &self.syncs
+    }
+
+    unsafe fn drop_memos(&mut self, types: &MemoTableTypes) {
+        self.memos.drop(types);
     }
 }
 
