@@ -1,7 +1,8 @@
-use super::{memo::Memo, Configuration, IngredientImpl};
+use super::{Configuration, IngredientImpl};
 use crate::{
-    accumulator::accumulated_map::InputAccumulatedValues, runtime::StampedValue,
-    zalsa::ZalsaDatabase, AsDynDatabase as _, Id,
+    accumulator::accumulated_map::InputAccumulatedValues, function::lru::LruChoice as _,
+    function::memo::MemoConfigured, runtime::StampedValue, zalsa::ZalsaDatabase,
+    AsDynDatabase as _, Id,
 };
 
 impl<C> IngredientImpl<C>
@@ -9,7 +10,7 @@ where
     C: Configuration,
 {
     pub fn fetch<'db>(&'db self, db: &'db C::DbView, id: Id) -> &'db C::Output<'db> {
-        let (zalsa, zalsa_local) = db.zalsas();
+        let zalsa_local = db.zalsa_local();
         zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
 
         let memo = self.refresh_memo(db, id);
@@ -17,11 +18,11 @@ where
             value,
             durability,
             changed_at,
-        } = memo.revisions.stamped_value(memo.value.as_ref().unwrap());
+        } = memo
+            .revisions
+            .stamped_value(C::Lru::assert_ref(&memo.value));
 
-        if let Some(evicted) = self.lru.record_use(id) {
-            self.evict_value_from_memo_for(zalsa, evicted);
-        }
+        self.lru.record_use(id);
 
         zalsa_local.report_tracked_read(
             self.database_key_index(id).into(),
@@ -41,7 +42,7 @@ where
         &'db self,
         db: &'db C::DbView,
         id: Id,
-    ) -> &'db Memo<C::Output<'db>> {
+    ) -> &'db MemoConfigured<'db, C> {
         loop {
             if let Some(memo) = self.fetch_hot(db, id).or_else(|| self.fetch_cold(db, id)) {
                 return memo;
@@ -50,11 +51,15 @@ where
     }
 
     #[inline]
-    fn fetch_hot<'db>(&'db self, db: &'db C::DbView, id: Id) -> Option<&'db Memo<C::Output<'db>>> {
+    fn fetch_hot<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        id: Id,
+    ) -> Option<&'db MemoConfigured<'db, C>> {
         let zalsa = db.zalsa();
         let memo_guard = self.get_memo_from_table_for(zalsa, id);
         if let Some(memo) = &memo_guard {
-            if memo.value.is_some()
+            if !C::Lru::is_evicted(&memo.value)
                 && self.shallow_verify_memo(db, zalsa, self.database_key_index(id), memo)
             {
                 // Unsafety invariant: memo is present in memo_map and we have verified that it is
@@ -65,7 +70,11 @@ where
         None
     }
 
-    fn fetch_cold<'db>(&'db self, db: &'db C::DbView, id: Id) -> Option<&'db Memo<C::Output<'db>>> {
+    fn fetch_cold<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        id: Id,
+    ) -> Option<&'db MemoConfigured<'db, C>> {
         let (zalsa, zalsa_local) = db.zalsas();
         let database_key_index = self.database_key_index(id);
 
@@ -84,7 +93,9 @@ where
         let zalsa = db.zalsa();
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id);
         if let Some(old_memo) = &opt_old_memo {
-            if old_memo.value.is_some() && self.deep_verify_memo(db, old_memo, &active_query) {
+            if !C::Lru::is_evicted(&old_memo.value)
+                && self.deep_verify_memo(db, old_memo, &active_query)
+            {
                 // Unsafety invariant: memo is present in memo_map and we have verified that it is
                 // still valid for the current revision.
                 return unsafe { Some(self.extend_memo_lifetime(old_memo)) };

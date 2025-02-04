@@ -3,10 +3,12 @@ use std::{any::Any, fmt, sync::Arc};
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
+    function::lru::LruChoice,
     ingredient::{fmt_index, MaybeChangedAfter},
     key::DatabaseKeyIndex,
     plumbing::JarAux,
     salsa_struct::SalsaStructInDb,
+    table::memo::MemoTable,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Cycle, Database, Id, Revision,
@@ -23,7 +25,7 @@ mod diff_outputs;
 mod execute;
 mod fetch;
 mod inputs;
-mod lru;
+pub mod lru;
 mod maybe_changed_after;
 mod memo;
 mod specify;
@@ -44,6 +46,9 @@ pub trait Configuration: Any {
 
     /// The value computed by the function.
     type Output<'db>: fmt::Debug + Send + Sync;
+
+    /// The singleton state for this input if any.
+    type Lru: LruChoice + Send + Sync;
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
@@ -98,7 +103,7 @@ pub struct IngredientImpl<C: Configuration> {
     memo_ingredient_index: MemoIngredientIndex,
 
     /// Used to find memos to throw out when we have too many memoized values.
-    lru: lru::Lru,
+    lru: C::Lru,
 
     /// When `fetch` and friends executes, they return a reference to the
     /// value stored in the memo that is extended to live as long as the `&self`
@@ -155,8 +160,8 @@ where
     /// only cleared with `&mut self`.
     unsafe fn extend_memo_lifetime<'this>(
         &'this self,
-        memo: &memo::Memo<C::Output<'this>>,
-    ) -> &'this memo::Memo<C::Output<'this>> {
+        memo: &memo::MemoConfigured<'this, C>,
+    ) -> &'this memo::MemoConfigured<'this, C> {
         std::mem::transmute(memo)
     }
 
@@ -164,8 +169,8 @@ where
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
-        memo: memo::Memo<C::Output<'db>>,
-    ) -> &'db memo::Memo<C::Output<'db>> {
+        memo: memo::MemoConfigured<'db, C>,
+    ) -> &'db memo::MemoConfigured<'db, C> {
         let memo = Arc::new(memo);
         let db_memo = unsafe {
             // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
@@ -184,6 +189,7 @@ where
 impl<C> Ingredient for IngredientImpl<C>
 where
     C: Configuration,
+    for<'lt> <C::Lru as LruChoice>::LruCtor<<C as Configuration>::Output<'lt>>: Send + Sync,
 {
     fn ingredient_index(&self) -> IngredientIndex {
         self.index
@@ -231,8 +237,13 @@ where
         true
     }
 
-    fn reset_for_new_revision(&mut self) {
+    fn reset_for_new_revision<'a>(
+        &mut self,
+        memo_table_for: &'a dyn Fn(crate::Id) -> &'a MemoTable,
+    ) {
         std::mem::take(&mut self.deleted_entries);
+        self.lru
+            .to_be_evicted(|evict| self.evict_value_from_memo_for(memo_table_for(evict)));
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

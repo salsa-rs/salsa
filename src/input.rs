@@ -246,7 +246,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         false
     }
 
-    fn reset_for_new_revision(&mut self) {
+    fn reset_for_new_revision<'a>(&mut self, _: &'a dyn Fn(crate::Id) -> &'a MemoTable) {
         panic!("unexpected call to `reset_for_new_revision`")
     }
 
