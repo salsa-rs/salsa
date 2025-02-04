@@ -58,12 +58,16 @@ where
                             "A just-verified memo must have up-to-date provisional status."
                         );
                     };
+                    let mut has_verified_cycle_heads = false;
                     for head in cycle_heads {
                         if *head == database_key_index {
                             continue;
                         }
                         let ingredient = db.zalsa().lookup_ingredient(head.ingredient_index);
                         if ingredient.is_verified_final(db.as_dyn_database(), head.key_index) {
+                            // This cycle head is already verified final, so we don't need to wait
+                            // on it; keep looping through cycle heads.
+                            has_verified_cycle_heads = true;
                             continue;
                         }
                         if ingredient.wait_for(db.as_dyn_database(), head.key_index) {
@@ -77,6 +81,11 @@ where
                             // cycle, so go ahead and return the provisional memo.
                             return memo;
                         }
+                    }
+                    // All our cycle heads are verified final; re-fetch and we should get a
+                    // non-provisional memo.
+                    if has_verified_cycle_heads {
+                        continue 'outer;
                     }
                 }
                 return memo;
