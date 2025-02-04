@@ -67,7 +67,13 @@ fn inputs(c: &mut Criterion) {
 
     group.bench_function(BenchmarkId::new("new", "InternedInput"), |b| {
         b.iter_batched_ref(
-            salsa::DatabaseImpl::default,
+            || {
+                let db = salsa::DatabaseImpl::default();
+                // Prepopulate ingredients.
+                let input = InternedInput::new(&db, "hello, world!".to_owned());
+                interned_length(&db, input);
+                db
+            },
             |db| {
                 let input: InternedInput = InternedInput::new(db, "hello, world!".to_owned());
                 interned_length(db, input);
@@ -95,7 +101,13 @@ fn inputs(c: &mut Criterion) {
 
     group.bench_function(BenchmarkId::new("new", "Input"), |b| {
         b.iter_batched_ref(
-            salsa::DatabaseImpl::default,
+            || {
+                let db = salsa::DatabaseImpl::default();
+                // Prepopulate ingredients.
+                let input = Input::new(&db, "hello, world!".to_owned());
+                length(&db, input);
+                db
+            },
             |db| {
                 let input = Input::new(db, "hello, world!".to_owned());
                 length(db, input);
