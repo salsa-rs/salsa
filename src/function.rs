@@ -215,10 +215,7 @@ where
             self.database_key_index(key_index),
             self.memo_ingredient_index,
         ) {
-            ClaimResult::Retry => true,
-            ClaimResult::Claimed(_) => {
-                unreachable!("should never have a provisional memo with unclaimed cycle head");
-            }
+            ClaimResult::Retry | ClaimResult::Claimed(_) => true,
             ClaimResult::Cycle => false,
         }
     }
