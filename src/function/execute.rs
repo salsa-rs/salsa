@@ -77,6 +77,10 @@ where
                     // inserted into the memo table when the cycle was hit, so let's pull our
                     // initial provisional value from there.
                     opt_owned_last_provisional = self.get_memo_from_table_for(zalsa, id);
+                    debug_assert!(opt_owned_last_provisional
+                        .as_ref()
+                        .unwrap()
+                        .may_be_provisional());
                     opt_owned_last_provisional
                         .as_deref()
                         .expect(
