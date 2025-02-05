@@ -18,8 +18,8 @@ impl<C: Configuration> Default for DeletedEntries<C> {
 }
 
 impl<C: Configuration> DeletedEntries<C> {
-    pub(super) fn push<'db>(&'db self, memo: ArcMemo<'db, C>) {
-        let memo = unsafe { std::mem::transmute::<ArcMemo<'db, C>, ArcMemo<'static, C>>(memo) };
+    pub(super) fn push(&self, memo: ArcMemo<'_, C>) {
+        let memo = unsafe { std::mem::transmute::<ArcMemo<'_, C>, ArcMemo<'static, C>>(memo) };
         self.seg_queue.push(memo);
     }
 }
