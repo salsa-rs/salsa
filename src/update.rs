@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     hash::{BuildHasher, Hash},
     path::PathBuf,
+    sync::Arc,
 };
 
 use crate::Revision;
@@ -288,6 +289,29 @@ where
     }
 }
 
+unsafe impl<T> Update for Arc<T>
+where
+    T: Update,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_arc: Self) -> bool {
+        let old_arc: &mut Arc<T> = unsafe { &mut *old_pointer };
+
+        if let Some(inner) = Arc::get_mut(old_arc) {
+            match Arc::try_unwrap(new_arc) {
+                Ok(new_inner) => T::maybe_update(inner, new_inner),
+                Err(new_arc) => {
+                    // We can't unwrap the new arc, so we have to update the old one in place.
+                    *old_arc = new_arc;
+                    true
+                }
+            }
+        } else {
+            *old_pointer = new_arc;
+            true
+        }
+    }
+}
+
 unsafe impl<T, const N: usize> Update for [T; N]
 where
     T: Update,
@@ -299,6 +323,24 @@ where
             changed |= T::maybe_update(old_pointer.add(i), new_element);
         }
         changed
+    }
+}
+
+unsafe impl<T, E> Update for Result<T, E>
+where
+    T: Update,
+    E: Update,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+        let old_value = unsafe { &mut *old_pointer };
+        match (old_value, new_value) {
+            (Ok(old), Ok(new)) => T::maybe_update(old, new),
+            (Err(old), Err(new)) => E::maybe_update(old, new),
+            (old_value, new_value) => {
+                *old_value = new_value;
+                true
+            }
+        }
     }
 }
 

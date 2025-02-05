@@ -8,10 +8,10 @@ use std::sync::{
 
 mod common;
 use common::LogDatabase;
-use salsa::Database as _;
+use salsa::{Database as _, Update};
 use test_log::test;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Update)]
 struct HotPotato(u32);
 
 thread_local! {

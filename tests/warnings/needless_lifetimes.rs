@@ -1,7 +1,9 @@
+use salsa::Update;
+
 #[salsa::db]
 pub trait Db: salsa::Database {}
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Update)]
 pub struct Item {}
 
 #[salsa::tracked]

@@ -49,13 +49,14 @@ use salsa::Durability;
 // | Cross  | Fallback | N/A      | Tracked   | both     | parallel/parallel_cycle_mid_recover.rs |
 // | Cross  | Fallback | N/A      | Tracked   | both     | parallel/parallel_cycle_all_recover.rs |
 
-#[derive(PartialEq, Eq, Hash, Clone, Debug)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug, Update)]
 struct Error {
     cycle: Vec<String>,
 }
 
 use salsa::Database as Db;
 use salsa::Setter;
+use salsa::Update;
 
 #[salsa::input]
 struct MyInput {}

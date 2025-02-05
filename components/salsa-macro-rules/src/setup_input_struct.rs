@@ -115,6 +115,17 @@ macro_rules! setup_input_struct {
                 }
             }
 
+            unsafe impl $zalsa::Update for $Struct {
+                unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+                    if unsafe { *old_pointer } != new_value {
+                        unsafe { *old_pointer = new_value };
+                        true
+                    } else {
+                        false
+                    }
+                }
+            }
+
             $zalsa::macro_if! { $generate_debug_impl =>
                 impl std::fmt::Debug for $Struct {
                     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
