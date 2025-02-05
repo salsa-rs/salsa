@@ -28,7 +28,9 @@ fn final_result_depends_on_y(db: &dyn LogDatabase, input: MyInput) -> u32 {
 
 #[salsa::tracked]
 struct MyTracked<'db> {
+    #[tracked]
     x: u32,
+    #[tracked]
     y: u32,
 }
 
