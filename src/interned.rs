@@ -394,6 +394,19 @@ where
     }
 }
 
+impl<T> HashEqLike<T> for &T
+where
+    T: Hash + Eq,
+{
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(*self, &mut *h);
+    }
+
+    fn eq(&self, data: &T) -> bool {
+        **self == *data
+    }
+}
+
 impl<T> Lookup<T> for &T
 where
     T: Clone,
