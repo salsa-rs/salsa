@@ -62,7 +62,7 @@ impl<C: Configuration> IngredientImpl<C> {
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
     pub(super) fn evict_value_from_memo_for<'db>(&'db self, zalsa: &'db Zalsa, id: Id) {
-        zalsa.memo_table_for(id).map_memo::<Memo<C::Output<'_>>>(
+        let old = zalsa.memo_table_for(id).map_memo::<Memo<C::Output<'_>>>(
             self.memo_ingredient_index,
             |memo| {
                 match memo.revisions.origin {
@@ -102,6 +102,11 @@ impl<C: Configuration> IngredientImpl<C> {
                 }
             },
         );
+        if let Some(old) = old {
+            // In case there is a reference to the old memo out there, we have to store it
+            // in the deleted entries. This will get cleared when a new revision starts.
+            self.deleted_entries.push(old);
+        }
     }
 }
 
