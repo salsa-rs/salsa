@@ -61,7 +61,7 @@ fn load_n_potatoes() -> usize {
 
 #[test]
 fn lru_works() {
-    let db = common::LoggerDatabase::default();
+    let mut db = common::LoggerDatabase::default();
     assert_eq!(load_n_potatoes(), 0);
 
     for i in 0..128u32 {
@@ -70,8 +70,8 @@ fn lru_works() {
         assert_eq!(p.0, i)
     }
 
-    // Create a new input to change the revision, and trigger the GC
-    MyInput::new(&db, 0);
+    // trigger the GC
+    db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 32);
 }
 
@@ -95,7 +95,7 @@ fn lru_doesnt_break_volatile_queries() {
 
 #[test]
 fn lru_can_be_changed_at_runtime() {
-    let db = common::LoggerDatabase::default();
+    let mut db = common::LoggerDatabase::default();
     assert_eq!(load_n_potatoes(), 0);
 
     let inputs: Vec<(u32, MyInput)> = (0..128).map(|i| (i, MyInput::new(&db, i))).collect();
@@ -105,8 +105,8 @@ fn lru_can_be_changed_at_runtime() {
         assert_eq!(p.0, i)
     }
 
-    // Create a new input to change the revision, and trigger the GC
-    MyInput::new(&db, 0);
+    // trigger the GC
+    db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 32);
 
     get_hot_potato::set_lru_capacity(&db, 64);
@@ -116,8 +116,8 @@ fn lru_can_be_changed_at_runtime() {
         assert_eq!(p.0, i)
     }
 
-    // Create a new input to change the revision, and trigger the GC
-    MyInput::new(&db, 0);
+    // trigger the GC
+    db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 64);
 
     // Special case: setting capacity to zero disables LRU
@@ -128,8 +128,8 @@ fn lru_can_be_changed_at_runtime() {
         assert_eq!(p.0, i)
     }
 
-    // Create a new input to change the revision, and trigger the GC
-    MyInput::new(&db, 0);
+    // trigger the GC
+    db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 128);
 
     drop(db);
