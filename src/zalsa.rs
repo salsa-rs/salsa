@@ -150,11 +150,11 @@ pub struct Zalsa {
     runtime: Runtime,
 }
 
-// Our fields locked behind Mutices and RwLocks cannot enter an inconsistent state due to panics
-// as they are all merely ID mappings with the exception of the `Runtime::dependency_graph`.
-// `Runtime::dependency_graph` does not invoke user queries though and as such will not arbitrarily
-// panic. The only way it may panic is by failing one of its asserts in which case we are already
-// in a broken state anyways.
+/// All fields on Zalsa are locked behind [`Mutex`]es and [`RwLock`]s and cannot enter
+/// inconsistent states. The contents of said fields are largely ID mappings, with the exception
+/// of [`Runtime::dependency_graph`]. However, [`Runtime::dependency_graph`] does not
+/// invoke any queries and as such there will be no panic from code downstream of Salsa. It can only
+/// panic if an assertion inside of Salsa fails.
 impl RefUnwindSafe for Zalsa {}
 
 impl Zalsa {

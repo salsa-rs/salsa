@@ -24,6 +24,18 @@ pub struct StorageHandle<Db> {
     phantom: PhantomData<fn() -> Db>,
 }
 
+impl<Db> Clone for StorageHandle<Db> {
+    fn clone(&self) -> Self {
+        *self.coordinate.clones.lock() += 1;
+
+        Self {
+            zalsa_impl: self.zalsa_impl.clone(),
+            coordinate: CoordinateDrop(Arc::clone(&self.coordinate)),
+            phantom: PhantomData,
+        }
+    }
+}
+
 impl<Db: Database> Default for StorageHandle<Db> {
     fn default() -> Self {
         Self {
@@ -39,15 +51,8 @@ impl<Db: Database> Default for StorageHandle<Db> {
 
 impl<Db> StorageHandle<Db> {
     pub fn into_storage(self) -> Storage<Db> {
-        let StorageHandle {
-            zalsa_impl,
-            coordinate,
-            phantom,
-        } = self;
         Storage {
-            zalsa_impl,
-            coordinate,
-            phantom,
+            handle: self,
             zalsa_local: ZalsaLocal::new(),
         }
     }
@@ -67,20 +72,10 @@ pub unsafe trait HasStorage: Database + Clone + Sized {
 
 /// Concrete implementation of the [`Database`] trait with local state that can be used to drive computations.
 pub struct Storage<Db> {
-    // Note: Drop order is important, zalsa_impl needs to drop before coordinate
-    /// Reference to the database.
-    zalsa_impl: Arc<Zalsa>,
-
-    // Note: Drop order is important, coordinate needs to drop after zalsa_impl
-    /// Coordination data for cancellation of other handles when `zalsa_mut` is called.
-    /// This could be stored in Zalsa but it makes things marginally cleaner to keep it separate.
-    coordinate: CoordinateDrop,
+    handle: StorageHandle<Db>,
 
     /// Per-thread state
     zalsa_local: zalsa_local::ZalsaLocal,
-
-    /// We store references to `Db`
-    phantom: PhantomData<fn() -> Db>,
 }
 
 struct Coordinate {
@@ -97,32 +92,23 @@ impl RefUnwindSafe for Coordinate {}
 impl<Db: Database> Default for Storage<Db> {
     fn default() -> Self {
         Self {
-            zalsa_impl: Arc::new(Zalsa::new::<Db>()),
-            coordinate: CoordinateDrop(Arc::new(Coordinate {
-                clones: Mutex::new(1),
-                cvar: Default::default(),
-            })),
+            handle: StorageHandle::default(),
             zalsa_local: ZalsaLocal::new(),
-            phantom: PhantomData,
         }
     }
 }
 
 impl<Db: Database> Storage<Db> {
-    /// Discard the local state of this handle, turning it into a [`StorageHandle`] that is [`Sync`]
-    /// and [`std::panic::UnwindSafe`].
+    /// Convert this instance of [`Storage`] into a [`StorageHandle`].
+    ///
+    /// This will discard the local state of this [`Storage`], thereby returning a value that
+    /// is both [`Sync`] and [`std::panic::UnwindSafe`].
     pub fn into_zalsa_handle(self) -> StorageHandle<Db> {
         let Storage {
-            zalsa_impl,
-            coordinate,
-            phantom,
+            handle,
             zalsa_local: _,
         } = self;
-        StorageHandle {
-            zalsa_impl,
-            coordinate,
-            phantom,
-        }
+        handle
     }
 
     // ANCHOR: cancel_other_workers
@@ -132,13 +118,13 @@ impl<Db: Database> Storage<Db> {
     /// This could deadlock if there is a single worker with two handles to the
     /// same database!
     fn cancel_others(&self, db: &Db) {
-        self.zalsa_impl.set_cancellation_flag();
+        self.handle.zalsa_impl.set_cancellation_flag();
 
         db.salsa_event(&|| Event::new(EventKind::DidSetCancellationFlag));
 
-        let mut clones = self.coordinate.clones.lock();
+        let mut clones = self.handle.coordinate.clones.lock();
         while *clones != 1 {
-            self.coordinate.cvar.wait(&mut clones);
+            self.handle.coordinate.cvar.wait(&mut clones);
         }
     }
     // ANCHOR_END: cancel_other_workers
@@ -146,7 +132,7 @@ impl<Db: Database> Storage<Db> {
 
 unsafe impl<T: HasStorage> ZalsaDatabase for T {
     fn zalsa(&self) -> &Zalsa {
-        &self.storage().zalsa_impl
+        &self.storage().handle.zalsa_impl
     }
 
     fn zalsa_mut(&mut self) -> &mut Zalsa {
@@ -154,7 +140,7 @@ unsafe impl<T: HasStorage> ZalsaDatabase for T {
 
         let storage = self.storage_mut();
         // The ref count on the `Arc` should now be 1
-        let zalsa_mut = Arc::get_mut(&mut storage.zalsa_impl).unwrap();
+        let zalsa_mut = Arc::get_mut(&mut storage.handle.zalsa_impl).unwrap();
         zalsa_mut.new_revision();
         zalsa_mut
     }
@@ -170,13 +156,9 @@ unsafe impl<T: HasStorage> ZalsaDatabase for T {
 
 impl<Db: Database> Clone for Storage<Db> {
     fn clone(&self) -> Self {
-        *self.coordinate.clones.lock() += 1;
-
         Self {
-            zalsa_impl: self.zalsa_impl.clone(),
-            coordinate: CoordinateDrop(Arc::clone(&self.coordinate)),
+            handle: self.handle.clone(),
             zalsa_local: ZalsaLocal::new(),
-            phantom: PhantomData,
         }
     }
 }
