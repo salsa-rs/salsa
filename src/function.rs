@@ -9,7 +9,7 @@ use crate::{
     salsa_struct::SalsaStructInDb,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
-    Cycle, Database, Id, Revision,
+    Cycle, Database, Id, Revision, Update,
 };
 
 use self::delete::DeletedEntries;
@@ -43,7 +43,7 @@ pub trait Configuration: Any {
     type Input<'db>: Send + Sync;
 
     /// The value computed by the function.
-    type Output<'db>: fmt::Debug + Send + Sync;
+    type Output<'db>: fmt::Debug + Send + Sync + Update;
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
