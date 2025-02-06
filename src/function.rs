@@ -231,8 +231,13 @@ where
     }
 
     fn reset_for_new_revision(&mut self, table: &mut Table) {
-        self.lru
-            .for_each_evicted(|evict| self.evict_value_from_memo_for(table.memos_mut(evict)));
+        self.lru.for_each_evicted(|evict| {
+            Self::evict_value_from_memo_for(
+                table.memos_mut(evict),
+                self.memo_ingredient_index,
+                &self.delete,
+            )
+        });
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

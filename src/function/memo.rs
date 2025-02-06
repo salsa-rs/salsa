@@ -5,8 +5,10 @@ use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::plumbing::MemoDropSender;
 use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
+use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
     key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event, EventKind, Id,
@@ -67,7 +69,11 @@ impl<C: Configuration> IngredientImpl<C> {
     /// Evicts the existing memo for the given key, replacing it
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
-    pub(super) fn evict_value_from_memo_for(&self, table: &mut MemoTable) {
+    pub(super) fn evict_value_from_memo_for(
+        table: &mut MemoTable,
+        memo_ingredient_index: MemoIngredientIndex,
+        memo_drop: &MemoDropSender,
+    ) {
         let map = |memo: ArcMemo<'static, C>| -> ArcMemo<'static, C> {
             match &memo.revisions.origin {
                 QueryOrigin::Assigned(_)
@@ -81,37 +87,17 @@ impl<C: Configuration> IngredientImpl<C> {
                 }
                 QueryOrigin::Derived(_) => {
                     // Note that we cannot use `Arc::get_mut` here as the use of `ArcSwap` makes it
-                    // impossible to get unique access to the interior Arc
-                    // QueryRevisions: !Clone to discourage cloning, we need it here though
-                    let &QueryRevisions {
-                        changed_at,
-                        durability,
-                        ref origin,
-                        ref tracked_struct_ids,
-                        ref accumulated,
-                        ref accumulated_inputs,
-                    } = &memo.revisions;
-                    // Re-assemble the memo but with the value set to `None`
-                    Arc::new(Memo::new(
-                        None,
-                        memo.verified_at.load(),
-                        QueryRevisions {
-                            changed_at,
-                            durability,
-                            origin: origin.clone(),
-                            tracked_struct_ids: tracked_struct_ids.clone(),
-                            accumulated: accumulated.clone(),
-                            accumulated_inputs: accumulated_inputs.clone(),
-                        },
-                    ))
+                    // impossible to get unique access to the interior Arc so we need to construct
+                    // a new allocation
+                    Arc::new(memo.without_value())
                 }
             }
         };
         // SAFETY: We queue the old value for deletion, delaying its drop until the next revision
         // bump.
-        let old_memo = unsafe { table.map_memo(self.memo_ingredient_index, map) };
+        let old_memo = unsafe { table.map_memo(memo_ingredient_index, map) };
         if let Some(old_memo) = old_memo {
-            self.delete.delay(ManuallyDrop::into_inner(old_memo));
+            memo_drop.delay(ManuallyDrop::into_inner(old_memo));
         }
     }
 }
@@ -142,6 +128,31 @@ impl<V> Memo<V> {
             revisions,
         }
     }
+
+    pub(super) fn without_value(&self) -> Self {
+        let &QueryRevisions {
+            changed_at,
+            durability,
+            ref origin,
+            ref tracked_struct_ids,
+            ref accumulated,
+            ref accumulated_inputs,
+        } = &self.revisions;
+        // Re-assemble the memo but with the value set to `None`
+        Memo::new(
+            None,
+            self.verified_at.load(),
+            QueryRevisions {
+                changed_at,
+                durability,
+                origin: origin.clone(),
+                tracked_struct_ids: tracked_struct_ids.clone(),
+                accumulated: accumulated.clone(),
+                accumulated_inputs: accumulated_inputs.clone(),
+            },
+        )
+    }
+
     /// True if this memo is known not to have changed based on its durability.
     pub(super) fn check_durability(&self, zalsa: &Zalsa) -> bool {
         let last_changed = zalsa.last_changed_revision(self.revisions.durability);

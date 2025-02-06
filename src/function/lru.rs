@@ -28,8 +28,8 @@ impl Lru {
         self.capacity.store(capacity, Ordering::Relaxed);
     }
 
-    pub(super) fn for_each_evicted(&self, mut cb: impl FnMut(Id)) {
-        let mut set = self.set.lock();
+    pub(super) fn for_each_evicted(&mut self, mut cb: impl FnMut(Id)) {
+        let set = self.set.get_mut();
         // Relaxed should be fine, we don't need to synchronize on this.
         let cap = self.capacity.load(Ordering::Relaxed);
         if set.len() <= cap || cap == 0 {
