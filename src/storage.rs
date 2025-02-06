@@ -1,3 +1,4 @@
+//! Public API facades for the implementation details of [`Zalsa`] and [`ZalsaLocal`].
 use std::{marker::PhantomData, panic::RefUnwindSafe, sync::Arc};
 
 use parking_lot::{Condvar, Mutex};
@@ -7,6 +8,50 @@ use crate::{
     zalsa_local::{self, ZalsaLocal},
     Database, Event, EventKind,
 };
+
+/// A handle to non-local database state.
+pub struct StorageHandle<Db> {
+    // Note: Drop order is important, zalsa_impl needs to drop before coordinate
+    /// Reference to the database.
+    zalsa_impl: Arc<Zalsa>,
+
+    // Note: Drop order is important, coordinate needs to drop after zalsa_impl
+    /// Coordination data for cancellation of other handles when `zalsa_mut` is called.
+    /// This could be stored in Zalsa but it makes things marginally cleaner to keep it separate.
+    coordinate: CoordinateDrop,
+
+    /// We store references to `Db`
+    phantom: PhantomData<fn() -> Db>,
+}
+
+impl<Db: Database> Default for StorageHandle<Db> {
+    fn default() -> Self {
+        Self {
+            zalsa_impl: Arc::new(Zalsa::new::<Db>()),
+            coordinate: CoordinateDrop(Arc::new(Coordinate {
+                clones: Mutex::new(1),
+                cvar: Default::default(),
+            })),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<Db> StorageHandle<Db> {
+    pub fn into_storage(self) -> Storage<Db> {
+        let StorageHandle {
+            zalsa_impl,
+            coordinate,
+            phantom,
+        } = self;
+        Storage {
+            zalsa_impl,
+            coordinate,
+            phantom,
+            zalsa_local: ZalsaLocal::new(),
+        }
+    }
+}
 
 /// Access the "storage" of a Salsa database: this is an internal plumbing trait
 /// automatically implemented by `#[salsa::db]` applied to a struct.
@@ -20,9 +65,8 @@ pub unsafe trait HasStorage: Database + Clone + Sized {
     fn storage_mut(&mut self) -> &mut Storage<Self>;
 }
 
-/// Concrete implementation of the [`Database`][] trait.
-/// Takes an optional type parameter `U` that allows you to thread your own data.
-pub struct Storage<Db: Database> {
+/// Concrete implementation of the [`Database`] trait with local state that can be used to drive computations.
+pub struct Storage<Db> {
     // Note: Drop order is important, zalsa_impl needs to drop before coordinate
     /// Reference to the database.
     zalsa_impl: Arc<Zalsa>,
@@ -38,12 +82,17 @@ pub struct Storage<Db: Database> {
     /// We store references to `Db`
     phantom: PhantomData<fn() -> Db>,
 }
+
 struct Coordinate {
     /// Counter of the number of clones of actor. Begins at 1.
     /// Incremented when cloned, decremented when dropped.
     clones: Mutex<usize>,
     cvar: Condvar,
 }
+
+// We cannot panic while holding a lock to `clones: Mutex<usize>` and therefore we cannot enter an
+// inconsistent state.
+impl RefUnwindSafe for Coordinate {}
 
 impl<Db: Database> Default for Storage<Db> {
     fn default() -> Self {
@@ -60,6 +109,22 @@ impl<Db: Database> Default for Storage<Db> {
 }
 
 impl<Db: Database> Storage<Db> {
+    /// Discard the local state of this handle, turning it into a [`StorageHandle`] that is [`Sync`]
+    /// and [`std::panic::UnwindSafe`].
+    pub fn into_zalsa_handle(self) -> StorageHandle<Db> {
+        let Storage {
+            zalsa_impl,
+            coordinate,
+            phantom,
+            zalsa_local: _,
+        } = self;
+        StorageHandle {
+            zalsa_impl,
+            coordinate,
+            phantom,
+        }
+    }
+
     // ANCHOR: cancel_other_workers
     /// Sets cancellation flag and blocks until all other workers with access
     /// to this storage have completed.
@@ -102,8 +167,6 @@ unsafe impl<T: HasStorage> ZalsaDatabase for T {
         Box::new(self.clone())
     }
 }
-
-impl<Db: Database> RefUnwindSafe for Storage<Db> {}
 
 impl<Db: Database> Clone for Storage<Db> {
     fn clone(&self) -> Self {

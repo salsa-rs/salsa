@@ -3,6 +3,7 @@ use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 use std::any::{Any, TypeId};
 use std::marker::PhantomData;
+use std::panic::RefUnwindSafe;
 use std::thread::ThreadId;
 
 use crate::cycle::CycleRecoveryStrategy;
@@ -148,6 +149,13 @@ pub struct Zalsa {
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
     runtime: Runtime,
 }
+
+// Our fields locked behind Mutices and RwLocks cannot enter an inconsistent state due to panics
+// as they are all merely ID mappings with the exception of the `Runtime::dependency_graph`.
+// `Runtime::dependency_graph` does not invoke user queries though and as such will not arbitrarily
+// panic. The only way it may panic is by failing one of its asserts in which case we are already
+// in a broken state anyways.
+impl RefUnwindSafe for Zalsa {}
 
 impl Zalsa {
     pub(crate) fn new<Db: Database>() -> Self {
