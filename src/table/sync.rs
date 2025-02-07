@@ -61,6 +61,7 @@ impl SyncTable {
                     memo_ingredient_index,
                     zalsa,
                     sync_table: self,
+                    _padding: false,
                 })
             }
             Some(SyncState {
@@ -91,6 +92,9 @@ pub(crate) struct ClaimGuard<'me> {
     memo_ingredient_index: MemoIngredientIndex,
     zalsa: &'me Zalsa,
     sync_table: &'me SyncTable,
+    // Reduce the size of ClaimResult by making more niches available in ClaimGuard; this fits into
+    // the padding of ClaimGuard so doesn't increase its size.
+    _padding: bool,
 }
 
 impl ClaimGuard<'_> {
