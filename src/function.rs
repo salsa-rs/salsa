@@ -5,7 +5,6 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, MaybeChangedAfter},
     key::DatabaseKeyIndex,
-    memo_ingredient_indices::{IngredientIndices, MemoIngredientIndices},
     salsa_struct::SalsaStructInDb,
     table::Table,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
@@ -96,7 +95,10 @@ pub struct IngredientImpl<C: Configuration> {
     index: IngredientIndex,
 
     /// The index for the memo/sync tables
-    memo_ingredient_indices: MemoIngredientIndices,
+    ///
+    /// This may be a `MemoIngredientSingletonIndex` or a `MemoIngredientIndex`, depending on
+    /// whether the tracked function's struct is a plain salsa struct or an enum `#[derive(Supertype)]`.
+    memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
 
     /// Used to find memos to throw out when we have too many memoized values.
     lru: lru::Lru,
@@ -127,9 +129,10 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn new(struct_indices: IngredientIndices, index: IngredientIndex, zalsa: &Zalsa) -> Self {
-        let memo_ingredient_indices = struct_indices
-            .memo_indices(|struct_index| zalsa.next_memo_ingredient_index(struct_index, index));
+    pub fn new(
+        index: IngredientIndex,
+        memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
+    ) -> Self {
         Self {
             index,
             memo_ingredient_indices,
