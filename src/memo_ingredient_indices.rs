@@ -1,45 +1,25 @@
-use std::fmt;
+use std::ops;
 
 use crate::zalsa::MemoIngredientIndex;
 use crate::IngredientIndex;
 
-/// The maximum number of memo ingredient indices we can hold. This affects the
-/// maximum number of variants possible in `#[derive(salsa::Enum)]`. We use a const
-/// so that we don't allocate and to perhaps allow the compiler to vectorize the search.
-pub const MAX_MEMO_INGREDIENT_INDICES: usize = 20;
-
 /// An ingredient has an [ingredient index][IngredientIndex]. However, Salsa also supports
-/// enums of salsa structs, and those don't have a constant ingredient index, because they
-/// are not ingredients by themselves but rather composed of them. However, an enum can be
-/// viewed as a *set* of [`IngredientIndex`], where each instance of the enum can belong
+/// enums of salsa structs (and other salsa enums), and those don't have a constant ingredient index,
+/// because they are not ingredients by themselves but rather composed of them. However, an enum can
+/// be viewed as a *set* of [`IngredientIndex`], where each instance of the enum can belong
 /// to one, potentially different, index. This is what this type represents: a set of
 /// `IngredientIndex`.
-///
-/// This type is represented as an array, for efficiency, and supports up to 20 indices.
-/// That means that Salsa enums can have at most 20 variants. Alternatively, they can also
-/// contain Salsa enums as variants, but then the total number of variants is counter - because
-/// what matters is the number of unique `IngredientIndex`s.
 #[derive(Clone)]
 pub struct IngredientIndices {
-    indices: [IngredientIndex; MAX_MEMO_INGREDIENT_INDICES],
-    len: u8,
+    indices: Box<[IngredientIndex]>,
 }
 
 impl From<IngredientIndex> for IngredientIndices {
     #[inline]
     fn from(value: IngredientIndex) -> Self {
-        let mut result = Self::uninitialized();
-        result.indices[0] = value;
-        result.len = 1;
-        result
-    }
-}
-
-impl fmt::Debug for IngredientIndices {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_list()
-            .entries(&self.indices[..self.len.into()])
-            .finish()
+        Self {
+            indices: Box::new([value]),
+        }
     }
 }
 
@@ -49,66 +29,71 @@ impl IngredientIndices {
         &self,
         mut memo_index: impl FnMut(IngredientIndex) -> MemoIngredientIndex,
     ) -> MemoIngredientIndices {
-        let mut memo_ingredient_indices = [(
-            IngredientIndex::from((u32::MAX - 1) as usize),
+        let mut indices = Vec::new();
+        let Some(&last) = self.indices.last() else {
+            return MemoIngredientIndices {
+                indices: Box::default(),
+            };
+        };
+        indices.resize(
+            last.as_usize() + 1,
             MemoIngredientIndex::from_usize((u32::MAX - 1) as usize),
-        ); MAX_MEMO_INGREDIENT_INDICES];
-        for i in 0..usize::from(self.len) {
-            let memo_ingredient_index = memo_index(self.indices[i]);
-            memo_ingredient_indices[i] = (self.indices[i], memo_ingredient_index);
+        );
+        for &ingredient in &self.indices {
+            indices[ingredient.as_usize()] = memo_index(ingredient);
         }
         MemoIngredientIndices {
-            indices: memo_ingredient_indices,
-            len: self.len,
+            indices: indices.into_boxed_slice(),
         }
     }
 
     #[inline]
-    pub fn uninitialized() -> Self {
+    pub fn empty() -> Self {
         Self {
-            indices: [IngredientIndex::from((u32::MAX - 1) as usize); MAX_MEMO_INGREDIENT_INDICES],
-            len: 0,
+            indices: Box::default(),
         }
     }
 
-    #[track_caller]
-    #[inline]
-    pub fn merge(&mut self, other: &Self) {
-        if usize::from(self.len) + usize::from(other.len) > MAX_MEMO_INGREDIENT_INDICES {
-            panic!("too many variants in the salsa enum");
+    pub fn merge(iter: impl IntoIterator<Item = Self>) -> Self {
+        let mut indices = Vec::new();
+        for index in iter {
+            indices.extend(index.indices);
         }
-        self.indices[usize::from(self.len)..][..usize::from(other.len)]
-            .copy_from_slice(&other.indices[..usize::from(other.len)]);
-        self.len += other.len;
+        indices.sort_unstable();
+        indices.dedup();
+        Self {
+            indices: indices.into_boxed_slice(),
+        }
     }
 }
 
 /// This type is to [`MemoIngredientIndex`] what [`IngredientIndices`] is to [`IngredientIndex`]:
 /// since enums can contain different ingredient indices, they can also have different memo indices,
 /// so we need to keep track of them.
+///
+/// This acts a map from [`IngredientIndex`] to [`MemoIngredientIndex`] but implemented
+/// via a slice for fast lookups, trading memory for speed. With these changes, lookups are `O(1)`
+/// instead of `O(n)`.
+///
+/// A database tends to have few ingredients (i) and even less function ingredients (f).
+/// While this is bounded as `O(i * f)`, the average case is significantly smaller: a function
+/// ingredient only stores a slice whose length corresponds to the largest ingredient index's
+/// _value_. For example, if we have the ingredient indices `[2, 6, 17]`, then we will allocate a
+/// slice whose length is `17 + 1`.
+///
+/// Assuming a heavy example scenario of 1000 ingredients (500 of which are function ingredients)
+/// this would come out to a maximum possibly memory usage of 4bytes * 1000 * 500 ~= 1.9MB.
+/// Given such a number scenario is already rather unlikely and the average usages of memory being
+/// lower we can sacrifice some memory for speed.
 #[derive(Clone)]
 pub struct MemoIngredientIndices {
-    indices: [(IngredientIndex, MemoIngredientIndex); MAX_MEMO_INGREDIENT_INDICES],
-    len: u8,
+    indices: Box<[MemoIngredientIndex]>,
 }
 
-impl fmt::Debug for MemoIngredientIndices {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_list()
-            .entries(&self.indices[..self.len.into()])
-            .finish()
-    }
-}
+impl ops::Index<IngredientIndex> for MemoIngredientIndices {
+    type Output = MemoIngredientIndex;
 
-impl MemoIngredientIndices {
-    #[inline]
-    pub(crate) fn find(&self, ingredient_index: IngredientIndex) -> MemoIngredientIndex {
-        for &(ingredient, memo_ingredient_index) in &self.indices[..(self.len - 1).into()] {
-            if ingredient == ingredient_index {
-                return memo_ingredient_index;
-            }
-        }
-        // It must be the last.
-        self.indices[usize::from(self.len - 1)].1
+    fn index(&self, index: IngredientIndex) -> &Self::Output {
+        &self.indices[index.as_usize()]
     }
 }
