@@ -112,6 +112,8 @@ const _: () = {
         }
     }
     impl zalsa_::SalsaStructInDb for InternedString<'_> {
+        type MemoIngredientMap = zalsa_::MemoIngredientSingletonIndex;
+
         fn lookup_or_create_ingredient_index(aux: &Zalsa) -> salsa::plumbing::IngredientIndices {
             aux.add_or_lookup_jar_by_type::<zalsa_struct_::JarImpl<Configuration_>>()
                 .into()

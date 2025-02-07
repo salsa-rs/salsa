@@ -70,15 +70,11 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
     let salsa_struct_in_db = quote! {
         impl #impl_generics zalsa::SalsaStructInDb for #enum_name #type_generics
         #where_clause {
+            type MemoIngredientMap = zalsa::MemoIngredientIndices;
+
             #[inline]
             fn lookup_or_create_ingredient_index(__zalsa: &zalsa::Zalsa) -> zalsa::IngredientIndices {
-                let mut __result = zalsa::IngredientIndices::uninitialized();
-                #(
-                    __result.merge(
-                        &<#variant_types as zalsa::SalsaStructInDb>::lookup_or_create_ingredient_index(__zalsa)
-                    );
-                )*
-                __result
+                zalsa::IngredientIndices::merge([ #( <#variant_types as zalsa::SalsaStructInDb>::lookup_or_create_ingredient_index(__zalsa) ),* ])
             }
 
             #[inline]
