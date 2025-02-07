@@ -5,6 +5,10 @@ use crate::zalsa::Zalsa;
 use crate::Id;
 
 pub trait SalsaStructInDb: Sized {
+    type MemoIngredientMap: std::ops::Index<crate::IngredientIndex, Output = crate::zalsa::MemoIngredientIndex>
+        + Send
+        + Sync;
+
     /// This method is used to create ingredient indices. Note, it does *not* create the ingredients
     /// themselves, that is the job of [`Zalsa::add_or_lookup_jar_by_type()`]. This method only creates
     /// or lookup the indices. Naturally, implementors may call `add_or_lookup_jar_by_type()` to

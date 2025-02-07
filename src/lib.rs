@@ -91,7 +91,9 @@ pub mod plumbing {
     pub use crate::ingredient::Ingredient;
     pub use crate::ingredient::Jar;
     pub use crate::key::DatabaseKeyIndex;
-    pub use crate::memo_ingredient_indices::IngredientIndices;
+    pub use crate::memo_ingredient_indices::{
+        IngredientIndices, MemoIngredientIndices, MemoIngredientSingletonIndex,
+    };
     pub use crate::revision::Revision;
     pub use crate::runtime::stamp;
     pub use crate::runtime::Runtime;

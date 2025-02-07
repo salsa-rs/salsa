@@ -101,6 +101,8 @@ macro_rules! setup_tracked_fn {
                         $zalsa::IngredientCache::new();
 
                     impl $zalsa::SalsaStructInDb for $InternedData<'_> {
+                        type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
+
                         fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
                             $zalsa::IngredientIndices::empty()
                         }
@@ -235,18 +237,18 @@ macro_rules! setup_tracked_fn {
                     first_index: $zalsa::IngredientIndex,
                     struct_index: $zalsa::IngredientIndices,
                 ) -> Vec<Box<dyn $zalsa::Ingredient>> {
-                    let struct_index = $zalsa::macro_if! {
+                    let struct_index: $zalsa::IngredientIndices = $zalsa::macro_if! {
                         if $needs_interner {
                             first_index.successor(0).into()
                         } else {
                             struct_index
                         }
                     };
+                    let memo_ingredient_indices = From::from((zalsa, struct_index, first_index));
 
                     let fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
-                        struct_index,
                         first_index,
-                        zalsa,
+                        memo_ingredient_indices,
                         $lru
                     );
                     $zalsa::macro_if! {
