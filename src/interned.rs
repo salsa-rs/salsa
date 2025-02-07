@@ -253,6 +253,20 @@ where
         self.data(db, C::deref_struct(s))
     }
 
+    #[cfg(feature = "salsa_unstable")]
+    /// Returns all data corresponding to the interned struct.
+    pub fn entries<'db>(
+        &'db self,
+        db: &'db dyn crate::Database,
+    ) -> impl Iterator<Item = &'db Value<C>> {
+        db.zalsa()
+            .table()
+            .pages
+            .iter()
+            .filter_map(|page| page.cast_type::<crate::table::Page<Value<C>>>())
+            .flat_map(|page| page.slots())
+    }
+
     pub fn reset(&mut self, revision: Revision) {
         assert!(revision > self.reset_at);
         self.reset_at = revision;
