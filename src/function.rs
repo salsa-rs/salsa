@@ -194,8 +194,7 @@ where
 
     #[inline]
     fn memo_ingredient_index(&self, zalsa: &Zalsa, id: Id) -> MemoIngredientIndex {
-        self.memo_ingredient_indices
-            .find(zalsa.ingredient_index(id))
+        self.memo_ingredient_indices[zalsa.ingredient_index(id)]
     }
 }
 

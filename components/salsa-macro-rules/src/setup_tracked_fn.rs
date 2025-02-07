@@ -102,7 +102,7 @@ macro_rules! setup_tracked_fn {
 
                     impl $zalsa::SalsaStructInDb for $InternedData<'_> {
                         fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
-                            $zalsa::IngredientIndices::uninitialized()
+                            $zalsa::IngredientIndices::empty()
                         }
 
                         #[inline]
@@ -223,7 +223,7 @@ macro_rules! setup_tracked_fn {
                 {
                     $zalsa::macro_if! {
                         if $needs_interner {
-                            $zalsa::IngredientIndices::uninitialized()
+                            $zalsa::IngredientIndices::empty()
                         } else {
                             <$InternedData as $zalsa::SalsaStructInDb>::lookup_or_create_ingredient_index(zalsa)
                         }
