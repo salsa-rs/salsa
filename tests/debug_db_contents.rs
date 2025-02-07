@@ -26,9 +26,8 @@ fn execute() {
     let _ = InternedStruct::new(&db, "Salsa2".to_string());
 
     // test interned structs
-    let interned = db
-        .storage()
-        .debug_interned_entries::<InternedStruct>()
+    let interned = InternedStruct::ingredient(&db)
+        .entries(&db)
         .collect::<Vec<_>>();
 
     assert_eq!(interned.len(), 2);
@@ -37,9 +36,9 @@ fn execute() {
 
     // test input structs
     let input = InputStruct::new(&db, 22);
-    let inputs = db
-        .storage()
-        .debug_input_entries::<InputStruct>()
+
+    let inputs = InputStruct::ingredient(&db)
+        .entries(&db)
         .collect::<Vec<_>>();
 
     assert_eq!(inputs.len(), 1);
@@ -48,9 +47,8 @@ fn execute() {
     // test tracked structs
     let computed = tracked_fn(&db, input).field(&db);
     assert_eq!(computed, 44);
-    let tracked = db
-        .storage()
-        .debug_tracked_entries::<TrackedStruct>()
+    let tracked = TrackedStruct::ingredient(&db)
+        .entries(&db)
         .collect::<Vec<_>>();
 
     assert_eq!(tracked.len(), 1);
