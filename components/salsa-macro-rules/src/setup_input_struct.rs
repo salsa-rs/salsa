@@ -67,7 +67,7 @@ macro_rules! setup_input_struct {
             use salsa::plumbing as $zalsa;
             use $zalsa::input as $zalsa_struct;
 
-            struct $Configuration;
+            type $Configuration = $Struct;
 
             impl $zalsa_struct::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
@@ -112,6 +112,17 @@ macro_rules! setup_input_struct {
             impl $zalsa::AsId for $Struct {
                 fn as_id(&self) -> salsa::Id {
                     self.0
+                }
+            }
+
+            unsafe impl $zalsa::Update for $Struct {
+                unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+                    if unsafe { *old_pointer } != new_value {
+                        unsafe { *old_pointer = new_value };
+                        true
+                    } else {
+                        false
+                    }
                 }
             }
 

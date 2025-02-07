@@ -28,6 +28,7 @@ pub struct FunctionId<'db> {
 // ANCHOR: program
 #[salsa::tracked]
 pub struct Program<'db> {
+    #[tracked]
     #[return_ref]
     pub statements: Vec<Statement<'db>>,
 }
@@ -76,14 +77,15 @@ pub enum Op {
 // ANCHOR: functions
 #[salsa::tracked]
 pub struct Function<'db> {
-    #[id]
     pub name: FunctionId<'db>,
 
     name_span: Span<'db>,
 
+    #[tracked]
     #[return_ref]
     pub args: Vec<VariableId<'db>>,
 
+    #[tracked]
     #[return_ref]
     pub body: Expression<'db>,
 }
@@ -91,7 +93,9 @@ pub struct Function<'db> {
 
 #[salsa::tracked]
 pub struct Span<'db> {
+    #[tracked]
     pub start: usize,
+    #[tracked]
     pub end: usize,
 }
 

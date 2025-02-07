@@ -16,7 +16,7 @@ use salsa::CycleRecoveryAction;
 
 use crate::setup::{Knobs, KnobsDatabase};
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, salsa::Update)]
 struct CycleValue(u32);
 
 const MIN: CycleValue = CycleValue(0);

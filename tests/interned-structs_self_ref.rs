@@ -68,7 +68,7 @@ const _: () = {
     }
     impl zalsa_struct_::Configuration for Configuration_ {
         const DEBUG_NAME: &'static str = "InternedString";
-        type Data<'a> = StructData<'a>;
+        type Fields<'a> = StructData<'a>;
         type Struct<'a> = InternedString<'a>;
         fn struct_from_id<'db>(id: salsa::Id) -> Self::Struct<'db> {
             InternedString(id, std::marker::PhantomData)

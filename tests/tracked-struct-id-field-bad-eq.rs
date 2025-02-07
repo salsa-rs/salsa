@@ -28,7 +28,6 @@ impl From<bool> for BadEq {
 
 #[salsa::tracked]
 struct MyTracked<'db> {
-    #[id]
     field: BadEq,
 }
 

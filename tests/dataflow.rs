@@ -19,7 +19,7 @@ struct Definition {
     increment: usize,
 }
 
-#[derive(Eq, PartialEq, Clone, Debug)]
+#[derive(Eq, PartialEq, Clone, Debug, salsa::Update)]
 enum Type {
     Bottom,
     Values(Box<[usize]>),

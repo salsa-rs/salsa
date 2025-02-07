@@ -8,7 +8,7 @@ use expect_test::expect;
 use salsa::{CycleRecoveryAction, Database as Db, DatabaseImpl as DbImpl, Durability, Setter};
 use test_log::test;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, salsa::Update)]
 enum Value {
     N(u8),
     OutOfBounds,
