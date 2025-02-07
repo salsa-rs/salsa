@@ -1,4 +1,4 @@
-/// It's possible to call a Salsa query from within a cycle initial fn.
+//! It's possible to call a Salsa query from within a cycle initial fn.
 
 #[salsa::tracked]
 fn initial_value(_db: &dyn salsa::Database) -> u32 {

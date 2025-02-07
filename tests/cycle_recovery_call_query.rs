@@ -1,4 +1,4 @@
-/// It's possible to call a Salsa query from within a cycle recovery fn.
+//! It's possible to call a Salsa query from within a cycle recovery fn.
 
 #[salsa::tracked]
 fn fallback_value(_db: &dyn salsa::Database) -> u32 {
