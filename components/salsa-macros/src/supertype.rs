@@ -72,13 +72,7 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
         #where_clause {
             #[inline]
             fn lookup_or_create_ingredient_index(__zalsa: &zalsa::Zalsa) -> zalsa::IngredientIndices {
-                let mut __result = zalsa::IngredientIndices::uninitialized();
-                #(
-                    __result.merge(
-                        &<#variant_types as zalsa::SalsaStructInDb>::lookup_or_create_ingredient_index(__zalsa)
-                    );
-                )*
-                __result
+                zalsa::IngredientIndices::merge([ #( <#variant_types as zalsa::SalsaStructInDb>::lookup_or_create_ingredient_index(__zalsa) ),* ])
             }
 
             #[inline]
