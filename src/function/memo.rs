@@ -2,6 +2,7 @@ use rustc_hash::FxHashSet;
 use std::any::Any;
 use std::fmt::Debug;
 use std::fmt::Formatter;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crossbeam::atomic::AtomicCell;
@@ -135,7 +136,7 @@ pub(super) struct Memo<V> {
     pub(super) verified_at: AtomicCell<Revision>,
 
     /// Is this memo verified to not be a provisional cycle result?
-    pub(super) verified_final: AtomicCell<bool>,
+    pub(super) verified_final: AtomicBool,
 
     /// Revision information
     pub(super) revisions: QueryRevisions,
@@ -151,14 +152,18 @@ impl<V> Memo<V> {
         Memo {
             value,
             verified_at: AtomicCell::new(revision_now),
-            verified_final: AtomicCell::new(revisions.cycle_heads.is_empty()),
+            verified_final: AtomicBool::new(revisions.cycle_heads.is_empty()),
             revisions,
         }
     }
 
-    /// True if this is may be a provisional cycle-iteration result.
+    /// True if this may be a provisional cycle-iteration result.
     pub(super) fn may_be_provisional(&self) -> bool {
-        !self.verified_final.load()
+        // Relaxed is OK here, because `verified_final` is only ever mutated in one direction (from
+        // `false` to `true`), and changing it to `true` on memos with cycle heads where it was
+        // ever `false` is purely an optimization; if we read an out-of-date `false`, it just means
+        // we might go validate it again unnecessarily.
+        !self.verified_final.load(Ordering::Relaxed)
     }
 
     /// Cycle heads that should be propagated to dependent queries.

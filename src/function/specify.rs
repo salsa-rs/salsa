@@ -1,4 +1,5 @@
 use crossbeam::atomic::AtomicCell;
+use std::sync::atomic::AtomicBool;
 
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
@@ -83,7 +84,7 @@ where
         let memo = Memo {
             value: Some(value),
             verified_at: AtomicCell::new(revision),
-            verified_final: AtomicCell::new(true),
+            verified_final: AtomicBool::new(true),
             revisions,
         };
 

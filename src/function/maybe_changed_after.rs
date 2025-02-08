@@ -8,6 +8,7 @@ use crate::{
     AsDynDatabase as _, Id, Revision,
 };
 use rustc_hash::FxHashSet;
+use std::sync::atomic::Ordering;
 
 use super::{memo::Memo, Configuration, IngredientImpl};
 
@@ -226,7 +227,9 @@ where
                 return false;
             }
         }
-        memo.verified_final.store(true);
+        // Relaxed is sufficient here because there are no other writes we need to ensure have
+        // happened before marking this memo as verified-final.
+        memo.verified_final.store(true, Ordering::Relaxed);
         true
     }
 
