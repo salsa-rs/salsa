@@ -58,7 +58,7 @@ impl Clone for AccumulatedMap {
 ///
 /// Knowning whether any input has accumulated values makes aggregating the accumulated values
 /// cheaper because we can skip over entire subtrees.
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum InputAccumulatedValues {
     /// The query nor any of its inputs have any accumulated values.
     #[default]
@@ -119,5 +119,22 @@ impl AtomicInputAccumulatedValues {
         } else {
             InputAccumulatedValues::Empty
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_input_accumulated_values() {
+        let val = AtomicInputAccumulatedValues::new(InputAccumulatedValues::Empty);
+        assert_eq!(val.load(), InputAccumulatedValues::Empty);
+        val.store(InputAccumulatedValues::Any);
+        assert_eq!(val.load(), InputAccumulatedValues::Any);
+        let val = AtomicInputAccumulatedValues::new(InputAccumulatedValues::Any);
+        assert_eq!(val.load(), InputAccumulatedValues::Any);
+        val.store(InputAccumulatedValues::Empty);
+        assert_eq!(val.load(), InputAccumulatedValues::Empty);
     }
 }
