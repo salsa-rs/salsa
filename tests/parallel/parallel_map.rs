@@ -83,7 +83,7 @@ fn execute_cancellation() {
 
     let counts = (2..=20).collect::<Vec<u32>>();
 
-    db.signal_on_did_cancel.store(2);
+    db.signal_on_did_cancel(2);
     input.set_field(&mut db).to(counts);
 
     // Assert thread A *should* was cancelled

@@ -27,6 +27,10 @@ impl Revision {
         }
     }
 
+    pub(crate) fn from_opt(g: usize) -> Option<Self> {
+        NonZeroUsize::new(g).map(|generation| Self { generation })
+    }
+
     pub(crate) fn next(self) -> Revision {
         Self::from(self.generation.get() + 1)
     }
@@ -47,6 +51,14 @@ pub(crate) struct AtomicRevision {
     data: AtomicUsize,
 }
 
+impl From<Revision> for AtomicRevision {
+    fn from(value: Revision) -> Self {
+        Self {
+            data: AtomicUsize::new(value.as_usize()),
+        }
+    }
+}
+
 impl AtomicRevision {
     pub(crate) const fn start() -> Self {
         Self {
@@ -55,10 +67,62 @@ impl AtomicRevision {
     }
 
     pub(crate) fn load(&self) -> Revision {
-        Revision::from(self.data.load(Ordering::SeqCst))
+        // Safety: We know that the value is non-zero because we only ever store `START` which 1, or a
+        // Revision which is guaranteed to be non-zero.
+        Revision {
+            generation: unsafe { NonZeroUsize::new_unchecked(self.data.load(Ordering::Acquire)) },
+        }
     }
 
     pub(crate) fn store(&self, r: Revision) {
         self.data.store(r.as_usize(), Ordering::SeqCst);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct OptionalAtomicRevision {
+    data: AtomicUsize,
+}
+
+impl From<Revision> for OptionalAtomicRevision {
+    fn from(value: Revision) -> Self {
+        Self {
+            data: AtomicUsize::new(value.as_usize()),
+        }
+    }
+}
+
+impl OptionalAtomicRevision {
+    pub(crate) fn new(revision: Option<Revision>) -> Self {
+        Self {
+            data: AtomicUsize::new(revision.map_or(0, |r| r.as_usize())),
+        }
+    }
+
+    pub(crate) fn load(&self) -> Option<Revision> {
+        Revision::from_opt(self.data.load(Ordering::Acquire))
+    }
+
+    pub(crate) fn swap(&self, val: Option<Revision>) -> Option<Revision> {
+        Revision::from_opt(
+            self.data
+                .swap(val.map_or(0, |r| r.as_usize()), Ordering::AcqRel),
+        )
+    }
+
+    pub(crate) fn compare_exchange(
+        &self,
+        current: Option<Revision>,
+        new: Option<Revision>,
+    ) -> Result<Option<Revision>, Option<Revision>> {
+        self.data
+            .compare_exchange(
+                current.map_or(0, |r| r.as_usize()),
+                new.map_or(0, |r| r.as_usize()),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .map(Revision::from_opt)
+            .map_err(Revision::from_opt)
     }
 }

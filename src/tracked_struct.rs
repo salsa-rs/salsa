@@ -1,6 +1,6 @@
 use std::{any::TypeId, fmt, hash::Hash, marker::PhantomData, ops::DerefMut};
 
-use crossbeam::{atomic::AtomicCell, queue::SegQueue};
+use crossbeam::queue::SegQueue;
 use tracked_field::FieldIngredientImpl;
 
 use crate::{
@@ -9,6 +9,7 @@ use crate::{
     ingredient::{fmt_index, Ingredient, Jar, JarAux, MaybeChangedAfter},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::ZalsaLocal,
+    revision::OptionalAtomicRevision,
     runtime::StampedValue,
     salsa_struct::SalsaStructInDb,
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
@@ -279,7 +280,7 @@ where
     /// even reading from those fields in that situation would create UB.
     /// This `None` value should never be observable by users unless they have
     /// leaked a reference across threads somehow.
-    updated_at: AtomicCell<Option<Revision>>,
+    updated_at: OptionalAtomicRevision,
 
     /// Fields of this tracked struct. They can change across revisions,
     /// but they do not change within a particular revision.
@@ -414,7 +415,7 @@ where
         fields: C::Fields<'db>,
     ) -> Id {
         let value = |_| Value {
-            updated_at: AtomicCell::new(Some(current_revision)),
+            updated_at: OptionalAtomicRevision::new(Some(current_revision)),
             durability: current_deps.durability,
             fields: unsafe { self.to_static(fields) },
             revisions: C::new_revisions(current_deps.changed_at),

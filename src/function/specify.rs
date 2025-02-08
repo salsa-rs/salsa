@@ -1,7 +1,6 @@
-use crossbeam::atomic::AtomicCell;
-
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
+    revision::AtomicRevision,
     tracked_struct::TrackedStructInDb,
     zalsa::ZalsaDatabase,
     zalsa_local::{QueryOrigin, QueryRevisions},
@@ -81,7 +80,7 @@ where
 
         let memo = Memo {
             value: Some(value),
-            verified_at: AtomicCell::new(revision),
+            verified_at: AtomicRevision::from(revision),
             revisions,
         };
 

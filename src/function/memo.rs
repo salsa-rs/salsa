@@ -3,9 +3,8 @@ use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
 
-use crossbeam::atomic::AtomicCell;
-
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::revision::AtomicRevision;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
     key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event, EventKind, Id,
@@ -95,7 +94,7 @@ impl<C: Configuration> IngredientImpl<C> {
                                 origin: origin.clone(),
                                 tracked_struct_ids: tracked_struct_ids.clone(),
                                 accumulated: accumulated.clone(),
-                                accumulated_inputs: AtomicCell::new(accumulated_inputs.load()),
+                                accumulated_inputs: accumulated_inputs.clone(),
                             },
                         ))
                     }
@@ -117,7 +116,7 @@ pub(super) struct Memo<V> {
 
     /// Last revision when this memo was verified; this begins
     /// as the current revision.
-    pub(super) verified_at: AtomicCell<Revision>,
+    pub(super) verified_at: AtomicRevision,
 
     /// Revision information
     pub(super) revisions: QueryRevisions,
@@ -132,7 +131,7 @@ impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
         Memo {
             value,
-            verified_at: AtomicCell::new(revision_now),
+            verified_at: AtomicRevision::from(revision_now),
             revisions,
         }
     }

@@ -90,7 +90,7 @@ fn execute() {
 
     let thread_a = std::thread::spawn({
         let db = db.clone();
-        db.knobs().signal_on_will_block.store(3);
+        db.knobs().signal_on_will_block(3);
         move || a1(&db, input)
     });
 

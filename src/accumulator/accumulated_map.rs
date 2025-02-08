@@ -1,4 +1,7 @@
-use std::ops;
+use std::{
+    ops,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use rustc_hash::FxHashMap;
 
@@ -89,5 +92,32 @@ impl ops::BitOr for InputAccumulatedValues {
 impl ops::BitOrAssign for InputAccumulatedValues {
     fn bitor_assign(&mut self, rhs: Self) {
         *self = *self | rhs;
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct AtomicInputAccumulatedValues(AtomicBool);
+
+impl Clone for AtomicInputAccumulatedValues {
+    fn clone(&self) -> Self {
+        Self(AtomicBool::new(self.0.load(Ordering::Relaxed)))
+    }
+}
+
+impl AtomicInputAccumulatedValues {
+    pub(crate) fn new(accumulated_inputs: InputAccumulatedValues) -> Self {
+        Self(AtomicBool::new(accumulated_inputs.is_any()))
+    }
+
+    pub(crate) fn store(&self, accumulated: InputAccumulatedValues) {
+        self.0.store(accumulated.is_any(), Ordering::Release);
+    }
+
+    pub(crate) fn load(&self) -> InputAccumulatedValues {
+        if self.0.load(Ordering::Acquire) {
+            InputAccumulatedValues::Any
+        } else {
+            InputAccumulatedValues::Empty
+        }
     }
 }

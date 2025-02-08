@@ -1,8 +1,9 @@
-use crossbeam::atomic::AtomicCell;
 use rustc_hash::FxHashMap;
 use tracing::debug;
 
-use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
+use crate::accumulator::accumulated_map::{
+    AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues,
+};
 use crate::active_query::ActiveQuery;
 use crate::durability::Durability;
 use crate::key::{DatabaseKeyIndex, InputDependencyIndex, OutputDependencyIndex};
@@ -341,7 +342,7 @@ pub(crate) struct QueryRevisions {
     pub(super) accumulated: Option<Box<AccumulatedMap>>,
     /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
     /// has any direct or indirect accumulated values.
-    pub(super) accumulated_inputs: AtomicCell<InputAccumulatedValues>,
+    pub(super) accumulated_inputs: AtomicInputAccumulatedValues,
 }
 
 impl QueryRevisions {
