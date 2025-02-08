@@ -55,7 +55,7 @@ pub(crate) struct ActiveQuery {
     /// Stores the values accumulated to the given ingredient.
     /// The type of accumulated value is erased but known to the ingredient.
     pub(crate) accumulated: AccumulatedMap,
-    ///
+
     /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
     /// has any accumulated values.
     pub(super) accumulated_inputs: InputAccumulatedValues,

@@ -72,7 +72,9 @@ pub trait Configuration: Any {
     /// Get the cycle recovery initial value.
     fn cycle_initial<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Self::Output<'db>;
 
-    /// Decide whether to iterate a cycle again or fallback.
+    /// Decide whether to iterate a cycle again or fallback. `value` is the provisional return
+    /// value from the latest iteration of this cycle. `count` is the number of cycle iterations
+    /// we've already completed.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
         value: &Self::Output<'db>,

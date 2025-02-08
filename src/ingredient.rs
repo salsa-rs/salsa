@@ -68,6 +68,10 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     fn is_verified_final<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool;
 
     /// Invoked when the current thread needs to wait for a result for the given `key_index`.
+    ///
+    /// A return value of `true` indicates that a result is now available. A return value of
+    /// `false` means that a cycle was encountered; the waited-on query is either already claimed
+    /// by the current thread, or by a thread waiting on the current thread.
     fn wait_for(&self, db: &dyn Database, key_index: Id) -> bool;
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
