@@ -141,3 +141,41 @@ impl HasLogger for ExecuteValidateLoggerDatabase {
         &self.logger
     }
 }
+
+/// Trait implemented by databases that lets them provide a fixed u32 value.
+pub trait HasValue {
+    fn get_value(&self) -> u32;
+}
+
+#[salsa::db]
+pub trait ValueDatabase: HasValue + Database {}
+
+#[salsa::db]
+impl<Db: HasValue + Database> ValueDatabase for Db {}
+
+#[salsa::db]
+#[derive(Clone, Default)]
+pub struct DatabaseWithValue {
+    storage: Storage<Self>,
+    value: u32,
+}
+
+impl HasValue for DatabaseWithValue {
+    fn get_value(&self) -> u32 {
+        self.value
+    }
+}
+
+#[salsa::db]
+impl Database for DatabaseWithValue {
+    fn salsa_event(&self, _event: &dyn Fn() -> salsa::Event) {}
+}
+
+impl DatabaseWithValue {
+    pub fn new(value: u32) -> Self {
+        Self {
+            storage: Default::default(),
+            value,
+        }
+    }
+}
