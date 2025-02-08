@@ -75,7 +75,7 @@ impl AtomicRevision {
     }
 
     pub(crate) fn store(&self, r: Revision) {
-        self.data.store(r.as_usize(), Ordering::SeqCst);
+        self.data.store(r.as_usize(), Ordering::Release);
     }
 }
 
