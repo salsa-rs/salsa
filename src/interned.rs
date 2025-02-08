@@ -390,11 +390,13 @@ pub trait HashEqLike<O> {
 pub trait Lookup<O> {
     fn into_owned(self) -> O;
 }
+
 impl<T> Lookup<T> for T {
     fn into_owned(self) -> T {
         self
     }
 }
+
 impl<T> HashEqLike<T> for T
 where
     T: Hash + Eq,
@@ -418,6 +420,19 @@ where
 
     fn eq(&self, data: &T) -> bool {
         **self == *data
+    }
+}
+
+impl<T> HashEqLike<&T> for T
+where
+    T: Hash + Eq,
+{
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        Hash::hash(self, &mut *h);
+    }
+
+    fn eq(&self, data: &&T) -> bool {
+        *self == **data
     }
 }
 
