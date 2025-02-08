@@ -6,37 +6,24 @@ warning: unused import: `salsa::Update`
   |
   = note: `#[warn(unused_imports)]` on by default
 
-error[E0277]: the trait bound `&'db str: Update` is not satisfied
-  --> tests/compile-fail/tracked_fn_return_ref.rs:16:67
+error: lifetime may not live long enough
+  --> tests/compile-fail/tracked_fn_return_ref.rs:15:1
    |
-16 | fn tracked_fn_return_ref<'db>(db: &'db dyn Db, input: MyInput) -> &'db str {
-   |                                                                   ^^^^^^^^ the trait `Update` is not implemented for `&'db str`
+15 | #[salsa::tracked]
+   | ^^^^^^^^^^^^^^^^^
+   | |
+   | lifetime `'db` defined here
+   | requires that `'db` must outlive `'static`
    |
-   = help: the trait `Update` is implemented for `String`
-note: required by a bound in `salsa::plumbing::function::Configuration::Output`
-  --> src/function.rs
-   |
-   |     type Output<'db>: fmt::Debug + Send + Sync + Update;
-   |                                                  ^^^^^^ required by this bound in `Configuration::Output`
+   = note: this error originates in the macro `salsa::plumbing::setup_tracked_fn` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `ContainsRef<'db>: Update` is not satisfied
-  --> tests/compile-fail/tracked_fn_return_ref.rs:24:6
+error: lifetime may not live long enough
+  --> tests/compile-fail/tracked_fn_return_ref.rs:20:1
    |
-24 | ) -> ContainsRef<'db> {
-   |      ^^^^^^^^^^^^^^^^ the trait `Update` is not implemented for `ContainsRef<'db>`
+20 | #[salsa::tracked]
+   | ^^^^^^^^^^^^^^^^^
+   | |
+   | lifetime `'db` defined here
+   | requires that `'db` must outlive `'static`
    |
-   = help: the following other types implement trait `Update`:
-             ()
-             (A, B)
-             (A, B, C)
-             (A, B, C, D)
-             (A, B, C, D, E)
-             (A, B, C, D, E, F)
-             (A, B, C, D, E, F, G)
-             (A, B, C, D, E, F, G, H)
-           and $N others
-note: required by a bound in `salsa::plumbing::function::Configuration::Output`
-  --> src/function.rs
-   |
-   |     type Output<'db>: fmt::Debug + Send + Sync + Update;
-   |                                                  ^^^^^^ required by this bound in `Configuration::Output`
+   = note: this error originates in the macro `salsa::plumbing::setup_tracked_fn` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)

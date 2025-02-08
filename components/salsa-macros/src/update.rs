@@ -1,4 +1,5 @@
 use proc_macro2::{Literal, TokenStream};
+use syn::spanned::Spanned;
 use synstructure::BindStyle;
 
 use crate::hygiene::Hygiene;
@@ -34,7 +35,7 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
                 .bindings()
                 .iter()
                 .fold(quote!(), |tokens, binding| quote!(#tokens #binding,));
-            let make_new_value = quote! {
+            let make_new_value = quote_spanned! {variant.ast().ident.span()=>
                 let #new_value = if let #variant_pat = #new_value {
                     (#make_tuple)
                 } else {
@@ -46,20 +47,28 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
             // For each field, invoke `maybe_update` recursively to update its value.
             // Or the results together (using `|`, not `||`, to avoid shortcircuiting)
             // to get the final return value.
-            let update_fields = variant.bindings().iter().zip(0..).fold(
+            let update_fields = variant.bindings().iter().enumerate().fold(
                 quote!(false),
-                |tokens, (binding, index)| {
+                |tokens, (index, binding)| {
                     let field_ty = &binding.ast().ty;
                     let field_index = Literal::usize_unsuffixed(index);
 
+                    let field_span = binding
+                        .ast()
+                        .ident
+                        .as_ref()
+                        .map(Spanned::span)
+                        .unwrap_or(binding.ast().span());
+
+                    let update_field = quote_spanned! {field_span=>
+                        salsa::plumbing::UpdateDispatch::<#field_ty>::maybe_update(
+                            #binding,
+                            #new_value.#field_index,
+                        )
+                    };
+
                     quote! {
-                        #tokens |
-                            unsafe {
-                                salsa::plumbing::UpdateDispatch::<#field_ty>::maybe_update(
-                                    #binding,
-                                    #new_value.#field_index,
-                                )
-                            }
+                        #tokens | unsafe { #update_field }
                     }
                 },
             );
@@ -77,6 +86,7 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let tokens = quote! {
         #[allow(clippy::all)]
+        #[automatically_derived]
         unsafe impl #impl_generics salsa::Update for #ident #ty_generics #where_clause {
             unsafe fn maybe_update(#old_pointer: *mut Self, #new_value: Self) -> bool {
                 use ::salsa::plumbing::UpdateFallback as _;

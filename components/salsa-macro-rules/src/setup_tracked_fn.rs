@@ -145,6 +145,20 @@ macro_rules! setup_tracked_fn {
                 }
             }
 
+            /// This method isn't used anywhere. It only exitst to enforce the `Self::Output: Update` constraint
+            /// for types that aren't `'static`.
+            ///
+            /// # Safety
+            /// The same safety rules as for `Update` apply.
+            unsafe fn _implements_update<'db>(old_pointer: *mut $output_ty, new_value: $output_ty) -> bool {
+                unsafe {
+                    use $zalsa::UpdateFallback;
+                    $zalsa::UpdateDispatch::<$output_ty>::maybe_update(
+                        old_pointer, new_value
+                    )
+                }
+            }
+
             impl $zalsa::function::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($fn_name);
 
