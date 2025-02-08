@@ -76,22 +76,14 @@ fn the_test() {
         let db_t2 = db_t1.clone();
         let db_t3 = db_t1.clone();
 
-        // Thread 1:
-        scope.spawn(move || {
-            let r = query_a(&db_t1);
-            assert_eq!(r, MAX);
-        });
+        let t1 = scope.spawn(move || query_a(&db_t1));
+        let t2 = scope.spawn(move || query_b(&db_t2));
+        let t3 = scope.spawn(move || query_c(&db_t3));
 
-        // Thread 2:
-        scope.spawn(move || {
-            let r = query_b(&db_t2);
-            assert_eq!(r, MAX);
-        });
+        let r_t1 = t1.join().unwrap();
+        let r_t2 = t2.join().unwrap();
+        let r_t3 = t3.join().unwrap();
 
-        // Thread 3:
-        scope.spawn(move || {
-            let r = query_c(&db_t3);
-            assert_eq!(r, MAX);
-        });
+        assert_eq!((r_t1, r_t2, r_t3), (MAX, MAX, MAX));
     });
 }

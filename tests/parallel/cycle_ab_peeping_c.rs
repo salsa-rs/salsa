@@ -68,16 +68,11 @@ fn the_test() {
         let db_t2 = db_t1.clone();
         db_t2.signal_on_will_block.store(2);
 
-        // Thread 1:
-        scope.spawn(move || {
-            let r = query_a(&db_t1);
-            assert_eq!(r, MAX);
-        });
+        let t1 = scope.spawn(move || query_a(&db_t1));
+        let t2 = scope.spawn(move || query_c(&db_t2));
 
-        // Thread 2:
-        scope.spawn(move || {
-            let r = query_c(&db_t2);
-            assert_eq!(r, MAX);
-        });
+        let (r_t1, r_t2) = (t1.join().unwrap(), t2.join().unwrap());
+
+        assert_eq!((r_t1, r_t2), (MAX, MAX));
     });
 }
