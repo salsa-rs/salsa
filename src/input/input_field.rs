@@ -62,11 +62,11 @@ where
     }
 
     fn is_verified_final<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
-        false
+        true
     }
 
     fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
-        false
+        true
     }
 
     fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {

@@ -111,11 +111,11 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
     }
 
     fn is_verified_final<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
-        false
+        true
     }
 
     fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
-        false
+        true
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
