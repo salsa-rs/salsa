@@ -1,6 +1,6 @@
 use std::{any::TypeId, fmt, hash::Hash, marker::PhantomData, ops::DerefMut};
 
-use crossbeam::queue::SegQueue;
+use crossbeam_queue::SegQueue;
 use tracked_field::FieldIngredientImpl;
 
 use crate::{
