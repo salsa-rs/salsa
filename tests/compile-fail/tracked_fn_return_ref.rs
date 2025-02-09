@@ -1,5 +1,4 @@
 use salsa::Database as Db;
-use salsa::Update;
 
 #[salsa::input]
 struct MyInput {

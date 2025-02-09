@@ -55,6 +55,8 @@ macro_rules! setup_tracked_fn {
         // True if we `return_ref` flag was given to the function
         return_ref: $return_ref:tt,
 
+        maybe_update_fn: {$($maybe_update_fn:tt)*},
+
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
         // not used elsewhere in the user's code.
@@ -150,14 +152,8 @@ macro_rules! setup_tracked_fn {
             ///
             /// # Safety
             /// The same safety rules as for `Update` apply.
-            unsafe fn _implements_update<'db>(old_pointer: *mut $output_ty, new_value: $output_ty) -> bool {
-                unsafe {
-                    use $zalsa::UpdateFallback;
-                    $zalsa::UpdateDispatch::<$output_ty>::maybe_update(
-                        old_pointer, new_value
-                    )
-                }
-            }
+            $($maybe_update_fn)*
+
 
             impl $zalsa::function::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($fn_name);

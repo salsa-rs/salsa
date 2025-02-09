@@ -1,29 +1,20 @@
-warning: unused import: `salsa::Update`
- --> tests/compile-fail/tracked_fn_return_ref.rs:2:5
-  |
-2 | use salsa::Update;
-  |     ^^^^^^^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` on by default
+error: lifetime may not live long enough
+  --> tests/compile-fail/tracked_fn_return_ref.rs:14:1
+   |
+14 | #[salsa::tracked]
+   | ^^^^^^^^^^^^^^^^^ requires that `'db` must outlive `'static`
+15 | fn tracked_fn_return_ref<'db>(db: &'db dyn Db, input: MyInput) -> &'db str {
+   |                                                                   - lifetime `'db` defined here
+   |
+   = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: lifetime may not live long enough
-  --> tests/compile-fail/tracked_fn_return_ref.rs:15:1
+  --> tests/compile-fail/tracked_fn_return_ref.rs:19:1
    |
-15 | #[salsa::tracked]
-   | ^^^^^^^^^^^^^^^^^
-   | |
-   | lifetime `'db` defined here
-   | requires that `'db` must outlive `'static`
+19 | #[salsa::tracked]
+   | ^^^^^^^^^^^^^^^^^ requires that `'db` must outlive `'static`
+...
+23 | ) -> ContainsRef<'db> {
+   |      ----------- lifetime `'db` defined here
    |
-   = note: this error originates in the macro `salsa::plumbing::setup_tracked_fn` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error: lifetime may not live long enough
-  --> tests/compile-fail/tracked_fn_return_ref.rs:20:1
-   |
-20 | #[salsa::tracked]
-   | ^^^^^^^^^^^^^^^^^
-   | |
-   | lifetime `'db` defined here
-   | requires that `'db` must outlive `'static`
-   |
-   = note: this error originates in the macro `salsa::plumbing::setup_tracked_fn` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
