@@ -187,7 +187,7 @@ impl Identity {
 }
 
 /// Stores the data that (almost) uniquely identifies a tracked struct.
-/// This includes the ingredient index of that struct type plus the hash of its id fields.
+/// This includes the ingredient index of that struct type plus the hash of its untracked fields.
 /// This is mapped to a disambiguator -- a value that starts as 0 but increments each round,
 /// allowing for multiple tracked structs with the same hash and ingredient_index
 /// created within the query to each have a unique id.
@@ -222,10 +222,7 @@ impl IdentityMap {
     pub(crate) fn insert(&mut self, key: Identity, id: Id) -> Option<Id> {
         use hashbrown::hash_map::RawEntryMut;
 
-        let eq_modulo_hash = |k: &Identity| {
-            k.ingredient_index == key.ingredient_index && k.disambiguator == key.disambiguator
-        };
-        let entry = self.map.raw_entry_mut().from_hash(key.hash, eq_modulo_hash);
+        let entry = self.map.raw_entry_mut().from_hash(key.hash, |k| *k == key);
         match entry {
             RawEntryMut::Occupied(mut occupied) => Some(occupied.insert(id)),
             RawEntryMut::Vacant(vacant) => {
@@ -236,12 +233,9 @@ impl IdentityMap {
     }
 
     pub(crate) fn get(&self, key: &Identity) -> Option<Id> {
-        let eq_modulo_hash = |k: &Identity| {
-            k.ingredient_index == key.ingredient_index && k.disambiguator == key.disambiguator
-        };
         self.map
             .raw_entry()
-            .from_hash(key.hash, eq_modulo_hash)
+            .from_hash(key.hash, |k| *k == *key)
             .map(|(_, &v)| v)
     }
 
@@ -318,8 +312,7 @@ impl DisambiguatorMap {
     pub(crate) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {
         use hashbrown::hash_map::RawEntryMut;
 
-        let eq_modulo_hash = |k: &IdentityHash| k.ingredient_index == key.ingredient_index;
-        let entry = self.map.raw_entry_mut().from_hash(key.hash, eq_modulo_hash);
+        let entry = self.map.raw_entry_mut().from_hash(key.hash, |k| *k == key);
         let disambiguator = match entry {
             RawEntryMut::Occupied(occupied) => occupied.into_mut(),
             RawEntryMut::Vacant(vacant) => {
@@ -388,7 +381,7 @@ where
 
         let identity = Identity {
             hash: identity_hash.hash,
-            ingredient_index: self.ingredient_index,
+            ingredient_index: identity_hash.ingredient_index,
             disambiguator,
         };
 
@@ -843,5 +836,103 @@ where
         // when deleting a tracked struct.
         self.read_lock(current_revision);
         &self.syncs
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disambiguate_map_works() {
+        let mut d = DisambiguatorMap::default();
+        // set up all 4 permutations of differing field values
+        let h1 = IdentityHash {
+            ingredient_index: IngredientIndex::from(0),
+            hash: 0,
+        };
+        let h2 = IdentityHash {
+            ingredient_index: IngredientIndex::from(1),
+            hash: 0,
+        };
+        let h3 = IdentityHash {
+            ingredient_index: IngredientIndex::from(0),
+            hash: 1,
+        };
+        let h4 = IdentityHash {
+            ingredient_index: IngredientIndex::from(1),
+            hash: 1,
+        };
+        assert_eq!(d.disambiguate(h1), Disambiguator(0));
+        assert_eq!(d.disambiguate(h1), Disambiguator(1));
+        assert_eq!(d.disambiguate(h2), Disambiguator(0));
+        assert_eq!(d.disambiguate(h2), Disambiguator(1));
+        assert_eq!(d.disambiguate(h3), Disambiguator(0));
+        assert_eq!(d.disambiguate(h3), Disambiguator(1));
+        assert_eq!(d.disambiguate(h4), Disambiguator(0));
+        assert_eq!(d.disambiguate(h4), Disambiguator(1));
+    }
+
+    #[test]
+    fn identity_map_works() {
+        let mut d = IdentityMap::default();
+        // set up all 8 permutations of differing field values
+        let i1 = Identity {
+            ingredient_index: IngredientIndex::from(0),
+            hash: 0,
+            disambiguator: Disambiguator(0),
+        };
+        let i2 = Identity {
+            ingredient_index: IngredientIndex::from(1),
+            hash: 0,
+            disambiguator: Disambiguator(0),
+        };
+        let i3 = Identity {
+            ingredient_index: IngredientIndex::from(0),
+            hash: 1,
+            disambiguator: Disambiguator(0),
+        };
+        let i4 = Identity {
+            ingredient_index: IngredientIndex::from(1),
+            hash: 1,
+            disambiguator: Disambiguator(0),
+        };
+        let i5 = Identity {
+            ingredient_index: IngredientIndex::from(0),
+            hash: 0,
+            disambiguator: Disambiguator(1),
+        };
+        let i6 = Identity {
+            ingredient_index: IngredientIndex::from(1),
+            hash: 0,
+            disambiguator: Disambiguator(1),
+        };
+        let i7 = Identity {
+            ingredient_index: IngredientIndex::from(0),
+            hash: 1,
+            disambiguator: Disambiguator(1),
+        };
+        let i8 = Identity {
+            ingredient_index: IngredientIndex::from(1),
+            hash: 1,
+            disambiguator: Disambiguator(1),
+        };
+        assert_eq!(d.insert(i1, Id::from_u32(0)), None);
+        assert_eq!(d.insert(i2, Id::from_u32(1)), None);
+        assert_eq!(d.insert(i3, Id::from_u32(2)), None);
+        assert_eq!(d.insert(i4, Id::from_u32(3)), None);
+        assert_eq!(d.insert(i5, Id::from_u32(4)), None);
+        assert_eq!(d.insert(i6, Id::from_u32(5)), None);
+        assert_eq!(d.insert(i7, Id::from_u32(6)), None);
+        assert_eq!(d.insert(i8, Id::from_u32(7)), None);
+
+        assert_eq!(d.get(&i1), Some(Id::from_u32(0)));
+        assert_eq!(d.get(&i2), Some(Id::from_u32(1)));
+        assert_eq!(d.get(&i3), Some(Id::from_u32(2)));
+        assert_eq!(d.get(&i4), Some(Id::from_u32(3)));
+        assert_eq!(d.get(&i5), Some(Id::from_u32(4)));
+        assert_eq!(d.get(&i6), Some(Id::from_u32(5)));
+        assert_eq!(d.get(&i7), Some(Id::from_u32(6)));
+        assert_eq!(d.get(&i8), Some(Id::from_u32(7)));
     }
 }
