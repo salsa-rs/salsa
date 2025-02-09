@@ -5,6 +5,8 @@ use std::{
     sync::Arc,
 };
 
+use rayon::iter::Either;
+
 use crate::Revision;
 
 /// This is used by the macro generated code.
@@ -340,6 +342,24 @@ where
         match (old_value, new_value) {
             (Ok(old), Ok(new)) => T::maybe_update(old, new),
             (Err(old), Err(new)) => E::maybe_update(old, new),
+            (old_value, new_value) => {
+                *old_value = new_value;
+                true
+            }
+        }
+    }
+}
+
+unsafe impl<L, R> Update for Either<L, R>
+where
+    L: Update,
+    R: Update,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+        let old_value = unsafe { &mut *old_pointer };
+        match (old_value, new_value) {
+            (Either::Left(old), Either::Left(new)) => L::maybe_update(old, new),
+            (Either::Right(old), Either::Right(new)) => R::maybe_update(old, new),
             (old_value, new_value) => {
                 *old_value = new_value;
                 true
