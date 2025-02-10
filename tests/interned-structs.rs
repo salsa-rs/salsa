@@ -42,6 +42,14 @@ struct InternedStringNoLifetime {
     data: String,
 }
 
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
+struct Foo;
+
+#[salsa::interned]
+struct InternedFoo<'db> {
+    data: Foo,
+}
+
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct SalsaIdWrapper(salsa::Id);
 
@@ -196,4 +204,13 @@ fn interning_with_custom_ids_and_no_lifetime() {
     let s2_2 = InternedStringWithCustomIdAndNoLiftime::new(&db, "World, ");
     assert_eq!(s1, s1_2);
     assert_eq!(s2, s2_2);
+}
+
+#[test]
+fn interning_reference() {
+    let db = salsa::DatabaseImpl::new();
+
+    let s1 = InternedFoo::new(&db, Foo);
+    let s2 = InternedFoo::new(&db, &Foo);
+    assert_eq!(s1, s2);
 }

@@ -65,7 +65,7 @@ pub enum ExpressionData<'db> {
     Call(FunctionId<'db>, Vec<Expression<'db>>),
 }
 
-#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug, salsa::Update)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash, Debug)]
 pub enum Op {
     Add,
     Subtract,

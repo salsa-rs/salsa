@@ -1,9 +1,12 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     hash::{BuildHasher, Hash},
+    marker::PhantomData,
     path::PathBuf,
     sync::Arc,
 };
+
+use rayon::iter::Either;
 
 use crate::Revision;
 
@@ -186,6 +189,29 @@ where
     }
 }
 
+unsafe impl<A> Update for smallvec::SmallVec<A>
+where
+    A: smallvec::Array,
+    A::Item: Update,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_vec: Self) -> bool {
+        let old_vec: &mut smallvec::SmallVec<A> = unsafe { &mut *old_pointer };
+
+        if old_vec.len() != new_vec.len() {
+            old_vec.clear();
+            old_vec.extend(new_vec);
+            return true;
+        }
+
+        let mut changed = false;
+        for (old_element, new_element) in old_vec.iter_mut().zip(new_vec) {
+            changed |= A::Item::maybe_update(old_element, new_element);
+        }
+
+        changed
+    }
+}
+
 macro_rules! maybe_update_set {
     ($old_pointer: expr, $new_set: expr) => {{
         let old_pointer = $old_pointer;
@@ -289,6 +315,26 @@ where
     }
 }
 
+unsafe impl<T> Update for Box<[T]>
+where
+    T: Update,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_box: Self) -> bool {
+        let old_box: &mut Box<[T]> = unsafe { &mut *old_pointer };
+
+        if old_box.len() == new_box.len() {
+            let mut changed = false;
+            for (old_element, new_element) in old_box.iter_mut().zip(new_box) {
+                changed |= T::maybe_update(old_element, new_element);
+            }
+            changed
+        } else {
+            *old_box = new_box;
+            true
+        }
+    }
+}
+
 unsafe impl<T> Update for Arc<T>
 where
     T: Update,
@@ -348,6 +394,24 @@ where
     }
 }
 
+unsafe impl<L, R> Update for Either<L, R>
+where
+    L: Update,
+    R: Update,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
+        let old_value = unsafe { &mut *old_pointer };
+        match (old_value, new_value) {
+            (Either::Left(old), Either::Left(new)) => L::maybe_update(old, new),
+            (Either::Right(old), Either::Right(new)) => R::maybe_update(old, new),
+            (old_value, new_value) => {
+                *old_value = new_value;
+                true
+            }
+        }
+    }
+}
+
 macro_rules! fallback_impl {
     ($($t:ty,)*) => {
         $(
@@ -377,6 +441,9 @@ fallback_impl! {
     isize,
     PathBuf,
 }
+
+#[cfg(feature = "compact_str")]
+fallback_impl! { compact_str::CompactString, }
 
 macro_rules! tuple_impl {
     ($($t:ident),*; $($u:ident),*) => {
@@ -429,5 +496,11 @@ where
                 true
             }
         }
+    }
+}
+
+unsafe impl<T> Update for PhantomData<T> {
+    unsafe fn maybe_update(_old_pointer: *mut Self, _new_value: Self) -> bool {
+        false
     }
 }

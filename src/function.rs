@@ -10,7 +10,7 @@ use crate::{
     table::sync::ClaimResult,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
-    Database, Id, Revision, Update,
+    Database, Id, Revision,
 };
 
 use self::delete::DeletedEntries;
@@ -46,7 +46,7 @@ pub trait Configuration: Any {
     type Input<'db>: Send + Sync;
 
     /// The value computed by the function.
-    type Output<'db>: fmt::Debug + Send + Sync + Update;
+    type Output<'db>: fmt::Debug + Send + Sync;
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
