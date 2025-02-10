@@ -55,6 +55,8 @@ macro_rules! setup_tracked_fn {
         // True if we `return_ref` flag was given to the function
         return_ref: $return_ref:tt,
 
+        maybe_update_fn: {$($maybe_update_fn:tt)*},
+
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
         // not used elsewhere in the user's code.
@@ -144,6 +146,14 @@ macro_rules! setup_tracked_fn {
                     }
                 }
             }
+
+            /// This method isn't used anywhere. It only exitst to enforce the `Self::Output: Update` constraint
+            /// for types that aren't `'static`.
+            ///
+            /// # Safety
+            /// The same safety rules as for `Update` apply.
+            $($maybe_update_fn)*
+
 
             impl $zalsa::function::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($fn_name);

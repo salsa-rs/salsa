@@ -10,6 +10,7 @@ rust-version = "1.76"
 
 [dependencies]
 arc-swap = "1"
+compact_str = { version = "0.8", optional = true }
 crossbeam = "0.8"
 dashmap = { version = "6", features = ["raw-api"] }
 hashlink = "0.9"

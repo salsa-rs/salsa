@@ -117,6 +117,18 @@ impl Macro {
 
         let return_ref: bool = self.args.return_ref.is_some();
 
+        let maybe_update_fn = quote_spanned! {output_ty.span()=> {
+            #[allow(clippy::all, unsafe_code)]
+            unsafe fn _maybe_update_fn<'db>(old_pointer: *mut #output_ty, new_value: #output_ty) -> bool {
+                unsafe {
+                    use #zalsa::UpdateFallback;
+                    #zalsa::UpdateDispatch::<#output_ty>::maybe_update(
+                        old_pointer, new_value
+                    )
+                }
+            }
+        }};
+
         Ok(crate::debug::dump_tokens(
             fn_name,
             quote![salsa::plumbing::setup_tracked_fn! {
@@ -137,6 +149,7 @@ impl Macro {
                 needs_interner: #needs_interner,
                 lru: #lru,
                 return_ref: #return_ref,
+                maybe_update_fn: { #maybe_update_fn },
                 unused_names: [
                     #zalsa,
                     #Configuration,
