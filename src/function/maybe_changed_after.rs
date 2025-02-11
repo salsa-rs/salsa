@@ -165,6 +165,16 @@ where
 
     /// True if the memo's value and `changed_at` time is still valid in this revision.
     /// Does only a shallow O(1) check, doesn't walk the dependencies.
+    ///
+    /// In general, a provisional memo (from cycle iteration) does not verify. Since we don't
+    /// eagerly finalize all provisional memos in cycle iteration, we have to lazily check here
+    /// (via `validate_provisional`) whether a may-be-provisional memo should actually be verified
+    /// final, because its cycle heads are all now final.
+    ///
+    /// If `allow_provisional` is `true`, don't check provisionality and return whatever memo we
+    /// find that can be verified in this revision, whether provisional or not. This only occurs at
+    /// one call-site, in `fetch_cold` when we actually encounter a cycle, and want to check if
+    /// there is an existing provisional memo we can reuse.
     #[inline]
     pub(super) fn shallow_verify_memo(
         &self,
@@ -213,6 +223,13 @@ where
 
     /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
     /// return true, if not return false.
+    ///
+    /// This check is not recursive, so it is not guaranteed that we will validate a provisional
+    /// memo that transitively should be validated. That is, if provisional memo A has cycle head
+    /// B, which also has a provisional memo with cycle head C, and C is verified final, we will
+    /// not validate A if we call `validate_provisional` on it, unless we first call
+    /// `validate_provisional` on B. Thus, `deep_verify_memo` needs to call `validate_provisional`
+    /// on maybe-provisional memos _after_ visiting all dependencies.
     fn validate_provisional(
         &self,
         db: &C::DbView,
