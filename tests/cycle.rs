@@ -802,7 +802,13 @@ fn nested_double_multiple_revisions() {
     a.clone().assert_bounds(&db);
 
     // and next revision, we converge
-    c_in.set_inputs(&mut db).to(vec![value(240), a.clone(), b]);
+    c_in.set_inputs(&mut db)
+        .to(vec![value(240), a.clone(), b.clone()]);
+
+    a.clone().assert_value(&db, 240);
+
+    // one more revision, without relevant changes
+    a_in.set_inputs(&mut db).to(vec![b]);
 
     a.assert_value(&db, 240);
 }
@@ -878,4 +884,121 @@ fn cycle_unchanged() {
         ]"#]]);
 
     a.assert_value(&db, 45);
+}
+
+/// a:Np(v59, b) -> b:Ni(v60, c) -> c:Np(d) -> d:Ni(v61, b, e) -> e:Np(d)
+///                 ^                          |   ^              |
+///                 +--------------------------+   +--------------+
+///
+/// If nothing in a nested cycle changed in the new revision, no part of the cycle should
+/// re-execute.
+#[test]
+fn cycle_unchanged_nested() {
+    let mut db = ExecuteValidateLoggerDatabase::default();
+    let a_in = Inputs::new(&db, vec![]);
+    let b_in = Inputs::new(&db, vec![]);
+    let c_in = Inputs::new(&db, vec![]);
+    let d_in = Inputs::new(&db, vec![]);
+    let e_in = Inputs::new(&db, vec![]);
+    let a = Input::MinPanic(a_in);
+    let b = Input::MinIterate(b_in);
+    let c = Input::MinPanic(c_in);
+    let d = Input::MinIterate(d_in);
+    let e = Input::MinPanic(e_in);
+    a_in.set_inputs(&mut db).to(vec![value(59), b.clone()]);
+    b_in.set_inputs(&mut db).to(vec![value(60), c.clone()]);
+    c_in.set_inputs(&mut db).to(vec![d.clone()]);
+    d_in.set_inputs(&mut db)
+        .to(vec![value(61), b.clone(), e.clone()]);
+    e_in.set_inputs(&mut db).to(vec![d.clone()]);
+
+    a.clone().assert_value(&db, 59);
+    b.clone().assert_value(&db, 60);
+
+    db.assert_logs_len(15);
+
+    // next revision, we change only A, which is not part of the cycle and the cycle does not
+    // depend on.
+    a_in.set_inputs(&mut db).to(vec![value(45), b.clone()]);
+    b.assert_value(&db, 60);
+
+    db.assert_logs(expect![[r#"
+        [
+            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(3)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(4)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(3)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(2)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
+        ]"#]]);
+
+    a.assert_value(&db, 45);
+}
+
+///                                 +--------------------------------+
+///                                 |                                v
+/// a:Np(v59, b) -> b:Ni(v60, c) -> c:Np(d, e) -> d:Ni(v61, b, e) -> e:Ni(d)
+///                 ^                             |   ^              |
+///                 +-----------------------------+   +--------------+
+///
+/// If nothing in a nested cycle changed in the new revision, no part of the cycle should
+/// re-execute.
+#[test_log::test]
+fn cycle_unchanged_nested_intertwined() {
+    // We run this test twice in order to catch some subtly different cases; see below.
+    for i in 0..1 {
+        let mut db = ExecuteValidateLoggerDatabase::default();
+        let a_in = Inputs::new(&db, vec![]);
+        let b_in = Inputs::new(&db, vec![]);
+        let c_in = Inputs::new(&db, vec![]);
+        let d_in = Inputs::new(&db, vec![]);
+        let e_in = Inputs::new(&db, vec![]);
+        let a = Input::MinPanic(a_in);
+        let b = Input::MinIterate(b_in);
+        let c = Input::MinPanic(c_in);
+        let d = Input::MinIterate(d_in);
+        let e = Input::MinIterate(e_in);
+        a_in.set_inputs(&mut db).to(vec![value(59), b.clone()]);
+        b_in.set_inputs(&mut db).to(vec![value(60), c.clone()]);
+        c_in.set_inputs(&mut db).to(vec![d.clone(), e.clone()]);
+        d_in.set_inputs(&mut db)
+            .to(vec![value(61), b.clone(), e.clone()]);
+        e_in.set_inputs(&mut db).to(vec![d.clone()]);
+
+        a.clone().assert_value(&db, 59);
+        b.clone().assert_value(&db, 60);
+
+        // First time we run this test, don't fetch c/d/e here; this means they won't get marked
+        // `verified_final` in R6 (this revision), which will leave us in the next revision (R7)
+        // with a chain of could-be-provisional memos from the previous revision which should be
+        // final but were never confirmed as such; this triggers the case in `deep_verify_memo`
+        // where we need to double-check `validate_provisional` after traversing dependencies.
+        //
+        // Second time we run this test, fetch everything in R6, to check the behavior of
+        // `maybe_changed_after` with all validated-final memos.
+        if i == 1 {
+            c.clone().assert_value(&db, 60);
+            d.clone().assert_value(&db, 60);
+            e.clone().assert_value(&db, 60);
+        }
+
+        db.assert_logs_len(27 + i);
+
+        // next revision, we change only A, which is not part of the cycle and the cycle does not
+        // depend on.
+        a_in.set_inputs(&mut db).to(vec![value(45), b.clone()]);
+        b.assert_value(&db, 60);
+
+        db.assert_logs(expect![[r#"
+        [
+            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(3)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(4)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(3)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: min_panic(Id(2)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: min_iterate(Id(1)) })",
+        ]"#]]);
+
+        a.assert_value(&db, 45);
+    }
 }

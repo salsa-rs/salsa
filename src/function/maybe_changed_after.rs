@@ -110,7 +110,7 @@ where
                     return Some(VerifyResult::Unchanged(
                         InputAccumulatedValues::Empty,
                         FxHashSet::from_iter([database_key_index]),
-                    ))
+                    ));
                 }
             },
             ClaimResult::Claimed(guard) => guard,
@@ -257,9 +257,6 @@ where
         if self.shallow_verify_memo(db, zalsa, database_key_index, old_memo, false) {
             return VerifyResult::Unchanged(InputAccumulatedValues::Empty, Default::default());
         }
-        if old_memo.may_be_provisional() {
-            return VerifyResult::Changed;
-        }
 
         let mut cycle_heads = FxHashSet::default();
         loop {
@@ -338,6 +335,42 @@ where
                 }
             };
 
+            // If this was a provisional memo from an older revision, we should have now validated
+            // the latest memos of all dependencies, so try one more time to validate ourselves;
+            // otherwise return changed. (This is necessary because a provisional memo may have a
+            // cycle head which itself is provisional, and in the previous revision it's possible
+            // that neither one was ever finalized; `validate_provisional` is not recursive, so we
+            // need to validate them in the right order.)
+            if old_memo.may_be_provisional() && !self.validate_provisional(db, zalsa, &old_memo) {
+                return VerifyResult::Changed;
+            }
+
+            // Possible scenarios here:
+            //
+            // 1. Cycle heads is empty. We traversed our full dependency graph and neither hit any
+            //    cycles, nor found any changed dependencies. We can mark our memo verified and
+            //    return Unchanged with empty cycle heads.
+            //
+            // 2. Cycle heads is non-empty, and does not contain our own key index. We are part of
+            //    a cycle, and since we don't know if some other cycle participant that hasn't been
+            //    traversed yet (that is, some other dependency of the cycle head, which is only a
+            //    dependency of ours via the cycle) might still have changed, we can't yet mark our
+            //    memo verified. We can return a provisional Unchanged, with cycle heads.
+            //
+            // 3. Cycle heads is non-empty, and contains only our own key index. We are the head of
+            //    a cycle, and we've now traversed the entire cycle and found no changes, but no
+            //    other cycle participants were verified (they would have all hit case 2 above). We
+            //    can now safely mark our own memo as verified. Then we have to traverse the entire
+            //    cycle again. This time, since our own memo is verified, there will be no cycle
+            //    encountered, and the rest of the cycle will be able to verify itself.
+            //
+            // 4. Cycle heads is non-empty, and contains our own key index as well as other key
+            //    indices. We are the head of a cycle nested within another cycle. We can't mark
+            //    our own memo verified (for the same reason as in case 2: the full outer cycle
+            //    hasn't been validated unchanged yet). We return Unchanged, with ourself removed
+            //    from cycle heads. We will handle our own memo (and the rest of our cycle) on a
+            //    future iteration; first the outer cycle head needs to verify itself.
+
             let in_heads = cycle_heads.remove(&database_key_index);
 
             if cycle_heads.is_empty() {
@@ -347,10 +380,15 @@ where
                     database_key_index,
                     inputs,
                 );
-            }
-            if in_heads {
-                cycle_heads.clear();
-                continue;
+
+                if in_heads {
+                    // Iterate our dependency graph again, starting from the top. We clear the
+                    // cycle heads here because we are starting a fresh traversal. (It might be
+                    // logically clearer to create a new HashSet each time, but clearing the
+                    // existing one is more efficient.)
+                    cycle_heads.clear();
+                    continue;
+                }
             }
             return VerifyResult::Unchanged(InputAccumulatedValues::Empty, cycle_heads);
         }
