@@ -55,7 +55,7 @@ where
                     let database_key_index = self.database_key_index(id);
                     let Some(cycle_heads) = memo.cycle_heads() else {
                         unreachable!(
-                            "A just-verified memo must have up-to-date provisional status."
+                            "A memo without cycle heads can never become maybe-provisional."
                         );
                     };
                     let mut has_verified_cycle_heads = false;
@@ -82,11 +82,15 @@ where
                             return memo;
                         }
                     }
-                    // All our cycle heads are verified final; re-fetch and we should get a
-                    // non-provisional memo.
                     if has_verified_cycle_heads {
+                        // All our cycle heads (barring ourself) are verified final; re-fetch and
+                        // we should get a non-provisional memo.
                         continue 'outer;
                     }
+                    // We have no cycle heads other than ourself, so we are a cycle initial value
+                    // and should be returned to caller to allow fixpoint iteration to proceed.
+                    // (All cases in the loop above other than "cycle head is self" are either
+                    // terminal or set `has_verified_cycle_heads`.)
                 }
                 return memo;
             }
