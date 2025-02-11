@@ -51,7 +51,7 @@ fn execute() {
         move || a1(&db, input)
     });
 
-    db.signal_on_did_cancel.store(2);
+    db.signal_on_did_cancel(2);
     input.set_field(&mut db).to(2);
 
     // Assert thread A *should* was cancelled

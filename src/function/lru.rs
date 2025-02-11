@@ -1,17 +1,19 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use crate::{hash::FxLinkedHashSet, Id};
 
-use crossbeam::atomic::AtomicCell;
 use parking_lot::Mutex;
 
 #[derive(Default)]
 pub(super) struct Lru {
-    capacity: AtomicCell<usize>,
+    capacity: AtomicUsize,
     set: Mutex<FxLinkedHashSet<Id>>,
 }
 
 impl Lru {
     pub(super) fn record_use(&self, index: Id) -> Option<Id> {
-        let capacity = self.capacity.load();
+        // Relaxed should be fine, we don't need to synchronize on this.
+        let capacity = self.capacity.load(Ordering::Relaxed);
 
         if capacity == 0 {
             // LRU is disabled
@@ -28,7 +30,8 @@ impl Lru {
     }
 
     pub(super) fn set_capacity(&self, capacity: usize) {
-        self.capacity.store(capacity);
+        // Relaxed should be fine, we don't need to synchronize on this.
+        self.capacity.store(capacity, Ordering::Relaxed);
 
         if capacity == 0 {
             let mut set = self.set.lock();

@@ -106,7 +106,7 @@ impl<C: Configuration> IngredientImpl<C> {
     pub fn new_input(&self, db: &dyn Database, fields: C::Fields, stamps: C::Stamps) -> C::Struct {
         let (zalsa, zalsa_local) = db.zalsas();
 
-        let id = self.singleton.with_lock(|| {
+        let id = self.singleton.with_scope(|| {
             zalsa_local.allocate(zalsa.table(), self.ingredient_index, |_| Value::<C> {
                 fields,
                 stamps,
