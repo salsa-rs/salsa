@@ -66,7 +66,7 @@ fn the_test() {
         let db_t1 = Knobs::default();
 
         let db_t2 = db_t1.clone();
-        db_t2.signal_on_will_block.store(2);
+        db_t2.signal_on_will_block(2);
 
         let t1 = scope.spawn(move || query_a(&db_t1));
         let t2 = scope.spawn(move || query_c(&db_t2));

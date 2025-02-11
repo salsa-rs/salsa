@@ -1,8 +1,8 @@
-use crossbeam::atomic::AtomicCell;
 use std::sync::atomic::AtomicBool;
 
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
+    revision::AtomicRevision,
     tracked_struct::TrackedStructInDb,
     zalsa::ZalsaDatabase,
     zalsa_local::{QueryOrigin, QueryRevisions},
@@ -83,7 +83,7 @@ where
 
         let memo = Memo {
             value: Some(value),
-            verified_at: AtomicCell::new(revision),
+            verified_at: AtomicRevision::from(revision),
             verified_final: AtomicBool::new(true),
             revisions,
         };

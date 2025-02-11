@@ -5,9 +5,8 @@ use std::fmt::Formatter;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crossbeam::atomic::AtomicCell;
-
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::revision::AtomicRevision;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
     cycle::CycleRecoveryStrategy, key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions,
@@ -99,7 +98,7 @@ impl<C: Configuration> IngredientImpl<C> {
                                 origin: origin.clone(),
                                 tracked_struct_ids: tracked_struct_ids.clone(),
                                 accumulated: accumulated.clone(),
-                                accumulated_inputs: AtomicCell::new(accumulated_inputs.load()),
+                                accumulated_inputs: accumulated_inputs.clone(),
                                 cycle_heads: cycle_heads.clone(),
                             },
                         ))
@@ -133,7 +132,7 @@ pub(super) struct Memo<V> {
 
     /// Last revision when this memo was verified; this begins
     /// as the current revision.
-    pub(super) verified_at: AtomicCell<Revision>,
+    pub(super) verified_at: AtomicRevision,
 
     /// Is this memo verified to not be a provisional cycle result?
     pub(super) verified_final: AtomicBool,
@@ -151,7 +150,7 @@ impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
         Memo {
             value,
-            verified_at: AtomicCell::new(revision_now),
+            verified_at: AtomicRevision::from(revision_now),
             verified_final: AtomicBool::new(revisions.cycle_heads.is_empty()),
             revisions,
         }
