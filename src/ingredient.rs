@@ -6,6 +6,8 @@ use std::{
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
+    plumbing::MemoDropSender,
+    table::Table,
     zalsa::{IngredientIndex, MemoIngredientIndex},
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id,
@@ -22,6 +24,7 @@ pub trait Jar: Any {
         &self,
         aux: &dyn JarAux,
         first_index: IngredientIndex,
+        memo_drop_sender: MemoDropSender,
     ) -> Vec<Box<dyn Ingredient>>;
 
     /// If this jar's first ingredient is a salsa struct, return its `TypeId`
@@ -122,7 +125,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ///
     /// **Important:** to actually receive resets, the ingredient must set
     /// [`IngredientRequiresReset::RESET_ON_NEW_REVISION`] to true.
-    fn reset_for_new_revision(&mut self);
+    fn reset_for_new_revision(&mut self, table: &mut Table);
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
 }

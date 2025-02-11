@@ -211,6 +211,7 @@ macro_rules! setup_tracked_fn {
                     &self,
                     aux: &dyn $zalsa::JarAux,
                     first_index: $zalsa::IngredientIndex,
+                    memo_drop_sender: $zalsa::MemoDropSender,
                 ) -> Vec<Box<dyn $zalsa::Ingredient>> {
                     let struct_index = $zalsa::macro_if! {
                         if $needs_interner {
@@ -227,6 +228,7 @@ macro_rules! setup_tracked_fn {
                         struct_index,
                         first_index,
                         aux,
+                        memo_drop_sender
                     );
                     fn_ingredient.set_capacity($lru);
                     $zalsa::macro_if! {

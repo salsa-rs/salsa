@@ -4,10 +4,10 @@ use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
 use crate::ingredient::{fmt_index, MaybeChangedAfter};
 use crate::key::InputDependencyIndex;
-use crate::plumbing::{Jar, JarAux};
+use crate::plumbing::{Jar, JarAux, MemoDropSender};
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
-use crate::table::Slot;
+use crate::table::{Slot, Table};
 use crate::zalsa::IngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{Database, DatabaseKeyIndex, Id};
@@ -103,6 +103,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
         &self,
         _aux: &dyn JarAux,
         first_index: IngredientIndex,
+        _: MemoDropSender,
     ) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(IngredientImpl::<C>::new(first_index)) as _]
     }
@@ -327,7 +328,7 @@ where
         false
     }
 
-    fn reset_for_new_revision(&mut self) {
+    fn reset_for_new_revision(&mut self, _: &mut Table) {
         // Interned ingredients do not, normally, get deleted except when they are "reset" en masse.
         // There ARE methods (e.g., `clear_deleted_entries` and `remove`) for deleting individual
         // items, but those are only used for tracked struct ingredients.
@@ -360,6 +361,10 @@ where
 {
     unsafe fn memos(&self, _current_revision: Revision) -> &MemoTable {
         &self.memos
+    }
+
+    fn memos_mut(&mut self) -> &mut MemoTable {
+        &mut self.memos
     }
 
     unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {

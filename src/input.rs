@@ -17,7 +17,7 @@ use crate::{
     ingredient::{fmt_index, Ingredient, MaybeChangedAfter},
     input::singleton::{Singleton, SingletonChoice},
     key::{DatabaseKeyIndex, InputDependencyIndex},
-    plumbing::{Jar, JarAux, Stamp},
+    plumbing::{Jar, JarAux, MemoDropSender, Stamp},
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
@@ -58,6 +58,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
         &self,
         _aux: &dyn JarAux,
         struct_index: crate::zalsa::IngredientIndex,
+        _: MemoDropSender,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient: IngredientImpl<C> = IngredientImpl::new(struct_index);
 
@@ -260,7 +261,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         false
     }
 
-    fn reset_for_new_revision(&mut self) {
+    fn reset_for_new_revision(&mut self, _: &mut Table) {
         panic!("unexpected call to `reset_for_new_revision`")
     }
 
@@ -326,6 +327,10 @@ where
 {
     unsafe fn memos(&self, _current_revision: Revision) -> &crate::table::memo::MemoTable {
         &self.memos
+    }
+
+    fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
+        &mut self.memos
     }
 
     unsafe fn syncs(&self, _current_revision: Revision) -> &SyncTable {
