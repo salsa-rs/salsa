@@ -341,7 +341,7 @@ where
             // cycle head which itself is provisional, and in the previous revision it's possible
             // that neither one was ever finalized; `validate_provisional` is not recursive, so we
             // need to validate them in the right order.)
-            if old_memo.may_be_provisional() && !self.validate_provisional(db, zalsa, &old_memo) {
+            if old_memo.may_be_provisional() && !self.validate_provisional(db, zalsa, old_memo) {
                 return VerifyResult::Changed;
             }
 
