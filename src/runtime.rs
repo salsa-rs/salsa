@@ -152,7 +152,6 @@ impl Runtime {
         let r_old = self.current_revision();
         let r_new = r_old.next();
         self.revisions[0] = r_new;
-        self.reset_cancellation_flag();
         r_new
     }
 

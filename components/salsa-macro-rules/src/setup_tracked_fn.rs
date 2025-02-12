@@ -138,7 +138,6 @@ macro_rules! setup_tracked_fn {
 
                 pub fn fn_ingredient_mut(db: &mut dyn $Db) -> &mut $zalsa::function::IngredientImpl<Self> {
                     let zalsa_mut = db.zalsa_mut();
-                    zalsa_mut.reset_cancellation_flag();
                     let index = zalsa_mut.add_or_lookup_jar_by_type(&$Configuration);
                     let (ingredient, _) = zalsa_mut.lookup_ingredient_mut(index);
                     ingredient.assert_type_mut::<$zalsa::function::IngredientImpl<Self>>()
