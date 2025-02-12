@@ -256,14 +256,6 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         );
     }
 
-    fn requires_reset_for_new_revision(&self) -> bool {
-        false
-    }
-
-    fn reset_for_new_revision(&mut self, _: &mut Table) {
-        panic!("unexpected call to `reset_for_new_revision`")
-    }
-
     fn fmt_index(&self, index: Option<Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }

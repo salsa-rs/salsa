@@ -441,3 +441,14 @@ pub(crate) unsafe fn transmute_data_ptr<T: ?Sized, U>(t: &T) -> &U {
     let u: *const U = t as *const U;
     unsafe { &*u }
 }
+
+/// Given a wide pointer `T`, extracts the data pointer (typed as `U`).
+///
+/// # Safety requirement
+///
+/// `U` must be correct type for the data pointer.
+pub(crate) unsafe fn transmute_data_mut_ptr<T: ?Sized, U>(t: &mut T) -> &mut U {
+    let t: *mut T = t;
+    let u: *mut U = t as *mut U;
+    unsafe { &mut *u }
+}
