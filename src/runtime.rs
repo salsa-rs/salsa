@@ -12,8 +12,8 @@ use parking_lot::Mutex;
 
 use crate::{
     active_query::ActiveQuery, cycle::CycleRecoveryStrategy, durability::Durability,
-    key::DatabaseKeyIndex, revision::AtomicRevision, table::Table, zalsa_local::ZalsaLocal,
-    Cancelled, Cycle, Database, Event, EventKind, Revision,
+    key::DatabaseKeyIndex, table::Table, zalsa_local::ZalsaLocal, Cancelled, Cycle, Database,
+    Event, EventKind, Revision,
 };
 
 use self::dependency_graph::DependencyGraph;
@@ -35,7 +35,7 @@ pub struct Runtime {
     /// revisions[i + 1]`, for all `i`. This is because when you
     /// modify a value with durability D, that implies that values
     /// with durability less than D may have changed too.
-    revisions: [AtomicRevision; Durability::LEN],
+    revisions: [Revision; Durability::LEN],
 
     /// The dependency graph tracks which runtimes are blocked on one
     /// another, waiting for queries to terminate.
@@ -81,7 +81,7 @@ impl<V> StampedValue<V> {
 impl Default for Runtime {
     fn default() -> Self {
         Runtime {
-            revisions: [const { AtomicRevision::start() }; Durability::LEN],
+            revisions: [Revision::start(); Durability::LEN],
             revision_canceled: Default::default(),
             dependency_graph: Default::default(),
             table: Default::default(),
@@ -101,7 +101,7 @@ impl std::fmt::Debug for Runtime {
 
 impl Runtime {
     pub(crate) fn current_revision(&self) -> Revision {
-        self.revisions[0].load()
+        self.revisions[0]
     }
 
     /// Reports that an input with durability `durability` changed.
@@ -109,9 +109,7 @@ impl Runtime {
     /// less than or equal to `durability` to the current revision.
     pub(crate) fn report_tracked_write(&mut self, durability: Durability) {
         let new_revision = self.current_revision();
-        for rev in &self.revisions[1..=durability.index()] {
-            rev.store(new_revision);
-        }
+        self.revisions[1..=durability.index()].fill(new_revision);
     }
 
     /// The revision in which values with durability `d` may have last
@@ -123,7 +121,7 @@ impl Runtime {
     /// dependencies.
     #[inline]
     pub(crate) fn last_changed_revision(&self, d: Durability) -> Revision {
-        self.revisions[d.index()].load()
+        self.revisions[d.index()]
     }
 
     pub(crate) fn load_cancellation_flag(&self) -> bool {
@@ -149,7 +147,7 @@ impl Runtime {
     pub(crate) fn new_revision(&mut self) -> Revision {
         let r_old = self.current_revision();
         let r_new = r_old.next();
-        self.revisions[0].store(r_new);
+        self.revisions[0] = r_new;
         self.revision_canceled.store(false, Ordering::Release);
         r_new
     }
