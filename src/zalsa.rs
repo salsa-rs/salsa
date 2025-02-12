@@ -312,6 +312,14 @@ impl Zalsa {
         new_revision
     }
 
+    /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
+    pub fn evict_lru(&mut self) {
+        for index in self.ingredients_requiring_reset.iter() {
+            self.ingredients_vec[index.as_usize()].reset_for_new_revision(self.runtime.table_mut());
+        }
+    }
+
     /// See [`Runtime::block_on_or_unwind`][]
     pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
         &self,
