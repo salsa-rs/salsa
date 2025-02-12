@@ -2,8 +2,11 @@ use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 use std::any::{Any, TypeId};
 use std::marker::PhantomData;
+use std::mem;
+use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::panic::RefUnwindSafe;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{Ingredient, Jar, JarAux};
@@ -77,7 +80,7 @@ pub struct IngredientIndex(u32);
 impl IngredientIndex {
     /// Create an ingredient index from a usize.
     pub(crate) fn from(v: usize) -> Self {
-        assert!(v < (u32::MAX as usize));
+        assert!(v <= u32::MAX as usize);
         Self(v as u32)
     }
 
@@ -107,9 +110,10 @@ pub struct MemoIngredientIndex(u32);
 
 impl MemoIngredientIndex {
     pub(crate) fn from_usize(u: usize) -> Self {
-        assert!(u < u32::MAX as usize);
+        assert!(u <= u32::MAX as usize);
         MemoIngredientIndex(u as u32)
     }
+
     pub(crate) fn as_usize(self) -> usize {
         self.0 as usize
     }
@@ -356,7 +360,11 @@ pub struct IngredientCache<I>
 where
     I: Ingredient,
 {
-    cached_data: std::sync::OnceLock<(Nonce<StorageNonce>, IngredientIndex)>,
+    // A packed representation of `Option<(Nonce<StorageNonce>, IngredientIndex)>`.
+    //
+    // This allows us to replace a lock in favor of an atomic load. This works thanks to `Nonce`
+    // having a niche, which means the entire type can fit into an `AtomicU64`.
+    cached_data: AtomicU64,
     phantom: PhantomData<fn() -> I>,
 }
 
@@ -375,10 +383,12 @@ impl<I> IngredientCache<I>
 where
     I: Ingredient,
 {
+    const UNINITIALIZED: u64 = 0;
+
     /// Create a new cache
     pub const fn new() -> Self {
         Self {
-            cached_data: std::sync::OnceLock::new(),
+            cached_data: AtomicU64::new(Self::UNINITIALIZED),
             phantom: PhantomData,
         }
     }
@@ -390,11 +400,34 @@ where
         db: &'s dyn Database,
         create_index: impl Fn() -> IngredientIndex,
     ) -> &'s I {
-        let zalsa = db.zalsa();
-        let &(nonce, mut index) = self.cached_data.get_or_init(|| {
+        const _: () = assert!(
+            mem::size_of::<(Nonce<StorageNonce>, IngredientIndex)>() == mem::size_of::<u64>()
+        );
+        let cached_data = self.cached_data.load(Ordering::Acquire);
+        if cached_data == Self::UNINITIALIZED {
             let index = create_index();
-            (zalsa.nonce(), index)
+            let nonce = db.zalsa().nonce().into_u32().get() as u64;
+            let packed = (nonce << u32::BITS) | (index.0 as u64);
+            debug_assert_ne!(packed, Self::UNINITIALIZED);
+
+            // Discard the result, whether we won over the cache or not does not matter
+            // we know that something has been cached now
+            _ = self.cached_data.compare_exchange(
+                Self::UNINITIALIZED,
+                packed,
+                Ordering::Release,
+                Ordering::Acquire,
+            );
+            // and we already have our index computed so we can just use that
+            return db.zalsa().lookup_ingredient(index).assert_type::<I>();
+        };
+
+        // unpack our u64
+        // SAFETY: We've checked against `UNINITIALIZED` (0) above and so the upper bits must be non-zero
+        let nonce = Nonce::<StorageNonce>::from_u32(unsafe {
+            NonZeroU32::new_unchecked((cached_data >> u32::BITS) as u32)
         });
+        let mut index = IngredientIndex(cached_data as u32);
 
         // FIXME: We used to cache a raw pointer to the revision but miri
         // was reporting errors because that pointer was derived from an `&`
@@ -403,10 +436,10 @@ where
         // We could fix it with orxfun/orx-concurrent-vec#18 or by "refreshing" the cache
         // when the revision changes but just caching the index is an awful lot simpler.
 
-        if zalsa.nonce() != nonce {
+        if db.zalsa().nonce() != nonce {
             index = create_index();
         }
-        zalsa.lookup_ingredient(index).assert_type::<I>()
+        db.zalsa().lookup_ingredient(index).assert_type::<I>()
     }
 }
 
