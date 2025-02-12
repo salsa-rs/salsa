@@ -60,12 +60,6 @@ impl From<Revision> for AtomicRevision {
 }
 
 impl AtomicRevision {
-    pub(crate) const fn start() -> Self {
-        Self {
-            data: AtomicUsize::new(START),
-        }
-    }
-
     pub(crate) fn load(&self) -> Revision {
         // Safety: We know that the value is non-zero because we only ever store `START` which 1, or a
         // Revision which is guaranteed to be non-zero.
