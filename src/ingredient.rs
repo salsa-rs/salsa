@@ -7,6 +7,7 @@ use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
     function::VerifyResult,
+    table::Table,
     zalsa::{IngredientIndex, MemoIngredientIndex},
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id,
@@ -133,7 +134,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ///
     /// **Important:** to actually receive resets, the ingredient must set
     /// [`IngredientRequiresReset::RESET_ON_NEW_REVISION`] to true.
-    fn reset_for_new_revision(&mut self);
+    fn reset_for_new_revision(&mut self, table: &mut Table);
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
 }

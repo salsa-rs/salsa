@@ -14,6 +14,7 @@ use crate::{
     function::VerifyResult,
     ingredient::{fmt_index, Ingredient, Jar},
     plumbing::JarAux,
+    table::Table,
     zalsa::IngredientIndex,
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id, Revision,
@@ -146,7 +147,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         false
     }
 
-    fn reset_for_new_revision(&mut self) {
+    fn reset_for_new_revision(&mut self, _: &mut Table) {
         panic!("unexpected reset on accumulator")
     }
 
