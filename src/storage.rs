@@ -117,6 +117,8 @@ impl<Db: Database> Storage<Db> {
     ///
     /// This could deadlock if there is a single worker with two handles to the
     /// same database!
+    ///
+    /// Needs to be paired with a call to `reset_cancellation_flag`.
     fn cancel_others(&self, db: &Db) {
         self.handle.zalsa_impl.set_cancellation_flag();
 
@@ -140,9 +142,10 @@ unsafe impl<T: HasStorage> ZalsaDatabase for T {
 
         let storage = self.storage_mut();
         // The ref count on the `Arc` should now be 1
-        let zalsa_mut = Arc::get_mut(&mut storage.handle.zalsa_impl).unwrap();
-        zalsa_mut.new_revision();
-        zalsa_mut
+        let zalsa = Arc::get_mut(&mut storage.handle.zalsa_impl).unwrap();
+        // cancellation is done, so reset the flag
+        zalsa.reset_cancellation_flag();
+        zalsa
     }
 
     fn zalsa_local(&self) -> &ZalsaLocal {

@@ -45,8 +45,6 @@ pub unsafe trait ZalsaDatabase: Any {
     ///
     /// **WARNING:** Triggers cancellation to other database handles.
     /// This can lead to deadlock!
-    ///
-    /// Note that this needs to be paired with a call to `Zalsa::new_revision` or `Zalsa::clear_cancellation_flag`.
     #[doc(hidden)]
     fn zalsa_mut(&mut self) -> &mut Zalsa;
 
@@ -273,9 +271,7 @@ impl Zalsa {
         self.runtime.load_cancellation_flag()
     }
 
-    /// **NOT SEMVER STABLE**
-    #[doc(hidden)]
-    pub fn reset_cancellation_flag(&mut self) {
+    pub(crate) fn reset_cancellation_flag(&mut self) {
         self.runtime.reset_cancellation_flag();
     }
 
