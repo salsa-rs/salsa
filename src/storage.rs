@@ -120,7 +120,7 @@ impl<Db: Database> Storage<Db> {
     ///
     /// Needs to be paired with a call to `reset_cancellation_flag`.
     fn cancel_others(&self, db: &Db) {
-        self.handle.zalsa_impl.set_cancellation_flag();
+        self.handle.zalsa_impl.runtime().set_cancellation_flag();
 
         db.salsa_event(&|| Event::new(EventKind::DidSetCancellationFlag));
 
@@ -144,7 +144,7 @@ unsafe impl<T: HasStorage> ZalsaDatabase for T {
         // The ref count on the `Arc` should now be 1
         let zalsa = Arc::get_mut(&mut storage.handle.zalsa_impl).unwrap();
         // cancellation is done, so reset the flag
-        zalsa.reset_cancellation_flag();
+        zalsa.runtime_mut().reset_cancellation_flag();
         zalsa
     }
 

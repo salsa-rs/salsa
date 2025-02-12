@@ -26,7 +26,7 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     /// is owned by the current thread, this could trigger deadlock.
     fn trigger_lru_eviction(&mut self) {
         let zalsa_mut = self.zalsa_mut();
-        zalsa_mut.reset_cancellation_flag();
+        zalsa_mut.runtime_mut().reset_cancellation_flag();
         zalsa_mut.evict_lru();
     }
 
@@ -41,7 +41,7 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     fn synthetic_write(&mut self, durability: Durability) {
         let zalsa_mut = self.zalsa_mut();
         zalsa_mut.new_revision();
-        zalsa_mut.report_tracked_write(durability);
+        zalsa_mut.runtime_mut().report_tracked_write(durability);
     }
 
     /// Reports that the query depends on some state unknown to salsa.

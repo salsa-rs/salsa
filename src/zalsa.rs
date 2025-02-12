@@ -4,18 +4,17 @@ use std::any::{Any, TypeId};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::panic::RefUnwindSafe;
-use std::thread::ThreadId;
 
 use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{Ingredient, Jar, JarAux};
 use crate::nonce::{Nonce, NonceGenerator};
-use crate::runtime::{Runtime, WaitResult};
+use crate::runtime::Runtime;
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
 use crate::table::Table;
 use crate::views::Views;
 use crate::zalsa_local::ZalsaLocal;
-use crate::{Database, DatabaseKeyIndex, Durability, Id, Revision};
+use crate::{Database, Durability, Id, Revision};
 
 /// Internal plumbing trait.
 ///
@@ -178,23 +177,52 @@ impl Zalsa {
         self.nonce
     }
 
-    /// Returns the [`Table`][] used to store the value of salsa structs
+    pub(crate) fn runtime(&self) -> &Runtime {
+        &self.runtime
+    }
+
+    pub(crate) fn runtime_mut(&mut self) -> &mut Runtime {
+        &mut self.runtime
+    }
+
+    /// Returns the [`Table`] used to store the value of salsa structs
     pub(crate) fn table(&self) -> &Table {
         self.runtime.table()
     }
 
     /// Returns the [`MemoTable`][] for the salsa struct with the given id
     pub(crate) fn memo_table_for(&self, id: Id) -> &MemoTable {
-        // SAFETY: We are supply the correct current revision
+        // SAFETY: We are supplying the correct current revision
         unsafe { self.table().memos(id, self.current_revision()) }
     }
 
     /// Returns the [`SyncTable`][] for the salsa struct with the given id
     pub(crate) fn sync_table_for(&self, id: Id) -> &SyncTable {
-        // SAFETY: We are supply the correct current revision
+        // SAFETY: We are supplying the correct current revision
         unsafe { self.table().syncs(id, self.current_revision()) }
     }
 
+    pub(crate) fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
+        let index = index.as_usize();
+        let ingredient = self
+            .ingredients_vec
+            .get(index)
+            .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
+        ingredient.deref()
+    }
+
+    pub(crate) fn ingredient_index_for_memo(
+        &self,
+        struct_ingredient_index: IngredientIndex,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> IngredientIndex {
+        self.memo_ingredient_indices.read()[struct_ingredient_index.as_usize()]
+            [memo_ingredient_index.as_usize()]
+    }
+}
+
+/// Semver unstable APIs used by the macro expansions
+impl Zalsa {
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
     pub fn add_or_lookup_jar_by_type(&self, jar: &dyn Jar) -> IngredientIndex {
@@ -238,15 +266,6 @@ impl Zalsa {
         }
     }
 
-    pub(crate) fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
-        let index = index.as_usize();
-        let ingredient = self
-            .ingredients_vec
-            .get(index)
-            .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
-        ingredient.deref()
-    }
-
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
     pub fn lookup_ingredient_mut(
@@ -267,26 +286,10 @@ impl Zalsa {
         self.runtime.current_revision()
     }
 
-    pub(crate) fn load_cancellation_flag(&self) -> bool {
-        self.runtime.load_cancellation_flag()
-    }
-
-    pub(crate) fn reset_cancellation_flag(&mut self) {
-        self.runtime.reset_cancellation_flag();
-    }
-
-    pub(crate) fn report_tracked_write(&mut self, durability: Durability) {
-        self.runtime.report_tracked_write(durability)
-    }
-
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
     pub fn last_changed_revision(&self, durability: Durability) -> Revision {
         self.runtime.last_changed_revision(durability)
-    }
-
-    pub(crate) fn set_cancellation_flag(&self) {
-        self.runtime.set_cancellation_flag()
     }
 
     /// **NOT SEMVER STABLE**
@@ -311,41 +314,13 @@ impl Zalsa {
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
     pub fn evict_lru(&mut self) {
-        for index in self.ingredients_requiring_reset.iter() {
-            self.ingredients_vec[index.as_usize()].reset_for_new_revision(self.runtime.table_mut());
+        for (_, index) in self.ingredients_requiring_reset.iter() {
+            let index = index.as_usize();
+            self.ingredients_vec
+                .get_mut(index)
+                .unwrap_or_else(|| panic!("index `{index}` is uninitialized"))
+                .reset_for_new_revision(self.runtime.table_mut());
         }
-    }
-
-    /// See [`Runtime::block_on_or_unwind`][]
-    pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
-        &self,
-        db: &dyn Database,
-        local_state: &ZalsaLocal,
-        database_key: DatabaseKeyIndex,
-        other_id: ThreadId,
-        query_mutex_guard: QueryMutexGuard,
-    ) {
-        self.runtime
-            .block_on_or_unwind(db, local_state, database_key, other_id, query_mutex_guard)
-    }
-
-    /// See [`Runtime::unblock_queries_blocked_on`][]
-    pub(crate) fn unblock_queries_blocked_on(
-        &self,
-        database_key: DatabaseKeyIndex,
-        wait_result: WaitResult,
-    ) {
-        self.runtime
-            .unblock_queries_blocked_on(database_key, wait_result)
-    }
-
-    pub(crate) fn ingredient_index_for_memo(
-        &self,
-        struct_ingredient_index: IngredientIndex,
-        memo_ingredient_index: MemoIngredientIndex,
-    ) -> IngredientIndex {
-        self.memo_ingredient_indices.read()[struct_ingredient_index.as_usize()]
-            [memo_ingredient_index.as_usize()]
     }
 }
 
