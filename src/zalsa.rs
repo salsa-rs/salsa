@@ -43,7 +43,7 @@ pub unsafe trait ZalsaDatabase: Any {
 
     /// Plumbing method: Access the internal salsa methods for mutating the database.
     ///
-    /// **WARNING:** Triggers a new revision, canceling other database handles.
+    /// **WARNING:** Triggers cancellation to other database handles.
     /// This can lead to deadlock!
     #[doc(hidden)]
     fn zalsa_mut(&mut self) -> &mut Zalsa;
@@ -196,6 +196,7 @@ impl Zalsa {
     }
 
     /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
     pub fn add_or_lookup_jar_by_type(&self, jar: &dyn Jar) -> IngredientIndex {
         {
             let jar_type_id = jar.type_id();
@@ -247,6 +248,7 @@ impl Zalsa {
     }
 
     /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
     pub fn lookup_ingredient_mut(
         &mut self,
         index: IngredientIndex,
@@ -260,6 +262,7 @@ impl Zalsa {
     }
 
     /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
     pub fn current_revision(&self) -> Revision {
         self.runtime.current_revision()
     }
@@ -273,6 +276,7 @@ impl Zalsa {
     }
 
     /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
     pub fn last_changed_revision(&self, durability: Durability) -> Revision {
         self.runtime.last_changed_revision(durability)
     }
@@ -281,9 +285,10 @@ impl Zalsa {
         self.runtime.set_cancellation_flag()
     }
 
-    /// Triggers a new revision. Invoked automatically when you call `zalsa_mut`
-    /// and so doesn't need to be called otherwise.
-    pub(crate) fn new_revision(&mut self) -> Revision {
+    /// **NOT SEMVER STABLE**
+    /// Triggers a new revision.
+    #[doc(hidden)]
+    pub fn new_revision(&mut self) -> Revision {
         let new_revision = self.runtime.new_revision();
 
         for (_, index) in self.ingredients_requiring_reset.iter() {
