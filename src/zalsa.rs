@@ -45,6 +45,8 @@ pub unsafe trait ZalsaDatabase: Any {
     ///
     /// **WARNING:** Triggers cancellation to other database handles.
     /// This can lead to deadlock!
+    ///
+    /// Note that this needs to be paired with a call to `Zalsa::new_revision` or `Zalsa::clear_cancellation_flag`.
     #[doc(hidden)]
     fn zalsa_mut(&mut self) -> &mut Zalsa;
 
@@ -271,6 +273,12 @@ impl Zalsa {
         self.runtime.load_cancellation_flag()
     }
 
+    /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
+    pub fn reset_cancellation_flag(&mut self) {
+        self.runtime.reset_cancellation_flag();
+    }
+
     pub(crate) fn report_tracked_write(&mut self, durability: Durability) {
         self.runtime.report_tracked_write(durability)
     }
@@ -404,7 +412,7 @@ where
         create_index: impl Fn() -> IngredientIndex,
     ) -> &'s I {
         let zalsa = db.zalsa();
-        let (nonce, index) = self.cached_data.get_or_init(|| {
+        let &(nonce, mut index) = self.cached_data.get_or_init(|| {
             let index = create_index();
             (zalsa.nonce(), index)
         });
@@ -416,12 +424,10 @@ where
         // We could fix it with orxfun/orx-concurrent-vec#18 or by "refreshing" the cache
         // when the revision changes but just caching the index is an awful lot simpler.
 
-        if db.zalsa().nonce() == *nonce {
-            zalsa.lookup_ingredient(*index).assert_type::<I>()
-        } else {
-            let index = create_index();
-            zalsa.lookup_ingredient(index).assert_type::<I>()
+        if zalsa.nonce() != nonce {
+            index = create_index();
         }
+        zalsa.lookup_ingredient(index).assert_type::<I>()
     }
 }
 

@@ -1,20 +1,24 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::num::NonZeroUsize;
 
 use crate::{hash::FxLinkedHashSet, Id};
 
 use parking_lot::Mutex;
 
-#[derive(Default)]
 pub(super) struct Lru {
-    capacity: AtomicUsize,
+    capacity: Option<NonZeroUsize>,
     set: Mutex<FxLinkedHashSet<Id>>,
 }
 
 impl Lru {
+    pub fn new(cap: usize) -> Self {
+        Self {
+            capacity: NonZeroUsize::new(cap),
+            set: Mutex::new(FxLinkedHashSet::default()),
+        }
+    }
+
     pub(super) fn record_use(&self, index: Id) {
-        // Relaxed should be fine, we don't need to synchronize on this.
-        let capacity = self.capacity.load(Ordering::Relaxed);
-        if capacity == 0 {
+        if self.capacity.is_none() {
             // LRU is disabled
             return;
         }
@@ -23,22 +27,18 @@ impl Lru {
         set.insert(index);
     }
 
-    pub(super) fn set_capacity(&self, capacity: usize) {
-        // Relaxed should be fine, we don't need to synchronize on this.
-        self.capacity.store(capacity, Ordering::Relaxed);
+    pub(super) fn set_capacity(&mut self, capacity: usize) {
+        self.capacity = NonZeroUsize::new(capacity);
     }
 
-    pub(super) fn for_each_evicted(&self, mut cb: impl FnMut(Id)) {
-        let mut set = self.set.lock();
-        // Relaxed should be fine, we don't need to synchronize on this.
-        let cap = self.capacity.load(Ordering::Relaxed);
-        if set.len() <= cap || cap == 0 {
+    pub(super) fn for_each_evicted(&mut self, mut cb: impl FnMut(Id)) {
+        let Some(cap) = self.capacity else {
             return;
-        }
-        while let Some(id) = set.pop_front() {
-            cb(id);
-            if set.len() <= cap {
-                break;
+        };
+        let set = self.set.get_mut();
+        while set.len() > cap.get() {
+            if let Some(id) = set.pop_front() {
+                cb(id);
             }
         }
     }
