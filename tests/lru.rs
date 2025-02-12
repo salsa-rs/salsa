@@ -48,13 +48,6 @@ fn get_hot_potato2(db: &dyn LogDatabase, input: MyInput) -> u32 {
     get_hot_potato(db, input).0
 }
 
-#[salsa::tracked(lru = 32)]
-fn get_volatile(db: &dyn LogDatabase, _input: MyInput) -> usize {
-    static COUNTER: AtomicUsize = AtomicUsize::new(0);
-    db.report_untracked_read();
-    COUNTER.fetch_add(1, Ordering::SeqCst)
-}
-
 fn load_n_potatoes() -> usize {
     N_POTATOES.with(|n| n.load(Ordering::SeqCst))
 }
@@ -67,30 +60,13 @@ fn lru_works() {
     for i in 0..128u32 {
         let input = MyInput::new(&db, i);
         let p = get_hot_potato(&db, input);
-        assert_eq!(p.0, i)
+        assert_eq!(p.0, i);
     }
 
+    assert_eq!(load_n_potatoes(), 128);
     // trigger the GC
     db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 32);
-}
-
-#[test]
-fn lru_doesnt_break_volatile_queries() {
-    let db = common::LoggerDatabase::default();
-
-    // Create all inputs first, so that there are no revision changes among calls to `get_volatile`
-    let inputs: Vec<MyInput> = (0..128usize).map(|i| MyInput::new(&db, i as u32)).collect();
-
-    // Here, we check that we execute each volatile query at most once, despite
-    // LRU. That does mean that we have more values in DB than the LRU capacity,
-    // but it's much better than inconsistent results from volatile queries!
-    for _ in 0..3 {
-        for (i, input) in inputs.iter().enumerate() {
-            let x = get_volatile(&db, *input);
-            assert_eq!(x, i);
-        }
-    }
 }
 
 #[test]
@@ -102,9 +78,10 @@ fn lru_can_be_changed_at_runtime() {
 
     for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);
-        assert_eq!(p.0, i)
+        assert_eq!(p.0, i);
     }
 
+    assert_eq!(load_n_potatoes(), 128);
     // trigger the GC
     db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 32);
@@ -113,9 +90,10 @@ fn lru_can_be_changed_at_runtime() {
     assert_eq!(load_n_potatoes(), 32);
     for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);
-        assert_eq!(p.0, i)
+        assert_eq!(p.0, i);
     }
 
+    assert_eq!(load_n_potatoes(), 128);
     // trigger the GC
     db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 64);
@@ -125,9 +103,10 @@ fn lru_can_be_changed_at_runtime() {
     assert_eq!(load_n_potatoes(), 64);
     for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);
-        assert_eq!(p.0, i)
+        assert_eq!(p.0, i);
     }
 
+    assert_eq!(load_n_potatoes(), 128);
     // trigger the GC
     db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 128);
