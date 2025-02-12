@@ -136,6 +136,7 @@ impl Runtime {
         *self.revision_canceled.get_mut() = false;
     }
 
+    /// Returns the [`Table`] used to store the value of salsa structs
     pub(crate) fn table(&self) -> &Table {
         &self.table
     }

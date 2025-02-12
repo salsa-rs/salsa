@@ -292,7 +292,7 @@ impl ZalsaLocal {
     pub(crate) fn unwind_if_revision_cancelled(&self, db: &dyn Database) {
         db.salsa_event(&|| Event::new(EventKind::WillCheckCancellation));
         let zalsa = db.zalsa();
-        if zalsa.load_cancellation_flag() {
+        if zalsa.runtime().load_cancellation_flag() {
             self.unwind_cancelled(zalsa.current_revision());
         }
     }
