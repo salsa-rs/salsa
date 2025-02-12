@@ -86,7 +86,7 @@ fn lru_can_be_changed_at_runtime() {
     db.synthetic_write(salsa::Durability::HIGH);
     assert_eq!(load_n_potatoes(), 32);
 
-    get_hot_potato::set_lru_capacity(&db, 64);
+    get_hot_potato::set_lru_capacity(&mut db, 64);
     assert_eq!(load_n_potatoes(), 32);
     for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);
@@ -99,7 +99,7 @@ fn lru_can_be_changed_at_runtime() {
     assert_eq!(load_n_potatoes(), 64);
 
     // Special case: setting capacity to zero disables LRU
-    get_hot_potato::set_lru_capacity(&db, 0);
+    get_hot_potato::set_lru_capacity(&mut db, 0);
     assert_eq!(load_n_potatoes(), 64);
     for &(i, input) in inputs.iter() {
         let p = get_hot_potato(&db, input);

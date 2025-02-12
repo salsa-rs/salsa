@@ -5,8 +5,10 @@ use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::function::DeletedEntries;
 use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
+use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
     key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event, EventKind, Id,
@@ -70,7 +72,11 @@ impl<C: Configuration> IngredientImpl<C> {
     /// Evicts the existing memo for the given key, replacing it
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
-    pub(super) fn evict_value_from_memo_for(&self, table: &mut MemoTable) {
+    pub(super) fn evict_value_from_memo_for(
+        table: &mut MemoTable,
+        deleted_entries: &DeletedEntries<C>,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) {
         let map = |memo: ArcMemo<'static, C>| -> ArcMemo<'static, C> {
             match &memo.revisions.origin {
                 QueryOrigin::Assigned(_)
@@ -111,11 +117,11 @@ impl<C: Configuration> IngredientImpl<C> {
             }
         };
         // SAFETY: We queue the old value for deletion, delaying its drop until the next revision bump.
-        let old = unsafe { table.map_memo(self.memo_ingredient_index, map) };
+        let old = unsafe { table.map_memo(memo_ingredient_index, map) };
         if let Some(old) = old {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
-            self.deleted_entries.push(ManuallyDrop::into_inner(old));
+            deleted_entries.push(ManuallyDrop::into_inner(old));
         }
     }
 }

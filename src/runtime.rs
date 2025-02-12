@@ -132,6 +132,10 @@ impl Runtime {
         self.revision_canceled.store(true, Ordering::Release);
     }
 
+    pub(crate) fn reset_cancellation_flag(&mut self) {
+        *self.revision_canceled.get_mut() = false;
+    }
+
     pub(crate) fn table(&self) -> &Table {
         &self.table
     }
@@ -148,7 +152,7 @@ impl Runtime {
         let r_old = self.current_revision();
         let r_new = r_old.next();
         self.revisions[0] = r_new;
-        self.revision_canceled.store(false, Ordering::Release);
+        self.reset_cancellation_flag();
         r_new
     }
 

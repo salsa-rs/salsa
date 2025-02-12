@@ -136,6 +136,14 @@ macro_rules! setup_tracked_fn {
                     })
                 }
 
+                pub fn fn_ingredient_mut(db: &mut dyn $Db) -> &mut $zalsa::function::IngredientImpl<Self> {
+                    let zalsa_mut = db.zalsa_mut();
+                    zalsa_mut.reset_cancellation_flag();
+                    let index = zalsa_mut.add_or_lookup_jar_by_type(&$Configuration);
+                    let (ingredient, _) = zalsa_mut.lookup_ingredient_mut(index);
+                    ingredient.assert_type_mut::<$zalsa::function::IngredientImpl<Self>>()
+                }
+
                 $zalsa::macro_if! { $needs_interner =>
                     fn intern_ingredient(
                         db: &dyn $Db,
@@ -221,8 +229,8 @@ macro_rules! setup_tracked_fn {
                         struct_index,
                         first_index,
                         aux,
+                        $lru
                     );
-                    fn_ingredient.set_capacity($lru);
                     $zalsa::macro_if! {
                         if $needs_interner {
                             vec![
@@ -278,9 +286,15 @@ macro_rules! setup_tracked_fn {
                 }
 
                 $zalsa::macro_if! { if0 $lru { } else {
+                    /// Sets the lru capacity
+                    ///
+                    /// **WARNING:** Just like an ordinary write, this method triggers
+                    /// cancellation. If you invoke it while a snapshot exists, it
+                    /// will block until that snapshot is dropped -- if that snapshot
+                    /// is owned by the current thread, this could trigger deadlock.
                     #[allow(dead_code)]
-                    fn set_lru_capacity(db: &dyn $Db, value: usize) {
-                        $Configuration::fn_ingredient(db).set_capacity(value);
+                    fn set_lru_capacity(db: &mut dyn $Db, value: usize) {
+                        $Configuration::fn_ingredient_mut(db).set_capacity(value);
                     }
                 } }
             }
