@@ -1,3 +1,5 @@
+use std::hint::black_box;
+
 use codspeed_criterion_compat::{criterion_group, criterion_main, BatchSize, Criterion};
 use salsa::Setter;
 
@@ -28,22 +30,24 @@ fn many_tracked_structs(criterion: &mut Criterion) {
             || {
                 let db = salsa::DatabaseImpl::new();
 
-                let input = Input::new(&db, 1_000);
-                let input2 = Input::new(&db, 1);
+                let input = Input::new(black_box(&db), black_box(1_000));
+                let input2 = Input::new(black_box(&db), black_box(1));
 
                 // prewarm cache
-                let _ = root(&db, input);
-                let _ = root(&db, input2);
+                let root1 = root(black_box(&db), black_box(input));
+                assert_eq!(black_box(root1), 1_000);
+                let root2 = root(black_box(&db), black_box(input2));
+                assert_eq!(black_box(root2), 1);
 
                 (db, input, input2)
             },
             |(db, input, input2)| {
                 // Make a change, but fetch the result for the other input
-                input2.set_field(db).to(2);
+                input2.set_field(black_box(db)).to(black_box(2));
 
-                let result = root(db, *input);
+                let result = root(black_box(db), *black_box(input));
 
-                assert_eq!(result, 1_000);
+                assert_eq!(black_box(result), 1_000);
             },
             BatchSize::LargeInput,
         );
