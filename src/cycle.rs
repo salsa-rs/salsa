@@ -44,7 +44,9 @@ pub(crate) struct CycleHeads(Option<Box<FxHashSet<DatabaseKeyIndex>>>);
 
 impl CycleHeads {
     pub(crate) fn is_empty(&self) -> bool {
-        !self.0.as_ref().is_some_and(|heads| !heads.is_empty())
+        // We ensure in `remove` and `extend` that we never have an empty hashset, we always use
+        // None to signify empty.
+        self.0.is_none()
     }
 
     pub(crate) fn contains(&self, value: &DatabaseKeyIndex) -> bool {
@@ -52,7 +54,15 @@ impl CycleHeads {
     }
 
     pub(crate) fn remove(&mut self, value: &DatabaseKeyIndex) -> bool {
-        self.0.as_mut().is_some_and(|heads| heads.remove(value))
+        if let Some(cycle_heads) = self.0.as_mut() {
+            let found = cycle_heads.remove(value);
+            if found && cycle_heads.is_empty() {
+                self.0.take();
+            }
+            found
+        } else {
+            false
+        }
     }
 }
 
