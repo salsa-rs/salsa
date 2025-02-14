@@ -171,6 +171,8 @@ macro_rules! setup_interned_struct {
             }
 
             impl< $($db_lt_arg)? > $zalsa::SalsaStructInDb for $Struct< $($db_lt_arg)? > {
+                type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
+
                 fn lookup_or_create_ingredient_index(aux: &$zalsa::Zalsa) -> $zalsa::IngredientIndices {
                     aux.add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Configuration>>().into()
                 }

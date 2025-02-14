@@ -1,11 +1,10 @@
 use crate::token_stream_with_error;
 use proc_macro2::TokenStream;
 
-/// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
+/// The implementation of the `supertype` macro.
 ///
-/// * the "id struct" `struct Foo(salsa::Id)`
-/// * the entity ingredient, which maps the id fields to the `Id`
-/// * for each value field, a function ingredient
+/// For an entity enum `Foo` with variants `Variant1, ..., VariantN`, we generate
+/// mappings between the variants and their corresponding supertypes.
 pub(crate) fn supertype(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let enum_item = parse_macro_input!(input as syn::ItemEnum);
     match enum_impl(enum_item) {
@@ -70,15 +69,11 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
     let salsa_struct_in_db = quote! {
         impl #impl_generics zalsa::SalsaStructInDb for #enum_name #type_generics
         #where_clause {
+            type MemoIngredientMap = zalsa::MemoIngredientIndices;
+
             #[inline]
             fn lookup_or_create_ingredient_index(__zalsa: &zalsa::Zalsa) -> zalsa::IngredientIndices {
-                let mut __result = zalsa::IngredientIndices::uninitialized();
-                #(
-                    __result.merge(
-                        &<#variant_types as zalsa::SalsaStructInDb>::lookup_or_create_ingredient_index(__zalsa)
-                    );
-                )*
-                __result
+                zalsa::IngredientIndices::merge([ #( <#variant_types as zalsa::SalsaStructInDb>::lookup_or_create_ingredient_index(__zalsa) ),* ])
             }
 
             #[inline]
@@ -96,36 +91,6 @@ fn enum_impl(enum_item: syn::ItemEnum) -> syn::Result<TokenStream> {
             }
         }
     };
-
-    // let std_traits = quote! {
-    //     impl #impl_generics ::core::marker::Copy for #enum_name #type_generics
-    //     #where_clause {}
-
-    //     impl #impl_generics ::core::clone::Clone for #enum_name #type_generics
-    //     #where_clause {
-    //         #[inline]
-    //         fn clone(&self) -> Self { *self }
-    //     }
-
-    //     impl #impl_generics ::core::cmp::Eq for #enum_name #type_generics
-    //     #where_clause {}
-
-    //     impl #impl_generics ::core::cmp::PartialEq for #enum_name #type_generics
-    //     #where_clause {
-    //         #[inline]
-    //         fn eq(&self, __other: &Self) -> bool {
-    //             zalsa::AsId::as_id(self) == zalsa::AsId::as_id(__other)
-    //         }
-    //     }
-
-    //     impl #impl_generics ::core::hash::Hash for #enum_name #type_generics
-    //     #where_clause {
-    //         #[inline]
-    //         fn hash<__H: ::core::hash::Hasher>(&self, __state: &mut __H) {
-    //             ::core::hash::Hash::hash(&zalsa::AsId::as_id(self), __state);
-    //         }
-    //     }
-    // };
 
     let all_impls = quote! {
         const _: () = {

@@ -52,8 +52,8 @@ pub use salsa_macros::accumulator;
 pub use salsa_macros::db;
 pub use salsa_macros::input;
 pub use salsa_macros::interned;
-pub use salsa_macros::supertype;
 pub use salsa_macros::tracked;
+pub use salsa_macros::Supertype;
 pub use salsa_macros::Update;
 
 pub mod prelude {
@@ -87,7 +87,9 @@ pub mod plumbing {
     pub use crate::ingredient::Ingredient;
     pub use crate::ingredient::Jar;
     pub use crate::key::DatabaseKeyIndex;
-    pub use crate::memo_ingredient_indices::IngredientIndices;
+    pub use crate::memo_ingredient_indices::{
+        IngredientIndices, MemoIngredientIndices, MemoIngredientSingletonIndex,
+    };
     pub use crate::revision::Revision;
     pub use crate::runtime::stamp;
     pub use crate::runtime::Runtime;

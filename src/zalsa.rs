@@ -240,7 +240,7 @@ impl Zalsa {
         let dependencies = J::create_dependencies(self);
 
         jar_map = self.jar_map.lock();
-        let index = IngredientIndex::from(self.ingredients_vec.len());
+        let index = IngredientIndex::from(self.ingredients_vec.count());
         match jar_map.entry(jar_type_id) {
             hash_map::Entry::Occupied(entry) => {
                 // Someone made it earlier than us.
