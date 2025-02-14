@@ -100,6 +100,10 @@ impl<'a> std::iter::IntoIterator for &'a CycleHeads {
 
 impl From<FxHashSet<DatabaseKeyIndex>> for CycleHeads {
     fn from(value: FxHashSet<DatabaseKeyIndex>) -> Self {
-        Self(Some(Box::new(value)))
+        Self(if value.is_empty() {
+            None
+        } else {
+            Some(Box::new(value))
+        })
     }
 }
