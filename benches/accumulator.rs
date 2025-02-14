@@ -1,3 +1,5 @@
+use std::hint::black_box;
+
 use codspeed_criterion_compat::{criterion_group, criterion_main, BatchSize, Criterion};
 use salsa::Accumulator;
 
@@ -43,17 +45,21 @@ fn accumulator(criterion: &mut Criterion) {
         b.iter_batched_ref(
             || {
                 let db = salsa::DatabaseImpl::new();
-                let input = Input::new(&db, 10_000);
+
+                let input = Input::new(black_box(&db), black_box(10_000));
+
                 // Pre-warm
-                let _ = root(&db, input);
+                let result = root(black_box(&db), black_box(input));
+                assert!(!black_box(result).is_empty());
+
                 (db, input)
             },
             |(db, input)| {
                 // Measure the cost of collecting accumulators ignoring the cost of running the
                 // query itself.
-                let diagnostics = root::accumulated::<Diagnostic>(db, *input);
+                let diagnostics = root::accumulated::<Diagnostic>(black_box(db), *black_box(input));
 
-                assert_eq!(diagnostics.len(), 1000);
+                assert_eq!(black_box(diagnostics).len(), 1000);
             },
             BatchSize::SmallInput,
         );
