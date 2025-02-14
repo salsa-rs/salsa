@@ -208,10 +208,7 @@ where
 
     fn is_provisional_cycle_head<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool {
         self.get_memo_from_table_for(db.zalsa(), input)
-            .is_some_and(|memo| {
-                memo.cycle_heads()
-                    .is_some_and(|heads| heads.contains(&self.database_key_index(input)))
-            })
+            .is_some_and(|memo| memo.cycle_heads().contains(&self.database_key_index(input)))
     }
 
     fn wait_for(&self, db: &dyn Database, key_index: Id) -> bool {

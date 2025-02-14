@@ -85,15 +85,13 @@ impl ActiveQuery {
         durability: Durability,
         revision: Revision,
         accumulated: InputAccumulatedValues,
-        cycle_heads: Option<&CycleHeads>,
+        cycle_heads: &CycleHeads,
     ) {
         self.input_outputs.insert(QueryEdge::Input(input));
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(revision);
         self.accumulated_inputs |= accumulated;
-        if let Some(cycle_heads) = cycle_heads {
-            self.cycle_heads.extend(cycle_heads);
-        }
+        self.cycle_heads.extend(cycle_heads);
     }
 
     pub(super) fn add_untracked_read(&mut self, changed_at: Revision) {

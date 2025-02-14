@@ -67,7 +67,7 @@ where
     }
 
     fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
-        true
+        false
     }
 
     fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {

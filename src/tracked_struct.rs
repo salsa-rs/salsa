@@ -5,7 +5,7 @@ use tracked_field::FieldIngredientImpl;
 
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
-    cycle::CycleRecoveryStrategy,
+    cycle::{CycleRecoveryStrategy, EMPTY_CYCLE_HEADS},
     function::VerifyResult,
     ingredient::{fmt_index, Ingredient, Jar, JarAux},
     key::{DatabaseKeyIndex, InputDependencyIndex},
@@ -659,7 +659,7 @@ where
             data.durability,
             field_changed_at,
             InputAccumulatedValues::Empty,
-            None,
+            &EMPTY_CYCLE_HEADS,
         );
 
         unsafe { self.to_self_ref(&data.fields) }
@@ -716,7 +716,7 @@ where
     }
 
     fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
-        true
+        false
     }
 
     fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {

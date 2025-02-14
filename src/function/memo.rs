@@ -10,7 +10,7 @@ use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
-    cycle::{CycleHeads, CycleRecoveryStrategy},
+    cycle::{CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE_HEADS},
     key::DatabaseKeyIndex,
     zalsa::Zalsa,
     zalsa_local::QueryRevisions,
@@ -179,11 +179,11 @@ impl<V> Memo<V> {
     }
 
     /// Cycle heads that should be propagated to dependent queries.
-    pub(super) fn cycle_heads(&self) -> Option<&CycleHeads> {
+    pub(super) fn cycle_heads(&self) -> &CycleHeads {
         if self.may_be_provisional() {
-            Some(&self.revisions.cycle_heads)
+            &self.revisions.cycle_heads
         } else {
-            None
+            &EMPTY_CYCLE_HEADS
         }
     }
 

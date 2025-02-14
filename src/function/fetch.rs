@@ -49,10 +49,10 @@ where
                 // any further (it could escape outside the cycle); we need to block on the other
                 // thread completing fixpoint iteration of the cycle, and then we can re-query for
                 // our no-longer-provisional memo.
-                if let Some(cycle_heads) = memo.cycle_heads() {
+                if memo.may_be_provisional() {
                     let database_key_index = self.database_key_index(id);
                     let mut retry = false;
-                    for head in cycle_heads {
+                    for head in memo.cycle_heads() {
                         if head == database_key_index {
                             continue;
                         }

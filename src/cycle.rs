@@ -107,3 +107,5 @@ impl From<FxHashSet<DatabaseKeyIndex>> for CycleHeads {
         })
     }
 }
+
+pub(crate) static EMPTY_CYCLE_HEADS: CycleHeads = CycleHeads(None);

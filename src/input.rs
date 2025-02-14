@@ -12,7 +12,7 @@ use input_field::FieldIngredientImpl;
 
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
-    cycle::CycleRecoveryStrategy,
+    cycle::{CycleRecoveryStrategy, EMPTY_CYCLE_HEADS},
     function::VerifyResult,
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient},
@@ -181,7 +181,7 @@ impl<C: Configuration> IngredientImpl<C> {
             stamp.durability,
             stamp.changed_at,
             InputAccumulatedValues::Empty,
-            None,
+            &EMPTY_CYCLE_HEADS,
         );
         &value.fields
     }

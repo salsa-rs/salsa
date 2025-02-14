@@ -163,7 +163,7 @@ impl ZalsaLocal {
         durability: Durability,
         changed_at: Revision,
         accumulated: InputAccumulatedValues,
-        cycle_heads: Option<&CycleHeads>,
+        cycle_heads: &CycleHeads,
     ) {
         debug!(
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",

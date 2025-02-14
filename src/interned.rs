@@ -1,6 +1,7 @@
 use dashmap::SharedValue;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::cycle::EMPTY_CYCLE_HEADS;
 use crate::durability::Durability;
 use crate::function::VerifyResult;
 use crate::ingredient::fmt_index;
@@ -184,7 +185,7 @@ where
             Durability::MAX,
             self.reset_at,
             InputAccumulatedValues::Empty,
-            None,
+            &EMPTY_CYCLE_HEADS,
         );
 
         // Optimization to only get read lock on the map if the data has already been interned.
@@ -294,7 +295,7 @@ where
     }
 
     fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
-        true
+        false
     }
 
     fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
