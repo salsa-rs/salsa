@@ -53,7 +53,7 @@ where
                     let database_key_index = self.database_key_index(id);
                     let mut retry = false;
                     for head in cycle_heads {
-                        if *head == database_key_index {
+                        if head == database_key_index {
                             continue;
                         }
                         let ingredient = db.zalsa().lookup_ingredient(head.ingredient_index);

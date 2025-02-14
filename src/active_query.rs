@@ -1,7 +1,5 @@
 use std::ops::Not;
 
-use rustc_hash::FxHashSet;
-
 use super::zalsa_local::{QueryEdges, QueryOrigin, QueryRevisions};
 use crate::accumulator::accumulated_map::AtomicInputAccumulatedValues;
 use crate::key::OutputDependencyIndex;
@@ -9,6 +7,7 @@ use crate::tracked_struct::{DisambiguatorMap, IdentityHash, IdentityMap};
 use crate::zalsa_local::QueryEdge;
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
+    cycle::CycleHeads,
     durability::Durability,
     hash::FxIndexSet,
     key::{DatabaseKeyIndex, InputDependencyIndex},
@@ -61,7 +60,7 @@ pub(crate) struct ActiveQuery {
     pub(super) accumulated_inputs: InputAccumulatedValues,
 
     /// Provisional cycle results that this query depends on.
-    pub(crate) cycle_heads: FxHashSet<DatabaseKeyIndex>,
+    pub(crate) cycle_heads: CycleHeads,
 }
 
 impl ActiveQuery {
@@ -86,7 +85,7 @@ impl ActiveQuery {
         durability: Durability,
         revision: Revision,
         accumulated: InputAccumulatedValues,
-        cycle_heads: Option<&FxHashSet<DatabaseKeyIndex>>,
+        cycle_heads: Option<&CycleHeads>,
     ) {
         self.input_outputs.insert(QueryEdge::Input(input));
         self.durability = self.durability.min(durability);

@@ -1,4 +1,3 @@
-use rustc_hash::FxHashSet;
 use std::any::Any;
 use std::fmt::Debug;
 use std::fmt::Formatter;
@@ -11,7 +10,10 @@ use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
-    cycle::CycleRecoveryStrategy, key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions,
+    cycle::{CycleHeads, CycleRecoveryStrategy},
+    key::DatabaseKeyIndex,
+    zalsa::Zalsa,
+    zalsa_local::QueryRevisions,
     Event, EventKind, Id, Revision,
 };
 
@@ -155,7 +157,7 @@ pub(super) struct Memo<V> {
 // Memo's are stored a lot, make sure their size is doesn't randomly increase.
 // #[cfg(test)]
 const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
-    [(); std::mem::size_of::<[usize; 17]>()];
+    [(); std::mem::size_of::<[usize; 14]>()];
 
 impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
@@ -177,7 +179,7 @@ impl<V> Memo<V> {
     }
 
     /// Cycle heads that should be propagated to dependent queries.
-    pub(super) fn cycle_heads(&self) -> Option<&FxHashSet<DatabaseKeyIndex>> {
+    pub(super) fn cycle_heads(&self) -> Option<&CycleHeads> {
         if self.may_be_provisional() {
             Some(&self.revisions.cycle_heads)
         } else {

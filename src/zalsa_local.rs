@@ -5,6 +5,7 @@ use crate::accumulator::accumulated_map::{
     AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues,
 };
 use crate::active_query::ActiveQuery;
+use crate::cycle::CycleHeads;
 use crate::durability::Durability;
 use crate::key::{DatabaseKeyIndex, InputDependencyIndex, OutputDependencyIndex};
 use crate::runtime::StampedValue;
@@ -162,7 +163,7 @@ impl ZalsaLocal {
         durability: Durability,
         changed_at: Revision,
         accumulated: InputAccumulatedValues,
-        cycle_heads: Option<&FxHashSet<DatabaseKeyIndex>>,
+        cycle_heads: Option<&CycleHeads>,
     ) {
         debug!(
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
@@ -328,12 +329,12 @@ pub(crate) struct QueryRevisions {
     /// which must provide the initial provisional value and decide,
     /// after each iteration, whether the cycle has converged or must
     /// iterate again.
-    pub(super) cycle_heads: FxHashSet<DatabaseKeyIndex>,
+    pub(super) cycle_heads: CycleHeads,
 }
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, revision: Revision) -> Self {
-        let cycle_heads = FxHashSet::from_iter([query]);
+        let cycle_heads = FxHashSet::from_iter([query]).into();
         Self {
             changed_at: revision,
             durability: Durability::MAX,
