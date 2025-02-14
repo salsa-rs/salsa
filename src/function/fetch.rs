@@ -49,7 +49,9 @@ where
                 // any further (it could escape outside the cycle); we need to block on the other
                 // thread completing fixpoint iteration of the cycle, and then we can re-query for
                 // our no-longer-provisional memo.
-                if !memo.provisional_retry(db.as_dyn_database(), self.database_key_index(id)) {
+                if !(memo.may_be_provisional()
+                    && memo.provisional_retry(db.as_dyn_database(), self.database_key_index(id)))
+                {
                     return memo;
                 }
             }
