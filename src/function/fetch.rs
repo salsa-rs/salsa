@@ -49,13 +49,8 @@ where
                 // any further (it could escape outside the cycle); we need to block on the other
                 // thread completing fixpoint iteration of the cycle, and then we can re-query for
                 // our no-longer-provisional memo.
-                if memo.may_be_provisional() {
+                if let Some(cycle_heads) = memo.cycle_heads() {
                     let database_key_index = self.database_key_index(id);
-                    let Some(cycle_heads) = memo.cycle_heads() else {
-                        unreachable!(
-                            "A memo without cycle heads can never become maybe-provisional."
-                        );
-                    };
                     let mut has_verified_cycle_heads = false;
                     for head in cycle_heads {
                         if *head == database_key_index {
@@ -85,10 +80,11 @@ where
                         // we should get a non-provisional memo.
                         continue 'outer;
                     }
-                    // We have no cycle heads other than ourself, so we are a cycle initial value
-                    // and should be returned to caller to allow fixpoint iteration to proceed.
-                    // (All cases in the loop above other than "cycle head is self" are either
-                    // terminal or set `has_verified_cycle_heads`.)
+                    // We have no cycle heads other than ourself, so we are a provisional value of
+                    // the cycle head (either initial value, or from a later iteration) and should
+                    // be returned to caller to allow fixpoint iteration to proceed. (All cases in
+                    // the loop above other than "cycle head is self" are either terminal or set
+                    // `has_verified_cycle_heads`.)
                 }
                 return memo;
             }
