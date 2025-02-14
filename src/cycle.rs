@@ -58,8 +58,12 @@ impl CycleHeads {
 
 impl std::iter::Extend<DatabaseKeyIndex> for CycleHeads {
     fn extend<T: IntoIterator<Item = DatabaseKeyIndex>>(&mut self, iter: T) {
-        let heads = self.0.get_or_insert(Box::new(FxHashSet::default()));
-        heads.extend(iter)
+        let mut iter = iter.into_iter();
+        if let Some(first) = iter.next() {
+            let heads = self.0.get_or_insert(Box::new(FxHashSet::default()));
+            heads.insert(first);
+            heads.extend(iter)
+        }
     }
 }
 
