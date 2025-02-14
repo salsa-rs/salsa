@@ -42,54 +42,16 @@ where
         db: &'db C::DbView,
         id: Id,
     ) -> &'db Memo<C::Output<'db>> {
-        'outer: loop {
+        loop {
             if let Some(memo) = self.fetch_hot(db, id).or_else(|| self.fetch_cold(db, id)) {
                 // If we get back a provisional cycle memo, and it's provisional on any cycle heads
                 // that are claimed by a different thread, we can't propagate the provisional memo
                 // any further (it could escape outside the cycle); we need to block on the other
                 // thread completing fixpoint iteration of the cycle, and then we can re-query for
                 // our no-longer-provisional memo.
-                if memo.may_be_provisional() {
-                    let database_key_index = self.database_key_index(id);
-                    let mut retry = false;
-                    for head in memo.cycle_heads() {
-                        if head == database_key_index {
-                            continue;
-                        }
-                        let ingredient = db.zalsa().lookup_ingredient(head.ingredient_index);
-                        if !ingredient
-                            .is_provisional_cycle_head(db.as_dyn_database(), head.key_index)
-                        {
-                            // This cycle is already finalized, so we don't need to wait on it;
-                            // keep looping through cycle heads.
-                            retry = true;
-                            continue;
-                        }
-                        if ingredient.wait_for(db.as_dyn_database(), head.key_index) {
-                            // There's a new memo available for the cycle head; fetch our own
-                            // updated memo and see if it's still provisional or if the cycle
-                            // has resolved.
-                            retry = true;
-                            continue;
-                        } else {
-                            // We hit a cycle blocking on the cycle head; this means it's in
-                            // our own active query stack and we are responsible to resolve the
-                            // cycle, so go ahead and return the provisional memo.
-                            return memo;
-                        }
-                    }
-                    if retry {
-                        // All our cycle heads (barring ourself) are complete; re-fetch and we
-                        // should get a non-provisional memo.
-                        continue 'outer;
-                    }
-                    // We have no cycle heads other than ourself, so we are a provisional value of
-                    // the cycle head (either initial value, or from a later iteration) and should
-                    // be returned to caller to allow fixpoint iteration to proceed. (All cases in
-                    // the loop above other than "cycle head is self" are either terminal or set
-                    // `retry`.)
+                if !memo.provisional_retry(db.as_dyn_database(), self.database_key_index(id)) {
+                    return memo;
                 }
-                return memo;
             }
         }
     }

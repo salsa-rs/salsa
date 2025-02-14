@@ -178,6 +178,55 @@ impl<V> Memo<V> {
         !self.verified_final.load(Ordering::Relaxed)
     }
 
+    /// Invoked when `refresh_memo` is about to return a memo to the caller; if that memo is
+    /// provisional, and its cycle head is claimed by another thread, we need to wait for that
+    /// other thread to complete the fixpoint iteration, and then retry fetching our own memo.
+    ///
+    /// Return `true` if the caller should retry, `false` if the caller should go ahead and return
+    /// this memo to the caller.
+    pub(super) fn provisional_retry(
+        &self,
+        db: &dyn crate::Database,
+        database_key_index: DatabaseKeyIndex,
+    ) -> bool {
+        if self.may_be_provisional() {
+            let mut retry = false;
+            for head in self.cycle_heads() {
+                if head == database_key_index {
+                    continue;
+                }
+                let ingredient = db.zalsa().lookup_ingredient(head.ingredient_index);
+                if !ingredient.is_provisional_cycle_head(db, head.key_index) {
+                    // This cycle is already finalized, so we don't need to wait on it;
+                    // keep looping through cycle heads.
+                    retry = true;
+                    continue;
+                }
+                if ingredient.wait_for(db.as_dyn_database(), head.key_index) {
+                    // There's a new memo available for the cycle head; fetch our own
+                    // updated memo and see if it's still provisional or if the cycle
+                    // has resolved.
+                    retry = true;
+                    continue;
+                } else {
+                    // We hit a cycle blocking on the cycle head; this means it's in
+                    // our own active query stack and we are responsible to resolve the
+                    // cycle, so go ahead and return the provisional memo.
+                    return false;
+                }
+            }
+            // If `retry` is `true`, all our cycle heads (barring ourself) are complete; re-fetch
+            // and we should get a non-provisional memo. If we get here and `retry` is still
+            // `false`, we have no cycle heads other than ourself, so we are a provisional value of
+            // the cycle head (either initial value, or from a later iteration) and should be
+            // returned to caller to allow fixpoint iteration to proceed. (All cases in the loop
+            // above other than "cycle head is self" are either terminal or set `retry`.)
+            retry
+        } else {
+            false
+        }
+    }
+
     /// Cycle heads that should be propagated to dependent queries.
     pub(super) fn cycle_heads(&self) -> &CycleHeads {
         if self.may_be_provisional() {
