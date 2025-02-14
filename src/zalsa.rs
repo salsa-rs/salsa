@@ -210,10 +210,17 @@ impl Zalsa {
                     let expected_index = ingredient.ingredient_index();
 
                     if ingredient.requires_reset_for_new_revision() {
-                        self.ingredients_requiring_reset.push(expected_index);
+                        // Safety: We hold the lock.
+                        unsafe {
+                            self.ingredients_requiring_reset
+                                .push_single_writer(expected_index);
+                        }
                     }
 
-                    let actual_index = self.ingredients_vec.push(ingredient);
+                    // Safety: We hold the lock.
+                    let actual_index =
+                        unsafe { self.ingredients_vec.push_single_writer(ingredient) };
+
                     assert_eq!(
                         expected_index.as_usize(),
                         actual_index,
