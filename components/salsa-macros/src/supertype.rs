@@ -1,11 +1,10 @@
 use crate::token_stream_with_error;
 use proc_macro2::TokenStream;
 
-/// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
+/// The implementation of the `supertype` macro.
 ///
-/// * the "id struct" `struct Foo(salsa::Id)`
-/// * the entity ingredient, which maps the id fields to the `Id`
-/// * for each value field, a function ingredient
+/// For an entity enum `Foo` with variants `Variant1, ..., VariantN`, we generate
+/// mappings between the variants and their corresponding supertypes.
 pub(crate) fn supertype(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let enum_item = parse_macro_input!(input as syn::ItemEnum);
     match enum_impl(enum_item) {
