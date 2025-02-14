@@ -67,7 +67,7 @@ pub fn interned(args: TokenStream, input: TokenStream) -> TokenStream {
     interned::interned(args, input)
 }
 
-#[proc_macro_derive(supertype)]
+#[proc_macro_derive(Supertype)]
 pub fn supertype(input: TokenStream) -> TokenStream {
     supertype::supertype(input)
 }

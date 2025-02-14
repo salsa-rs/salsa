@@ -56,8 +56,8 @@ pub use salsa_macros::accumulator;
 pub use salsa_macros::db;
 pub use salsa_macros::input;
 pub use salsa_macros::interned;
-pub use salsa_macros::supertype;
 pub use salsa_macros::tracked;
+pub use salsa_macros::Supertype;
 pub use salsa_macros::Update;
 
 pub mod prelude {
