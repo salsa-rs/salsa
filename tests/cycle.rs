@@ -915,7 +915,7 @@ fn cycle_unchanged_nested() {
     a.clone().assert_value(&db, 59);
     b.clone().assert_value(&db, 60);
 
-    db.assert_logs_len(15);
+    db.assert_logs_len(10);
 
     // next revision, we change only A, which is not part of the cycle and the cycle does not
     // depend on.
@@ -982,7 +982,7 @@ fn cycle_unchanged_nested_intertwined() {
             e.clone().assert_value(&db, 60);
         }
 
-        db.assert_logs_len(27 + i);
+        db.assert_logs_len(16 + i);
 
         // next revision, we change only A, which is not part of the cycle and the cycle does not
         // depend on.

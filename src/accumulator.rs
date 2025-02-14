@@ -111,7 +111,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         panic!("nothing should ever depend on an accumulator directly")
     }
 
-    fn is_verified_final<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
+    fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
         true
     }
 

@@ -230,6 +230,13 @@ fn multi_symbol_cycle_converges_then_diverges() {
     assert_eq!(infer_use(&db, use_x), Type::Values(Box::from([0])));
     assert_eq!(infer_use(&db, use_y), Type::Values(Box::from([0])));
 
+    // Set the increment on x to 0.
+    defx1.set_increment(&mut db).to(0);
+
+    // Both symbols still converge on 0.
+    assert_eq!(infer_use(&db, use_x), Type::Values(Box::from([0])));
+    assert_eq!(infer_use(&db, use_y), Type::Values(Box::from([0])));
+
     // Set the increment on x from 0 to 1.
     defx1.set_increment(&mut db).to(1);
 

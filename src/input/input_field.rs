@@ -62,7 +62,7 @@ where
         VerifyResult::changed_if(value.stamps[self.field_index].changed_at > revision)
     }
 
-    fn is_verified_final<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
+    fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
         true
     }
 

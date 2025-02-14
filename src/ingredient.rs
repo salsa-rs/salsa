@@ -65,8 +65,11 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         revision: Revision,
     ) -> VerifyResult;
 
-    /// Is the value for `input` in this ingredient marked as possibly a provisional cycle value?
-    fn is_verified_final<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool;
+    /// Is the value for `input` in this ingredient a cycle head that is still provisional?
+    ///
+    /// In the case of nested cycles, we are not asking here whether the value is provisional due
+    /// to the outer cycle being unresolved, only whether its own cycle remains provisional.
+    fn is_provisional_cycle_head<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool;
 
     /// Invoked when the current thread needs to wait for a result for the given `key_index`.
     ///

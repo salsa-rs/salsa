@@ -51,23 +51,26 @@ where
                 // our no-longer-provisional memo.
                 if let Some(cycle_heads) = memo.cycle_heads() {
                     let database_key_index = self.database_key_index(id);
-                    let mut has_verified_cycle_heads = false;
+                    let mut retry = false;
                     for head in cycle_heads {
                         if *head == database_key_index {
                             continue;
                         }
                         let ingredient = db.zalsa().lookup_ingredient(head.ingredient_index);
-                        if ingredient.is_verified_final(db.as_dyn_database(), head.key_index) {
-                            // This cycle head is already verified final, so we don't need to wait
-                            // on it; keep looping through cycle heads.
-                            has_verified_cycle_heads = true;
+                        if !ingredient
+                            .is_provisional_cycle_head(db.as_dyn_database(), head.key_index)
+                        {
+                            // This cycle is already finalized, so we don't need to wait on it;
+                            // keep looping through cycle heads.
+                            retry = true;
                             continue;
                         }
                         if ingredient.wait_for(db.as_dyn_database(), head.key_index) {
                             // There's a new memo available for the cycle head; fetch our own
                             // updated memo and see if it's still provisional or if the cycle
                             // has resolved.
-                            continue 'outer;
+                            retry = true;
+                            continue;
                         } else {
                             // We hit a cycle blocking on the cycle head; this means it's in
                             // our own active query stack and we are responsible to resolve the
@@ -75,16 +78,16 @@ where
                             return memo;
                         }
                     }
-                    if has_verified_cycle_heads {
-                        // All our cycle heads (barring ourself) are verified final; re-fetch and
-                        // we should get a non-provisional memo.
+                    if retry {
+                        // All our cycle heads (barring ourself) are complete; re-fetch and we
+                        // should get a non-provisional memo.
                         continue 'outer;
                     }
                     // We have no cycle heads other than ourself, so we are a provisional value of
                     // the cycle head (either initial value, or from a later iteration) and should
                     // be returned to caller to allow fixpoint iteration to proceed. (All cases in
                     // the loop above other than "cycle head is self" are either terminal or set
-                    // `has_verified_cycle_heads`.)
+                    // `retry`.)
                 }
                 return memo;
             }

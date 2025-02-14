@@ -223,13 +223,6 @@ where
 
     /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
     /// return true, if not return false.
-    ///
-    /// This check is not recursive, so it is not guaranteed that we will validate a provisional
-    /// memo that transitively should be validated. That is, if provisional memo A has cycle head
-    /// B, which also has a provisional memo with cycle head C, and C is verified final, we will
-    /// not validate A if we call `validate_provisional` on it, unless we first call
-    /// `validate_provisional` on B. Thus, `deep_verify_memo` needs to call `validate_provisional`
-    /// on maybe-provisional memos _after_ visiting all dependencies.
     fn validate_provisional(
         &self,
         db: &C::DbView,
@@ -237,9 +230,9 @@ where
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
         for cycle_head in &memo.revisions.cycle_heads {
-            if !zalsa
+            if zalsa
                 .lookup_ingredient(cycle_head.ingredient_index)
-                .is_verified_final(db.as_dyn_database(), cycle_head.key_index)
+                .is_provisional_cycle_head(db.as_dyn_database(), cycle_head.key_index)
             {
                 return false;
             }
@@ -273,6 +266,9 @@ where
 
         if self.shallow_verify_memo(db, zalsa, database_key_index, old_memo, false) {
             return VerifyResult::Unchanged(InputAccumulatedValues::Empty, Default::default());
+        }
+        if old_memo.may_be_provisional() {
+            return VerifyResult::Changed;
         }
 
         let mut cycle_heads = FxHashSet::default();
@@ -351,16 +347,6 @@ where
                     inputs
                 }
             };
-
-            // If this was a provisional memo from an older revision, we should have now validated
-            // the latest memos of all dependencies, so try one more time to validate ourselves;
-            // otherwise return changed. (This is necessary because a provisional memo may have a
-            // cycle head which itself is provisional, and in the previous revision it's possible
-            // that neither one was ever finalized; `validate_provisional` is not recursive, so we
-            // need to validate them in the right order.)
-            if old_memo.may_be_provisional() && !self.validate_provisional(db, zalsa, old_memo) {
-                return VerifyResult::Changed;
-            }
 
             // Possible scenarios here:
             //
