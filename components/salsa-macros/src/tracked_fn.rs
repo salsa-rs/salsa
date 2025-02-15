@@ -117,17 +117,20 @@ impl Macro {
 
         let return_ref: bool = self.args.return_ref.is_some();
 
-        let maybe_update_fn = quote_spanned! {output_ty.span()=> {
-            #[allow(clippy::all, unsafe_code)]
-            unsafe fn _maybe_update_fn<'db>(old_pointer: *mut #output_ty, new_value: #output_ty) -> bool {
-                unsafe {
-                    use #zalsa::UpdateFallback;
-                    #zalsa::UpdateDispatch::<#output_ty>::maybe_update(
-                        old_pointer, new_value
-                    )
-                }
+        // The path expression is responsible for emitting the primary span in the diagnostic we
+        // want, so by uniformly using `output_ty.span()` we ensure that the diagnostic is emitted
+        // at the return type in the original input.
+        // See the tests/compile-fail/tracked_fn_return_ref.rs test
+        let maybe_update_path = quote_spanned! {output_ty.span() =>
+            UpdateDispatch::<#output_ty>::maybe_update
+        };
+        let assert_return_type_is_update = quote! {
+            #[allow(clippy::all, warnings)]
+            fn _assert_return_type_is_update<#db_lt>()  {
+                use #zalsa::{UpdateFallback, UpdateDispatch};
+                #maybe_update_path;
             }
-        }};
+        };
 
         Ok(crate::debug::dump_tokens(
             fn_name,
@@ -149,7 +152,7 @@ impl Macro {
                 needs_interner: #needs_interner,
                 lru: #lru,
                 return_ref: #return_ref,
-                maybe_update_fn: { #maybe_update_fn },
+                assert_return_type_is_update: { #assert_return_type_is_update },
                 unused_names: [
                     #zalsa,
                     #Configuration,

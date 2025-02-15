@@ -1,20 +1,14 @@
 error: lifetime may not live long enough
-  --> tests/compile-fail/tracked_fn_return_ref.rs:14:1
+  --> tests/compile-fail/tracked_fn_return_ref.rs:15:67
    |
-14 | #[salsa::tracked]
-   | ^^^^^^^^^^^^^^^^^ requires that `'db` must outlive `'static`
 15 | fn tracked_fn_return_ref<'db>(db: &'db dyn Db, input: MyInput) -> &'db str {
-   |                                                                   - lifetime `'db` defined here
-   |
-   = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
+   |                          --- lifetime `'db` defined here          ^ requires that `'db` must outlive `'static`
 
 error: lifetime may not live long enough
-  --> tests/compile-fail/tracked_fn_return_ref.rs:19:1
+  --> tests/compile-fail/tracked_fn_return_ref.rs:23:6
    |
-19 | #[salsa::tracked]
-   | ^^^^^^^^^^^^^^^^^ requires that `'db` must outlive `'static`
+20 | fn tracked_fn_return_struct_containing_ref<'db>(
+   |                                            --- lifetime `'db` defined here
 ...
 23 | ) -> ContainsRef<'db> {
-   |      ----------- lifetime `'db` defined here
-   |
-   = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
+   |      ^^^^^^^^^^^ requires that `'db` must outlive `'static`
