@@ -21,7 +21,7 @@ where
             // consumers must be aware of. Becoming *more* durable
             // is not. See the test `constant_to_non_constant`.
             if revisions.durability >= old_memo.revisions.durability
-                && C::should_backdate_value(old_value, value)
+                && C::values_equal(old_value, value)
             {
                 tracing::debug!(
                     "value is equal, back-dating to {:?}",

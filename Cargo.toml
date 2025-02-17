@@ -47,13 +47,16 @@ crossbeam-channel = "0.5.14"
 name = "compare"
 harness = false
 
-
 [[bench]]
 name = "incremental"
 harness = false
 
 [[bench]]
 name = "accumulator"
+harness = false
+
+[[bench]]
+name = "dataflow"
 harness = false
 
 [workspace]

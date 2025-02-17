@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 
 use crate::{
     key::DatabaseKeyIndex,
-    runtime::WaitResult,
+    runtime::{BlockResult, WaitResult},
     zalsa::{MemoIngredientIndex, Zalsa},
     zalsa_local::ZalsaLocal,
     Database,
@@ -30,6 +30,12 @@ struct SyncState {
     anyone_waiting: AtomicBool,
 }
 
+pub(crate) enum ClaimResult<'a> {
+    Retry,
+    Cycle,
+    Claimed(ClaimGuard<'a>),
+}
+
 impl SyncTable {
     pub(crate) fn claim<'me>(
         &'me self,
@@ -37,7 +43,7 @@ impl SyncTable {
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<ClaimGuard<'me>> {
+    ) -> ClaimResult<'me> {
         let mut syncs = self.syncs.write();
         let zalsa = db.zalsa();
         let thread_id = std::thread::current().id();
@@ -50,11 +56,12 @@ impl SyncTable {
                     id: thread_id,
                     anyone_waiting: AtomicBool::new(false),
                 });
-                Some(ClaimGuard {
+                ClaimResult::Claimed(ClaimGuard {
                     database_key_index,
                     memo_ingredient_index,
                     zalsa,
                     sync_table: self,
+                    _padding: false,
                 })
             }
             Some(SyncState {
@@ -68,8 +75,10 @@ impl SyncTable {
                 // boolean is to decide *whether* to acquire the lock,
                 // not to gate future atomic reads.
                 anyone_waiting.store(true, Ordering::Relaxed);
-                zalsa.block_on_or_unwind(db, zalsa_local, database_key_index, *other_id, syncs);
-                None
+                match zalsa.block_on(db, zalsa_local, database_key_index, *other_id, syncs) {
+                    BlockResult::Completed => ClaimResult::Retry,
+                    BlockResult::Cycle => ClaimResult::Cycle,
+                }
             }
         }
     }
@@ -83,6 +92,9 @@ pub(crate) struct ClaimGuard<'me> {
     memo_ingredient_index: MemoIngredientIndex,
     zalsa: &'me Zalsa,
     sync_table: &'me SyncTable,
+    // Reduce the size of ClaimResult by making more niches available in ClaimGuard; this fits into
+    // the padding of ClaimGuard so doesn't increase its size.
+    _padding: bool,
 }
 
 impl ClaimGuard<'_> {
@@ -93,7 +105,7 @@ impl ClaimGuard<'_> {
             syncs[self.memo_ingredient_index.as_usize()].take().unwrap();
 
         // NB: `Ordering::Relaxed` is sufficient here,
-        // see `store` above for explanation.
+        // see `claim` above for explanation.
         if anyone_waiting.load(Ordering::Relaxed) {
             self.zalsa
                 .unblock_queries_blocked_on(self.database_key_index, wait_result)

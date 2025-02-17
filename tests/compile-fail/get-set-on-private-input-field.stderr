@@ -1,17 +1,17 @@
 error[E0624]: method `field` is private
-  --> tests/compile-fail/get-set-on-private-input-field.rs:14:11
+  --> tests/compile-fail/get-set-on-private-input-field.rs:12:11
    |
-4  |     #[salsa::input]
+2  |     #[salsa::input]
    |     --------------- private method defined here
 ...
-14 |     input.field(&db);
+12 |     input.field(&db);
    |           ^^^^^ private method
 
 error[E0624]: method `set_field` is private
-  --> tests/compile-fail/get-set-on-private-input-field.rs:15:11
+  --> tests/compile-fail/get-set-on-private-input-field.rs:13:11
    |
-4  |     #[salsa::input]
+2  |     #[salsa::input]
    |     --------------- private method defined here
 ...
-15 |     input.set_field(&mut db).to(23);
+13 |     input.set_field(&mut db).to(23);
    |           ^^^^^^^^^ private method
