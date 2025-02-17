@@ -55,7 +55,7 @@ macro_rules! setup_tracked_fn {
         // True if we `return_ref` flag was given to the function
         return_ref: $return_ref:tt,
 
-        maybe_update_fn: {$($maybe_update_fn:tt)*},
+        assert_return_type_is_update: {$($assert_return_type_is_update:tt)*},
 
         // Annoyingly macro-rules hygiene does not extend to items defined in the macro.
         // We have the procedural macro generate names for those items that are
@@ -147,14 +147,6 @@ macro_rules! setup_tracked_fn {
                 }
             }
 
-            /// This method isn't used anywhere. It only exitst to enforce the `Self::Output: Update` constraint
-            /// for types that aren't `'static`.
-            ///
-            /// # Safety
-            /// The same safety rules as for `Update` apply.
-            $($maybe_update_fn)*
-
-
             impl $zalsa::function::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($fn_name);
 
@@ -182,6 +174,8 @@ macro_rules! setup_tracked_fn {
                 }
 
                 fn execute<$db_lt>($db: &$db_lt Self::DbView, ($($input_id),*): ($($input_ty),*)) -> Self::Output<$db_lt> {
+                    $($assert_return_type_is_update)*
+
                     $($inner_fn)*
 
                     $inner($db, $($input_id),*)
