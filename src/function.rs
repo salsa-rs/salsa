@@ -5,7 +5,6 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, MaybeChangedAfter},
     key::DatabaseKeyIndex,
-    plumbing::JarAux,
     salsa_struct::SalsaStructInDb,
     table::Table,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
@@ -96,7 +95,10 @@ pub struct IngredientImpl<C: Configuration> {
     index: IngredientIndex,
 
     /// The index for the memo/sync tables
-    memo_ingredient_index: MemoIngredientIndex,
+    ///
+    /// This may be a `MemoIngredientSingletonIndex` or a `MemoIngredientIndex`, depending on
+    /// whether the tracked function's struct is a plain salsa struct or an enum `#[derive(Supertype)]`.
+    memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
 
     /// Used to find memos to throw out when we have too many memoized values.
     lru: lru::Lru,
@@ -127,10 +129,13 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn new(struct_index: IngredientIndex, index: IngredientIndex, aux: &dyn JarAux) -> Self {
+    pub fn new(
+        index: IngredientIndex,
+        memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
+    ) -> Self {
         Self {
             index,
-            memo_ingredient_index: aux.next_memo_ingredient_index(struct_index, index),
+            memo_ingredient_indices,
             lru: Default::default(),
             deleted_entries: Default::default(),
         }
@@ -166,6 +171,7 @@ where
         zalsa: &'db Zalsa,
         id: Id,
         memo: memo::Memo<C::Output<'db>>,
+        memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db memo::Memo<C::Output<'db>> {
         let memo = Arc::new(memo);
         // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
@@ -173,13 +179,31 @@ where
         let db_memo = unsafe { self.extend_memo_lifetime(&memo) };
         // Safety: We delay the drop of `old_value` until a new revision starts which ensures no
         // references will exist for the memo contents.
-        if let Some(old_value) = unsafe { self.insert_memo_into_table_for(zalsa, id, memo) } {
+        if let Some(old_value) =
+            unsafe { self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index) }
+        {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
             self.deleted_entries
                 .push(ManuallyDrop::into_inner(old_value));
         }
         db_memo
+    }
+
+    // FIXME: deduplicate `memo_ingredient_index` and `memo_ingredient_index_for_id`.
+    // this is only duplciated because `reset_for_new_revision` in `function.rs` doesn't have easy access
+    // to zalsa (nor should it, really).
+    #[inline]
+    fn memo_ingredient_index_for_ingredient(
+        &self,
+        ingredient_index: IngredientIndex,
+    ) -> MemoIngredientIndex {
+        self.memo_ingredient_indices[ingredient_index]
+    }
+
+    #[inline]
+    fn memo_ingredient_index(&self, zalsa: &Zalsa, id: Id) -> MemoIngredientIndex {
+        self.memo_ingredient_indices[zalsa.ingredient_index(id)]
     }
 }
 
@@ -234,8 +258,10 @@ where
     }
 
     fn reset_for_new_revision(&mut self, table: &mut Table) {
-        self.lru
-            .for_each_evicted(|evict| self.evict_value_from_memo_for(table.memos_mut(evict)));
+        self.lru.for_each_evicted(|evict| {
+            let ingredient_index = table.ingredient_index(evict);
+            self.evict_value_from_memo_for(table.memos_mut(evict), ingredient_index);
+        });
         std::mem::take(&mut self.deleted_entries);
     }
 

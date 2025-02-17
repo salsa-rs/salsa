@@ -30,6 +30,8 @@ pub struct Table {
 pub(crate) trait TablePage: Any + Send + Sync {
     fn hidden_type_name(&self) -> &'static str;
 
+    fn ingredient_index(&self) -> IngredientIndex;
+
     /// Access the memos attached to `slot`.
     ///
     /// # Safety condition
@@ -50,7 +52,6 @@ pub(crate) trait TablePage: Any + Send + Sync {
 
 pub(crate) struct Page<T: Slot> {
     /// The ingredient for elements on this page.
-    #[allow(dead_code)] // pretty sure we'll need this
     ingredient: IngredientIndex,
 
     /// Number of elements of `data` that are initialized.
@@ -124,6 +125,13 @@ impl Default for Table {
 }
 
 impl Table {
+    /// Returns the [`IngredientIndex`] for an [`Id`].
+    #[inline]
+    pub fn ingredient_index(&self, id: Id) -> IngredientIndex {
+        let (page_idx, _) = split_id(id);
+        self.pages[page_idx.0].ingredient_index()
+    }
+
     /// Get a reference to the data for `id`, which must have been allocated from this table with type `T`.
     ///
     /// # Panics
@@ -290,6 +298,10 @@ impl<T: Slot> Page<T> {
 impl<T: Slot> TablePage for Page<T> {
     fn hidden_type_name(&self) -> &'static str {
         std::any::type_name::<Self>()
+    }
+
+    fn ingredient_index(&self) -> IngredientIndex {
+        self.ingredient
     }
 
     unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable {

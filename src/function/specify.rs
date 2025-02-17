@@ -73,7 +73,8 @@ where
             accumulated_inputs: Default::default(),
         };
 
-        if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key) {
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
+        if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
             self.backdate_if_appropriate(&old_memo, &mut revisions, &value);
             self.diff_outputs(db, database_key_index, &old_memo, &mut revisions);
         }
@@ -89,7 +90,7 @@ where
             memo.tracing_debug(),
             key
         );
-        self.insert_memo(zalsa, key, memo);
+        self.insert_memo(zalsa, key, memo, memo_ingredient_index);
 
         // Record that the current query *specified* a value for this cell.
         let database_key_index = self.database_key_index(key);
@@ -107,8 +108,9 @@ where
         key: Id,
     ) {
         let zalsa = db.zalsa();
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
 
-        let memo = match self.get_memo_from_table_for(zalsa, key) {
+        let memo = match self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
             Some(m) => m,
             None => return,
         };
