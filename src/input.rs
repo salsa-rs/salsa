@@ -194,7 +194,7 @@ impl<C: Configuration> IngredientImpl<C> {
             .table()
             .pages
             .iter()
-            .filter_map(|page| page.cast_type::<crate::table::Page<Value<C>>>())
+            .filter_map(|(_, page)| page.cast_type::<crate::table::Page<Value<C>>>())
             .flat_map(|page| page.slots())
     }
 

@@ -16,7 +16,7 @@ dashmap = { version = "6", features = ["raw-api"] }
 hashlink = "0.9"
 hashbrown = "0.14.3"
 indexmap = "2"
-append-only-vec = "0.1.5"
+boxcar = "0.2.9"
 tracing = "0.1"
 parking_lot = "0.12"
 rustc-hash = "2"
