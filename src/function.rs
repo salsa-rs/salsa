@@ -127,11 +127,16 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn new(struct_index: IngredientIndex, index: IngredientIndex, aux: &dyn JarAux) -> Self {
+    pub fn new(
+        struct_index: IngredientIndex,
+        index: IngredientIndex,
+        aux: &dyn JarAux,
+        lru: usize,
+    ) -> Self {
         Self {
             index,
             memo_ingredient_index: aux.next_memo_ingredient_index(struct_index, index),
-            lru: Default::default(),
+            lru: lru::Lru::new(lru),
             deleted_entries: Default::default(),
         }
     }
@@ -143,7 +148,7 @@ where
         }
     }
 
-    pub fn set_capacity(&self, capacity: usize) {
+    pub fn set_capacity(&mut self, capacity: usize) {
         self.lru.set_capacity(capacity);
     }
 
@@ -234,8 +239,13 @@ where
     }
 
     fn reset_for_new_revision(&mut self, table: &mut Table) {
-        self.lru
-            .for_each_evicted(|evict| self.evict_value_from_memo_for(table.memos_mut(evict)));
+        self.lru.for_each_evicted(|evict| {
+            Self::evict_value_from_memo_for(
+                table.memos_mut(evict),
+                &self.deleted_entries,
+                self.memo_ingredient_index,
+            )
+        });
         std::mem::take(&mut self.deleted_entries);
     }
 
