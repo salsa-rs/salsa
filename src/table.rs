@@ -7,7 +7,6 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use append_only_vec::AppendOnlyVec;
 use memo::MemoTable;
 use parking_lot::Mutex;
 use sync::SyncTable;
@@ -24,7 +23,7 @@ const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
 const MAX_PAGES: usize = 1 << (32 - PAGE_LEN_BITS);
 
 pub struct Table {
-    pub(crate) pages: AppendOnlyVec<Box<dyn TablePage>>,
+    pub(crate) pages: boxcar::Vec<Box<dyn TablePage>>,
 }
 
 pub(crate) trait TablePage: Any + Send + Sync {
@@ -118,7 +117,7 @@ impl SlotIndex {
 impl Default for Table {
     fn default() -> Self {
         Self {
-            pages: AppendOnlyVec::new(),
+            pages: boxcar::Vec::new(),
         }
     }
 }
@@ -179,7 +178,12 @@ impl Table {
     /// Get the memo table associated with `id`
     pub(crate) fn memos_mut(&mut self, id: Id) -> &mut MemoTable {
         let (page, slot) = split_id(id);
-        self.pages[page.0].memos_mut(slot)
+        let page_index = page.0;
+        let page = self
+            .pages
+            .get_mut(page_index)
+            .unwrap_or_else(|| panic!("index `{page_index}` is uninitialized"));
+        page.memos_mut(slot)
     }
 
     /// Get the sync table associated with `id`
