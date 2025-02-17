@@ -4,7 +4,7 @@ use crate::{
     key::DatabaseKeyIndex,
     zalsa::{Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
-    AsDynDatabase as _, Id, Revision,
+    AsDynDatabase as _, Database, Id, Revision,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};
@@ -15,7 +15,7 @@ where
 {
     pub(super) fn maybe_changed_after<'db>(
         &'db self,
-        db: &'db C::DbView,
+        db: &'db dyn Database,
         id: Id,
         revision: Revision,
     ) -> MaybeChangedAfter {
@@ -30,7 +30,7 @@ where
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.get_memo_from_table_for(zalsa, id);
             if let Some(memo) = &memo_guard {
-                if self.shallow_verify_memo(db, zalsa, database_key_index, memo) {
+                if self.shallow_verify_memo(db.as_dyn_database(), zalsa, database_key_index, memo) {
                     return if memo.revisions.changed_at > revision {
                         MaybeChangedAfter::Yes
                     } else {
@@ -38,6 +38,7 @@ where
                     };
                 }
                 drop(memo_guard); // release the arc-swap guard before cold path
+                let db = db.as_view::<C::DbView>();
                 if let Some(mcs) = self.maybe_changed_after_cold(db, id, revision) {
                     return mcs;
                 } else {
@@ -79,7 +80,7 @@ where
         );
 
         // Check if the inputs are still valid. We can just compare `changed_at`.
-        if self.deep_verify_memo(db, &old_memo, &active_query) {
+        if self.deep_verify_memo(db.as_dyn_database(), &old_memo, &active_query) {
             return Some(if old_memo.revisions.changed_at > revision {
                 MaybeChangedAfter::Yes
             } else {
@@ -114,7 +115,7 @@ where
     #[inline]
     pub(super) fn shallow_verify_memo(
         &self,
-        db: &C::DbView,
+        db: &dyn Database,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
@@ -134,7 +135,6 @@ where
 
         if memo.check_durability(zalsa) {
             // No input of the suitable durability has changed since last verified.
-            let db = db.as_dyn_database();
             memo.mark_as_verified(
                 db,
                 revision_now,
@@ -158,7 +158,7 @@ where
     /// query is on the stack.
     pub(super) fn deep_verify_memo(
         &self,
-        db: &C::DbView,
+        db: &dyn Database,
         old_memo: &Memo<C::Output<'_>>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> bool {
@@ -209,9 +209,7 @@ where
                 for &edge in edges.input_outputs.iter() {
                     match edge {
                         QueryEdge::Input(dependency_index) => {
-                            match dependency_index
-                                .maybe_changed_after(db.as_dyn_database(), last_verified_at)
-                            {
+                            match dependency_index.maybe_changed_after(db, last_verified_at) {
                                 MaybeChangedAfter::Yes => {
                                     return false;
                                 }
@@ -237,8 +235,7 @@ where
                             // by this function cannot be read until this function is marked green,
                             // so even if we mark them as valid here, the function will re-execute
                             // and overwrite the contents.
-                            dependency_index
-                                .mark_validated_output(db.as_dyn_database(), database_key_index);
+                            dependency_index.mark_validated_output(db, database_key_index);
                         }
                     }
                 }
@@ -246,12 +243,7 @@ where
             }
         };
 
-        old_memo.mark_as_verified(
-            db.as_dyn_database(),
-            zalsa.current_revision(),
-            database_key_index,
-            inputs,
-        );
+        old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index, inputs);
         true
     }
 }

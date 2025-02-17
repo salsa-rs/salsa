@@ -197,7 +197,6 @@ where
         input: Id,
         revision: Revision,
     ) -> MaybeChangedAfter {
-        let db = db.as_view::<C::DbView>();
         self.maybe_changed_after(db, input, revision)
     }
 
