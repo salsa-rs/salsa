@@ -4,6 +4,7 @@ use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
 use crate::ingredient::{fmt_index, MaybeChangedAfter};
 use crate::plumbing::{Jar, JarAux};
+use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
 use crate::table::{Slot, Table};
@@ -70,6 +71,10 @@ where
     fields: C::Fields<'static>,
     memos: MemoTable,
     syncs: SyncTable,
+    /// The revision the value was first interned in.
+    first_interned_at: Revision,
+    /// The most recent interned revision.
+    last_interned_at: AtomicRevision,
 }
 
 impl<C> Value<C>
@@ -169,7 +174,8 @@ where
         // so instead we go with this and transmute the lifetime in the `eq` closure
         C::Fields<'db>: HashEqLike<Key>,
     {
-        let zalsa_local = db.zalsa_local();
+        let (zalsa, zalsa_local) = db.zalsas();
+        let current_revision = zalsa.current_revision();
 
         // Optimization to only get read lock on the map if the data has already been interned.
         let data_hash = self.key_map.hasher().hash_one(&key);
@@ -187,12 +193,16 @@ where
                 // SAFETY: Read lock on map is held during this block
                 let id = unsafe { *bucket.as_ref().1.get() };
 
+                // Sync the value's revision.
+                let value = zalsa.table().get::<Value<C>>(id);
+                value.last_interned_at.store(current_revision);
+
                 // Record a dependency on this value.
                 let index = self.database_key_index(id);
                 zalsa_local.report_tracked_read(
                     index,
                     Durability::MAX,
-                    Revision::start(),
+                    current_revision,
                     InputAccumulatedValues::Empty,
                 );
 
@@ -209,12 +219,16 @@ where
                 let id = unsafe { *slot.as_ref().1.get() };
                 drop(slot);
 
+                // Sync the value's revision.
+                let value = zalsa.table().get::<Value<C>>(id);
+                value.last_interned_at.store(current_revision);
+
                 // Record a dependency on this value.
                 let index = self.database_key_index(id);
                 zalsa_local.report_tracked_read(
                     index,
                     Durability::MAX,
-                    Revision::start(),
+                    current_revision,
                     InputAccumulatedValues::Empty,
                 );
 
@@ -230,6 +244,8 @@ where
                     fields: unsafe { self.to_internal_data(assemble(id, key)) },
                     memos: Default::default(),
                     syncs: Default::default(),
+                    first_interned_at: current_revision,
+                    last_interned_at: AtomicRevision::from(current_revision),
                 });
 
                 let value = (
@@ -251,7 +267,7 @@ where
                 zalsa_local.report_tracked_read(
                     index,
                     Durability::MAX,
-                    Revision::start(),
+                    current_revision,
                     InputAccumulatedValues::Empty,
                 );
 
@@ -270,6 +286,10 @@ where
     /// to the interned item.
     pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
         let internal_data = db.zalsa().table().get::<Value<C>>(id);
+        assert!(
+            internal_data.last_interned_at.load() >= db.zalsa().current_revision(),
+            "Data was not interned in the current revision."
+        );
         unsafe { Self::from_internal_data(&internal_data.fields) }
     }
 
@@ -277,6 +297,12 @@ where
     /// Note that this is not "leaking" since no dependency edge is required.
     pub fn fields<'db>(&'db self, db: &'db dyn Database, s: C::Struct<'db>) -> &'db C::Fields<'db> {
         self.data(db, C::deref_struct(s))
+    }
+
+    pub fn reset(&mut self, db: &mut dyn Database) {
+        // Trigger a new revision.
+        let _zalsa_mut = db.zalsa_mut();
+        self.key_map.clear();
     }
 
     #[cfg(feature = "salsa_unstable")]
@@ -304,11 +330,19 @@ where
 
     fn maybe_changed_after(
         &self,
-        _db: &dyn Database,
-        _input: Id,
-        _revision: Revision,
+        db: &dyn Database,
+        input: Id,
+        revision: Revision,
     ) -> MaybeChangedAfter {
-        // Interned data currently never changes.
+        let value = db.zalsa().table().get::<Value<C>>(input);
+        if value.first_interned_at > revision {
+            // The slot was reused.
+            return MaybeChangedAfter::Yes;
+        }
+
+        // The slot is valid in this revision but we have to sync the value's revision.
+        value.last_interned_at.store(db.zalsa().current_revision());
+
         MaybeChangedAfter::No(InputAccumulatedValues::Empty)
     }
 
