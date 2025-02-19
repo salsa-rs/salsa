@@ -3,7 +3,6 @@ use dashmap::SharedValue;
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
 use crate::ingredient::{fmt_index, MaybeChangedAfter};
-use crate::key::InputDependencyIndex;
 use crate::plumbing::{IngredientIndices, Jar};
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
@@ -61,12 +60,6 @@ pub struct IngredientImpl<C: Configuration> {
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
     key_map: FxDashMap<C::Fields<'static>, Id>,
-
-    /// Stores the revision when this interned ingredient was last cleared.
-    /// You can clear an interned table at any point, deleting all its entries,
-    /// but that will make anything dependent on those entries dirty and in need
-    /// of being recomputed.
-    reset_at: Revision,
 }
 
 /// Struct storing the interned fields.
@@ -120,7 +113,6 @@ where
         Self {
             ingredient_index,
             key_map: Default::default(),
-            reset_at: Revision::start(),
         }
     }
 
@@ -178,12 +170,6 @@ where
         C::Fields<'db>: HashEqLike<Key>,
     {
         let zalsa_local = db.zalsa_local();
-        zalsa_local.report_tracked_read(
-            InputDependencyIndex::for_table(self.ingredient_index),
-            Durability::MAX,
-            self.reset_at,
-            InputAccumulatedValues::Empty,
-        );
 
         // Optimization to only get read lock on the map if the data has already been interned.
         let data_hash = self.key_map.hasher().hash_one(&key);
@@ -199,7 +185,18 @@ where
             let lock = shard.read();
             if let Some(bucket) = lock.find(data_hash, eq) {
                 // SAFETY: Read lock on map is held during this block
-                return unsafe { *bucket.as_ref().1.get() };
+                let id = unsafe { *bucket.as_ref().1.get() };
+
+                // Record a dependency on this value.
+                let index = self.database_key_index(id);
+                zalsa_local.report_tracked_read(
+                    index,
+                    Durability::MAX,
+                    Revision::start(),
+                    InputAccumulatedValues::Empty,
+                );
+
+                return id;
             }
         }
 
@@ -208,35 +205,64 @@ where
             self.key_map.hasher().hash_one(element)
         }) {
             // Data has been interned by a racing call, use that ID instead
-            Ok(slot) => unsafe { *slot.as_ref().1.get() },
+            Ok(slot) => {
+                let id = unsafe { *slot.as_ref().1.get() };
+                drop(slot);
+
+                // Record a dependency on this value.
+                let index = self.database_key_index(id);
+                zalsa_local.report_tracked_read(
+                    index,
+                    Durability::MAX,
+                    Revision::start(),
+                    InputAccumulatedValues::Empty,
+                );
+
+                return id;
+            }
+
             // We won any races so should intern the data
             Err(slot) => {
                 let zalsa = db.zalsa();
                 let table = zalsa.table();
+
                 let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
                     fields: unsafe { self.to_internal_data(assemble(id, key)) },
                     memos: Default::default(),
                     syncs: Default::default(),
                 });
-                unsafe {
-                    lock.insert_in_slot(
-                        data_hash,
-                        slot,
-                        (
-                            table.get::<Value<C>>(id).fields.clone(),
-                            SharedValue::new(id),
-                        ),
-                    )
-                };
+
+                let value = (
+                    table.get::<Value<C>>(id).fields.clone(),
+                    SharedValue::new(id),
+                );
+
+                unsafe { lock.insert_in_slot(data_hash, slot, value) };
+
                 debug_assert_eq!(
                     data_hash,
                     self.key_map
                         .hasher()
                         .hash_one(table.get::<Value<C>>(id).fields.clone())
                 );
+
+                // Record a dependency on this value.
+                let index = self.database_key_index(id);
+                zalsa_local.report_tracked_read(
+                    index,
+                    Durability::MAX,
+                    Revision::start(),
+                    InputAccumulatedValues::Empty,
+                );
+
                 id
             }
         }
+    }
+
+    /// Returns the database key index for an interned value with the given id.
+    pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
+        DatabaseKeyIndex::new(self.ingredient_index, id)
     }
 
     /// Lookup the data for an interned value based on its id.
@@ -266,12 +292,6 @@ where
             .filter_map(|(_, page)| page.cast_type::<crate::table::Page<Value<C>>>())
             .flat_map(|page| page.slots())
     }
-
-    pub fn reset(&mut self, revision: Revision) {
-        assert!(revision > self.reset_at);
-        self.reset_at = revision;
-        self.key_map.clear();
-    }
 }
 
 impl<C> Ingredient for IngredientImpl<C>
@@ -286,9 +306,10 @@ where
         &self,
         _db: &dyn Database,
         _input: Id,
-        revision: Revision,
+        _revision: Revision,
     ) -> MaybeChangedAfter {
-        MaybeChangedAfter::from(revision < self.reset_at)
+        // Interned data currently never changes.
+        MaybeChangedAfter::No(InputAccumulatedValues::Empty)
     }
 
     fn cycle_recovery_strategy(&self) -> crate::cycle::CycleRecoveryStrategy {
@@ -330,7 +351,7 @@ where
         false
     }
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
 

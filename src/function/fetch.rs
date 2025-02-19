@@ -25,7 +25,7 @@ where
         self.lru.record_use(id);
 
         zalsa_local.report_tracked_read(
-            self.database_key_index(id).into(),
+            self.database_key_index(id),
             durability,
             changed_at,
             match &memo.revisions.accumulated {
