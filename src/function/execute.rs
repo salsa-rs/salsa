@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{
     zalsa::ZalsaDatabase, zalsa_local::ActiveQueryGuard, Cycle, Database, Event, EventKind,
 };
@@ -23,7 +21,7 @@ where
         &'db self,
         db: &'db C::DbView,
         active_query: ActiveQueryGuard<'_>,
-        opt_old_memo: Option<Arc<Memo<C::Output<'_>>>>,
+        opt_old_memo: Option<&Memo<C::Output<'_>>>,
     ) -> &'db Memo<C::Output<'db>> {
         let zalsa = db.zalsa();
         let revision_now = zalsa.current_revision();

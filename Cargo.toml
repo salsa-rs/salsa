@@ -12,7 +12,6 @@ rust-version = "1.80"
 salsa-macro-rules = { version = "0.1.0", path = "components/salsa-macro-rules" }
 salsa-macros = { version = "0.18.0", path = "components/salsa-macros" }
 
-arc-swap = "1"
 boxcar = "0.2.9"
 crossbeam-queue = "0.3.11"
 dashmap = { version = "6", features = ["raw-api"] }
