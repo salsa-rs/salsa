@@ -26,7 +26,7 @@ impl<C: Configuration> IngredientImpl<C> {
         memo.cast()
     }
 
-    /// Convert from an internal memo (which uses `'static``) to one tied to self
+    /// Convert from an internal memo (which uses `'static`) to one tied to self
     /// so it can be publicly released.
     unsafe fn to_self<'db>(
         &'db self,
@@ -35,7 +35,7 @@ impl<C: Configuration> IngredientImpl<C> {
         memo.cast()
     }
 
-    /// Convert from an internal memo (which uses `'static``) to one tied to self
+    /// Convert from an internal memo (which uses `'static`) to one tied to self
     /// so it can be publicly released.
     unsafe fn to_self_ref<'db>(
         &'db self,
