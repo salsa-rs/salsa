@@ -96,6 +96,6 @@ fn test_leaked_inputs_ignored() {
     // value of 100 since the struct has already been read during
     // this revision.
     //
-    // Contrast with preverify-struct-with-leaked-data-2.rs.
+    // Contrast with preverify-struct-with-leaked-data.rs.
     assert_eq!(result_in_rev_2, (0, 0));
 }
