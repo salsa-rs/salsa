@@ -12,8 +12,8 @@ pub(super) struct DeletedEntries<C: Configuration> {
     seg_queue: SegQueue<SharedBox<Memo<C::Output<'static>>>>,
 }
 
-unsafe impl<C: Configuration> Send for DeletedEntries<C> {}
-unsafe impl<C: Configuration> Sync for DeletedEntries<C> {}
+unsafe impl<T: Send> Send for SharedBox<T> {}
+unsafe impl<T: Sync> Sync for SharedBox<T> {}
 
 impl<C: Configuration> Default for DeletedEntries<C> {
     fn default() -> Self {
