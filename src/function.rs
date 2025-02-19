@@ -1,4 +1,4 @@
-use std::{any::Any, fmt, mem::ManuallyDrop, sync::Arc};
+use std::{any::Any, fmt, ptr::NonNull};
 
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
@@ -167,17 +167,23 @@ where
         id: Id,
         memo: memo::Memo<C::Output<'db>>,
     ) -> &'db memo::Memo<C::Output<'db>> {
-        let memo = Arc::new(memo);
+        // We convert to a `NonNull` here as soon as possible because we are going to alias
+        // into the `Box`, which is a `noalias` type.
+        let memo = unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memo))) };
+
         // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
         // value is returned) and anything removed from map is added to deleted entries (ensured elsewhere).
-        let db_memo = unsafe { self.extend_memo_lifetime(&memo) };
+        let db_memo = unsafe { self.extend_memo_lifetime(memo.as_ref()) };
+
         // Safety: We delay the drop of `old_value` until a new revision starts which ensures no
         // references will exist for the memo contents.
         if let Some(old_value) = unsafe { self.insert_memo_into_table_for(zalsa, id, memo) } {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
-            self.deleted_entries
-                .push(ManuallyDrop::into_inner(old_value));
+            //
+            // SAFETY: Once the revision starts, there will be no oustanding borrows to the
+            // memo contents, and so it will be safe to free.
+            unsafe { self.deleted_entries.push(old_value) };
         }
         db_memo
     }
@@ -236,6 +242,7 @@ where
     fn reset_for_new_revision(&mut self, table: &mut Table) {
         self.lru
             .for_each_evicted(|evict| self.evict_value_from_memo_for(table.memos_mut(evict)));
+
         std::mem::take(&mut self.deleted_entries);
     }
 

@@ -9,7 +9,6 @@ description = "A generic framework for on-demand, incrementalized computation (e
 rust-version = "1.76"
 
 [dependencies]
-arc-swap = "1"
 compact_str = { version = "0.8", optional = true }
 crossbeam-queue = "0.3.11"
 dashmap = { version = "6", features = ["raw-api"] }

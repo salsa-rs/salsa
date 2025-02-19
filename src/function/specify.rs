@@ -74,8 +74,8 @@ where
         };
 
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key) {
-            self.backdate_if_appropriate(&old_memo, &mut revisions, &value);
-            self.diff_outputs(db, database_key_index, &old_memo, &mut revisions);
+            self.backdate_if_appropriate(old_memo, &mut revisions, &value);
+            self.diff_outputs(db, database_key_index, old_memo, &mut revisions);
         }
 
         let memo = Memo {
