@@ -35,6 +35,17 @@ enum DurabilityVal {
     High = 2,
 }
 
+impl From<u8> for DurabilityVal {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => DurabilityVal::Low,
+            1 => DurabilityVal::Medium,
+            2 => DurabilityVal::High,
+            _ => panic!("invalid durability"),
+        }
+    }
+}
+
 impl Durability {
     /// Low durability: things that change frequently.
     ///
@@ -67,6 +78,14 @@ impl Durability {
 
     pub(crate) fn index(self) -> usize {
         self.0 as usize
+    }
+
+    pub(crate) fn as_u8(self) -> u8 {
+        self.0 as u8
+    }
+
+    pub(crate) fn from_u8(value: u8) -> Self {
+        Self(DurabilityVal::from(value))
     }
 }
 

@@ -16,6 +16,7 @@ use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use super::hash::FxDashMap;
 use super::ingredient::Ingredient;
@@ -71,16 +72,29 @@ where
     fields: C::Fields<'static>,
     memos: MemoTable,
     syncs: SyncTable,
+
     /// The revision the value was first interned in.
     first_interned_at: Revision,
+
     /// The most recent interned revision.
     last_interned_at: AtomicRevision,
+
+    /// The minimum durability of all inputs consumed by the creator
+    /// query prior to creating this tracked struct. If any of those
+    /// inputs changes, then the creator query may create this struct
+    /// with different values.
+    durability: AtomicU8,
 }
 
 impl<C> Value<C>
 where
     C: Configuration,
 {
+    // Loads the durability of this interned struct.
+    fn durability(&self) -> Durability {
+        Durability::from_u8(self.durability.load(Ordering::Acquire))
+    }
+
     /// Fields of this interned struct.
     #[cfg(feature = "salsa_unstable")]
     pub fn fields(&self) -> &C::Fields<'static> {
@@ -193,15 +207,27 @@ where
                 // SAFETY: Read lock on map is held during this block
                 let id = unsafe { *bucket.as_ref().1.get() };
 
-                // Sync the value's revision.
                 let value = zalsa.table().get::<Value<C>>(id);
+
+                // Sync the value's revision.
                 value.last_interned_at.store(current_revision);
+
+                let durability = if let Some((_, stamp)) = zalsa_local.active_query() {
+                    // Record the maximum durability across all queries that intern this value.
+                    let previous_durability = value
+                        .durability
+                        .fetch_max(stamp.durability.as_u8(), Ordering::AcqRel);
+
+                    Durability::from_u8(previous_durability).max(stamp.durability)
+                } else {
+                    value.durability()
+                };
 
                 // Record a dependency on this value.
                 let index = self.database_key_index(id);
                 zalsa_local.report_tracked_read_simple(
                     index,
-                    Durability::MAX,
+                    durability,
                     current_revision,
                 );
 
@@ -216,21 +242,31 @@ where
             // Data has been interned by a racing call, use that ID instead
             Ok(slot) => {
                 let id = unsafe { *slot.as_ref().1.get() };
-                drop(slot);
+                let value = zalsa.table().get::<Value<C>>(id);
 
                 // Sync the value's revision.
-                let value = zalsa.table().get::<Value<C>>(id);
                 value.last_interned_at.store(current_revision);
+
+                let durability = if let Some((_, stamp)) = zalsa_local.active_query() {
+                    // Record the maximum durability across all queries that intern this value.
+                    let previous_durability = value
+                        .durability
+                        .fetch_max(stamp.durability.as_u8(), Ordering::AcqRel);
+
+                    Durability::from_u8(previous_durability).max(stamp.durability)
+                } else {
+                    value.durability()
+                };
 
                 // Record a dependency on this value.
                 let index = self.database_key_index(id);
                 zalsa_local.report_tracked_read_simple(
                     index,
-                    Durability::MAX,
+                    durability,
                     current_revision,
                 );
 
-                return id;
+                id
             }
 
             // We won any races so should intern the data
@@ -238,12 +274,23 @@ where
                 let zalsa = db.zalsa();
                 let table = zalsa.table();
 
+                let (durability, last_interned_at) = match zalsa_local.active_query() {
+                    // Record the durability of the current query, along with the revision
+                    // we are interning in.
+                    Some((_, stamp)) => (stamp.durability, current_revision),
+
+                    // An interned value created outside of a query is considered immortal.
+                    // The durability in this case doesn't really matter.
+                    None => (Durability::MAX, Revision::from(usize::MAX)),
+                };
+
                 let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
                     fields: unsafe { self.to_internal_data(assemble(id, key)) },
                     memos: Default::default(),
                     syncs: Default::default(),
+                    durability: AtomicU8::new(durability.as_u8()),
                     first_interned_at: current_revision,
-                    last_interned_at: AtomicRevision::from(current_revision),
+                    last_interned_at: AtomicRevision::from(last_interned_at),
                 });
 
                 let value = (
@@ -264,7 +311,7 @@ where
                 let index = self.database_key_index(id);
                 zalsa_local.report_tracked_read_simple(
                     index,
-                    Durability::MAX,
+                    durability,
                     current_revision,
                 );
 
@@ -283,10 +330,13 @@ where
     /// to the interned item.
     pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
         let internal_data = db.zalsa().table().get::<Value<C>>(id);
+        let last_changed_revision = db.zalsa().last_changed_revision(internal_data.durability());
+
         assert!(
-            internal_data.last_interned_at.load() >= db.zalsa().current_revision(),
-            "Data was not interned in the current revision."
+            internal_data.last_interned_at.load() >= last_changed_revision,
+            "Data was not interned in the latest revision for its durability."
         );
+
         unsafe { Self::from_internal_data(&internal_data.fields) }
     }
 
