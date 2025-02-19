@@ -181,14 +181,14 @@ impl<V> Memo<V> {
             if head == database_key_index {
                 continue;
             }
-            let ingredient = db.zalsa().lookup_ingredient(head.ingredient_index);
-            if !ingredient.is_provisional_cycle_head(db, head.key_index) {
+            let ingredient = db.zalsa().lookup_ingredient(head.ingredient_index());
+            if !ingredient.is_provisional_cycle_head(db, head.key_index()) {
                 // This cycle is already finalized, so we don't need to wait on it;
                 // keep looping through cycle heads.
                 retry = true;
                 continue;
             }
-            if ingredient.wait_for(db, head.key_index) {
+            if ingredient.wait_for(db, head.key_index()) {
                 // There's a new memo available for the cycle head; fetch our own
                 // updated memo and see if it's still provisional or if the cycle
                 // has resolved.

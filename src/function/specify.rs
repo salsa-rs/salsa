@@ -41,8 +41,7 @@ where
         //
         // Now, if We invoke Q3 first, We get one result for Q2, but if We invoke Q4 first, We get a different value. That's no good.
         let database_key_index = <C::Input<'db>>::database_key_index(db.as_dyn_database(), key);
-        let dependency_index = database_key_index.into();
-        if !zalsa_local.is_output_of_active_query(dependency_index) {
+        if !zalsa_local.is_output_of_active_query(database_key_index) {
             panic!("can only use `specify` on salsa structs created during the current tracked fn");
         }
 
@@ -105,7 +104,7 @@ where
 
         // Record that the current query *specified* a value for this cell.
         let database_key_index = self.database_key_index(key);
-        zalsa_local.add_output(database_key_index.into());
+        zalsa_local.add_output(database_key_index);
     }
 
     /// Invoked when the query `executor` has been validated as having green inputs
