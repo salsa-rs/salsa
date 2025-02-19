@@ -160,11 +160,8 @@ where
         }
     }
 
-    pub fn database_key_index(&self, k: Id) -> DatabaseKeyIndex {
-        DatabaseKeyIndex {
-            ingredient_index: self.index,
-            key_index: k,
-        }
+    pub fn database_key_index(&self, key: Id) -> DatabaseKeyIndex {
+        DatabaseKeyIndex::new(self.index, key)
     }
 
     pub fn set_capacity(&mut self, capacity: usize) {
@@ -302,7 +299,7 @@ where
         std::mem::take(&mut self.deleted_entries);
     }
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
 

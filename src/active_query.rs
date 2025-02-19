@@ -2,7 +2,6 @@ use std::ops::Not;
 
 use super::zalsa_local::{QueryEdges, QueryOrigin, QueryRevisions};
 use crate::accumulator::accumulated_map::AtomicInputAccumulatedValues;
-use crate::key::OutputDependencyIndex;
 use crate::tracked_struct::{DisambiguatorMap, IdentityHash, IdentityMap};
 use crate::zalsa_local::QueryEdge;
 use crate::{
@@ -10,7 +9,7 @@ use crate::{
     cycle::CycleHeads,
     durability::Durability,
     hash::FxIndexSet,
-    key::{DatabaseKeyIndex, InputDependencyIndex},
+    key::DatabaseKeyIndex,
     tracked_struct::Disambiguator,
     Revision,
 };
@@ -81,7 +80,7 @@ impl ActiveQuery {
 
     pub(super) fn add_read(
         &mut self,
-        input: InputDependencyIndex,
+        input: DatabaseKeyIndex,
         durability: Durability,
         revision: Revision,
         accumulated: InputAccumulatedValues,
@@ -96,7 +95,7 @@ impl ActiveQuery {
 
     pub(super) fn add_read_simple(
         &mut self,
-        input: InputDependencyIndex,
+        input: DatabaseKeyIndex,
         durability: Durability,
         revision: Revision,
     ) {
@@ -118,12 +117,12 @@ impl ActiveQuery {
     }
 
     /// Adds a key to our list of outputs.
-    pub(super) fn add_output(&mut self, key: OutputDependencyIndex) {
+    pub(super) fn add_output(&mut self, key: DatabaseKeyIndex) {
         self.input_outputs.insert(QueryEdge::Output(key));
     }
 
     /// True if the given key was output by this query.
-    pub(super) fn is_output(&self, key: OutputDependencyIndex) -> bool {
+    pub(super) fn is_output(&self, key: DatabaseKeyIndex) -> bool {
         self.input_outputs.contains(&QueryEdge::Output(key))
     }
 

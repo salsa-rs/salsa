@@ -30,7 +30,7 @@ where
         self.lru.record_use(id);
 
         zalsa_local.report_tracked_read(
-            self.database_key_index(id).into(),
+            self.database_key_index(id),
             durability,
             changed_at,
             match &memo.revisions.accumulated {
@@ -130,7 +130,7 @@ where
                 }
                 // no provisional value; create/insert/return initial provisional value
                 return self
-                    .initial_value(db, database_key_index.key_index)
+                    .initial_value(db, database_key_index.key_index())
                     .map(|initial_value| {
                         tracing::debug!(
                             "hit cycle at {database_key_index:#?}, \

@@ -250,8 +250,8 @@ where
         );
         if (&memo.revisions.cycle_heads).into_iter().any(|cycle_head| {
             zalsa
-                .lookup_ingredient(cycle_head.ingredient_index)
-                .is_provisional_cycle_head(db.as_dyn_database(), cycle_head.key_index)
+                .lookup_ingredient(cycle_head.ingredient_index())
+                .is_provisional_cycle_head(db.as_dyn_database(), cycle_head.key_index())
         }) {
             return false;
         }
