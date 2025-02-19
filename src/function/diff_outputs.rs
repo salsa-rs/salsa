@@ -1,7 +1,7 @@
 use super::{memo::Memo, Configuration, IngredientImpl};
 use crate::{
-    hash::FxHashSet, key::OutputDependencyIndex, zalsa_local::QueryRevisions, AsDynDatabase as _,
-    DatabaseKeyIndex, Event, EventKind,
+    hash::FxHashSet, zalsa_local::QueryRevisions, AsDynDatabase as _, DatabaseKeyIndex, Event,
+    EventKind,
 };
 
 impl<C> IngredientImpl<C>
@@ -33,7 +33,7 @@ where
             // Remove the outputs that are no longer present in the current revision
             // to prevent that the next revision is seeded with a id mapping that no longer exists.
             revisions.tracked_struct_ids.retain(|&k, &mut value| {
-                !old_outputs.contains(&OutputDependencyIndex::new(k.ingredient_index(), value))
+                !old_outputs.contains(&DatabaseKeyIndex::new(k.ingredient_index(), value))
             });
         }
 
@@ -42,7 +42,7 @@ where
         }
     }
 
-    fn report_stale_output(db: &C::DbView, key: DatabaseKeyIndex, output: OutputDependencyIndex) {
+    fn report_stale_output(db: &C::DbView, key: DatabaseKeyIndex, output: DatabaseKeyIndex) {
         let db = db.as_dyn_database();
 
         db.salsa_event(&|| {

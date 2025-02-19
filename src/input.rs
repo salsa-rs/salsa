@@ -16,7 +16,7 @@ use crate::{
     id::{AsId, FromId},
     ingredient::{fmt_index, Ingredient, MaybeChangedAfter},
     input::singleton::{Singleton, SingletonChoice},
-    key::{DatabaseKeyIndex, InputDependencyIndex},
+    key::DatabaseKeyIndex,
     plumbing::{Jar, JarAux, Stamp},
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
@@ -97,10 +97,7 @@ impl<C: Configuration> IngredientImpl<C> {
     }
 
     pub fn database_key_index(&self, id: C::Struct) -> DatabaseKeyIndex {
-        DatabaseKeyIndex {
-            ingredient_index: self.ingredient_index,
-            key_index: id.as_id(),
-        }
+        DatabaseKeyIndex::new(self.ingredient_index, id.as_id())
     }
 
     pub fn new_input(&self, db: &dyn Database, fields: C::Fields, stamps: C::Stamps) -> C::Struct {
@@ -176,7 +173,7 @@ impl<C: Configuration> IngredientImpl<C> {
         let value = Self::data(zalsa, id);
         let stamp = &value.stamps[field_index];
         zalsa_local.report_tracked_read(
-            InputDependencyIndex::new(field_ingredient_index, id),
+            DatabaseKeyIndex::new(field_ingredient_index, id),
             stamp.durability,
             stamp.changed_at,
             InputAccumulatedValues::Empty,
@@ -264,7 +261,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         panic!("unexpected call to `reset_for_new_revision`")
     }
 
-    fn fmt_index(&self, index: Option<Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
 

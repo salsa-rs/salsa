@@ -142,7 +142,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         panic!("unexpected reset on accumulator")
     }
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(A::DEBUG_NAME, index, fmt)
     }
 

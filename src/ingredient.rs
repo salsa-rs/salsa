@@ -125,7 +125,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// [`IngredientRequiresReset::RESET_ON_NEW_REVISION`] to true.
     fn reset_for_new_revision(&mut self, table: &mut Table);
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
+    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
 }
 
 impl dyn Ingredient {
@@ -165,16 +165,8 @@ impl dyn Ingredient {
 }
 
 /// A helper function to show human readable fmt.
-pub(crate) fn fmt_index(
-    debug_name: &str,
-    id: Option<Id>,
-    fmt: &mut fmt::Formatter<'_>,
-) -> fmt::Result {
-    if let Some(i) = id {
-        write!(fmt, "{debug_name}({i:?})")
-    } else {
-        write!(fmt, "{debug_name}()")
-    }
+pub(crate) fn fmt_index(debug_name: &str, id: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(fmt, "{debug_name}({id:?})")
 }
 
 #[derive(Copy, Clone, Debug)]
