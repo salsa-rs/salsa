@@ -260,10 +260,10 @@ pub struct Value<C>
 where
     C: Configuration,
 {
-    /// The durability minimum durability of all inputs consumed
-    /// by the creator query prior to creating this tracked struct.
-    /// If any of those inputs changes, then the creator query may
-    /// create this struct with different values.
+    /// The minimum durability of all inputs consumed by the creator
+    /// query prior to creating this tracked struct. If any of those
+    /// inputs changes, then the creator query may create this struct
+    /// with different values.
     durability: Durability,
 
     /// The revision in which the tracked struct was first created.
