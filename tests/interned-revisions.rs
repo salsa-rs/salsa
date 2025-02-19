@@ -39,12 +39,12 @@ fn test_durability() {
 #[test]
 fn test_durability2() {
     #[salsa::tracked]
-    fn function<'db>(db: &'db dyn Database, input: Input) -> Interned<'db> {
+    fn function(db: &dyn Database, input: Input) -> Interned<'_> {
         let _ = input.field1(db);
         function2(db)
     }
 
-    fn function2<'db>(db: &'db dyn Database) -> Interned<'db> {
+    fn function2(db: &dyn Database) -> Interned<'_> {
         Interned::new(db, 0)
     }
 
