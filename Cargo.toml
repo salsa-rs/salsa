@@ -16,7 +16,8 @@ dashmap = { version = "6", features = ["raw-api"] }
 hashlink = "0.9"
 hashbrown = "0.14.3"
 indexmap = "2"
-boxcar = "0.2.9"
+# boxcar = "0.2.9"
+boxcar = { git = "https://github.com/ibraheemdev/boxcar", rev = "9df483d8ea216f1ced8e6d38a7316da19208096a" }
 tracing = "0.1"
 parking_lot = "0.12"
 rustc-hash = "2"
