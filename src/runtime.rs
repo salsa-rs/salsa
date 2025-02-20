@@ -278,7 +278,7 @@ impl Runtime {
                 if let Some((_, index)) = v
                     .iter()
                     .enumerate()
-                    .map(|(idx, key)| (key.ingredient_index.debug_name(db), idx))
+                    .map(|(idx, key)| (key.ingredient_index().debug_name(db), idx))
                     .min()
                 {
                     v.rotate_left(index);
@@ -302,7 +302,7 @@ impl Runtime {
                     .skip_while(|aq| {
                         match db
                             .zalsa()
-                            .lookup_ingredient(aq.database_key_index.ingredient_index)
+                            .lookup_ingredient(aq.database_key_index.ingredient_index())
                             .cycle_recovery_strategy()
                         {
                             CycleRecoveryStrategy::Panic => true,

@@ -3,8 +3,8 @@ use dashmap::SharedValue;
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::durability::Durability;
 use crate::ingredient::{fmt_index, MaybeChangedAfter};
-use crate::key::InputDependencyIndex;
 use crate::plumbing::{Jar, JarAux};
+use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
 use crate::table::sync::SyncTable;
 use crate::table::{Slot, Table};
@@ -16,6 +16,7 @@ use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use super::hash::FxDashMap;
 use super::ingredient::Ingredient;
@@ -61,12 +62,6 @@ pub struct IngredientImpl<C: Configuration> {
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
     key_map: FxDashMap<C::Fields<'static>, Id>,
-
-    /// Stores the revision when this interned ingredient was last cleared.
-    /// You can clear an interned table at any point, deleting all its entries,
-    /// but that will make anything dependent on those entries dirty and in need
-    /// of being recomputed.
-    reset_at: Revision,
 }
 
 /// Struct storing the interned fields.
@@ -77,12 +72,29 @@ where
     fields: C::Fields<'static>,
     memos: MemoTable,
     syncs: SyncTable,
+
+    /// The revision the value was first interned in.
+    first_interned_at: Revision,
+
+    /// The most recent interned revision.
+    last_interned_at: AtomicRevision,
+
+    /// The minimum durability of all inputs consumed by the creator
+    /// query prior to creating this tracked struct. If any of those
+    /// inputs changes, then the creator query may create this struct
+    /// with different values.
+    durability: AtomicU8,
 }
 
 impl<C> Value<C>
 where
     C: Configuration,
 {
+    // Loads the durability of this interned struct.
+    fn durability(&self) -> Durability {
+        Durability::from_u8(self.durability.load(Ordering::Acquire))
+    }
+
     /// Fields of this interned struct.
     #[cfg(feature = "salsa_unstable")]
     pub fn fields(&self) -> &C::Fields<'static> {
@@ -120,7 +132,6 @@ where
         Self {
             ingredient_index,
             key_map: Default::default(),
-            reset_at: Revision::start(),
         }
     }
 
@@ -177,13 +188,8 @@ where
         // so instead we go with this and transmute the lifetime in the `eq` closure
         C::Fields<'db>: HashEqLike<Key>,
     {
-        let zalsa_local = db.zalsa_local();
-        zalsa_local.report_tracked_read(
-            InputDependencyIndex::for_table(self.ingredient_index),
-            Durability::MAX,
-            self.reset_at,
-            InputAccumulatedValues::Empty,
-        );
+        let (zalsa, zalsa_local) = db.zalsas();
+        let current_revision = zalsa.current_revision();
 
         // Optimization to only get read lock on the map if the data has already been interned.
         let data_hash = self.key_map.hasher().hash_one(&key);
@@ -199,7 +205,34 @@ where
             let lock = shard.read();
             if let Some(bucket) = lock.find(data_hash, eq) {
                 // SAFETY: Read lock on map is held during this block
-                return unsafe { *bucket.as_ref().1.get() };
+                let id = unsafe { *bucket.as_ref().1.get() };
+
+                let value = zalsa.table().get::<Value<C>>(id);
+
+                // Sync the value's revision.
+                value.last_interned_at.store(current_revision);
+
+                let durability = if let Some((_, stamp)) = zalsa_local.active_query() {
+                    // Record the maximum durability across all queries that intern this value.
+                    let previous_durability = value
+                        .durability
+                        .fetch_max(stamp.durability.as_u8(), Ordering::AcqRel);
+
+                    Durability::from_u8(previous_durability).max(stamp.durability)
+                } else {
+                    value.durability()
+                };
+
+                // Record a dependency on this value.
+                let index = self.database_key_index(id);
+                zalsa_local.report_tracked_read(
+                    index,
+                    durability,
+                    current_revision,
+                    InputAccumulatedValues::Empty,
+                );
+
+                return id;
             }
         }
 
@@ -208,35 +241,91 @@ where
             self.key_map.hasher().hash_one(element)
         }) {
             // Data has been interned by a racing call, use that ID instead
-            Ok(slot) => unsafe { *slot.as_ref().1.get() },
+            Ok(slot) => {
+                let id = unsafe { *slot.as_ref().1.get() };
+                let value = zalsa.table().get::<Value<C>>(id);
+
+                // Sync the value's revision.
+                value.last_interned_at.store(current_revision);
+
+                let durability = if let Some((_, stamp)) = zalsa_local.active_query() {
+                    // Record the maximum durability across all queries that intern this value.
+                    let previous_durability = value
+                        .durability
+                        .fetch_max(stamp.durability.as_u8(), Ordering::AcqRel);
+
+                    Durability::from_u8(previous_durability).max(stamp.durability)
+                } else {
+                    value.durability()
+                };
+
+                // Record a dependency on this value.
+                let index = self.database_key_index(id);
+                zalsa_local.report_tracked_read(
+                    index,
+                    durability,
+                    current_revision,
+                    InputAccumulatedValues::Empty,
+                );
+
+                id
+            }
+
             // We won any races so should intern the data
             Err(slot) => {
                 let zalsa = db.zalsa();
                 let table = zalsa.table();
+
+                let (durability, last_interned_at) = match zalsa_local.active_query() {
+                    // Record the durability of the current query, along with the revision
+                    // we are interning in.
+                    Some((_, stamp)) => (stamp.durability, current_revision),
+
+                    // An interned value created outside of a query is considered immortal.
+                    // The durability in this case doesn't really matter.
+                    None => (Durability::MAX, Revision::from(usize::MAX)),
+                };
+
                 let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
                     fields: unsafe { self.to_internal_data(assemble(id, key)) },
                     memos: Default::default(),
                     syncs: Default::default(),
+                    durability: AtomicU8::new(durability.as_u8()),
+                    first_interned_at: current_revision,
+                    last_interned_at: AtomicRevision::from(last_interned_at),
                 });
-                unsafe {
-                    lock.insert_in_slot(
-                        data_hash,
-                        slot,
-                        (
-                            table.get::<Value<C>>(id).fields.clone(),
-                            SharedValue::new(id),
-                        ),
-                    )
-                };
+
+                let value = (
+                    table.get::<Value<C>>(id).fields.clone(),
+                    SharedValue::new(id),
+                );
+
+                unsafe { lock.insert_in_slot(data_hash, slot, value) };
+
                 debug_assert_eq!(
                     data_hash,
                     self.key_map
                         .hasher()
                         .hash_one(table.get::<Value<C>>(id).fields.clone())
                 );
+
+                // Record a dependency on this value.
+                let index = self.database_key_index(id);
+                zalsa_local.report_tracked_read(
+                    index,
+                    durability,
+                    current_revision,
+                    InputAccumulatedValues::Empty,
+                );
+
                 id
             }
         }
+    }
+
+    /// Returns the database key index for an interned value with the given id.
+    pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
+        DatabaseKeyIndex::new(self.ingredient_index, id)
     }
 
     /// Lookup the data for an interned value based on its id.
@@ -244,6 +333,13 @@ where
     /// to the interned item.
     pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
         let internal_data = db.zalsa().table().get::<Value<C>>(id);
+        let last_changed_revision = db.zalsa().last_changed_revision(internal_data.durability());
+
+        assert!(
+            internal_data.last_interned_at.load() >= last_changed_revision,
+            "Data was not interned in the latest revision for its durability."
+        );
+
         unsafe { Self::from_internal_data(&internal_data.fields) }
     }
 
@@ -251,6 +347,12 @@ where
     /// Note that this is not "leaking" since no dependency edge is required.
     pub fn fields<'db>(&'db self, db: &'db dyn Database, s: C::Struct<'db>) -> &'db C::Fields<'db> {
         self.data(db, C::deref_struct(s))
+    }
+
+    pub fn reset(&mut self, db: &mut dyn Database) {
+        // Trigger a new revision.
+        let _zalsa_mut = db.zalsa_mut();
+        self.key_map.clear();
     }
 
     #[cfg(feature = "salsa_unstable")]
@@ -266,12 +368,6 @@ where
             .filter_map(|(_, page)| page.cast_type::<crate::table::Page<Value<C>>>())
             .flat_map(|page| page.slots())
     }
-
-    pub fn reset(&mut self, revision: Revision) {
-        assert!(revision > self.reset_at);
-        self.reset_at = revision;
-        self.key_map.clear();
-    }
 }
 
 impl<C> Ingredient for IngredientImpl<C>
@@ -284,11 +380,20 @@ where
 
     fn maybe_changed_after(
         &self,
-        _db: &dyn Database,
-        _input: Id,
+        db: &dyn Database,
+        input: Id,
         revision: Revision,
     ) -> MaybeChangedAfter {
-        MaybeChangedAfter::from(revision < self.reset_at)
+        let value = db.zalsa().table().get::<Value<C>>(input);
+        if value.first_interned_at > revision {
+            // The slot was reused.
+            return MaybeChangedAfter::Yes;
+        }
+
+        // The slot is valid in this revision but we have to sync the value's revision.
+        value.last_interned_at.store(db.zalsa().current_revision());
+
+        MaybeChangedAfter::No(InputAccumulatedValues::Empty)
     }
 
     fn cycle_recovery_strategy(&self) -> crate::cycle::CycleRecoveryStrategy {
@@ -334,7 +439,7 @@ where
         panic!("unexpected call to `reset_for_new_revision`")
     }
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
 

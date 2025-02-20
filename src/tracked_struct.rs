@@ -7,7 +7,7 @@ use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, JarAux, MaybeChangedAfter},
-    key::{DatabaseKeyIndex, InputDependencyIndex},
+    key::DatabaseKeyIndex,
     plumbing::ZalsaLocal,
     revision::OptionalAtomicRevision,
     runtime::StampedValue,
@@ -255,10 +255,10 @@ pub struct Value<C>
 where
     C: Configuration,
 {
-    /// The durability minimum durability of all inputs consumed
-    /// by the creator query prior to creating this tracked struct.
-    /// If any of those inputs changes, then the creator query may
-    /// create this struct with different values.
+    /// The minimum durability of all inputs consumed by the creator
+    /// query prior to creating this tracked struct. If any of those
+    /// inputs changes, then the creator query may create this struct
+    /// with different values.
     durability: Durability,
 
     /// The revision when this tracked struct was last updated.
@@ -360,10 +360,7 @@ where
 
     /// Returns the database key index for a tracked struct with the given id.
     pub fn database_key_index(&self, id: Id) -> DatabaseKeyIndex {
-        DatabaseKeyIndex {
-            ingredient_index: self.ingredient_index,
-            key_index: id,
-        }
+        DatabaseKeyIndex::new(self.ingredient_index, id)
     }
 
     pub fn new_struct<'db>(
@@ -390,7 +387,7 @@ where
         match zalsa_local.tracked_struct_id(&identity) {
             Some(id) => {
                 // The struct already exists in the intern map.
-                zalsa_local.add_output(self.database_key_index(id).into());
+                zalsa_local.add_output(self.database_key_index(id));
                 self.update(zalsa, current_revision, id, &current_deps, fields);
                 C::struct_from_id(id)
             }
@@ -399,7 +396,7 @@ where
                 // This is a new tracked struct, so create an entry in the struct map.
                 let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
                 let key = self.database_key_index(id);
-                zalsa_local.add_output(key.into());
+                zalsa_local.add_output(key);
                 zalsa_local.store_tracked_struct_id(identity, id);
                 C::struct_from_id(id)
             }
@@ -600,11 +597,7 @@ where
             let ingredient_index =
                 zalsa.ingredient_index_for_memo(self.ingredient_index, memo_ingredient_index);
 
-            let executor = DatabaseKeyIndex {
-                ingredient_index,
-                key_index: id,
-            };
-
+            let executor = DatabaseKeyIndex::new(ingredient_index, id);
             db.salsa_event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
             for stale_output in memo.origin().outputs() {
@@ -654,7 +647,7 @@ where
         let field_changed_at = data.revisions[field_index];
 
         zalsa_local.report_tracked_read(
-            InputDependencyIndex::new(field_ingredient_index, id),
+            DatabaseKeyIndex::new(field_ingredient_index, id),
             data.durability,
             field_changed_at,
             InputAccumulatedValues::Empty,
@@ -745,7 +738,7 @@ where
         self.delete_entity(db.as_dyn_database(), stale_output_key);
     }
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }
 
