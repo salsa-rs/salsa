@@ -13,11 +13,11 @@ use input_field::FieldIngredientImpl;
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
-    id::{AsId, FromId},
+    id::{AsId, FromIdWithDb},
     ingredient::{fmt_index, Ingredient, MaybeChangedAfter},
     input::singleton::{Singleton, SingletonChoice},
     key::{DatabaseKeyIndex, InputDependencyIndex},
-    plumbing::{Jar, JarAux, Stamp},
+    plumbing::{Jar, Stamp},
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
@@ -32,7 +32,7 @@ pub trait Configuration: Any {
     type Singleton: SingletonChoice + Send + Sync;
 
     /// The input struct (which wraps an `Id`)
-    type Struct: FromId + 'static + Send + Sync;
+    type Struct: FromIdWithDb + 'static + Send + Sync;
 
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields: Send + Sync;
@@ -55,9 +55,9 @@ impl<C: Configuration> Default for JarImpl<C> {
 
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
-        &self,
-        _aux: &dyn JarAux,
+        _zalsa: &Zalsa,
         struct_index: crate::zalsa::IngredientIndex,
+        _dependencies: crate::memo_ingredient_indices::IngredientIndices,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient: IngredientImpl<C> = IngredientImpl::new(struct_index);
 
@@ -68,8 +68,8 @@ impl<C: Configuration> Jar for JarImpl<C> {
             .collect()
     }
 
-    fn salsa_struct_type_id(&self) -> Option<std::any::TypeId> {
-        Some(TypeId::of::<<C as Configuration>::Struct>())
+    fn id_struct_type_id() -> TypeId {
+        TypeId::of::<C::Struct>()
     }
 }
 
@@ -115,7 +115,7 @@ impl<C: Configuration> IngredientImpl<C> {
             })
         });
 
-        FromId::from_id(id)
+        FromIdWithDb::from_id(id, db)
     }
 
     /// Change the value of the field `field_index` to a new value.
@@ -153,12 +153,14 @@ impl<C: Configuration> IngredientImpl<C> {
         setter(&mut r.fields)
     }
 
-    /// Get the singleton input previously created.
-    pub fn get_singleton_input(&self) -> Option<C::Struct>
+    /// Get the singleton input previously created (if any).
+    pub fn get_singleton_input(&self, db: &(impl ?Sized + Database)) -> Option<C::Struct>
     where
         C: Configuration<Singleton = Singleton>,
     {
-        self.singleton.index().map(FromId::from_id)
+        self.singleton
+            .index()
+            .map(|id| FromIdWithDb::from_id(id, db))
     }
 
     /// Access field of an input.
