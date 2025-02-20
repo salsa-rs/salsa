@@ -7,7 +7,7 @@ use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
     table::Table,
-    zalsa::{IngredientIndex, MemoIngredientIndex},
+    zalsa::{transmute_data_mut_ptr, transmute_data_ptr, IngredientIndex, MemoIngredientIndex},
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id,
 };
@@ -111,7 +111,9 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
 
     /// Returns true if `reset_for_new_revision` should be called when new revisions start.
     /// Invoked once when ingredient is added and not after that.
-    fn requires_reset_for_new_revision(&self) -> bool;
+    fn requires_reset_for_new_revision(&self) -> bool {
+        false
+    }
 
     /// Invoked when a new revision is about to start.
     /// This moment is important because it means that we have an `&mut`-reference to the
@@ -123,7 +125,14 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ///
     /// **Important:** to actually receive resets, the ingredient must set
     /// [`IngredientRequiresReset::RESET_ON_NEW_REVISION`] to true.
-    fn reset_for_new_revision(&mut self, table: &mut Table);
+    fn reset_for_new_revision(&mut self, table: &mut Table) {
+        _ = table;
+        panic!(
+            "Ingredient `{}` set `Ingredient::requires_reset_for_new_revision` to true but does \
+            not overwrite `Ingredient::reset_for_new_revision`",
+            self.debug_name()
+        );
+    }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
 }
@@ -141,9 +150,7 @@ impl dyn Ingredient {
 
         // SAFETY: We know that the underlying data pointer
         // refers to a value of type T because of the `TypeId` check above.
-        let this: *const dyn Ingredient = self;
-        let this = this as *const T; // discards the vtable
-        unsafe { &*this }
+        unsafe { transmute_data_ptr(self) }
     }
 
     /// Equivalent to the `downcast` methods on `any`.
@@ -158,9 +165,7 @@ impl dyn Ingredient {
 
         // SAFETY: We know that the underlying data pointer
         // refers to a value of type T because of the `TypeId` check above.
-        let this: *mut dyn Ingredient = self;
-        let this = this as *mut T; // discards the vtable
-        unsafe { &mut *this }
+        unsafe { transmute_data_mut_ptr(self) }
     }
 }
 

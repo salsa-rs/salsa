@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 
 use crate::{
     ingredient::{Ingredient, MaybeChangedAfter},
-    table::Table,
     zalsa::IngredientIndex,
     Database, Id,
 };
@@ -92,14 +91,6 @@ where
         _stale_output_key: crate::Id,
     ) {
         panic!("tracked field ingredients have no outputs")
-    }
-
-    fn requires_reset_for_new_revision(&self) -> bool {
-        false
-    }
-
-    fn reset_for_new_revision(&mut self, _: &mut Table) {
-        panic!("tracked field ingredients do not require reset")
     }
 
     fn fmt_index(

@@ -752,14 +752,6 @@ where
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
     }
-
-    fn requires_reset_for_new_revision(&self) -> bool {
-        false
-    }
-
-    fn reset_for_new_revision(&mut self, _: &mut Table) {
-        panic!("tracked struct ingredients do not require reset")
-    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>

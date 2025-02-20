@@ -68,7 +68,13 @@ impl SyncTable {
                 // boolean is to decide *whether* to acquire the lock,
                 // not to gate future atomic reads.
                 anyone_waiting.store(true, Ordering::Relaxed);
-                zalsa.block_on_or_unwind(db, zalsa_local, database_key_index, *other_id, syncs);
+                zalsa.runtime().block_on_or_unwind(
+                    db,
+                    zalsa_local,
+                    database_key_index,
+                    *other_id,
+                    syncs,
+                );
                 None
             }
         }
@@ -96,6 +102,7 @@ impl ClaimGuard<'_> {
         // see `store` above for explanation.
         if anyone_waiting.load(Ordering::Relaxed) {
             self.zalsa
+                .runtime()
                 .unblock_queries_blocked_on(self.database_key_index, wait_result)
         }
     }
