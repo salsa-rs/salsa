@@ -32,7 +32,6 @@ salsa_unstable = []
 
 [dev-dependencies]
 annotate-snippets = "0.11.5"
-derive-new = "0.6.0"
 codspeed-criterion-compat = { version = "2.6.0", default-features = false }
 expect-test = "1.5.0"
 eyre = "0.6.8"
