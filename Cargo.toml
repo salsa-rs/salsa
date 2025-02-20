@@ -13,8 +13,8 @@ arc-swap = "1"
 compact_str = { version = "0.8", optional = true }
 crossbeam-queue = "0.3.11"
 dashmap = { version = "6", features = ["raw-api"] }
-hashlink = "0.9"
-hashbrown = "0.14.3"
+hashbrown = "0.15"
+hashlink = "0.10"
 indexmap = "2"
 boxcar = "0.2.9"
 tracing = "0.1"
