@@ -50,7 +50,7 @@ pub trait Configuration: Any {
     /// (and, if so, how).
     const CYCLE_STRATEGY: CycleRecoveryStrategy;
 
-    /// Invokes after a new result `new_value`` has been computed for which an older memoized
+    /// Invokes after a new result `new_value` has been computed for which an older memoized
     /// value existed `old_value`. Returns true if the new value is equal to the older one
     /// and hence should be "backdated" (i.e., marked as having last changed in an older revision,
     /// even though it was recomputed).
