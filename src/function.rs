@@ -206,6 +206,8 @@ where
         self.maybe_changed_after(db, input, revision)
     }
 
+    /// True if the input `input` contains a memo that cites itself as a cycle head.
+    /// This indicates an intermediate value for a cycle that has not yet reached a fixed point.
     fn is_provisional_cycle_head<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool {
         self.get_memo_from_table_for(db.zalsa(), input)
             .is_some_and(|memo| memo.cycle_heads().contains(&self.database_key_index(input)))
