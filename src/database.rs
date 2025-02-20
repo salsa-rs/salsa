@@ -18,9 +18,21 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     /// * `event`, a fn that, if called, will create the event that occurred
     fn salsa_event(&self, event: &dyn Fn() -> Event);
 
+    /// Enforces current LRU limits, evicting entries if necessary.
+    ///
+    /// **WARNING:** Just like an ordinary write, this method triggers
+    /// cancellation. If you invoke it while a snapshot exists, it
+    /// will block until that snapshot is dropped -- if that snapshot
+    /// is owned by the current thread, this could trigger deadlock.
+    fn trigger_lru_eviction(&mut self) {
+        let zalsa_mut = self.zalsa_mut();
+        zalsa_mut.runtime_mut().reset_cancellation_flag();
+        zalsa_mut.evict_lru();
+    }
+
     /// A "synthetic write" causes the system to act *as though* some
-    /// input of durability `durability` has changed. This is mostly
-    /// useful for profiling scenarios.
+    /// input of durability `durability` has changed, triggering a new revision.
+    /// This is mostly useful for profiling scenarios.
     ///
     /// **WARNING:** Just like an ordinary write, this method triggers
     /// cancellation. If you invoke it while a snapshot exists, it
@@ -28,7 +40,8 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     /// is owned by the current thread, this could trigger deadlock.
     fn synthetic_write(&mut self, durability: Durability) {
         let zalsa_mut = self.zalsa_mut();
-        zalsa_mut.report_tracked_write(durability);
+        zalsa_mut.new_revision();
+        zalsa_mut.runtime_mut().report_tracked_write(durability);
     }
 
     /// Reports that the query depends on some state unknown to salsa.

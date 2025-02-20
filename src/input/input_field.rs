@@ -2,7 +2,6 @@ use crate::cycle::CycleRecoveryStrategy;
 use crate::function::VerifyResult;
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::input::Configuration;
-use crate::table::Table;
 use crate::zalsa::IngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{Database, DatabaseKeyIndex, Id, Revision};
@@ -88,14 +87,6 @@ where
         _executor: DatabaseKeyIndex,
         _stale_output_key: Id,
     ) {
-    }
-
-    fn requires_reset_for_new_revision(&self) -> bool {
-        false
-    }
-
-    fn reset_for_new_revision(&mut self, _: &mut Table) {
-        panic!("unexpected call: input fields don't register for resets");
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -75,7 +75,13 @@ impl SyncTable {
                 // boolean is to decide *whether* to acquire the lock,
                 // not to gate future atomic reads.
                 anyone_waiting.store(true, Ordering::Relaxed);
-                match zalsa.block_on(db, zalsa_local, database_key_index, *other_id, syncs) {
+                match zalsa.runtime().block_on(
+                    db,
+                    zalsa_local,
+                    database_key_index,
+                    *other_id,
+                    syncs,
+                ) {
                     BlockResult::Completed => ClaimResult::Retry,
                     BlockResult::Cycle => ClaimResult::Cycle,
                 }
@@ -108,6 +114,7 @@ impl ClaimGuard<'_> {
         // see `claim` above for explanation.
         if anyone_waiting.load(Ordering::Relaxed) {
             self.zalsa
+                .runtime()
                 .unblock_queries_blocked_on(self.database_key_index, wait_result)
         }
     }
