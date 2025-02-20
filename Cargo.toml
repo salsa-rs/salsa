@@ -21,7 +21,7 @@ tracing = "0.1"
 parking_lot = "0.12"
 rustc-hash = "2"
 salsa-macro-rules = { version = "0.1.0", path = "components/salsa-macro-rules" }
-salsa-macros = { path = "components/salsa-macros" }
+salsa-macros = { version = "0.18.0", path = "components/salsa-macros" }
 smallvec = "1"
 rayon = "1.10.0"
 
