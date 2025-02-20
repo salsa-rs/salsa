@@ -26,4 +26,24 @@ fn tracked_fn_return_struct_containing_ref<'db>(
     }
 }
 
+#[salsa::tracked]
+fn tracked_fn_return_struct_containing_ref_elided_implicit<'db>(
+    db: &'db dyn Db,
+    input: MyInput,
+) -> ContainsRef {
+    ContainsRef {
+        text: input.text(db),
+    }
+}
+
+#[salsa::tracked]
+fn tracked_fn_return_struct_containing_ref_elided_explicit<'db>(
+    db: &'db dyn Db,
+    input: MyInput,
+) -> ContainsRef<'_> {
+    ContainsRef {
+        text: input.text(db),
+    }
+}
+
 fn main() {}

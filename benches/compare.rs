@@ -1,3 +1,4 @@
+use std::hint::black_box;
 use std::mem::transmute;
 
 use codspeed_criterion_compat::{
@@ -41,16 +42,16 @@ fn mutating_inputs(c: &mut Criterion) {
                     let string = base_string.clone().repeat(*n);
                     let new_len = string.len();
 
-                    let input = Input::new(&db, base_string.clone());
+                    let input = Input::new(black_box(&db), black_box(base_string.clone()));
                     let actual_len = length(&db, input);
-                    assert_eq!(base_len, actual_len);
+                    assert_eq!(black_box(actual_len), base_len);
 
                     (db, input, string, new_len)
                 },
                 |&mut (ref mut db, input, ref string, new_len)| {
-                    input.set_text(db).to(string.clone());
+                    input.set_text(black_box(db)).to(black_box(string).clone());
                     let actual_len = length(db, input);
-                    assert_eq!(new_len, actual_len);
+                    assert_eq!(black_box(actual_len), new_len);
                 },
                 BatchSize::SmallInput,
             )
@@ -70,13 +71,17 @@ fn inputs(c: &mut Criterion) {
             || {
                 let db = salsa::DatabaseImpl::default();
                 // Prepopulate ingredients.
-                let input = InternedInput::new(&db, "hello, world!".to_owned());
-                interned_length(&db, input);
+                let input =
+                    InternedInput::new(black_box(&db), black_box("hello, world!".to_owned()));
+                let interned_len = interned_length(black_box(&db), black_box(input));
+                assert_eq!(black_box(interned_len), 13);
                 db
             },
             |db| {
-                let input: InternedInput = InternedInput::new(db, "hello, world!".to_owned());
-                interned_length(db, input);
+                let input =
+                    InternedInput::new(black_box(db), black_box("hello, world!".to_owned()));
+                let interned_len = interned_length(black_box(db), black_box(input));
+                assert_eq!(black_box(interned_len), 13);
             },
             BatchSize::SmallInput,
         )
@@ -89,11 +94,13 @@ fn inputs(c: &mut Criterion) {
                 // we can't pass this along otherwise, and the lifetime is generally informational
                 let input: InternedInput<'static> =
                     unsafe { transmute(InternedInput::new(&db, "hello, world!".to_owned())) };
-                let _ = interned_length(&db, input);
+                let interned_len = interned_length(black_box(&db), black_box(input));
+                assert_eq!(black_box(interned_len), 13);
                 (db, input)
             },
             |&mut (ref db, input)| {
-                interned_length(db, input);
+                let interned_len = interned_length(black_box(db), black_box(input));
+                assert_eq!(black_box(interned_len), 13);
             },
             BatchSize::SmallInput,
         )
@@ -103,14 +110,18 @@ fn inputs(c: &mut Criterion) {
         b.iter_batched_ref(
             || {
                 let db = salsa::DatabaseImpl::default();
+
                 // Prepopulate ingredients.
-                let input = Input::new(&db, "hello, world!".to_owned());
-                length(&db, input);
+                let input = Input::new(black_box(&db), black_box("hello, world!".to_owned()));
+                let len = length(black_box(&db), black_box(input));
+                assert_eq!(black_box(len), 13);
+
                 db
             },
             |db| {
-                let input = Input::new(db, "hello, world!".to_owned());
-                length(db, input);
+                let input = Input::new(black_box(db), black_box("hello, world!".to_owned()));
+                let len = length(black_box(db), black_box(input));
+                assert_eq!(black_box(len), 13);
             },
             BatchSize::SmallInput,
         )
@@ -120,12 +131,16 @@ fn inputs(c: &mut Criterion) {
         b.iter_batched_ref(
             || {
                 let db = salsa::DatabaseImpl::default();
-                let input = Input::new(&db, "hello, world!".to_owned());
-                let _ = length(&db, input);
+
+                let input = Input::new(black_box(&db), black_box("hello, world!".to_owned()));
+                let len = length(black_box(&db), black_box(input));
+                assert_eq!(black_box(len), 13);
+
                 (db, input)
             },
             |&mut (ref db, input)| {
-                length(db, input);
+                let len = length(black_box(db), black_box(input));
+                assert_eq!(black_box(len), 13);
             },
             BatchSize::SmallInput,
         )

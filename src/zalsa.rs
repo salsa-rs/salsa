@@ -1,8 +1,9 @@
-use append_only_vec::AppendOnlyVec;
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 use std::any::{Any, TypeId};
 use std::marker::PhantomData;
+use std::ops::Deref;
+use std::panic::RefUnwindSafe;
 use std::thread::ThreadId;
 
 use crate::ingredient::{Ingredient, Jar, JarAux};
@@ -129,15 +130,22 @@ pub struct Zalsa {
     /// Vector of ingredients.
     ///
     /// Immutable unless the mutex on `ingredients_map` is held.
-    ingredients_vec: AppendOnlyVec<Box<dyn Ingredient>>,
+    ingredients_vec: boxcar::Vec<Box<dyn Ingredient>>,
 
     /// Indices of ingredients that require reset when a new revision starts.
-    ingredients_requiring_reset: AppendOnlyVec<IngredientIndex>,
+    ingredients_requiring_reset: boxcar::Vec<IngredientIndex>,
 
     /// The runtime for this particular salsa database handle.
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
     runtime: Runtime,
 }
+
+/// All fields on Zalsa are locked behind [`Mutex`]es and [`RwLock`]s and cannot enter
+/// inconsistent states. The contents of said fields are largely ID mappings, with the exception
+/// of [`Runtime::dependency_graph`]. However, [`Runtime::dependency_graph`] does not
+/// invoke any queries and as such there will be no panic from code downstream of Salsa. It can only
+/// panic if an assertion inside of Salsa fails.
+impl RefUnwindSafe for Zalsa {}
 
 impl Zalsa {
     pub(crate) fn new<Db: Database>() -> Self {
@@ -145,8 +153,8 @@ impl Zalsa {
             views_of: Views::new::<Db>(),
             nonce: NONCE.nonce(),
             jar_map: Default::default(),
-            ingredients_vec: AppendOnlyVec::new(),
-            ingredients_requiring_reset: AppendOnlyVec::new(),
+            ingredients_vec: boxcar::Vec::new(),
+            ingredients_requiring_reset: boxcar::Vec::new(),
             runtime: Runtime::default(),
             memo_ingredient_indices: Default::default(),
         }
@@ -191,7 +199,7 @@ impl Zalsa {
             // ingredient indices cannot overlap.
             let index = *jar_map.entry(jar_type_id).or_insert_with(|| {
                 should_create = true;
-                IngredientIndex::from(self.ingredients_vec.len())
+                IngredientIndex::from(self.ingredients_vec.count())
             });
             if should_create {
                 let aux = JarAuxImpl(self, &jar_map);
@@ -220,7 +228,12 @@ impl Zalsa {
     }
 
     pub(crate) fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
-        &*self.ingredients_vec[index.as_usize()]
+        let index = index.as_usize();
+        let ingredient = self
+            .ingredients_vec
+            .get(index)
+            .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
+        ingredient.deref()
     }
 
     /// **NOT SEMVER STABLE**
@@ -228,10 +241,12 @@ impl Zalsa {
         &mut self,
         index: IngredientIndex,
     ) -> (&mut dyn Ingredient, &mut Runtime) {
-        (
-            &mut *self.ingredients_vec[index.as_usize()],
-            &mut self.runtime,
-        )
+        let index = index.as_usize();
+        let ingredient = self
+            .ingredients_vec
+            .get_mut(index)
+            .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
+        (ingredient.as_mut(), &mut self.runtime)
     }
 
     /// **NOT SEMVER STABLE**
@@ -261,8 +276,14 @@ impl Zalsa {
     pub(crate) fn new_revision(&mut self) -> Revision {
         let new_revision = self.runtime.new_revision();
 
-        for index in self.ingredients_requiring_reset.iter() {
-            self.ingredients_vec[index.as_usize()].reset_for_new_revision(self.runtime.table_mut());
+        for (_, index) in self.ingredients_requiring_reset.iter() {
+            let index = index.as_usize();
+            let ingredient = self
+                .ingredients_vec
+                .get_mut(index)
+                .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
+
+            ingredient.reset_for_new_revision(self.runtime.table_mut());
         }
 
         new_revision
