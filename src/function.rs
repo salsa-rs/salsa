@@ -213,6 +213,7 @@ where
             .is_some_and(|memo| memo.cycle_heads().contains(&self.database_key_index(input)))
     }
 
+    /// Attempts to claim `key_index`, returning `false` if a cycle occurs.
     fn wait_for(&self, db: &dyn Database, key_index: Id) -> bool {
         let (zalsa, zalsa_local) = db.zalsas();
         match zalsa.sync_table_for(key_index).claim(
