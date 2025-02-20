@@ -1,6 +1,5 @@
 #![allow(clippy::needless_borrow)]
 
-use derive_new::new;
 use ordered_float::OrderedFloat;
 
 // ANCHOR: input
@@ -35,11 +34,17 @@ pub struct Program<'db> {
 // ANCHOR_END: program
 
 // ANCHOR: statements_and_expressions
-#[derive(Eq, PartialEq, Debug, Hash, new, salsa::Update)]
+#[derive(Eq, PartialEq, Debug, Hash, salsa::Update)]
 pub struct Statement<'db> {
     pub span: Span<'db>,
 
     pub data: StatementData<'db>,
+}
+
+impl<'db> Statement<'db> {
+    pub fn new(span: Span<'db>, data: StatementData<'db>) -> Self {
+        Statement { span, data }
+    }
 }
 
 #[derive(Eq, PartialEq, Debug, Hash, salsa::Update)]
@@ -50,11 +55,17 @@ pub enum StatementData<'db> {
     Print(Expression<'db>),
 }
 
-#[derive(Eq, PartialEq, Debug, Hash, new, salsa::Update)]
+#[derive(Eq, PartialEq, Debug, Hash, salsa::Update)]
 pub struct Expression<'db> {
     pub span: Span<'db>,
 
     pub data: ExpressionData<'db>,
+}
+
+impl<'db> Expression<'db> {
+    pub fn new(span: Span<'db>, data: ExpressionData<'db>) -> Self {
+        Expression { span, data }
+    }
 }
 
 #[derive(Eq, PartialEq, Debug, Hash, salsa::Update)]
@@ -102,7 +113,6 @@ pub struct Span<'db> {
 // ANCHOR: diagnostic
 #[salsa::accumulator]
 #[allow(dead_code)] // Debug impl uses them
-#[derive(new)]
 pub struct Diagnostic {
     pub start: usize,
     pub end: usize,
@@ -111,6 +121,14 @@ pub struct Diagnostic {
 // ANCHOR_END: diagnostic
 
 impl Diagnostic {
+    pub fn new(start: usize, end: usize, message: String) -> Self {
+        Diagnostic {
+            start,
+            end,
+            message,
+        }
+    }
+
     #[cfg(test)]
     pub fn render(&self, db: &dyn crate::Db, src: SourceProgram) -> String {
         use annotate_snippets::*;
