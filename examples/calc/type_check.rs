@@ -1,7 +1,6 @@
 use crate::ir::{
     Diagnostic, Expression, Function, FunctionId, Program, Span, StatementData, VariableId,
 };
-use derive_new::new;
 #[cfg(test)]
 use expect_test::expect;
 use salsa::Accumulator;
@@ -44,11 +43,24 @@ pub fn find_function<'db>(
         .next()
 }
 
-#[derive(new)]
 struct CheckExpression<'input, 'db> {
     db: &'db dyn crate::Db,
     program: Program<'db>,
     names_in_scope: &'input [VariableId<'db>],
+}
+
+impl<'input, 'db> CheckExpression<'input, 'db> {
+    pub fn new(
+        db: &'db dyn crate::Db,
+        program: Program<'db>,
+        names_in_scope: &'input [VariableId<'db>],
+    ) -> Self {
+        CheckExpression {
+            db,
+            program,
+            names_in_scope,
+        }
+    }
 }
 
 impl<'db> CheckExpression<'_, 'db> {

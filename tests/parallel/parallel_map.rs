@@ -1,4 +1,4 @@
-// test for rayon interations.
+// test for rayon interactions.
 
 use salsa::Cancelled;
 use salsa::Setter;

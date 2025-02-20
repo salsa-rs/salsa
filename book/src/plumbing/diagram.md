@@ -6,7 +6,7 @@ This diagram shows the items that get generated from the Hello World query group
 graph LR
     classDef diagramNode text-align:left;
     subgraph query group
-        HelloWorldTrait["trait HelloWorld: Database + HasQueryGroup(HelloWorldStroage)"]
+        HelloWorldTrait["trait HelloWorld: Database + HasQueryGroup(HelloWorldStorage)"]
         HelloWorldImpl["impl&lt;DB&gt; HelloWorld for DB<br>where DB: HasQueryGroup(HelloWorldStorage)"]
         click HelloWorldImpl "http:query_groups.html#impl-of-the-hello-world-trait" "more info"
         HelloWorldStorage["struct HelloWorldStorage"]

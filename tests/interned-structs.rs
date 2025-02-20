@@ -71,7 +71,7 @@ struct InternedStringWithCustomId<'db> {
 }
 
 #[salsa::interned(id = SalsaIdWrapper, no_lifetime)]
-struct InternedStringWithCustomIdAndNoLiftime<'db> {
+struct InternedStringWithCustomIdAndNoLifetime<'db> {
     data: String,
 }
 
@@ -198,10 +198,10 @@ fn interning_with_custom_ids() {
 fn interning_with_custom_ids_and_no_lifetime() {
     let db = salsa::DatabaseImpl::new();
 
-    let s1 = InternedStringWithCustomIdAndNoLiftime::new(&db, "Hello, ".to_string());
-    let s2 = InternedStringWithCustomIdAndNoLiftime::new(&db, "World, ".to_string());
-    let s1_2 = InternedStringWithCustomIdAndNoLiftime::new(&db, "Hello, ");
-    let s2_2 = InternedStringWithCustomIdAndNoLiftime::new(&db, "World, ");
+    let s1 = InternedStringWithCustomIdAndNoLifetime::new(&db, "Hello, ".to_string());
+    let s2 = InternedStringWithCustomIdAndNoLifetime::new(&db, "World, ".to_string());
+    let s1_2 = InternedStringWithCustomIdAndNoLifetime::new(&db, "Hello, ");
+    let s2_2 = InternedStringWithCustomIdAndNoLifetime::new(&db, "World, ");
     assert_eq!(s1, s1_2);
     assert_eq!(s2, s2_2);
 }
