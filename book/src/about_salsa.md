@@ -3,7 +3,7 @@
 Salsa is a Rust framework for writing incremental, on-demand programs
 -- these are programs that want to adapt to changes in their inputs,
 continuously producing a new output that is up-to-date. Salsa is based
-on the the incremental recompilation techniques that we built for
+on the incremental recompilation techniques that we built for
 rustc, and many (but not all) of its users are building compilers or
 other similar tooling.
 

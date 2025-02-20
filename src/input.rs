@@ -163,7 +163,7 @@ impl<C: Configuration> IngredientImpl<C> {
 
     /// Access field of an input.
     /// Note that this function returns the entire tuple of value fields.
-    /// The caller is responible for selecting the appropriate element.
+    /// The caller is responsible for selecting the appropriate element.
     pub fn field<'db>(
         &'db self,
         db: &'db dyn crate::Database,

@@ -94,7 +94,7 @@ The database can thus be thought of as a list of ingredients,
 although that list is organized into a 2-level hierarchy.
 
 The reason for this 2-level hierarchy is that it permits separate compilation and privacy.
-The crate that lists the jars doens't have to know the contents of the jar to embed the jar struct in the database.
+The crate that lists the jars doesn't have to know the contents of the jar to embed the jar struct in the database.
 And some of the types that appear in the jar may be private to another struct.
 
 ### The `HasJars` trait and the `Jars` type
@@ -184,7 +184,7 @@ So, technically, to check if an input has changed, an ingredient:
 
 ### Initializing the database
 
-The last thing to dicsuss is how the database is initialized.
+The last thing to discuss is how the database is initialized.
 The `Default` implementation for `Storage<DB>` does the work:
 
 ```rust,ignore

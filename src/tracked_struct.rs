@@ -483,7 +483,7 @@ where
         //
         // When F is re-executed in rev 2, we first try to validate F's inputs/outputs,
         // which is the list [output: S, input: I]. As no inputs have changed by the time
-        // we reach S, we mark it as verified. But then input I is seen to hvae changed,
+        // we reach S, we mark it as verified. But then input I is seen to have changed,
         // and so we re-execute F. Note that we *know* that S will have the same value
         // (barring program bugs).
         //
@@ -574,7 +574,7 @@ where
         let data = Self::data_raw(zalsa.table(), id);
 
         // We want to set `updated_at` to `None`, signalling that other field values
-        // cannot be read. The current vaue should be `Some(R0)` for some older revision.
+        // cannot be read. The current value should be `Some(R0)` for some older revision.
         let data_ref = unsafe { &*data };
         match data_ref.updated_at.load() {
             None => {
@@ -631,7 +631,7 @@ where
     /// Access to this tracked field.
     ///
     /// Note that this function returns the entire tuple of value fields.
-    /// The caller is responible for selecting the appropriate element.
+    /// The caller is responsible for selecting the appropriate element.
     ///
     /// This function takes two indices:
     /// - `field_index` is the absolute index of the field on the tracked struct.
@@ -666,7 +666,7 @@ where
     /// Access to this untracked field.
     ///
     /// Note that this function returns the entire tuple of value fields.
-    /// The caller is responible for selecting the appropriate element.
+    /// The caller is responsible for selecting the appropriate element.
     pub fn untracked_field<'db>(
         &'db self,
         db: &'db dyn crate::Database,
