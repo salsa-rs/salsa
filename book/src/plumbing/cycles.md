@@ -54,7 +54,7 @@ Consider the case where only the query QA2 has recovery set. It and QA3 will be 
 
 ### Example 2: Recovery in two queries on the detecting thread
 
-Consider the case where both query QA2 and QA3 have recovery set. It proceeds the same Example 1 until the the current initiates unwinding, as described in Example 1. When QA3 receives the cycle, it stores its recovery value and completes normally. QA2 then adds QA3 as an input dependency: at that point, QA2 observes that it too has the cycle mark set, and so it initiates unwinding. The rest of QA2 therefore never executes. This unwinding is caught by QA2's entry point and it stores the recovery value and returns normally. QA1 and QC3 then continue normally, as they have not had their `cycle` flag set.
+Consider the case where both query QA2 and QA3 have recovery set. It proceeds the same Example 1 until the current thread initiates unwinding, as described in Example 1. When QA3 receives the cycle, it stores its recovery value and completes normally. QA2 then adds QA3 as an input dependency: at that point, QA2 observes that it too has the cycle mark set, and so it initiates unwinding. The rest of QA2 therefore never executes. This unwinding is caught by QA2's entry point and it stores the recovery value and returns normally. QA1 and QC3 then continue normally, as they have not had their `cycle` flag set.
 
 ### Example 3: Recovery on another thread
 

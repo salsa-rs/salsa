@@ -72,7 +72,7 @@ impl ZalsaLocal {
             // Try to allocate an entry on that page
             let page_ref = table.page::<T>(page);
             match page_ref.allocate(page, value) {
-                // If succesfull, return
+                // If successful, return
                 Ok(id) => return id,
 
                 // Otherwise, create a new page and try again

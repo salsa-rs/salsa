@@ -26,7 +26,7 @@ where
         // Like tracked struct fields, accumulated values are essentially a "side channel output"
         // from a tracked function, hence we can't report this as a read of the tracked function(s)
         // whose accumulated values we are probing, since the accumulated values may have changed
-        // even when the the main return value of the function has not changed.
+        // even when the main return value of the function has not changed.
         //
         // Unlike tracked struct fields, we don't have a distinct id or ingredient to represent
         // "the values of type A accumulated by tracked function X". Typically accumulated values
@@ -46,7 +46,7 @@ where
         let mut visited: FxHashSet<DatabaseKeyIndex> = FxHashSet::default();
         let mut stack: Vec<DatabaseKeyIndex> = vec![db_key];
 
-        // Do a depth-first earch across the dependencies of `key`, reading the values accumulated by
+        // Do a depth-first search across the dependencies of `key`, reading the values accumulated by
         // each dependency.
         while let Some(k) = stack.pop() {
             // Already visited `k`?
