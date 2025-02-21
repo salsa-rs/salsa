@@ -11,7 +11,8 @@ use accumulated::AnyAccumulated;
 
 use crate::{
     cycle::CycleRecoveryStrategy,
-    ingredient::{fmt_index, Ingredient, Jar, MaybeChangedAfter},
+    function::VerifyResult,
+    ingredient::{fmt_index, Ingredient, Jar},
     plumbing::JarAux,
     zalsa::IngredientIndex,
     zalsa_local::QueryOrigin,
@@ -105,8 +106,16 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _db: &dyn Database,
         _input: Id,
         _revision: Revision,
-    ) -> MaybeChangedAfter {
+    ) -> VerifyResult {
         panic!("nothing should ever depend on an accumulator directly")
+    }
+
+    fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
+        false
+    }
+
+    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
+        true
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
