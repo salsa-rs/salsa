@@ -141,20 +141,30 @@ macro_rules! setup_tracked_struct {
                     revisions: &mut Self::Revisions,
                     old_fields: *mut Self::Fields<$db_lt>,
                     new_fields: Self::Fields<$db_lt>,
-                ) {
+                ) -> bool {
                     use $zalsa::UpdateFallback as _;
                     unsafe {
                         $(
                             $crate::maybe_backdate!(
-                                $field_option,
-                                $field_ty,
-                                (*old_fields).$field_index,
-                                new_fields.$field_index,
-                                revisions[$field_index],
+                                $tracked_option,
+                                $tracked_ty,
+                                (*old_fields).$absolute_tracked_index,
+                                new_fields.$absolute_tracked_index,
+                                revisions[$absolute_tracked_index],
                                 current_revision,
                                 $zalsa,
                             );
-                        )*
+                        )*;
+
+                        // If any untracked field has changed, return `true`, indicating that the tracked struct
+                        // itself should be considered changed.
+                        $(
+                            $zalsa::UpdateDispatch::<$untracked_ty>::maybe_update(
+                                &mut (*old_fields).$absolute_untracked_index,
+                                new_fields.$absolute_untracked_index,
+                            )
+                            |
+                        )* false
                     }
                 }
             }
