@@ -1,6 +1,6 @@
 [package]
 name = "salsa"
-version = "0.18.0"
+version = "0.19.0"
 authors = ["Salsa developers"]
 edition = "2021"
 license = "Apache-2.0 OR MIT"
@@ -20,7 +20,7 @@ boxcar = "0.2.9"
 tracing = "0.1"
 parking_lot = "0.12"
 rustc-hash = "2"
-salsa-macro-rules = { version = "0.1.0", path = "components/salsa-macro-rules" }
+salsa-macro-rules = { version = "0.1.1", path = "components/salsa-macro-rules" }
 salsa-macros = { version = "0.18.0", path = "components/salsa-macros" }
 smallvec = "1"
 rayon = "1.10.0"
