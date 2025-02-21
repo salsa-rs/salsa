@@ -186,11 +186,12 @@ impl<V> Memo<V> {
 
     pub(super) fn mark_outputs_as_verified(
         &self,
+        zalsa: &Zalsa,
         db: &dyn crate::Database,
         database_key_index: DatabaseKeyIndex,
     ) {
         for output in self.revisions.origin.outputs() {
-            output.mark_validated_output(db, database_key_index);
+            output.mark_validated_output(zalsa, db, database_key_index);
         }
     }
 

@@ -49,9 +49,8 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     /// Queries which report untracked reads will be re-executed in the next
     /// revision.
     fn report_untracked_read(&self) {
-        let db = self.as_dyn_database();
-        let zalsa_local = db.zalsa_local();
-        zalsa_local.report_untracked_read(db.zalsa().current_revision())
+        let (zalsa, zalsa_local) = self.zalsas();
+        zalsa_local.report_untracked_read(zalsa.current_revision())
     }
 
     /// Return the "debug name" (i.e., the struct name, etc) for an "ingredient",
@@ -81,8 +80,7 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     /// used instead.
     fn unwind_if_revision_cancelled(&self) {
         let db = self.as_dyn_database();
-        let zalsa_local = db.zalsa_local();
-        zalsa_local.unwind_if_revision_cancelled(db);
+        self.zalsa_local().unwind_if_revision_cancelled(db);
     }
 
     /// Execute `op` with the database in thread-local storage for debug print-outs.

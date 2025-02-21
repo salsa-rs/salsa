@@ -608,7 +608,7 @@ where
             db.salsa_event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
             for stale_output in memo.origin().outputs() {
-                stale_output.remove_stale_output(db, executor);
+                stale_output.remove_stale_output(zalsa, db, executor);
             }
         }
 
