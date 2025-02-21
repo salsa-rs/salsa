@@ -62,7 +62,10 @@ pub trait Configuration: Sized + 'static {
     fn new_revisions(current_revision: Revision) -> Self::Revisions;
 
     /// Update the field data and, if the value has changed,
-    /// the appropriate entry in the `revisions` array.
+    /// the appropriate entry in the `revisions` array (tracked fields only).
+    ///
+    /// Returns `true` if any untracked field was updated and
+    /// the struct should be considered re-created.
     ///
     /// # Safety
     ///
@@ -87,7 +90,7 @@ pub trait Configuration: Sized + 'static {
         revisions: &mut Self::Revisions,
         old_fields: *mut Self::Fields<'db>,
         new_fields: Self::Fields<'db>,
-    );
+    ) -> bool;
 }
 // ANCHOR_END: Configuration
 
@@ -535,15 +538,24 @@ where
         // its validity invariant and any owned content also continues
         // to meet its safety invariant.
         unsafe {
-            C::update_fields(
+            if C::update_fields(
                 current_revision,
                 &mut data.revisions,
                 self.to_self_ptr(std::ptr::addr_of_mut!(data.fields)),
                 fields,
-            );
+            ) {
+                // Consider this a new tracked-struct (even though it still uses the same id)
+                // when any non-tracked field got updated.
+                // This should be rare and only ever happen if there's a hash collision
+                // which makes Salsa consider two tracked structs to still be the same
+                // even though the fields are different.
+                // See `tracked-struct-id-field-bad-hash` for more details.
+                data.created_at = current_revision;
+            }
         }
         if current_deps.durability < data.durability {
             data.revisions = C::new_revisions(current_revision);
+            data.created_at = current_revision;
         }
         data.durability = current_deps.durability;
         let swapped_out = data.updated_at.swap(Some(current_revision));

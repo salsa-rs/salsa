@@ -50,3 +50,31 @@ fn execute() {
     input.set_field(&mut db).to(false);
     the_fn(&db, input);
 }
+
+#[salsa::tracked]
+fn create_tracked<'db>(db: &'db dyn Db, input: MyInput) -> MyTracked<'db> {
+    MyTracked::new(db, BadHash::from(input.field(db)))
+}
+
+#[salsa::tracked]
+fn with_tracked<'db>(db: &'db dyn Db, tracked: MyTracked<'db>) -> bool {
+    tracked.field(db).field
+}
+
+#[test]
+fn dependent_query() {
+    let mut db = salsa::DatabaseImpl::new();
+
+    let input = MyInput::new(&db, true);
+    let tracked = create_tracked(&db, input);
+    assert!(with_tracked(&db, tracked));
+
+    input.set_field(&mut db).to(false);
+    // We now re-run the query that creates the tracked struct.
+    // Salsa will re-use the `MyTracked` struct from the previous revision
+    // because it thinks it is unchanged because of `BadHash`'s bad hash function.
+    // That's why Salsa updates the `MyTracked` struct in-place and the struct
+    // should be considered re-created even though it still has the same id.
+    let tracked = create_tracked(&db, input);
+    assert!(!with_tracked(&db, tracked));
+}
