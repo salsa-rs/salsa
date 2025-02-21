@@ -78,6 +78,13 @@ pub struct Storage<Db> {
     zalsa_local: zalsa_local::ZalsaLocal,
 }
 
+impl<Db> Drop for Storage<Db> {
+    fn drop(&mut self) {
+        self.zalsa_local
+            .record_unfilled_pages(self.handle.zalsa_impl.table());
+    }
+}
+
 struct Coordinate {
     /// Counter of the number of clones of actor. Begins at 1.
     /// Incremented when cloned, decremented when dropped.
@@ -103,11 +110,11 @@ impl<Db: Database> Storage<Db> {
     ///
     /// This will discard the local state of this [`Storage`], thereby returning a value that
     /// is both [`Sync`] and [`std::panic::UnwindSafe`].
-    pub fn into_zalsa_handle(self) -> StorageHandle<Db> {
-        let Storage {
-            handle,
-            zalsa_local: _,
-        } = self;
+    pub fn into_zalsa_handle(mut self) -> StorageHandle<Db> {
+        self.zalsa_local
+            .record_unfilled_pages(self.handle.zalsa_impl.table());
+        let handle = unsafe { std::ptr::read(&self.handle) };
+        std::mem::forget(self);
         handle
     }
 
