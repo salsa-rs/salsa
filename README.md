@@ -52,8 +52,5 @@ but we have a [zulip chat](https://salsa.zulipchat.com/) as well.
 
 ## Contributing
 
-To create a release and publish to crates.io, follow the steps:
-
-1. Update the `version` field in Cargo.toml.
-2. Create a Git tag. The tag name must follow the format like "v*.*.*".
-3. Push. GitHub Actions will publish the crate to crates.io automatically.
+To create a release and publish to crates.io, update the `version` field in Cargo.toml.
+After pushed, GitHub Actions will publish the crates to crates.io automatically.
