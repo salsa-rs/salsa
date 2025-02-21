@@ -32,9 +32,6 @@ use std::cell::RefCell;
 pub struct ZalsaLocal {
     /// Vector of active queries.
     ///
-    /// This is normally `Some`, but it is set to `None`
-    /// while the query is blocked waiting for a result.
-    ///
     /// Unwinding note: pushes onto this vector must be popped -- even
     /// during unwinding.
     query_stack: RefCell<Vec<ActiveQuery>>,
@@ -52,6 +49,13 @@ impl ZalsaLocal {
         }
     }
 
+    pub(crate) fn record_unfilled_pages(&mut self, table: &Table) {
+        let most_recent_pages = self.most_recent_pages.get_mut();
+        most_recent_pages
+            .drain()
+            .for_each(|(ingredient, page)| table.record_unfilled_page(ingredient, page));
+    }
+
     /// Allocate a new id in `table` for the given ingredient
     /// storing `value`. Remembers the most recent page from this
     /// thread and attempts to reuse it.
@@ -66,7 +70,7 @@ impl ZalsaLocal {
             .most_recent_pages
             .borrow_mut()
             .entry(ingredient)
-            .or_insert_with(|| table.push_page::<T>(ingredient));
+            .or_insert_with(|| table.fetch_or_push_page::<T>(ingredient));
 
         loop {
             // Try to allocate an entry on that page
@@ -76,6 +80,8 @@ impl ZalsaLocal {
                 Ok(id) => return id,
 
                 // Otherwise, create a new page and try again
+                // Note that we could try fetching a page again, but as we just filled one up
+                // it is unlikely that there is a non-full one available.
                 Err(v) => {
                     value = v;
                     page = table.push_page::<T>(ingredient);
@@ -97,7 +103,11 @@ impl ZalsaLocal {
     }
 
     /// Executes a closure within the context of the current active query stacks.
-    pub(crate) fn with_query_stack<R>(&self, c: impl FnOnce(&mut Vec<ActiveQuery>) -> R) -> R {
+    pub(crate) fn with_query_stack<R>(
+        &self,
+        // FIXME: We ought to require `UnwindSafe` here to prove that `ZalsaLocal: RefUnwindSafe`
+        c: impl FnOnce(&mut Vec<ActiveQuery>) -> R, /*+ UnwindSafe */
+    ) -> R {
         c(self.query_stack.borrow_mut().as_mut())
     }
 
@@ -304,6 +314,9 @@ impl ZalsaLocal {
     }
 }
 
+// Okay to implement as `ZalsaLocal`` is !Sync and FIXME: See `Self::with_query_stack`
+// - `most_recent_pages` can't observe broken states as we cannot panic such that we enter an
+//   inconsistent state
 impl std::panic::RefUnwindSafe for ZalsaLocal {}
 
 /// Summarizes "all the inputs that a query used"
