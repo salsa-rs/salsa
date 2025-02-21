@@ -261,6 +261,13 @@ where
     /// create this struct with different values.
     durability: Durability,
 
+    /// The revisiono in which the tracked struct was first-created.
+    /// This is different from `updated_at` which gets bumped on every read.
+    ///
+    /// Tracking `created_at` is important to detect tracked struct ids
+    /// that are being reused after they've been freed in a previous revision.
+    created_at: Revision,
+
     /// The revision when this tracked struct was last updated.
     /// This field also acts as a kind of "lock". Once it is equal
     /// to `Some(current_revision)`, the fields are locked and
@@ -415,6 +422,7 @@ where
         fields: C::Fields<'db>,
     ) -> Id {
         let value = |_| Value {
+            created_at: current_revision,
             updated_at: OptionalAtomicRevision::new(Some(current_revision)),
             durability: current_deps.durability,
             fields: unsafe { self.to_static(fields) },
@@ -672,11 +680,19 @@ where
         db: &'db dyn crate::Database,
         s: C::Struct<'db>,
     ) -> &'db C::Fields<'db> {
-        let (zalsa, _) = db.zalsas();
+        let (zalsa, zalsa_local) = db.zalsas();
         let id = C::deref_struct(s);
         let data = Self::data(zalsa.table(), id);
 
         data.read_lock(zalsa.current_revision());
+
+        // Add a dependency on the tracked struct itself.
+        zalsa_local.report_tracked_read(
+            InputDependencyIndex::new(self.ingredient_index, id),
+            data.durability,
+            data.created_at,
+            InputAccumulatedValues::Empty,
+        );
 
         unsafe { self.to_self_ref(&data.fields) }
     }
@@ -706,11 +722,14 @@ where
 
     fn maybe_changed_after(
         &self,
-        _db: &dyn Database,
-        _input: Id,
-        _revision: Revision,
+        db: &dyn Database,
+        input: Id,
+        revision: Revision,
     ) -> MaybeChangedAfter {
-        MaybeChangedAfter::No(InputAccumulatedValues::Empty)
+        let (zalsa, _) = db.zalsas();
+        let data = Self::data(zalsa.table(), input);
+
+        MaybeChangedAfter::from(data.created_at > revision)
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
