@@ -4,7 +4,6 @@ use std::any::{Any, TypeId};
 use std::marker::PhantomData;
 use std::mem;
 use std::num::NonZeroU32;
-use std::ops::Deref;
 use std::panic::RefUnwindSafe;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -208,11 +207,10 @@ impl Zalsa {
 
     pub(crate) fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
         let index = index.as_usize();
-        let ingredient = self
-            .ingredients_vec
+        self.ingredients_vec
             .get(index)
-            .unwrap_or_else(|| panic!("index `{index}` is uninitialized"));
-        ingredient.deref()
+            .unwrap_or_else(|| panic!("index `{index}` is uninitialized"))
+            .as_ref()
     }
 
     pub(crate) fn ingredient_index_for_memo(
@@ -428,13 +426,6 @@ where
             NonZeroU32::new_unchecked((cached_data >> u32::BITS) as u32)
         });
         let mut index = IngredientIndex(cached_data as u32);
-
-        // FIXME: We used to cache a raw pointer to the revision but miri
-        // was reporting errors because that pointer was derived from an `&`
-        // that is invalidated when the next revision starts with an `&mut`.
-        //
-        // We could fix it with orxfun/orx-concurrent-vec#18 or by "refreshing" the cache
-        // when the revision changes but just caching the index is an awful lot simpler.
 
         if db.zalsa().nonce() != nonce {
             index = create_index();
