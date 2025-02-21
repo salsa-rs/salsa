@@ -194,12 +194,7 @@ impl<C: Configuration> IngredientImpl<C> {
         &'db self,
         db: &'db dyn crate::Database,
     ) -> impl Iterator<Item = &'db Value<C>> {
-        db.zalsa()
-            .table()
-            .pages
-            .iter()
-            .filter_map(|(_, page)| page.cast_type::<crate::table::Page<Value<C>>>())
-            .flat_map(|page| page.slots())
+        db.zalsa().table().slots_of::<Value<C>>()
     }
 
     /// Peek at the field values without recording any read dependency.
