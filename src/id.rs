@@ -14,7 +14,7 @@ use crate::Database;
 /// room for niches; currently there is only one niche, so that
 /// `Option<Id>` is the same size as an `Id`.
 ///
-/// As an end-user of `Salsa` you will not use `Id` directly,
+/// As an end-user of `Salsa` you will generally not use `Id` directly,
 /// it is wrapped in new types.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id {
@@ -31,14 +31,22 @@ impl Id {
     /// In general, you should not need to create salsa ids yourself,
     /// but it can be useful if you are using the type as a general
     /// purpose "identifier" internally.
+    ///
+    /// # Safety
+    ///
+    /// The supplied value must be less than [`Self::MAX_U32`].
+    ///
+    /// Additionally, creating an arbitrary `Id` can lead to unsoundness if such an ID ends up being used to index
+    /// the internal allocation tables which end up being out of bounds. Care must be taken that the
+    /// ID is either constructed with a valid value or that it never ends up being used as keys to
+    /// salsa computations.
     #[doc(hidden)]
     #[track_caller]
-    pub const fn from_u32(x: u32) -> Self {
+    pub const unsafe fn from_u32(v: u32) -> Self {
+        debug_assert!(v < Self::MAX_U32);
         Id {
-            value: match NonZeroU32::new(x + 1) {
-                Some(v) => v,
-                None => panic!("given value is too large to be a `salsa::Id`"),
-            },
+            // SAFETY: Caller obligation
+            value: unsafe { NonZeroU32::new_unchecked(v + 1) },
         }
     }
 

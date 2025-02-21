@@ -721,12 +721,7 @@ where
         &'db self,
         db: &'db dyn crate::Database,
     ) -> impl Iterator<Item = &'db Value<C>> {
-        db.zalsa()
-            .table()
-            .pages
-            .iter()
-            .filter_map(|(_, page)| page.cast_type::<crate::table::Page<Value<C>>>())
-            .flat_map(|page| page.slots())
+        db.zalsa().table().slots_of::<Value<C>>()
     }
 }
 
@@ -857,6 +852,7 @@ impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
+    #[inline]
     unsafe fn memos(&self, current_revision: Revision) -> &crate::table::memo::MemoTable {
         // Acquiring the read lock here with the current revision
         // ensures that there is no danger of a race
@@ -865,10 +861,12 @@ where
         &self.memos
     }
 
+    #[inline]
     fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
         &mut self.memos
     }
 
+    #[inline]
     unsafe fn syncs(&self, current_revision: Revision) -> &crate::table::sync::SyncTable {
         // Acquiring the read lock here with the current revision
         // ensures that there is no danger of a race
@@ -956,22 +954,25 @@ mod tests {
             hash: 1,
             disambiguator: Disambiguator(1),
         };
-        assert_eq!(d.insert(i1, Id::from_u32(0)), None);
-        assert_eq!(d.insert(i2, Id::from_u32(1)), None);
-        assert_eq!(d.insert(i3, Id::from_u32(2)), None);
-        assert_eq!(d.insert(i4, Id::from_u32(3)), None);
-        assert_eq!(d.insert(i5, Id::from_u32(4)), None);
-        assert_eq!(d.insert(i6, Id::from_u32(5)), None);
-        assert_eq!(d.insert(i7, Id::from_u32(6)), None);
-        assert_eq!(d.insert(i8, Id::from_u32(7)), None);
+        // SAFETY: We don't use the IDs within salsa internals so this is fine
+        unsafe {
+            assert_eq!(d.insert(i1, Id::from_u32(0)), None);
+            assert_eq!(d.insert(i2, Id::from_u32(1)), None);
+            assert_eq!(d.insert(i3, Id::from_u32(2)), None);
+            assert_eq!(d.insert(i4, Id::from_u32(3)), None);
+            assert_eq!(d.insert(i5, Id::from_u32(4)), None);
+            assert_eq!(d.insert(i6, Id::from_u32(5)), None);
+            assert_eq!(d.insert(i7, Id::from_u32(6)), None);
+            assert_eq!(d.insert(i8, Id::from_u32(7)), None);
 
-        assert_eq!(d.get(&i1), Some(Id::from_u32(0)));
-        assert_eq!(d.get(&i2), Some(Id::from_u32(1)));
-        assert_eq!(d.get(&i3), Some(Id::from_u32(2)));
-        assert_eq!(d.get(&i4), Some(Id::from_u32(3)));
-        assert_eq!(d.get(&i5), Some(Id::from_u32(4)));
-        assert_eq!(d.get(&i6), Some(Id::from_u32(5)));
-        assert_eq!(d.get(&i7), Some(Id::from_u32(6)));
-        assert_eq!(d.get(&i8), Some(Id::from_u32(7)));
+            assert_eq!(d.get(&i1), Some(Id::from_u32(0)));
+            assert_eq!(d.get(&i2), Some(Id::from_u32(1)));
+            assert_eq!(d.get(&i3), Some(Id::from_u32(2)));
+            assert_eq!(d.get(&i4), Some(Id::from_u32(3)));
+            assert_eq!(d.get(&i5), Some(Id::from_u32(4)));
+            assert_eq!(d.get(&i6), Some(Id::from_u32(5)));
+            assert_eq!(d.get(&i7), Some(Id::from_u32(6)));
+            assert_eq!(d.get(&i8), Some(Id::from_u32(7)));
+        };
     }
 }

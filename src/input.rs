@@ -187,12 +187,7 @@ impl<C: Configuration> IngredientImpl<C> {
         &'db self,
         db: &'db dyn crate::Database,
     ) -> impl Iterator<Item = &'db Value<C>> {
-        db.zalsa()
-            .table()
-            .pages
-            .iter()
-            .filter_map(|(_, page)| page.cast_type::<crate::table::Page<Value<C>>>())
-            .flat_map(|page| page.slots())
+        db.zalsa().table().slots_of::<Value<C>>()
     }
 
     /// Peek at the field values without recording any read dependency.
@@ -318,14 +313,17 @@ impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
+    #[inline]
     unsafe fn memos(&self, _current_revision: Revision) -> &crate::table::memo::MemoTable {
         &self.memos
     }
 
+    #[inline]
     fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
         &mut self.memos
     }
 
+    #[inline]
     unsafe fn syncs(&self, _current_revision: Revision) -> &SyncTable {
         &self.syncs
     }
