@@ -45,7 +45,6 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let database_key_index = active_query.database_key_index;
         let id = database_key_index.key_index;
         let value = match Cycle::catch(|| C::execute(db, C::id_to_input(db, id))) {
             Ok(v) => v,
