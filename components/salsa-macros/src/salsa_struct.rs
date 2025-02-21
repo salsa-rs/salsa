@@ -227,6 +227,10 @@ where
         Literal::usize_unsuffixed(self.fields.len())
     }
 
+    pub(crate) fn num_tracked_fields(&self) -> Literal {
+        Literal::usize_unsuffixed(self.tracked_fields_iter().count())
+    }
+
     pub(crate) fn required_fields(&self) -> Vec<TokenStream> {
         self.fields
             .iter()
