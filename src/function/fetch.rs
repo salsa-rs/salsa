@@ -1,7 +1,9 @@
 use super::{memo::Memo, Configuration, IngredientImpl};
 use crate::{
-    accumulator::accumulated_map::InputAccumulatedValues, runtime::StampedValue,
-    zalsa::ZalsaDatabase, AsDynDatabase as _, Id,
+    accumulator::accumulated_map::InputAccumulatedValues,
+    runtime::StampedValue,
+    zalsa::{Zalsa, ZalsaDatabase},
+    AsDynDatabase as _, Id,
 };
 
 impl<C> IngredientImpl<C>
@@ -40,16 +42,24 @@ where
         db: &'db C::DbView,
         id: Id,
     ) -> &'db Memo<C::Output<'db>> {
+        let zalsa = db.zalsa();
         loop {
-            if let Some(memo) = self.fetch_hot(db, id).or_else(|| self.fetch_cold(db, id)) {
+            if let Some(memo) = self
+                .fetch_hot(zalsa, db, id)
+                .or_else(|| self.fetch_cold(zalsa, db, id))
+            {
                 return memo;
             }
         }
     }
 
     #[inline]
-    fn fetch_hot<'db>(&'db self, db: &'db C::DbView, id: Id) -> Option<&'db Memo<C::Output<'db>>> {
-        let zalsa = db.zalsa();
+    fn fetch_hot<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        db: &'db C::DbView,
+        id: Id,
+    ) -> Option<&'db Memo<C::Output<'db>>> {
         let memo_guard = self.get_memo_from_table_for(zalsa, id);
         if let Some(memo) = &memo_guard {
             if memo.value.is_some()
@@ -63,13 +73,19 @@ where
         None
     }
 
-    fn fetch_cold<'db>(&'db self, db: &'db C::DbView, id: Id) -> Option<&'db Memo<C::Output<'db>>> {
-        let (zalsa, zalsa_local) = db.zalsas();
+    fn fetch_cold<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        db: &'db C::DbView,
+        id: Id,
+    ) -> Option<&'db Memo<C::Output<'db>>> {
+        let zalsa_local = db.zalsa_local();
         let database_key_index = self.database_key_index(id);
 
         // Try to claim this query: if someone else has claimed it already, go back and start again.
         let _claim_guard = zalsa.sync_table_for(id).claim(
             db.as_dyn_database(),
+            zalsa,
             zalsa_local,
             database_key_index,
             self.memo_ingredient_index,
@@ -79,10 +95,10 @@ where
         let active_query = zalsa_local.push_query(database_key_index);
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
-        let zalsa = db.zalsa();
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id);
         if let Some(old_memo) = &opt_old_memo {
-            if old_memo.value.is_some() && self.deep_verify_memo(db, old_memo, &active_query) {
+            if old_memo.value.is_some() && self.deep_verify_memo(db, zalsa, old_memo, &active_query)
+            {
                 // Unsafety invariant: memo is present in memo_map and we have verified that it is
                 // still valid for the current revision.
                 return unsafe { Some(self.extend_memo_lifetime(old_memo)) };

@@ -34,12 +34,12 @@ impl SyncTable {
     pub(crate) fn claim<'me>(
         &'me self,
         db: &'me dyn Database,
+        zalsa: &'me Zalsa,
         zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<ClaimGuard<'me>> {
         let mut syncs = self.syncs.write();
-        let zalsa = db.zalsa();
         let thread_id = std::thread::current().id();
 
         util::ensure_vec_len(&mut syncs, memo_ingredient_index.as_usize() + 1);
