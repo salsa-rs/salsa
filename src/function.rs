@@ -7,6 +7,7 @@ use crate::{
     key::DatabaseKeyIndex,
     plumbing::JarAux,
     salsa_struct::SalsaStructInDb,
+    table::memo::{MemoEntryType, MemoTableTypes},
     table::Table,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
@@ -28,6 +29,8 @@ mod lru;
 mod maybe_changed_after;
 mod memo;
 mod specify;
+
+pub type Memo<C> = memo::Memo<<C as Configuration>::Output<'static>>;
 
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
@@ -114,6 +117,9 @@ pub struct IngredientImpl<C: Configuration> {
     /// we don't know that we can trust the database to give us the same runtime
     /// everytime and so forth.
     deleted_entries: DeletedEntries<C>,
+
+    /// This is empty, but we need this for the trait and it doesn't consume a lot of memory anyway.
+    _memo_table_types: Arc<MemoTableTypes>,
 }
 
 /// True if `old_value == new_value`. Invoked by the generated
@@ -127,17 +133,26 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn new(
+    /// # Safety
+    ///
+    /// `memo_type` and `memo_table_types` must be correct.
+    pub unsafe fn new(
         struct_index: IngredientIndex,
         index: IngredientIndex,
+        memo_type: MemoEntryType,
+        memo_types: &MemoTableTypes,
         aux: &dyn JarAux,
         lru: usize,
     ) -> Self {
         Self {
             index,
-            memo_ingredient_index: aux.next_memo_ingredient_index(struct_index, index),
+            // SAFETY: Our precondition.
+            memo_ingredient_index: unsafe {
+                aux.next_memo_ingredient_index(struct_index, index, memo_type, memo_types)
+            },
             lru: lru::Lru::new(lru),
             deleted_entries: Default::default(),
+            _memo_table_types: Arc::new(MemoTableTypes::default()),
         }
     }
 
@@ -255,6 +270,10 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
+    }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        self._memo_table_types.clone()
     }
 
     fn accumulated<'db>(

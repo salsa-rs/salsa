@@ -12,7 +12,7 @@ use crate::table::PageIndex;
 use crate::table::Slot;
 use crate::table::Table;
 use crate::tracked_struct::{Disambiguator, Identity, IdentityHash, IdentityMap};
-use crate::zalsa::IngredientIndex;
+use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::Accumulator;
 use crate::Cancelled;
 use crate::Cycle;
@@ -57,6 +57,7 @@ impl ZalsaLocal {
     /// thread and attempts to reuse it.
     pub(crate) fn allocate<T: Slot>(
         &self,
+        zalsa: &Zalsa,
         table: &Table,
         ingredient: IngredientIndex,
         mut value: impl FnOnce(Id) -> T,
@@ -66,7 +67,7 @@ impl ZalsaLocal {
             .most_recent_pages
             .borrow_mut()
             .entry(ingredient)
-            .or_insert_with(|| table.push_page::<T>(ingredient));
+            .or_insert_with(|| table.push_page::<T>(ingredient, zalsa));
 
         loop {
             // Try to allocate an entry on that page
@@ -78,7 +79,7 @@ impl ZalsaLocal {
                 // Otherwise, create a new page and try again
                 Err(v) => {
                     value = v;
-                    page = table.push_page::<T>(ingredient);
+                    page = table.push_page::<T>(ingredient, zalsa);
                     self.most_recent_pages.borrow_mut().insert(ingredient, page);
                 }
             }

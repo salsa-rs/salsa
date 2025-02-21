@@ -4,6 +4,7 @@ use std::{
     any::Any,
     fmt::{self, Debug},
     marker::PhantomData,
+    sync::Arc,
 };
 
 use accumulated::Accumulated;
@@ -13,6 +14,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, MaybeChangedAfter},
     plumbing::JarAux,
+    table::memo::MemoTableTypes,
     zalsa::IngredientIndex,
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id, Revision,
@@ -60,6 +62,7 @@ impl<A: Accumulator> Jar for JarImpl<A> {
 
 pub struct IngredientImpl<A: Accumulator> {
     index: IngredientIndex,
+    memo_table_types: Arc<MemoTableTypes>,
     phantom: PhantomData<Accumulated<A>>,
 }
 
@@ -79,6 +82,7 @@ impl<A: Accumulator> IngredientImpl<A> {
     pub fn new(index: IngredientIndex) -> Self {
         Self {
             index,
+            memo_table_types: Arc::new(MemoTableTypes::default()),
             phantom: PhantomData,
         }
     }
@@ -139,6 +143,10 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
 
     fn debug_name(&self) -> &'static str {
         A::DEBUG_NAME
+    }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        self.memo_table_types.clone()
     }
 }
 
