@@ -1,3 +1,5 @@
+#![forbid(unsafe_op_in_unsafe_fn)]
+
 mod accumulator;
 mod active_query;
 mod array;

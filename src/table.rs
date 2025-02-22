@@ -172,7 +172,7 @@ impl Table {
     /// of the owner of database owning this table.
     pub(crate) unsafe fn memos(&self, id: Id, current_revision: Revision) -> &MemoTable {
         let (page, slot) = split_id(id);
-        self.pages[page.0].memos(slot, current_revision)
+        unsafe { self.pages[page.0].memos(slot, current_revision) }
     }
 
     /// Get the memo table associated with `id`
@@ -194,7 +194,7 @@ impl Table {
     /// of the owner of database owning this table.
     pub(crate) unsafe fn syncs(&self, id: Id, current_revision: Revision) -> &SyncTable {
         let (page, slot) = split_id(id);
-        self.pages[page.0].syncs(slot, current_revision)
+        unsafe { self.pages[page.0].syncs(slot, current_revision) }
     }
 }
 
@@ -297,7 +297,7 @@ impl<T: Slot> TablePage for Page<T> {
     }
 
     unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable {
-        self.get(slot).memos(current_revision)
+        unsafe { self.get(slot).memos(current_revision) }
     }
 
     fn memos_mut(&mut self, slot: SlotIndex) -> &mut MemoTable {
@@ -305,7 +305,7 @@ impl<T: Slot> TablePage for Page<T> {
     }
 
     unsafe fn syncs(&self, slot: SlotIndex, current_revision: Revision) -> &SyncTable {
-        self.get(slot).syncs(current_revision)
+        unsafe { self.get(slot).syncs(current_revision) }
     }
 }
 
