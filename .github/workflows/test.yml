@@ -92,6 +92,8 @@ jobs:
           cargo miri run --example calc
 
   benchmarks:
+    # https://github.com/CodSpeedHQ/action/issues/126
+    if: github.event_name != 'merge_group'
     name: Benchmarks
     runs-on: ubuntu-latest
     steps:
