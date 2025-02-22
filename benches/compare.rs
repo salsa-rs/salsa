@@ -21,9 +21,23 @@ pub struct InternedInput<'db> {
     pub text: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, salsa::Supertype)]
+enum EnumInput<'db> {
+    InternedInput(InternedInput<'db>),
+    Input(Input),
+}
+
 #[salsa::tracked]
 pub fn interned_length<'db>(db: &'db dyn salsa::Database, input: InternedInput<'db>) -> usize {
     input.text(db).len()
+}
+
+#[salsa::tracked]
+pub fn either_length<'db>(db: &'db dyn salsa::Database, input: EnumInput<'db>) -> usize {
+    match input {
+        EnumInput::InternedInput(input) => interned_length(db, input),
+        EnumInput::Input(input) => length(db, input),
+    }
 }
 
 fn mutating_inputs(c: &mut Criterion) {
@@ -140,6 +154,77 @@ fn inputs(c: &mut Criterion) {
             },
             |&mut (ref db, input)| {
                 let len = length(black_box(db), black_box(input));
+                assert_eq!(black_box(len), 13);
+            },
+            BatchSize::SmallInput,
+        )
+    });
+
+    group.bench_function(BenchmarkId::new("new", "EnumInput"), |b| {
+        b.iter_batched_ref(
+            || {
+                let db = salsa::DatabaseImpl::default();
+
+                // Prepopulate ingredients.
+                let input = EnumInput::Input(Input::new(
+                    black_box(&db),
+                    black_box("hello, world!".to_owned()),
+                ));
+                let interned_input = EnumInput::InternedInput(InternedInput::new(
+                    black_box(&db),
+                    black_box("hello, world!".to_owned()),
+                ));
+                let len = either_length(black_box(&db), black_box(input));
+                assert_eq!(black_box(len), 13);
+                let len = either_length(black_box(&db), black_box(interned_input));
+                assert_eq!(black_box(len), 13);
+
+                db
+            },
+            |db| {
+                let input = EnumInput::Input(Input::new(
+                    black_box(db),
+                    black_box("hello, world!".to_owned()),
+                ));
+                let interned_input = EnumInput::InternedInput(InternedInput::new(
+                    black_box(db),
+                    black_box("hello, world!".to_owned()),
+                ));
+                let len = either_length(black_box(db), black_box(input));
+                assert_eq!(black_box(len), 13);
+                let len = either_length(black_box(db), black_box(interned_input));
+                assert_eq!(black_box(len), 13);
+            },
+            BatchSize::SmallInput,
+        )
+    });
+
+    group.bench_function(BenchmarkId::new("amortized", "EnumInput"), |b| {
+        b.iter_batched_ref(
+            || {
+                let db = salsa::DatabaseImpl::default();
+
+                let input = EnumInput::Input(Input::new(
+                    black_box(&db),
+                    black_box("hello, world!".to_owned()),
+                ));
+                let interned_input = EnumInput::InternedInput(InternedInput::new(
+                    black_box(&db),
+                    black_box("hello, world!".to_owned()),
+                ));
+                // we can't pass this along otherwise, and the lifetime is generally informational
+                let interned_input: EnumInput<'static> = unsafe { transmute(interned_input) };
+                let len = either_length(black_box(&db), black_box(input));
+                assert_eq!(black_box(len), 13);
+                let len = either_length(black_box(&db), black_box(interned_input));
+                assert_eq!(black_box(len), 13);
+
+                (db, input, interned_input)
+            },
+            |&mut (ref db, input, interned_input)| {
+                let len = either_length(black_box(db), black_box(input));
+                assert_eq!(black_box(len), 13);
+                let len = either_length(black_box(db), black_box(interned_input));
                 assert_eq!(black_box(len), 13);
             },
             BatchSize::SmallInput,
