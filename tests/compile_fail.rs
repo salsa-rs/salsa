@@ -1,4 +1,4 @@
-#[rustversion::stable]
+#[rustversion::all(stable, since(1.84))]
 #[test]
 fn compile_fail() {
     let t = trybuild::TestCases::new();
