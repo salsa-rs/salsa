@@ -82,10 +82,7 @@ impl std::iter::IntoIterator for CycleHeads {
     type IntoIter = std::collections::hash_set::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0
-            .map(|heads| *heads)
-            .unwrap_or_else(FxHashSet::default)
-            .into_iter()
+        self.0.map(|heads| *heads).unwrap_or_default().into_iter()
     }
 }
 
@@ -94,7 +91,7 @@ pub(crate) struct CycleHeadsIter<'a>(
     Option<std::collections::hash_set::Iter<'a, DatabaseKeyIndex>>,
 );
 
-impl<'a> Iterator for CycleHeadsIter<'a> {
+impl Iterator for CycleHeadsIter<'_> {
     type Item = DatabaseKeyIndex;
 
     fn next(&mut self) -> Option<Self::Item> {
