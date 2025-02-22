@@ -8,7 +8,6 @@ use std::panic::RefUnwindSafe;
 use std::thread::ThreadId;
 
 use crate::cycle::CycleRecoveryStrategy;
-use crate::hash::FxDashMap;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::{Runtime, WaitResult};
@@ -140,7 +139,9 @@ pub struct Zalsa {
     jar_map: Mutex<FxHashMap<TypeId, IngredientIndex>>,
 
     /// A map from the `IngredientIndex` to the `TypeId` of its ID struct.
-    ingredient_to_id_struct_type_id_map: FxDashMap<IngredientIndex, TypeId>,
+    ///
+    /// Notably this is not the reverse mapping of `jar_map`.
+    ingredient_to_id_struct_type_id_map: RwLock<FxHashMap<IngredientIndex, TypeId>>,
 
     /// Vector of ingredients.
     ///
@@ -225,6 +226,7 @@ impl Zalsa {
         let ingredient_index = self.ingredient_index(id);
         *self
             .ingredient_to_id_struct_type_id_map
+            .read()
             .get(&ingredient_index)
             .expect("should have the ingredient index available")
     }
@@ -236,6 +238,7 @@ impl Zalsa {
         if let Some(index) = jar_map.get(&jar_type_id) {
             return *index;
         };
+        // Drop the map as `J::create_dependencies` may recurse into this function taking the lock again.
         drop(jar_map);
         let dependencies = J::create_dependencies(self);
 
@@ -269,6 +272,7 @@ impl Zalsa {
 
         drop(jar_map);
         self.ingredient_to_id_struct_type_id_map
+            .write()
             .insert(index, J::id_struct_type_id());
 
         index

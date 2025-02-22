@@ -96,8 +96,9 @@ pub struct IngredientImpl<C: Configuration> {
 
     /// The index for the memo/sync tables
     ///
-    /// This may be a `MemoIngredientSingletonIndex` or a `MemoIngredientIndex`, depending on
-    /// whether the tracked function's struct is a plain salsa struct or an enum `#[derive(Supertype)]`.
+    /// This may be a [`crate::memo_ingredient_indices::MemoIngredientSingletonIndex`] or a
+    /// [`crate::memo_ingredient_indices::MemoIngredientIndices`], depending on whether the
+    /// tracked function's struct is a plain salsa struct or an enum `#[derive(Supertype)]`.
     memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
 
     /// Used to find memos to throw out when we have too many memoized values.
