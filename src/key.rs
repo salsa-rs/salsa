@@ -1,6 +1,10 @@
 use core::fmt;
 
-use crate::{function::VerifyResult, zalsa::IngredientIndex, Database, Id};
+use crate::{
+    function::VerifyResult,
+    zalsa::{IngredientIndex, Zalsa},
+    Database, Id,
+};
 
 /// An integer that uniquely identifies a particular query instance within the
 /// database. Used to track output dependencies between queries. Fully ordered and
@@ -30,18 +34,24 @@ impl OutputDependencyIndex {
         }
     }
 
-    pub(crate) fn remove_stale_output(&self, db: &dyn Database, executor: DatabaseKeyIndex) {
-        db.zalsa()
+    pub(crate) fn remove_stale_output(
+        &self,
+        zalsa: &Zalsa,
+        db: &dyn Database,
+        executor: DatabaseKeyIndex,
+    ) {
+        zalsa
             .lookup_ingredient(self.ingredient_index)
             .remove_stale_output(db, executor, self.key_index)
     }
 
     pub(crate) fn mark_validated_output(
         &self,
+        zalsa: &Zalsa,
         db: &dyn Database,
         database_key_index: DatabaseKeyIndex,
     ) {
-        db.zalsa()
+        zalsa
             .lookup_ingredient(self.ingredient_index)
             .mark_validated_output(db, database_key_index, self.key_index)
     }

@@ -1,7 +1,10 @@
 use super::{memo::Memo, Configuration, IngredientImpl, VerifyResult};
 use crate::{
-    accumulator::accumulated_map::InputAccumulatedValues, runtime::StampedValue,
-    table::sync::ClaimResult, zalsa::ZalsaDatabase, zalsa_local::QueryRevisions,
+    accumulator::accumulated_map::InputAccumulatedValues,
+    runtime::StampedValue,
+    table::sync::ClaimResult,
+    zalsa::{Zalsa, ZalsaDatabase},
+    zalsa_local::QueryRevisions,
     AsDynDatabase as _, Id,
 };
 
@@ -42,8 +45,12 @@ where
         db: &'db C::DbView,
         id: Id,
     ) -> &'db Memo<C::Output<'db>> {
+        let zalsa = db.zalsa();
         loop {
-            if let Some(memo) = self.fetch_hot(db, id).or_else(|| self.fetch_cold(db, id)) {
+            if let Some(memo) = self
+                .fetch_hot(zalsa, db, id)
+                .or_else(|| self.fetch_cold(zalsa, db, id))
+            {
                 // If we get back a provisional cycle memo, and it's provisional on any cycle heads
                 // that are claimed by a different thread, we can't propagate the provisional memo
                 // any further (it could escape outside the cycle); we need to block on the other
@@ -59,8 +66,12 @@ where
     }
 
     #[inline]
-    fn fetch_hot<'db>(&'db self, db: &'db C::DbView, id: Id) -> Option<&'db Memo<C::Output<'db>>> {
-        let zalsa = db.zalsa();
+    fn fetch_hot<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        db: &'db C::DbView,
+        id: Id,
+    ) -> Option<&'db Memo<C::Output<'db>>> {
         let memo_guard = self.get_memo_from_table_for(zalsa, id);
         if let Some(memo) = &memo_guard {
             if memo.value.is_some()
@@ -74,13 +85,19 @@ where
         None
     }
 
-    fn fetch_cold<'db>(&'db self, db: &'db C::DbView, id: Id) -> Option<&'db Memo<C::Output<'db>>> {
-        let (zalsa, zalsa_local) = db.zalsas();
+    fn fetch_cold<'db>(
+        &'db self,
+        zalsa: &'db Zalsa,
+        db: &'db C::DbView,
+        id: Id,
+    ) -> Option<&'db Memo<C::Output<'db>>> {
+        let zalsa_local = db.zalsa_local();
         let database_key_index = self.database_key_index(id);
 
         // Try to claim this query: if someone else has claimed it already, go back and start again.
         let _claim_guard = match zalsa.sync_table_for(id).claim(
             db.as_dyn_database(),
+            zalsa,
             zalsa_local,
             database_key_index,
             self.memo_ingredient_index,
@@ -137,7 +154,7 @@ where
         if let Some(old_memo) = &opt_old_memo {
             if old_memo.value.is_some() {
                 if let VerifyResult::Unchanged(_, cycle_heads) =
-                    self.deep_verify_memo(db, old_memo, &active_query)
+                    self.deep_verify_memo(db, zalsa, old_memo, &active_query)
                 {
                     if cycle_heads.is_empty() {
                         // Unsafety invariant: memo is present in memo_map and we have verified that it is

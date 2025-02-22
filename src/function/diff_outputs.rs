@@ -1,7 +1,7 @@
 use super::{memo::Memo, Configuration, IngredientImpl};
 use crate::{
-    hash::FxHashSet, key::OutputDependencyIndex, zalsa_local::QueryRevisions, AsDynDatabase as _,
-    DatabaseKeyIndex, Event, EventKind,
+    hash::FxHashSet, key::OutputDependencyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions,
+    AsDynDatabase as _, DatabaseKeyIndex, Event, EventKind,
 };
 
 impl<C> IngredientImpl<C>
@@ -15,6 +15,7 @@ where
     /// that no longer exist in this revision from [`QueryRevisions::tracked_struct_ids`].
     pub(super) fn diff_outputs(
         &self,
+        zalsa: &Zalsa,
         db: &C::DbView,
         key: DatabaseKeyIndex,
         old_memo: &Memo<C::Output<'_>>,
@@ -38,11 +39,16 @@ where
         }
 
         for old_output in old_outputs {
-            Self::report_stale_output(db, key, old_output);
+            Self::report_stale_output(zalsa, db, key, old_output);
         }
     }
 
-    fn report_stale_output(db: &C::DbView, key: DatabaseKeyIndex, output: OutputDependencyIndex) {
+    fn report_stale_output(
+        zalsa: &Zalsa,
+        db: &C::DbView,
+        key: DatabaseKeyIndex,
+        output: OutputDependencyIndex,
+    ) {
         let db = db.as_dyn_database();
 
         db.salsa_event(&|| {
@@ -52,6 +58,6 @@ where
             })
         });
 
-        output.remove_stale_output(db, key);
+        output.remove_stale_output(zalsa, db, key);
     }
 }

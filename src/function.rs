@@ -223,6 +223,7 @@ where
         let (zalsa, zalsa_local) = db.zalsas();
         match zalsa.sync_table_for(key_index).claim(
             db,
+            zalsa,
             zalsa_local,
             self.database_key_index(key_index),
             self.memo_ingredient_index,

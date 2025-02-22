@@ -2,6 +2,7 @@ use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
     key::DatabaseKeyIndex,
+    plumbing::ZalsaLocal,
     table::sync::ClaimResult,
     zalsa::{Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
@@ -73,7 +74,9 @@ where
                     };
                 }
                 drop(memo_guard); // release the arc-swap guard before cold path
-                if let Some(mcs) = self.maybe_changed_after_cold(db, id, revision) {
+                if let Some(mcs) =
+                    self.maybe_changed_after_cold(zalsa, zalsa_local, db, id, revision)
+                {
                     return mcs;
                 } else {
                     // We failed to claim, have to retry.
@@ -87,15 +90,17 @@ where
 
     fn maybe_changed_after_cold<'db>(
         &'db self,
+        zalsa: &Zalsa,
+        zalsa_local: &ZalsaLocal,
         db: &'db C::DbView,
         key_index: Id,
         revision: Revision,
     ) -> Option<VerifyResult> {
-        let (zalsa, zalsa_local) = db.zalsas();
         let database_key_index = self.database_key_index(key_index);
 
         let _claim_guard = match zalsa.sync_table_for(key_index).claim(
             db.as_dyn_database(),
+            zalsa,
             zalsa_local,
             database_key_index,
             self.memo_ingredient_index,
@@ -129,7 +134,7 @@ where
         // Check if the inputs are still valid. We can just compare `changed_at`.
         let active_query = zalsa_local.push_query(database_key_index);
         if let VerifyResult::Unchanged(_, cycle_heads) =
-            self.deep_verify_memo(db, &old_memo, &active_query)
+            self.deep_verify_memo(db, zalsa, &old_memo, &active_query)
         {
             return Some(if old_memo.revisions.changed_at > revision {
                 VerifyResult::Changed
@@ -214,7 +219,7 @@ where
                 database_key_index,
                 memo.revisions.accumulated_inputs.load(),
             );
-            memo.mark_outputs_as_verified(db, database_key_index);
+            memo.mark_outputs_as_verified(zalsa, db, database_key_index);
             return true;
         }
 
@@ -253,10 +258,10 @@ where
     pub(super) fn deep_verify_memo(
         &self,
         db: &C::DbView,
+        zalsa: &Zalsa,
         old_memo: &Memo<C::Output<'_>>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> VerifyResult {
-        let zalsa = db.zalsa();
         let database_key_index = active_query.database_key_index;
 
         tracing::debug!(
@@ -338,6 +343,7 @@ where
                                 //
                                 // TODO not if we found a cycle head other than ourself?
                                 dependency_index.mark_validated_output(
+                                    zalsa,
                                     db.as_dyn_database(),
                                     database_key_index,
                                 );
