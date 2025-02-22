@@ -82,19 +82,38 @@ impl std::iter::IntoIterator for CycleHeads {
     type IntoIter = std::collections::hash_set::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.map(|heads| heads.into_iter()).unwrap_or_default()
+        self.0
+            .map(|heads| *heads)
+            .unwrap_or_else(FxHashSet::default)
+            .into_iter()
     }
 }
 
+// This type can be removed once MSRV is 1.83+ and we have Default for hashset iterators.
+pub(crate) struct CycleHeadsIter<'a>(
+    Option<std::collections::hash_set::Iter<'a, DatabaseKeyIndex>>,
+);
+
+impl<'a> Iterator for CycleHeadsIter<'a> {
+    type Item = DatabaseKeyIndex;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.as_mut()?.next().copied()
+    }
+
+    fn last(self) -> Option<Self::Item> {
+        self.0?.last().copied()
+    }
+}
+
+impl std::iter::FusedIterator for CycleHeadsIter<'_> {}
+
 impl<'a> std::iter::IntoIterator for &'a CycleHeads {
     type Item = DatabaseKeyIndex;
-    type IntoIter = std::iter::Copied<std::collections::hash_set::Iter<'a, DatabaseKeyIndex>>;
+    type IntoIter = CycleHeadsIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0
-            .as_ref()
-            .map(|heads| heads.iter().copied())
-            .unwrap_or_default()
+        CycleHeadsIter(self.0.as_ref().map(|heads| heads.iter()))
     }
 }
 
