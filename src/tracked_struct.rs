@@ -264,11 +264,13 @@ where
     /// create this struct with different values.
     durability: Durability,
 
-    /// The revisiono in which the tracked struct was first-created.
-    /// This is different from `updated_at` which gets bumped on every read.
+    /// The revision in which the tracked struct was first created.
     ///
-    /// Tracking `created_at` is important to detect tracked struct ids
-    /// that are being reused after they've been freed in a previous revision.
+    /// Unlike `updated_at`, which gets bumped on every read,
+    /// `created_at` is updated whenever an untracked field is updated.
+    /// This is necessary to detect reused tracked struct ids _after_
+    /// they've been freed in a prior revision or tracked structs that have been updated
+    /// in-place because of a bad `Hash` implementation.
     created_at: Revision,
 
     /// The revision when this tracked struct was last updated.
@@ -472,11 +474,11 @@ where
 
         // The protocol is:
         //
-        // * When we begin updating, we store `None` in the `created_at` field
-        // * When completed, we store `Some(current_revision)` in `created_at`
+        // * When we begin updating, we store `None` in the `updated_at` field
+        // * When completed, we store `Some(current_revision)` in `updated_at`
         //
         // No matter what mischief users get up to, it should be impossible for us to
-        // observe `None` in `created_at`. The `id` should only be associated with one
+        // observe `None` in `updated_at`. The `id` should only be associated with one
         // query and that query can only be running in one thread at a time.
         //
         // We *can* observe `Some(current_revision)` however, which means that this
