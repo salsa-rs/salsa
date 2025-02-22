@@ -1,3 +1,4 @@
+#![cfg(feature = "rayon")]
 // test for rayon interactions.
 
 use salsa::Cancelled;
