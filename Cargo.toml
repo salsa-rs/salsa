@@ -9,38 +9,46 @@ description = "A generic framework for on-demand, incrementalized computation (e
 rust-version = "1.80"
 
 [dependencies]
+salsa-macro-rules = { version = "0.1.0", path = "components/salsa-macro-rules" }
+salsa-macros = { version = "0.18.0", path = "components/salsa-macros" }
+
 arc-swap = "1"
-compact_str = { version = "0.8", optional = true }
+boxcar = "0.2.9"
 crossbeam-queue = "0.3.11"
 dashmap = { version = "6", features = ["raw-api"] }
 hashbrown = "0.15"
 hashlink = "0.10"
 indexmap = "2"
-boxcar = "0.2.9"
-tracing = "0.1"
 parking_lot = "0.12"
 rustc-hash = "2"
-salsa-macro-rules = { version = "0.1.0", path = "components/salsa-macro-rules" }
-salsa-macros = { version = "0.18.0", path = "components/salsa-macros" }
 smallvec = "1"
-rayon = "1.10.0"
+tracing = "0.1"
+
+# parallel map
+rayon = { version = "1.10.0", optional = true }
+
+# Stuff we want Update impls for by default
+compact_str = { version = "0.8", optional = true }
 
 [features]
-# FIXME: remove this as a default feature before 1.0.
-default = ["salsa_unstable"]
+# FIXME: remove `salsa_unstable` as a default feature before 1.0.
+default = ["salsa_unstable", "rayon"]
 salsa_unstable = []
 
 [dev-dependencies]
-annotate-snippets = "0.11.5"
-codspeed-criterion-compat = { version = "2.6.0", default-features = false }
-expect-test = "1.5.0"
+# examples
+crossbeam-channel = "0.5.14"
 eyre = "0.6.8"
 notify-debouncer-mini = "0.4.1"
 ordered-float = "4.2.1"
+
+# tests/benches
+annotate-snippets = "0.11.5"
+codspeed-criterion-compat = { version = "2.6.0", default-features = false }
+expect-test = "1.5.0"
 rustversion = "1.0"
 test-log = { version = "0.2.11", features = ["trace"] }
 trybuild = "1.0"
-crossbeam-channel = "0.5.14"
 
 [[bench]]
 name = "compare"

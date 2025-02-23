@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
 };
 
+#[cfg(feature = "rayon")]
 use rayon::iter::Either;
 
 use crate::Revision;
@@ -394,6 +395,7 @@ where
     }
 }
 
+#[cfg(feature = "rayon")]
 unsafe impl<L, R> Update for Either<L, R>
 where
     L: Update,
