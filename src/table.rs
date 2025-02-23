@@ -9,6 +9,7 @@ use std::{
 
 use memo::MemoTable;
 use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use sync::SyncTable;
 
 use crate::{zalsa::transmute_data_ptr, Id, IngredientIndex, Revision};
@@ -24,6 +25,8 @@ const MAX_PAGES: usize = 1 << (32 - PAGE_LEN_BITS);
 
 pub struct Table {
     pub(crate) pages: boxcar::Vec<Box<dyn TablePage>>,
+    /// Map from ingredient to non-full pages that are up for grabs
+    non_full_pages: Mutex<FxHashMap<IngredientIndex, Vec<PageIndex>>>,
 }
 
 pub(crate) trait TablePage: Any + Send + Sync {
@@ -118,6 +121,7 @@ impl Default for Table {
     fn default() -> Self {
         Self {
             pages: boxcar::Vec::new(),
+            non_full_pages: Default::default(),
         }
     }
 }
@@ -195,6 +199,26 @@ impl Table {
     pub(crate) unsafe fn syncs(&self, id: Id, current_revision: Revision) -> &SyncTable {
         let (page, slot) = split_id(id);
         unsafe { self.pages[page.0].syncs(slot, current_revision) }
+    }
+
+    pub(crate) fn fetch_or_push_page<T: Slot>(&self, ingredient: IngredientIndex) -> PageIndex {
+        if let Some(page) = self
+            .non_full_pages
+            .lock()
+            .get_mut(&ingredient)
+            .and_then(Vec::pop)
+        {
+            return page;
+        }
+        self.push_page::<T>(ingredient)
+    }
+
+    pub(crate) fn record_unfilled_page(&self, ingredient: IngredientIndex, page: PageIndex) {
+        self.non_full_pages
+            .lock()
+            .entry(ingredient)
+            .or_default()
+            .push(page);
     }
 }
 
