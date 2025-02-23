@@ -1,8 +1,5 @@
 use crate::{zalsa::transmute_data_ptr, Database};
-use std::{
-    any::{Any, TypeId},
-    sync::Arc,
-};
+use std::any::{Any, TypeId};
 
 /// A `Views` struct is associated with some specific database type
 /// (a `DatabaseImpl<U>` for some existential `U`). It contains functions
@@ -22,7 +19,7 @@ use std::{
 /// ```
 pub struct Views {
     source_type_id: TypeId,
-    view_casters: Arc<boxcar::Vec<DynViewCaster>>,
+    view_casters: Box<boxcar::Vec<DynViewCaster>>,
 }
 
 /// A DynViewCaster contains a manual trait object that can cast from the
@@ -76,7 +73,7 @@ impl Views {
         let source_type_id = TypeId::of::<Db>();
         Self {
             source_type_id,
-            view_casters: Arc::new(boxcar::Vec::new()),
+            view_casters: Box::new(boxcar::Vec::new()),
         }
     }
 
