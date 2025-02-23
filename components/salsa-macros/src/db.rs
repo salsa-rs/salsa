@@ -89,10 +89,12 @@ impl DbMacro {
                 use salsa::plumbing as #zalsa;
 
                 unsafe impl #zalsa::HasStorage for #db {
+                    #[inline(always)]
                     fn storage(&self) -> &#zalsa::Storage<Self> {
                         &self.#storage
                     }
 
+                    #[inline(always)]
                     fn storage_mut(&mut self) -> &mut #zalsa::Storage<Self> {
                         &mut self.#storage
                     }
@@ -131,12 +133,14 @@ impl DbMacro {
 
         input.items.push(parse_quote! {
             #[doc(hidden)]
+            #[inline(always)]
             fn register_downcaster(&self)  {
                 salsa::plumbing::views(self).add(<Self as #TraitPath>::downcast);
             }
         });
         input.items.push(parse_quote! {
             #[doc(hidden)]
+            #[inline(always)]
             unsafe fn downcast(db: &dyn salsa::plumbing::Database) -> &dyn #TraitPath where Self: Sized {
                 debug_assert_eq!(db.type_id(), ::core::any::TypeId::of::<Self>());
                 // SAFETY: Caller responsibility
