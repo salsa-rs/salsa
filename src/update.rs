@@ -182,7 +182,7 @@ where
 
         let mut changed = false;
         for (old_element, new_element) in old_vec.iter_mut().zip(new_vec) {
-            changed |= T::maybe_update(old_element, new_element);
+            changed |= unsafe { T::maybe_update(old_element, new_element) };
         }
 
         changed
@@ -205,7 +205,7 @@ where
 
         let mut changed = false;
         for (old_element, new_element) in old_vec.iter_mut().zip(new_vec) {
-            changed |= A::Item::maybe_update(old_element, new_element);
+            changed |= unsafe { A::Item::maybe_update(old_element, new_element) };
         }
 
         changed
@@ -276,7 +276,7 @@ macro_rules! maybe_update_map {
             let mut changed = false;
             for (key, new_value) in new_map.into_iter() {
                 let old_value = old_map.get_mut(&key).unwrap();
-                changed |= V::maybe_update(old_value, new_value);
+                changed |= unsafe { V::maybe_update(old_value, new_value) };
             }
             changed
         }
@@ -311,7 +311,7 @@ where
     unsafe fn maybe_update(old_pointer: *mut Self, new_box: Self) -> bool {
         let old_box: &mut Box<T> = unsafe { &mut *old_pointer };
 
-        T::maybe_update(&mut **old_box, *new_box)
+        unsafe { T::maybe_update(&mut **old_box, *new_box) }
     }
 }
 
@@ -325,7 +325,7 @@ where
         if old_box.len() == new_box.len() {
             let mut changed = false;
             for (old_element, new_element) in old_box.iter_mut().zip(new_box) {
-                changed |= T::maybe_update(old_element, new_element);
+                changed |= unsafe { T::maybe_update(old_element, new_element) };
             }
             changed
         } else {
@@ -348,7 +348,7 @@ where
 
         if let Some(inner) = Arc::get_mut(old_arc) {
             match Arc::try_unwrap(new_arc) {
-                Ok(new_inner) => T::maybe_update(inner, new_inner),
+                Ok(new_inner) => unsafe { T::maybe_update(inner, new_inner) },
                 Err(new_arc) => {
                     // We can't unwrap the new arc, so we have to update the old one in place.
                     *old_arc = new_arc;
@@ -356,7 +356,7 @@ where
                 }
             }
         } else {
-            *old_pointer = new_arc;
+            unsafe { *old_pointer = new_arc };
             true
         }
     }
@@ -367,10 +367,10 @@ where
     T: Update,
 {
     unsafe fn maybe_update(old_pointer: *mut Self, new_vec: Self) -> bool {
-        let old_pointer: *mut T = std::ptr::addr_of_mut!((*old_pointer)[0]);
+        let old_pointer: *mut T = unsafe { std::ptr::addr_of_mut!((*old_pointer)[0]) };
         let mut changed = false;
         for (new_element, i) in new_vec.into_iter().zip(0..) {
-            changed |= T::maybe_update(old_pointer.add(i), new_element);
+            changed |= unsafe { T::maybe_update(old_pointer.add(i), new_element) };
         }
         changed
     }
@@ -384,8 +384,8 @@ where
     unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
         let old_value = unsafe { &mut *old_pointer };
         match (old_value, new_value) {
-            (Ok(old), Ok(new)) => T::maybe_update(old, new),
-            (Err(old), Err(new)) => E::maybe_update(old, new),
+            (Ok(old), Ok(new)) => unsafe { T::maybe_update(old, new) },
+            (Err(old), Err(new)) => unsafe { E::maybe_update(old, new) },
             (old_value, new_value) => {
                 *old_value = new_value;
                 true
@@ -402,8 +402,8 @@ where
     unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
         let old_value = unsafe { &mut *old_pointer };
         match (old_value, new_value) {
-            (Either::Left(old), Either::Left(new)) => L::maybe_update(old, new),
-            (Either::Right(old), Either::Right(new)) => R::maybe_update(old, new),
+            (Either::Left(old), Either::Left(new)) => unsafe { L::maybe_update(old, new) },
+            (Either::Right(old), Either::Right(new)) => unsafe { R::maybe_update(old, new) },
             (old_value, new_value) => {
                 *old_value = new_value;
                 true
@@ -417,7 +417,7 @@ macro_rules! fallback_impl {
         $(
             unsafe impl Update for $t {
                 unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
-                    update_fallback(old_pointer, new_value)
+                    unsafe { update_fallback(old_pointer, new_value) }
                 }
             }
         )*
@@ -489,7 +489,7 @@ where
     unsafe fn maybe_update(old_pointer: *mut Self, new_value: Self) -> bool {
         let old_value = unsafe { &mut *old_pointer };
         match (old_value, new_value) {
-            (Some(old), Some(new)) => T::maybe_update(old, new),
+            (Some(old), Some(new)) => unsafe { T::maybe_update(old, new) },
             (None, None) => false,
             (old_value, new_value) => {
                 *old_value = new_value;

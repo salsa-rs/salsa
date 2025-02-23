@@ -163,7 +163,7 @@ where
         &'this self,
         memo: &memo::Memo<C::Output<'this>>,
     ) -> &'this memo::Memo<C::Output<'this>> {
-        std::mem::transmute(memo)
+        unsafe { std::mem::transmute(memo) }
     }
 
     fn insert_memo<'db>(
