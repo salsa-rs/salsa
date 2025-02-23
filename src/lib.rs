@@ -1,5 +1,7 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
+extern crate self as salsa;
+
 mod accumulator;
 mod active_query;
 mod array;
@@ -107,6 +109,7 @@ pub mod plumbing {
     pub use crate::update::helper::Dispatch as UpdateDispatch;
     pub use crate::update::helper::Fallback as UpdateFallback;
     pub use crate::update::Update;
+    pub use crate::zalsa::transmute_data_ptr;
     pub use crate::zalsa::views;
     pub use crate::zalsa::IngredientCache;
     pub use crate::zalsa::IngredientIndex;
