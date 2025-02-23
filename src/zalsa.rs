@@ -145,7 +145,9 @@ pub struct Zalsa {
     ingredients_vec: boxcar::Vec<Box<dyn Ingredient>>,
 
     /// Indices of ingredients that require reset when a new revision starts.
-    ingredients_requiring_reset: boxcar::Vec<IngredientIndex>,
+    // FIXME: When we take this lock, we are also holding the `jar_map` lock, so we should probably
+    // combine the two.
+    ingredients_requiring_reset: Mutex<Vec<IngredientIndex>>,
 
     /// The runtime for this particular salsa database handle.
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
@@ -166,7 +168,7 @@ impl Zalsa {
             nonce: NONCE.nonce(),
             jar_map: Default::default(),
             ingredients_vec: boxcar::Vec::new(),
-            ingredients_requiring_reset: boxcar::Vec::new(),
+            ingredients_requiring_reset: Default::default(),
             runtime: Runtime::default(),
             memo_ingredient_indices: Default::default(),
         }
@@ -264,7 +266,7 @@ impl Zalsa {
                     let expected_index = ingredient.ingredient_index();
 
                     if ingredient.requires_reset_for_new_revision() {
-                        self.ingredients_requiring_reset.push(expected_index);
+                        self.ingredients_requiring_reset.lock().push(expected_index);
                     }
 
                     let actual_index = self.ingredients_vec.push(ingredient);
@@ -315,7 +317,7 @@ impl Zalsa {
     pub fn new_revision(&mut self) -> Revision {
         let new_revision = self.runtime.new_revision();
 
-        for (_, index) in self.ingredients_requiring_reset.iter() {
+        for index in self.ingredients_requiring_reset.get_mut() {
             let index = index.as_usize();
             let ingredient = self
                 .ingredients_vec
@@ -331,7 +333,7 @@ impl Zalsa {
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
     pub fn evict_lru(&mut self) {
-        for (_, index) in self.ingredients_requiring_reset.iter() {
+        for index in self.ingredients_requiring_reset.get_mut() {
             let index = index.as_usize();
             self.ingredients_vec
                 .get_mut(index)
