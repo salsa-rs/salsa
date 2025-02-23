@@ -122,8 +122,6 @@ impl dyn Database {
     #[track_caller]
     pub fn as_view<DbView: ?Sized + Database>(&self) -> &DbView {
         let views = self.zalsa().views();
-        views.assert_database(self);
-        // SAFETY: We've asserted that the database is correct.
-        unsafe { views.downcaster_for()(self) }
+        views.downcaster_for().downcast(self)
     }
 }

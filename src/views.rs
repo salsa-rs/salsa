@@ -10,52 +10,61 @@ use crate::Database;
 /// dynamically through `TypeId` magic.
 pub struct Views {
     source_type_id: TypeId,
-    view_casters: boxcar::Vec<DynViewCaster>,
+    view_casters: boxcar::Vec<ViewCaster>,
 }
 
-/// A DynViewCaster contains a manual trait object that can cast from the
-/// (ghost) `Db` type of `Views` to some (ghost) `DbView` type.
-///
-/// You can think of the struct as looking like:
-///
-/// ```rust,ignore
-/// struct DynViewCaster<ghost Db, ghost DbView> {
-///     target_type_id: TypeId,     // TypeId of DbView
-///     type_name: &'static str,    // type name of DbView
-///     view_caster: *mut (),       // a `Box<ViewCaster<Db, DbView>>`
-///     cast: *const (),            // a `unsafe fn (&ViewCaster<Db, DbView>, &dyn Database) -> &DbView`
-///     drop: *const (),            // the destructor for the box above
-/// }
-/// ```
-///
-/// The manual trait object and vtable allows for type erasure without
-/// transmuting between fat pointers, whose layout is undefined.
-struct DynViewCaster {
+struct ViewCaster {
     /// The id of the target type `dyn DbView` that we can cast to.
     target_type_id: TypeId,
 
     /// The name of the target type `dyn DbView` that we can cast to.
     type_name: &'static str,
 
-    /// Type-erased `ViewCaster::<Db, DbView>::vtable_cast`.
-    cast: ErasedDatabaseDownCaster,
+    /// Type-erased function pointer that downcasts from `dyn Database` to `dyn DbView`.
+    cast: ErasedDatabaseDownCasterSig,
 }
 
-type ErasedDatabaseDownCaster = unsafe fn(&dyn Database) -> *const ();
-pub type DatabaseDownCaster<DbView> = unsafe fn(&dyn Database) -> &DbView;
+type ErasedDatabaseDownCasterSig = unsafe fn(&dyn Database) -> *const ();
+type DatabaseDownCasterSig<DbView> = unsafe fn(&dyn Database) -> &DbView;
+
+pub struct DatabaseDownCaster<DbView: ?Sized>(TypeId, DatabaseDownCasterSig<DbView>);
+
+impl<DbView: ?Sized + Any> DatabaseDownCaster<DbView> {
+    pub fn downcast<'db>(&self, db: &'db dyn Database) -> &'db DbView {
+        assert_eq!(
+            self.0,
+            db.type_id(),
+            "Database type does not match the expected type for this `Views` instance"
+        );
+        // SAFETY: We've asserted that the database is correct.
+        unsafe { (self.1)(db) }
+    }
+
+    /// Downcast `db` to `DbView`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `db` is of the correct type.
+    pub unsafe fn downcast_unchecked<'db>(&self, db: &'db dyn Database) -> &'db DbView {
+        unsafe { (self.1)(db) }
+    }
+}
 
 impl Views {
     pub(crate) fn new<Db: Database>() -> Self {
         let source_type_id = TypeId::of::<Db>();
         let view_casters = boxcar::Vec::new();
         // special case the no-op transformation, that way we skip out on reconstructing the wide pointer
-        view_casters.push(DynViewCaster {
+        view_casters.push(ViewCaster {
             target_type_id: TypeId::of::<dyn Database>(),
             type_name: std::any::type_name::<dyn Database>(),
+            // SAFETY: We are type erasing for storage, taking care of unerasing before we call
+            // the function pointer.
             cast: unsafe {
-                std::mem::transmute::<DatabaseDownCaster<dyn Database>, ErasedDatabaseDownCaster>(
-                    |db| db,
-                )
+                std::mem::transmute::<
+                    DatabaseDownCasterSig<dyn Database>,
+                    ErasedDatabaseDownCasterSig,
+                >(|db| db)
             },
         });
         Self {
@@ -65,7 +74,7 @@ impl Views {
     }
 
     /// Add a new downcaster from `dyn Database` to `dyn DbView`.
-    pub fn add<DbView: ?Sized + Any>(&self, func: DatabaseDownCaster<DbView>) {
+    pub fn add<DbView: ?Sized + Any>(&self, func: DatabaseDownCasterSig<DbView>) {
         let target_type_id = TypeId::of::<DbView>();
         if self
             .view_casters
@@ -74,11 +83,15 @@ impl Views {
         {
             return;
         }
-        self.view_casters.push(DynViewCaster {
+        self.view_casters.push(ViewCaster {
             target_type_id,
             type_name: std::any::type_name::<DbView>(),
+            // SAFETY: We are type erasing for storage, taking care of unerasing before we call
+            // the function pointer.
             cast: unsafe {
-                std::mem::transmute::<DatabaseDownCaster<DbView>, ErasedDatabaseDownCaster>(func)
+                std::mem::transmute::<DatabaseDownCasterSig<DbView>, ErasedDatabaseDownCasterSig>(
+                    func,
+                )
             },
         });
     }
@@ -92,25 +105,19 @@ impl Views {
         let view_type_id = TypeId::of::<DbView>();
         for (_idx, view) in self.view_casters.iter() {
             if view.target_type_id == view_type_id {
-                return unsafe {
-                    std::mem::transmute::<ErasedDatabaseDownCaster, DatabaseDownCaster<DbView>>(
+                // SAFETY: We are unerasing the type erased function pointer having made sure the
+                // TypeId matches.
+                return DatabaseDownCaster(self.source_type_id, unsafe {
+                    std::mem::transmute::<ErasedDatabaseDownCasterSig, DatabaseDownCasterSig<DbView>>(
                         view.cast,
                     )
-                };
+                });
             }
         }
 
         panic!(
             "No downcaster registered for type `{}` in `Views`",
             std::any::type_name::<DbView>(),
-        );
-    }
-
-    pub fn assert_database(&self, db: &dyn Database) {
-        assert_eq!(
-            self.source_type_id,
-            db.type_id(),
-            "Database type does not match the expected type for this `Views` instance"
         );
     }
 }
@@ -123,7 +130,7 @@ impl std::fmt::Debug for Views {
     }
 }
 
-impl std::fmt::Debug for DynViewCaster {
+impl std::fmt::Debug for ViewCaster {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("DynViewCaster")
             .field(&self.type_name)

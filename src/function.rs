@@ -230,9 +230,8 @@ where
         input: Id,
         revision: Revision,
     ) -> MaybeChangedAfter {
-        db.zalsa().views().assert_database(db);
-        // SAFETY: We've asserted that the database is correct.
-        let db = unsafe { (self.view_caster)(db) };
+        // SAFETY: The `db` belongs to the ingredient as per caller invariant
+        let db = unsafe { self.view_caster.downcast_unchecked(db) };
         self.maybe_changed_after(db, input, revision)
     }
 
@@ -292,9 +291,7 @@ where
         db: &'db dyn Database,
         key_index: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
-        db.zalsa().views().assert_database(db);
-        // SAFETY: We've asserted that the database is correct.
-        let db = unsafe { (self.view_caster)(db) };
+        let db = self.view_caster.downcast(db);
         self.accumulated_map(db, key_index)
     }
 }
