@@ -20,8 +20,8 @@ where
         id: Id,
         revision: Revision,
     ) -> MaybeChangedAfter {
-        let (zalsa, zalsa_local) = db.zalsas();
-        zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
+        let zalsa = db.zalsa();
+        zalsa.unwind_if_revision_cancelled(db);
 
         loop {
             let database_key_index = self.database_key_index(id);
@@ -40,7 +40,7 @@ where
                 }
                 drop(memo_guard); // release the arc-swap guard before cold path
                 if let Some(mcs) =
-                    self.maybe_changed_after_cold(zalsa, zalsa_local, db, id, revision)
+                    self.maybe_changed_after_cold(zalsa, db.zalsa_local(), db, id, revision)
                 {
                     return mcs;
                 } else {

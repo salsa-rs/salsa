@@ -16,9 +16,6 @@ use crate::zalsa::IngredientIndex;
 use crate::Accumulator;
 use crate::Cancelled;
 use crate::Cycle;
-use crate::Database;
-use crate::Event;
-use crate::EventKind;
 use crate::Id;
 use crate::Revision;
 use std::cell::RefCell;
@@ -285,26 +282,6 @@ impl ZalsaLocal {
                 "overwrote a previous id for `{identity:?}`"
             );
         })
-    }
-
-    /// Starts unwinding the stack if the current revision is cancelled.
-    ///
-    /// This method can be called by query implementations that perform
-    /// potentially expensive computations, in order to speed up propagation of
-    /// cancellation.
-    ///
-    /// Cancellation will automatically be triggered by salsa on any query
-    /// invocation.
-    ///
-    /// This method should not be overridden by `Database` implementors. A
-    /// `salsa_event` is emitted when this method is called, so that should be
-    /// used instead.
-    pub(crate) fn unwind_if_revision_cancelled(&self, db: &dyn Database) {
-        db.salsa_event(&|| Event::new(EventKind::WillCheckCancellation));
-        let zalsa = db.zalsa();
-        if zalsa.runtime().load_cancellation_flag() {
-            self.unwind_cancelled(zalsa.current_revision());
-        }
     }
 
     #[cold]

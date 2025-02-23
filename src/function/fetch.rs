@@ -11,8 +11,8 @@ where
     C: Configuration,
 {
     pub fn fetch<'db>(&'db self, db: &'db C::DbView, id: Id) -> &'db C::Output<'db> {
-        let zalsa_local = db.zalsa_local();
-        zalsa_local.unwind_if_revision_cancelled(db.as_dyn_database());
+        let (zalsa, zalsa_local) = db.zalsas();
+        zalsa.unwind_if_revision_cancelled(db);
 
         let memo = self.refresh_memo(db, id);
         let StampedValue {

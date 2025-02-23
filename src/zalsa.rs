@@ -221,6 +221,21 @@ impl Zalsa {
         self.memo_ingredient_indices.read()[struct_ingredient_index.as_usize()]
             [memo_ingredient_index.as_usize()]
     }
+
+    /// Starts unwinding the stack if the current revision is cancelled.
+    ///
+    /// This method can be called by query implementations that perform
+    /// potentially expensive computations, in order to speed up propagation of
+    /// cancellation.
+    ///
+    /// Cancellation will automatically be triggered by salsa on any query
+    /// invocation.
+    pub(crate) fn unwind_if_revision_cancelled(&self, db: &(impl Database + ?Sized)) {
+        db.salsa_event(&|| crate::Event::new(crate::EventKind::WillCheckCancellation));
+        if self.runtime().load_cancellation_flag() {
+            db.zalsa_local().unwind_cancelled(self.current_revision());
+        }
+    }
 }
 
 /// Semver unstable APIs used by the macro expansions
