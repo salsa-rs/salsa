@@ -740,7 +740,7 @@ where
         input: Id,
         revision: Revision,
     ) -> MaybeChangedAfter {
-        let (zalsa, _) = db.zalsas();
+        let zalsa = db.zalsa();
         let data = Self::data(zalsa.table(), input);
 
         MaybeChangedAfter::from(data.created_at > revision)
