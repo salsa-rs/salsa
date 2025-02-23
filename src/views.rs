@@ -20,7 +20,6 @@ use std::{
 ///     }>>,
 /// }
 /// ```
-#[derive(Clone)]
 pub struct Views {
     source_type_id: TypeId,
     view_casters: Arc<boxcar::Vec<DynViewCaster>>,
@@ -54,7 +53,7 @@ struct DynViewCaster {
     view_caster: *mut (),
 
     /// Type-erased `ViewCaster::<Db, DbView>::vtable_cast`.
-    cast: *const (),
+    cast: unsafe fn(*mut (), &dyn Database) -> *const (),
 
     /// Type-erased `ViewCaster::<Db, DbView>::drop`.
     drop: unsafe fn(*mut ()),
@@ -81,9 +80,13 @@ impl Views {
         }
     }
 
-    /// Add a new upcast from `Db` to `T`, given the upcasting function `func`.
+    /// Add a new downcast from `Db` to `DbView`, given the downcasting function `func`.
     pub fn add<Db: Database, DbView: ?Sized + Any>(&self, func: fn(&Db) -> &DbView) {
-        assert_eq!(self.source_type_id, TypeId::of::<Db>(), "dyn-upcasts");
+        assert_eq!(
+            self.source_type_id,
+            TypeId::of::<Db>(),
+            "`Db` type mismatch for source"
+        );
 
         let target_type_id = TypeId::of::<DbView>();
 
@@ -101,7 +104,7 @@ impl Views {
             target_type_id,
             type_name: std::any::type_name::<DbView>(),
             view_caster: view_caster.cast(),
-            cast: ViewCaster::<Db, DbView>::erased_cast as _,
+            cast: ViewCaster::<Db, DbView>::erased_cast,
             drop: ViewCaster::<Db, DbView>::erased_drop,
         });
     }
@@ -167,9 +170,10 @@ where
     /// # Safety
     ///
     /// The underlying type of `caster` must be `ViewCaster::<Db, DbView>`.
-    unsafe fn erased_cast(caster: *mut (), db: &dyn Database) -> &DbView {
+    unsafe fn erased_cast(caster: *mut (), db: &dyn Database) -> *const () {
         let caster = unsafe { &*caster.cast::<ViewCaster<Db, DbView>>() };
-        unsafe { caster.cast(db) }
+        let r = unsafe { caster.cast(db) };
+        (r as *const DbView).cast()
     }
 
     /// The destructor for `Box<ViewCaster<Db, DbView>>`.
@@ -178,7 +182,7 @@ where
     ///
     /// All the safety requirements of `Box::<ViewCaster<Db, DbView>>::from_raw` apply.
     unsafe fn erased_drop(caster: *mut ()) {
-        let _: Box<ViewCaster<Db, DbView>> = unsafe { Box::from_raw(caster.cast()) };
+        drop(unsafe { <Box<ViewCaster<Db, DbView>>>::from_raw(caster.cast()) });
     }
 }
 
