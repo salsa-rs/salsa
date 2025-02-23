@@ -8,6 +8,7 @@ use salsa::Setter;
 
 #[salsa::input]
 pub struct Input {
+    #[return_ref]
     pub text: String,
 }
 
@@ -18,6 +19,7 @@ pub fn length(db: &dyn salsa::Database, input: Input) -> usize {
 
 #[salsa::interned]
 pub struct InternedInput<'db> {
+    #[return_ref]
     pub text: String,
 }
 
