@@ -50,7 +50,7 @@ macro_rules! setup_tracked_struct {
         // Absolute indices of any untracked fields.
         absolute_untracked_indices: [$($absolute_untracked_index:tt),*],
 
-        // A set of "field options" for each field.
+        // A set of "field options" for each tracked field.
         //
         // Each field option is a tuple `(maybe_clone, maybe_backdate)` where:
         //
@@ -59,16 +59,21 @@ macro_rules! setup_tracked_struct {
         //
         // These are used to drive conditional logic for each field via recursive macro invocation
         // (see e.g. @maybe_clone below).
-        field_options: [$($field_option:tt),*],
-
-        // A set of "field options" for each tracked field.
         tracked_options: [$($tracked_option:tt),*],
 
         // A set of "field options" for each untracked field.
+        //
+        // Each field option is a tuple `(maybe_clone, maybe_backdate)` where:
+        //
+        // * `maybe_clone` is either the identifier `clone` or `no_clone`
+        // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
+        //
+        // These are used to drive conditional logic for each field via recursive macro invocation
+        // (see e.g. @maybe_clone below).
         untracked_options: [$($untracked_option:tt),*],
 
-        // Number of fields.
-        num_fields: $N:literal,
+        // Number of tracked fields.
+        num_tracked_fields: $N:literal,
 
         // If true, generate a debug impl.
         generate_debug_impl: $generate_debug_impl:tt,
@@ -111,7 +116,7 @@ macro_rules! setup_tracked_struct {
                 ];
 
                 const TRACKED_FIELD_INDICES: &'static [usize] = &[
-                    $($absolute_tracked_index,)*
+                    $($relative_tracked_index,)*
                 ];
 
                 type Fields<$db_lt> = ($($field_ty,)*);
@@ -150,7 +155,7 @@ macro_rules! setup_tracked_struct {
                                 $tracked_ty,
                                 (*old_fields).$absolute_tracked_index,
                                 new_fields.$absolute_tracked_index,
-                                revisions[$absolute_tracked_index],
+                                revisions[$relative_tracked_index],
                                 current_revision,
                                 $zalsa,
                             );
@@ -246,7 +251,7 @@ macro_rules! setup_tracked_struct {
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let db = db.as_dyn_database();
-                        let fields = $Configuration::ingredient(db).tracked_field(db, self, $absolute_tracked_index, $relative_tracked_index);
+                        let fields = $Configuration::ingredient(db).tracked_field(db, self, $relative_tracked_index);
                         $crate::maybe_clone!(
                             $tracked_option,
                             $tracked_ty,

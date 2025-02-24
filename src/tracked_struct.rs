@@ -31,13 +31,13 @@ pub trait Configuration: Sized + 'static {
     /// The debug names of any fields.
     const FIELD_DEBUG_NAMES: &'static [&'static str];
 
-    /// The absolute indices of any tracked fields.
+    /// The relative indices of any tracked fields.
     const TRACKED_FIELD_INDICES: &'static [usize];
 
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields<'db>: Send + Sync;
 
-    /// A array of [`Revision`][] values, one per each of the value fields.
+    /// A array of [`Revision`][] values, one per each of the tracked value fields.
     /// When a struct is re-recreated in a new revision, the corresponding
     /// entries for each field are updated to the new revision if their
     /// values have changed (or if the field is marked as `#[no_eq]`).
@@ -117,14 +117,16 @@ impl<C: Configuration> Jar for JarImpl<C> {
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient = <IngredientImpl<C>>::new(struct_index);
 
-        let tracked_field_ingredients = C::TRACKED_FIELD_INDICES.iter().enumerate().map(
-            |(relative_tracked_index, &field_index)| {
-                Box::new(<FieldIngredientImpl<C>>::new(
-                    field_index,
-                    struct_index.successor(relative_tracked_index),
-                )) as _
-            },
-        );
+        let tracked_field_ingredients =
+            C::TRACKED_FIELD_INDICES
+                .iter()
+                .copied()
+                .map(|relative_tracked_index| {
+                    Box::new(<FieldIngredientImpl<C>>::new(
+                        relative_tracked_index,
+                        struct_index.successor(relative_tracked_index),
+                    )) as _
+                });
 
         std::iter::once(Box::new(struct_ingredient) as _)
             .chain(tracked_field_ingredients)
@@ -663,7 +665,6 @@ where
         &'db self,
         db: &'db dyn crate::Database,
         s: C::Struct<'db>,
-        field_index: usize,
         relative_tracked_index: usize,
     ) -> &'db C::Fields<'db> {
         let (zalsa, zalsa_local) = db.zalsas();
@@ -673,7 +674,7 @@ where
 
         data.read_lock(zalsa.current_revision());
 
-        let field_changed_at = data.revisions[field_index];
+        let field_changed_at = data.revisions[relative_tracked_index];
 
         zalsa_local.report_tracked_read(
             InputDependencyIndex::new(field_ingredient_index, id),
