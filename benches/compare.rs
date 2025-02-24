@@ -6,6 +6,8 @@ use codspeed_criterion_compat::{
 };
 use salsa::Setter;
 
+include!("shims/global_alloc_overwrite.rs");
+
 #[salsa::input]
 pub struct Input {
     #[return_ref]
