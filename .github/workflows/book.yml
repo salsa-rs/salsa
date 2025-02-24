@@ -26,6 +26,9 @@ jobs:
           curl -L https://github.com/Michael-F-Bryan/mdbook-linkcheck/releases/download/v$MDBOOK_LINKCHECK_VERSION/mdbook-linkcheck.x86_64-unknown-linux-gnu.zip -O
           unzip mdbook-linkcheck.x86_64-unknown-linux-gnu.zip -d ~/.cargo/bin
           chmod +x ~/.cargo/bin/mdbook-linkcheck
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
       - name: Build
         run: mdbook build
         working-directory: book
@@ -33,7 +36,7 @@ jobs:
         id: deployment
         uses: actions/upload-pages-artifact@v3
         with:
-          path: book/book/html
+          path: ./book/book
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
