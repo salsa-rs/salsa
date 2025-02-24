@@ -3,6 +3,8 @@ use std::hint::black_box;
 use codspeed_criterion_compat::{criterion_group, criterion_main, BatchSize, Criterion};
 use salsa::Setter;
 
+include!("shims/global_alloc_overwrite.rs");
+
 #[salsa::input]
 struct Input {
     field: usize,

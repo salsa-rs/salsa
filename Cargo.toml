@@ -50,6 +50,9 @@ rustversion = "1.0"
 test-log = { version = "0.2.11", features = ["trace"] }
 trybuild = "1.0"
 
+[target.'cfg(all(not(target_os = "windows"), not(target_os = "openbsd"), any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "powerpc64")))'.dev-dependencies]
+tikv-jemallocator = "0.6.0"
+
 [[bench]]
 name = "compare"
 harness = false
