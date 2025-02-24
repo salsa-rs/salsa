@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     revision::AtomicRevision,
@@ -71,6 +73,7 @@ where
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
+            cycle_heads: Default::default(),
         };
 
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key) {
@@ -81,6 +84,7 @@ where
         let memo = Memo {
             value: Some(value),
             verified_at: AtomicRevision::from(revision),
+            verified_final: AtomicBool::new(true),
             revisions,
         };
 

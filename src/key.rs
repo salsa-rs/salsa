@@ -1,9 +1,7 @@
 use core::fmt;
 
 use crate::{
-    accumulator::accumulated_map::InputAccumulatedValues,
-    cycle::CycleRecoveryStrategy,
-    ingredient::MaybeChangedAfter,
+    function::VerifyResult,
     zalsa::{IngredientIndex, Zalsa},
     Database, Id,
 };
@@ -98,14 +96,14 @@ impl InputDependencyIndex {
         &self,
         db: &dyn Database,
         last_verified_at: crate::Revision,
-    ) -> MaybeChangedAfter {
+    ) -> VerifyResult {
         match self.key_index {
             Some(key_index) => db
                 .zalsa()
                 .lookup_ingredient(self.ingredient_index)
                 .maybe_changed_after(db, key_index, last_verified_at),
             // Data in tables themselves remain valid until the table as a whole is reset.
-            None => MaybeChangedAfter::No(InputAccumulatedValues::Empty),
+            None => VerifyResult::unchanged(),
         }
     }
 
@@ -147,10 +145,6 @@ impl DatabaseKeyIndex {
 
     pub fn key_index(self) -> Id {
         self.key_index
-    }
-
-    pub(crate) fn cycle_recovery_strategy(self, db: &dyn Database) -> CycleRecoveryStrategy {
-        self.ingredient_index.cycle_recovery_strategy(db)
     }
 }
 
