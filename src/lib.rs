@@ -1,3 +1,5 @@
+#![forbid(unsafe_op_in_unsafe_fn)]
+
 mod accumulator;
 mod active_query;
 mod array;
@@ -16,6 +18,7 @@ mod input;
 mod interned;
 mod key;
 mod nonce;
+#[cfg(feature = "rayon")]
 mod par_map;
 mod revision;
 mod runtime;
@@ -46,6 +49,7 @@ pub use self::storage::Storage;
 pub use self::update::Update;
 pub use self::zalsa::IngredientIndex;
 pub use crate::attach::with_attached_database;
+#[cfg(feature = "rayon")]
 pub use par_map::par_map;
 pub use salsa_macros::accumulator;
 pub use salsa_macros::db;

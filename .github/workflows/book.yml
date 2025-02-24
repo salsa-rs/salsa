@@ -8,7 +8,6 @@ on:
     paths:
       - "book/**"
       - ".github/workflows/book.yml"
-  merge_group:
 
 jobs:
   book:
@@ -27,14 +26,17 @@ jobs:
           curl -L https://github.com/Michael-F-Bryan/mdbook-linkcheck/releases/download/v$MDBOOK_LINKCHECK_VERSION/mdbook-linkcheck.x86_64-unknown-linux-gnu.zip -O
           unzip mdbook-linkcheck.x86_64-unknown-linux-gnu.zip -d ~/.cargo/bin
           chmod +x ~/.cargo/bin/mdbook-linkcheck
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
       - name: Build
         run: mdbook build
         working-directory: book
-      - uses: actions/upload-artifact@v4
+      - name: Upload static files as artifact
+        id: deployment
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: book
-          path: book/book/html
-
+          path: ./book/book
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
@@ -47,12 +49,10 @@ jobs:
       contents: read
       pages: write
       id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: book
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-      - uses: actions/deploy-pages@v4
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

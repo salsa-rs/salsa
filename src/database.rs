@@ -79,8 +79,7 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     /// `salsa_event` is emitted when this method is called, so that should be
     /// used instead.
     fn unwind_if_revision_cancelled(&self) {
-        let db = self.as_dyn_database();
-        self.zalsa_local().unwind_if_revision_cancelled(db);
+        self.zalsa().unwind_if_revision_cancelled(self);
     }
 
     /// Execute `op` with the database in thread-local storage for debug print-outs.

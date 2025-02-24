@@ -103,7 +103,6 @@ impl Macro {
 
         let absolute_untracked_indices = salsa_struct.untracked_field_indices();
 
-        let field_options = salsa_struct.field_options();
         let tracked_options = salsa_struct.tracked_options();
         let untracked_options = salsa_struct.untracked_options();
 
@@ -111,7 +110,7 @@ impl Macro {
         let tracked_tys = salsa_struct.tracked_tys();
         let untracked_tys = salsa_struct.untracked_tys();
 
-        let num_fields = salsa_struct.num_fields();
+        let num_tracked_fields = salsa_struct.num_tracked_fields();
         let generate_debug_impl = salsa_struct.generate_debug_impl();
 
         let zalsa = self.hygiene.ident("zalsa");
@@ -149,11 +148,10 @@ impl Macro {
 
                     absolute_untracked_indices: [#(#absolute_untracked_indices),*],
 
-                    field_options: [#(#field_options),*],
                     tracked_options: [#(#tracked_options),*],
                     untracked_options: [#(#untracked_options),*],
 
-                    num_fields: #num_fields,
+                    num_tracked_fields: #num_tracked_fields,
                     generate_debug_impl: #generate_debug_impl,
                     unused_names: [
                         #zalsa,

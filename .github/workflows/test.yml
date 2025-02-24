@@ -12,6 +12,10 @@ on:
       - "tests/compile-fail/**.stderr"
   merge_group:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Test
@@ -93,6 +97,8 @@ jobs:
           cargo miri run --example calc
 
   benchmarks:
+    # https://github.com/CodSpeedHQ/action/issues/126
+    if: github.event_name != 'merge_group'
     name: Benchmarks
     runs-on: ubuntu-latest
     steps:

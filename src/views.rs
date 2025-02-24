@@ -169,7 +169,7 @@ where
     /// The underlying type of `caster` must be `ViewCaster::<Db, DbView>`.
     unsafe fn erased_cast(caster: *mut (), db: &dyn Database) -> &DbView {
         let caster = unsafe { &*caster.cast::<ViewCaster<Db, DbView>>() };
-        caster.cast(db)
+        unsafe { caster.cast(db) }
     }
 
     /// The destructor for `Box<ViewCaster<Db, DbView>>`.
