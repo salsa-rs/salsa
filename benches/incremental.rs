@@ -16,11 +16,13 @@ struct Tracked<'db> {
 }
 
 #[salsa::tracked(return_ref)]
+#[inline(never)]
 fn index<'db>(db: &'db dyn salsa::Database, input: Input) -> Vec<Tracked<'db>> {
     (0..input.field(db)).map(|i| Tracked::new(db, i)).collect()
 }
 
 #[salsa::tracked]
+#[inline(never)]
 fn root(db: &dyn salsa::Database, input: Input) -> usize {
     let index = index(db, input);
     index.len()

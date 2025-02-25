@@ -15,6 +15,7 @@ pub struct Input {
 }
 
 #[salsa::tracked]
+#[inline(never)]
 pub fn length(db: &dyn salsa::Database, input: Input) -> usize {
     input.text(db).len()
 }
@@ -32,11 +33,13 @@ enum SupertypeInput<'db> {
 }
 
 #[salsa::tracked]
+#[inline(never)]
 pub fn interned_length<'db>(db: &'db dyn salsa::Database, input: InternedInput<'db>) -> usize {
     input.text(db).len()
 }
 
 #[salsa::tracked]
+#[inline(never)]
 pub fn either_length<'db>(db: &'db dyn salsa::Database, input: SupertypeInput<'db>) -> usize {
     match input {
         SupertypeInput::InternedInput(input) => interned_length(db, input),
