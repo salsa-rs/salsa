@@ -121,6 +121,7 @@ impl dyn Database {
     /// If the view has not been added to the database (see [`crate::views::Views`]).
     #[track_caller]
     pub fn as_view<DbView: ?Sized + Database>(&self) -> &DbView {
-        self.zalsa().views().try_view_as(self).unwrap()
+        let views = self.zalsa().views();
+        views.downcaster_for().downcast(self)
     }
 }
