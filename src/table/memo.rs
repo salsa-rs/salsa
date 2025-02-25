@@ -1,12 +1,15 @@
-use std::any::{Any, TypeId};
-use std::ptr::NonNull;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::{
+    any::{Any, TypeId},
+    fmt::Debug,
+    mem,
+    ptr::{self, NonNull},
+    sync::atomic::{AtomicPtr, Ordering},
+};
 
 use parking_lot::RwLock;
 use thin_vec::ThinVec;
 
-use crate::zalsa::MemoIngredientIndex;
-use crate::zalsa_local::QueryOrigin;
+use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
 
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument
@@ -16,17 +19,9 @@ pub(crate) struct MemoTable {
     memos: RwLock<ThinVec<MemoEntry>>,
 }
 
-pub(crate) trait Memo: Any + Send + Sync {
+pub trait Memo: Any + Send + Sync {
     /// Returns the `origin` of this memo
     fn origin(&self) -> &QueryOrigin;
-}
-
-/// Wraps the data stored for a memoized entry.
-/// This struct has a customized Drop that will
-/// ensure that its `data` field is properly freed.
-#[derive(Default)]
-struct MemoEntry {
-    data: Option<MemoEntryData>,
 }
 
 /// Data for a memoized entry.
@@ -46,21 +41,22 @@ struct MemoEntry {
 /// Therefore, we hide the type by transmuting to `DummyMemo`; but we must then be very careful
 /// when freeing `MemoEntryData` values to transmute things back. See the `Drop` impl for
 /// [`MemoEntry`][] for details.
-struct MemoEntryData {
+#[derive(Default)]
+struct MemoEntry {
+    /// An [`AtomicPtr`][] to a `Box<M>` for the erased memo type `M`
+    atomic_memo: AtomicPtr<DummyMemo>,
+}
+
+#[derive(Clone, Copy)]
+pub struct MemoEntryType {
     /// The `type_id` of the erased memo type `M`
     type_id: TypeId,
 
     /// A type-coercion function for the erased memo type `M`
     to_dyn_fn: fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>,
-
-    /// An [`AtomicPtr`][] to a `Box<M>` for the erased memo type `M`
-    atomic_memo: AtomicPtr<DummyMemo>,
 }
 
-/// Dummy placeholder type that we use when erasing the memo type `M` in [`MemoEntryData`][].
-struct DummyMemo {}
-
-impl MemoTable {
+impl MemoEntryType {
     fn to_dummy<M: Memo>(memo: NonNull<M>) -> NonNull<DummyMemo> {
         memo.cast()
     }
@@ -74,46 +70,122 @@ impl MemoTable {
 
         #[allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
         unsafe {
-            std::mem::transmute::<
+            mem::transmute::<
                 fn(NonNull<M>) -> NonNull<dyn Memo>,
                 fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>,
             >(f)
         }
     }
 
+    #[inline]
+    pub fn of<M: Memo>() -> Self {
+        Self {
+            type_id: TypeId::of::<M>(),
+            to_dyn_fn: Self::to_dyn_fn::<M>(),
+        }
+    }
+}
+
+/// Dummy placeholder type that we use when erasing the memo type `M` in [`MemoEntryData`][].
+#[derive(Debug)]
+struct DummyMemo {}
+
+impl Memo for DummyMemo {
+    fn origin(&self) -> &QueryOrigin {
+        unreachable!("should not get here")
+    }
+}
+
+#[derive(Default)]
+pub struct MemoTableTypes {
+    types: RwLock<Vec<Option<MemoEntryType>>>,
+}
+
+impl MemoTableTypes {
+    pub(crate) fn set(&self, memo_ingredient_index: MemoIngredientIndex, memo_type: MemoEntryType) {
+        let mut types = self.types.write();
+        let memo_ingredient_index = memo_ingredient_index.as_usize();
+        if memo_ingredient_index >= types.len() {
+            types.resize_with(memo_ingredient_index + 1, Default::default);
+        }
+        match &mut types[memo_ingredient_index] {
+            Some(existing) => {
+                assert_eq!(
+                    existing.type_id, memo_type.type_id,
+                    "inconsistent type-id for `{memo_ingredient_index:?}`"
+                );
+            }
+            entry @ None => {
+                *entry = Some(memo_type);
+            }
+        }
+    }
+
     /// # Safety
     ///
-    /// The caller needs to make sure to not free the returned value until no more references into
-    /// the database exist as there may be outstanding borrows into the pointer contents.
+    /// The types table must be the correct one of `memos`.
+    #[inline]
+    pub(crate) unsafe fn attach_memos<'a>(
+        &'a self,
+        memos: &'a MemoTable,
+    ) -> MemoTableWithTypes<'a> {
+        MemoTableWithTypes { types: self, memos }
+    }
+
+    /// # Safety
+    ///
+    /// The types table must be the correct one of `memos`.
+    #[inline]
+    pub(crate) unsafe fn attach_memos_mut<'a>(
+        &'a self,
+        memos: &'a mut MemoTable,
+    ) -> MemoTableWithTypesMut<'a> {
+        MemoTableWithTypesMut { types: self, memos }
+    }
+}
+
+pub(crate) struct MemoTableWithTypes<'a> {
+    types: &'a MemoTableTypes,
+    memos: &'a MemoTable,
+}
+
+impl<'a> MemoTableWithTypes<'a> {
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not drop the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the `Arc` contents.
     pub(crate) unsafe fn insert<M: Memo>(
-        &self,
+        self,
         memo_ingredient_index: MemoIngredientIndex,
         memo: NonNull<M>,
     ) -> Option<NonNull<M>> {
+        // The type must already exist, we insert it when creating the memo ingredient.
+        let types = self.types.types.read();
+        assert_eq!(
+            types[memo_ingredient_index.as_usize()]
+                .as_ref()
+                .expect("memo type should be available in insert")
+                .type_id,
+            TypeId::of::<M>(),
+            "inconsistent type-id for `{memo_ingredient_index:?}`"
+        );
+        drop(types);
+
         // If the memo slot is already occupied, it must already have the
         // right type info etc, and we only need the read-lock.
-        if let Some(MemoEntry {
-            data:
-                Some(MemoEntryData {
-                    type_id,
-                    to_dyn_fn: _,
-                    atomic_memo,
-                }),
-        }) = self.memos.read().get(memo_ingredient_index.as_usize())
+        if let Some(MemoEntry { atomic_memo }) = self
+            .memos
+            .memos
+            .read()
+            .get(memo_ingredient_index.as_usize())
         {
-            assert_eq!(
-                *type_id,
-                TypeId::of::<M>(),
-                "inconsistent type-id for `{memo_ingredient_index:?}`"
-            );
+            let old_memo =
+                atomic_memo.swap(MemoEntryType::to_dummy(memo).as_ptr(), Ordering::AcqRel);
 
-            let old_memo = atomic_memo.swap(Self::to_dummy(memo).as_ptr(), Ordering::AcqRel);
-
-            // SAFETY: The `atomic_memo` field is never null.
-            let old_memo = unsafe { NonNull::new_unchecked(old_memo) };
+            let old_memo = NonNull::new(old_memo);
 
             // SAFETY: `type_id` check asserted above
-            return Some(unsafe { Self::from_dummy(old_memo) });
+            return old_memo.map(|old_memo| unsafe { MemoEntryType::from_dummy(old_memo) });
         }
 
         // Otherwise we need the write lock.
@@ -123,142 +195,162 @@ impl MemoTable {
 
     /// # Safety
     ///
-    /// The caller needs to make sure to not free the returned value until no more references into
-    /// the database exist as there may be outstanding borrows into the pointer contents.
+    /// The caller needs to make sure to not drop the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the `Arc` contents.
     unsafe fn insert_cold<M: Memo>(
-        &self,
+        self,
         memo_ingredient_index: MemoIngredientIndex,
         memo: NonNull<M>,
     ) -> Option<NonNull<M>> {
-        let mut memos = self.memos.write();
         let memo_ingredient_index = memo_ingredient_index.as_usize();
+        let mut memos = self.memos.memos.write();
+        let additional_len = memo_ingredient_index - memos.len() + 1;
+        memos.reserve(additional_len);
         while memos.len() < memo_ingredient_index + 1 {
-            memos.push(MemoEntry { data: None });
+            memos.push(MemoEntry::default());
         }
-        let old_entry = memos[memo_ingredient_index].data.replace(MemoEntryData {
-            type_id: TypeId::of::<M>(),
-            to_dyn_fn: Self::to_dyn_fn::<M>(),
-            atomic_memo: AtomicPtr::new(Self::to_dummy(memo).as_ptr()),
-        });
-        old_entry.map(
-            |MemoEntryData {
-                 type_id: _,
-                 to_dyn_fn: _,
-                 atomic_memo,
-                }|
-                // SAFETY: The `atomic_memo` field is never null.
-                unsafe { Self::from_dummy(NonNull::new_unchecked(atomic_memo.into_inner())) },
-        )
+        let old_entry = mem::replace(
+            memos[memo_ingredient_index].atomic_memo.get_mut(),
+            MemoEntryType::to_dummy(memo).as_ptr(),
+        );
+        let old_entry = NonNull::new(old_entry);
+        // SAFETY: The `TypeId` is asserted in `insert()`.
+        old_entry.map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
     }
 
-    pub(crate) fn get<M: Memo>(&self, memo_ingredient_index: MemoIngredientIndex) -> Option<&M> {
-        let memos = self.memos.read();
+    pub(crate) fn get<M: Memo>(self, memo_ingredient_index: MemoIngredientIndex) -> Option<&'a M> {
+        if let Some(MemoEntry { atomic_memo }) = self
+            .memos
+            .memos
+            .read()
+            .get(memo_ingredient_index.as_usize())
+        {
+            if let Some(Some(MemoEntryType {
+                type_id,
+                to_dyn_fn: _,
+            })) = self
+                .types
+                .types
+                .read()
+                .get(memo_ingredient_index.as_usize())
+            {
+                assert_eq!(
+                    *type_id,
+                    TypeId::of::<M>(),
+                    "inconsistent type-id for `{memo_ingredient_index:?}`"
+                );
+                let memo = NonNull::new(atomic_memo.load(Ordering::Acquire));
+                // SAFETY: `type_id` check asserted above
+                return memo.map(|memo| unsafe { MemoEntryType::from_dummy(memo).as_ref() });
+            }
+        }
 
-        let Some(MemoEntry {
-            data:
-                Some(MemoEntryData {
-                    type_id,
-                    to_dyn_fn: _,
-                    atomic_memo,
-                }),
-        }) = memos.get(memo_ingredient_index.as_usize())
-        else {
-            return None;
-        };
+        None
+    }
+}
 
-        assert_eq!(
-            *type_id,
-            TypeId::of::<M>(),
-            "inconsistent type-id for `{memo_ingredient_index:?}`"
-        );
+pub(crate) struct MemoTableWithTypesMut<'a> {
+    types: &'a MemoTableTypes,
+    memos: &'a mut MemoTable,
+}
 
-        // SAFETY: The `atomic_memo` field is never null.
-        let memo = unsafe { NonNull::new_unchecked(atomic_memo.load(Ordering::Acquire)) };
-
-        // SAFETY: `type_id` check asserted above
-        unsafe { Some(Self::from_dummy(memo).as_ref()) }
+impl<'a> MemoTableWithTypesMut<'a> {
+    #[inline]
+    pub(crate) fn reborrow<'b>(&'b mut self) -> MemoTableWithTypesMut<'b>
+    where
+        'a: 'b,
+    {
+        MemoTableWithTypesMut {
+            types: self.types,
+            memos: self.memos,
+        }
     }
 
     /// Calls `f` on the memo at `memo_ingredient_index`.
     ///
     /// If the memo is not present, `f` is not called.
     pub(crate) fn map_memo<M: Memo>(
-        &mut self,
+        self,
         memo_ingredient_index: MemoIngredientIndex,
         f: impl FnOnce(&mut M),
     ) {
-        let memos = self.memos.get_mut();
-        let Some(MemoEntry {
-            data:
-                Some(MemoEntryData {
-                    type_id,
-                    to_dyn_fn: _,
-                    atomic_memo,
-                }),
-        }) = memos.get_mut(memo_ingredient_index.as_usize())
-        else {
+        let types = self.types.types.read();
+        let Some(Some(memo_type)) = types.get(memo_ingredient_index.as_usize()) else {
             return;
         };
-
         assert_eq!(
-            *type_id,
+            memo_type.type_id,
             TypeId::of::<M>(),
             "inconsistent type-id for `{memo_ingredient_index:?}`"
         );
+        drop(types);
 
-        // SAFETY: The `atomic_memo` field is never null.
-        let memo = unsafe { NonNull::new_unchecked(*atomic_memo.get_mut()) };
+        // If the memo slot is already occupied, it must already have the
+        // right type info etc, and we only need the read-lock.
+        let memos = self.memos.memos.get_mut();
+        let Some(MemoEntry { atomic_memo }) = memos.get_mut(memo_ingredient_index.as_usize())
+        else {
+            return;
+        };
+        let Some(memo) = NonNull::new(*atomic_memo.get_mut()) else {
+            return;
+        };
 
         // SAFETY: `type_id` check asserted above
-        f(unsafe { Self::from_dummy(memo).as_mut() });
+        f(unsafe { MemoEntryType::from_dummy(memo).as_mut() });
+    }
+
+    /// To drop an entry, we need its type, so we don't implement `Drop`, and instead have this method.
+    #[inline]
+    pub fn drop(self) {
+        let types = self.types.types.read();
+        let types = types.iter();
+        for (type_, memo) in std::iter::zip(types, self.memos.memos.get_mut()) {
+            if let Some(type_) = type_ {
+                // SAFETY: The types match because this is an invariant of `MemoTableWithTypesMut`.
+                unsafe {
+                    memo.drop(type_);
+                }
+            }
+        }
     }
 
     /// # Safety
     ///
     /// The caller needs to make sure to not call this function until no more references into
     /// the database exist as there may be outstanding borrows into the pointer contents.
-    pub(crate) unsafe fn into_memos(
-        self,
-    ) -> impl Iterator<Item = (MemoIngredientIndex, Box<dyn Memo>)> {
-        self.memos
-            .into_inner()
-            .into_iter()
+    pub(crate) unsafe fn with_memos(self, mut f: impl FnMut(MemoIngredientIndex, Box<dyn Memo>)) {
+        let memos = self.memos.memos.get_mut();
+        let types = self.types.types.read();
+        memos
+            .iter_mut()
+            .zip(types.iter())
             .zip(0..)
-            .filter_map(|(mut memo, index)| memo.data.take().map(|d| (d, index)))
-            .map(
-                |(
-                    MemoEntryData {
-                        type_id: _,
-                        to_dyn_fn,
-                        atomic_memo,
-                    },
-                    index,
-                )| {
-                    // SAFETY: The `atomic_memo` field is never null.
-                    let memo =
-                        unsafe { to_dyn_fn(NonNull::new_unchecked(atomic_memo.into_inner())) };
-                    // SAFETY: The caller guarantees that there are no outstanding borrows into the `Box` contents.
-                    let memo = unsafe { Box::from_raw(memo.as_ptr()) };
-
-                    (MemoIngredientIndex::from_usize(index), memo)
-                },
-            )
+            .filter_map(|((memo, type_), index)| {
+                let memo = mem::replace(memo.atomic_memo.get_mut(), ptr::null_mut());
+                let memo = NonNull::new(memo)?;
+                Some((memo, type_.as_ref()?, index))
+            })
+            .map(|(memo, type_, index)| {
+                // SAFETY: We took ownership of the memo, and converted it to the correct type.
+                // The caller guarantees that there are no outstanding borrows into the `Box` contents.
+                let memo = unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) };
+                (MemoIngredientIndex::from_usize(index), memo)
+            })
+            .for_each(|(index, memo)| f(index, memo));
     }
 }
 
-impl Drop for MemoEntry {
-    fn drop(&mut self) {
-        if let Some(MemoEntryData {
-            type_id: _,
-            to_dyn_fn,
-            atomic_memo,
-        }) = self.data.take()
+impl MemoEntry {
+    /// # Safety
+    ///
+    /// The type must match.
+    #[inline]
+    unsafe fn drop(&mut self, type_: &MemoEntryType) {
+        if let Some(memo) = NonNull::new(mem::replace(self.atomic_memo.get_mut(), ptr::null_mut()))
         {
-            // SAFETY: The `atomic_memo` field is never null.
-            let memo = unsafe { to_dyn_fn(NonNull::new_unchecked(atomic_memo.into_inner())) };
-            // SAFETY: We have `&mut self`, so there are no outstanding borrows into the `Box` contents.
-            let memo = unsafe { Box::from_raw(memo.as_ptr()) };
-            std::mem::drop(memo);
+            // SAFETY: Our preconditions.
+            mem::drop(unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) });
         }
     }
 }
@@ -271,6 +363,6 @@ impl Drop for DummyMemo {
 
 impl std::fmt::Debug for MemoTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MemoTable").finish()
+        f.debug_struct("MemoTable").finish_non_exhaustive()
     }
 }

@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use crate::table::memo::{MemoEntryType, MemoTableTypes};
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::{Id, IngredientIndex};
 
@@ -42,11 +45,34 @@ impl IngredientIndices {
     }
 }
 
-impl From<(&Zalsa, IngredientIndices, IngredientIndex)> for MemoIngredientIndices {
-    #[inline]
-    fn from(
-        (zalsa, struct_indices, ingredient): (&Zalsa, IngredientIndices, IngredientIndex),
+pub trait NewMemoIngredientIndices {
+    /// # Safety
+    ///
+    /// The memo types must be correct.
+    unsafe fn create(
+        zalsa: &Zalsa,
+        struct_indices: IngredientIndices,
+        ingredient: IngredientIndex,
+        memo_type: MemoEntryType,
+        intern_ingredient_memo_types: Option<Arc<MemoTableTypes>>,
+    ) -> Self;
+}
+
+impl NewMemoIngredientIndices for MemoIngredientIndices {
+    /// # Safety
+    ///
+    /// The memo types must be correct.
+    unsafe fn create(
+        zalsa: &Zalsa,
+        struct_indices: IngredientIndices,
+        ingredient: IngredientIndex,
+        memo_type: MemoEntryType,
+        _intern_ingredient_memo_types: Option<Arc<MemoTableTypes>>,
     ) -> Self {
+        debug_assert!(
+            _intern_ingredient_memo_types.is_none(),
+            "intern ingredient can only have a singleton memo ingredient"
+        );
         let Some(&last) = struct_indices.indices.last() else {
             unreachable!("Attempting to construct struct memo mapping for non tracked function?")
         };
@@ -56,8 +82,18 @@ impl From<(&Zalsa, IngredientIndices, IngredientIndex)> for MemoIngredientIndice
             MemoIngredientIndex::from_usize((u32::MAX - 1) as usize),
         );
         for &struct_ingredient in &struct_indices.indices {
-            indices[struct_ingredient.as_usize()] =
-                zalsa.next_memo_ingredient_index(struct_ingredient, ingredient);
+            let memo_types = zalsa
+                .lookup_ingredient(struct_ingredient)
+                .memo_table_types();
+            // SAFETY: By our precondition the memo types are correct.
+            indices[struct_ingredient.as_usize()] = unsafe {
+                zalsa.next_memo_ingredient_index(
+                    struct_ingredient,
+                    ingredient,
+                    memo_type,
+                    &memo_types,
+                )
+            };
         }
         MemoIngredientIndices {
             indices: indices.into_boxed_slice(),
@@ -112,14 +148,28 @@ impl MemoIngredientMap for MemoIngredientSingletonIndex {
     }
 }
 
-impl From<(&Zalsa, IngredientIndices, IngredientIndex)> for MemoIngredientSingletonIndex {
+impl NewMemoIngredientIndices for MemoIngredientSingletonIndex {
     #[inline]
-    fn from((zalsa, indices, ingredient): (&Zalsa, IngredientIndices, IngredientIndex)) -> Self {
+    unsafe fn create(
+        zalsa: &Zalsa,
+        indices: IngredientIndices,
+        ingredient: IngredientIndex,
+        memo_type: MemoEntryType,
+        intern_ingredient_memo_types: Option<Arc<MemoTableTypes>>,
+    ) -> Self {
         let &[struct_ingredient] = &*indices.indices else {
             unreachable!("Attempting to construct struct memo mapping from enum?")
         };
 
-        Self(zalsa.next_memo_ingredient_index(struct_ingredient, ingredient))
+        let memo_types = intern_ingredient_memo_types.unwrap_or_else(|| {
+            zalsa
+                .lookup_ingredient(struct_ingredient)
+                .memo_table_types()
+        });
+        // SAFETY: By our precondition, we are passed the correct memo types.
+        Self(unsafe {
+            zalsa.next_memo_ingredient_index(struct_ingredient, ingredient, memo_type, &memo_types)
+        })
     }
 }
 

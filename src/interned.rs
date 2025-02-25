@@ -16,7 +16,7 @@ use crate::hash::FxDashMap;
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::plumbing::{IngredientIndices, Jar};
 use crate::revision::AtomicRevision;
-use crate::table::memo::MemoTable;
+use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::sync::SyncTable;
 use crate::table::Slot;
 use crate::zalsa::{IngredientIndex, Zalsa};
@@ -62,6 +62,8 @@ pub struct IngredientImpl<C: Configuration> {
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
     key_map: FxDashMap<C::Fields<'static>, Id>,
+
+    memo_table_types: Arc<MemoTableTypes>,
 }
 
 /// Struct storing the interned fields.
@@ -132,6 +134,7 @@ where
         Self {
             ingredient_index,
             key_map: Default::default(),
+            memo_table_types: Arc::new(MemoTableTypes::default()),
         }
     }
 
@@ -288,15 +291,16 @@ where
                     // If there is no active query this durability does not actually matter.
                     .unwrap_or(Durability::MAX);
 
-                let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
-                    fields: unsafe { self.to_internal_data(assemble(id, key)) },
-                    memos: Default::default(),
-                    syncs: Default::default(),
-                    durability: AtomicU8::new(durability.as_u8()),
-                    // Record the revision we are interning in.
-                    first_interned_at: current_revision,
-                    last_interned_at: AtomicRevision::from(current_revision),
-                });
+                let id =
+                    zalsa_local.allocate(zalsa, table, self.ingredient_index, |id| Value::<C> {
+                        fields: unsafe { self.to_internal_data(assemble(id, key)) },
+                        memos: Default::default(),
+                        syncs: Default::default(),
+                        durability: AtomicU8::new(durability.as_u8()),
+                        // Record the revision we are interning in.
+                        first_interned_at: current_revision,
+                        last_interned_at: AtomicRevision::from(current_revision),
+                    });
 
                 let value = table.get::<Value<C>>(id);
 
@@ -409,6 +413,10 @@ where
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
     }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        self.memo_table_types.clone()
+    }
 }
 
 impl<C> std::fmt::Debug for IngredientImpl<C>
@@ -439,6 +447,12 @@ where
     #[inline(always)]
     unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {
         &self.syncs
+    }
+
+    unsafe fn drop_memos(&mut self, types: &MemoTableTypes) {
+        // SAFETY: Our precondition.
+        let memos = unsafe { types.attach_memos_mut(&mut self.memos) };
+        memos.drop();
     }
 }
 

@@ -1,6 +1,7 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 use std::ops::DerefMut;
+use std::sync::Arc;
 
 pub mod input_field;
 pub mod setter;
@@ -14,7 +15,7 @@ use crate::ingredient::{fmt_index, Ingredient};
 use crate::input::singleton::{Singleton, SingletonChoice};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{Jar, Stamp};
-use crate::table::memo::MemoTable;
+use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::sync::SyncTable;
 use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, Zalsa};
@@ -72,6 +73,7 @@ impl<C: Configuration> Jar for JarImpl<C> {
 pub struct IngredientImpl<C: Configuration> {
     ingredient_index: IngredientIndex,
     singleton: C::Singleton,
+    memo_table_types: Arc<MemoTableTypes>,
     _phantom: std::marker::PhantomData<C::Struct>,
 }
 
@@ -80,6 +82,7 @@ impl<C: Configuration> IngredientImpl<C> {
         Self {
             ingredient_index: index,
             singleton: Default::default(),
+            memo_table_types: Arc::new(MemoTableTypes::default()),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -100,12 +103,17 @@ impl<C: Configuration> IngredientImpl<C> {
         let (zalsa, zalsa_local) = db.zalsas();
 
         let id = self.singleton.with_scope(|| {
-            zalsa_local.allocate(zalsa.table(), self.ingredient_index, |_| Value::<C> {
-                fields,
-                stamps,
-                memos: Default::default(),
-                syncs: Default::default(),
-            })
+            zalsa_local.allocate(
+                zalsa,
+                zalsa.table(),
+                self.ingredient_index,
+                |_| Value::<C> {
+                    fields,
+                    stamps,
+                    memos: Default::default(),
+                    syncs: Default::default(),
+                },
+            )
         });
 
         FromIdWithDb::from_id(id, db)
@@ -219,6 +227,10 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
     }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        self.memo_table_types.clone()
+    }
 }
 
 impl<C: Configuration> std::fmt::Debug for IngredientImpl<C> {
@@ -285,5 +297,11 @@ where
     #[inline(always)]
     unsafe fn syncs(&self, _current_revision: Revision) -> &SyncTable {
         &self.syncs
+    }
+
+    unsafe fn drop_memos(&mut self, types: &MemoTableTypes) {
+        // SAFETY: Our precondition.
+        let memos = unsafe { types.attach_memos_mut(&mut self.memos) };
+        memos.drop();
     }
 }
