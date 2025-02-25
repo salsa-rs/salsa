@@ -2,7 +2,6 @@ use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     ingredient::MaybeChangedAfter,
     key::DatabaseKeyIndex,
-    plumbing::ZalsaLocal,
     zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
     AsDynDatabase as _, Id, Revision,
@@ -40,14 +39,9 @@ where
                     };
                 }
                 drop(memo_guard); // release the arc-swap guard before cold path
-                if let Some(mcs) = self.maybe_changed_after_cold(
-                    zalsa,
-                    db.zalsa_local(),
-                    db,
-                    id,
-                    revision,
-                    memo_ingredient_index,
-                ) {
+                if let Some(mcs) =
+                    self.maybe_changed_after_cold(zalsa, db, id, revision, memo_ingredient_index)
+                {
                     return mcs;
                 } else {
                     // We failed to claim, have to retry.
@@ -62,7 +56,6 @@ where
     fn maybe_changed_after_cold<'db>(
         &'db self,
         zalsa: &Zalsa,
-        zalsa_local: &ZalsaLocal,
         db: &'db C::DbView,
         key_index: Id,
         revision: Revision,
@@ -70,6 +63,7 @@ where
     ) -> Option<MaybeChangedAfter> {
         let database_key_index = self.database_key_index(key_index);
 
+        let zalsa_local = db.zalsa_local();
         let _claim_guard = zalsa.sync_table_for(key_index).claim(
             db.as_dyn_database(),
             zalsa,

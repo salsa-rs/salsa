@@ -5,6 +5,7 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, MaybeChangedAfter},
     key::DatabaseKeyIndex,
+    plumbing::MemoIngredientMap,
     salsa_struct::SalsaStructInDb,
     table::Table,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
@@ -194,7 +195,7 @@ where
 
     #[inline]
     fn memo_ingredient_index(&self, zalsa: &Zalsa, id: Id) -> MemoIngredientIndex {
-        self.memo_ingredient_indices[zalsa.ingredient_index(id)]
+        self.memo_ingredient_indices.get_zalsa_id(zalsa, id)
     }
 }
 
@@ -254,7 +255,7 @@ where
             Self::evict_value_from_memo_for(
                 table.memos_mut(evict),
                 &self.deleted_entries,
-                self.memo_ingredient_indices[ingredient_index],
+                self.memo_ingredient_indices.get(ingredient_index),
             )
         });
         std::mem::take(&mut self.deleted_entries);

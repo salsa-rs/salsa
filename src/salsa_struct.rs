@@ -1,13 +1,11 @@
 use std::any::TypeId;
 
-use crate::memo_ingredient_indices::IngredientIndices;
+use crate::memo_ingredient_indices::{IngredientIndices, MemoIngredientMap};
 use crate::zalsa::Zalsa;
 use crate::Id;
 
 pub trait SalsaStructInDb: Sized {
-    type MemoIngredientMap: std::ops::Index<crate::IngredientIndex, Output = crate::zalsa::MemoIngredientIndex>
-        + Send
-        + Sync;
+    type MemoIngredientMap: MemoIngredientMap;
 
     /// Lookup or create ingredient indices.
     ///

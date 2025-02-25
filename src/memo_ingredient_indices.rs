@@ -1,7 +1,5 @@
-use std::ops;
-
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::IngredientIndex;
+use crate::{Id, IngredientIndex};
 
 /// An ingredient has an [ingredient index][IngredientIndex]. However, Salsa also supports
 /// enums of salsa structs (and other salsa enums), and those don't have a constant ingredient index,
@@ -89,24 +87,28 @@ pub struct MemoIngredientIndices {
     indices: Box<[MemoIngredientIndex]>,
 }
 
-impl ops::Index<IngredientIndex> for MemoIngredientIndices {
-    type Output = MemoIngredientIndex;
-
-    #[inline]
-    fn index(&self, index: IngredientIndex) -> &Self::Output {
-        &self.indices[index.as_usize()]
+impl MemoIngredientMap for MemoIngredientIndices {
+    #[inline(always)]
+    fn get_zalsa_id(&self, zalsa: &Zalsa, id: Id) -> MemoIngredientIndex {
+        self.get(zalsa.ingredient_index(id))
+    }
+    #[inline(always)]
+    fn get(&self, index: IngredientIndex) -> MemoIngredientIndex {
+        self.indices[index.as_usize()]
     }
 }
 
 #[derive(Debug)]
 pub struct MemoIngredientSingletonIndex(MemoIngredientIndex);
 
-impl ops::Index<IngredientIndex> for MemoIngredientSingletonIndex {
-    type Output = MemoIngredientIndex;
-
-    #[inline]
-    fn index(&self, _: IngredientIndex) -> &Self::Output {
-        &self.0
+impl MemoIngredientMap for MemoIngredientSingletonIndex {
+    #[inline(always)]
+    fn get_zalsa_id(&self, _: &Zalsa, _: Id) -> MemoIngredientIndex {
+        self.0
+    }
+    #[inline(always)]
+    fn get(&self, _: IngredientIndex) -> MemoIngredientIndex {
+        self.0
     }
 }
 
@@ -119,4 +121,9 @@ impl From<(&Zalsa, IngredientIndices, IngredientIndex)> for MemoIngredientSingle
 
         Self(zalsa.next_memo_ingredient_index(struct_ingredient, ingredient))
     }
+}
+
+pub trait MemoIngredientMap: Send + Sync {
+    fn get_zalsa_id(&self, zalsa: &Zalsa, id: Id) -> MemoIngredientIndex;
+    fn get(&self, index: IngredientIndex) -> MemoIngredientIndex;
 }
