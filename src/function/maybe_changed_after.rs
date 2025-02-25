@@ -139,7 +139,15 @@ where
             return true;
         }
 
-        if memo.check_durability(zalsa) {
+        let last_changed = zalsa.last_changed_revision(memo.revisions.durability);
+        tracing::debug!(
+            "{database_key_index:?}: check_durability(memo = {memo:#?}, last_changed={:?} <= verified_at={:?}) = {:?}",
+            last_changed,
+            verified_at,
+            last_changed <= verified_at,
+            memo = memo.tracing_debug()
+        );
+        if last_changed <= verified_at {
             // No input of the suitable durability has changed since last verified.
             let db = db.as_dyn_database();
             memo.mark_as_verified(
