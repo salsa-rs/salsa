@@ -1,4 +1,5 @@
 use super::{memo::Memo, Configuration, IngredientImpl};
+use crate::zalsa::MemoIngredientIndex;
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     runtime::StampedValue,
@@ -43,10 +44,11 @@ where
         id: Id,
     ) -> &'db Memo<C::Output<'db>> {
         let zalsa = db.zalsa();
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         loop {
             if let Some(memo) = self
-                .fetch_hot(zalsa, db, id)
-                .or_else(|| self.fetch_cold(zalsa, db, id))
+                .fetch_hot(zalsa, db, id, memo_ingredient_index)
+                .or_else(|| self.fetch_cold(zalsa, db, id, memo_ingredient_index))
             {
                 return memo;
             }
@@ -59,8 +61,9 @@ where
         zalsa: &'db Zalsa,
         db: &'db C::DbView,
         id: Id,
+        memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
-        let memo_guard = self.get_memo_from_table_for(zalsa, id);
+        let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
         if let Some(memo) = &memo_guard {
             if memo.value.is_some()
                 && self.shallow_verify_memo(db, zalsa, self.database_key_index(id), memo)
@@ -78,6 +81,7 @@ where
         zalsa: &'db Zalsa,
         db: &'db C::DbView,
         id: Id,
+        memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
         let zalsa_local = db.zalsa_local();
         let database_key_index = self.database_key_index(id);
@@ -88,14 +92,14 @@ where
             zalsa,
             zalsa_local,
             database_key_index,
-            self.memo_ingredient_index,
+            memo_ingredient_index,
         )?;
 
         // Push the query on the stack.
         let active_query = zalsa_local.push_query(database_key_index);
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
-        let opt_old_memo = self.get_memo_from_table_for(zalsa, id);
+        let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
         if let Some(old_memo) = &opt_old_memo {
             if old_memo.value.is_some() && self.deep_verify_memo(db, zalsa, old_memo, &active_query)
             {
