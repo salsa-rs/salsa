@@ -157,9 +157,9 @@ impl<V> Memo<V> {
 
     /// Mark memo as having been verified in the `revision_now`, which should
     /// be the current revision.
-    pub(super) fn mark_as_verified(
+    pub(super) fn mark_as_verified<Db: ?Sized + crate::Database>(
         &self,
-        db: &dyn crate::Database,
+        db: &Db,
         revision_now: Revision,
         database_key_index: DatabaseKeyIndex,
         accumulated: InputAccumulatedValues,
