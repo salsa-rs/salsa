@@ -1,7 +1,8 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
     ingredient::{Ingredient, MaybeChangedAfter},
+    tracked_struct::MemoTableTypes,
     zalsa::IngredientIndex,
     Database, Id,
 };
@@ -26,7 +27,7 @@ where
 
     /// The absolute index of this field on the tracked struct.
     field_index: usize,
-
+    memo_table_types: Arc<MemoTableTypes>,
     phantom: PhantomData<fn() -> Value<C>>,
 }
 
@@ -37,6 +38,7 @@ where
     pub(super) fn new(field_index: usize, ingredient_index: IngredientIndex) -> Self {
         Self {
             field_index,
+            memo_table_types: Arc::new(MemoTableTypes::default()),
             ingredient_index,
             phantom: PhantomData,
         }
@@ -109,6 +111,10 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::FIELD_DEBUG_NAMES[self.field_index]
+    }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        self.memo_table_types.clone()
     }
 }
 

@@ -4,7 +4,10 @@ use std::{
     mem::MaybeUninit,
     panic::RefUnwindSafe,
     ptr, slice,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use memo::MemoTable;
@@ -12,7 +15,11 @@ use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use sync::SyncTable;
 
-use crate::{zalsa::transmute_data_ptr, Id, IngredientIndex, Revision};
+use crate::{
+    table::memo::{MemoTableTypes, MemoTableWithTypes},
+    zalsa::{transmute_data_ptr, Zalsa},
+    Id, IngredientIndex, Revision,
+};
 
 pub(crate) mod memo;
 pub(crate) mod sync;
@@ -39,10 +46,10 @@ pub(crate) trait TablePage: Any + Send + Sync {
     /// # Safety condition
     ///
     /// The `current_revision` MUST be the current revision of the database owning this table page.
-    unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable;
+    unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> MemoTableWithTypes<'_>;
 
     /// Access the memos attached to `slot`.
-    fn memos_mut(&mut self, slot: SlotIndex) -> &mut MemoTable;
+    fn memos_mut(&mut self, slot: SlotIndex) -> MemoTableWithTypes<'_>;
 
     /// Access the syncs attached to `slot`.
     ///
@@ -55,6 +62,8 @@ pub(crate) trait TablePage: Any + Send + Sync {
 pub(crate) struct Page<T: Slot> {
     /// The ingredient for elements on this page.
     ingredient: IngredientIndex,
+
+    memo_types: Arc<MemoTableTypes>,
 
     /// Number of elements of `data` that are initialized.
     allocated: AtomicUsize,
@@ -81,8 +90,12 @@ pub(crate) trait Slot: Any + Send + Sync {
     /// The current revision MUST be the current revision of the database containing this slot.
     unsafe fn memos(&self, current_revision: Revision) -> &MemoTable;
 
-    /// Mutably access the [`MemoTable`] for this slot.
-    fn memos_mut(&mut self) -> &mut MemoTable;
+    /// Access the [`MemoTable`] for this slot.
+    ///
+    /// # Safety
+    ///
+    /// You must have mutable access to the slot.
+    unsafe fn memos_no_revision(&self) -> &MemoTable;
 
     /// Access the [`SyncTable`][] for this slot.
     ///
@@ -90,6 +103,11 @@ pub(crate) trait Slot: Any + Send + Sync {
     ///
     /// The current revision MUST be the current revision of the database containing this slot.
     unsafe fn syncs(&self, current_revision: Revision) -> &SyncTable;
+
+    /// # Safety
+    ///
+    /// `types` must be correct.
+    unsafe fn drop_memos(&mut self, types: &MemoTableTypes);
 }
 
 unsafe impl<T: Slot> Send for Page<T> {}
@@ -171,8 +189,12 @@ impl Table {
     }
 
     /// Allocate a new page for the given ingredient and with slots of type `T`
-    pub(crate) fn push_page<T: Slot>(&self, ingredient: IngredientIndex) -> PageIndex {
-        let page = Box::new(<Page<T>>::new(ingredient));
+    pub(crate) fn push_page<T: Slot>(
+        &self,
+        ingredient: IngredientIndex,
+        zalsa: &Zalsa,
+    ) -> PageIndex {
+        let page = Box::new(<Page<T>>::new(ingredient, zalsa));
         PageIndex::new(self.pages.push(page))
     }
 
@@ -182,13 +204,17 @@ impl Table {
     ///
     /// The parameter `current_revision` MUST be the current revision
     /// of the owner of database owning this table.
-    pub(crate) unsafe fn memos(&self, id: Id, current_revision: Revision) -> &MemoTable {
+    pub(crate) unsafe fn memos(
+        &self,
+        id: Id,
+        current_revision: Revision,
+    ) -> MemoTableWithTypes<'_> {
         let (page, slot) = split_id(id);
         unsafe { self.pages[page.0].memos(slot, current_revision) }
     }
 
     /// Get the memo table associated with `id`
-    pub(crate) fn memos_mut(&mut self, id: Id) -> &mut MemoTable {
+    pub(crate) fn memos_mut(&mut self, id: Id) -> MemoTableWithTypes<'_> {
         let (page, slot) = split_id(id);
         let page_index = page.0;
         let page = self
@@ -209,7 +235,11 @@ impl Table {
         unsafe { self.pages[page.0].syncs(slot, current_revision) }
     }
 
-    pub(crate) fn fetch_or_push_page<T: Slot>(&self, ingredient: IngredientIndex) -> PageIndex {
+    pub(crate) fn fetch_or_push_page<T: Slot>(
+        &self,
+        ingredient: IngredientIndex,
+        zalsa: &Zalsa,
+    ) -> PageIndex {
         if let Some(page) = self
             .non_full_pages
             .lock()
@@ -218,7 +248,7 @@ impl Table {
         {
             return page;
         }
-        self.push_page::<T>(ingredient)
+        self.push_page::<T>(ingredient, zalsa)
     }
 
     pub(crate) fn record_unfilled_page(&self, ingredient: IngredientIndex, page: PageIndex) {
@@ -232,12 +262,17 @@ impl Table {
 
 impl<T: Slot> Page<T> {
     #[allow(clippy::uninit_vec)]
-    fn new(ingredient: IngredientIndex) -> Self {
+    fn new(ingredient: IngredientIndex, zalsa: &Zalsa) -> Self {
+        let memo_types = zalsa
+            .lookup_ingredient(ingredient)
+            .memo_table_types()
+            .clone();
         Self {
             ingredient,
             allocated: Default::default(),
             allocation_lock: Default::default(),
             data: Box::new([const { UnsafeCell::new(MaybeUninit::uninit()) }; PAGE_LEN]),
+            memo_types,
         }
     }
 
@@ -257,16 +292,6 @@ impl<T: Slot> Page<T> {
     pub(crate) fn get(&self, slot: SlotIndex) -> &T {
         self.check_bounds(slot);
         unsafe { (*self.data[slot.0].get()).assume_init_ref() }
-    }
-
-    /// Returns a reference to the given slot.
-    ///
-    /// # Panics
-    ///
-    /// If slot is out of bounds
-    pub(crate) fn get_mut(&mut self, slot: SlotIndex) -> &mut T {
-        self.check_bounds(slot);
-        unsafe { (*self.data[slot.0].get()).assume_init_mut() }
     }
 
     pub(crate) fn slots(&self) -> impl Iterator<Item = &T> {
@@ -332,12 +357,17 @@ impl<T: Slot> TablePage for Page<T> {
         self.ingredient
     }
 
-    unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable {
-        unsafe { self.get(slot).memos(current_revision) }
+    unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> MemoTableWithTypes<'_> {
+        let memos = unsafe { self.get(slot).memos(current_revision) };
+        // SAFETY: We store the correct types.
+        unsafe { self.memo_types.attach_memos(memos) }
     }
 
-    fn memos_mut(&mut self, slot: SlotIndex) -> &mut MemoTable {
-        self.get_mut(slot).memos_mut()
+    fn memos_mut(&mut self, slot: SlotIndex) -> MemoTableWithTypes<'_> {
+        // SAFETY: We have a `&mut` reference.
+        let memos = unsafe { self.get(slot).memos_no_revision() };
+        // SAFETY: We use the correct memo types.
+        unsafe { self.memo_types.attach_memos(memos) }
     }
 
     unsafe fn syncs(&self, slot: SlotIndex, current_revision: Revision) -> &SyncTable {
@@ -348,12 +378,15 @@ impl<T: Slot> TablePage for Page<T> {
 impl<T: Slot> Drop for Page<T> {
     fn drop(&mut self) {
         // Execute destructors for all initialized elements
-        let len = self.allocated.load(Ordering::Acquire);
+        let len = *self.allocated.get_mut();
         // SAFETY: self.data is initialized for T's up to len
         unsafe {
             // FIXME: Should be ptr::from_raw_parts_mut but that is unstable
             let to_drop = slice::from_raw_parts_mut(self.data.as_mut_ptr().cast::<T>(), len);
-            ptr::drop_in_place(to_drop)
+            for v in &mut *to_drop {
+                v.drop_memos(&self.memo_types);
+                ptr::drop_in_place(v);
+            }
         }
     }
 }
