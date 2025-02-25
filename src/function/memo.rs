@@ -154,18 +154,6 @@ impl<V> Memo<V> {
             revisions,
         }
     }
-    /// True if this memo is known not to have changed based on its durability.
-    pub(super) fn check_durability(&self, zalsa: &Zalsa) -> bool {
-        let last_changed = zalsa.last_changed_revision(self.revisions.durability);
-        let verified_at = self.verified_at.load();
-        tracing::debug!(
-            "check_durability(last_changed={:?} <= verified_at={:?}) = {:?}",
-            last_changed,
-            self.verified_at,
-            last_changed <= verified_at,
-        );
-        last_changed <= verified_at
-    }
 
     /// Mark memo as having been verified in the `revision_now`, which should
     /// be the current revision.
