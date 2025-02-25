@@ -380,10 +380,19 @@ impl<'s> SalsaField<'s> {
 
         // Scan the attributes and look for the salsa attributes:
         for attr in &field.attrs {
+            let mut found = false;
             for (fa, func) in FIELD_OPTION_ATTRIBUTES {
                 if attr.path().is_ident(fa) {
                     func(attr, &mut result);
+                    found = true;
                 }
+            }
+
+            if !found {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "unrecognized field attribute",
+                ));
             }
         }
 
