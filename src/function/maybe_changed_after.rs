@@ -141,14 +141,13 @@ where
 
         if memo.check_durability(zalsa) {
             // No input of the suitable durability has changed since last verified.
-            let db = db.as_dyn_database();
             memo.mark_as_verified(
                 db,
                 revision_now,
                 database_key_index,
                 memo.revisions.accumulated_inputs.load(),
             );
-            memo.mark_outputs_as_verified(zalsa, db, database_key_index);
+            memo.mark_outputs_as_verified(zalsa, db.as_dyn_database(), database_key_index);
             return true;
         }
 
@@ -256,12 +255,7 @@ where
             }
         };
 
-        old_memo.mark_as_verified(
-            db.as_dyn_database(),
-            zalsa.current_revision(),
-            database_key_index,
-            inputs,
-        );
+        old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index, inputs);
         true
     }
 }

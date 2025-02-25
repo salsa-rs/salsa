@@ -127,7 +127,7 @@ where
 
         let database_key_index = self.database_key_index(key);
         memo.mark_as_verified(
-            db.as_dyn_database(),
+            db,
             zalsa.current_revision(),
             database_key_index,
             InputAccumulatedValues::Empty,
