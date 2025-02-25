@@ -34,7 +34,8 @@ impl SingletonChoice for Singleton {
     fn index(&self) -> Option<Id> {
         match self.index.load(Ordering::Acquire) {
             0 => None,
-            id => Some(Id::from_u32(id - 1)),
+            // SAFETY: Our u32 is derived from an ID and thus safe to convert back.
+            id => Some(unsafe { Id::from_u32(id - 1) }),
         }
     }
 }
