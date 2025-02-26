@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::function::DeletedEntries;
 use crate::revision::AtomicRevision;
-use crate::table::memo::MemoTable;
+use crate::table::memo::MemoTableWithTypes;
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
@@ -75,7 +75,7 @@ impl<C: Configuration> IngredientImpl<C> {
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
     pub(super) fn evict_value_from_memo_for(
-        table: &mut MemoTable,
+        table: MemoTableWithTypes<'_>,
         deleted_entries: &DeletedEntries<C>,
         memo_ingredient_index: MemoIngredientIndex,
     ) {
@@ -129,7 +129,7 @@ impl<C: Configuration> IngredientImpl<C> {
 }
 
 #[derive(Debug)]
-pub(super) struct Memo<V> {
+pub struct Memo<V> {
     /// The result of the query, if we decide to memoize it.
     pub(super) value: Option<V>,
 
