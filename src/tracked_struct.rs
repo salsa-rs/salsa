@@ -1,4 +1,4 @@
-use std::{any::TypeId, fmt, hash::Hash, marker::PhantomData, mem::ManuallyDrop, ops::DerefMut};
+use std::{any::TypeId, fmt, hash::Hash, marker::PhantomData, ops::DerefMut};
 
 use crossbeam_queue::SegQueue;
 use tracked_field::FieldIngredientImpl;
@@ -617,10 +617,10 @@ where
         // Take the memo table. This is safe because we have modified `data_ref.updated_at` to `None`
         // and the code that references the memo-table has a read-lock.
         let memo_table = unsafe { (*data).take_memo_table() };
+
         // SAFETY: We have verified that no more references to these memos exist and so we are good
         // to drop them.
         for (memo_ingredient_index, memo) in unsafe { memo_table.into_memos() } {
-            let memo = ManuallyDrop::into_inner(memo);
             let ingredient_index =
                 zalsa.ingredient_index_for_memo(self.ingredient_index, memo_ingredient_index);
 

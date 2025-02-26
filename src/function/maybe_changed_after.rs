@@ -38,7 +38,6 @@ where
                         MaybeChangedAfter::No(memo.revisions.accumulated_inputs.load())
                     };
                 }
-                drop(memo_guard); // release the arc-swap guard before cold path
                 if let Some(mcs) =
                     self.maybe_changed_after_cold(zalsa, db, id, revision, memo_ingredient_index)
                 {
@@ -86,7 +85,7 @@ where
         );
 
         // Check if the inputs are still valid. We can just compare `changed_at`.
-        if self.deep_verify_memo(db, zalsa, &old_memo, &active_query) {
+        if self.deep_verify_memo(db, zalsa, old_memo, &active_query) {
             return Some(if old_memo.revisions.changed_at > revision {
                 MaybeChangedAfter::Yes
             } else {
