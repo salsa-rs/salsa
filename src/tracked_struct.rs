@@ -1,4 +1,4 @@
-use std::{any::TypeId, fmt, hash::Hash, marker::PhantomData, mem::ManuallyDrop, ops::DerefMut};
+use std::{any::TypeId, fmt, hash::Hash, marker::PhantomData, ops::DerefMut};
 
 use crossbeam_queue::SegQueue;
 use tracked_field::FieldIngredientImpl;
@@ -7,7 +7,7 @@ use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::{CycleRecoveryStrategy, EMPTY_CYCLE_HEADS},
     function::VerifyResult,
-    ingredient::{fmt_index, Ingredient, Jar, JarAux},
+    ingredient::{fmt_index, Ingredient, Jar},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::ZalsaLocal,
     revision::OptionalAtomicRevision,
@@ -112,9 +112,9 @@ impl<C: Configuration> Default for JarImpl<C> {
 
 impl<C: Configuration> Jar for JarImpl<C> {
     fn create_ingredients(
-        &self,
-        _aux: &dyn JarAux,
+        _zalsa: &Zalsa,
         struct_index: crate::zalsa::IngredientIndex,
+        _dependencies: crate::memo_ingredient_indices::IngredientIndices,
     ) -> Vec<Box<dyn Ingredient>> {
         let struct_ingredient = <IngredientImpl<C>>::new(struct_index);
 
@@ -134,8 +134,8 @@ impl<C: Configuration> Jar for JarImpl<C> {
             .collect()
     }
 
-    fn salsa_struct_type_id(&self) -> Option<TypeId> {
-        Some(TypeId::of::<<C as Configuration>::Struct<'static>>())
+    fn id_struct_type_id() -> TypeId {
+        TypeId::of::<C::Struct<'static>>()
     }
 }
 
@@ -618,10 +618,10 @@ where
         // Take the memo table. This is safe because we have modified `data_ref.updated_at` to `None`
         // and the code that references the memo-table has a read-lock.
         let memo_table = unsafe { (*data).take_memo_table() };
+
         // SAFETY: We have verified that no more references to these memos exist and so we are good
         // to drop them.
         for (memo_ingredient_index, memo) in unsafe { memo_table.into_memos() } {
-            let memo = ManuallyDrop::into_inner(memo);
             let ingredient_index =
                 zalsa.ingredient_index_for_memo(self.ingredient_index, memo_ingredient_index);
 

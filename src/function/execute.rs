@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::{
     cycle::{CycleRecoveryStrategy, MAX_ITERATIONS},
     zalsa::ZalsaDatabase,
@@ -26,7 +24,7 @@ where
         &'db self,
         db: &'db C::DbView,
         mut active_query: ActiveQueryGuard<'db>,
-        opt_old_memo: Option<Arc<Memo<C::Output<'_>>>>,
+        opt_old_memo: Option<&Memo<C::Output<'_>>>,
     ) -> &'db Memo<C::Output<'db>> {
         let (zalsa, zalsa_local) = db.zalsas();
         let revision_now = zalsa.current_revision();
@@ -40,6 +38,8 @@ where
                 database_key: database_key_index,
             })
         });
+
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
 
         let mut iteration_count: u32 = 0;
         let mut fell_back = false;
@@ -76,13 +76,13 @@ where
                     // This is our first time around the loop; a provisional value must have been
                     // inserted into the memo table when the cycle was hit, so let's pull our
                     // initial provisional value from there.
-                    opt_owned_last_provisional = self.get_memo_from_table_for(zalsa, id);
+                    opt_owned_last_provisional =
+                        self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
                     debug_assert!(opt_owned_last_provisional
                         .as_ref()
                         .unwrap()
                         .may_be_provisional());
                     opt_owned_last_provisional
-                        .as_deref()
                         .expect(
                             "{database_key_index:#?} is a cycle head, \
                             but no provisional memo found",
@@ -140,6 +140,7 @@ where
                         zalsa,
                         id,
                         Memo::new(Some(new_value), revision_now, revisions),
+                        memo_ingredient_index,
                     ));
 
                     active_query = zalsa_local.push_query(database_key_index);
@@ -167,6 +168,7 @@ where
                 zalsa,
                 id,
                 Memo::new(Some(new_value), revision_now, revisions),
+                memo_ingredient_index,
             );
         }
     }

@@ -1,7 +1,7 @@
 //! Basic test of accumulator functionality.
 
 use std::{
-    any::Any,
+    any::{Any, TypeId},
     fmt::{self, Debug},
     marker::PhantomData,
     panic::UnwindSafe,
@@ -14,8 +14,8 @@ use crate::{
     cycle::CycleRecoveryStrategy,
     function::VerifyResult,
     ingredient::{fmt_index, Ingredient, Jar},
-    plumbing::JarAux,
-    zalsa::IngredientIndex,
+    plumbing::IngredientIndices,
+    zalsa::{IngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Database, DatabaseKeyIndex, Id, Revision,
 };
@@ -48,15 +48,15 @@ impl<A: Accumulator> Default for JarImpl<A> {
 
 impl<A: Accumulator> Jar for JarImpl<A> {
     fn create_ingredients(
-        &self,
-        _aux: &dyn JarAux,
+        _zalsa: &Zalsa,
         first_index: IngredientIndex,
+        _dependencies: IngredientIndices,
     ) -> Vec<Box<dyn Ingredient>> {
         vec![Box::new(<IngredientImpl<A>>::new(first_index))]
     }
 
-    fn salsa_struct_type_id(&self) -> Option<std::any::TypeId> {
-        None
+    fn id_struct_type_id() -> TypeId {
+        TypeId::of::<A>()
     }
 }
 
@@ -71,9 +71,8 @@ impl<A: Accumulator> IngredientImpl<A> {
     where
         Db: ?Sized + Database,
     {
-        let jar: JarImpl<A> = Default::default();
         let zalsa = db.zalsa();
-        let index = zalsa.add_or_lookup_jar_by_type(&jar);
+        let index = zalsa.add_or_lookup_jar_by_type::<JarImpl<A>>();
         let ingredient = zalsa.lookup_ingredient(index).assert_type::<Self>();
         Some(ingredient)
     }

@@ -24,7 +24,8 @@ macro_rules! setup_accumulator_impl {
 
             fn $ingredient(db: &dyn $zalsa::Database) -> &$zalsa_struct::IngredientImpl<$Struct> {
                 $CACHE.get_or_create(db, || {
-                    db.zalsa().add_or_lookup_jar_by_type(&<$zalsa_struct::JarImpl<$Struct>>::default())
+                    db.zalsa()
+                        .add_or_lookup_jar_by_type::<$zalsa_struct::JarImpl<$Struct>>()
                 })
             }
 

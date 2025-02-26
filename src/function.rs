@@ -1,11 +1,11 @@
-use std::{any::Any, fmt, mem::ManuallyDrop, sync::Arc};
+use std::{any::Any, fmt, ptr::NonNull};
 
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::{CycleRecoveryAction, CycleRecoveryStrategy},
     ingredient::fmt_index,
     key::DatabaseKeyIndex,
-    plumbing::JarAux,
+    plumbing::MemoIngredientMap,
     salsa_struct::SalsaStructInDb,
     table::sync::ClaimResult,
     table::Table,
@@ -101,7 +101,11 @@ pub struct IngredientImpl<C: Configuration> {
     index: IngredientIndex,
 
     /// The index for the memo/sync tables
-    memo_ingredient_index: MemoIngredientIndex,
+    ///
+    /// This may be a [`crate::memo_ingredient_indices::MemoIngredientSingletonIndex`] or a
+    /// [`crate::memo_ingredient_indices::MemoIngredientIndices`], depending on whether the
+    /// tracked function's struct is a plain salsa struct or an enum `#[derive(Supertype)]`.
+    memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
 
     /// Used to find memos to throw out when we have too many memoized values.
     lru: lru::Lru,
@@ -133,14 +137,13 @@ where
     C: Configuration,
 {
     pub fn new(
-        struct_index: IngredientIndex,
         index: IngredientIndex,
-        aux: &dyn JarAux,
+        memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
         lru: usize,
     ) -> Self {
         Self {
             index,
-            memo_ingredient_index: aux.next_memo_ingredient_index(struct_index, index),
+            memo_ingredient_indices,
             lru: lru::Lru::new(lru),
             deleted_entries: Default::default(),
         }
@@ -176,20 +179,34 @@ where
         zalsa: &'db Zalsa,
         id: Id,
         memo: memo::Memo<C::Output<'db>>,
+        memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db memo::Memo<C::Output<'db>> {
-        let memo = Arc::new(memo);
+        // We convert to a `NonNull` here as soon as possible because we are going to alias
+        // into the `Box`, which is a `noalias` type.
+        let memo = unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memo))) };
+
         // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
         // value is returned) and anything removed from map is added to deleted entries (ensured elsewhere).
-        let db_memo = unsafe { self.extend_memo_lifetime(&memo) };
+        let db_memo = unsafe { self.extend_memo_lifetime(memo.as_ref()) };
+
         // Safety: We delay the drop of `old_value` until a new revision starts which ensures no
         // references will exist for the memo contents.
-        if let Some(old_value) = unsafe { self.insert_memo_into_table_for(zalsa, id, memo) } {
+        if let Some(old_value) =
+            unsafe { self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index) }
+        {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
-            self.deleted_entries
-                .push(ManuallyDrop::into_inner(old_value));
+            //
+            // SAFETY: Once the revision starts, there will be no oustanding borrows to the
+            // memo contents, and so it will be safe to free.
+            unsafe { self.deleted_entries.push(old_value) };
         }
         db_memo
+    }
+
+    #[inline]
+    fn memo_ingredient_index(&self, zalsa: &Zalsa, id: Id) -> MemoIngredientIndex {
+        self.memo_ingredient_indices.get_zalsa_id(zalsa, id)
     }
 }
 
@@ -214,8 +231,12 @@ where
     /// True if the input `input` contains a memo that cites itself as a cycle head.
     /// This indicates an intermediate value for a cycle that has not yet reached a fixed point.
     fn is_provisional_cycle_head<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool {
-        self.get_memo_from_table_for(db.zalsa(), input)
-            .is_some_and(|memo| memo.cycle_heads().contains(&self.database_key_index(input)))
+        self.get_memo_from_table_for(
+            db.zalsa(),
+            input,
+            self.memo_ingredient_index(db.zalsa(), input),
+        )
+        .is_some_and(|memo| memo.cycle_heads().contains(&self.database_key_index(input)))
     }
 
     /// Attempts to claim `key_index`, returning `false` if a cycle occurs.
@@ -226,7 +247,7 @@ where
             zalsa,
             zalsa_local,
             self.database_key_index(key_index),
-            self.memo_ingredient_index,
+            self.memo_ingredient_index(zalsa, key_index),
         ) {
             ClaimResult::Retry | ClaimResult::Claimed(_) => true,
             ClaimResult::Cycle => false,
@@ -267,10 +288,10 @@ where
 
     fn reset_for_new_revision(&mut self, table: &mut Table) {
         self.lru.for_each_evicted(|evict| {
+            let ingredient_index = table.ingredient_index(evict);
             Self::evict_value_from_memo_for(
                 table.memos_mut(evict),
-                &self.deleted_entries,
-                self.memo_ingredient_index,
+                self.memo_ingredient_indices.get(ingredient_index),
             )
         });
         std::mem::take(&mut self.deleted_entries);

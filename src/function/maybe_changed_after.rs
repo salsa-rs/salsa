@@ -2,9 +2,8 @@ use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::CycleRecoveryStrategy,
     key::DatabaseKeyIndex,
-    plumbing::ZalsaLocal,
     table::sync::ClaimResult,
-    zalsa::{Zalsa, ZalsaDatabase},
+    zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
     AsDynDatabase as _, Id, Revision,
 };
@@ -53,6 +52,7 @@ where
         revision: Revision,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
+        let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         zalsa.unwind_if_revision_cancelled(db);
 
         loop {
@@ -61,7 +61,7 @@ where
             tracing::debug!("{database_key_index:?}: maybe_changed_after(revision = {revision:?})");
 
             // Check if we have a verified version: this is the hot path.
-            let memo_guard = self.get_memo_from_table_for(zalsa, id);
+            let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
             if let Some(memo) = &memo_guard {
                 if self.shallow_verify_memo(db, zalsa, database_key_index, memo, false) {
                     return if memo.revisions.changed_at > revision {
@@ -73,9 +73,8 @@ where
                         )
                     };
                 }
-                drop(memo_guard); // release the arc-swap guard before cold path
                 if let Some(mcs) =
-                    self.maybe_changed_after_cold(zalsa, db.zalsa_local(), db, id, revision)
+                    self.maybe_changed_after_cold(zalsa, db, id, revision, memo_ingredient_index)
                 {
                     return mcs;
                 } else {
@@ -91,19 +90,20 @@ where
     fn maybe_changed_after_cold<'db>(
         &'db self,
         zalsa: &Zalsa,
-        zalsa_local: &ZalsaLocal,
         db: &'db C::DbView,
         key_index: Id,
         revision: Revision,
+        memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
+        let zalsa_local = db.zalsa_local();
         let _claim_guard = match zalsa.sync_table_for(key_index).claim(
             db.as_dyn_database(),
             zalsa,
             zalsa_local,
             database_key_index,
-            self.memo_ingredient_index,
+            memo_ingredient_index,
         ) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => match C::CYCLE_STRATEGY {
@@ -121,7 +121,8 @@ where
             ClaimResult::Claimed(guard) => guard,
         };
         // Load the current memo, if any.
-        let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index) else {
+        let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index, memo_ingredient_index)
+        else {
             return Some(VerifyResult::Changed);
         };
 
@@ -134,7 +135,7 @@ where
         // Check if the inputs are still valid. We can just compare `changed_at`.
         let active_query = zalsa_local.push_query(database_key_index);
         if let VerifyResult::Unchanged(_, cycle_heads) =
-            self.deep_verify_memo(db, zalsa, &old_memo, &active_query)
+            self.deep_verify_memo(db, zalsa, old_memo, &active_query)
         {
             return Some(if old_memo.revisions.changed_at > revision {
                 VerifyResult::Changed
@@ -210,16 +211,23 @@ where
             return true;
         }
 
-        if memo.check_durability(zalsa) {
+        let last_changed = zalsa.last_changed_revision(memo.revisions.durability);
+        tracing::debug!(
+            "{database_key_index:?}: check_durability(memo = {memo:#?}, last_changed={:?} <= verified_at={:?}) = {:?}",
+            last_changed,
+            verified_at,
+            last_changed <= verified_at,
+            memo = memo.tracing_debug()
+        );
+        if last_changed <= verified_at {
             // No input of the suitable durability has changed since last verified.
-            let db = db.as_dyn_database();
             memo.mark_as_verified(
                 db,
                 revision_now,
                 database_key_index,
                 memo.revisions.accumulated_inputs.load(),
             );
-            memo.mark_outputs_as_verified(zalsa, db, database_key_index);
+            memo.mark_outputs_as_verified(zalsa, db.as_dyn_database(), database_key_index);
             return true;
         }
 
@@ -383,12 +391,7 @@ where
             let in_heads = cycle_heads.remove(&database_key_index);
 
             if cycle_heads.is_empty() {
-                old_memo.mark_as_verified(
-                    db.as_dyn_database(),
-                    zalsa.current_revision(),
-                    database_key_index,
-                    inputs,
-                );
+                old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index, inputs);
 
                 if in_heads {
                     // Iterate our dependency graph again, starting from the top. We clear the
