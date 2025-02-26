@@ -149,7 +149,6 @@ const _: () = {
             Db_: ?Sized + salsa::Database,
             String: zalsa_::interned::HashEqLike<T0>,
         {
-            let current_revision = zalsa_::current_revision(db);
             Configuration_::ingredient(db).intern(
                 db.as_dyn_database(),
                 StructKey::<'db>(data, std::marker::PhantomData::default()),
