@@ -19,7 +19,7 @@ where
             // Careful: if the value became less durable than it
             // used to be, that is a "breaking change" that our
             // consumers must be aware of. Becoming *more* durable
-            // is not. See the test `constant_to_non_constant`.
+            // is not. See the test `durable_to_less_durable`.
             if revisions.durability >= old_memo.revisions.durability
                 && C::should_backdate_value(old_value, value)
             {
