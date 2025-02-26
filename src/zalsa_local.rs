@@ -6,6 +6,7 @@ use crate::accumulator::accumulated_map::{
 };
 use crate::active_query::ActiveQuery;
 use crate::durability::Durability;
+use crate::hash::FxHashSet;
 use crate::key::{DatabaseKeyIndex, InputDependencyIndex, OutputDependencyIndex};
 use crate::runtime::StampedValue;
 use crate::table::PageIndex;
@@ -36,13 +37,15 @@ pub struct ZalsaLocal {
     /// Stores the most recent page for a given ingredient.
     /// This is thread-local to avoid contention.
     most_recent_pages: RefCell<FxHashMap<IngredientIndex, PageIndex>>,
+    pub(crate) diff_outputs_scratch: RefCell<FxHashSet<OutputDependencyIndex>>,
 }
 
 impl ZalsaLocal {
     pub(crate) fn new() -> Self {
         ZalsaLocal {
-            query_stack: RefCell::new(vec![]),
-            most_recent_pages: RefCell::new(FxHashMap::default()),
+            query_stack: RefCell::default(),
+            most_recent_pages: RefCell::default(),
+            diff_outputs_scratch: RefCell::default(),
         }
     }
 

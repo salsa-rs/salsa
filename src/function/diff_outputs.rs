@@ -1,6 +1,6 @@
 use super::{memo::Memo, Configuration, IngredientImpl};
 use crate::{
-    hash::FxHashSet, key::OutputDependencyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions,
+    key::OutputDependencyIndex, plumbing::ZalsaLocal, zalsa::Zalsa, zalsa_local::QueryRevisions,
     AsDynDatabase as _, Database, DatabaseKeyIndex, Event, EventKind,
 };
 
@@ -8,7 +8,7 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    /// Compute the old and new outputs and invoke the `clear_stale_output` callback
+    /// Compute the old and new outputs and invoke the `remove_stale_output` callback
     /// for each output that was generated before but is not generated now.
     ///
     /// This function takes a `&mut` reference to `revisions` to remove outputs
@@ -16,13 +16,15 @@ where
     pub(super) fn diff_outputs(
         &self,
         zalsa: &Zalsa,
+        zalsa_local: &ZalsaLocal,
         db: &C::DbView,
         key: DatabaseKeyIndex,
         old_memo: &Memo<C::Output<'_>>,
         revisions: &mut QueryRevisions,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset
-        let mut old_outputs: FxHashSet<_> = old_memo.revisions.origin.outputs().collect();
+        let old_outputs = &mut *zalsa_local.diff_outputs_scratch.borrow_mut();
+        old_outputs.extend(old_memo.revisions.origin.outputs());
 
         // Iterate over the outputs of the current query
         // and remove elements from `old_outputs` when we find them
@@ -38,7 +40,7 @@ where
             });
         }
 
-        for old_output in old_outputs {
+        for old_output in old_outputs.drain() {
             Self::report_stale_output(zalsa, db, key, old_output);
         }
     }
