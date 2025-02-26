@@ -284,14 +284,14 @@ impl Table {
 impl<'p, T: Slot> PageView<'p, T> {
     #[inline]
     fn page_data(&self) -> &'p [PageDataEntry<T>] {
-        let len = self.0.allocated.load(Ordering::Acquire);
+        let len = self.0.allocated();
         // SAFETY: `len` is the initialized length of the page
         unsafe { slice::from_raw_parts(self.0.data.cast::<PageDataEntry<T>>().as_ptr(), len) }
     }
 
     #[inline]
     fn data(&self) -> &'p [T] {
-        let len = self.0.allocated.load(Ordering::Acquire);
+        let len = self.0.allocated();
         // SAFETY: `len` is the initialized length of the page
         unsafe { slice::from_raw_parts(self.0.data.cast::<T>().as_ptr(), len) }
     }
@@ -301,7 +301,7 @@ impl<'p, T: Slot> PageView<'p, T> {
         V: FnOnce(Id) -> T,
     {
         let _guard = self.0.allocation_lock.lock();
-        let index = self.0.allocated.load(Ordering::Acquire);
+        let index = self.0.allocated();
         if index >= PAGE_LEN {
             return Err(value);
         }
@@ -319,7 +319,8 @@ impl<'p, T: Slot> PageView<'p, T> {
 
         // Update the length (this must be done after initialization as otherwise an uninitialized
         // read could occur!)
-        self.0.allocated.store(index + 1, Ordering::Release);
+        // Ordering: Relaxed is fine as the `allocation_lock` establishes a happens-before relationship
+        self.0.allocated.store(index + 1, Ordering::Relaxed);
 
         Ok(id)
     }
@@ -357,13 +358,20 @@ impl Page {
         }
     }
 
+    #[inline]
+    fn allocated(&self) -> usize {
+        // Ordering: Relaxed is fine as the `allocation_lock` establishes a happens-before
+        // relationship
+        self.allocated.load(Ordering::Relaxed)
+    }
+
     /// Retrieves the pointer for the given slot.
     ///
     /// # Panics
     ///
     /// If slot is out of bounds
     fn get(&self, slot: SlotIndex) -> *mut () {
-        let len = self.allocated.load(Ordering::Acquire);
+        let len = self.allocated();
         assert!(
             slot.0 < len,
             "out of bounds access `{slot:?}` (maximum slot `{len}`)"
