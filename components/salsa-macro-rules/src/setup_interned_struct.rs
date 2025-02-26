@@ -207,7 +207,6 @@ macro_rules! setup_interned_struct {
                         $field_ty: $zalsa::interned::HashEqLike<$indexed_ty>,
                     )*
                 {
-                    let current_revision = $zalsa::current_revision(db);
                     $Configuration::ingredient(db).intern(db.as_dyn_database(),
                         StructKey::<$db_lt>($($field_id,)* std::marker::PhantomData::default()), |_, data| ($($zalsa::interned::Lookup::into_owned(data.$field_index),)*))
                 }
