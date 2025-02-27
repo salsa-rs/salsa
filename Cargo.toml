@@ -1,6 +1,6 @@
 [package]
 name = "salsa"
-version = "0.18.0"
+version = "0.19.0"
 authors = ["Salsa developers"]
 edition = "2021"
 license = "Apache-2.0 OR MIT"
@@ -9,8 +9,8 @@ description = "A generic framework for on-demand, incrementalized computation (e
 rust-version = "1.80"
 
 [dependencies]
-salsa-macro-rules = { version = "0.1.0", path = "components/salsa-macro-rules" }
-salsa-macros = { version = "0.18.0", path = "components/salsa-macros" }
+salsa-macro-rules = { version = "0.1.1", path = "components/salsa-macro-rules" }
+salsa-macros = { version = "0.18.1", path = "components/salsa-macros" }
 
 boxcar = "0.2.9"
 crossbeam-queue = "0.3.11"
