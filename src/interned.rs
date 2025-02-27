@@ -274,23 +274,21 @@ where
                 let zalsa = db.zalsa();
                 let table = zalsa.table();
 
-                let (durability, last_interned_at) = match zalsa_local.active_query() {
-                    // Record the durability of the current query, along with the revision
-                    // we are interning in.
-                    Some((_, stamp)) => (stamp.durability, current_revision),
-
-                    // An interned value created outside of a query is considered immortal.
-                    // The durability in this case doesn't really matter.
-                    None => (Durability::MAX, Revision::from(usize::MAX)),
-                };
+                // Record the durability of the current query on the interned value.
+                let durability = zalsa_local
+                    .active_query()
+                    .map(|(_, stamp)| stamp.durability)
+                    // If there is no active query this durability does not actually matter.
+                    .unwrap_or(Durability::MAX);
 
                 let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
                     fields: unsafe { self.to_internal_data(assemble(id, key)) },
                     memos: Default::default(),
                     syncs: Default::default(),
                     durability: AtomicU8::new(durability.as_u8()),
+                    // Record the revision we are interning in.
                     first_interned_at: current_revision,
-                    last_interned_at: AtomicRevision::from(last_interned_at),
+                    last_interned_at: AtomicRevision::from(current_revision),
                 });
 
                 let value = (
