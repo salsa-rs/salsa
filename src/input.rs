@@ -215,7 +215,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         self.ingredient_index
     }
 
-    fn maybe_changed_after(
+    unsafe fn maybe_changed_after(
         &self,
         _db: &dyn Database,
         _input: Id,
