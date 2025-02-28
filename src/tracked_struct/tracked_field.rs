@@ -93,6 +93,7 @@ where
         _db: &dyn Database,
         _executor: crate::DatabaseKeyIndex,
         _stale_output_key: crate::Id,
+        _old_is_provisional: bool,
     ) {
         panic!("tracked field ingredients have no outputs")
     }

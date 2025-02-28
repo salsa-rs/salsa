@@ -139,6 +139,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
         _stale_output_key: crate::Id,
+        _old_is_provisional: bool,
     ) {
     }
 

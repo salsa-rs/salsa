@@ -86,6 +86,7 @@ where
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
         _stale_output_key: Id,
+        _old_is_provisional: bool,
     ) {
     }
 

@@ -39,10 +39,11 @@ impl OutputDependencyIndex {
         zalsa: &Zalsa,
         db: &dyn Database,
         executor: DatabaseKeyIndex,
+        old_is_provisional: bool,
     ) {
         zalsa
             .lookup_ingredient(self.ingredient_index)
-            .remove_stale_output(db, executor, self.key_index)
+            .remove_stale_output(db, executor, self.key_index, old_is_provisional)
     }
 
     pub(crate) fn mark_validated_output(

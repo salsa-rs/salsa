@@ -38,8 +38,10 @@ where
             });
         }
 
+        let old_is_provisional = old_memo.may_be_provisional();
+
         for old_output in old_outputs {
-            Self::report_stale_output(zalsa, db, key, old_output);
+            Self::report_stale_output(zalsa, db, key, old_output, old_is_provisional);
         }
     }
 
@@ -48,6 +50,7 @@ where
         db: &C::DbView,
         key: DatabaseKeyIndex,
         output: OutputDependencyIndex,
+        old_is_provisional: bool,
     ) {
         db.salsa_event(&|| {
             Event::new(EventKind::WillDiscardStaleOutput {
@@ -56,6 +59,6 @@ where
             })
         });
 
-        output.remove_stale_output(zalsa, db.as_dyn_database(), key);
+        output.remove_stale_output(zalsa, db.as_dyn_database(), key, old_is_provisional);
     }
 }

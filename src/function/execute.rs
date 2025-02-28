@@ -155,12 +155,15 @@ where
 
             tracing::debug!("{database_key_index:?}: execute: result.revisions = {revisions:#?}");
 
-            // If the new value is equal to the old one, then it didn't
-            // really change, even if some of its inputs have. So we can
-            // "backdate" its `changed_at` revision to be the same as the
-            // old value.
             if let Some(old_memo) = &opt_old_memo {
+                // If the new value is equal to the old one, then it didn't
+                // really change, even if some of its inputs have. So we can
+                // "backdate" its `changed_at` revision to be the same as the
+                // old value.
                 self.backdate_if_appropriate(old_memo, &mut revisions, &new_value);
+
+                // Diff the new outputs with the old, to discard any no-longer-emitted
+                // outputs and update the tracked struct IDs for seeding the next revision.
                 self.diff_outputs(zalsa, db, database_key_index, old_memo, &mut revisions);
             }
 
