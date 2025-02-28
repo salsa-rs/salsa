@@ -5,8 +5,9 @@ use tracked_field::FieldIngredientImpl;
 
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
-    cycle::CycleRecoveryStrategy,
-    ingredient::{fmt_index, Ingredient, Jar, MaybeChangedAfter},
+    cycle::{CycleRecoveryStrategy, EMPTY_CYCLE_HEADS},
+    function::VerifyResult,
+    ingredient::{fmt_index, Ingredient, Jar},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::ZalsaLocal,
     revision::OptionalAtomicRevision,
@@ -681,6 +682,7 @@ where
             data.durability,
             field_changed_at,
             InputAccumulatedValues::Empty,
+            &EMPTY_CYCLE_HEADS,
         );
 
         unsafe { self.to_self_ref(&data.fields) }
@@ -707,6 +709,7 @@ where
             data.durability,
             data.created_at,
             InputAccumulatedValues::Empty,
+            &EMPTY_CYCLE_HEADS,
         );
 
         unsafe { self.to_self_ref(&data.fields) }
@@ -740,11 +743,19 @@ where
         db: &dyn Database,
         input: Id,
         revision: Revision,
-    ) -> MaybeChangedAfter {
+    ) -> VerifyResult {
         let zalsa = db.zalsa();
         let data = Self::data(zalsa.table(), input);
 
-        MaybeChangedAfter::from(data.created_at > revision)
+        VerifyResult::changed_if(data.created_at > revision)
+    }
+
+    fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
+        false
+    }
+
+    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
+        true
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
