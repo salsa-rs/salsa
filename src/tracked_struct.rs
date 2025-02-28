@@ -160,7 +160,7 @@ where
     ingredient_index: IngredientIndex,
 
     /// Phantom data: we fetch `Value<C>` out from `Table`
-    phantom: PhantomData<fn() -> Value<C>>,
+    phantom: PhantomData<fn() -> ValueWithLock<C>>,
 
     /// Store freed ids
     free_list: SegQueue<Id>,
@@ -255,26 +255,10 @@ impl IdentityMap {
 }
 
 // ANCHOR: ValueStruct
-#[derive(Debug)]
-pub struct Value<C>
+pub struct ValueWithLock<C>
 where
     C: Configuration,
 {
-    /// The durability minimum durability of all inputs consumed
-    /// by the creator query prior to creating this tracked struct.
-    /// If any of those inputs changes, then the creator query may
-    /// create this struct with different values.
-    durability: Durability,
-
-    /// The revision in which the tracked struct was first created.
-    ///
-    /// Unlike `updated_at`, which gets bumped on every read,
-    /// `created_at` is updated whenever an untracked field is updated.
-    /// This is necessary to detect reused tracked struct ids _after_
-    /// they've been freed in a prior revision or tracked structs that have been updated
-    /// in-place because of a bad `Hash` implementation.
-    created_at: Revision,
-
     /// The revision when this tracked struct was last updated.
     /// This field also acts as a kind of "lock". Once it is equal
     /// to `Some(current_revision)`, the fields are locked and
@@ -295,6 +279,27 @@ where
     /// This `None` value should never be observable by users unless they have
     /// leaked a reference across threads somehow.
     updated_at: OptionalAtomicRevision,
+    value: Value<C>,
+}
+
+pub struct Value<C>
+where
+    C: Configuration,
+{
+    /// The durability minimum durability of all inputs consumed
+    /// by the creator query prior to creating this tracked struct.
+    /// If any of those inputs changes, then the creator query may
+    /// create this struct with different values.
+    durability: Durability,
+
+    /// The revision in which the tracked struct was first created.
+    ///
+    /// Unlike `updated_at`, which gets bumped on every read,
+    /// `created_at` is updated whenever an untracked field is updated.
+    /// This is necessary to detect reused tracked struct ids _after_
+    /// they've been freed in a prior revision or tracked structs that have been updated
+    /// in-place because of a bad `Hash` implementation.
+    created_at: Revision,
 
     /// Fields of this tracked struct. They can change across revisions,
     /// but they do not change within a particular revision.
@@ -427,14 +432,16 @@ where
         fields: C::Fields<'db>,
     ) -> Id {
         let current_revision = zalsa.current_revision();
-        let value = |_| Value {
-            created_at: current_revision,
+        let value = |_| ValueWithLock {
             updated_at: OptionalAtomicRevision::new(Some(current_revision)),
-            durability: current_deps.durability,
-            fields: unsafe { self.to_static(fields) },
-            revisions: C::new_revisions(current_deps.changed_at),
-            memos: Default::default(),
-            syncs: Default::default(),
+            value: Value {
+                created_at: current_revision,
+                durability: current_deps.durability,
+                fields: unsafe { self.to_static(fields) },
+                revisions: C::new_revisions(current_deps.changed_at),
+                memos: Default::default(),
+                syncs: Default::default(),
+            },
         };
 
         if let Some(id) = self.free_list.pop() {
@@ -450,7 +457,7 @@ where
 
             id
         } else {
-            zalsa_local.allocate::<Value<C>>(zalsa.table(), self.ingredient_index, value)
+            zalsa_local.allocate::<ValueWithLock<C>>(zalsa.table(), self.ingredient_index, value)
         }
     }
 
@@ -505,9 +512,6 @@ where
         // that is still live.
 
         let current_revision = zalsa.current_revision();
-        // UNSAFE: Marking as mut requires exclusive access for the duration of
-        // the `mut`. We have now *claimed* this data by swapping in `None`,
-        // any attempt to read concurrently will panic.
         let last_updated_at = unsafe { (*data_raw).updated_at.load() };
         assert!(
             last_updated_at.is_some(),
@@ -528,39 +532,36 @@ where
                 "failed to acquire write lock, id `{id:?}` must have been leaked across threads"
             );
         }
-
         // SAFETY: Marking as mut requires exclusive access for the duration of
         // the `mut`. We have now *claimed* this data by swapping in `None`,
-        // any attempt to read concurrently will panic. Note that we cannot create
-        // a `&mut` reference to the full `Value` though because
-        // another thread may access `updated_at` concurrently.
+        // any attempt to read concurrently will panic.
+        let data = unsafe { &mut (*data_raw).value };
 
         // SAFETY: We assert that the pointer to `data.revisions`
         // is a pointer into the database referencing a value
         // from a previous revision. As such, it continues to meet
         // its validity invariant and any owned content also continues
         // to meet its safety invariant.
-        unsafe {
-            if C::update_fields(
+        let updated = unsafe {
+            C::update_fields(
                 current_revision,
-                &mut (*data_raw).revisions,
-                self.to_self_ptr(std::ptr::addr_of_mut!((*data_raw).fields)),
+                &mut data.revisions,
+                self.to_self_ptr(std::ptr::addr_of_mut!(data.fields)),
                 fields,
-            ) {
-                // Consider this a new tracked-struct (even though it still uses the same id)
-                // when any non-tracked field got updated.
-                // This should be rare and only ever happen if there's a hash collision
-                // which makes Salsa consider two tracked structs to still be the same
-                // even though the fields are different.
-                // See `tracked-struct-id-field-bad-hash` for more details.
-                (*data_raw).revisions = C::new_revisions(current_revision);
-                (*data_raw).created_at = current_revision;
-            } else if current_deps.durability < (*data_raw).durability {
-                (*data_raw).revisions = C::new_revisions(current_revision);
-                (*data_raw).created_at = current_revision;
-            }
-            (*data_raw).durability = current_deps.durability;
+            )
+        };
+        if updated || current_deps.durability < data.durability {
+            // If `updated`, consider this a new tracked-struct (even though it still uses the same id)
+            // when any non-tracked field got updated.
+            // This should be rare and only ever happen if there's a hash collision
+            // which makes Salsa consider two tracked structs to still be the same
+            // even though the fields are different.
+            // See `tracked-struct-id-field-bad-hash` for more details.
+            data.revisions = C::new_revisions(current_revision);
+            data.created_at = current_revision;
         }
+        data.durability = current_deps.durability;
+        // release the lock
         let swapped_out = unsafe { (*data_raw).updated_at.swap_mut(Some(current_revision)) };
         assert!(swapped_out.is_none(), "lock was acquired twice!");
     }
@@ -571,10 +572,10 @@ where
         let val = Self::data_raw(table, id);
         acquire_read_lock(unsafe { &(*val).updated_at }, current_revision);
         // We have acquired the read lock, so it is safe to return a reference to the data.
-        unsafe { &*val }
+        unsafe { &(*val).value }
     }
 
-    fn data_raw(table: &Table, id: Id) -> *mut Value<C> {
+    fn data_raw(table: &Table, id: Id) -> *mut ValueWithLock<C> {
         table.get_raw(id)
     }
 
@@ -612,7 +613,7 @@ where
 
         // Take the memo table. This is safe because we have modified `data_ref.updated_at` to `None`
         // signalling that we have acquired the write lock
-        let memo_table = std::mem::take(unsafe { &mut (*data).memos });
+        let memo_table = std::mem::take(unsafe { &mut (*data).value.memos });
 
         // SAFETY: We have verified that no more references to these memos exist and so we are good
         // to drop them.
@@ -709,12 +710,12 @@ where
     pub fn entries<'db>(
         &'db self,
         db: &'db dyn crate::Database,
-    ) -> impl Iterator<Item = &'db Value<C>> {
+    ) -> impl Iterator<Item = &'db ValueWithLock<C>> {
         db.zalsa()
             .table()
             .pages
             .iter()
-            .filter_map(|(_, page)| page.cast_type::<crate::table::Page<Value<C>>>())
+            .filter_map(|(_, page)| page.cast_type::<crate::table::Page<ValueWithLock<C>>>())
             .flat_map(|page| page.slots())
     }
 }
@@ -789,7 +790,7 @@ where
     }
 }
 
-impl<C> Value<C>
+impl<C> ValueWithLock<C>
 where
     C: Configuration,
 {
@@ -799,7 +800,7 @@ where
     /// a particular revision.
     #[cfg(feature = "salsa_unstable")]
     pub fn fields(&self) -> &C::Fields<'static> {
-        &self.fields
+        &self.value.fields
     }
 }
 
@@ -823,7 +824,7 @@ fn acquire_read_lock(updated_at: &OptionalAtomicRevision, current_revision: Revi
     }
 }
 
-impl<C> Slot for Value<C>
+impl<C> Slot for ValueWithLock<C>
 where
     C: Configuration,
 {
@@ -833,11 +834,11 @@ where
         // ensures that there is no danger of a race
         // when deleting a tracked struct.
         acquire_read_lock(&self.updated_at, current_revision);
-        &self.memos
+        &self.value.memos
     }
 
     fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
-        &mut self.memos
+        &mut self.value.memos
     }
 
     // FIXME: `&self` may alias here?
@@ -846,7 +847,7 @@ where
         // ensures that there is no danger of a race
         // when deleting a tracked struct.
         acquire_read_lock(&self.updated_at, current_revision);
-        &self.syncs
+        &self.value.syncs
     }
 }
 
