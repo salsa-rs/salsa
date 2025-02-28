@@ -400,18 +400,17 @@ where
             disambiguator,
         };
 
-        let current_revision = zalsa.current_revision();
         match zalsa_local.tracked_struct_id(&identity) {
             Some(id) => {
                 // The struct already exists in the intern map.
                 zalsa_local.add_output(self.database_key_index(id).into());
-                self.update(zalsa, current_revision, id, &current_deps, fields);
+                self.update(zalsa, id, &current_deps, fields);
                 C::struct_from_id(id)
             }
 
             None => {
                 // This is a new tracked struct, so create an entry in the struct map.
-                let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
+                let id = self.allocate(zalsa, zalsa_local, &current_deps, fields);
                 let key = self.database_key_index(id);
                 zalsa_local.add_output(key.into());
                 zalsa_local.store_tracked_struct_id(identity, id);
@@ -424,10 +423,10 @@ where
         &'db self,
         zalsa: &'db Zalsa,
         zalsa_local: &'db ZalsaLocal,
-        current_revision: Revision,
         current_deps: &StampedValue<()>,
         fields: C::Fields<'db>,
     ) -> Id {
+        let current_revision = zalsa.current_revision();
         let value = |_| Value {
             created_at: current_revision,
             updated_at: OptionalAtomicRevision::new(Some(current_revision)),
@@ -440,16 +439,14 @@ where
 
         if let Some(id) = self.free_list.pop() {
             let data_raw = Self::data_raw(zalsa.table(), id);
-            assert!(
+            debug_assert!(
                 unsafe { (*data_raw).updated_at.load().is_none() },
-                "free list entry for `{id:?}` does not have `None` for `updated_at`"
+                "free list entry for `{id:?}` should not be locked"
             );
 
             // Overwrite the free-list entry. Use `*foo = ` because the entry
             // has been previously initialized and we want to free the old contents.
-            unsafe {
-                *data_raw = value(id);
-            }
+            unsafe { *data_raw = value(id) };
 
             id
         } else {
@@ -467,7 +464,6 @@ where
     fn update<'db>(
         &'db self,
         zalsa: &'db Zalsa,
-        current_revision: Revision,
         id: Id,
         current_deps: &StampedValue<()>,
         fields: C::Fields<'db>,
@@ -508,6 +504,7 @@ where
         // during the current revision and thus obtained an `&` reference to those fields
         // that is still live.
 
+        let current_revision = zalsa.current_revision();
         // UNSAFE: Marking as mut requires exclusive access for the duration of
         // the `mut`. We have now *claimed* this data by swapping in `None`,
         // any attempt to read concurrently will panic.
@@ -524,17 +521,19 @@ where
         // Acquire the write-lock. This can only fail if there is a parallel thread
         // reading from this same `id`, which can only happen if the user has leaked it.
         // Tsk tsk.
-        let swapped_out = unsafe { (*data_raw).updated_at.swap(None) };
-        if swapped_out != last_updated_at {
+
+        let swapped = unsafe { (*data_raw).updated_at.swap(None) };
+        if last_updated_at != swapped {
             panic!(
                 "failed to acquire write lock, id `{id:?}` must have been leaked across threads"
             );
         }
 
-        // UNSAFE: Marking as mut requires exclusive access for the duration of
+        // SAFETY: Marking as mut requires exclusive access for the duration of
         // the `mut`. We have now *claimed* this data by swapping in `None`,
-        // any attempt to read concurrently will panic.
-        let data = unsafe { &mut *data_raw };
+        // any attempt to read concurrently will panic. Note that we cannot create
+        // a `&mut` reference to the full `Value` though because
+        // another thread may access `updated_at` concurrently.
 
         // SAFETY: We assert that the pointer to `data.revisions`
         // is a pointer into the database referencing a value
@@ -544,8 +543,8 @@ where
         unsafe {
             if C::update_fields(
                 current_revision,
-                &mut data.revisions,
-                self.to_self_ptr(std::ptr::addr_of_mut!(data.fields)),
+                &mut (*data_raw).revisions,
+                self.to_self_ptr(std::ptr::addr_of_mut!((*data_raw).fields)),
                 fields,
             ) {
                 // Consider this a new tracked-struct (even though it still uses the same id)
@@ -554,22 +553,25 @@ where
                 // which makes Salsa consider two tracked structs to still be the same
                 // even though the fields are different.
                 // See `tracked-struct-id-field-bad-hash` for more details.
-                data.created_at = current_revision;
+                (*data_raw).revisions = C::new_revisions(current_revision);
+                (*data_raw).created_at = current_revision;
+            } else if current_deps.durability < (*data_raw).durability {
+                (*data_raw).revisions = C::new_revisions(current_revision);
+                (*data_raw).created_at = current_revision;
             }
+            (*data_raw).durability = current_deps.durability;
         }
-        if current_deps.durability < data.durability {
-            data.revisions = C::new_revisions(current_revision);
-            data.created_at = current_revision;
-        }
-        data.durability = current_deps.durability;
-        let swapped_out = data.updated_at.swap(Some(current_revision));
-        assert!(swapped_out.is_none());
+        let swapped_out = unsafe { (*data_raw).updated_at.swap_mut(Some(current_revision)) };
+        assert!(swapped_out.is_none(), "lock was acquired twice!");
     }
 
     /// Fetch the data for a given id created by this ingredient from the table,
     /// -giving it the appropriate type.
-    fn data(table: &Table, id: Id) -> &Value<C> {
-        table.get(id)
+    fn data(table: &Table, id: Id, current_revision: Revision) -> &Value<C> {
+        let val = Self::data_raw(table, id);
+        acquire_read_lock(unsafe { &(*val).updated_at }, current_revision);
+        // We have acquired the read lock, so it is safe to return a reference to the data.
+        unsafe { &*val }
     }
 
     fn data_raw(table: &Table, id: Id) -> *mut Value<C> {
@@ -594,29 +596,23 @@ where
         });
 
         let zalsa = db.zalsa();
-        let current_revision = zalsa.current_revision();
         let data = Self::data_raw(zalsa.table(), id);
 
         // We want to set `updated_at` to `None`, signalling that other field values
         // cannot be read. The current value should be `Some(R0)` for some older revision.
-        let data_ref = unsafe { &*data };
-        match data_ref.updated_at.load() {
+        match unsafe { (*data).updated_at.swap(None) }{
             None => {
                 panic!("cannot delete write-locked id `{id:?}`; value leaked across threads");
             }
-            Some(r) if r == current_revision => panic!(
+            Some(r) if r == zalsa.current_revision() => panic!(
                 "cannot delete read-locked id `{id:?}`; value leaked across threads or user functions not deterministic"
             ),
-            Some(r) => {
-                if data_ref.updated_at.compare_exchange(Some(r), None).is_err() {
-                    panic!("race occurred when deleting value `{id:?}`")
-                }
-            }
+            Some(_) => ()
         }
 
         // Take the memo table. This is safe because we have modified `data_ref.updated_at` to `None`
-        // and the code that references the memo-table has a read-lock.
-        let memo_table = unsafe { (*data).take_memo_table() };
+        // signalling that we have acquired the write lock
+        let memo_table = std::mem::take(unsafe { &mut (*data).memos });
 
         // SAFETY: We have verified that no more references to these memos exist and so we are good
         // to drop them.
@@ -648,7 +644,7 @@ where
         s: C::Struct<'db>,
     ) -> &'db C::Fields<'db> {
         let id = C::deref_struct(s);
-        let value = Self::data(db.zalsa().table(), id);
+        let value = Self::data(db.zalsa().table(), id, db.zalsa().current_revision());
         unsafe { self.to_self_ref(&value.fields) }
     }
 
@@ -670,9 +666,7 @@ where
         let (zalsa, zalsa_local) = db.zalsas();
         let id = C::deref_struct(s);
         let field_ingredient_index = self.ingredient_index.successor(relative_tracked_index);
-        let data = Self::data(zalsa.table(), id);
-
-        data.read_lock(zalsa.current_revision());
+        let data = Self::data(zalsa.table(), id, zalsa.current_revision());
 
         let field_changed_at = data.revisions[relative_tracked_index];
 
@@ -697,9 +691,7 @@ where
     ) -> &'db C::Fields<'db> {
         let (zalsa, zalsa_local) = db.zalsas();
         let id = C::deref_struct(s);
-        let data = Self::data(zalsa.table(), id);
-
-        data.read_lock(zalsa.current_revision());
+        let data = Self::data(zalsa.table(), id, zalsa.current_revision());
 
         // Add a dependency on the tracked struct itself.
         zalsa_local.report_tracked_read(
@@ -742,7 +734,7 @@ where
         revision: Revision,
     ) -> MaybeChangedAfter {
         let zalsa = db.zalsa();
-        let data = Self::data(zalsa.table(), input);
+        let data = Self::data(zalsa.table(), input, zalsa.current_revision());
 
         MaybeChangedAfter::from(data.created_at > revision)
     }
@@ -761,9 +753,7 @@ where
         _executor: DatabaseKeyIndex,
         _output_key: crate::Id,
     ) {
-        // we used to update `update_at` field but now we do it lazilly when data is accessed
-        //
-        // FIXME: delete this method
+        // we used to update `update_at` field but now we do it lazily when data is accessed
     }
 
     fn remove_stale_output(
@@ -776,7 +766,7 @@ where
         // `executor` creates a tracked struct `salsa_output_key`,
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
-        self.delete_entity(db.as_dyn_database(), stale_output_key);
+        self.delete_entity(db, stale_output_key);
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -811,34 +801,22 @@ where
     pub fn fields(&self) -> &C::Fields<'static> {
         &self.fields
     }
+}
 
-    fn take_memo_table(&mut self) -> MemoTable {
-        // This fn is only called after `updated_at` has been set to `None`;
-        // this ensures that there is no concurrent access
-        // (and that the `&mut self` is accurate...).
-        assert!(self.updated_at.load().is_none());
-
-        std::mem::take(&mut self.memos)
-    }
-
-    fn read_lock(&self, current_revision: Revision) {
-        loop {
-            match self.updated_at.load() {
-                None => {
-                    panic!("access to field whilst the value is being initialized");
-                }
-                Some(r) => {
-                    if r == current_revision {
-                        return;
-                    }
-
-                    if self
-                        .updated_at
-                        .compare_exchange(Some(r), Some(current_revision))
-                        .is_ok()
-                    {
-                        break;
-                    }
+fn acquire_read_lock(updated_at: &OptionalAtomicRevision, current_revision: Revision) {
+    loop {
+        match updated_at.load() {
+            None => panic!(
+                "write lock taken; value leaked across threads or user functions not deterministic"
+            ),
+            // the read lock was taken by someone else, so we also succeed
+            Some(r) if r == current_revision => return,
+            Some(r) => {
+                if updated_at
+                    .compare_exchange(Some(r), Some(current_revision))
+                    .is_ok()
+                {
+                    break;
                 }
             }
         }
@@ -849,11 +827,12 @@ impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
+    // FIXME: `&self` may alias here before the lock is taken?
     unsafe fn memos(&self, current_revision: Revision) -> &crate::table::memo::MemoTable {
         // Acquiring the read lock here with the current revision
         // ensures that there is no danger of a race
         // when deleting a tracked struct.
-        self.read_lock(current_revision);
+        acquire_read_lock(&self.updated_at, current_revision);
         &self.memos
     }
 
@@ -861,11 +840,12 @@ where
         &mut self.memos
     }
 
+    // FIXME: `&self` may alias here?
     unsafe fn syncs(&self, current_revision: Revision) -> &crate::table::sync::SyncTable {
         // Acquiring the read lock here with the current revision
         // ensures that there is no danger of a race
         // when deleting a tracked struct.
-        self.read_lock(current_revision);
+        acquire_read_lock(&self.updated_at, current_revision);
         &self.syncs
     }
 }

@@ -104,6 +104,13 @@ impl OptionalAtomicRevision {
         )
     }
 
+    pub(crate) fn swap_mut(&mut self, val: Option<Revision>) -> Option<Revision> {
+        Revision::from_opt(std::mem::replace(
+            self.data.get_mut(),
+            val.map_or(0, |r| r.as_usize()),
+        ))
+    }
+
     pub(crate) fn compare_exchange(
         &self,
         current: Option<Revision>,
