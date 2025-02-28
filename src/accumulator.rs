@@ -24,7 +24,7 @@ pub(crate) mod accumulated_map;
 
 /// Trait implemented on the struct that user annotated with `#[salsa::accumulator]`.
 /// The `Self` type is therefore the types to be accumulated.
-pub trait Accumulator: Clone + Debug + Send + Sync + Any + Sized + UnwindSafe {
+pub trait Accumulator: Debug + Send + Sync + Any + Sized + UnwindSafe {
     const DEBUG_NAME: &'static str;
 
     /// Accumulate an instance of this in the database for later retrieval.

@@ -11,7 +11,6 @@ pub(crate) struct Accumulated<A: Accumulator> {
 pub(crate) trait AnyAccumulated: Any + Debug + Send + Sync {
     fn as_dyn_any(&self) -> &dyn Any;
     fn as_dyn_any_mut(&mut self) -> &mut dyn Any;
-    fn cloned(&self) -> Box<dyn AnyAccumulated>;
 }
 
 impl<A: Accumulator> Accumulated<A> {
@@ -19,8 +18,8 @@ impl<A: Accumulator> Accumulated<A> {
         self.values.push(value);
     }
 
-    pub fn extend_with_accumulated(&self, values: &mut Vec<A>) {
-        values.extend_from_slice(&self.values);
+    pub fn extend_with_accumulated<'slf>(&'slf self, values: &mut Vec<&'slf A>) {
+        values.extend(&self.values);
     }
 }
 
@@ -42,11 +41,6 @@ where
 
     fn as_dyn_any_mut(&mut self) -> &mut dyn Any {
         self
-    }
-
-    fn cloned(&self) -> Box<dyn AnyAccumulated> {
-        let this: Self = self.clone();
-        Box::new(this)
     }
 }
 

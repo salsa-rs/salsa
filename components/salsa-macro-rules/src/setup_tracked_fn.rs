@@ -277,7 +277,7 @@ macro_rules! setup_tracked_fn {
                 pub fn accumulated<$db_lt, A: salsa::Accumulator>(
                     $db: &$db_lt dyn $Db,
                     $($input_id: $input_ty,)*
-                ) -> Vec<A> {
+                ) -> Vec<&$db_lt A> {
                     use salsa::plumbing as $zalsa;
                     let key = $zalsa::macro_if! {
                         if $needs_interner {
