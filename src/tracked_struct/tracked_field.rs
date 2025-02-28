@@ -62,7 +62,7 @@ where
         revision: crate::Revision,
     ) -> MaybeChangedAfter {
         let zalsa = db.zalsa();
-        let data = <super::IngredientImpl<C>>::data(zalsa.table(), input);
+        let data = <super::IngredientImpl<C>>::data(zalsa.table(), input, zalsa.current_revision());
         let field_changed_at = data.revisions[self.field_index];
         MaybeChangedAfter::from(field_changed_at > revision)
     }
