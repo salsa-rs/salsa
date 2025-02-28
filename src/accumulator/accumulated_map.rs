@@ -22,10 +22,10 @@ impl AccumulatedMap {
             .accumulate(value);
     }
 
-    pub fn extend_with_accumulated<A: Accumulator>(
-        &self,
+    pub fn extend_with_accumulated<'slf, A: Accumulator>(
+        &'slf self,
         index: IngredientIndex,
-        output: &mut Vec<A>,
+        output: &mut Vec<&'slf A>,
     ) {
         let Some(a) = self.map.get(&index) else {
             return;
@@ -39,18 +39,6 @@ impl AccumulatedMap {
 
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
-    }
-}
-
-impl Clone for AccumulatedMap {
-    fn clone(&self) -> Self {
-        Self {
-            map: self
-                .map
-                .iter()
-                .map(|(&key, value)| (key, value.cloned()))
-                .collect(),
-        }
     }
 }
 

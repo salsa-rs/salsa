@@ -14,7 +14,7 @@ where
 {
     /// Helper used by `accumulate` functions. Computes the results accumulated by `database_key_index`
     /// and its inputs.
-    pub fn accumulated_by<A>(&self, db: &C::DbView, key: Id) -> Vec<A>
+    pub fn accumulated_by<'db, A>(&self, db: &'db C::DbView, key: Id) -> Vec<&'db A>
     where
         A: accumulator::Accumulator,
     {
