@@ -8,6 +8,7 @@ use crate::{
     plumbing::MemoIngredientMap,
     salsa_struct::SalsaStructInDb,
     table::Table,
+    views::DatabaseDownCaster,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
     Cycle, Database, Id, Revision,
@@ -105,6 +106,14 @@ pub struct IngredientImpl<C: Configuration> {
     /// Used to find memos to throw out when we have too many memoized values.
     lru: lru::Lru,
 
+    /// A downcaster from `dyn Database` to `C::DbView`.
+    ///
+    /// # Safety
+    ///
+    /// The supplied database must be be the same as the database used to construct the [`Views`]
+    /// instances that this downcaster was derived from.
+    view_caster: DatabaseDownCaster<C::DbView>,
+
     /// When `fetch` and friends executes, they return a reference to the
     /// value stored in the memo that is extended to live as long as the `&self`
     /// reference we start with. This means that whenever we remove something
@@ -135,12 +144,14 @@ where
         index: IngredientIndex,
         memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
         lru: usize,
+        view_caster: DatabaseDownCaster<C::DbView>,
     ) -> Self {
         Self {
             index,
             memo_ingredient_indices,
             lru: lru::Lru::new(lru),
             deleted_entries: Default::default(),
+            view_caster,
         }
     }
 
@@ -213,13 +224,14 @@ where
         self.index
     }
 
-    fn maybe_changed_after(
+    unsafe fn maybe_changed_after(
         &self,
         db: &dyn Database,
         input: Id,
         revision: Revision,
     ) -> MaybeChangedAfter {
-        let db = db.as_view::<C::DbView>();
+        // SAFETY: The `db` belongs to the ingredient as per caller invariant
+        let db = unsafe { self.view_caster.downcast_unchecked(db) };
         self.maybe_changed_after(db, input, revision)
     }
 
@@ -279,7 +291,7 @@ where
         db: &'db dyn Database,
         key_index: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
-        let db = db.as_view::<C::DbView>();
+        let db = self.view_caster.downcast(db);
         self.accumulated_map(db, key_index)
     }
 }
