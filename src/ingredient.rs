@@ -79,13 +79,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// revision, but was NOT output in the current revision.
     ///
     /// This hook is used to clear out the stale value so others cannot read it.
-    fn remove_stale_output(
-        &self,
-        db: &dyn Database,
-        executor: DatabaseKeyIndex,
-        stale_output_key: Id,
-    ) {
-        let _ = (db, executor, stale_output_key);
+    fn remove_stale_output(&self, zalsa: &Zalsa, stale_output_key: Id) {
+        let _ = (zalsa, stale_output_key);
         unreachable!("only tracked struct ingredients can have stale outputs")
     }
 

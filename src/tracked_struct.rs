@@ -13,7 +13,7 @@ use crate::{
     salsa_struct::SalsaStructInDb,
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
-    Database, Durability, Event, EventKind, Id, Revision,
+    Database, Durability, Id, Revision,
 };
 
 pub mod tracked_field;
@@ -584,14 +584,7 @@ where
     /// Using this method on an entity id that MAY be used in the current revision will lead to
     /// unspecified results (but not UB). See [`InternedIngredient::delete_index`] for more
     /// discussion and important considerations.
-    pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id) {
-        db.salsa_event(&|| {
-            Event::new(crate::EventKind::DidDiscard {
-                key: self.database_key_index(id),
-            })
-        });
-
-        let zalsa = db.zalsa();
+    pub(crate) fn delete_entity(&self, zalsa: &Zalsa, id: Id) {
         let current_revision = zalsa.current_revision();
         let data = Self::data_raw(zalsa.table(), id);
 
@@ -618,19 +611,9 @@ where
 
         // SAFETY: We have verified that no more references to these memos exist and so we are good
         // to drop them.
-        for (memo_ingredient_index, memo) in unsafe { memo_table.into_memos() } {
-            let ingredient_index =
-                zalsa.ingredient_index_for_memo(self.ingredient_index, memo_ingredient_index);
-
-            let executor = DatabaseKeyIndex {
-                ingredient_index,
-                key_index: id,
-            };
-
-            db.salsa_event(&|| Event::new(EventKind::DidDiscard { key: executor }));
-
+        for memo in unsafe { memo_table.into_memos() } {
             for stale_output in memo.origin().outputs() {
-                stale_output.remove_stale_output(zalsa, db, executor);
+                stale_output.remove_stale_output(zalsa);
             }
         }
 
@@ -756,17 +739,12 @@ where
         // FIXME: delete this method
     }
 
-    fn remove_stale_output(
-        &self,
-        db: &dyn Database,
-        _executor: DatabaseKeyIndex,
-        stale_output_key: crate::Id,
-    ) {
+    fn remove_stale_output(&self, zalsa: &Zalsa, stale_output_key: crate::Id) {
         // This method is called when, in prior revisions,
         // `executor` creates a tracked struct `salsa_output_key`,
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
-        self.delete_entity(db, stale_output_key);
+        self.delete_entity(zalsa, stale_output_key);
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

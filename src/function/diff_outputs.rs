@@ -1,7 +1,7 @@
 use super::{memo::Memo, Configuration, IngredientImpl};
 use crate::{
     hash::FxHashSet, key::OutputDependencyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions,
-    AsDynDatabase as _, Database, DatabaseKeyIndex, Event, EventKind,
+    Database, DatabaseKeyIndex, Event, EventKind,
 };
 
 impl<C> IngredientImpl<C>
@@ -56,6 +56,6 @@ where
             })
         });
 
-        output.remove_stale_output(zalsa, db.as_dyn_database(), key);
+        output.remove_stale_output(zalsa);
     }
 }

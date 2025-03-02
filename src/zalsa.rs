@@ -216,15 +216,6 @@ impl Zalsa {
             .as_ref()
     }
 
-    pub(crate) fn ingredient_index_for_memo(
-        &self,
-        struct_ingredient_index: IngredientIndex,
-        memo_ingredient_index: MemoIngredientIndex,
-    ) -> IngredientIndex {
-        self.memo_ingredient_indices.read()[struct_ingredient_index.as_usize()]
-            [memo_ingredient_index.as_usize()]
-    }
-
     /// Starts unwinding the stack if the current revision is cancelled.
     ///
     /// This method can be called by query implementations that perform
