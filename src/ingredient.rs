@@ -62,22 +62,6 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         revision: Revision,
     ) -> MaybeChangedAfter;
 
-    /// What were the inputs (if any) that were used to create the value at `key_index`.
-    fn origin(&self, db: &dyn Database, key_index: Id) -> Option<QueryOrigin>;
-
-    /// What values were accumulated during the creation of the value at `key_index`
-    /// (if any).
-    ///
-    /// In practice, returns `Some` only for tracked function ingredients.
-    fn accumulated<'db>(
-        &'db self,
-        db: &'db dyn Database,
-        key_index: Id,
-    ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
-        _ = (db, key_index);
-        (None, InputAccumulatedValues::Any)
-    }
-
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
     /// This occurs because the value for `executor`, which generated it, was marked as valid
     /// in the current revision.
@@ -86,7 +70,10 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: &'db dyn Database,
         executor: DatabaseKeyIndex,
         output_key: crate::Id,
-    );
+    ) {
+        let _ = (db, executor, output_key);
+        unreachable!("only tracked struct and function ingredients can have validatable outputs")
+    }
 
     /// Invoked when the value `stale_output` was output by `executor` in a previous
     /// revision, but was NOT output in the current revision.
@@ -97,15 +84,15 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: &dyn Database,
         executor: DatabaseKeyIndex,
         stale_output_key: Id,
-    );
+    ) {
+        let _ = (db, executor, stale_output_key);
+        unreachable!("only tracked struct ingredients can have stale outputs")
+    }
 
     /// Returns the [`IngredientIndex`] of this ingredient.
     fn ingredient_index(&self) -> IngredientIndex;
 
-    /// If this ingredient is a participant in a cycle, what is its cycle recovery strategy?
-    /// (Really only relevant to [`crate::function::FunctionIngredient`],
-    /// since only function ingredients push themselves onto the active query stack.)
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy;
+    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
 
     /// Returns true if `reset_for_new_revision` should be called when new revisions start.
     /// Invoked once when ingredient is added and not after that.
@@ -132,7 +119,31 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         );
     }
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
+    // Function ingredient methods
+
+    /// If this ingredient is a participant in a cycle, what is its cycle recovery strategy?
+    /// (Really only relevant to [`crate::function::FunctionIngredient`],
+    /// since only function ingredients push themselves onto the active query stack.)
+    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
+        unreachable!("only function ingredients can be part of a cycle")
+    }
+
+    /// What were the inputs (if any) that were used to create the value at `key_index`.
+    fn origin(&self, db: &dyn Database, key_index: Id) -> Option<QueryOrigin> {
+        let _ = (db, key_index);
+        unreachable!("only function ingredients have origins")
+    }
+
+    /// What values were accumulated during the creation of the value at `key_index`
+    /// (if any).
+    fn accumulated<'db>(
+        &'db self,
+        db: &'db dyn Database,
+        key_index: Id,
+    ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
+        let _ = (db, key_index);
+        (None, InputAccumulatedValues::Empty)
+    }
 }
 
 impl dyn Ingredient {

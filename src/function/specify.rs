@@ -101,9 +101,9 @@ where
     /// and `key` is a value that was specified by `executor`.
     /// Marks `key` as valid in the current revision since if `executor` had re-executed,
     /// it would have specified `key` again.
-    pub(super) fn validate_specified_value<Db: ?Sized + Database>(
+    pub(super) fn validate_specified_value(
         &self,
-        db: &Db,
+        db: &dyn Database,
         executor: DatabaseKeyIndex,
         key: Id,
     ) {

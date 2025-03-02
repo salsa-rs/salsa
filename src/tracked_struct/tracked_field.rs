@@ -51,10 +51,6 @@ where
         self.ingredient_index
     }
 
-    fn cycle_recovery_strategy(&self) -> crate::cycle::CycleRecoveryStrategy {
-        crate::cycle::CycleRecoveryStrategy::Panic
-    }
-
     unsafe fn maybe_changed_after<'db>(
         &'db self,
         db: &'db dyn Database,
@@ -65,32 +61,6 @@ where
         let data = <super::IngredientImpl<C>>::data(zalsa.table(), input);
         let field_changed_at = data.revisions[self.field_index];
         MaybeChangedAfter::from(field_changed_at > revision)
-    }
-
-    fn origin(
-        &self,
-        _db: &dyn Database,
-        _key_index: crate::Id,
-    ) -> Option<crate::zalsa_local::QueryOrigin> {
-        None
-    }
-
-    fn mark_validated_output(
-        &self,
-        _db: &dyn Database,
-        _executor: crate::DatabaseKeyIndex,
-        _output_key: crate::Id,
-    ) {
-        panic!("tracked field ingredients have no outputs")
-    }
-
-    fn remove_stale_output(
-        &self,
-        _db: &dyn Database,
-        _executor: crate::DatabaseKeyIndex,
-        _stale_output_key: crate::Id,
-    ) {
-        panic!("tracked field ingredients have no outputs")
     }
 
     fn fmt_index(

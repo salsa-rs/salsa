@@ -12,7 +12,6 @@ use input_field::FieldIngredientImpl;
 
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
-    cycle::CycleRecoveryStrategy,
     id::{AsId, FromIdWithDb},
     ingredient::{fmt_index, Ingredient, MaybeChangedAfter},
     input::singleton::{Singleton, SingletonChoice},
@@ -20,7 +19,6 @@ use crate::{
     plumbing::{Jar, Stamp},
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
-    zalsa_local::QueryOrigin,
     Database, Durability, Id, Revision, Runtime,
 };
 
@@ -224,38 +222,6 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
         MaybeChangedAfter::No(InputAccumulatedValues::Empty)
-    }
-
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        CycleRecoveryStrategy::Panic
-    }
-
-    fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {
-        None
-    }
-
-    fn mark_validated_output(
-        &self,
-        _db: &dyn Database,
-        executor: DatabaseKeyIndex,
-        output_key: Id,
-    ) {
-        unreachable!(
-            "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
-            executor, output_key
-        );
-    }
-
-    fn remove_stale_output(
-        &self,
-        _db: &dyn Database,
-        executor: DatabaseKeyIndex,
-        stale_output_key: Id,
-    ) {
-        unreachable!(
-            "remove_stale_output({:?}, {:?}): input cannot be the output of a tracked function",
-            executor, stale_output_key
-        );
     }
 
     fn fmt_index(&self, index: Option<Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -5,7 +5,6 @@ use tracked_field::FieldIngredientImpl;
 
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
-    cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, MaybeChangedAfter},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::ZalsaLocal,
@@ -14,7 +13,6 @@ use crate::{
     salsa_struct::SalsaStructInDb,
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
-    zalsa_local::QueryOrigin,
     Database, Durability, Event, EventKind, Id, Revision,
 };
 
@@ -747,14 +745,6 @@ where
         MaybeChangedAfter::from(data.created_at > revision)
     }
 
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        crate::cycle::CycleRecoveryStrategy::Panic
-    }
-
-    fn origin(&self, _db: &dyn Database, _key_index: crate::Id) -> Option<QueryOrigin> {
-        None
-    }
-
     fn mark_validated_output<'db>(
         &'db self,
         _db: &'db dyn Database,
@@ -776,7 +766,7 @@ where
         // `executor` creates a tracked struct `salsa_output_key`,
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
-        self.delete_entity(db.as_dyn_database(), stale_output_key);
+        self.delete_entity(db, stale_output_key);
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

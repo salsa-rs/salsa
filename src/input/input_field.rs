@@ -1,9 +1,7 @@
-use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{fmt_index, Ingredient, MaybeChangedAfter};
 use crate::input::Configuration;
 use crate::zalsa::IngredientIndex;
-use crate::zalsa_local::QueryOrigin;
-use crate::{Database, DatabaseKeyIndex, Id, Revision};
+use crate::{Database, Id, Revision};
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -45,10 +43,6 @@ where
         self.index
     }
 
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        CycleRecoveryStrategy::Panic
-    }
-
     unsafe fn maybe_changed_after(
         &self,
         db: &dyn Database,
@@ -59,26 +53,6 @@ where
         let value = <IngredientImpl<C>>::data(zalsa, input);
 
         MaybeChangedAfter::from(value.stamps[self.field_index].changed_at > revision)
-    }
-
-    fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {
-        None
-    }
-
-    fn mark_validated_output(
-        &self,
-        _db: &dyn Database,
-        _executor: DatabaseKeyIndex,
-        _output_key: Id,
-    ) {
-    }
-
-    fn remove_stale_output(
-        &self,
-        _db: &dyn Database,
-        _executor: DatabaseKeyIndex,
-        _stale_output_key: Id,
-    ) {
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

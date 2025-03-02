@@ -235,14 +235,6 @@ where
         self.maybe_changed_after(db, input, revision)
     }
 
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        C::CYCLE_STRATEGY
-    }
-
-    fn origin(&self, db: &dyn Database, key: Id) -> Option<QueryOrigin> {
-        self.origin(db.zalsa(), key)
-    }
-
     fn mark_validated_output(
         &self,
         db: &dyn Database,
@@ -250,17 +242,6 @@ where
         output_key: crate::Id,
     ) {
         self.validate_specified_value(db, executor, output_key);
-    }
-
-    fn remove_stale_output(
-        &self,
-        _db: &dyn Database,
-        _executor: DatabaseKeyIndex,
-        _stale_output_key: crate::Id,
-    ) {
-        // This function is invoked when a query Q specifies the value for `stale_output_key` in rev 1,
-        // but not in rev 2. We don't do anything in this case, we just leave the (now stale) memo.
-        // Since its `verified_at` field has not changed, it will be considered dirty if it is invoked.
     }
 
     fn requires_reset_for_new_revision(&self) -> bool {
@@ -284,6 +265,14 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
+    }
+
+    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
+        C::CYCLE_STRATEGY
+    }
+
+    fn origin(&self, db: &dyn Database, key: Id) -> Option<QueryOrigin> {
+        self.origin(db.zalsa(), key)
     }
 
     fn accumulated<'db>(

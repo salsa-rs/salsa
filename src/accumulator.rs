@@ -11,12 +11,10 @@ use accumulated::Accumulated;
 use accumulated::AnyAccumulated;
 
 use crate::{
-    cycle::CycleRecoveryStrategy,
     ingredient::{fmt_index, Ingredient, Jar, MaybeChangedAfter},
     plumbing::IngredientIndices,
     zalsa::{IngredientIndex, Zalsa},
-    zalsa_local::QueryOrigin,
-    Database, DatabaseKeyIndex, Id, Revision,
+    Database, Id, Revision,
 };
 
 mod accumulated;
@@ -107,30 +105,6 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _revision: Revision,
     ) -> MaybeChangedAfter {
         panic!("nothing should ever depend on an accumulator directly")
-    }
-
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        CycleRecoveryStrategy::Panic
-    }
-
-    fn origin(&self, _db: &dyn Database, _key_index: crate::Id) -> Option<QueryOrigin> {
-        None
-    }
-
-    fn mark_validated_output(
-        &self,
-        _db: &dyn Database,
-        _executor: DatabaseKeyIndex,
-        _output_key: crate::Id,
-    ) {
-    }
-
-    fn remove_stale_output(
-        &self,
-        _db: &dyn Database,
-        _executor: DatabaseKeyIndex,
-        _stale_output_key: crate::Id,
-    ) {
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
