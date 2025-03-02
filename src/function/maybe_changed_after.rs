@@ -31,7 +31,7 @@ where
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
             if let Some(memo) = memo_guard {
-                if self.shallow_verify_memo(db, zalsa, database_key_index, memo) {
+                if self.shallow_verify_memo(zalsa, database_key_index, memo) {
                     return if memo.revisions.changed_at > revision {
                         MaybeChangedAfter::Yes
                     } else {
@@ -118,7 +118,6 @@ where
     #[inline]
     pub(super) fn shallow_verify_memo(
         &self,
-        db: &C::DbView,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
@@ -146,13 +145,8 @@ where
         );
         if last_changed <= verified_at {
             // No input of the suitable durability has changed since last verified.
-            memo.mark_as_verified(
-                db,
-                revision_now,
-                database_key_index,
-                memo.revisions.accumulated_inputs.load(),
-            );
-            memo.mark_outputs_as_verified(zalsa, db.as_dyn_database(), database_key_index);
+            memo.mark_as_verified(revision_now, memo.revisions.accumulated_inputs.load());
+            memo.mark_outputs_as_verified(zalsa, database_key_index);
             return true;
         }
 
@@ -181,7 +175,7 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        if self.shallow_verify_memo(db, zalsa, database_key_index, old_memo) {
+        if self.shallow_verify_memo(zalsa, database_key_index, old_memo) {
             return true;
         }
 
@@ -241,16 +235,12 @@ where
                             // by this function cannot be read until this function is marked green,
                             // so even if we mark them as valid here, the function will re-execute
                             // and overwrite the contents.
-                            dependency_index.mark_validated_output(
-                                zalsa,
-                                dyn_db,
-                                database_key_index,
-                            );
+                            dependency_index.mark_validated_output(zalsa, database_key_index);
                         }
                     }
                 }
 
-                old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index, inputs);
+                old_memo.mark_as_verified(zalsa.current_revision(), inputs);
                 true
             }
         }

@@ -728,9 +728,9 @@ where
         MaybeChangedAfter::from(data.created_at > revision)
     }
 
-    fn mark_validated_output<'db>(
-        &'db self,
-        _db: &'db dyn Database,
+    fn mark_validated_output(
+        &self,
+        _zalsa: &Zalsa,
         _executor: DatabaseKeyIndex,
         _output_key: crate::Id,
     ) {

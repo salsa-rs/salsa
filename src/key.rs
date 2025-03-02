@@ -45,12 +45,11 @@ impl OutputDependencyIndex {
     pub(crate) fn mark_validated_output(
         &self,
         zalsa: &Zalsa,
-        db: &dyn Database,
         database_key_index: DatabaseKeyIndex,
     ) {
         zalsa
             .lookup_ingredient(self.ingredient_index)
-            .mark_validated_output(db, database_key_index, self.key_index)
+            .mark_validated_output(zalsa, database_key_index, self.key_index)
     }
 }
 

@@ -2,9 +2,9 @@ use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     revision::AtomicRevision,
     tracked_struct::TrackedStructInDb,
-    zalsa::ZalsaDatabase,
+    zalsa::{Zalsa, ZalsaDatabase},
     zalsa_local::{QueryOrigin, QueryRevisions},
-    AsDynDatabase as _, Database, DatabaseKeyIndex, Id,
+    AsDynDatabase as _, DatabaseKeyIndex, Id,
 };
 
 use super::{memo::Memo, Configuration, IngredientImpl};
@@ -103,11 +103,10 @@ where
     /// it would have specified `key` again.
     pub(super) fn validate_specified_value(
         &self,
-        db: &dyn Database,
+        zalsa: &Zalsa,
         executor: DatabaseKeyIndex,
         key: Id,
     ) {
-        let zalsa = db.zalsa();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
 
         let memo = match self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
@@ -125,12 +124,6 @@ where
             ),
         }
 
-        let database_key_index = self.database_key_index(key);
-        memo.mark_as_verified(
-            db,
-            zalsa.current_revision(),
-            database_key_index,
-            InputAccumulatedValues::Empty,
-        );
+        memo.mark_as_verified(zalsa.current_revision(), InputAccumulatedValues::Empty);
     }
 }

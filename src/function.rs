@@ -237,11 +237,11 @@ where
 
     fn mark_validated_output(
         &self,
-        db: &dyn Database,
+        zalsa: &Zalsa,
         executor: DatabaseKeyIndex,
         output_key: crate::Id,
     ) {
-        self.validate_specified_value(db, executor, output_key);
+        self.validate_specified_value(zalsa, executor, output_key);
     }
 
     fn requires_reset_for_new_revision(&self) -> bool {

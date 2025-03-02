@@ -8,10 +8,7 @@ use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa_local::QueryOrigin;
-use crate::{
-    key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event, EventKind, Id,
-    Revision,
-};
+use crate::{key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Id, Revision};
 
 use super::{Configuration, IngredientImpl};
 
@@ -136,19 +133,11 @@ impl<V> Memo<V> {
 
     /// Mark memo as having been verified in the `revision_now`, which should
     /// be the current revision.
-    pub(super) fn mark_as_verified<Db: ?Sized + crate::Database>(
+    pub(super) fn mark_as_verified(
         &self,
-        db: &Db,
         revision_now: Revision,
-        database_key_index: DatabaseKeyIndex,
         accumulated: InputAccumulatedValues,
     ) {
-        db.salsa_event(&|| {
-            Event::new(EventKind::DidValidateMemoizedValue {
-                database_key: database_key_index,
-            })
-        });
-
         self.verified_at.store(revision_now);
         self.revisions.accumulated_inputs.store(accumulated);
     }
@@ -156,11 +145,10 @@ impl<V> Memo<V> {
     pub(super) fn mark_outputs_as_verified(
         &self,
         zalsa: &Zalsa,
-        db: &dyn crate::Database,
         database_key_index: DatabaseKeyIndex,
     ) {
         for output in self.revisions.origin.outputs() {
-            output.mark_validated_output(zalsa, db, database_key_index);
+            output.mark_validated_output(zalsa, database_key_index);
         }
     }
 

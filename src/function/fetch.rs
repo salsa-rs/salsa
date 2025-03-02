@@ -50,7 +50,7 @@ where
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         loop {
             if let Some(memo) = self
-                .fetch_hot(zalsa, db, id, memo_ingredient_index)
+                .fetch_hot(zalsa, id, memo_ingredient_index)
                 .or_else(|| self.fetch_cold(zalsa, db, id, memo_ingredient_index))
             {
                 return memo;
@@ -62,14 +62,13 @@ where
     fn fetch_hot<'db>(
         &'db self,
         zalsa: &'db Zalsa,
-        db: &'db C::DbView,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
         let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
         if let Some(memo) = memo_guard {
             if memo.value.is_some()
-                && self.shallow_verify_memo(db, zalsa, self.database_key_index(id), memo)
+                && self.shallow_verify_memo(zalsa, self.database_key_index(id), memo)
             {
                 // Unsafety invariant: memo is present in memo_map and we have verified that it is
                 // still valid for the current revision.

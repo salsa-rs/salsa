@@ -65,13 +65,13 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     /// Invoked when the value `output_key` should be marked as valid in the current revision.
     /// This occurs because the value for `executor`, which generated it, was marked as valid
     /// in the current revision.
-    fn mark_validated_output<'db>(
-        &'db self,
-        db: &'db dyn Database,
+    fn mark_validated_output(
+        &self,
+        zalsa: &Zalsa,
         executor: DatabaseKeyIndex,
         output_key: crate::Id,
     ) {
-        let _ = (db, executor, output_key);
+        let _ = (zalsa, executor, output_key);
         unreachable!("only tracked struct and function ingredients can have validatable outputs")
     }
 
