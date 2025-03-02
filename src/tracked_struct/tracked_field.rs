@@ -59,41 +59,6 @@ where
         VerifyResult::changed_if(field_changed_at > revision)
     }
 
-    fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
-        false
-    }
-
-    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
-        true
-    }
-
-    fn origin(
-        &self,
-        _db: &dyn Database,
-        _key_index: crate::Id,
-    ) -> Option<crate::zalsa_local::QueryOrigin> {
-        None
-    }
-
-    fn mark_validated_output(
-        &self,
-        _db: &dyn Database,
-        _executor: crate::DatabaseKeyIndex,
-        _output_key: crate::Id,
-    ) {
-        panic!("tracked field ingredients have no outputs")
-    }
-
-    fn remove_stale_output(
-        &self,
-        _db: &dyn Database,
-        _executor: crate::DatabaseKeyIndex,
-        _stale_output_key: crate::Id,
-        _provisional: bool,
-    ) {
-        panic!("tracked field ingredients have no outputs")
-    }
-
     fn fmt_index(&self, index: crate::Id, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             fmt,

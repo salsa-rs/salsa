@@ -404,50 +404,6 @@ where
         VerifyResult::unchanged()
     }
 
-    fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
-        false
-    }
-
-    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
-        true
-    }
-
-    fn origin(&self, _db: &dyn Database, _key_index: crate::Id) -> Option<QueryOrigin> {
-        None
-    }
-
-    fn mark_validated_output(
-        &self,
-        _db: &dyn Database,
-        executor: DatabaseKeyIndex,
-        output_key: crate::Id,
-    ) {
-        unreachable!(
-            "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
-            executor, output_key
-        );
-    }
-
-    fn remove_stale_output(
-        &self,
-        _db: &dyn Database,
-        executor: DatabaseKeyIndex,
-        stale_output_key: crate::Id,
-        _provisional: bool,
-    ) {
-        unreachable!(
-            "remove_stale_output({:?}, {:?}): interned ids are not outputs",
-            executor, stale_output_key
-        );
-    }
-
-    // Interned ingredients do not, normally, get deleted except when they are "reset" en masse.
-    // There ARE methods (e.g., `clear_deleted_entries` and `remove`) for deleting individual
-    // items, but those are only used for tracked struct ingredients.
-    fn requires_reset_for_new_revision(&self) -> bool {
-        false
-    }
-
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }

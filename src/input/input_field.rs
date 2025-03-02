@@ -2,8 +2,7 @@ use crate::function::VerifyResult;
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::input::Configuration;
 use crate::zalsa::IngredientIndex;
-use crate::zalsa_local::QueryOrigin;
-use crate::{Database, DatabaseKeyIndex, Id, Revision};
+use crate::{Database, Id, Revision};
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -62,27 +61,6 @@ where
 
     fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
         true
-    }
-
-    fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {
-        None
-    }
-
-    fn mark_validated_output(
-        &self,
-        _db: &dyn Database,
-        _executor: DatabaseKeyIndex,
-        _output_key: Id,
-    ) {
-    }
-
-    fn remove_stale_output(
-        &self,
-        _db: &dyn Database,
-        _executor: DatabaseKeyIndex,
-        _stale_output_key: Id,
-        _provisional: bool,
-    ) {
     }
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

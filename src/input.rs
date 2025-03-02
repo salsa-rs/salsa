@@ -19,7 +19,6 @@ use crate::{
     plumbing::{Jar, Stamp},
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
-    zalsa_local::QueryOrigin,
     Database, Durability, Id, Revision, Runtime,
 };
 
@@ -215,44 +214,6 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         // Their *fields* are stored in function ingredients elsewhere.
         VerifyResult::unchanged()
     }
-
-    fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
-        false
-    }
-
-    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
-        true
-    }
-
-    fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {
-        None
-    }
-
-    fn mark_validated_output(
-        &self,
-        _db: &dyn Database,
-        executor: DatabaseKeyIndex,
-        output_key: Id,
-    ) {
-        unreachable!(
-            "mark_validated_output({:?}, {:?}): input cannot be the output of a tracked function",
-            executor, output_key
-        );
-    }
-
-    fn remove_stale_output(
-        &self,
-        _db: &dyn Database,
-        executor: DatabaseKeyIndex,
-        stale_output_key: Id,
-        _provisional: bool,
-    ) {
-        unreachable!(
-            "remove_stale_output({:?}, {:?}): input cannot be the output of a tracked function",
-            executor, stale_output_key
-        );
-    }
-
     fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::DEBUG_NAME, index, fmt)
     }

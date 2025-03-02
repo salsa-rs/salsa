@@ -312,6 +312,10 @@ where
         C::DEBUG_NAME
     }
 
+    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
+        C::CYCLE_STRATEGY
+    }
+
     fn accumulated<'db>(
         &'db self,
         db: &'db dyn Database,

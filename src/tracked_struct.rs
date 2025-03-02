@@ -15,7 +15,6 @@ use crate::{
     salsa_struct::SalsaStructInDb,
     table::{memo::MemoTable, sync::SyncTable, Slot, Table},
     zalsa::{IngredientIndex, Zalsa},
-    zalsa_local::QueryOrigin,
     Database, Durability, Event, EventKind, Id, Revision,
 };
 
@@ -755,10 +754,6 @@ where
         true
     }
 
-    fn origin(&self, _db: &dyn Database, _key_index: crate::Id) -> Option<QueryOrigin> {
-        None
-    }
-
     fn mark_validated_output<'db>(
         &'db self,
         _db: &'db dyn Database,
@@ -781,7 +776,7 @@ where
         // `executor` creates a tracked struct `salsa_output_key`,
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
-        self.delete_entity(db.as_dyn_database(), stale_output_key, provisional);
+        self.delete_entity(db, stale_output_key, provisional);
     }
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
