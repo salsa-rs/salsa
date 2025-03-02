@@ -30,7 +30,7 @@ where
 
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-            if let Some(memo) = &memo_guard {
+            if let Some(memo) = memo_guard {
                 if self.shallow_verify_memo(db, zalsa, database_key_index, memo) {
                     return if memo.revisions.changed_at > revision {
                         MaybeChangedAfter::Yes
@@ -62,15 +62,13 @@ where
     ) -> Option<MaybeChangedAfter> {
         let database_key_index = self.database_key_index(key_index);
 
-        let zalsa_local = db.zalsa_local();
         let _claim_guard = zalsa.sync_table_for(key_index).claim(
-            db.as_dyn_database(),
+            db,
             zalsa,
-            zalsa_local,
             database_key_index,
             memo_ingredient_index,
         )?;
-        let active_query = zalsa_local.push_query(database_key_index);
+        let active_query = db.zalsa_local().push_query(database_key_index);
 
         // Load the current memo, if any.
         let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index, memo_ingredient_index)
