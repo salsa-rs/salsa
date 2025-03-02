@@ -185,7 +185,7 @@ where
             return true;
         }
 
-        let inputs = match &old_memo.revisions.origin {
+        match &old_memo.revisions.origin {
             QueryOrigin::Assigned(_) => {
                 // If the value was assigneed by another query,
                 // and that query were up-to-date,
@@ -198,15 +198,11 @@ where
                 // Conditionally specified queries
                 // where the value is specified
                 // in rev 1 but not in rev 2.
-                return false;
-            }
-            QueryOrigin::BaseInput => {
-                // This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
-                return true;
+                false
             }
             QueryOrigin::DerivedUntracked(_) => {
                 // Untracked inputs? Have to assume that it changed.
-                return false;
+                false
             }
             QueryOrigin::Derived(edges) => {
                 // Fully tracked inputs? Iterate over the inputs and check them, one by one.
@@ -217,15 +213,12 @@ where
                 // it is still up to date is meaningless.
                 let last_verified_at = old_memo.verified_at.load();
                 let mut inputs = InputAccumulatedValues::Empty;
+                let dyn_db = db.as_dyn_database();
                 for &edge in edges.input_outputs.iter() {
                     match edge {
                         QueryEdge::Input(dependency_index) => {
-                            match dependency_index
-                                .maybe_changed_after(db.as_dyn_database(), last_verified_at)
-                            {
-                                MaybeChangedAfter::Yes => {
-                                    return false;
-                                }
+                            match dependency_index.maybe_changed_after(dyn_db, last_verified_at) {
+                                MaybeChangedAfter::Yes => return false,
                                 MaybeChangedAfter::No(input_accumulated) => {
                                     inputs |= input_accumulated;
                                 }
@@ -250,17 +243,16 @@ where
                             // and overwrite the contents.
                             dependency_index.mark_validated_output(
                                 zalsa,
-                                db.as_dyn_database(),
+                                dyn_db,
                                 database_key_index,
                             );
                         }
                     }
                 }
-                inputs
-            }
-        };
 
-        old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index, inputs);
-        true
+                old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index, inputs);
+                true
+            }
+        }
     }
 }
