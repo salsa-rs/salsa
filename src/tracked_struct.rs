@@ -587,7 +587,7 @@ where
     /// Using this method on an entity id that MAY be used in the current revision will lead to
     /// unspecified results (but not UB). See [`InternedIngredient::delete_index`] for more
     /// discussion and important considerations.
-    pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id, old_is_provisional: bool) {
+    pub(crate) fn delete_entity(&self, db: &dyn crate::Database, id: Id, provisional: bool) {
         db.salsa_event(&|| {
             Event::new(crate::EventKind::DidDiscard {
                 key: self.database_key_index(id),
@@ -605,7 +605,7 @@ where
             None => {
                 panic!("cannot delete write-locked id `{id:?}`; value leaked across threads");
             }
-            Some(r) if !old_is_provisional && r == current_revision => panic!(
+            Some(r) if !provisional && r == current_revision => panic!(
                 "cannot delete read-locked id `{id:?}`; value leaked across threads or user functions not deterministic"
             ),
             Some(r) => {
@@ -633,7 +633,7 @@ where
             db.salsa_event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
             for stale_output in memo.origin().outputs() {
-                stale_output.remove_stale_output(zalsa, db, executor, old_is_provisional);
+                stale_output.remove_stale_output(zalsa, db, executor, provisional);
             }
         }
 
@@ -782,13 +782,13 @@ where
         db: &dyn Database,
         _executor: DatabaseKeyIndex,
         stale_output_key: crate::Id,
-        old_is_provisional: bool,
+        provisional: bool,
     ) {
         // This method is called when, in prior revisions,
         // `executor` creates a tracked struct `salsa_output_key`,
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
-        self.delete_entity(db.as_dyn_database(), stale_output_key, old_is_provisional);
+        self.delete_entity(db.as_dyn_database(), stale_output_key, provisional);
     }
 
     fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

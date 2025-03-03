@@ -348,8 +348,6 @@ where
                                 // by this function cannot be read until this function is marked green,
                                 // so even if we mark them as valid here, the function will re-execute
                                 // and overwrite the contents.
-                                //
-                                // TODO not if we found a cycle head other than ourself?
                                 dependency_index.mark_validated_output(
                                     zalsa,
                                     db.as_dyn_database(),

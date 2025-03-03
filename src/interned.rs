@@ -327,7 +327,7 @@ where
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
         stale_output_key: crate::Id,
-        _old_is_provisional: bool,
+        _provisional: bool,
     ) {
         unreachable!(
             "remove_stale_output({:?}, {:?}): interned ids are not outputs",

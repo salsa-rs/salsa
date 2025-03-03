@@ -107,7 +107,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: &dyn Database,
         executor: DatabaseKeyIndex,
         stale_output_key: Id,
-        old_is_provisional: bool,
+        provisional: bool,
     );
 
     /// Returns the [`IngredientIndex`] of this ingredient.

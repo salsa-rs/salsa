@@ -261,7 +261,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
         stale_output_key: Id,
-        _old_is_provisional: bool,
+        _provisional: bool,
     ) {
         unreachable!(
             "remove_stale_output({:?}, {:?}): input cannot be the output of a tracked function",
