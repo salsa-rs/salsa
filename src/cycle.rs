@@ -43,6 +43,11 @@
 //! with that fallback, and then iterate the cycle one more time. A fallback value is expected to
 //! result in a stable, converged cycle. If it does not (that is, if the result of another
 //! iteration of the cycle is not the same as the fallback value), we'll panic.
+//!
+//! In nested cycle cases, the inner cycle head will iterate until its own cycle is resolved, but
+//! the "final" value it then returns will still be provisional on the outer cycle head. The outer
+//! cycle head may then iterate, which may result in a new set of iterations on the inner cycle,
+//! for each iteration of the outer cycle.
 
 use crate::key::DatabaseKeyIndex;
 use rustc_hash::FxHashSet;
