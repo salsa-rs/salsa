@@ -11,8 +11,7 @@
 
 ## Obligatory warning
 
-Very much a WORK IN PROGRESS at this point. Ready for experimental use
-but expect frequent breaking changes.
+Very much a WORK IN PROGRESS at this point.
 
 ## Credits
 
