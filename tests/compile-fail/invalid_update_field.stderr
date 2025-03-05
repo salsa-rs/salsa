@@ -1,0 +1,9 @@
+error: lifetime may not live long enough
+ --> tests/compile-fail/invalid_update_field.rs:1:10
+  |
+1 | #[derive(salsa::Update)]
+  |          ^^^^^^^^^^^^^ requires that `'a` must outlive `'static`
+2 | struct S2<'a> {
+  |           -- lifetime `'a` defined here
+  |
+  = note: this error originates in the derive macro `salsa::Update` (in Nightly builds, run with -Z macro-backtrace for more info)
