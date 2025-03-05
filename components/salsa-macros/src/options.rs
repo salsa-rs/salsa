@@ -264,7 +264,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 if A::CYCLE_INITIAL {
                     let _eq = Equals::parse(input)?;
                     let path = syn::Path::parse(input)?;
-                    if let Some(old) = std::mem::replace(&mut options.cycle_initial, Some(path)) {
+                    if let Some(old) = options.cycle_initial.replace(path) {
                         return Err(syn::Error::new(
                             old.span(),
                             "option `cycle_initial` provided twice",
