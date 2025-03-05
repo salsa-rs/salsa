@@ -138,7 +138,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
             let ident: syn::Ident = syn::Ident::parse_any(input)?;
             if ident == "return_ref" {
                 if A::RETURN_REF {
-                    if let Some(old) = std::mem::replace(&mut options.return_ref, Some(ident)) {
+                    if let Some(old) = options.return_ref.replace(ident) {
                         return Err(syn::Error::new(
                             old.span(),
                             "option `return_ref` provided twice",
@@ -152,7 +152,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 }
             } else if ident == "no_eq" {
                 if A::NO_EQ {
-                    if let Some(old) = std::mem::replace(&mut options.no_eq, Some(ident)) {
+                    if let Some(old) = options.no_eq.replace(ident) {
                         return Err(syn::Error::new(old.span(), "option `no_eq` provided twice"));
                     }
                 } else {
@@ -163,7 +163,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 }
             } else if ident == "no_debug" {
                 if A::NO_DEBUG {
-                    if let Some(old) = std::mem::replace(&mut options.no_debug, Some(ident)) {
+                    if let Some(old) = options.no_debug.replace(ident) {
                         return Err(syn::Error::new(
                             old.span(),
                             "option `no_debug` provided twice",
@@ -177,7 +177,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 }
             } else if ident == "no_lifetime" {
                 if A::NO_LIFETIME {
-                    if let Some(old) = std::mem::replace(&mut options.no_lifetime, Some(ident)) {
+                    if let Some(old) = options.no_lifetime.replace(ident) {
                         return Err(syn::Error::new(
                             old.span(),
                             "option `no_lifetime` provided twice",
@@ -191,7 +191,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 }
             } else if ident == "no_clone" {
                 if A::NO_CLONE {
-                    if let Some(old) = std::mem::replace(&mut options.no_clone, Some(ident)) {
+                    if let Some(old) = options.no_clone.replace(ident) {
                         return Err(syn::Error::new(
                             old.span(),
                             "option `no_clone` provided twice",
@@ -205,7 +205,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 }
             } else if ident == "singleton" {
                 if A::SINGLETON {
-                    if let Some(old) = std::mem::replace(&mut options.singleton, Some(ident)) {
+                    if let Some(old) = options.singleton.replace(ident) {
                         return Err(syn::Error::new(
                             old.span(),
                             "option `singleton` provided twice",
@@ -219,7 +219,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 }
             } else if ident == "specify" {
                 if A::SPECIFY {
-                    if let Some(old) = std::mem::replace(&mut options.specify, Some(ident)) {
+                    if let Some(old) = options.specify.replace(ident) {
                         return Err(syn::Error::new(
                             old.span(),
                             "option `specify` provided twice",
@@ -235,7 +235,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 if A::DB {
                     let _eq = Equals::parse(input)?;
                     let path = syn::Path::parse(input)?;
-                    if let Some(old) = std::mem::replace(&mut options.db_path, Some(path)) {
+                    if let Some(old) = options.db_path.replace(path) {
                         return Err(syn::Error::new(old.span(), "option `db` provided twice"));
                     }
                 } else {
@@ -248,7 +248,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 if A::CYCLE_FN {
                     let _eq = Equals::parse(input)?;
                     let path = syn::Path::parse(input)?;
-                    if let Some(old) = std::mem::replace(&mut options.cycle_fn, Some(path)) {
+                    if let Some(old) = options.cycle_fn.replace(path) {
                         return Err(syn::Error::new(
                             old.span(),
                             "option `cycle_fn` provided twice",
@@ -262,9 +262,6 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 }
             } else if ident == "cycle_initial" {
                 if A::CYCLE_INITIAL {
-                    // TODO(carljm) should it be an error to give cycle_initial without cycle_fn,
-                    // or should we just allow this to fall into potentially infinite iteration, if
-                    // iteration never converges?
                     let _eq = Equals::parse(input)?;
                     let path = syn::Path::parse(input)?;
                     if let Some(old) = std::mem::replace(&mut options.cycle_initial, Some(path)) {
@@ -283,7 +280,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 if A::DATA {
                     let _eq = Equals::parse(input)?;
                     let ident = syn::Ident::parse(input)?;
-                    if let Some(old) = std::mem::replace(&mut options.data, Some(ident)) {
+                    if let Some(old) = options.data.replace(ident) {
                         return Err(syn::Error::new(old.span(), "option `data` provided twice"));
                     }
                 } else {
@@ -297,7 +294,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     let _eq = Equals::parse(input)?;
                     let lit = syn::LitInt::parse(input)?;
                     let value = lit.base10_parse::<usize>()?;
-                    if let Some(old) = std::mem::replace(&mut options.lru, Some(value)) {
+                    if let Some(old) = options.lru.replace(value) {
                         return Err(syn::Error::new(old.span(), "option `lru` provided twice"));
                     }
                 } else {
@@ -310,8 +307,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                 if A::CONSTRUCTOR_NAME {
                     let _eq = Equals::parse(input)?;
                     let ident = syn::Ident::parse(input)?;
-                    if let Some(old) = std::mem::replace(&mut options.constructor_name, Some(ident))
-                    {
+                    if let Some(old) = options.constructor_name.replace(ident) {
                         return Err(syn::Error::new(
                             old.span(),
                             "option `constructor` provided twice",

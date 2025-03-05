@@ -1,10 +1,11 @@
 [package]
 name = "salsa-macros"
 version = "0.18.0"
-authors = ["Salsa developers"]
-edition = "2021"
-license = "Apache-2.0 OR MIT"
-repository = "https://github.com/salsa-rs/salsa"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 description = "Procedural macros for the salsa crate"
 
 [lib]
