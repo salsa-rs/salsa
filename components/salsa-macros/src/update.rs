@@ -1,5 +1,5 @@
-use proc_macro2::{Literal, TokenStream};
-use syn::spanned::Spanned;
+use proc_macro2::{Literal, Span, TokenStream};
+use syn::{parenthesized, parse::ParseStream, spanned::Spanned, Token};
 use synstructure::BindStyle;
 
 use crate::hygiene::Hygiene;
@@ -7,9 +7,9 @@ use crate::hygiene::Hygiene;
 pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream> {
     let hygiene = Hygiene::from2(&input);
 
-    if let syn::Data::Union(_) = &input.data {
+    if let syn::Data::Union(u) = &input.data {
         return Err(syn::Error::new_spanned(
-            &input.ident,
+            u.union_token,
             "`derive(Update)` does not support `union`",
         ));
     }
@@ -27,6 +27,24 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
         .variants()
         .iter()
         .map(|variant| {
+            let err = variant
+                .ast()
+                .attrs
+                .iter()
+                .filter(|attr| attr.path().is_ident("update"))
+                .map(|attr| {
+                    syn::Error::new(
+                        attr.path().span(),
+                        "unexpected attribute `#[update]` on variant",
+                    )
+                })
+                .reduce(|mut acc, err| {
+                    acc.combine(err);
+                    acc
+                });
+            if let Some(err) = err {
+                return Err(err);
+            }
             let variant_pat = variant.pat();
 
             // First check that the `new_value` has same variant.
@@ -35,7 +53,7 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
                 .bindings()
                 .iter()
                 .fold(quote!(), |tokens, binding| quote!(#tokens #binding,));
-            let make_new_value = quote_spanned! {variant.ast().ident.span()=>
+            let make_new_value = quote! {
                 let #new_value = if let #variant_pat = #new_value {
                     (#make_tuple)
                 } else {
@@ -47,40 +65,73 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
             // For each field, invoke `maybe_update` recursively to update its value.
             // Or the results together (using `|`, not `||`, to avoid shortcircuiting)
             // to get the final return value.
-            let update_fields = variant.bindings().iter().enumerate().fold(
-                quote!(false),
-                |tokens, (index, binding)| {
-                    let field_ty = &binding.ast().ty;
-                    let field_index = Literal::usize_unsuffixed(index);
+            let mut update_fields = quote!(false);
+            for (index, binding) in variant.bindings().iter().enumerate() {
+                let mut attrs = binding
+                    .ast()
+                    .attrs
+                    .iter()
+                    .filter(|attr| attr.path().is_ident("update"));
+                let attr = attrs.next();
+                if let Some(attr) = attrs.next() {
+                    return Err(syn::Error::new(
+                        attr.path().span(),
+                        "multiple #[update(with)] attributes on field",
+                    ));
+                }
 
-                    let field_span = binding
-                        .ast()
-                        .ident
-                        .as_ref()
-                        .map(Spanned::span)
-                        .unwrap_or(binding.ast().span());
+                let field_ty = &binding.ast().ty;
+                let field_index = Literal::usize_unsuffixed(index);
 
-                    let update_field = quote_spanned! {field_span=>
-                        salsa::plumbing::UpdateDispatch::<#field_ty>::maybe_update(
-                            #binding,
-                            #new_value.#field_index,
-                        )
-                    };
+                let (maybe_update, unsafe_token) = match attr {
+                    Some(attr) => {
+                        mod kw {
+                            syn::custom_keyword!(with);
+                        }
+                        attr.parse_args_with(|parser: ParseStream| {
+                            let mut content;
 
-                    quote! {
-                        #tokens | unsafe { #update_field }
+                            let unsafe_token = parser.parse::<Token![unsafe]>()?;
+                            parenthesized!(content in parser);
+                            let with_token = content.parse::<kw::with>()?;
+                            parenthesized!(content in content);
+                            let expr = content.parse::<syn::Expr>()?;
+                            Ok((
+                                quote_spanned! { with_token.span() =>  ({ let maybe_update: unsafe fn(*mut #field_ty, #field_ty) -> bool = #expr; maybe_update }) },
+                                // quote_spanned! { with_token.span() => ((#expr) as unsafe fn(*mut #field_ty, #field_ty) -> bool) },
+                                unsafe_token,
+                            ))
+                        })?
                     }
-                },
-            );
+                    None => {
+                        (
+                            quote!(
+                                salsa::plumbing::UpdateDispatch::<#field_ty>::maybe_update
+                            ),
+                            Token![unsafe](Span::call_site()),
+                        )
+                    }
+                };
+                let update_field = quote! {
+                    #maybe_update(
+                        #binding,
+                        #new_value.#field_index,
+                    )
+                };
 
-            quote!(
+                update_fields = quote! {
+                    #update_fields | #unsafe_token { #update_field }
+                };
+            }
+
+            Ok(quote!(
                 #variant_pat => {
                     #make_new_value
                     #update_fields
                 }
-            )
+            ))
         })
-        .collect();
+        .collect::<syn::Result<_>>()?;
 
     let ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
