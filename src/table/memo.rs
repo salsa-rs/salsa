@@ -135,14 +135,11 @@ impl MemoTable {
         if memos.len() < memo_ingredient_index + 1 {
             memos.resize_with(memo_ingredient_index + 1, MemoEntry::default);
         }
-        let old_entry = std::mem::replace(
-            &mut memos[memo_ingredient_index].data,
-            Some(MemoEntryData {
-                type_id: TypeId::of::<M>(),
-                to_dyn_fn: Self::to_dyn_fn::<M>(),
-                atomic_memo: AtomicPtr::new(Self::to_dummy(memo).as_ptr()),
-            }),
-        );
+        let old_entry = memos[memo_ingredient_index].data.replace(MemoEntryData {
+            type_id: TypeId::of::<M>(),
+            to_dyn_fn: Self::to_dyn_fn::<M>(),
+            atomic_memo: AtomicPtr::new(Self::to_dummy(memo).as_ptr()),
+        });
         old_entry.map(
             |MemoEntryData {
                  type_id: _,
