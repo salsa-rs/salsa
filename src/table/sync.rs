@@ -1,15 +1,11 @@
-use std::{
-    sync::atomic::{AtomicBool, Ordering},
-    thread::ThreadId,
-};
+use std::thread::ThreadId;
 
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 
 use crate::{
     key::DatabaseKeyIndex,
     runtime::WaitResult,
     zalsa::{MemoIngredientIndex, Zalsa},
-    zalsa_local::ZalsaLocal,
     Database,
 };
 
@@ -19,7 +15,7 @@ use super::util;
 /// worker threads.
 #[derive(Default)]
 pub(crate) struct SyncTable {
-    syncs: RwLock<Vec<Option<SyncState>>>,
+    syncs: Mutex<Vec<Option<SyncState>>>,
 }
 
 struct SyncState {
@@ -27,28 +23,28 @@ struct SyncState {
 
     /// Set to true if any other queries are blocked,
     /// waiting for this query to complete.
-    anyone_waiting: AtomicBool,
+    anyone_waiting: bool,
 }
 
 impl SyncTable {
+    #[inline]
     pub(crate) fn claim<'me>(
         &'me self,
-        db: &'me dyn Database,
+        db: &'me (impl ?Sized + Database),
         zalsa: &'me Zalsa,
-        zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<ClaimGuard<'me>> {
-        let mut syncs = self.syncs.write();
+        let mut syncs = self.syncs.lock();
         let thread_id = std::thread::current().id();
 
         util::ensure_vec_len(&mut syncs, memo_ingredient_index.as_usize() + 1);
 
-        match &syncs[memo_ingredient_index.as_usize()] {
+        match &mut syncs[memo_ingredient_index.as_usize()] {
             None => {
                 syncs[memo_ingredient_index.as_usize()] = Some(SyncState {
                     id: thread_id,
-                    anyone_waiting: AtomicBool::new(false),
+                    anyone_waiting: false,
                 });
                 Some(ClaimGuard {
                     database_key_index,
@@ -61,16 +57,10 @@ impl SyncTable {
                 id: other_id,
                 anyone_waiting,
             }) => {
-                // NB: `Ordering::Relaxed` is sufficient here,
-                // as there are no loads that are "gated" on this
-                // value. Everything that is written is also protected
-                // by a lock that must be acquired. The role of this
-                // boolean is to decide *whether* to acquire the lock,
-                // not to gate future atomic reads.
-                anyone_waiting.store(true, Ordering::Relaxed);
+                *anyone_waiting = true;
                 zalsa.runtime().block_on_or_unwind(
-                    db,
-                    zalsa_local,
+                    db.as_dyn_database(),
+                    db.zalsa_local(),
                     database_key_index,
                     *other_id,
                     syncs,
@@ -92,30 +82,28 @@ pub(crate) struct ClaimGuard<'me> {
 }
 
 impl ClaimGuard<'_> {
-    fn remove_from_map_and_unblock_queries(&self, wait_result: WaitResult) {
-        let mut syncs = self.sync_table.syncs.write();
+    fn remove_from_map_and_unblock_queries(&self) {
+        let mut syncs = self.sync_table.syncs.lock();
 
         let SyncState { anyone_waiting, .. } =
             syncs[self.memo_ingredient_index.as_usize()].take().unwrap();
 
-        // NB: `Ordering::Relaxed` is sufficient here,
-        // see `store` above for explanation.
-        if anyone_waiting.load(Ordering::Relaxed) {
-            self.zalsa
-                .runtime()
-                .unblock_queries_blocked_on(self.database_key_index, wait_result)
+        if anyone_waiting {
+            self.zalsa.runtime().unblock_queries_blocked_on(
+                self.database_key_index,
+                if std::thread::panicking() {
+                    WaitResult::Panicked
+                } else {
+                    WaitResult::Completed
+                },
+            )
         }
     }
 }
 
 impl Drop for ClaimGuard<'_> {
     fn drop(&mut self) {
-        let wait_result = if std::thread::panicking() {
-            WaitResult::Panicked
-        } else {
-            WaitResult::Completed
-        };
-        self.remove_from_map_and_unblock_queries(wait_result)
+        self.remove_from_map_and_unblock_queries()
     }
 }
 

@@ -90,9 +90,7 @@ impl<C: Configuration> IngredientImpl<C> {
     ) {
         let map = |memo: &mut Memo<C::Output<'static>>| {
             match &memo.revisions.origin {
-                QueryOrigin::Assigned(_)
-                | QueryOrigin::DerivedUntracked(_)
-                | QueryOrigin::BaseInput => {
+                QueryOrigin::Assigned(_) | QueryOrigin::DerivedUntracked(_) => {
                     // Careful: Cannot evict memos whose values were
                     // assigned as output of another query
                     // or those with untracked inputs

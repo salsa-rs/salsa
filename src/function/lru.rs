@@ -17,18 +17,26 @@ impl Lru {
         }
     }
 
+    #[inline(always)]
     pub(super) fn record_use(&self, index: Id) {
         if self.capacity.is_none() {
             // LRU is disabled
             return;
         }
+        self.insert(index);
+    }
 
+    #[inline(never)]
+    fn insert(&self, index: Id) {
         let mut set = self.set.lock();
         set.insert(index);
     }
 
     pub(super) fn set_capacity(&mut self, capacity: usize) {
         self.capacity = NonZeroUsize::new(capacity);
+        if self.capacity.is_none() {
+            self.set.get_mut().clear();
+        }
     }
 
     pub(super) fn for_each_evicted(&mut self, mut cb: impl FnMut(Id)) {
