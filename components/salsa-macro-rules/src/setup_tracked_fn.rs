@@ -142,12 +142,13 @@ macro_rules! setup_tracked_fn {
             impl $Configuration {
                 fn fn_ingredient(db: &dyn $Db) -> &$zalsa::function::IngredientImpl<$Configuration> {
                     $FN_CACHE.get_or_create(db.as_dyn_database(), || {
-                        <dyn $Db as $Db>::zalsa_db(db);
+                        <dyn $Db as $Db>::zalsa_register_downcaster(db);
                         db.zalsa().add_or_lookup_jar_by_type::<$Configuration>()
                     })
                 }
 
                 pub fn fn_ingredient_mut(db: &mut dyn $Db) -> &mut $zalsa::function::IngredientImpl<Self> {
+                    <dyn $Db as $Db>::zalsa_register_downcaster(db);
                     let zalsa_mut = db.zalsa_mut();
                     let index = zalsa_mut.add_or_lookup_jar_by_type::<$Configuration>();
                     let (ingredient, _) = zalsa_mut.lookup_ingredient_mut(index);
@@ -159,6 +160,7 @@ macro_rules! setup_tracked_fn {
                         db: &dyn $Db,
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
                         $INTERN_CACHE.get_or_create(db.as_dyn_database(), || {
+                            <dyn $Db as $Db>::zalsa_register_downcaster(db);
                             db.zalsa().add_or_lookup_jar_by_type::<$Configuration>().successor(0)
                         })
                     }
@@ -249,7 +251,8 @@ macro_rules! setup_tracked_fn {
                     let fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
                         first_index,
                         memo_ingredient_indices,
-                        $lru
+                        $lru,
+                        zalsa.views().downcaster_for::<dyn $Db>()
                     );
                     $zalsa::macro_if! {
                         if $needs_interner {

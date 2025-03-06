@@ -89,10 +89,12 @@ impl DbMacro {
                 use salsa::plumbing as #zalsa;
 
                 unsafe impl #zalsa::HasStorage for #db {
+                    #[inline(always)]
                     fn storage(&self) -> &#zalsa::Storage<Self> {
                         &self.#storage
                     }
 
+                    #[inline(always)]
                     fn storage_mut(&mut self) -> &mut #zalsa::Storage<Self> {
                         &mut self.#storage
                     }
@@ -102,16 +104,26 @@ impl DbMacro {
     }
 
     fn add_salsa_view_method(&self, input: &mut syn::ItemTrait) -> syn::Result<()> {
+        let trait_name = &input.ident;
         input.items.push(parse_quote! {
             #[doc(hidden)]
-            fn zalsa_db(&self);
+            fn zalsa_register_downcaster(&self);
+        });
+
+        let comment = format!(" Downcast a [`dyn Database`] to a [`dyn {trait_name}`]");
+        input.items.push(parse_quote! {
+            #[doc = #comment]
+            ///
+            /// # Safety
+            ///
+            /// The input database must be of type `Self`.
+            #[doc(hidden)]
+            unsafe fn downcast(db: &dyn salsa::plumbing::Database) -> &dyn #trait_name where Self: Sized;
         });
         Ok(())
     }
 
     fn add_salsa_view_method_impl(&self, input: &mut syn::ItemImpl) -> syn::Result<()> {
-        let zalsa = self.hygiene.ident("zalsa");
-
         let Some((_, TraitPath, _)) = &input.trait_ else {
             return Err(syn::Error::new_spanned(
                 &input.self_ty,
@@ -121,9 +133,18 @@ impl DbMacro {
 
         input.items.push(parse_quote! {
             #[doc(hidden)]
-            fn zalsa_db(&self) {
-                use salsa::plumbing as #zalsa;
-                #zalsa::views(self).add::<Self, dyn #TraitPath>(|t| t);
+            #[inline(always)]
+            fn zalsa_register_downcaster(&self)  {
+                salsa::plumbing::views(self).add(<Self as #TraitPath>::downcast);
+            }
+        });
+        input.items.push(parse_quote! {
+            #[doc(hidden)]
+            #[inline(always)]
+            unsafe fn downcast(db: &dyn salsa::plumbing::Database) -> &dyn #TraitPath where Self: Sized {
+                debug_assert_eq!(db.type_id(), ::core::any::TypeId::of::<Self>());
+                // SAFETY: Same as the safety of the `downcast` method.
+                unsafe { &*salsa::plumbing::transmute_data_ptr::<dyn salsa::plumbing::Database, Self>(db) }
             }
         });
         Ok(())

@@ -100,7 +100,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         self.index
     }
 
-    fn maybe_changed_after(
+    unsafe fn maybe_changed_after(
         &self,
         _db: &dyn Database,
         _input: Id,
