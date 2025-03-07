@@ -36,26 +36,20 @@ impl OutputDependencyIndex {
         }
     }
 
-    pub(crate) fn remove_stale_output(
-        &self,
-        zalsa: &Zalsa,
-        db: &dyn Database,
-        executor: DatabaseKeyIndex,
-    ) {
+    pub(crate) fn remove_stale_output(&self, zalsa: &Zalsa) {
         zalsa
             .lookup_ingredient(self.ingredient_index)
-            .remove_stale_output(db, executor, self.key_index)
+            .remove_stale_output(zalsa, self.key_index)
     }
 
     pub(crate) fn mark_validated_output(
         &self,
         zalsa: &Zalsa,
-        db: &dyn Database,
         database_key_index: DatabaseKeyIndex,
     ) {
         zalsa
             .lookup_ingredient(self.ingredient_index)
-            .mark_validated_output(db, database_key_index, self.key_index)
+            .mark_validated_output(zalsa, database_key_index, self.key_index)
     }
 }
 
