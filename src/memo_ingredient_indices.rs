@@ -1,3 +1,4 @@
+use crate::table::Table;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::{Id, IngredientIndex};
 
@@ -89,9 +90,10 @@ pub struct MemoIngredientIndices {
 
 impl MemoIngredientMap for MemoIngredientIndices {
     #[inline(always)]
-    fn get_zalsa_id(&self, zalsa: &Zalsa, id: Id) -> MemoIngredientIndex {
-        self.get(zalsa.ingredient_index(id))
+    fn get_id_with_table(&self, table: &Table, id: Id) -> MemoIngredientIndex {
+        self.get(table.ingredient_index(id))
     }
+
     #[inline(always)]
     fn get(&self, index: IngredientIndex) -> MemoIngredientIndex {
         self.indices[index.as_usize()]
@@ -103,9 +105,10 @@ pub struct MemoIngredientSingletonIndex(MemoIngredientIndex);
 
 impl MemoIngredientMap for MemoIngredientSingletonIndex {
     #[inline(always)]
-    fn get_zalsa_id(&self, _: &Zalsa, _: Id) -> MemoIngredientIndex {
+    fn get_id_with_table(&self, _: &Table, _: Id) -> MemoIngredientIndex {
         self.0
     }
+
     #[inline(always)]
     fn get(&self, _: IngredientIndex) -> MemoIngredientIndex {
         self.0
@@ -124,6 +127,6 @@ impl From<(&Zalsa, IngredientIndices, IngredientIndex)> for MemoIngredientSingle
 }
 
 pub trait MemoIngredientMap: Send + Sync {
-    fn get_zalsa_id(&self, zalsa: &Zalsa, id: Id) -> MemoIngredientIndex;
+    fn get_id_with_table(&self, table: &Table, id: Id) -> MemoIngredientIndex;
     fn get(&self, index: IngredientIndex) -> MemoIngredientIndex;
 }
