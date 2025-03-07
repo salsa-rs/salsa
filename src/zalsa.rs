@@ -12,8 +12,6 @@ use crate::cycle::CycleRecoveryStrategy;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
-use crate::table::memo::MemoTable;
-use crate::table::sync::SyncTable;
 use crate::table::Table;
 use crate::views::Views;
 use crate::zalsa_local::ZalsaLocal;
@@ -196,18 +194,6 @@ impl Zalsa {
         self.runtime.table()
     }
 
-    /// Returns the [`MemoTable`][] for the salsa struct with the given id
-    pub(crate) fn memo_table_for(&self, id: Id) -> &MemoTable {
-        // SAFETY: We are supplying the correct current revision
-        unsafe { self.table().memos(id, self.current_revision()) }
-    }
-
-    /// Returns the [`SyncTable`][] for the salsa struct with the given id
-    pub(crate) fn sync_table_for(&self, id: Id) -> &SyncTable {
-        // SAFETY: We are supplying the correct current revision
-        unsafe { self.table().syncs(id, self.current_revision()) }
-    }
-
     pub(crate) fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
         let index = index.as_usize();
         self.ingredients_vec
@@ -269,7 +255,7 @@ impl Zalsa {
     /// **NOT SEMVER STABLE**
     #[inline]
     pub fn lookup_page_type_id(&self, id: Id) -> TypeId {
-        let ingredient_index = self.ingredient_index(id);
+        let ingredient_index = self.table().ingredient_index(id);
         *self
             .ingredient_to_id_struct_type_id_map
             .read()
@@ -380,11 +366,6 @@ impl Zalsa {
                 .unwrap_or_else(|| panic!("index `{index}` is uninitialized"))
                 .reset_for_new_revision(self.runtime.table_mut());
         }
-    }
-
-    #[inline]
-    pub fn ingredient_index(&self, id: Id) -> IngredientIndex {
-        self.table().ingredient_index(id)
     }
 }
 

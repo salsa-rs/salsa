@@ -7,7 +7,7 @@ use std::{
 
 use parking_lot::RwLock;
 
-use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
+use crate::{key::OutputDependencyIndex, zalsa::MemoIngredientIndex};
 
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument
@@ -19,7 +19,7 @@ pub(crate) struct MemoTable {
 
 pub(crate) trait Memo: Any + Send + Sync + Debug {
     /// Returns the `origin` of this memo
-    fn origin(&self) -> &QueryOrigin;
+    fn for_each_output(&self, cb: &mut dyn FnMut(OutputDependencyIndex));
 }
 
 /// Wraps the data stored for a memoized entry.
@@ -52,35 +52,16 @@ struct MemoEntryData {
     type_id: TypeId,
 
     /// A type-coercion function for the erased memo type `M`
-    to_dyn_fn: fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>,
+    to_dyn_fn: fn(NonNull<ErasedMemo>) -> NonNull<dyn Memo>,
 
-    /// An [`AtomicPtr`][] to a `Box<M>` for the erased memo type `M`
-    atomic_memo: AtomicPtr<DummyMemo>,
+    /// An [`AtomicPtr`] to a `Box<M>` for the erased memo type `M`
+    atomic_memo: AtomicPtr<ErasedMemo>,
 }
 
-/// Dummy placeholder type that we use when erasing the memo type `M` in [`MemoEntryData`][].
-struct DummyMemo {}
+/// Dummy placeholder type that we use when erasing the memo type `M` in [`MemoEntryData`].
+struct ErasedMemo {}
 
 impl MemoTable {
-    fn to_dummy<M: Memo>(memo: NonNull<M>) -> NonNull<DummyMemo> {
-        memo.cast()
-    }
-
-    unsafe fn from_dummy<M: Memo>(memo: NonNull<DummyMemo>) -> NonNull<M> {
-        memo.cast()
-    }
-
-    fn to_dyn_fn<M: Memo>() -> fn(NonNull<DummyMemo>) -> NonNull<dyn Memo> {
-        let f: fn(NonNull<M>) -> NonNull<dyn Memo> = |x| x;
-
-        unsafe {
-            std::mem::transmute::<
-                fn(NonNull<M>) -> NonNull<dyn Memo>,
-                fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>,
-            >(f)
-        }
-    }
-
     /// # Safety
     ///
     /// The caller needs to make sure to not free the returned value until no more references into
@@ -119,37 +100,6 @@ impl MemoTable {
         // Otherwise we need the write lock.
         // SAFETY: The caller is responsible for dropping
         unsafe { self.insert_cold(memo_ingredient_index, memo) }
-    }
-
-    /// # Safety
-    ///
-    /// The caller needs to make sure to not free the returned value until no more references into
-    /// the database exist as there may be outstanding borrows into the pointer contents.
-    unsafe fn insert_cold<M: Memo>(
-        &self,
-        memo_ingredient_index: MemoIngredientIndex,
-        memo: NonNull<M>,
-    ) -> Option<NonNull<M>> {
-        let mut memos = self.memos.write();
-        let memo_ingredient_index = memo_ingredient_index.as_usize();
-        if memos.len() < memo_ingredient_index + 1 {
-            memos.resize_with(memo_ingredient_index + 1, MemoEntry::default);
-        }
-        let old_entry = memos[memo_ingredient_index].data.replace(MemoEntryData {
-            type_id: TypeId::of::<M>(),
-            to_dyn_fn: Self::to_dyn_fn::<M>(),
-            atomic_memo: AtomicPtr::new(Self::to_dummy(memo).as_ptr()),
-        });
-        old_entry.map(
-            |MemoEntryData {
-                 type_id: _,
-                 to_dyn_fn: _,
-                 atomic_memo,
-             }| unsafe {
-                // SAFETY: The `atomic_memo` field is never null.
-                Self::from_dummy(NonNull::new_unchecked(atomic_memo.into_inner()))
-            },
-        )
     }
 
     pub(crate) fn get<M: Memo>(&self, memo_ingredient_index: MemoIngredientIndex) -> Option<&M> {
@@ -247,6 +197,58 @@ impl MemoTable {
     }
 }
 
+impl MemoTable {
+    fn to_dummy<M: Memo>(memo: NonNull<M>) -> NonNull<ErasedMemo> {
+        memo.cast()
+    }
+
+    unsafe fn from_dummy<M: Memo>(memo: NonNull<ErasedMemo>) -> NonNull<M> {
+        memo.cast()
+    }
+
+    fn to_dyn_fn<M: Memo>() -> fn(NonNull<ErasedMemo>) -> NonNull<dyn Memo> {
+        let f: fn(NonNull<M>) -> NonNull<dyn Memo> = |x| x;
+
+        unsafe {
+            std::mem::transmute::<
+                fn(NonNull<M>) -> NonNull<dyn Memo>,
+                fn(NonNull<ErasedMemo>) -> NonNull<dyn Memo>,
+            >(f)
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not free the returned value until no more references into
+    /// the database exist as there may be outstanding borrows into the pointer contents.
+    unsafe fn insert_cold<M: Memo>(
+        &self,
+        memo_ingredient_index: MemoIngredientIndex,
+        memo: NonNull<M>,
+    ) -> Option<NonNull<M>> {
+        let mut memos = self.memos.write();
+        let memo_ingredient_index = memo_ingredient_index.as_usize();
+        if memos.len() < memo_ingredient_index + 1 {
+            memos.resize_with(memo_ingredient_index + 1, MemoEntry::default);
+        }
+        let old_entry = memos[memo_ingredient_index].data.replace(MemoEntryData {
+            type_id: TypeId::of::<M>(),
+            to_dyn_fn: Self::to_dyn_fn::<M>(),
+            atomic_memo: AtomicPtr::new(Self::to_dummy(memo).as_ptr()),
+        });
+        old_entry.map(
+            |MemoEntryData {
+                 type_id: _,
+                 to_dyn_fn: _,
+                 atomic_memo,
+             }| unsafe {
+                // SAFETY: The `atomic_memo` field is never null.
+                Self::from_dummy(NonNull::new_unchecked(atomic_memo.into_inner()))
+            },
+        )
+    }
+}
+
 impl Drop for MemoEntry {
     fn drop(&mut self) {
         if let Some(MemoEntryData {
@@ -264,7 +266,7 @@ impl Drop for MemoEntry {
     }
 }
 
-impl Drop for DummyMemo {
+impl Drop for ErasedMemo {
     fn drop(&mut self) {
         unreachable!("should never get here")
     }

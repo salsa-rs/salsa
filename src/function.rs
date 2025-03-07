@@ -155,15 +155,20 @@ where
         }
     }
 
-    pub fn database_key_index(&self, k: Id) -> DatabaseKeyIndex {
+    pub fn set_capacity(&mut self, capacity: usize) {
+        self.lru.set_capacity(capacity);
+    }
+}
+
+impl<C> IngredientImpl<C>
+where
+    C: Configuration,
+{
+    fn database_key_index(&self, k: Id) -> DatabaseKeyIndex {
         DatabaseKeyIndex {
             ingredient_index: self.index,
             key_index: k,
         }
-    }
-
-    pub fn set_capacity(&mut self, capacity: usize) {
-        self.lru.set_capacity(capacity);
     }
 
     /// Returns a reference to the memo value that lives as long as self.
@@ -212,7 +217,8 @@ where
 
     #[inline]
     fn memo_ingredient_index(&self, zalsa: &Zalsa, id: Id) -> MemoIngredientIndex {
-        self.memo_ingredient_indices.get_zalsa_id(zalsa, id)
+        self.memo_ingredient_indices
+            .get_id_with_table(zalsa.table(), id)
     }
 }
 
@@ -269,11 +275,7 @@ where
 
     fn reset_for_new_revision(&mut self, table: &mut Table) {
         self.lru.for_each_evicted(|evict| {
-            let ingredient_index = table.ingredient_index(evict);
-            Self::evict_value_from_memo_for(
-                table.memos_mut(evict),
-                self.memo_ingredient_indices.get(ingredient_index),
-            )
+            Self::evict_value_from_memo_for(table, &self.memo_ingredient_indices, evict)
         });
         std::mem::take(&mut self.deleted_entries);
     }

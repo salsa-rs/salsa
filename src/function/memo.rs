@@ -4,8 +4,11 @@ use std::fmt::Formatter;
 use std::ptr::NonNull;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::key::OutputDependencyIndex;
+use crate::plumbing::MemoIngredientMap;
+use crate::plumbing::SalsaStructInDb;
 use crate::revision::AtomicRevision;
-use crate::table::memo::MemoTable;
+use crate::table::Table;
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
@@ -16,35 +19,6 @@ use crate::{
 use super::{Configuration, IngredientImpl};
 
 impl<C: Configuration> IngredientImpl<C> {
-    /// Memos have to be stored internally using `'static` as the database lifetime.
-    /// This (unsafe) function call converts from something tied to self to static.
-    /// Values transmuted this way have to be transmuted back to being tied to self
-    /// when they are returned to the user.
-    unsafe fn to_static<'db>(
-        &'db self,
-        memo: NonNull<Memo<C::Output<'db>>>,
-    ) -> NonNull<Memo<C::Output<'static>>> {
-        memo.cast()
-    }
-
-    /// Convert from an internal memo (which uses `'static`) to one tied to self
-    /// so it can be publicly released.
-    unsafe fn to_self<'db>(
-        &'db self,
-        memo: NonNull<Memo<C::Output<'static>>>,
-    ) -> NonNull<Memo<C::Output<'db>>> {
-        memo.cast()
-    }
-
-    /// Convert from an internal memo (which uses `'static`) to one tied to self
-    /// so it can be publicly released.
-    unsafe fn to_self_ref<'db>(
-        &'db self,
-        memo: &'db Memo<C::Output<'static>>,
-    ) -> &'db Memo<C::Output<'db>> {
-        unsafe { std::mem::transmute(memo) }
-    }
-
     /// Inserts the memo for the given key; (atomically) overwrites and returns any previously existing memo
     ///
     /// # Safety
@@ -58,13 +32,12 @@ impl<C: Configuration> IngredientImpl<C> {
         memo: NonNull<Memo<C::Output<'db>>>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<NonNull<Memo<C::Output<'db>>>> {
-        let static_memo = unsafe { self.to_static(memo) };
-        let old_static_memo = unsafe {
-            zalsa
-                .memo_table_for(id)
-                .insert(memo_ingredient_index, static_memo)
-        }?;
-        Some(unsafe { self.to_self(old_static_memo) })
+        let static_memo = memo.cast::<Memo<C::Output<'static>>>();
+        // SAFETY: We are supplying the correct current revision
+        let memos = unsafe { zalsa.table().memos(id, zalsa.current_revision()) };
+        // SAFETY: Caller is responsible for upholding the safety invariants
+        let old_static_memo = unsafe { memos.insert(memo_ingredient_index, static_memo) }?;
+        Some(old_static_memo.cast::<Memo<C::Output<'db>>>())
     }
 
     /// Loads the current memo for `key_index`. This does not hold any sort of
@@ -76,18 +49,27 @@ impl<C: Configuration> IngredientImpl<C> {
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
-        let static_memo = zalsa.memo_table_for(id).get(memo_ingredient_index)?;
+        // SAFETY: We are supplying the correct current revision
+        let static_memo = unsafe { zalsa.table().memos(id, zalsa.current_revision()) }
+            .get(memo_ingredient_index)?;
 
-        unsafe { Some(self.to_self_ref(static_memo)) }
+        // SAFETY: `'db` is the actual lifetime of the memo
+        Some(unsafe {
+            std::mem::transmute::<&'db Memo<C::Output<'static>>, &'db Memo<C::Output<'db>>>(
+                static_memo,
+            )
+        })
     }
 
     /// Evicts the existing memo for the given key, replacing it
     /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
     /// or has values assigned as output of another query, this has no effect.
     pub(super) fn evict_value_from_memo_for(
-        table: &mut MemoTable,
-        memo_ingredient_index: MemoIngredientIndex,
+        table: &mut Table,
+        memo_ingredient_indices: &<<C as Configuration>::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
+        evict: Id,
     ) {
+        let memo_ingredient_index = memo_ingredient_indices.get_id_with_table(table, evict);
         let map = |memo: &mut Memo<C::Output<'static>>| {
             match &memo.revisions.origin {
                 QueryOrigin::Assigned(_) | QueryOrigin::DerivedUntracked(_) => {
@@ -103,7 +85,7 @@ impl<C: Configuration> IngredientImpl<C> {
             }
         };
 
-        table.map_memo(memo_ingredient_index, map)
+        table.memos_mut(evict).map_memo(memo_ingredient_index, map)
     }
 }
 
@@ -191,7 +173,7 @@ impl<V> Memo<V> {
 }
 
 impl<V: Debug + Send + Sync + Any> crate::table::memo::Memo for Memo<V> {
-    fn origin(&self) -> &QueryOrigin {
-        &self.revisions.origin
+    fn for_each_output(&self, cb: &mut dyn FnMut(OutputDependencyIndex)) {
+        self.revisions.origin.outputs().for_each(cb);
     }
 }

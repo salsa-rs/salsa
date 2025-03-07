@@ -1,4 +1,5 @@
 use super::{memo::Memo, Configuration, IngredientImpl};
+use crate::table::sync::ClaimGuard;
 use crate::zalsa::MemoIngredientIndex;
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
@@ -15,7 +16,7 @@ where
         let (zalsa, zalsa_local) = db.zalsas();
         zalsa.unwind_if_revision_cancelled(db);
 
-        let memo = self.refresh_memo(db, id);
+        let memo = self.refresh_memo(zalsa, db, id);
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let StampedValue {
             value,
@@ -24,8 +25,6 @@ where
         } = memo
             .revisions
             .stamped_value(unsafe { memo.value.as_ref().unwrap_unchecked() });
-
-        self.lru.record_use(id);
 
         zalsa_local.report_tracked_read(
             self.database_key_index(id).into(),
@@ -43,10 +42,11 @@ where
     #[inline]
     pub(super) fn refresh_memo<'db>(
         &'db self,
+        zalsa: &'db Zalsa,
         db: &'db C::DbView,
         id: Id,
     ) -> &'db Memo<C::Output<'db>> {
-        let zalsa = db.zalsa();
+        self.lru.record_use(id);
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         loop {
             if let Some(memo) = self
@@ -89,10 +89,7 @@ where
         let database_key_index = self.database_key_index(id);
 
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let _claim_guard =
-            zalsa
-                .sync_table_for(id)
-                .claim(db, zalsa, database_key_index, memo_ingredient_index)?;
+        let _claim_guard = ClaimGuard::claim(db, zalsa, database_key_index, memo_ingredient_index)?;
 
         // Push the query on the stack.
         let active_query = db.zalsa_local().push_query(database_key_index);

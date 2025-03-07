@@ -2,6 +2,7 @@ use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     ingredient::MaybeChangedAfter,
     key::DatabaseKeyIndex,
+    table::sync::ClaimGuard,
     zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
     AsDynDatabase as _, Id, Revision,
@@ -62,12 +63,7 @@ where
     ) -> Option<MaybeChangedAfter> {
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = zalsa.sync_table_for(key_index).claim(
-            db,
-            zalsa,
-            database_key_index,
-            memo_ingredient_index,
-        )?;
+        let _claim_guard = ClaimGuard::claim(db, zalsa, database_key_index, memo_ingredient_index)?;
         let active_query = db.zalsa_local().push_query(database_key_index);
 
         // Load the current memo, if any.

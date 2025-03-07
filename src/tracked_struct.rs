@@ -631,9 +631,9 @@ where
 
             db.salsa_event(&|| Event::new(EventKind::DidDiscard { key: executor }));
 
-            for stale_output in memo.origin().outputs() {
-                stale_output.remove_stale_output(zalsa, db, executor);
-            }
+            memo.for_each_output(&mut |stale_output| {
+                stale_output.remove_stale_output(zalsa, db, executor)
+            });
         }
 
         // now that all cleanup has occurred, make available for re-use
