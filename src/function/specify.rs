@@ -15,8 +15,13 @@ where
 {
     /// Specify the value for `key` *and* record that we did so.
     /// Used for explicit calls to `specify`, but not needed for pre-declared tracked struct fields.
-    pub fn specify_and_record<'db>(&'db self, db: &'db C::DbView, key: Id, value: C::Output<'db>)
-    where
+    pub fn specify_and_record<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        key: Id,
+        map_key: C::MapKey<'db>,
+        value: C::Output<'db>,
+    ) where
         C::Input<'db>: TrackedStructInDb,
     {
         let (zalsa, zalsa_local) = db.zalsas();
@@ -74,7 +79,9 @@ where
         };
 
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
-        if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
+        if let Some(old_memo) =
+            self.get_memo_from_table_for(zalsa, key, &map_key, memo_ingredient_index)
+        {
             self.backdate_if_appropriate(old_memo, &mut revisions, &value);
             self.diff_outputs(zalsa, db, database_key_index, old_memo, &mut revisions);
         }
@@ -90,7 +97,7 @@ where
             memo.tracing_debug(),
             key
         );
-        self.insert_memo(zalsa, key, memo, memo_ingredient_index);
+        self.insert_memo(zalsa, key, map_key, memo, memo_ingredient_index);
 
         // Record that the current query *specified* a value for this cell.
         let database_key_index = self.database_key_index(key);
@@ -101,16 +108,17 @@ where
     /// and `key` is a value that was specified by `executor`.
     /// Marks `key` as valid in the current revision since if `executor` had re-executed,
     /// it would have specified `key` again.
-    pub(super) fn validate_specified_value<Db: ?Sized + Database>(
-        &self,
-        db: &Db,
+    pub(super) fn validate_specified_value<'db, Db: ?Sized + Database>(
+        &'db self,
+        db: &'db Db,
         executor: DatabaseKeyIndex,
         key: Id,
+        map_key: &C::MapKey<'db>,
     ) {
         let zalsa = db.zalsa();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
 
-        let memo = match self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
+        let memo = match self.get_memo_from_table_for(zalsa, key, map_key, memo_ingredient_index) {
             Some(m) => m,
             None => return,
         };

@@ -1,3 +1,5 @@
+use rayon::iter::Either;
+
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     ingredient::MaybeChangedAfter,
@@ -18,6 +20,7 @@ where
         &'db self,
         db: &'db C::DbView,
         id: Id,
+        mut map_key: C::MapKey<'db>,
         revision: Revision,
     ) -> MaybeChangedAfter {
         let zalsa = db.zalsa();
@@ -30,7 +33,8 @@ where
             tracing::debug!("{database_key_index:?}: maybe_changed_after(revision = {revision:?})");
 
             // Check if we have a verified version: this is the hot path.
-            let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
+            let memo_guard =
+                self.get_memo_from_table_for(zalsa, id, &map_key, memo_ingredient_index);
             if let Some(memo) = memo_guard {
                 if self.shallow_verify_memo(db, zalsa, database_key_index, memo) {
                     return if memo.revisions.changed_at > revision {
@@ -39,12 +43,19 @@ where
                         MaybeChangedAfter::No(memo.revisions.accumulated_inputs.load())
                     };
                 }
-                if let Some(mcs) =
-                    self.maybe_changed_after_cold(zalsa, db, id, revision, memo_ingredient_index)
-                {
-                    return mcs;
-                } else {
-                    // We failed to claim, have to retry.
+                match self.maybe_changed_after_cold(
+                    zalsa,
+                    db,
+                    id,
+                    map_key,
+                    revision,
+                    memo_ingredient_index,
+                ) {
+                    Either::Left(mcs) => return mcs,
+                    Either::Right(key) => {
+                        map_key = key;
+                        // We failed to claim, have to retry.
+                    }
                 }
             } else {
                 // No memo? Assume has changed.
@@ -55,21 +66,27 @@ where
 
     fn maybe_changed_after_cold<'db>(
         &'db self,
-        zalsa: &Zalsa,
+        zalsa: &'db Zalsa,
         db: &'db C::DbView,
         key_index: Id,
+        map_key: C::MapKey<'db>,
         revision: Revision,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<MaybeChangedAfter> {
+    ) -> Either<MaybeChangedAfter, C::MapKey<'db>> {
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = ClaimGuard::claim(db, zalsa, database_key_index, memo_ingredient_index)?;
+        let Some(_claim_guard) =
+            ClaimGuard::claim(db, zalsa, database_key_index, memo_ingredient_index)
+        else {
+            return Either::Right(map_key);
+        };
         let active_query = db.zalsa_local().push_query(database_key_index);
 
         // Load the current memo, if any.
-        let Some(old_memo) = self.get_memo_from_table_for(zalsa, key_index, memo_ingredient_index)
+        let Some(old_memo) =
+            self.get_memo_from_table_for(zalsa, key_index, &map_key, memo_ingredient_index)
         else {
-            return Some(MaybeChangedAfter::Yes);
+            return Either::Left(MaybeChangedAfter::Yes);
         };
 
         tracing::debug!(
@@ -80,7 +97,7 @@ where
 
         // Check if the inputs are still valid. We can just compare `changed_at`.
         if self.deep_verify_memo(db, zalsa, old_memo, &active_query) {
-            return Some(if old_memo.revisions.changed_at > revision {
+            return Either::Left(if old_memo.revisions.changed_at > revision {
                 MaybeChangedAfter::Yes
             } else {
                 MaybeChangedAfter::No(old_memo.revisions.accumulated_inputs.load())
@@ -92,10 +109,10 @@ where
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
         if old_memo.value.is_some() {
-            let memo = self.execute(db, active_query, Some(old_memo));
+            let memo = self.execute(db, active_query, map_key, Some(old_memo));
             let changed_at = memo.revisions.changed_at;
 
-            return Some(if changed_at > revision {
+            return Either::Left(if changed_at > revision {
                 MaybeChangedAfter::Yes
             } else {
                 MaybeChangedAfter::No(match &memo.revisions.accumulated {
@@ -106,7 +123,7 @@ where
         }
 
         // Otherwise, nothing for it: have to consider the value to have changed.
-        Some(MaybeChangedAfter::Yes)
+        Either::Left(MaybeChangedAfter::Yes)
     }
 
     /// True if the memo's value and `changed_at` time is still valid in this revision.

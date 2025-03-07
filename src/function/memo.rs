@@ -29,14 +29,21 @@ impl<C: Configuration> IngredientImpl<C> {
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
+        map_key: C::MapKey<'db>,
         memo: NonNull<Memo<C::Output<'db>>>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<NonNull<Memo<C::Output<'db>>>> {
         let static_memo = memo.cast::<Memo<C::Output<'static>>>();
         // SAFETY: We are supplying the correct current revision
         let memos = unsafe { zalsa.table().memos(id, zalsa.current_revision()) };
-        // SAFETY: Caller is responsible for upholding the safety invariants
-        let old_static_memo = unsafe { memos.insert(memo_ingredient_index, static_memo) }?;
+
+        let old_static_memo = if size_of::<C::MapKey<'db>>() != 0 {
+            // SAFETY: Caller is responsible for upholding the safety invariants
+            unsafe { memos.map_insert(memo_ingredient_index, map_key, static_memo) }
+        } else {
+            // SAFETY: Caller is responsible for upholding the safety invariants
+            unsafe { memos.insert(memo_ingredient_index, static_memo) }
+        }?;
         Some(old_static_memo.cast::<Memo<C::Output<'db>>>())
     }
 
@@ -47,11 +54,16 @@ impl<C: Configuration> IngredientImpl<C> {
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
+        map_key: &C::MapKey<'db>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
         // SAFETY: We are supplying the correct current revision
-        let static_memo = unsafe { zalsa.table().memos(id, zalsa.current_revision()) }
-            .get(memo_ingredient_index)?;
+        let memos = unsafe { zalsa.table().memos(id, zalsa.current_revision()) };
+        let static_memo = if size_of::<C::MapKey<'db>>() != 0 {
+            memos.map_get(memo_ingredient_index, map_key)
+        } else {
+            memos.get(memo_ingredient_index)
+        }?;
 
         // SAFETY: `'db` is the actual lifetime of the memo
         Some(unsafe {

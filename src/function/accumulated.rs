@@ -14,7 +14,12 @@ where
 {
     /// Helper used by `accumulate` functions. Computes the results accumulated by `database_key_index`
     /// and its inputs.
-    pub fn accumulated_by<'db, A>(&self, db: &'db C::DbView, key: Id) -> Vec<&'db A>
+    pub fn accumulated_by<'db, A>(
+        &'db self,
+        db: &'db C::DbView,
+        key: Id,
+        map_key: C::MapKey<'db>,
+    ) -> Vec<&'db A>
     where
         A: accumulator::Accumulator,
     {
@@ -39,7 +44,7 @@ where
         let mut output = vec![];
 
         // First ensure the result is up to date
-        self.fetch(db, key);
+        self.fetch(db, key, map_key);
 
         let db = db.as_dyn_database();
         let db_key = self.database_key_index(key);
@@ -96,9 +101,10 @@ where
         &'db self,
         db: &'db C::DbView,
         key: Id,
+        map_key: C::MapKey<'db>,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         // NEXT STEP: stash and refactor `fetch` to return an `&Memo` so we can make this work
-        let memo = self.refresh_memo(db.zalsa(), db, key);
+        let memo = self.refresh_memo(db.zalsa(), db, key, map_key);
         (
             memo.revisions.accumulated.as_deref(),
             memo.revisions.accumulated_inputs.load(),

@@ -43,6 +43,7 @@ pub trait Configuration: Any {
 
     /// The input to the function
     type Input<'db>: Send + Sync;
+    type MapKey<'db>: Send + Sync + std::hash::Hash + Eq + std::fmt::Debug + Any;
 
     /// The value computed by the function.
     type Output<'db>: fmt::Debug + Send + Sync;
@@ -189,6 +190,7 @@ where
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
+        map_key: C::MapKey<'db>,
         memo: memo::Memo<C::Output<'db>>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> &'db memo::Memo<C::Output<'db>> {
@@ -202,9 +204,9 @@ where
 
         // Safety: We delay the drop of `old_value` until a new revision starts which ensures no
         // references will exist for the memo contents.
-        if let Some(old_value) =
-            unsafe { self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index) }
-        {
+        if let Some(old_value) = unsafe {
+            self.insert_memo_into_table_for(zalsa, id, map_key, memo, memo_ingredient_index)
+        } {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
             //
@@ -238,7 +240,8 @@ where
     ) -> MaybeChangedAfter {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster.downcast_unchecked(db) };
-        self.maybe_changed_after(db, input, revision)
+        let map_key = todo!();
+        self.maybe_changed_after(db, input, map_key, revision)
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
@@ -246,7 +249,8 @@ where
     }
 
     fn origin(&self, db: &dyn Database, key: Id) -> Option<QueryOrigin> {
-        self.origin(db.zalsa(), key)
+        let map_key = todo!();
+        self.origin(db.zalsa(), key, map_key)
     }
 
     fn mark_validated_output(
@@ -255,7 +259,8 @@ where
         executor: DatabaseKeyIndex,
         output_key: crate::Id,
     ) {
-        self.validate_specified_value(db, executor, output_key);
+        let map_key = todo!();
+        self.validate_specified_value(db, executor, output_key, map_key);
     }
 
     fn remove_stale_output(
@@ -294,7 +299,8 @@ where
         key_index: Id,
     ) -> (Option<&'db AccumulatedMap>, InputAccumulatedValues) {
         let db = self.view_caster.downcast(db);
-        self.accumulated_map(db, key_index)
+        let map_key = todo!();
+        self.accumulated_map(db, key_index, map_key)
     }
 }
 
