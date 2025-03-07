@@ -85,7 +85,9 @@ impl<C: Configuration> IngredientImpl<C> {
             }
         };
 
-        table.memos_mut(evict).map_memo(memo_ingredient_index, map)
+        table
+            .memos_mut(evict)
+            .tap_mut_memo(memo_ingredient_index, map)
     }
 }
 

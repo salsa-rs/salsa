@@ -1,11 +1,14 @@
 use std::{
     any::{Any, TypeId},
     fmt::Debug,
+    hash::Hash,
+    iter,
     ptr::NonNull,
     sync::atomic::{AtomicPtr, Ordering},
 };
 
 use parking_lot::RwLock;
+use rustc_hash::FxHashMap;
 
 use crate::{key::OutputDependencyIndex, zalsa::MemoIngredientIndex};
 
@@ -47,6 +50,7 @@ struct MemoEntry {
 /// Therefore, we hide the type by transmuting to `DummyMemo`; but we must then be very careful
 /// when freeing `MemoEntryData` values to transmute things back. See the `Drop` impl for
 /// [`MemoEntry`][] for details.
+#[derive(Debug)]
 struct MemoEntryData {
     /// The `type_id` of the erased memo type `M`
     type_id: TypeId,
@@ -93,13 +97,105 @@ impl MemoTable {
             // SAFETY: The `atomic_memo` field is never null.
             let old_memo = unsafe { NonNull::new_unchecked(old_memo) };
 
-            // SAFETY: `type_id` check asserted above
-            return Some(unsafe { Self::from_dummy(old_memo) });
+            return Some(old_memo.cast());
         }
 
+        // FIXME: This should not be able to return a value?
         // Otherwise we need the write lock.
         // SAFETY: The caller is responsible for dropping
         unsafe { self.insert_cold(memo_ingredient_index, memo) }
+    }
+
+    pub(crate) unsafe fn map_insert<K: Eq + Hash + Debug + Any + Send + Sync, M: Memo>(
+        &self,
+        memo_ingredient_index: MemoIngredientIndex,
+        key: K,
+        memo: NonNull<M>,
+    ) -> Option<NonNull<M>> {
+        // If the memo slot is already occupied, it must already have the
+        // right type info etc, and we only need the read-lock.
+        let read = self.memos.read();
+        if let Some(MemoEntry {
+            data:
+                Some(MemoEntryData {
+                    type_id,
+                    to_dyn_fn: _,
+                    atomic_memo: atomic_map_memo,
+                }),
+        }) = read.get(memo_ingredient_index.as_usize())
+        {
+            assert_eq!(
+                *type_id,
+                TypeId::of::<MemoMap<K>>(),
+                "inconsistent type-id for `{memo_ingredient_index:?}`"
+            );
+
+            let map_memo =
+                unsafe { NonNull::new_unchecked(atomic_map_memo.load(Ordering::Acquire)) };
+            let old_memo = map_memo.cast::<MemoMap<K>>();
+
+            if let Some(MemoEntryData {
+                type_id,
+                to_dyn_fn: _,
+                atomic_memo,
+            }) = unsafe { old_memo.as_ref() }.map.get(&key)
+            {
+                assert_eq!(
+                    *type_id,
+                    TypeId::of::<M>(),
+                    "inconsistent type-id for `{memo_ingredient_index:?}`"
+                );
+                let old_memo = atomic_memo.swap(Self::to_dummy(memo).as_ptr(), Ordering::AcqRel);
+
+                // SAFETY: The `atomic_memo` field is never null.
+                let old_memo = unsafe { NonNull::new_unchecked(old_memo) };
+
+                return Some(old_memo.cast());
+            }
+            // disconnect borrow of the read-lock, the entry won't be de-initialized as that will
+            // only happen on LRU collection, which cannot happen concurrently (as it requires
+            // mutable access over Zalsa)
+            let atomic_map_memo: *const _ = atomic_map_memo;
+            drop(read);
+
+            // re-acquire the memo but with the write lock held, this effectively gives us exclusive
+            // access now
+            let _write = self.memos.write();
+            let map_memo =
+                unsafe { NonNull::new_unchecked((*atomic_map_memo).load(Ordering::Acquire)) };
+            let mut old_memo = map_memo.cast::<MemoMap<K>>();
+            unsafe { old_memo.as_mut() }.map.insert(
+                key,
+                MemoEntryData {
+                    type_id: TypeId::of::<M>(),
+                    to_dyn_fn: Self::to_dyn_fn::<M>(),
+                    atomic_memo: AtomicPtr::new(Self::to_dummy(memo).as_ptr()),
+                },
+            );
+            return None;
+        }
+
+        drop(read);
+        // Otherwise we need the write lock.
+        // SAFETY: The caller is responsible for dropping
+        unsafe {
+            assert!(self
+                .insert_cold(
+                    memo_ingredient_index,
+                    NonNull::from(Box::leak(Box::new(MemoMap {
+                        map: FxHashMap::from_iter(iter::once((
+                            key,
+                            MemoEntryData {
+                                type_id: TypeId::of::<M>(),
+                                to_dyn_fn: Self::to_dyn_fn::<M>(),
+                                atomic_memo: AtomicPtr::new(Self::to_dummy(memo).as_ptr()),
+                            },
+                        ))),
+                    }))),
+                )
+                .is_none());
+        }
+        None
     }
 
     pub(crate) fn get<M: Memo>(&self, memo_ingredient_index: MemoIngredientIndex) -> Option<&M> {
@@ -127,13 +223,37 @@ impl MemoTable {
         let memo = unsafe { NonNull::new_unchecked(atomic_memo.load(Ordering::Acquire)) };
 
         // SAFETY: `type_id` check asserted above
-        unsafe { Some(Self::from_dummy(memo).as_ref()) }
+        unsafe { Some(memo.cast().as_ref()) }
+    }
+
+    pub(crate) fn map_get<K: Eq + Hash + Debug + Any + Send + Sync, M: Memo>(
+        &self,
+        memo_ingredient_index: MemoIngredientIndex,
+        k: &K,
+    ) -> Option<&M> {
+        let MemoEntryData {
+            type_id,
+            to_dyn_fn: _,
+            atomic_memo,
+        } = self.get::<MemoMap<K>>(memo_ingredient_index)?.map.get(&k)?;
+
+        assert_eq!(
+            *type_id,
+            TypeId::of::<K>(),
+            "inconsistent type-id for `{memo_ingredient_index:?}`"
+        );
+
+        // SAFETY: The `atomic_memo` field is never null.
+        let memo = unsafe { NonNull::new_unchecked(atomic_memo.load(Ordering::Acquire)) };
+
+        // SAFETY: `type_id` check asserted above
+        unsafe { Some(memo.cast().as_ref()) }
     }
 
     /// Calls `f` on the memo at `memo_ingredient_index`.
     ///
     /// If the memo is not present, `f` is not called.
-    pub(crate) fn map_memo<M: Memo>(
+    pub(crate) fn tap_mut_memo<M: Memo>(
         &mut self,
         memo_ingredient_index: MemoIngredientIndex,
         f: impl FnOnce(&mut M),
@@ -161,7 +281,7 @@ impl MemoTable {
         let memo = unsafe { NonNull::new_unchecked(*atomic_memo.get_mut()) };
 
         // SAFETY: `type_id` check asserted above
-        f(unsafe { Self::from_dummy(memo).as_mut() });
+        f(unsafe { memo.cast().as_mut() });
     }
 
     /// # Safety
@@ -197,12 +317,31 @@ impl MemoTable {
     }
 }
 
+#[derive(Debug)]
+struct MemoMap<K> {
+    map: FxHashMap<K, MemoEntryData>,
+}
+
+impl<K: Debug + Send + Sync + Any> Memo for MemoMap<K> {
+    fn for_each_output(&self, cb: &mut dyn FnMut(OutputDependencyIndex)) {
+        self.map.values().for_each(
+            |MemoEntryData {
+                 type_id: _,
+                 to_dyn_fn,
+                 atomic_memo,
+             }| {
+                // FIXME: The load is unnecessary, the only call path to this has ownership
+                unsafe {
+                    to_dyn_fn(NonNull::new_unchecked(atomic_memo.load(Ordering::Acquire))).as_ref()
+                }
+                .for_each_output(cb)
+            },
+        )
+    }
+}
+
 impl MemoTable {
     fn to_dummy<M: Memo>(memo: NonNull<M>) -> NonNull<ErasedMemo> {
-        memo.cast()
-    }
-
-    unsafe fn from_dummy<M: Memo>(memo: NonNull<ErasedMemo>) -> NonNull<M> {
         memo.cast()
     }
 
@@ -243,7 +382,7 @@ impl MemoTable {
                  atomic_memo,
              }| unsafe {
                 // SAFETY: The `atomic_memo` field is never null.
-                Self::from_dummy(NonNull::new_unchecked(atomic_memo.into_inner()))
+                NonNull::new_unchecked(atomic_memo.into_inner()).cast()
             },
         )
     }
