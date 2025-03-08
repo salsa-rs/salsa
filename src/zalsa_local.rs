@@ -371,9 +371,6 @@ pub enum QueryOrigin {
     /// The `DatabaseKeyIndex` is the identity of the assigning query.
     Assigned(DatabaseKeyIndex),
 
-    /// This value was set as a base input to the computation.
-    BaseInput,
-
     /// The value was derived by executing a function
     /// and we were able to track ALL of that function's inputs.
     /// Those inputs are described in [`QueryEdges`].
@@ -394,9 +391,7 @@ impl QueryOrigin {
     pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = InputDependencyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
-            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput | QueryOrigin::FixpointInitial => {
-                None
-            }
+            QueryOrigin::Assigned(_) | QueryOrigin::FixpointInitial => None,
         };
         opt_edges.into_iter().flat_map(|edges| edges.inputs())
     }
@@ -405,9 +400,7 @@ impl QueryOrigin {
     pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = OutputDependencyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
-            QueryOrigin::Assigned(_) | QueryOrigin::BaseInput | QueryOrigin::FixpointInitial => {
-                None
-            }
+            QueryOrigin::Assigned(_) | QueryOrigin::FixpointInitial => None,
         };
         opt_edges.into_iter().flat_map(|edges| edges.outputs())
     }

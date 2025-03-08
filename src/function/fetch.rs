@@ -18,11 +18,14 @@ where
         zalsa.unwind_if_revision_cancelled(db);
 
         let memo = self.refresh_memo(db, id);
+        // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let StampedValue {
             value,
             durability,
             changed_at,
-        } = memo.revisions.stamped_value(memo.value.as_ref().unwrap());
+        } = memo
+            .revisions
+            .stamped_value(unsafe { memo.value.as_ref().unwrap_unchecked() });
 
         self.lru.record_use(id);
 
@@ -76,7 +79,7 @@ where
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
         let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-        if let Some(memo) = &memo_guard {
+        if let Some(memo) = memo_guard {
             if memo.value.is_some()
                 && self.shallow_verify_memo(db, zalsa, self.database_key_index(id), memo, false)
             {
@@ -95,14 +98,12 @@ where
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
-        let zalsa_local = db.zalsa_local();
         let database_key_index = self.database_key_index(id);
 
         // Try to claim this query: if someone else has claimed it already, go back and start again.
         let _claim_guard = match zalsa.sync_table_for(id).claim(
-            db.as_dyn_database(),
+            db,
             zalsa,
-            zalsa_local,
             database_key_index,
             memo_ingredient_index,
         ) {
@@ -154,11 +155,11 @@ where
         };
 
         // Push the query on the stack.
-        let active_query = zalsa_local.push_query(database_key_index);
+        let active_query = db.zalsa_local().push_query(database_key_index);
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-        if let Some(old_memo) = &opt_old_memo {
+        if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
                 if let VerifyResult::Unchanged(_, cycle_heads) =
                     self.deep_verify_memo(db, zalsa, old_memo, &active_query)

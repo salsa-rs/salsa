@@ -1,4 +1,5 @@
 use parking_lot::{Mutex, RwLock};
+use portable_atomic::AtomicU64;
 use rustc_hash::FxHashMap;
 use std::any::{Any, TypeId};
 use std::collections::hash_map;
@@ -6,7 +7,7 @@ use std::marker::PhantomData;
 use std::mem;
 use std::num::NonZeroU32;
 use std::panic::RefUnwindSafe;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
@@ -169,10 +170,6 @@ impl Zalsa {
         }
     }
 
-    pub(crate) fn views(&self) -> &Views {
-        &self.views_of
-    }
-
     pub(crate) fn nonce(&self) -> Nonce<StorageNonce> {
         self.nonce
     }
@@ -255,6 +252,11 @@ impl Zalsa {
 
 /// Semver unstable APIs used by the macro expansions
 impl Zalsa {
+    /// **NOT SEMVER STABLE**
+    pub fn views(&self) -> &Views {
+        &self.views_of
+    }
+
     /// **NOT SEMVER STABLE**
     #[inline]
     pub fn lookup_page_type_id(&self, id: Id) -> TypeId {
@@ -461,10 +463,10 @@ where
 
 /// Given a wide pointer `T`, extracts the data pointer (typed as `U`).
 ///
-/// # Safety requirement
+/// # Safety
 ///
 /// `U` must be correct type for the data pointer.
-pub(crate) unsafe fn transmute_data_ptr<T: ?Sized, U>(t: &T) -> &U {
+pub unsafe fn transmute_data_ptr<T: ?Sized, U>(t: &T) -> &U {
     let t: *const T = t;
     let u: *const U = t as *const U;
     unsafe { &*u }
@@ -472,7 +474,7 @@ pub(crate) unsafe fn transmute_data_ptr<T: ?Sized, U>(t: &T) -> &U {
 
 /// Given a wide pointer `T`, extracts the data pointer (typed as `U`).
 ///
-/// # Safety requirement
+/// # Safety
 ///
 /// `U` must be correct type for the data pointer.
 pub(crate) unsafe fn transmute_data_mut_ptr<T: ?Sized, U>(t: &mut T) -> &mut U {

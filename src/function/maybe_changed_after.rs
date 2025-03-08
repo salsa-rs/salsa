@@ -62,7 +62,7 @@ where
 
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-            if let Some(memo) = &memo_guard {
+            if let Some(memo) = memo_guard {
                 if self.shallow_verify_memo(db, zalsa, database_key_index, memo, false) {
                     return if memo.revisions.changed_at > revision {
                         VerifyResult::Changed
@@ -97,11 +97,9 @@ where
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
-        let zalsa_local = db.zalsa_local();
         let _claim_guard = match zalsa.sync_table_for(key_index).claim(
-            db.as_dyn_database(),
+            db,
             zalsa,
-            zalsa_local,
             database_key_index,
             memo_ingredient_index,
         ) {
@@ -133,7 +131,7 @@ where
         );
 
         // Check if the inputs are still valid. We can just compare `changed_at`.
-        let active_query = zalsa_local.push_query(database_key_index);
+        let active_query = db.zalsa_local().push_query(database_key_index);
         if let VerifyResult::Unchanged(_, cycle_heads) =
             self.deep_verify_memo(db, zalsa, old_memo, &active_query)
         {
@@ -301,8 +299,7 @@ where
                     // in rev 1 but not in rev 2.
                     return VerifyResult::Changed;
                 }
-                QueryOrigin::BaseInput | QueryOrigin::FixpointInitial => {
-                    // This value was `set` by the mutator thread -- ie, it's a base input and it cannot be out of date.
+                QueryOrigin::FixpointInitial => {
                     return VerifyResult::unchanged();
                 }
                 QueryOrigin::DerivedUntracked(_) => {
@@ -318,6 +315,7 @@ where
                     // it is still up to date is meaningless.
                     let last_verified_at = old_memo.verified_at.load();
                     let mut inputs = InputAccumulatedValues::Empty;
+                    let dyn_db = db.as_dyn_database();
                     for &edge in edges.input_outputs.iter() {
                         match edge {
                             QueryEdge::Input(dependency_index) => {
@@ -350,7 +348,7 @@ where
                                 // and overwrite the contents.
                                 dependency_index.mark_validated_output(
                                     zalsa,
-                                    db.as_dyn_database(),
+                                    dyn_db,
                                     database_key_index,
                                 );
                             }

@@ -50,7 +50,7 @@ where
         CycleRecoveryStrategy::Panic
     }
 
-    fn maybe_changed_after(
+    unsafe fn maybe_changed_after(
         &self,
         db: &dyn Database,
         input: Id,

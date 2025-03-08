@@ -52,7 +52,7 @@ where
         loop {
             // If we already executed this query once, then use the tracked-struct ids from the
             // previous execution as the starting point for the new one.
-            if let Some(old_memo) = &opt_old_memo {
+            if let Some(old_memo) = opt_old_memo {
                 active_query.seed_tracked_struct_ids(&old_memo.revisions.tracked_struct_ids);
             }
 
@@ -155,7 +155,7 @@ where
 
             tracing::debug!("{database_key_index:?}: execute: result.revisions = {revisions:#?}");
 
-            if let Some(old_memo) = &opt_old_memo {
+            if let Some(old_memo) = opt_old_memo {
                 // If the new value is equal to the old one, then it didn't
                 // really change, even if some of its inputs have. So we can
                 // "backdate" its `changed_at` revision to be the same as the

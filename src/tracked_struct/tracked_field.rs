@@ -51,7 +51,7 @@ where
         crate::cycle::CycleRecoveryStrategy::Panic
     }
 
-    fn maybe_changed_after<'db>(
+    unsafe fn maybe_changed_after<'db>(
         &'db self,
         db: &'db dyn Database,
         input: Id,
