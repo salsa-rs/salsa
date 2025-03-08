@@ -41,11 +41,10 @@ impl Attached {
                     // Already attached? Assert that the database has not changed.
                     // NOTE: It's important to use `addr_eq` here because `NonNull::eq`
                     // not only compares the address but also the type's metadata.
-                    if !std::ptr::addr_eq(current_db.as_ptr(), new_db.as_ptr()) {
-                        panic!(
-                            "Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}",
-                        );
-                    }
+                    assert!(
+                        std::ptr::addr_eq(current_db.as_ptr(), new_db.as_ptr()),
+                       "Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}"
+                    );
 
                     Self { state: None }
                 } else {
