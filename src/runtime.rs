@@ -1,19 +1,14 @@
 use std::{
     mem,
-    panic::panic_any,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicBool, Ordering},
     thread::ThreadId,
 };
 
 use parking_lot::Mutex;
 
 use crate::{
-    active_query::ActiveQuery, cycle::CycleRecoveryStrategy, durability::Durability,
-    key::DatabaseKeyIndex, table::Table, zalsa_local::ZalsaLocal, Cancelled, Cycle, Database,
-    Event, EventKind, Revision,
+    durability::Durability, key::DatabaseKeyIndex, table::Table, zalsa_local::ZalsaLocal,
+    Cancelled, Database, Event, EventKind, Revision,
 };
 
 use self::dependency_graph::DependencyGraph;
@@ -49,7 +44,12 @@ pub struct Runtime {
 pub(crate) enum WaitResult {
     Completed,
     Panicked,
-    Cycle(Cycle),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum BlockResult {
+    Completed,
+    Cycle,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -156,8 +156,8 @@ impl Runtime {
         r_new
     }
 
-    /// Block until `other_id` completes executing `database_key`;
-    /// panic or unwind in the case of a cycle.
+    /// Block until `other_id` completes executing `database_key`, or return `BlockResult::Cycle`
+    /// immediately in case of a cycle.
     ///
     /// `query_mutex_guard` is the guard for the current query's state;
     /// it will be dropped after we have successfully registered the
@@ -167,34 +167,19 @@ impl Runtime {
     ///
     /// If the thread `other_id` panics, then our thread is considered
     /// cancelled, so this function will panic with a `Cancelled` value.
-    ///
-    /// # Cycle handling
-    ///
-    /// If the thread `other_id` already depends on the current thread,
-    /// and hence there is a cycle in the query graph, then this function
-    /// will unwind instead of returning normally. The method of unwinding
-    /// depends on the [`Self::mutual_cycle_recovery_strategy`]
-    /// of the cycle participants:
-    ///
-    /// * [`CycleRecoveryStrategy::Panic`]: panic with the [`Cycle`] as the value.
-    /// * [`CycleRecoveryStrategy::Fallback`]: initiate unwinding with [`CycleParticipant::unwind`].
-    pub(crate) fn block_on_or_unwind<QueryMutexGuard>(
+    pub(crate) fn block_on<QueryMutexGuard>(
         &self,
         db: &dyn Database,
         local_state: &ZalsaLocal,
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
-    ) {
+    ) -> BlockResult {
         let mut dg = self.dependency_graph.lock();
         let thread_id = std::thread::current().id();
 
         if dg.depends_on(other_id, thread_id) {
-            self.unblock_cycle_and_maybe_throw(db, local_state, &mut dg, database_key, other_id);
-
-            // If the above fn returns, then (via cycle recovery) it has unblocked the
-            // cycle, so we can continue.
-            assert!(!dg.depends_on(other_id, thread_id));
+            return BlockResult::Cycle;
         }
 
         db.salsa_event(&|| {
@@ -218,126 +203,12 @@ impl Runtime {
         });
 
         match result {
-            WaitResult::Completed => (),
+            WaitResult::Completed => BlockResult::Completed,
 
             // If the other thread panicked, then we consider this thread
             // cancelled. The assumption is that the panic will be detected
             // by the other thread and responded to appropriately.
             WaitResult::Panicked => Cancelled::PropagatedPanic.throw(),
-
-            WaitResult::Cycle(c) => c.throw(),
-        }
-    }
-
-    /// Handles a cycle in the dependency graph that was detected when the
-    /// current thread tried to block on `database_key_index` which is being
-    /// executed by `to_id`. If this function returns, then `to_id` no longer
-    /// depends on the current thread, and so we should continue executing
-    /// as normal. Otherwise, the function will throw a `Cycle` which is expected
-    /// to be caught by some frame on our stack. This occurs either if there is
-    /// a frame on our stack with cycle recovery (possibly the top one!) or if there
-    /// is no cycle recovery at all.
-    fn unblock_cycle_and_maybe_throw(
-        &self,
-        db: &dyn Database,
-        local_state: &ZalsaLocal,
-        dg: &mut DependencyGraph,
-        database_key_index: DatabaseKeyIndex,
-        to_id: ThreadId,
-    ) {
-        tracing::debug!(
-            "unblock_cycle_and_maybe_throw(database_key={:?})",
-            database_key_index
-        );
-
-        let (me_recovered, others_recovered, cycle) = local_state.with_query_stack(|from_stack| {
-            let from_id = std::thread::current().id();
-
-            // Make a "dummy stack frame". As we iterate through the cycle, we will collect the
-            // inputs from each participant. Then, if we are participating in cycle recovery, we
-            // will propagate those results to all participants.
-            let mut cycle_query = ActiveQuery::new(database_key_index);
-
-            // Identify the cycle participants:
-            let cycle = {
-                let mut v = vec![];
-                dg.for_each_cycle_participant(
-                    from_id,
-                    from_stack,
-                    database_key_index,
-                    to_id,
-                    |aqs| {
-                        aqs.iter_mut().for_each(|aq| {
-                            cycle_query.add_from(aq);
-                            v.push(aq.database_key_index);
-                        });
-                    },
-                );
-
-                // We want to give the participants in a deterministic order
-                // (at least for this execution, not necessarily across executions),
-                // no matter where it started on the stack. Find the minimum
-                // key and rotate it to the front.
-
-                if let Some((_, index)) = v
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, key)| (key.ingredient_index.debug_name(db), idx))
-                    .min()
-                {
-                    v.rotate_left(index);
-                }
-
-                Cycle::new(Arc::new(v.into_boxed_slice()))
-            };
-            tracing::debug!("cycle {cycle:?}, cycle_query {cycle_query:#?}");
-
-            // We can remove the cycle participants from the list of dependencies;
-            // they are a strongly connected component (SCC) and we only care about
-            // dependencies to things outside the SCC that control whether it will
-            // form again.
-            cycle_query.remove_cycle_participants(&cycle);
-
-            // Mark each cycle participant that has recovery set, along with
-            // any frames that come after them on the same thread. Those frames
-            // are going to be unwound so that fallback can occur.
-            dg.for_each_cycle_participant(from_id, from_stack, database_key_index, to_id, |aqs| {
-                aqs.iter_mut()
-                    .skip_while(|aq| {
-                        match db
-                            .zalsa()
-                            .lookup_ingredient(aq.database_key_index.ingredient_index)
-                            .cycle_recovery_strategy()
-                        {
-                            CycleRecoveryStrategy::Panic => true,
-                            CycleRecoveryStrategy::Fallback => false,
-                        }
-                    })
-                    .for_each(|aq| {
-                        tracing::debug!("marking {:?} for fallback", aq.database_key_index);
-                        aq.take_inputs_from(&cycle_query);
-                        assert!(aq.cycle.is_none());
-                        aq.cycle = Some(cycle.clone());
-                    });
-            });
-
-            // Unblock every thread that has cycle recovery with a `WaitResult::Cycle`.
-            // They will throw the cycle, which will be caught by the frame that has
-            // cycle recovery so that it can execute that recovery.
-            let (me_recovered, others_recovered) =
-                dg.maybe_unblock_runtimes_in_cycle(from_id, from_stack, database_key_index, to_id);
-            (me_recovered, others_recovered, cycle)
-        });
-
-        if me_recovered {
-            // If the current thread has recovery, we want to throw
-            // so that it can begin.
-            cycle.throw()
-        } else if others_recovered {
-            // If other threads have recovery but we didn't: return and we will block on them.
-        } else {
-            // if nobody has recover, then we panic
-            panic_any(cycle);
         }
     }
 

@@ -1,9 +1,7 @@
 use core::fmt;
 
 use crate::{
-    accumulator::accumulated_map::InputAccumulatedValues,
-    cycle::CycleRecoveryStrategy,
-    ingredient::MaybeChangedAfter,
+    function::VerifyResult,
     zalsa::{IngredientIndex, Zalsa},
     Database, Id,
 };
@@ -41,10 +39,11 @@ impl OutputDependencyIndex {
         zalsa: &Zalsa,
         db: &dyn Database,
         executor: DatabaseKeyIndex,
+        provisional: bool,
     ) {
         zalsa
             .lookup_ingredient(self.ingredient_index)
-            .remove_stale_output(db, executor, self.key_index)
+            .remove_stale_output(db, executor, self.key_index, provisional)
     }
 
     pub(crate) fn mark_validated_output(
@@ -98,7 +97,7 @@ impl InputDependencyIndex {
         &self,
         db: &dyn Database,
         last_verified_at: crate::Revision,
-    ) -> MaybeChangedAfter {
+    ) -> VerifyResult {
         match self.key_index {
             // SAFETY: The `db` belongs to the ingredient
             Some(key_index) => unsafe {
@@ -107,7 +106,7 @@ impl InputDependencyIndex {
                     .maybe_changed_after(db, key_index, last_verified_at)
             },
             // Data in tables themselves remain valid until the table as a whole is reset.
-            None => MaybeChangedAfter::No(InputAccumulatedValues::Empty),
+            None => VerifyResult::unchanged(),
         }
     }
 
@@ -149,10 +148,6 @@ impl DatabaseKeyIndex {
 
     pub fn key_index(self) -> Id {
         self.key_index
-    }
-
-    pub(crate) fn cycle_recovery_strategy(self, db: &dyn Database) -> CycleRecoveryStrategy {
-        self.ingredient_index.cycle_recovery_strategy(db)
     }
 }
 

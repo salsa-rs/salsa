@@ -1,10 +1,11 @@
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use tracing::debug;
 
 use crate::accumulator::accumulated_map::{
     AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues,
 };
 use crate::active_query::ActiveQuery;
+use crate::cycle::CycleHeads;
 use crate::durability::Durability;
 use crate::key::{DatabaseKeyIndex, InputDependencyIndex, OutputDependencyIndex};
 use crate::runtime::StampedValue;
@@ -15,7 +16,6 @@ use crate::tracked_struct::{Disambiguator, Identity, IdentityHash, IdentityMap};
 use crate::zalsa::IngredientIndex;
 use crate::Accumulator;
 use crate::Cancelled;
-use crate::Cycle;
 use crate::Id;
 use crate::Revision;
 use std::cell::RefCell;
@@ -170,6 +170,7 @@ impl ZalsaLocal {
         durability: Durability,
         changed_at: Revision,
         accumulated: InputAccumulatedValues,
+        cycle_heads: &CycleHeads,
     ) {
         debug!(
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
@@ -177,32 +178,7 @@ impl ZalsaLocal {
         );
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.add_read(input, durability, changed_at, accumulated);
-
-                // We are a cycle participant:
-                //
-                //     C0 --> ... --> Ci --> Ci+1 -> ... -> Cn --> C0
-                //                        ^   ^
-                //                        :   |
-                //         This edge -----+   |
-                //                            |
-                //                            |
-                //                            N0
-                //
-                // In this case, the value we have just read from `Ci+1`
-                // is actually the cycle fallback value and not especially
-                // interesting. We unwind now with `CycleParticipant` to avoid
-                // executing the rest of our query function. This unwinding
-                // will be caught and our own fallback value will be used.
-                //
-                // Note that `Ci+1` may` have *other* callers who are not
-                // participants in the cycle (e.g., N0 in the graph above).
-                // They will not have the `cycle` marker set in their
-                // stack frames, so they will just read the fallback value
-                // from `Ci+1` and continue on their merry way.
-                if let Some(cycle) = &top_query.cycle {
-                    cycle.clone().throw()
-                }
+                top_query.add_read(input, durability, changed_at, accumulated, cycle_heads);
             }
         })
     }
@@ -330,12 +306,36 @@ pub(crate) struct QueryRevisions {
     pub(super) tracked_struct_ids: IdentityMap,
 
     pub(super) accumulated: Option<Box<AccumulatedMap>>,
+
     /// [`InputAccumulatedValues::Empty`] if any input read during the query's execution
     /// has any direct or indirect accumulated values.
     pub(super) accumulated_inputs: AtomicInputAccumulatedValues,
+
+    /// This result was computed based on provisional values from
+    /// these cycle heads. The "cycle head" is the query responsible
+    /// for managing a fixpoint iteration. In a cycle like
+    /// `--> A --> B --> C --> A`, the cycle head is query `A`: it is
+    /// the query whose value is requested while it is executing,
+    /// which must provide the initial provisional value and decide,
+    /// after each iteration, whether the cycle has converged or must
+    /// iterate again.
+    pub(super) cycle_heads: CycleHeads,
 }
 
 impl QueryRevisions {
+    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, revision: Revision) -> Self {
+        let cycle_heads = FxHashSet::from_iter([query]).into();
+        Self {
+            changed_at: revision,
+            durability: Durability::MAX,
+            origin: QueryOrigin::FixpointInitial,
+            tracked_struct_ids: Default::default(),
+            accumulated: Default::default(),
+            accumulated_inputs: Default::default(),
+            cycle_heads,
+        }
+    }
+
     pub(crate) fn stamped_value<V>(&self, value: V) -> StampedValue<V> {
         self.stamp_template().stamp(value)
     }
@@ -381,6 +381,9 @@ pub enum QueryOrigin {
     /// The [`QueryEdges`] argument contains a listing of all the inputs we saw
     /// (but we know there were more).
     DerivedUntracked(QueryEdges),
+
+    /// The value is an initial provisional value for a query that supports fixpoint iteration.
+    FixpointInitial,
 }
 
 impl QueryOrigin {
@@ -388,7 +391,7 @@ impl QueryOrigin {
     pub(crate) fn inputs(&self) -> impl DoubleEndedIterator<Item = InputDependencyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
-            QueryOrigin::Assigned(_) => None,
+            QueryOrigin::Assigned(_) | QueryOrigin::FixpointInitial => None,
         };
         opt_edges.into_iter().flat_map(|edges| edges.inputs())
     }
@@ -397,7 +400,7 @@ impl QueryOrigin {
     pub(crate) fn outputs(&self) -> impl DoubleEndedIterator<Item = OutputDependencyIndex> + '_ {
         let opt_edges = match self {
             QueryOrigin::Derived(edges) | QueryOrigin::DerivedUntracked(edges) => Some(edges),
-            QueryOrigin::Assigned(_) => None,
+            QueryOrigin::Assigned(_) | QueryOrigin::FixpointInitial => None,
         };
         opt_edges.into_iter().flat_map(|edges| edges.outputs())
     }
@@ -509,17 +512,7 @@ impl ActiveQueryGuard<'_> {
         // Extract accumulated inputs.
         let popped_query = self.complete();
 
-        // If this frame were a cycle participant, it would have unwound.
-        assert!(popped_query.cycle.is_none());
-
         popped_query.into_revisions()
-    }
-
-    /// If the active query is registered as a cycle participant, remove and
-    /// return that cycle.
-    pub(crate) fn take_cycle(&self) -> Option<Cycle> {
-        self.local_state
-            .with_query_stack(|stack| stack.last_mut()?.cycle.take())
     }
 }
 

@@ -37,6 +37,9 @@ macro_rules! setup_tracked_fn {
         // Path to the cycle recovery function to use.
         cycle_recovery_fn: ($($cycle_recovery_fn:tt)*),
 
+        // Path to function to get the initial value to use for cycle recovery.
+        cycle_recovery_initial: ($($cycle_recovery_initial:tt)*),
+
         // Name of cycle recovery strategy variant to use.
         cycle_recovery_strategy: $cycle_recovery_strategy:ident,
 
@@ -180,7 +183,7 @@ macro_rules! setup_tracked_fn {
 
                 const CYCLE_STRATEGY: $zalsa::CycleRecoveryStrategy = $zalsa::CycleRecoveryStrategy::$cycle_recovery_strategy;
 
-                fn should_backdate_value(
+                fn values_equal(
                     old_value: &Self::Output<'_>,
                     new_value: &Self::Output<'_>,
                 ) -> bool {
@@ -188,7 +191,7 @@ macro_rules! setup_tracked_fn {
                         if $no_eq {
                             false
                         } else {
-                            $zalsa::should_backdate_value(old_value, new_value)
+                            $zalsa::values_equal(old_value, new_value)
                         }
                     }
                 }
@@ -201,12 +204,17 @@ macro_rules! setup_tracked_fn {
                     $inner($db, $($input_id),*)
                 }
 
+                fn cycle_initial<$db_lt>(db: &$db_lt dyn $Db, ($($input_id),*): ($($input_ty),*)) -> Self::Output<$db_lt> {
+                    $($cycle_recovery_initial)*(db, $($input_id),*)
+                }
+
                 fn recover_from_cycle<$db_lt>(
                     db: &$db_lt dyn $Db,
-                    cycle: &$zalsa::Cycle,
+                    value: &Self::Output<$db_lt>,
+                    count: u32,
                     ($($input_id),*): ($($input_ty),*)
-                ) -> Self::Output<$db_lt> {
-                    $($cycle_recovery_fn)*(db, cycle, $($input_id),*)
+                ) -> $zalsa::CycleRecoveryAction<Self::Output<$db_lt>> {
+                    $($cycle_recovery_fn)*(db, value, count, $($input_id),*)
                 }
 
                 fn id_to_input<$db_lt>(db: &$db_lt Self::DbView, key: salsa::Id) -> Self::Input<$db_lt> {
