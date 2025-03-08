@@ -30,6 +30,7 @@ use crate::{
     options::{AllowedOptions, Options},
 };
 use proc_macro2::{Ident, Literal, Span, TokenStream};
+use syn::parse::ParseStream;
 
 pub(crate) struct SalsaStruct<'s, A: SalsaStructAllowedOptions> {
     struct_item: &'s syn::ItemStruct,
@@ -40,6 +41,9 @@ pub(crate) struct SalsaStruct<'s, A: SalsaStructAllowedOptions> {
 pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
     /// The kind of struct (e.g., interned, input, tracked).
     const KIND: &'static str;
+
+    /// Are `#[maybe_update]` fields allowed?
+    const ALLOW_MAYBE_UPDATE: bool;
 
     /// Are `#[tracked]` fields allowed?
     const ALLOW_TRACKED: bool;
@@ -55,12 +59,13 @@ pub(crate) trait SalsaStructAllowedOptions: AllowedOptions {
 }
 
 pub(crate) struct SalsaField<'s> {
-    field: &'s syn::Field,
+    pub(crate) field: &'s syn::Field,
 
     pub(crate) has_tracked_attr: bool,
     pub(crate) has_default_attr: bool,
     pub(crate) has_ref_attr: bool,
     pub(crate) has_no_eq_attr: bool,
+    pub(crate) maybe_update_attr: Option<(syn::Path, syn::Expr)>,
     get_name: syn::Ident,
     set_name: syn::Ident,
 }
@@ -68,16 +73,40 @@ pub(crate) struct SalsaField<'s> {
 const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 
 #[allow(clippy::type_complexity)]
-pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(&str, fn(&syn::Attribute, &mut SalsaField))] = &[
-    ("tracked", |_, ef| ef.has_tracked_attr = true),
-    ("default", |_, ef| ef.has_default_attr = true),
-    ("return_ref", |_, ef| ef.has_ref_attr = true),
-    ("no_eq", |_, ef| ef.has_no_eq_attr = true),
+pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(
+    &str,
+    fn(&syn::Attribute, &mut SalsaField) -> syn::Result<()>,
+)] = &[
+    ("tracked", |_, ef| {
+        ef.has_tracked_attr = true;
+        Ok(())
+    }),
+    ("default", |_, ef| {
+        ef.has_default_attr = true;
+        Ok(())
+    }),
+    ("return_ref", |_, ef| {
+        ef.has_ref_attr = true;
+        Ok(())
+    }),
+    ("no_eq", |_, ef| {
+        ef.has_no_eq_attr = true;
+        Ok(())
+    }),
     ("get", |attr, ef| {
-        ef.get_name = attr.parse_args().unwrap();
+        ef.get_name = attr.parse_args()?;
+        Ok(())
     }),
     ("set", |attr, ef| {
-        ef.set_name = attr.parse_args().unwrap();
+        ef.set_name = attr.parse_args()?;
+        Ok(())
+    }),
+    ("maybe_update", |attr, ef| {
+        ef.maybe_update_attr = Some(attr.parse_args_with(|parser: ParseStream| {
+            let expr = parser.parse::<syn::Expr>()?;
+            Ok((attr.path().clone(), expr))
+        })?);
+        Ok(())
     }),
 ];
 
@@ -105,6 +134,7 @@ where
             fields,
         };
 
+        this.maybe_disallow_maybe_update_fields()?;
         this.maybe_disallow_tracked_fields()?;
         this.maybe_disallow_default_fields()?;
 
@@ -127,6 +157,34 @@ where
             Some(id) => id.clone(),
             None => parse_quote!(salsa::Id),
         }
+    }
+
+    /// Disallow `#[tracked]` attributes on the fields of this struct.
+    ///
+    /// If an `#[tracked]` field is found, return an error.
+    ///
+    /// # Parameters
+    ///
+    /// * `kind`, the attribute name (e.g., `input` or `interned`)
+    fn maybe_disallow_maybe_update_fields(&self) -> syn::Result<()> {
+        if A::ALLOW_MAYBE_UPDATE {
+            return Ok(());
+        }
+
+        // Check if any field has the `#[maybe_update]` attribute.
+        for ef in &self.fields {
+            if ef.maybe_update_attr.is_some() {
+                return Err(syn::Error::new_spanned(
+                    ef.field,
+                    format!(
+                        "`#[maybe_update]` cannot be used with `#[salsa::{}]`",
+                        A::KIND
+                    ),
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     /// Disallow `#[tracked]` attributes on the fields of this struct.
@@ -337,14 +395,14 @@ where
         self.args.no_lifetime.is_none()
     }
 
-    fn tracked_fields_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
+    pub fn tracked_fields_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
         self.fields
             .iter()
             .enumerate()
             .filter(|(_, f)| f.has_tracked_attr)
     }
 
-    fn untracked_fields_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
+    pub fn untracked_fields_iter(&self) -> impl Iterator<Item = (usize, &SalsaField<'s>)> {
         self.fields
             .iter()
             .enumerate()
@@ -374,6 +432,7 @@ impl<'s> SalsaField<'s> {
             has_ref_attr: false,
             has_default_attr: false,
             has_no_eq_attr: false,
+            maybe_update_attr: None,
             get_name,
             set_name,
         };
@@ -382,7 +441,7 @@ impl<'s> SalsaField<'s> {
         for attr in &field.attrs {
             for (fa, func) in FIELD_OPTION_ATTRIBUTES {
                 if attr.path().is_ident(fa) {
-                    func(attr, &mut result);
+                    func(attr, &mut result)?;
                 }
             }
         }
