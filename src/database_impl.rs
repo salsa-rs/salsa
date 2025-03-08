@@ -1,6 +1,5 @@
-use crate::{self as salsa, Database, Event, Storage};
+use crate::{storage::HasStorage, Database, Event, Storage};
 
-#[salsa::db]
 /// Default database implementation that you can use if you don't
 /// require any custom user data.
 #[derive(Default, Clone)]
@@ -19,10 +18,23 @@ impl DatabaseImpl {
     }
 }
 
-#[salsa::db]
 impl Database for DatabaseImpl {
     /// Default behavior: tracing debug log the event.
     fn salsa_event(&self, event: &dyn Fn() -> Event) {
         tracing::debug!("salsa_event({:?})", event());
+    }
+}
+
+// # Safety
+//
+// The `storage` and `storage_mut` fields return a reference to the same
+// storage field owned by `self`.
+unsafe impl HasStorage for DatabaseImpl {
+    fn storage(&self) -> &Storage<Self> {
+        &self.storage
+    }
+
+    fn storage_mut(&mut self) -> &mut Storage<Self> {
+        &mut self.storage
     }
 }
