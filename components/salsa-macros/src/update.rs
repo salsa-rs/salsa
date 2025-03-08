@@ -2,7 +2,7 @@ use proc_macro2::{Literal, Span, TokenStream};
 use syn::{parenthesized, parse::ParseStream, spanned::Spanned, Token};
 use synstructure::BindStyle;
 
-use crate::hygiene::Hygiene;
+use crate::{hygiene::Hygiene, kw};
 
 pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream> {
     let hygiene = Hygiene::from2(&input);
@@ -85,9 +85,6 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
 
                 let (maybe_update, unsafe_token) = match attr {
                     Some(attr) => {
-                        mod kw {
-                            syn::custom_keyword!(with);
-                        }
                         attr.parse_args_with(|parser: ParseStream| {
                             let mut content;
 
@@ -98,7 +95,6 @@ pub(crate) fn update_derive(input: syn::DeriveInput) -> syn::Result<TokenStream>
                             let expr = content.parse::<syn::Expr>()?;
                             Ok((
                                 quote_spanned! { with_token.span() =>  ({ let maybe_update: unsafe fn(*mut #field_ty, #field_ty) -> bool = #expr; maybe_update }) },
-                                // quote_spanned! { with_token.span() => ((#expr) as unsafe fn(*mut #field_ty, #field_ty) -> bool) },
                                 unsafe_token,
                             ))
                         })?
