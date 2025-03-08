@@ -26,7 +26,7 @@ note: the trait `Update` must be implemented
   |
   | pub unsafe trait Update {
   | ^^^^^^^^^^^^^^^^^^^^^^^
-  = note: this error originates in the macro `salsa::plumbing::setup_tracked_struct` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `NotUpdate` with `#[derive(PartialEq)]`
   |
 7   + #[derive(PartialEq)]

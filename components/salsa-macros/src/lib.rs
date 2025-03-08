@@ -93,3 +93,8 @@ pub(crate) fn token_stream_with_error(mut tokens: TokenStream, error: syn::Error
     tokens.extend(TokenStream::from(error.into_compile_error()));
     tokens
 }
+
+mod kw {
+    syn::custom_keyword!(with);
+    syn::custom_keyword!(maybe_update);
+}

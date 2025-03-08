@@ -50,6 +50,12 @@ macro_rules! setup_tracked_struct {
         // Absolute indices of any untracked fields.
         absolute_untracked_indices: [$($absolute_untracked_index:tt),*],
 
+        // Tracked field types.
+        tracked_maybe_updates: [$($tracked_maybe_update:tt),*],
+
+        // Untracked field types.
+        untracked_maybe_updates: [$($untracked_maybe_update:tt),*],
+
         // A set of "field options" for each tracked field.
         //
         // Each field option is a tuple `(return_mode, maybe_backdate)` where:
@@ -150,7 +156,7 @@ macro_rules! setup_tracked_struct {
                         $(
                             $crate::maybe_backdate!(
                                 $tracked_option,
-                                $tracked_ty,
+                                $tracked_maybe_update,
                                 (*old_fields).$absolute_tracked_index,
                                 new_fields.$absolute_tracked_index,
                                 revisions[$relative_tracked_index],
@@ -162,7 +168,7 @@ macro_rules! setup_tracked_struct {
                         // If any untracked field has changed, return `true`, indicating that the tracked struct
                         // itself should be considered changed.
                         $(
-                            $zalsa::UpdateDispatch::<$untracked_ty>::maybe_update(
+                            $untracked_maybe_update(
                                 &mut (*old_fields).$absolute_untracked_index,
                                 new_fields.$absolute_untracked_index,
                             )

@@ -3,7 +3,7 @@
 macro_rules! maybe_backdate {
     (
         ($return_mode:ident, no_backdate, $maybe_default:ident),
-        $field_ty:ty,
+        $maybe_update:tt,
         $old_field_place:expr,
         $new_field_place:expr,
         $revision_place:expr,
@@ -21,17 +21,14 @@ macro_rules! maybe_backdate {
 
     (
         ($return_mode:ident, backdate, $maybe_default:ident),
-        $field_ty:ty,
+        $maybe_update:tt,
         $old_field_place:expr,
         $new_field_place:expr,
         $revision_place:expr,
         $current_revision:expr,
         $zalsa:ident,
      ) => {
-        if $zalsa::UpdateDispatch::<$field_ty>::maybe_update(
-            std::ptr::addr_of_mut!($old_field_place),
-            $new_field_place,
-        ) {
+        if $maybe_update(std::ptr::addr_of_mut!($old_field_place), $new_field_place) {
             $revision_place = $current_revision;
         }
     };
