@@ -1,7 +1,5 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
-extern crate self as salsa;
-
 mod accumulator;
 mod active_query;
 mod array;
@@ -54,13 +52,8 @@ pub use self::zalsa::IngredientIndex;
 pub use crate::attach::with_attached_database;
 #[cfg(feature = "rayon")]
 pub use par_map::par_map;
-pub use salsa_macros::accumulator;
-pub use salsa_macros::db;
-pub use salsa_macros::input;
-pub use salsa_macros::interned;
-pub use salsa_macros::tracked;
-pub use salsa_macros::Supertype;
-pub use salsa_macros::Update;
+#[cfg(feature = "macros")]
+pub use salsa_macros::{accumulator, db, input, interned, tracked, Supertype, Update};
 
 pub mod prelude {
     pub use crate::Accumulator;

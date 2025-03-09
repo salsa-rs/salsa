@@ -24,6 +24,22 @@ struct ViewCaster {
     cast: ErasedDatabaseDownCasterSig,
 }
 
+impl ViewCaster {
+    fn new<DbView: ?Sized + Any>(func: unsafe fn(&dyn Database) -> &DbView) -> ViewCaster {
+        ViewCaster {
+            target_type_id: TypeId::of::<DbView>(),
+            type_name: std::any::type_name::<DbView>(),
+            // SAFETY: We are type erasing for storage, taking care of unerasing before we call
+            // the function pointer.
+            cast: unsafe {
+                std::mem::transmute::<DatabaseDownCasterSig<DbView>, ErasedDatabaseDownCasterSig>(
+                    func,
+                )
+            },
+        }
+    }
+}
+
 type ErasedDatabaseDownCasterSig = unsafe fn(&dyn Database) -> *const ();
 type DatabaseDownCasterSig<DbView> = unsafe fn(&dyn Database) -> &DbView;
 
@@ -55,18 +71,7 @@ impl Views {
         let source_type_id = TypeId::of::<Db>();
         let view_casters = boxcar::Vec::new();
         // special case the no-op transformation, that way we skip out on reconstructing the wide pointer
-        view_casters.push(ViewCaster {
-            target_type_id: TypeId::of::<dyn Database>(),
-            type_name: std::any::type_name::<dyn Database>(),
-            // SAFETY: We are type erasing for storage, taking care of unerasing before we call
-            // the function pointer.
-            cast: unsafe {
-                std::mem::transmute::<
-                    DatabaseDownCasterSig<dyn Database>,
-                    ErasedDatabaseDownCasterSig,
-                >(|db| db)
-            },
-        });
+        view_casters.push(ViewCaster::new::<dyn Database>(|db| db));
         Self {
             source_type_id,
             view_casters,
@@ -83,17 +88,7 @@ impl Views {
         {
             return;
         }
-        self.view_casters.push(ViewCaster {
-            target_type_id,
-            type_name: std::any::type_name::<DbView>(),
-            // SAFETY: We are type erasing for storage, taking care of unerasing before we call
-            // the function pointer.
-            cast: unsafe {
-                std::mem::transmute::<DatabaseDownCasterSig<DbView>, ErasedDatabaseDownCasterSig>(
-                    func,
-                )
-            },
-        });
+        self.view_casters.push(ViewCaster::new::<DbView>(func));
     }
 
     /// Retrieve an downcaster function from `dyn Database` to `dyn DbView`.
