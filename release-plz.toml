@@ -1,0 +1,11 @@
+[[package]]
+name = "salsa"
+version_group = "salsa"
+
+[[package]]
+name = "salsa-macros"
+version_group = "salsa"
+
+[[package]]
+name = "salsa-macro-rules"
+version_group = "salsa"
