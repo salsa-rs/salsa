@@ -318,15 +318,18 @@ impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
-    unsafe fn memos(&self, _current_revision: Revision) -> &crate::table::memo::MemoTable {
-        &self.memos
+    unsafe fn memos(
+        this: *const Self,
+        _current_revision: Revision,
+    ) -> *const crate::table::memo::MemoTable {
+        unsafe { &raw const (*this).memos }
     }
 
     fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
         &mut self.memos
     }
 
-    unsafe fn syncs(&self, _current_revision: Revision) -> &SyncTable {
-        &self.syncs
+    unsafe fn syncs(this: *const Self, _current_revision: Revision) -> *const SyncTable {
+        unsafe { &raw const (*this).syncs }
     }
 }

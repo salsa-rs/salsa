@@ -79,7 +79,7 @@ pub(crate) trait Slot: Any + Send + Sync {
     /// # Safety condition
     ///
     /// The current revision MUST be the current revision of the database containing this slot.
-    unsafe fn memos(&self, current_revision: Revision) -> &MemoTable;
+    unsafe fn memos(slot: *const Self, current_revision: Revision) -> *const MemoTable;
 
     /// Mutably access the [`MemoTable`] for this slot.
     fn memos_mut(&mut self) -> &mut MemoTable;
@@ -89,7 +89,7 @@ pub(crate) trait Slot: Any + Send + Sync {
     /// # Safety condition
     ///
     /// The current revision MUST be the current revision of the database containing this slot.
-    unsafe fn syncs(&self, current_revision: Revision) -> &SyncTable;
+    unsafe fn syncs(slot: *const Self, current_revision: Revision) -> *const SyncTable;
 }
 
 unsafe impl<T: Slot> Send for Page<T> {}
@@ -333,7 +333,7 @@ impl<T: Slot> TablePage for Page<T> {
     }
 
     unsafe fn memos(&self, slot: SlotIndex, current_revision: Revision) -> &MemoTable {
-        unsafe { self.get(slot).memos(current_revision) }
+        unsafe { &*T::memos(self.get_raw(slot), current_revision) }
     }
 
     fn memos_mut(&mut self, slot: SlotIndex) -> &mut MemoTable {
@@ -341,7 +341,7 @@ impl<T: Slot> TablePage for Page<T> {
     }
 
     unsafe fn syncs(&self, slot: SlotIndex, current_revision: Revision) -> &SyncTable {
-        unsafe { self.get(slot).syncs(current_revision) }
+        unsafe { &*T::syncs(self.get_raw(slot), current_revision) }
     }
 }
 
