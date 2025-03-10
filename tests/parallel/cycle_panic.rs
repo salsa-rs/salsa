@@ -1,0 +1,42 @@
+//! Test for panic in cycle recovery function, in cross-thread cycle.
+use crate::setup::{Knobs, KnobsDatabase};
+
+#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+fn query_a(db: &dyn KnobsDatabase) -> u32 {
+    db.signal(1);
+    db.wait_for(2);
+    query_b(db)
+}
+
+#[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=initial)]
+fn query_b(db: &dyn KnobsDatabase) -> u32 {
+    db.wait_for(1);
+    db.signal(2);
+    query_a(db) + 1
+}
+
+fn cycle_fn(_db: &dyn KnobsDatabase, _value: &u32, _count: u32) -> salsa::CycleRecoveryAction<u32> {
+    panic!("cancel!")
+}
+
+fn initial(_db: &dyn KnobsDatabase) -> u32 {
+    0
+}
+
+#[test]
+fn execute() {
+    let db = Knobs::default();
+
+    std::thread::scope(|scope| {
+        let db_t1 = db.clone();
+        let t1 = scope.spawn(move || query_a(&db_t1));
+
+        let db_t2 = db.clone();
+        let t2 = scope.spawn(move || query_b(&db_t2));
+
+        // The main thing here is that we don't deadlock.
+        let (r1, r2) = (t1.join(), t2.join());
+        assert!(r1.is_err());
+        assert!(r2.is_err());
+    });
+}

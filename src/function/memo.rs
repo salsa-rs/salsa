@@ -2,6 +2,7 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::revision::AtomicRevision;
@@ -9,8 +10,11 @@ use crate::table::memo::MemoTable;
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
-    key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event, EventKind, Id,
-    Revision,
+    cycle::{CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE_HEADS},
+    key::DatabaseKeyIndex,
+    zalsa::Zalsa,
+    zalsa_local::QueryRevisions,
+    Event, EventKind, Id, Revision,
 };
 
 use super::{Configuration, IngredientImpl};
@@ -82,7 +86,7 @@ impl<C: Configuration> IngredientImpl<C> {
     }
 
     /// Evicts the existing memo for the given key, replacing it
-    /// with an equivalent memo that has no value. If the memo is untracked, BaseInput,
+    /// with an equivalent memo that has no value. If the memo is untracked, FixpointInitial,
     /// or has values assigned as output of another query, this has no effect.
     pub(super) fn evict_value_from_memo_for(
         table: &mut MemoTable,
@@ -90,7 +94,9 @@ impl<C: Configuration> IngredientImpl<C> {
     ) {
         let map = |memo: &mut Memo<C::Output<'static>>| {
             match &memo.revisions.origin {
-                QueryOrigin::Assigned(_) | QueryOrigin::DerivedUntracked(_) => {
+                QueryOrigin::Assigned(_)
+                | QueryOrigin::DerivedUntracked(_)
+                | QueryOrigin::FixpointInitial => {
                     // Careful: Cannot evict memos whose values were
                     // assigned as output of another query
                     // or those with untracked inputs
@@ -105,6 +111,17 @@ impl<C: Configuration> IngredientImpl<C> {
 
         table.map_memo(memo_ingredient_index, map)
     }
+
+    pub(super) fn initial_value<'db>(
+        &'db self,
+        db: &'db C::DbView,
+        key: Id,
+    ) -> Option<C::Output<'db>> {
+        match C::CYCLE_STRATEGY {
+            CycleRecoveryStrategy::Fixpoint => Some(C::cycle_initial(db, C::id_to_input(db, key))),
+            CycleRecoveryStrategy::Panic => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -116,6 +133,9 @@ pub(super) struct Memo<V> {
     /// as the current revision.
     pub(super) verified_at: AtomicRevision,
 
+    /// Is this memo verified to not be a provisional cycle result?
+    pub(super) verified_final: AtomicBool,
+
     /// Revision information
     pub(super) revisions: QueryRevisions,
 }
@@ -123,14 +143,79 @@ pub(super) struct Memo<V> {
 // Memo's are stored a lot, make sure their size is doesn't randomly increase.
 // #[cfg(test)]
 const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
-    [(); std::mem::size_of::<[usize; 12]>()];
+    [(); std::mem::size_of::<[usize; 14]>()];
 
 impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
         Memo {
             value,
             verified_at: AtomicRevision::from(revision_now),
+            verified_final: AtomicBool::new(revisions.cycle_heads.is_empty()),
             revisions,
+        }
+    }
+
+    /// True if this may be a provisional cycle-iteration result.
+    #[inline]
+    pub(super) fn may_be_provisional(&self) -> bool {
+        // Relaxed is OK here, because `verified_final` is only ever mutated in one direction (from
+        // `false` to `true`), and changing it to `true` on memos with cycle heads where it was
+        // ever `false` is purely an optimization; if we read an out-of-date `false`, it just means
+        // we might go validate it again unnecessarily.
+        !self.verified_final.load(Ordering::Relaxed)
+    }
+
+    /// Invoked when `refresh_memo` is about to return a memo to the caller; if that memo is
+    /// provisional, and its cycle head is claimed by another thread, we need to wait for that
+    /// other thread to complete the fixpoint iteration, and then retry fetching our own memo.
+    ///
+    /// Return `true` if the caller should retry, `false` if the caller should go ahead and return
+    /// this memo to the caller.
+    pub(super) fn provisional_retry(
+        &self,
+        db: &dyn crate::Database,
+        database_key_index: DatabaseKeyIndex,
+    ) -> bool {
+        let mut retry = false;
+        for head in self.cycle_heads() {
+            if head == database_key_index {
+                continue;
+            }
+            let ingredient = db.zalsa().lookup_ingredient(head.ingredient_index);
+            if !ingredient.is_provisional_cycle_head(db, head.key_index) {
+                // This cycle is already finalized, so we don't need to wait on it;
+                // keep looping through cycle heads.
+                retry = true;
+                continue;
+            }
+            if ingredient.wait_for(db, head.key_index) {
+                // There's a new memo available for the cycle head; fetch our own
+                // updated memo and see if it's still provisional or if the cycle
+                // has resolved.
+                retry = true;
+                continue;
+            } else {
+                // We hit a cycle blocking on the cycle head; this means it's in
+                // our own active query stack and we are responsible to resolve the
+                // cycle, so go ahead and return the provisional memo.
+                return false;
+            }
+        }
+        // If `retry` is `true`, all our cycle heads (barring ourself) are complete; re-fetch
+        // and we should get a non-provisional memo. If we get here and `retry` is still
+        // `false`, we have no cycle heads other than ourself, so we are a provisional value of
+        // the cycle head (either initial value, or from a later iteration) and should be
+        // returned to caller to allow fixpoint iteration to proceed. (All cases in the loop
+        // above other than "cycle head is self" are either terminal or set `retry`.)
+        retry
+    }
+
+    /// Cycle heads that should be propagated to dependent queries.
+    pub(super) fn cycle_heads(&self) -> &CycleHeads {
+        if self.may_be_provisional() {
+            &self.revisions.cycle_heads
+        } else {
+            &EMPTY_CYCLE_HEADS
         }
     }
 
@@ -181,6 +266,7 @@ impl<V> Memo<V> {
                         },
                     )
                     .field("verified_at", &self.memo.verified_at)
+                    .field("verified_final", &self.memo.verified_final)
                     .field("revisions", &self.memo.revisions)
                     .finish()
             }

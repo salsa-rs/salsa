@@ -12,9 +12,10 @@ use input_field::FieldIngredientImpl;
 
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
-    cycle::CycleRecoveryStrategy,
+    cycle::{CycleRecoveryStrategy, EMPTY_CYCLE_HEADS},
+    function::VerifyResult,
     id::{AsId, FromIdWithDb},
-    ingredient::{fmt_index, Ingredient, MaybeChangedAfter},
+    ingredient::{fmt_index, Ingredient},
     input::singleton::{Singleton, SingletonChoice},
     key::{DatabaseKeyIndex, InputDependencyIndex},
     plumbing::{Jar, Stamp},
@@ -182,6 +183,7 @@ impl<C: Configuration> IngredientImpl<C> {
             stamp.durability,
             stamp.changed_at,
             InputAccumulatedValues::Empty,
+            &EMPTY_CYCLE_HEADS,
         );
         &value.fields
     }
@@ -220,10 +222,18 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: &dyn Database,
         _input: Id,
         _revision: Revision,
-    ) -> MaybeChangedAfter {
+    ) -> VerifyResult {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
-        MaybeChangedAfter::No(InputAccumulatedValues::Empty)
+        VerifyResult::unchanged()
+    }
+
+    fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
+        false
+    }
+
+    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
+        true
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
@@ -251,6 +261,7 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
         stale_output_key: Id,
+        _provisional: bool,
     ) {
         unreachable!(
             "remove_stale_output({:?}, {:?}): input cannot be the output of a tracked function",

@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 
 use crate::{
     key::DatabaseKeyIndex,
-    runtime::WaitResult,
+    runtime::{BlockResult, WaitResult},
     zalsa::{MemoIngredientIndex, Zalsa},
     Database,
 };
@@ -26,6 +26,12 @@ struct SyncState {
     anyone_waiting: bool,
 }
 
+pub(crate) enum ClaimResult<'a> {
+    Retry,
+    Cycle,
+    Claimed(ClaimGuard<'a>),
+}
+
 impl SyncTable {
     #[inline]
     pub(crate) fn claim<'me>(
@@ -34,7 +40,7 @@ impl SyncTable {
         zalsa: &'me Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<ClaimGuard<'me>> {
+    ) -> ClaimResult<'me> {
         let mut syncs = self.syncs.lock();
         let thread_id = std::thread::current().id();
 
@@ -46,26 +52,35 @@ impl SyncTable {
                     id: thread_id,
                     anyone_waiting: false,
                 });
-                Some(ClaimGuard {
+                ClaimResult::Claimed(ClaimGuard {
                     database_key_index,
                     memo_ingredient_index,
                     zalsa,
                     sync_table: self,
+                    _padding: false,
                 })
             }
             Some(SyncState {
                 id: other_id,
                 anyone_waiting,
             }) => {
+                // NB: `Ordering::Relaxed` is sufficient here,
+                // as there are no loads that are "gated" on this
+                // value. Everything that is written is also protected
+                // by a lock that must be acquired. The role of this
+                // boolean is to decide *whether* to acquire the lock,
+                // not to gate future atomic reads.
                 *anyone_waiting = true;
-                zalsa.runtime().block_on_or_unwind(
+                match zalsa.runtime().block_on(
                     db.as_dyn_database(),
                     db.zalsa_local(),
                     database_key_index,
                     *other_id,
                     syncs,
-                );
-                None
+                ) {
+                    BlockResult::Completed => ClaimResult::Retry,
+                    BlockResult::Cycle => ClaimResult::Cycle,
+                }
             }
         }
     }
@@ -79,6 +94,9 @@ pub(crate) struct ClaimGuard<'me> {
     memo_ingredient_index: MemoIngredientIndex,
     zalsa: &'me Zalsa,
     sync_table: &'me SyncTable,
+    // Reduce the size of ClaimResult by making more niches available in ClaimGuard; this fits into
+    // the padding of ClaimGuard so doesn't increase its size.
+    _padding: bool,
 }
 
 impl ClaimGuard<'_> {

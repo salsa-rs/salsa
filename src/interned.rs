@@ -1,8 +1,10 @@
 use dashmap::SharedValue;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::cycle::EMPTY_CYCLE_HEADS;
 use crate::durability::Durability;
-use crate::ingredient::{fmt_index, MaybeChangedAfter};
+use crate::function::VerifyResult;
+use crate::ingredient::fmt_index;
 use crate::key::InputDependencyIndex;
 use crate::plumbing::{IngredientIndices, Jar};
 use crate::table::memo::MemoTable;
@@ -183,6 +185,7 @@ where
             Durability::MAX,
             self.reset_at,
             InputAccumulatedValues::Empty,
+            &EMPTY_CYCLE_HEADS,
         );
 
         // Optimization to only get read lock on the map if the data has already been interned.
@@ -287,8 +290,16 @@ where
         _db: &dyn Database,
         _input: Id,
         revision: Revision,
-    ) -> MaybeChangedAfter {
-        MaybeChangedAfter::from(revision < self.reset_at)
+    ) -> VerifyResult {
+        VerifyResult::changed_if(revision < self.reset_at)
+    }
+
+    fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
+        false
+    }
+
+    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
+        true
     }
 
     fn cycle_recovery_strategy(&self) -> crate::cycle::CycleRecoveryStrategy {
@@ -316,6 +327,7 @@ where
         _db: &dyn Database,
         executor: DatabaseKeyIndex,
         stale_output_key: crate::Id,
+        _provisional: bool,
     ) {
         unreachable!(
             "remove_stale_output({:?}, {:?}): interned ids are not outputs",

@@ -6,6 +6,7 @@ use std::{
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
     cycle::CycleRecoveryStrategy,
+    function::VerifyResult,
     plumbing::IngredientIndices,
     table::Table,
     zalsa::{transmute_data_mut_ptr, transmute_data_ptr, IngredientIndex, Zalsa},
@@ -60,7 +61,20 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: &'db dyn Database,
         input: Id,
         revision: Revision,
-    ) -> MaybeChangedAfter;
+    ) -> VerifyResult;
+
+    /// Is the value for `input` in this ingredient a cycle head that is still provisional?
+    ///
+    /// In the case of nested cycles, we are not asking here whether the value is provisional due
+    /// to the outer cycle being unresolved, only whether its own cycle remains provisional.
+    fn is_provisional_cycle_head<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool;
+
+    /// Invoked when the current thread needs to wait for a result for the given `key_index`.
+    ///
+    /// A return value of `true` indicates that a result is now available. A return value of
+    /// `false` means that a cycle was encountered; the waited-on query is either already claimed
+    /// by the current thread, or by a thread waiting on the current thread.
+    fn wait_for(&self, db: &dyn Database, key_index: Id) -> bool;
 
     /// What were the inputs (if any) that were used to create the value at `key_index`.
     fn origin(&self, db: &dyn Database, key_index: Id) -> Option<QueryOrigin>;
@@ -97,6 +111,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: &dyn Database,
         executor: DatabaseKeyIndex,
         stale_output_key: Id,
+        provisional: bool,
     );
 
     /// Returns the [`IngredientIndex`] of this ingredient.
@@ -177,25 +192,5 @@ pub(crate) fn fmt_index(
         write!(fmt, "{debug_name}({i:?})")
     } else {
         write!(fmt, "{debug_name}()")
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum MaybeChangedAfter {
-    /// The query result hasn't changed.
-    ///
-    /// The inner value tracks whether the memo or any of its dependencies have an accumulated value.
-    No(InputAccumulatedValues),
-
-    /// The query's result has changed since the last revision or the query isn't cached yet.
-    Yes,
-}
-
-impl From<bool> for MaybeChangedAfter {
-    fn from(value: bool) -> Self {
-        match value {
-            true => MaybeChangedAfter::Yes,
-            false => MaybeChangedAfter::No(InputAccumulatedValues::Empty),
-        }
     }
 }

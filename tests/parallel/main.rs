@@ -1,9 +1,9 @@
 mod setup;
 
+mod cycle_a_t1_b_t2;
+mod cycle_ab_peeping_c;
+mod cycle_nested_three_threads;
+mod cycle_panic;
 mod parallel_cancellation;
-mod parallel_cycle_all_recover;
-mod parallel_cycle_mid_recover;
-mod parallel_cycle_none_recover;
-mod parallel_cycle_one_recover;
 mod parallel_map;
 mod signal;

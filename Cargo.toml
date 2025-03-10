@@ -73,6 +73,10 @@ harness = false
 name = "accumulator"
 harness = false
 
+[[bench]]
+name = "dataflow"
+harness = false
+
 [workspace]
 members = ["components/salsa-macro-rules", "components/salsa-macros"]
 

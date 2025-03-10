@@ -8,11 +8,14 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    /// Compute the old and new outputs and invoke the `clear_stale_output` callback
+    /// Compute the old and new outputs and invoke `remove_stale_output`
     /// for each output that was generated before but is not generated now.
     ///
     /// This function takes a `&mut` reference to `revisions` to remove outputs
     /// that no longer exist in this revision from [`QueryRevisions::tracked_struct_ids`].
+    ///
+    /// If `provisional` is true, the new outputs are from a cycle-provisional result. In
+    /// that case, we won't panic if we see outputs from the current revision become stale.
     pub(super) fn diff_outputs(
         &self,
         zalsa: &Zalsa,
@@ -20,6 +23,7 @@ where
         key: DatabaseKeyIndex,
         old_memo: &Memo<C::Output<'_>>,
         revisions: &mut QueryRevisions,
+        provisional: bool,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset
         let mut old_outputs: FxHashSet<_> = old_memo.revisions.origin.outputs().collect();
@@ -39,7 +43,7 @@ where
         }
 
         for old_output in old_outputs {
-            Self::report_stale_output(zalsa, db, key, old_output);
+            Self::report_stale_output(zalsa, db, key, old_output, provisional);
         }
     }
 
@@ -48,6 +52,7 @@ where
         db: &C::DbView,
         key: DatabaseKeyIndex,
         output: OutputDependencyIndex,
+        provisional: bool,
     ) {
         db.salsa_event(&|| {
             Event::new(EventKind::WillDiscardStaleOutput {
@@ -55,7 +60,6 @@ where
                 output_key: output,
             })
         });
-
-        output.remove_stale_output(zalsa, db.as_dyn_database(), key);
+        output.remove_stale_output(zalsa, db.as_dyn_database(), key, provisional);
     }
 }
