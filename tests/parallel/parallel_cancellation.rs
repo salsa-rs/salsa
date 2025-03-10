@@ -1,6 +1,4 @@
-//! Test for cycle recover spread across two threads.
-//! See `../cycles.rs` for a complete listing of cycle tests,
-//! both intra and cross thread.
+//! Test for thread cancellation.
 
 use salsa::Cancelled;
 use salsa::Setter;

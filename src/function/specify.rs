@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     revision::AtomicRevision,
@@ -71,17 +73,26 @@ where
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
+            cycle_heads: Default::default(),
         };
 
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
         if let Some(old_memo) = self.get_memo_from_table_for(zalsa, key, memo_ingredient_index) {
             self.backdate_if_appropriate(old_memo, &mut revisions, &value);
-            self.diff_outputs(zalsa, db, database_key_index, old_memo, &mut revisions);
+            self.diff_outputs(
+                zalsa,
+                db,
+                database_key_index,
+                old_memo,
+                &mut revisions,
+                false,
+            );
         }
 
         let memo = Memo {
             value: Some(value),
             verified_at: AtomicRevision::from(revision),
+            verified_final: AtomicBool::new(true),
             revisions,
         };
 

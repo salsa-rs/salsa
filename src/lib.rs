@@ -34,7 +34,7 @@ mod zalsa_local;
 
 pub use self::accumulator::Accumulator;
 pub use self::cancelled::Cancelled;
-pub use self::cycle::Cycle;
+pub use self::cycle::CycleRecoveryAction;
 pub use self::database::AsDynDatabase;
 pub use self::database::Database;
 pub use self::database_impl::DatabaseImpl;
@@ -74,11 +74,11 @@ pub mod plumbing {
     pub use crate::array::Array;
     pub use crate::attach::attach;
     pub use crate::attach::with_attached_database;
-    pub use crate::cycle::Cycle;
+    pub use crate::cycle::CycleRecoveryAction;
     pub use crate::cycle::CycleRecoveryStrategy;
     pub use crate::database::current_revision;
     pub use crate::database::Database;
-    pub use crate::function::should_backdate_value;
+    pub use crate::function::values_equal;
     pub use crate::id::AsId;
     pub use crate::id::FromId;
     pub use crate::id::FromIdWithDb;
@@ -122,6 +122,7 @@ pub mod plumbing {
     pub use salsa_macro_rules::setup_method_body;
     pub use salsa_macro_rules::setup_tracked_fn;
     pub use salsa_macro_rules::setup_tracked_struct;
+    pub use salsa_macro_rules::unexpected_cycle_initial;
     pub use salsa_macro_rules::unexpected_cycle_recovery;
 
     pub mod accumulator {
