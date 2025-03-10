@@ -26,16 +26,31 @@ struct SyncState {
     anyone_waiting: bool,
 }
 
-impl SyncTable {
+/// Marks an active 'claim' in the synchronization map. The claim is
+/// released when this value is dropped.
+#[must_use]
+pub(crate) struct ClaimGuard<'me> {
+    database_key_index: DatabaseKeyIndex,
+    memo_ingredient_index: MemoIngredientIndex,
+    zalsa: &'me Zalsa,
+    sync_table: &'me SyncTable,
+}
+
+impl ClaimGuard<'_> {
     #[inline]
     pub(crate) fn claim<'me>(
-        &'me self,
         db: &'me (impl ?Sized + Database),
         zalsa: &'me Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<ClaimGuard<'me>> {
-        let mut syncs = self.syncs.lock();
+        // SAFETY: We are supplying the correct current revision
+        let sync_table = unsafe {
+            zalsa
+                .table()
+                .syncs(database_key_index.key_index, zalsa.current_revision())
+        };
+        let mut syncs = sync_table.syncs.lock();
         let thread_id = std::thread::current().id();
 
         util::ensure_vec_len(&mut syncs, memo_ingredient_index.as_usize() + 1);
@@ -50,7 +65,7 @@ impl SyncTable {
                     database_key_index,
                     memo_ingredient_index,
                     zalsa,
-                    sync_table: self,
+                    sync_table,
                 })
             }
             Some(SyncState {
@@ -69,19 +84,7 @@ impl SyncTable {
             }
         }
     }
-}
 
-/// Marks an active 'claim' in the synchronization map. The claim is
-/// released when this value is dropped.
-#[must_use]
-pub(crate) struct ClaimGuard<'me> {
-    database_key_index: DatabaseKeyIndex,
-    memo_ingredient_index: MemoIngredientIndex,
-    zalsa: &'me Zalsa,
-    sync_table: &'me SyncTable,
-}
-
-impl ClaimGuard<'_> {
     fn remove_from_map_and_unblock_queries(&self) {
         let mut syncs = self.sync_table.syncs.lock();
 

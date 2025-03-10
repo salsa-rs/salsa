@@ -21,6 +21,7 @@ where
         &'db self,
         db: &'db C::DbView,
         active_query: ActiveQueryGuard<'_>,
+        map_key: C::MapKey<'db>,
         opt_old_memo: Option<&Memo<C::Output<'_>>>,
     ) -> &'db Memo<C::Output<'db>> {
         let zalsa = db.zalsa();
@@ -43,7 +44,6 @@ where
 
         // Query was not previously executed, or value is potentially
         // stale, or value is absent. Let's execute!
-        let database_key_index = active_query.database_key_index;
         let id = database_key_index.key_index;
         let value = match Cycle::catch(|| C::execute(db, C::id_to_input(db, id))) {
             Ok(v) => v,
@@ -86,6 +86,7 @@ where
         self.insert_memo(
             zalsa,
             id,
+            map_key,
             Memo::new(Some(value), revision_now, revisions),
             memo_ingredient_index,
         )
