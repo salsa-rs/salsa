@@ -22,7 +22,6 @@
   - [On-demand (Lazy) inputs](./common_patterns/on_demand_inputs.md)
 - [Tuning](./tuning.md)
 - [Cycle handling](./cycles.md)
-  - [Recovering via fallback](./cycles/fallback.md)
 
 # How Salsa works internally
 

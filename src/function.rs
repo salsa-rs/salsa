@@ -2,21 +2,24 @@ use std::{any::Any, fmt, ptr::NonNull};
 
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
-    cycle::CycleRecoveryStrategy,
-    ingredient::{fmt_index, MaybeChangedAfter},
+    cycle::{CycleRecoveryAction, CycleRecoveryStrategy},
+    ingredient::fmt_index,
     key::DatabaseKeyIndex,
     plumbing::MemoIngredientMap,
     salsa_struct::SalsaStructInDb,
+    table::sync::ClaimResult,
     table::Table,
     views::DatabaseDownCaster,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
-    Cycle, Database, Id, Revision,
+    Database, Id, Revision,
 };
 
 use self::delete::DeletedEntries;
 
 use super::ingredient::Ingredient;
+
+pub(crate) use maybe_changed_after::VerifyResult;
 
 mod accumulated;
 mod backdate;
@@ -51,13 +54,12 @@ pub trait Configuration: Any {
     /// (and, if so, how).
     const CYCLE_STRATEGY: CycleRecoveryStrategy;
 
-    /// Invokes after a new result `new_value` has been computed for which an older memoized
-    /// value existed `old_value`. Returns true if the new value is equal to the older one
-    /// and hence should be "backdated" (i.e., marked as having last changed in an older revision,
-    /// even though it was recomputed).
+    /// Invokes after a new result `new_value`` has been computed for which an older memoized value
+    /// existed `old_value`, or in fixpoint iteration. Returns true if the new value is equal to
+    /// the older one.
     ///
-    /// This invokes user's code in form of the `Eq` impl.
-    fn should_backdate_value(old_value: &Self::Output<'_>, new_value: &Self::Output<'_>) -> bool;
+    /// This invokes user code in form of the `Eq` impl.
+    fn values_equal(old_value: &Self::Output<'_>, new_value: &Self::Output<'_>) -> bool;
 
     /// Convert from the id used internally to the value that execute is expecting.
     /// This is a no-op if the input to the function is a salsa struct.
@@ -69,15 +71,18 @@ pub trait Configuration: Any {
     /// This invokes the function the user wrote.
     fn execute<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Self::Output<'db>;
 
-    /// If the cycle strategy is `Fallback`, then invoked when `key` is a participant
-    /// in a cycle to find out what value it should have.
-    ///
-    /// This invokes the recovery function given by the user.
+    /// Get the cycle recovery initial value.
+    fn cycle_initial<'db>(db: &'db Self::DbView, input: Self::Input<'db>) -> Self::Output<'db>;
+
+    /// Decide whether to iterate a cycle again or fallback. `value` is the provisional return
+    /// value from the latest iteration of this cycle. `count` is the number of cycle iterations
+    /// we've already completed.
     fn recover_from_cycle<'db>(
         db: &'db Self::DbView,
-        cycle: &Cycle,
+        value: &Self::Output<'db>,
+        count: u32,
         input: Self::Input<'db>,
-    ) -> Self::Output<'db>;
+    ) -> CycleRecoveryAction<Self::Output<'db>>;
 }
 
 /// Function ingredients are the "workhorse" of salsa.
@@ -130,9 +135,9 @@ pub struct IngredientImpl<C: Configuration> {
 }
 
 /// True if `old_value == new_value`. Invoked by the generated
-/// code for `should_backdate_value` so as to give a better
+/// code for `values_equal` so as to give a better
 /// error message.
-pub fn should_backdate_value<V: Eq>(old_value: &V, new_value: &V) -> bool {
+pub fn values_equal<V: Eq>(old_value: &V, new_value: &V) -> bool {
     old_value == new_value
 }
 
@@ -229,10 +234,35 @@ where
         db: &dyn Database,
         input: Id,
         revision: Revision,
-    ) -> MaybeChangedAfter {
+    ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster.downcast_unchecked(db) };
         self.maybe_changed_after(db, input, revision)
+    }
+
+    /// True if the input `input` contains a memo that cites itself as a cycle head.
+    /// This indicates an intermediate value for a cycle that has not yet reached a fixed point.
+    fn is_provisional_cycle_head<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool {
+        self.get_memo_from_table_for(
+            db.zalsa(),
+            input,
+            self.memo_ingredient_index(db.zalsa(), input),
+        )
+        .is_some_and(|memo| memo.cycle_heads().contains(&self.database_key_index(input)))
+    }
+
+    /// Attempts to claim `key_index`, returning `false` if a cycle occurs.
+    fn wait_for(&self, db: &dyn Database, key_index: Id) -> bool {
+        let zalsa = db.zalsa();
+        match zalsa.sync_table_for(key_index).claim(
+            db,
+            zalsa,
+            self.database_key_index(key_index),
+            self.memo_ingredient_index(zalsa, key_index),
+        ) {
+            ClaimResult::Retry | ClaimResult::Claimed(_) => true,
+            ClaimResult::Cycle => false,
+        }
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
@@ -257,6 +287,7 @@ where
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
         _stale_output_key: crate::Id,
+        _provisional: bool,
     ) {
         // This function is invoked when a query Q specifies the value for `stale_output_key` in rev 1,
         // but not in rev 2. We don't do anything in this case, we just leave the (now stale) memo.
