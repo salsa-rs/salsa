@@ -218,30 +218,22 @@ impl MemoTable {
     ///
     /// The caller needs to make sure to not call this function until no more references into
     /// the database exist as there may be outstanding borrows into the pointer contents.
-    pub(crate) unsafe fn into_memos(
-        self,
-    ) -> impl Iterator<Item = (MemoIngredientIndex, Box<dyn Memo>)> {
+    pub(crate) unsafe fn into_memos(self) -> impl Iterator<Item = Box<dyn Memo>> {
         self.memos
             .into_inner()
             .into_iter()
-            .zip(0..)
-            .filter_map(|(mut memo, index)| memo.data.take().map(|d| (d, index)))
+            .filter_map(|mut memo| memo.data.take())
             .map(
-                |(
-                    MemoEntryData {
-                        type_id: _,
-                        to_dyn_fn,
-                        atomic_memo,
-                    },
-                    index,
-                )| {
+                |MemoEntryData {
+                     type_id: _,
+                     to_dyn_fn,
+                     atomic_memo,
+                 }| {
                     // SAFETY: The `atomic_memo` field is never null.
                     let memo =
                         unsafe { to_dyn_fn(NonNull::new_unchecked(atomic_memo.into_inner())) };
                     // SAFETY: The caller guarantees that there are no outstanding borrows into the `Box` contents.
-                    let memo = unsafe { Box::from_raw(memo.as_ptr()) };
-
-                    (MemoIngredientIndex::from_usize(index), memo)
+                    unsafe { Box::from_raw(memo.as_ptr()) }
                 },
             )
     }
