@@ -7,7 +7,6 @@ use crate::{
 
 /// The trait implemented by all Salsa databases.
 /// You can create your own subtraits of this trait using the `#[salsa::db]`(`crate::db`) procedural macro.
-#[crate::db]
 pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     /// This function is invoked by the salsa runtime at various points during execution.
     /// You can customize what happens by implementing the [`UserData`][] trait.
@@ -88,6 +87,21 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
         Self: Sized,
     {
         crate::attach::attach(self, || op(self))
+    }
+
+    #[doc(hidden)]
+    fn zalsa_register_downcaster(&self) {
+        // The no-op downcaster is special cased in view caster construction.
+    }
+
+    #[doc(hidden)]
+    #[inline(always)]
+    unsafe fn downcast(db: &dyn Database) -> &dyn Database
+    where
+        Self: Sized,
+    {
+        // No-op
+        db
     }
 }
 
