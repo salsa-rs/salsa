@@ -32,7 +32,6 @@ fn dummy(_db: &dyn KnobsDatabase) -> u32 {
 }
 
 #[test]
-#[cfg_attr(miri, ignore)]
 fn execute() {
     let db = salsa::DatabaseImpl::new();
 
@@ -44,7 +43,6 @@ fn execute() {
 
 // we expect this to panic, as `salsa::par_map` needs to be called from a query.
 #[test]
-#[cfg_attr(miri, ignore)]
 #[should_panic]
 fn direct_calls_panic() {
     let db = salsa::DatabaseImpl::new();
@@ -70,7 +68,6 @@ fn direct_calls_panic() {
 // panics
 
 #[test]
-#[cfg_attr(miri, ignore)]
 fn execute_cancellation() {
     let mut db = Knobs::default();
 
