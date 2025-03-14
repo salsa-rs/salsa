@@ -271,7 +271,6 @@ where
 
             // We won any races so should intern the data
             Err(slot) => {
-                let zalsa = db.zalsa();
                 let table = zalsa.table();
 
                 // Record the durability of the current query on the interned value.
@@ -325,8 +324,9 @@ where
     /// Rarely used since end-users generally carry a struct with a pointer directly
     /// to the interned item.
     pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
-        let internal_data = db.zalsa().table().get::<Value<C>>(id);
-        let last_changed_revision = db.zalsa().last_changed_revision(internal_data.durability());
+        let zalsa = db.zalsa();
+        let internal_data = zalsa.table().get::<Value<C>>(id);
+        let last_changed_revision = zalsa.last_changed_revision(internal_data.durability());
 
         assert!(
             internal_data.last_interned_at.load() >= last_changed_revision,
