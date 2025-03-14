@@ -64,6 +64,7 @@ fn test_leaked_inputs_ignored() {
         [
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
             "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
+            "Event { thread_id: ThreadId(2), kind: DidInternValue { id: Id(800), revision: R1 } }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
             "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: counter_field(Id(800)) } }",
         ]"#]]);
@@ -82,6 +83,7 @@ fn test_leaked_inputs_ignored() {
         [
             "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
+            "Event { thread_id: ThreadId(2), kind: DidReinternValue { id: Id(800), revision: R2 } }",
             "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
             "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: counter_field(Id(800)) } }",
             "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
