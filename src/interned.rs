@@ -228,7 +228,7 @@ where
                 zalsa_local.report_tracked_read_simple(
                     index,
                     durability,
-                    current_revision,
+                    value.first_interned_at,
                 );
 
                 return id;
@@ -263,7 +263,7 @@ where
                 zalsa_local.report_tracked_read_simple(
                     index,
                     durability,
-                    current_revision,
+                    value.first_interned_at,
                 );
 
                 id
@@ -291,12 +291,10 @@ where
                     last_interned_at: AtomicRevision::from(current_revision),
                 });
 
-                let value = (
-                    table.get::<Value<C>>(id).fields.clone(),
-                    SharedValue::new(id),
-                );
+                let value = table.get::<Value<C>>(id);
 
-                unsafe { lock.insert_in_slot(data_hash, slot, value) };
+                let slot_value = (value.fields.clone(), SharedValue::new(id));
+                unsafe { lock.insert_in_slot(data_hash, slot, slot_value) };
 
                 debug_assert_eq!(
                     data_hash,
@@ -310,7 +308,7 @@ where
                 zalsa_local.report_tracked_read_simple(
                     index,
                     durability,
-                    current_revision,
+                    value.first_interned_at,
                 );
 
                 id
