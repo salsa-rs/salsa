@@ -493,22 +493,10 @@ pub(crate) struct ActiveQueryGuard<'me> {
 }
 
 impl ActiveQueryGuard<'_> {
-    fn pop_impl(&self) -> QueryRevisions {
-        self.local_state.with_query_stack(|stack| {
-            // Sanity check: pushes and pops should be balanced.
-            assert_eq!(stack.len(), self.push_len);
-            debug_assert_eq!(
-                stack.last().unwrap().database_key_index,
-                self.database_key_index
-            );
-            stack.pop_into_revisions().unwrap()
-        })
-    }
-
     /// Initialize the tracked struct ids with the values from the prior execution.
     pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &IdentityMap) {
         self.local_state.with_query_stack(|stack| {
-            assert_eq!(stack.len(), self.push_len);
+            debug_assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
             assert!(frame.tracked_struct_ids.is_empty());
             frame.tracked_struct_ids.clone_from(tracked_struct_ids);
@@ -517,7 +505,11 @@ impl ActiveQueryGuard<'_> {
 
     /// Invoked when the query has successfully completed execution.
     fn complete(self) -> QueryRevisions {
-        let query = self.pop_impl();
+        let query = self.local_state.with_query_stack(|stack| {
+            // Sanity check: pushes and pops should be balanced.
+            debug_assert_eq!(stack.len(), self.push_len);
+            stack.pop_into_revisions(self.database_key_index)
+        });
         std::mem::forget(self);
         query
     }
@@ -533,6 +525,10 @@ impl ActiveQueryGuard<'_> {
 
 impl Drop for ActiveQueryGuard<'_> {
     fn drop(&mut self) {
-        self.pop_impl();
+        self.local_state.with_query_stack(|stack| {
+            // Sanity check: pushes and pops should be balanced.
+            debug_assert_eq!(stack.len(), self.push_len);
+            stack.pop(self.database_key_index);
+        });
     }
 }

@@ -48,6 +48,10 @@ impl AccumulatedMap {
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
+
+    pub fn clear(&mut self) {
+        self.map.clear()
+    }
 }
 
 /// Tracks whether any input read during a query's execution has any accumulated values.

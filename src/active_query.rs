@@ -86,20 +86,20 @@ impl ActiveQuery {
             changed_at,
             input_outputs,
             untracked_read,
-            cycle_heads,
             disambiguator_map,
             tracked_struct_ids,
             accumulated,
             accumulated_inputs,
+            cycle_heads,
         } = self;
         *database_key_index = new_database_key_index;
         *durability = Durability::MAX;
         *changed_at = Revision::start();
-        input_outputs.clear();
         *untracked_read = false;
         *accumulated_inputs = Default::default();
-        disambiguator_map.clear();
-        // These three are cleared via `mem::take`` when popped off as revisions.
+        // These should've been cleared when popped.
+        debug_assert!(input_outputs.is_empty());
+        debug_assert!(disambiguator_map.is_empty());
         debug_assert!(tracked_struct_ids.is_empty());
         debug_assert!(cycle_heads.is_empty());
         debug_assert!(accumulated.is_empty());
@@ -156,15 +156,15 @@ impl ActiveQuery {
     fn take_revisions(&mut self) -> QueryRevisions {
         let &mut Self {
             database_key_index: _,
-            disambiguator_map: _,
             durability,
             changed_at,
-            untracked_read,
-            accumulated_inputs,
-            ref mut cycle_heads,
             ref mut input_outputs,
+            untracked_read,
+            ref mut disambiguator_map,
             ref mut tracked_struct_ids,
             ref mut accumulated,
+            accumulated_inputs,
+            ref mut cycle_heads,
         } = self;
 
         let edges = QueryEdges::new(input_outputs.drain(..));
@@ -180,6 +180,7 @@ impl ActiveQuery {
         let tracked_struct_ids = mem::take(tracked_struct_ids);
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
         let cycle_heads = mem::take(cycle_heads);
+        disambiguator_map.clear();
         QueryRevisions {
             changed_at,
             durability,
@@ -189,6 +190,26 @@ impl ActiveQuery {
             accumulated,
             cycle_heads,
         }
+    }
+
+    fn reset_revisions(&mut self) {
+        let Self {
+            database_key_index: _,
+            durability: _,
+            changed_at: _,
+            input_outputs,
+            untracked_read: _,
+            disambiguator_map,
+            tracked_struct_ids,
+            accumulated,
+            accumulated_inputs: _,
+            cycle_heads,
+        } = self;
+        tracked_struct_ids.clear();
+        input_outputs.clear();
+        disambiguator_map.clear();
+        accumulated.clear();
+        *cycle_heads = Default::default();
     }
 
     pub(super) fn disambiguate(&mut self, key: IdentityHash) -> Disambiguator {
@@ -230,11 +251,23 @@ impl QueryStack {
         self.len
     }
 
-    pub(crate) fn pop_into_revisions(&mut self) -> Option<QueryRevisions> {
-        if self.len == 0 {
-            return None;
-        }
+    pub(crate) fn pop_into_revisions(&mut self, key: DatabaseKeyIndex) -> QueryRevisions {
+        debug_assert_ne!(self.len, 0, "too many pops");
         self.len -= 1;
-        Some(self.stack[self.len].take_revisions())
+        debug_assert_eq!(
+            self.stack[self.len].database_key_index, key,
+            "unbalanced push/pop"
+        );
+        self.stack[self.len].take_revisions()
+    }
+
+    pub(crate) fn pop(&mut self, key: DatabaseKeyIndex) {
+        debug_assert_ne!(self.len, 0, "too many pops");
+        self.len -= 1;
+        debug_assert_eq!(
+            self.stack[self.len].database_key_index, key,
+            "unbalanced push/pop"
+        );
+        self.stack[self.len].reset_revisions()
     }
 }
