@@ -10,7 +10,7 @@ use crate::table::sync::SyncTable;
 use crate::table::Slot;
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOrigin;
-use crate::{Database, DatabaseKeyIndex, Id};
+use crate::{Database, DatabaseKeyIndex, Event, EventKind, Id};
 use std::any::TypeId;
 use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
@@ -210,7 +210,15 @@ where
                 let value = zalsa.table().get::<Value<C>>(id);
 
                 // Sync the value's revision.
-                value.last_interned_at.store(current_revision);
+                if value.last_interned_at.load() < current_revision {
+                    value.last_interned_at.store(current_revision);
+                    db.salsa_event(&|| {
+                        Event::new(EventKind::DidReinternValue {
+                            id,
+                            revision: current_revision,
+                        })
+                    });
+                }
 
                 let durability = if let Some((_, stamp)) = zalsa_local.active_query() {
                     // Record the maximum durability across all queries that intern this value.
@@ -245,7 +253,15 @@ where
                 let value = zalsa.table().get::<Value<C>>(id);
 
                 // Sync the value's revision.
-                value.last_interned_at.store(current_revision);
+                if value.last_interned_at.load() < current_revision {
+                    value.last_interned_at.store(current_revision);
+                    db.salsa_event(&|| {
+                        Event::new(EventKind::DidReinternValue {
+                            id,
+                            revision: current_revision,
+                        })
+                    });
+                }
 
                 let durability = if let Some((_, stamp)) = zalsa_local.active_query() {
                     // Record the maximum durability across all queries that intern this value.
@@ -309,6 +325,13 @@ where
                     durability,
                     value.first_interned_at,
                 );
+
+                db.salsa_event(&|| {
+                    Event::new(EventKind::DidInternValue {
+                        id,
+                        revision: current_revision,
+                    })
+                });
 
                 id
             }
@@ -383,7 +406,15 @@ where
         }
 
         // The slot is valid in this revision but we have to sync the value's revision.
-        value.last_interned_at.store(db.zalsa().current_revision());
+        let current_revision = db.zalsa().current_revision();
+        value.last_interned_at.store(current_revision);
+
+        db.salsa_event(&|| {
+            Event::new(EventKind::DidReinternValue {
+                id: input,
+                revision: current_revision,
+            })
+        });
 
         VerifyResult::unchanged()
     }
