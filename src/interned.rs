@@ -343,8 +343,7 @@ where
     }
 
     pub fn reset(&mut self, db: &mut dyn Database) {
-        // Trigger a new revision.
-        let _zalsa_mut = db.zalsa_mut();
+        db.zalsa_mut().new_revision();
         self.key_map.clear();
     }
 
