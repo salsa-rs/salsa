@@ -29,7 +29,7 @@ where
         let (zalsa, zalsa_local) = db.zalsas();
         let revision_now = zalsa.current_revision();
         let database_key_index = active_query.database_key_index;
-        let id = database_key_index.key_index;
+        let id = database_key_index.key_index();
 
         tracing::info!("{:?}: executing query", database_key_index);
 
