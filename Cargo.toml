@@ -58,6 +58,9 @@ rustversion = "1.0"
 test-log = { version = "0.2.11", features = ["trace"] }
 trybuild = "1.0"
 
+# not directly used, but 2.5.0 bumped the MSRV beyond 1.80 so pin it temporarily
+half = "=2.4.1"
+
 [target.'cfg(all(not(target_os = "windows"), not(target_os = "openbsd"), any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "powerpc64")))'.dev-dependencies]
 tikv-jemallocator = "0.6.0"
 
