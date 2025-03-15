@@ -4,12 +4,12 @@ use expect_test::expect;
 use salsa::{Accumulator, Database};
 use test_log::test;
 
-#[salsa::input]
+#[salsa::input(debug)]
 struct MyInput {
     count: u32,
 }
 
-#[salsa::accumulator(no_debug)]
+#[salsa::accumulator]
 struct Log(String);
 
 impl std::fmt::Debug for Log {

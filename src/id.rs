@@ -59,7 +59,7 @@ pub trait AsId: Sized {
 }
 
 /// Internal Salsa trait for types that are just a newtype'd [`Id`][].
-pub trait FromId: AsId + Copy + Eq + Hash + Debug {
+pub trait FromId: AsId + Copy + Eq + Hash {
     fn from_id(id: Id) -> Self;
 }
 
@@ -77,7 +77,7 @@ impl FromId for Id {
 
 /// Enums cannot use [`FromId`] because they need access to the DB to tell the `TypeId` of the variant,
 /// so they use this trait instead, that has a blanket implementation for `FromId`.
-pub trait FromIdWithDb: AsId + Copy + Eq + Hash + Debug {
+pub trait FromIdWithDb: AsId + Copy + Eq + Hash {
     fn from_id(id: Id, db: &(impl ?Sized + Database)) -> Self;
 }
 

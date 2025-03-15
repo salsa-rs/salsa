@@ -1,14 +1,14 @@
-#[salsa::interned]
+#[salsa::interned(debug)]
 struct InternedStruct<'db> {
     name: String,
 }
 
-#[salsa::input]
+#[salsa::input(debug)]
 struct InputStruct {
     field: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(debug)]
 struct TrackedStruct<'db> {
     field: u32,
 }

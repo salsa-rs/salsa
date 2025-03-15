@@ -7,7 +7,7 @@ use expect_test::expect;
 use salsa::{Accumulator, Setter};
 use test_log::test;
 
-#[salsa::input]
+#[salsa::input(debug)]
 struct File {
     name: String,
     dependencies: Vec<File>,
@@ -15,6 +15,7 @@ struct File {
 }
 
 #[salsa::accumulator]
+#[derive(Debug)]
 struct Diagnostic(#[allow(dead_code)] String);
 
 #[salsa::tracked(cycle_fn = cycle_fn, cycle_initial = cycle_initial)]

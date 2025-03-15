@@ -41,7 +41,7 @@ impl crate::options::AllowedOptions for InternedStruct {
 
     const NO_EQ: bool = false;
 
-    const NO_DEBUG: bool = true;
+    const DEBUG: bool = true;
 
     const NO_LIFETIME: bool = true;
 

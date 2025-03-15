@@ -4,12 +4,12 @@
 use salsa::{Database, DatabaseImpl};
 use test_log::test;
 
-#[salsa::input]
+#[salsa::input(debug)]
 struct MyInput {
     field: String,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(debug)]
 struct MyTracked<'db> {
     #[tracked]
     data: MyInput,

@@ -330,7 +330,7 @@ where
     }
 
     pub fn generate_debug_impl(&self) -> bool {
-        self.args.no_debug.is_none()
+        self.args.debug.is_some()
     }
 
     pub fn generate_lifetime(&self) -> bool {

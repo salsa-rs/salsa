@@ -9,7 +9,7 @@ use common::LogDatabase;
 use expect_test::expect;
 use salsa::Setter;
 
-#[salsa::input]
+#[salsa::input(debug)]
 struct MyInput {
     field: u32,
 }

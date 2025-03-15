@@ -276,7 +276,7 @@ impl<V> Memo<V> {
     }
 }
 
-impl<V: Debug + Send + Sync + Any> crate::table::memo::Memo for Memo<V> {
+impl<V: Send + Sync + Any> crate::table::memo::Memo for Memo<V> {
     fn origin(&self) -> &QueryOrigin {
         &self.revisions.origin
     }

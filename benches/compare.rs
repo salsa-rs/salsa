@@ -26,7 +26,7 @@ pub struct InternedInput<'db> {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, salsa::Supertype)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, salsa::Supertype)]
 enum SupertypeInput<'db> {
     InternedInput(InternedInput<'db>),
     Input(Input),

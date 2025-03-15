@@ -9,9 +9,17 @@ use crate::IngredientIndex;
 
 use super::{accumulated::Accumulated, Accumulator, AnyAccumulated};
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct AccumulatedMap {
     map: FxHashMap<IngredientIndex, Box<dyn AnyAccumulated>>,
+}
+
+impl std::fmt::Debug for AccumulatedMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccumulatedMap")
+            .field("map", &self.map.keys())
+            .finish()
+    }
 }
 
 impl AccumulatedMap {

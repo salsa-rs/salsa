@@ -22,9 +22,10 @@ use test_log::test;
 // }
 
 #[salsa::accumulator]
+#[derive(Debug)]
 struct Log(#[allow(dead_code)] String);
 
-#[salsa::input]
+#[salsa::input(debug)]
 struct MyInput {
     n: u32,
 }

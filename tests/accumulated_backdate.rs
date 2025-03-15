@@ -8,12 +8,13 @@ use expect_test::expect;
 use salsa::{Accumulator, Setter};
 use test_log::test;
 
-#[salsa::input]
+#[salsa::input(debug)]
 struct File {
     content: String,
 }
 
 #[salsa::accumulator]
+#[derive(Debug)]
 struct Log(#[allow(dead_code)] String);
 
 #[salsa::tracked]

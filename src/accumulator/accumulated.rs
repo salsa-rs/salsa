@@ -8,7 +8,7 @@ pub(crate) struct Accumulated<A: Accumulator> {
     values: Vec<A>,
 }
 
-pub(crate) trait AnyAccumulated: Any + Debug + Send + Sync {
+pub(crate) trait AnyAccumulated: Any + Send + Sync {
     fn as_dyn_any(&self) -> &dyn Any;
     fn as_dyn_any_mut(&mut self) -> &mut dyn Any;
 }

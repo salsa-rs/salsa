@@ -6,7 +6,7 @@ use salsa::Setter;
 use crate::setup::Knobs;
 use crate::setup::KnobsDatabase;
 
-#[salsa::input]
+#[salsa::input(debug)]
 struct MyInput {
     field: i32,
 }

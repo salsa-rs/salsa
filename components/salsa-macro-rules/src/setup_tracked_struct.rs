@@ -286,9 +286,18 @@ macro_rules! setup_tracked_struct {
                         )
                     }
                 )*
+            }
 
+            impl<'_db> $Struct<'_db> {
                 /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
-                pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+                where
+                    // `zalsa::with_attached_database` has a local lifetime for the database
+                    // so we need this function to be higher-ranked over the db lifetime
+                    // Thus the actual lifetime of `Self` does not matter here so we discard
+                    // it with the `'_db` lifetime name as we cannot shadow lifetimes.
+                    $(for<$db_lt> $field_ty: std::fmt::Debug),*
+                {
                     $zalsa::with_attached_database(|db| {
                         let fields = $Configuration::ingredient(db).leak_fields(db, this);
                         let mut f = f.debug_struct(stringify!($Struct));

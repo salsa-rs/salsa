@@ -29,7 +29,7 @@ impl crate::options::AllowedOptions for TrackedFn {
 
     const NO_EQ: bool = true;
 
-    const NO_DEBUG: bool = false;
+    const DEBUG: bool = false;
 
     const NO_LIFETIME: bool = false;
 

@@ -43,7 +43,7 @@ impl Inputs {
 }
 
 /// A single input, evaluating to a single [`Value`].
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 enum Input {
     /// a simple value
     Value(Value),

@@ -10,7 +10,7 @@ use expect_test::expect;
 use salsa::{Accumulator, Setter};
 use test_log::test;
 
-#[salsa::input]
+#[salsa::input(debug)]
 struct List {
     value: u32,
     next: Option<List>,
