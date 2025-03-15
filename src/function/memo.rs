@@ -177,29 +177,32 @@ impl<V> Memo<V> {
         database_key_index: DatabaseKeyIndex,
     ) -> bool {
         let mut retry = false;
-        for head in self.cycle_heads() {
-            if head == database_key_index {
-                continue;
-            }
-            let ingredient = db.zalsa().lookup_ingredient(head.ingredient_index);
-            if !ingredient.is_provisional_cycle_head(db, head.key_index) {
-                // This cycle is already finalized, so we don't need to wait on it;
-                // keep looping through cycle heads.
-                retry = true;
-                continue;
-            }
-            if ingredient.wait_for(db, head.key_index) {
-                // There's a new memo available for the cycle head; fetch our own
-                // updated memo and see if it's still provisional or if the cycle
-                // has resolved.
-                retry = true;
-                continue;
-            } else {
-                // We hit a cycle blocking on the cycle head; this means it's in
-                // our own active query stack and we are responsible to resolve the
-                // cycle, so go ahead and return the provisional memo.
-                return false;
-            }
+        let hit_cycle = self
+            .cycle_heads()
+            .into_iter()
+            .filter(|&head| head != database_key_index)
+            .any(|head| {
+                let ingredient = db.zalsa().lookup_ingredient(head.ingredient_index);
+                if !ingredient.is_provisional_cycle_head(db, head.key_index) {
+                    // This cycle is already finalized, so we don't need to wait on it;
+                    // keep looping through cycle heads.
+                    retry = true;
+                    false
+                } else if ingredient.wait_for(db, head.key_index) {
+                    // There's a new memo available for the cycle head; fetch our own
+                    // updated memo and see if it's still provisional or if the cycle
+                    // has resolved.
+                    retry = true;
+                    false
+                } else {
+                    // We hit a cycle blocking on the cycle head; this means it's in
+                    // our own active query stack and we are responsible to resolve the
+                    // cycle, so go ahead and return the provisional memo.
+                    true
+                }
+            });
+        if hit_cycle {
+            return false;
         }
         // If `retry` is `true`, all our cycle heads (barring ourself) are complete; re-fetch
         // and we should get a non-provisional memo. If we get here and `retry` is still

@@ -127,21 +127,16 @@ impl CycleHeads {
             }
         }
     }
-}
 
-impl std::iter::Extend<DatabaseKeyIndex> for CycleHeads {
-    fn extend<T: IntoIterator<Item = DatabaseKeyIndex>>(&mut self, iter: T) {
-        let mut iter = iter.into_iter();
-        if let Some(first) = iter.next() {
+    pub(crate) fn extend(&mut self, other: &Self) {
+        if let Some(other) = &other.0 {
             let heads = &mut **self.0.get_or_insert_with(|| Box::new(Vec::new()));
-            if !heads.contains(&first) {
-                heads.push(first);
-            }
-            for head in iter {
+            heads.reserve(other.len());
+            other.iter().for_each(|&head| {
                 if !heads.contains(&head) {
                     heads.push(head);
                 }
-            }
+            });
         }
     }
 }

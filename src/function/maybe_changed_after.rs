@@ -239,13 +239,12 @@ where
         zalsa: &Zalsa,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
-        for cycle_head in &memo.revisions.cycle_heads {
-            if zalsa
+        if (&memo.revisions.cycle_heads).into_iter().any(|cycle_head| {
+            zalsa
                 .lookup_ingredient(cycle_head.ingredient_index)
                 .is_provisional_cycle_head(db.as_dyn_database(), cycle_head.key_index)
-            {
-                return false;
-            }
+        }) {
+            return false;
         }
         // Relaxed is sufficient here because there are no other writes we need to ensure have
         // happened before marking this memo as verified-final.
