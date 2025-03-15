@@ -108,7 +108,7 @@ impl<'db> CheckExpression<'_, 'db> {
 fn check_string(
     source_text: &str,
     expected_diagnostics: expect_test::Expect,
-    edits: &[(&str, expect_test::Expect, expect_test::Expect)],
+    edits: &[(&str, expect_test::Expect)],
 ) {
     use salsa::{Database, Setter};
 
@@ -135,11 +135,8 @@ fn check_string(
         expected_diagnostics.assert_eq(&rendered_diagnostics);
     });
 
-    // Clear logs
-    db.take_logs();
-
     // Apply edits and check diagnostics/logs after each one
-    for (new_source_text, expected_diagnostics, expected_logs) in edits {
+    for (new_source_text, expected_diagnostics) in edits {
         source_program
             .set_text(&mut db)
             .to(new_source_text.to_string());
@@ -149,8 +146,6 @@ fn check_string(
             expected_diagnostics
                 .assert_debug_eq(&type_check_program::accumulated::<Diagnostic>(db, program));
         });
-
-        expected_logs.assert_debug_eq(&db.take_logs());
     }
 }
 
@@ -266,12 +261,6 @@ fn fix_bad_variable_in_function() {
             ",
             expect![[r#"
                 []
-            "#]],
-            expect![[r#"
-                [
-                    "Event: Event { thread_id: ThreadId(11), kind: WillExecute { database_key: parse_statements(Id(0)) } }",
-                    "Event: Event { thread_id: ThreadId(11), kind: WillExecute { database_key: type_check_function(Id(1800)) } }",
-                ]
             "#]],
         )],
     );

@@ -126,7 +126,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pptional_atomic_revision() {
+    fn optional_atomic_revision() {
         let val = OptionalAtomicRevision::new(Some(Revision::start()));
         assert_eq!(val.load(), Some(Revision::start()));
         assert_eq!(val.swap(None), Some(Revision::start()));
