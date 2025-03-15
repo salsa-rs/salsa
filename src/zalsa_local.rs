@@ -183,6 +183,24 @@ impl ZalsaLocal {
         })
     }
 
+    /// Register that currently active query reads the given input
+    pub(crate) fn report_tracked_read_simple(
+        &self,
+        input: InputDependencyIndex,
+        durability: Durability,
+        changed_at: Revision,
+    ) {
+        debug!(
+            "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
+            input, durability, changed_at
+        );
+        self.with_query_stack(|stack| {
+            if let Some(top_query) = stack.last_mut() {
+                top_query.add_read_simple(input, durability, changed_at);
+            }
+        })
+    }
+
     /// Register that the current query read an untracked value
     ///
     /// # Parameters

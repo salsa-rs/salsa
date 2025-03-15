@@ -1,7 +1,5 @@
 use dashmap::SharedValue;
 
-use crate::accumulator::accumulated_map::InputAccumulatedValues;
-use crate::cycle::EMPTY_CYCLE_HEADS;
 use crate::durability::Durability;
 use crate::function::VerifyResult;
 use crate::ingredient::fmt_index;
@@ -180,12 +178,10 @@ where
         C::Fields<'db>: HashEqLike<Key>,
     {
         let zalsa_local = db.zalsa_local();
-        zalsa_local.report_tracked_read(
+        zalsa_local.report_tracked_read_simple(
             InputDependencyIndex::for_table(self.ingredient_index),
             Durability::MAX,
             self.reset_at,
-            InputAccumulatedValues::Empty,
-            &EMPTY_CYCLE_HEADS,
         );
 
         // Optimization to only get read lock on the map if the data has already been interned.

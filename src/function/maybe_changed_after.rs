@@ -383,10 +383,9 @@ where
             //    from cycle heads. We will handle our own memo (and the rest of our cycle) on a
             //    future iteration; first the outer cycle head needs to verify itself.
 
-            let found = cycle_heads
+            let in_heads = cycle_heads
                 .iter()
-                .position(|&head| head == database_key_index);
-            let in_heads = found
+                .position(|&head| head == database_key_index)
                 .inspect(|&head| _ = cycle_heads.swap_remove(head))
                 .is_some();
 
