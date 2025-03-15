@@ -90,7 +90,8 @@ pub enum CycleRecoveryStrategy {
 /// the cycle head(s) (can be plural in case of nested cycles) representing the cycles it is part
 /// of. This struct tracks these cycle heads.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct CycleHeads(Option<Box<Vec<DatabaseKeyIndex>>>);
+#[allow(clippy::box_collection)]
+pub struct CycleHeads(Option<Box<Vec<DatabaseKeyIndex>>>);
 
 impl CycleHeads {
     pub(crate) fn is_empty(&self) -> bool {
@@ -114,6 +115,17 @@ impl CycleHeads {
             self.0.take();
         }
         true
+    }
+
+    #[inline]
+    pub(crate) fn insert_into(self, cycle_heads: &mut Vec<DatabaseKeyIndex>) {
+        if let Some(heads) = self.0 {
+            for head in *heads {
+                if !cycle_heads.contains(&head) {
+                    cycle_heads.push(head);
+                }
+            }
+        }
     }
 }
 
@@ -143,7 +155,7 @@ impl IntoIterator for CycleHeads {
     }
 }
 
-pub(crate) struct CycleHeadsIter<'a>(std::slice::Iter<'a, DatabaseKeyIndex>);
+pub struct CycleHeadsIter<'a>(std::slice::Iter<'a, DatabaseKeyIndex>);
 
 impl Iterator for CycleHeadsIter<'_> {
     type Item = DatabaseKeyIndex;
@@ -179,4 +191,14 @@ impl From<DatabaseKeyIndex> for CycleHeads {
     }
 }
 
-pub(crate) static EMPTY_CYCLE_HEADS: CycleHeads = CycleHeads(None);
+impl From<Vec<DatabaseKeyIndex>> for CycleHeads {
+    fn from(value: Vec<DatabaseKeyIndex>) -> Self {
+        Self(if value.is_empty() {
+            None
+        } else {
+            Some(Box::new(value))
+        })
+    }
+}
+
+pub(crate) const EMPTY_CYCLE_HEADS: CycleHeads = CycleHeads(None);
