@@ -1,4 +1,4 @@
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use tracing::debug;
 
 use crate::accumulator::accumulated_map::{
@@ -324,7 +324,6 @@ pub(crate) struct QueryRevisions {
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, revision: Revision) -> Self {
-        let cycle_heads = FxHashSet::from_iter([query]).into();
         Self {
             changed_at: revision,
             durability: Durability::MAX,
@@ -332,7 +331,7 @@ impl QueryRevisions {
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
-            cycle_heads,
+            cycle_heads: CycleHeads::from(query),
         }
     }
 
