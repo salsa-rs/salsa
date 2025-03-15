@@ -62,7 +62,11 @@ where
                 // thread completing fixpoint iteration of the cycle, and then we can re-query for
                 // our no-longer-provisional memo.
                 if !(memo.may_be_provisional()
-                    && memo.provisional_retry(db.as_dyn_database(), self.database_key_index(id)))
+                    && memo.provisional_retry(
+                        db.as_dyn_database(),
+                        zalsa,
+                        self.database_key_index(id),
+                    ))
                 {
                     return memo;
                 }
@@ -80,8 +84,10 @@ where
     ) -> Option<&'db Memo<C::Output<'db>>> {
         let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
         if let Some(memo) = memo_guard {
+            let database_key_index = self.database_key_index(id);
             if memo.value.is_some()
-                && self.shallow_verify_memo(db, zalsa, self.database_key_index(id), memo, false)
+                && self.validate_may_be_provisional(db, zalsa, database_key_index, memo)
+                && self.shallow_verify_memo(db, zalsa, database_key_index, memo)
             {
                 // Unsafety invariant: memo is present in memo_map and we have verified that it is
                 // still valid for the current revision.
@@ -110,16 +116,16 @@ where
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => {
                 // check if there's a provisional value for this query
+                // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
+                // existing provisional memo if it exists
                 let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-                if let Some(memo) = &memo_guard {
+                if let Some(memo) = memo_guard {
                     if memo.value.is_some()
                         && memo.revisions.cycle_heads.contains(&database_key_index)
-                        && self.shallow_verify_memo(db, zalsa, database_key_index, memo, true)
+                        && self.shallow_verify_memo(db, zalsa, database_key_index, memo)
                     {
                         // Unsafety invariant: memo is present in memo_map.
-                        unsafe {
-                            return Some(self.extend_memo_lifetime(memo));
-                        }
+                        return unsafe { Some(self.extend_memo_lifetime(memo)) };
                     }
                 }
                 // no provisional value; create/insert/return initial provisional value

@@ -62,7 +62,9 @@ where
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
             if let Some(memo) = memo_guard {
-                if self.shallow_verify_memo(db, zalsa, database_key_index, memo, false) {
+                if self.validate_may_be_provisional(db, zalsa, database_key_index, memo)
+                    && self.shallow_verify_memo(db, zalsa, database_key_index, memo)
+                {
                     return if memo.revisions.changed_at > revision {
                         VerifyResult::Changed
                     } else {
@@ -173,11 +175,6 @@ where
     /// eagerly finalize all provisional memos in cycle iteration, we have to lazily check here
     /// (via `validate_provisional`) whether a may-be-provisional memo should actually be verified
     /// final, because its cycle heads are all now final.
-    ///
-    /// If `allow_provisional` is `true`, don't check provisionality and return whatever memo we
-    /// find that can be verified in this revision, whether provisional or not. This only occurs at
-    /// one call-site, in `fetch_cold` when we actually encounter a cycle, and want to check if
-    /// there is an existing provisional memo we can reuse.
     #[inline]
     pub(super) fn shallow_verify_memo(
         &self,
@@ -185,17 +182,11 @@ where
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
-        allow_provisional: bool,
     ) -> bool {
         tracing::debug!(
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
-        if !allow_provisional && memo.may_be_provisional() {
-            if !self.validate_provisional(db, zalsa, database_key_index, memo) {
-                return false;
-            }
-        }
         let verified_at = memo.verified_at.load();
         let revision_now = zalsa.current_revision();
 
@@ -227,8 +218,25 @@ where
         false
     }
 
+    /// Validates this memo if it is a provisional memo. Returns true for non provisional memos or
+    /// if the provisional memo has been successfully marked as verified final, that is, its
+    /// cycle heads have all been finalized.
+    #[inline]
+    pub(super) fn validate_may_be_provisional(
+        &self,
+        db: &C::DbView,
+        zalsa: &Zalsa,
+        database_key_index: DatabaseKeyIndex,
+        memo: &Memo<C::Output<'_>>,
+    ) -> bool {
+        // Wouldn't it be nice if rust had an implication operator ...
+        // may_be_provisional -> validate_provisional
+        !memo.may_be_provisional() || self.validate_provisional(db, zalsa, database_key_index, memo)
+    }
+
     /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
     /// return true, if not return false.
+    #[inline]
     fn validate_provisional(
         &self,
         db: &C::DbView,
@@ -274,8 +282,10 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        if self.shallow_verify_memo(db, zalsa, database_key_index, old_memo, false) {
-            return VerifyResult::Unchanged(InputAccumulatedValues::Empty, Default::default());
+        if self.validate_may_be_provisional(db, zalsa, database_key_index, old_memo)
+            && self.shallow_verify_memo(db, zalsa, database_key_index, old_memo)
+        {
+            return VerifyResult::unchanged();
         }
 
         match &old_memo.revisions.origin {
