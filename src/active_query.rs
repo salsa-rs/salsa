@@ -247,11 +247,18 @@ impl QueryStack {
         self.len += 1;
     }
 
+    #[cfg(debug_assertions)]
     pub(crate) fn len(&self) -> usize {
         self.len
     }
 
-    pub(crate) fn pop_into_revisions(&mut self, key: DatabaseKeyIndex) -> QueryRevisions {
+    pub(crate) fn pop_into_revisions(
+        &mut self,
+        key: DatabaseKeyIndex,
+        #[cfg(debug_assertions)] push_len: usize,
+    ) -> QueryRevisions {
+        #[cfg(debug_assertions)]
+        assert_eq!(push_len, self.len(), "unbalanced push/pop");
         debug_assert_ne!(self.len, 0, "too many pops");
         self.len -= 1;
         debug_assert_eq!(
@@ -261,7 +268,9 @@ impl QueryStack {
         self.stack[self.len].take_revisions()
     }
 
-    pub(crate) fn pop(&mut self, key: DatabaseKeyIndex) {
+    pub(crate) fn pop(&mut self, key: DatabaseKeyIndex, #[cfg(debug_assertions)] push_len: usize) {
+        #[cfg(debug_assertions)]
+        assert_eq!(push_len, self.len(), "unbalanced push/pop");
         debug_assert_ne!(self.len, 0, "too many pops");
         self.len -= 1;
         debug_assert_eq!(
