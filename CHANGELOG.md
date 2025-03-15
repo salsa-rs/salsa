@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.19.0...salsa-v0.20.0) - 2025-03-15
+
+### Added
+
+- Drop `Debug` requirements and flip implementation defaults ([#756](https://github.com/salsa-rs/salsa/pull/756))
+
+### Other
+
+- Use a `Vec` for `CycleHeads` ([#760](https://github.com/salsa-rs/salsa/pull/760))
+- Use nextest for miri test runs ([#758](https://github.com/salsa-rs/salsa/pull/758))
+- Pin `half` version to prevent CI failure ([#757](https://github.com/salsa-rs/salsa/pull/757))
+- rewrite cycle handling to support fixed-point iteration ([#603](https://github.com/salsa-rs/salsa/pull/603))
+
 ## [0.19.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.18.0...salsa-v0.19.0) - 2025-03-10
 
 ### Fixed
