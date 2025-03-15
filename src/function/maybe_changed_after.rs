@@ -1,13 +1,12 @@
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
-    cycle::CycleRecoveryStrategy,
+    cycle::{CycleHeads, CycleRecoveryStrategy},
     key::DatabaseKeyIndex,
     table::sync::ClaimResult,
     zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
     AsDynDatabase as _, Id, Revision,
 };
-use rustc_hash::FxHashSet;
 use std::sync::atomic::Ordering;
 
 use super::{memo::Memo, Configuration, IngredientImpl};
@@ -22,9 +21,9 @@ pub enum VerifyResult {
     /// The first inner value tracks whether the memo or any of its dependencies have an
     /// accumulated value.
     ///
-    /// Database keys in the hashset represent cycle heads encountered in validation; don't mark
+    /// The second is the cycle heads encountered in validation; don't mark
     /// memos verified until we've iterated the full cycle to ensure no inputs changed.
-    Unchanged(InputAccumulatedValues, FxHashSet<DatabaseKeyIndex>),
+    Unchanged(InputAccumulatedValues, CycleHeads),
 }
 
 impl VerifyResult {
@@ -37,7 +36,7 @@ impl VerifyResult {
     }
 
     pub(crate) fn unchanged() -> Self {
-        Self::Unchanged(InputAccumulatedValues::Empty, FxHashSet::default())
+        Self::Unchanged(InputAccumulatedValues::Empty, CycleHeads::default())
     }
 }
 
@@ -69,7 +68,7 @@ where
                     } else {
                         VerifyResult::Unchanged(
                             memo.revisions.accumulated_inputs.load(),
-                            FxHashSet::default(),
+                            CycleHeads::default(),
                         )
                     };
                 }
@@ -112,7 +111,7 @@ where
                 CycleRecoveryStrategy::Fixpoint => {
                     return Some(VerifyResult::Unchanged(
                         InputAccumulatedValues::Empty,
-                        FxHashSet::from_iter([database_key_index]),
+                        CycleHeads::from(database_key_index),
                     ));
                 }
             },
@@ -158,7 +157,7 @@ where
                         Some(_) => InputAccumulatedValues::Any,
                         None => memo.revisions.accumulated_inputs.load(),
                     },
-                    FxHashSet::default(),
+                    CycleHeads::default(),
                 )
             });
         }
@@ -240,13 +239,12 @@ where
         zalsa: &Zalsa,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
-        for cycle_head in &memo.revisions.cycle_heads {
-            if zalsa
+        if (&memo.revisions.cycle_heads).into_iter().any(|cycle_head| {
+            zalsa
                 .lookup_ingredient(cycle_head.ingredient_index)
                 .is_provisional_cycle_head(db.as_dyn_database(), cycle_head.key_index)
-            {
-                return false;
-            }
+        }) {
+            return false;
         }
         // Relaxed is sufficient here because there are no other writes we need to ensure have
         // happened before marking this memo as verified-final.
@@ -282,7 +280,7 @@ where
             return VerifyResult::Changed;
         }
 
-        let mut cycle_heads = FxHashSet::default();
+        let mut cycle_heads = vec![];
         loop {
             let inputs = match &old_memo.revisions.origin {
                 QueryOrigin::Assigned(_) => {
@@ -324,7 +322,7 @@ where
                                 {
                                     VerifyResult::Changed => return VerifyResult::Changed,
                                     VerifyResult::Unchanged(input_accumulated, cycles) => {
-                                        cycle_heads.extend(cycles);
+                                        cycles.insert_into(&mut cycle_heads);
                                         inputs |= input_accumulated;
                                     }
                                 }
@@ -384,7 +382,11 @@ where
             //    from cycle heads. We will handle our own memo (and the rest of our cycle) on a
             //    future iteration; first the outer cycle head needs to verify itself.
 
-            let in_heads = cycle_heads.remove(&database_key_index);
+            let in_heads = cycle_heads
+                .iter()
+                .position(|&head| head == database_key_index)
+                .inspect(|&head| _ = cycle_heads.swap_remove(head))
+                .is_some();
 
             if cycle_heads.is_empty() {
                 old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index, inputs);
@@ -398,7 +400,10 @@ where
                     continue;
                 }
             }
-            return VerifyResult::Unchanged(InputAccumulatedValues::Empty, cycle_heads);
+            return VerifyResult::Unchanged(
+                InputAccumulatedValues::Empty,
+                CycleHeads::from(cycle_heads),
+            );
         }
     }
 }

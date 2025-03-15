@@ -4,8 +4,7 @@ use crossbeam_queue::SegQueue;
 use tracked_field::FieldIngredientImpl;
 
 use crate::{
-    accumulator::accumulated_map::InputAccumulatedValues,
-    cycle::{CycleRecoveryStrategy, EMPTY_CYCLE_HEADS},
+    cycle::CycleRecoveryStrategy,
     function::VerifyResult,
     ingredient::{fmt_index, Ingredient, Jar},
     key::{DatabaseKeyIndex, InputDependencyIndex},
@@ -677,12 +676,10 @@ where
 
         let field_changed_at = data.revisions[relative_tracked_index];
 
-        zalsa_local.report_tracked_read(
+        zalsa_local.report_tracked_read_simple(
             InputDependencyIndex::new(field_ingredient_index, id),
             data.durability,
             field_changed_at,
-            InputAccumulatedValues::Empty,
-            &EMPTY_CYCLE_HEADS,
         );
 
         unsafe { self.to_self_ref(&data.fields) }
@@ -704,12 +701,10 @@ where
         data.read_lock(zalsa.current_revision());
 
         // Add a dependency on the tracked struct itself.
-        zalsa_local.report_tracked_read(
+        zalsa_local.report_tracked_read_simple(
             InputDependencyIndex::new(self.ingredient_index, id),
             data.durability,
             data.created_at,
-            InputAccumulatedValues::Empty,
-            &EMPTY_CYCLE_HEADS,
         );
 
         unsafe { self.to_self_ref(&data.fields) }

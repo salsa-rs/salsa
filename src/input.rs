@@ -11,8 +11,7 @@ pub mod singleton;
 use input_field::FieldIngredientImpl;
 
 use crate::{
-    accumulator::accumulated_map::InputAccumulatedValues,
-    cycle::{CycleRecoveryStrategy, EMPTY_CYCLE_HEADS},
+    cycle::CycleRecoveryStrategy,
     function::VerifyResult,
     id::{AsId, FromIdWithDb},
     ingredient::{fmt_index, Ingredient},
@@ -178,12 +177,10 @@ impl<C: Configuration> IngredientImpl<C> {
         let id = id.as_id();
         let value = Self::data(zalsa, id);
         let stamp = &value.stamps[field_index];
-        zalsa_local.report_tracked_read(
+        zalsa_local.report_tracked_read_simple(
             InputDependencyIndex::new(field_ingredient_index, id),
             stamp.durability,
             stamp.changed_at,
-            InputAccumulatedValues::Empty,
-            &EMPTY_CYCLE_HEADS,
         );
         &value.fields
     }

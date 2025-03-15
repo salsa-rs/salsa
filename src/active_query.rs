@@ -94,6 +94,17 @@ impl ActiveQuery {
         self.cycle_heads.extend(cycle_heads);
     }
 
+    pub(super) fn add_read_simple(
+        &mut self,
+        input: InputDependencyIndex,
+        durability: Durability,
+        revision: Revision,
+    ) {
+        self.input_outputs.insert(QueryEdge::Input(input));
+        self.durability = self.durability.min(durability);
+        self.changed_at = self.changed_at.max(revision);
+    }
+
     pub(super) fn add_untracked_read(&mut self, changed_at: Revision) {
         self.untracked_read = true;
         self.durability = Durability::MIN;

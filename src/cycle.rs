@@ -50,7 +50,6 @@
 //! for each iteration of the outer cycle.
 
 use crate::key::DatabaseKeyIndex;
-use rustc_hash::FxHashSet;
 
 /// The maximum number of times we'll fixpoint-iterate before panicking.
 ///
@@ -91,7 +90,8 @@ pub enum CycleRecoveryStrategy {
 /// the cycle head(s) (can be plural in case of nested cycles) representing the cycles it is part
 /// of. This struct tracks these cycle heads.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct CycleHeads(Option<Box<FxHashSet<DatabaseKeyIndex>>>);
+#[allow(clippy::box_collection)]
+pub struct CycleHeads(Option<Box<Vec<DatabaseKeyIndex>>>);
 
 impl CycleHeads {
     pub(crate) fn is_empty(&self) -> bool {
@@ -105,52 +105,62 @@ impl CycleHeads {
     }
 
     pub(crate) fn remove(&mut self, value: &DatabaseKeyIndex) -> bool {
-        if let Some(cycle_heads) = self.0.as_mut() {
-            let found = cycle_heads.remove(value);
-            if found && cycle_heads.is_empty() {
-                self.0.take();
+        let Some(cycle_heads) = &mut self.0 else {
+            return false;
+        };
+        let found = cycle_heads.iter().position(|&head| head == *value);
+        let Some(found) = found else { return false };
+        cycle_heads.swap_remove(found);
+        if cycle_heads.is_empty() {
+            self.0.take();
+        }
+        true
+    }
+
+    #[inline]
+    pub(crate) fn insert_into(self, cycle_heads: &mut Vec<DatabaseKeyIndex>) {
+        if let Some(heads) = self.0 {
+            for head in *heads {
+                if !cycle_heads.contains(&head) {
+                    cycle_heads.push(head);
+                }
             }
-            found
-        } else {
-            false
+        }
+    }
+
+    pub(crate) fn extend(&mut self, other: &Self) {
+        if let Some(other) = &other.0 {
+            let heads = &mut **self.0.get_or_insert_with(|| Box::new(Vec::new()));
+            heads.reserve(other.len());
+            other.iter().for_each(|&head| {
+                if !heads.contains(&head) {
+                    heads.push(head);
+                }
+            });
         }
     }
 }
 
-impl std::iter::Extend<DatabaseKeyIndex> for CycleHeads {
-    fn extend<T: IntoIterator<Item = DatabaseKeyIndex>>(&mut self, iter: T) {
-        let mut iter = iter.into_iter();
-        if let Some(first) = iter.next() {
-            let heads = self.0.get_or_insert(Box::new(FxHashSet::default()));
-            heads.insert(first);
-            heads.extend(iter)
-        }
-    }
-}
-
-impl std::iter::IntoIterator for CycleHeads {
+impl IntoIterator for CycleHeads {
     type Item = DatabaseKeyIndex;
-    type IntoIter = std::collections::hash_set::IntoIter<Self::Item>;
+    type IntoIter = <Vec<Self::Item> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.map(|heads| *heads).unwrap_or_default().into_iter()
     }
 }
 
-// This type can be removed once MSRV is 1.83+ and we have Default for hashset iterators.
-pub(crate) struct CycleHeadsIter<'a>(
-    Option<std::collections::hash_set::Iter<'a, DatabaseKeyIndex>>,
-);
+pub struct CycleHeadsIter<'a>(std::slice::Iter<'a, DatabaseKeyIndex>);
 
 impl Iterator for CycleHeadsIter<'_> {
     type Item = DatabaseKeyIndex;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.as_mut()?.next().copied()
+        self.0.next().copied()
     }
 
     fn last(self) -> Option<Self::Item> {
-        self.0?.last().copied()
+        self.0.last().copied()
     }
 }
 
@@ -161,12 +171,23 @@ impl<'a> std::iter::IntoIterator for &'a CycleHeads {
     type IntoIter = CycleHeadsIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        CycleHeadsIter(self.0.as_ref().map(|heads| heads.iter()))
+        CycleHeadsIter(
+            self.0
+                .as_ref()
+                .map(|heads| heads.iter())
+                .unwrap_or_default(),
+        )
     }
 }
 
-impl From<FxHashSet<DatabaseKeyIndex>> for CycleHeads {
-    fn from(value: FxHashSet<DatabaseKeyIndex>) -> Self {
+impl From<DatabaseKeyIndex> for CycleHeads {
+    fn from(value: DatabaseKeyIndex) -> Self {
+        Self(Some(Box::new(vec![value])))
+    }
+}
+
+impl From<Vec<DatabaseKeyIndex>> for CycleHeads {
+    fn from(value: Vec<DatabaseKeyIndex>) -> Self {
         Self(if value.is_empty() {
             None
         } else {
@@ -175,4 +196,4 @@ impl From<FxHashSet<DatabaseKeyIndex>> for CycleHeads {
     }
 }
 
-pub(crate) static EMPTY_CYCLE_HEADS: CycleHeads = CycleHeads(None);
+pub(crate) const EMPTY_CYCLE_HEADS: CycleHeads = CycleHeads(None);

@@ -1,4 +1,4 @@
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use tracing::debug;
 
 use crate::accumulator::accumulated_map::{
@@ -183,6 +183,24 @@ impl ZalsaLocal {
         })
     }
 
+    /// Register that currently active query reads the given input
+    pub(crate) fn report_tracked_read_simple(
+        &self,
+        input: InputDependencyIndex,
+        durability: Durability,
+        changed_at: Revision,
+    ) {
+        debug!(
+            "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
+            input, durability, changed_at
+        );
+        self.with_query_stack(|stack| {
+            if let Some(top_query) = stack.last_mut() {
+                top_query.add_read_simple(input, durability, changed_at);
+            }
+        })
+    }
+
     /// Register that the current query read an untracked value
     ///
     /// # Parameters
@@ -324,7 +342,6 @@ pub(crate) struct QueryRevisions {
 
 impl QueryRevisions {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, revision: Revision) -> Self {
-        let cycle_heads = FxHashSet::from_iter([query]).into();
         Self {
             changed_at: revision,
             durability: Durability::MAX,
@@ -332,7 +349,7 @@ impl QueryRevisions {
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
-            cycle_heads,
+            cycle_heads: CycleHeads::from(query),
         }
     }
 
