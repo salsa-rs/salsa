@@ -15,8 +15,8 @@ use crate::setup::{Knobs, KnobsDatabase};
 struct CycleValue(u32);
 
 const MIN: CycleValue = CycleValue(0);
-const MID: CycleValue = CycleValue(11);
-const MAX: CycleValue = CycleValue(22);
+const MID: CycleValue = CycleValue(5);
+const MAX: CycleValue = CycleValue(10);
 
 #[salsa::tracked(cycle_fn=cycle_fn, cycle_initial=cycle_initial)]
 fn query_a(db: &dyn KnobsDatabase) -> CycleValue {

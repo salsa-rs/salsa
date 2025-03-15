@@ -6,6 +6,7 @@ mod common;
 use common::{ExecuteValidateLoggerDatabase, LogDatabase};
 use expect_test::expect;
 use salsa::{CycleRecoveryAction, Database as Db, DatabaseImpl as DbImpl, Durability, Setter};
+#[cfg(not(miri))]
 use test_log::test;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, salsa::Update)]
@@ -31,12 +32,13 @@ impl Value {
 /// `max_iterate`, `min_panic`, `max_panic`) for testing cycle behaviors.
 #[salsa::input]
 struct Inputs {
+    #[return_ref]
     inputs: Vec<Input>,
 }
 
 impl Inputs {
     fn values(self, db: &dyn Db) -> impl Iterator<Item = Value> + '_ {
-        self.inputs(db).into_iter().map(|input| input.eval(db))
+        self.inputs(db).iter().map(|input| input.eval(db))
     }
 }
 
@@ -69,8 +71,8 @@ enum Input {
 }
 
 impl Input {
-    fn eval(self, db: &dyn Db) -> Value {
-        match self {
+    fn eval(&self, db: &dyn Db) -> Value {
+        match *self {
             Self::Value(value) => value,
             Self::UntrackedRead(value) => {
                 db.report_untracked_read();
@@ -80,30 +82,30 @@ impl Input {
             Self::MaxIterate(inputs) => max_iterate(db, inputs),
             Self::MinPanic(inputs) => min_panic(db, inputs),
             Self::MaxPanic(inputs) => max_panic(db, inputs),
-            Self::Successor(input) => match input.eval(db) {
+            Self::Successor(ref input) => match input.eval(db) {
                 Value::N(num) => Value::N(num + 1),
                 other => other,
             },
-            Self::SuccessorOrZero(input) => match input.eval(db) {
+            Self::SuccessorOrZero(ref input) => match input.eval(db) {
                 Value::N(num) => Value::N(num + 1),
                 _ => Value::N(0),
             },
         }
     }
 
-    fn assert(self, db: &dyn Db, expected: Value) {
+    fn assert(&self, db: &dyn Db, expected: Value) {
         assert_eq!(self.eval(db), expected)
     }
 
-    fn assert_value(self, db: &dyn Db, expected: u8) {
+    fn assert_value(&self, db: &dyn Db, expected: u8) {
         self.assert(db, Value::N(expected))
     }
 
-    fn assert_bounds(self, db: &dyn Db) {
+    fn assert_bounds(&self, db: &dyn Db) {
         self.assert(db, Value::OutOfBounds)
     }
 
-    fn assert_count(self, db: &dyn Db) {
+    fn assert_count(&self, db: &dyn Db) {
         self.assert(db, Value::TooManyIterations)
     }
 }
@@ -734,7 +736,7 @@ fn cycle_becomes_non_cycle() {
     a_in.set_inputs(&mut db).to(vec![b]);
     b_in.set_inputs(&mut db).to(vec![a.clone()]);
 
-    a.clone().assert_value(&db, 255);
+    a.assert_value(&db, 255);
 
     b_in.set_inputs(&mut db).to(vec![value(30)]);
 
@@ -758,7 +760,7 @@ fn non_cycle_becomes_cycle() {
     a_in.set_inputs(&mut db).to(vec![b]);
     b_in.set_inputs(&mut db).to(vec![value(30)]);
 
-    a.clone().assert_value(&db, 30);
+    a.assert_value(&db, 30);
 
     b_in.set_inputs(&mut db).to(vec![a.clone()]);
 
@@ -790,7 +792,7 @@ fn nested_double_multiple_revisions() {
         Input::Successor(Box::new(b.clone())),
     ]);
 
-    a.clone().assert_count(&db);
+    a.assert_count(&db);
 
     // next revision, we hit max value instead
     c_in.set_inputs(&mut db).to(vec![
@@ -799,13 +801,13 @@ fn nested_double_multiple_revisions() {
         Input::Successor(Box::new(b.clone())),
     ]);
 
-    a.clone().assert_bounds(&db);
+    a.assert_bounds(&db);
 
     // and next revision, we converge
     c_in.set_inputs(&mut db)
         .to(vec![value(240), a.clone(), b.clone()]);
 
-    a.clone().assert_value(&db, 240);
+    a.assert_value(&db, 240);
 
     // one more revision, without relevant changes
     a_in.set_inputs(&mut db).to(vec![b]);
@@ -838,7 +840,7 @@ fn cycle_durability() {
         .with_durability(Durability::HIGH)
         .to(vec![a.clone()]);
 
-    a.clone().assert_value(&db, 255);
+    a.assert_value(&db, 255);
 
     // next revision, we converge instead
     a_in.set_inputs(&mut db)
@@ -866,8 +868,8 @@ fn cycle_unchanged() {
     b_in.set_inputs(&mut db).to(vec![value(60), c]);
     c_in.set_inputs(&mut db).to(vec![b.clone()]);
 
-    a.clone().assert_value(&db, 59);
-    b.clone().assert_value(&db, 60);
+    a.assert_value(&db, 59);
+    b.assert_value(&db, 60);
 
     db.assert_logs_len(4);
 
@@ -912,8 +914,8 @@ fn cycle_unchanged_nested() {
         .to(vec![value(61), b.clone(), e.clone()]);
     e_in.set_inputs(&mut db).to(vec![d.clone()]);
 
-    a.clone().assert_value(&db, 59);
-    b.clone().assert_value(&db, 60);
+    a.assert_value(&db, 59);
+    b.assert_value(&db, 60);
 
     db.assert_logs_len(10);
 
@@ -965,8 +967,8 @@ fn cycle_unchanged_nested_intertwined() {
             .to(vec![value(61), b.clone(), e.clone()]);
         e_in.set_inputs(&mut db).to(vec![d.clone()]);
 
-        a.clone().assert_value(&db, 59);
-        b.clone().assert_value(&db, 60);
+        a.assert_value(&db, 59);
+        b.assert_value(&db, 60);
 
         // First time we run this test, don't fetch c/d/e here; this means they won't get marked
         // `verified_final` in R6 (this revision), which will leave us in the next revision (R7)
@@ -977,9 +979,9 @@ fn cycle_unchanged_nested_intertwined() {
         // Second time we run this test, fetch everything in R6, to check the behavior of
         // `maybe_changed_after` with all validated-final memos.
         if i == 1 {
-            c.clone().assert_value(&db, 60);
-            d.clone().assert_value(&db, 60);
-            e.clone().assert_value(&db, 60);
+            c.assert_value(&db, 60);
+            d.assert_value(&db, 60);
+            e.assert_value(&db, 60);
         }
 
         db.assert_logs_len(16 + i);

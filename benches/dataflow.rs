@@ -7,6 +7,8 @@ use salsa::{CycleRecoveryAction, Database as Db, Setter};
 use std::collections::BTreeSet;
 use std::iter::IntoIterator;
 
+include!("shims/global_alloc_overwrite.rs");
+
 /// A Use of a symbol.
 #[salsa::input]
 struct Use {

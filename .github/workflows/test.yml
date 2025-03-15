@@ -41,6 +41,7 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
+      - uses: taiki-e/install-action@nextest
       - uses: actions/cache@v4
         with:
           path: |
@@ -58,7 +59,7 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-features --all-targets -- -D warnings
       - name: Test
-        run: cargo test --workspace --all-features --all-targets
+        run: cargo nextest run --workspace --all-features --all-targets --no-fail-fast
       - name: Test docs
         run: cargo test --workspace --all-features --doc
       - name: Check (without default features)
@@ -73,6 +74,7 @@ jobs:
       - name: Install Miri
         uses: dtolnay/rust-toolchain@miri
         id: rust-toolchain
+      - uses: taiki-e/install-action@nextest
       - uses: actions/cache@v4
         with:
           path: |
@@ -89,12 +91,11 @@ jobs:
       - name: Setup Miri
         run: cargo miri setup
       - name: Test with Miri
-        run: cargo miri test --no-fail-fast --all-features
+        run: cargo miri nextest run --all-features --no-fail-fast --tests
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-retag-fields
       - name: Run examples with Miri
-        run: |
-          cargo miri run --example calc
+        run: cargo miri run --example calc
 
   benchmarks:
     # https://github.com/CodSpeedHQ/action/issues/126

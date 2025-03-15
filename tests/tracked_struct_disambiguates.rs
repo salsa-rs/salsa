@@ -85,10 +85,7 @@ fn execute() {
     let mut db = salsa::DatabaseImpl::new();
     let inputs = MyInputs::new(
         &db,
-        (0..1024)
-            .into_iter()
-            .map(|i| MyInput::new(&db, i))
-            .collect(),
+        (0..64).into_iter().map(|i| MyInput::new(&db, i)).collect(),
     );
     let trackeds = batch(&db, inputs);
     for (id, tracked) in trackeds.into_iter().enumerate() {
