@@ -3,12 +3,12 @@ mod common;
 use common::LogDatabase;
 use salsa::Database;
 
-#[salsa::input]
+#[salsa::input(debug)]
 struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(debug)]
 struct MyTracked<'db> {
     field: u32,
 }

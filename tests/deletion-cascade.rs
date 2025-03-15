@@ -9,7 +9,7 @@ use expect_test::expect;
 use salsa::Setter;
 use test_log::test;
 
-#[salsa::input(singleton)]
+#[salsa::input(singleton, debug)]
 struct MyInput {
     field: u32,
 }

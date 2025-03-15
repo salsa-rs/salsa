@@ -3,7 +3,7 @@
 use ordered_float::OrderedFloat;
 
 // ANCHOR: input
-#[salsa::input]
+#[salsa::input(debug)]
 pub struct SourceProgram {
     #[return_ref]
     pub text: String,
@@ -11,13 +11,13 @@ pub struct SourceProgram {
 // ANCHOR_END: input
 
 // ANCHOR: interned_ids
-#[salsa::interned]
+#[salsa::interned(debug)]
 pub struct VariableId<'db> {
     #[return_ref]
     pub text: String,
 }
 
-#[salsa::interned]
+#[salsa::interned(debug)]
 pub struct FunctionId<'db> {
     #[return_ref]
     pub text: String,
@@ -25,7 +25,7 @@ pub struct FunctionId<'db> {
 // ANCHOR_END: interned_ids
 
 // ANCHOR: program
-#[salsa::tracked]
+#[salsa::tracked(debug)]
 pub struct Program<'db> {
     #[tracked]
     #[return_ref]
@@ -86,7 +86,7 @@ pub enum Op {
 // ANCHOR_END: statements_and_expressions
 
 // ANCHOR: functions
-#[salsa::tracked]
+#[salsa::tracked(debug)]
 pub struct Function<'db> {
     pub name: FunctionId<'db>,
 
@@ -102,7 +102,7 @@ pub struct Function<'db> {
 }
 // ANCHOR_END: functions
 
-#[salsa::tracked]
+#[salsa::tracked(debug)]
 pub struct Span<'db> {
     #[tracked]
     pub start: usize,
@@ -112,6 +112,7 @@ pub struct Span<'db> {
 
 // ANCHOR: diagnostic
 #[salsa::accumulator]
+#[derive(Debug)]
 #[allow(dead_code)] // Debug impl uses them
 pub struct Diagnostic {
     pub start: usize,

@@ -9,7 +9,7 @@ struct MyInput {
     field: u32,
 }
 
-#[salsa::tracked]
+#[salsa::tracked(debug)]
 struct TrackedStruct<'db> {
     field: u32,
 }

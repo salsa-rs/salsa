@@ -6,38 +6,38 @@ use salsa::plumbing::{AsId, FromId};
 use std::path::{Path, PathBuf};
 use test_log::test;
 
-#[salsa::interned]
+#[salsa::interned(debug)]
 struct InternedBoxed<'db> {
     data: Box<str>,
 }
 
-#[salsa::interned]
+#[salsa::interned(debug)]
 struct InternedString<'db> {
     data: String,
 }
 
-#[salsa::interned]
+#[salsa::interned(debug)]
 struct InternedPair<'db> {
     data: (InternedString<'db>, InternedString<'db>),
 }
 
-#[salsa::interned]
+#[salsa::interned(debug)]
 struct InternedTwoFields<'db> {
     data1: String,
     data2: String,
 }
 
-#[salsa::interned]
+#[salsa::interned(debug)]
 struct InternedVec<'db> {
     data1: Vec<String>,
 }
 
-#[salsa::interned]
+#[salsa::interned(debug)]
 struct InternedPathBuf<'db> {
     data1: PathBuf,
 }
 
-#[salsa::interned(no_lifetime)]
+#[salsa::interned(no_lifetime, debug)]
 struct InternedStringNoLifetime {
     data: String,
 }
@@ -45,7 +45,7 @@ struct InternedStringNoLifetime {
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
 struct Foo;
 
-#[salsa::interned]
+#[salsa::interned(debug)]
 struct InternedFoo<'db> {
     data: Foo,
 }
@@ -65,12 +65,12 @@ impl FromId for SalsaIdWrapper {
     }
 }
 
-#[salsa::interned(id = SalsaIdWrapper)]
+#[salsa::interned(id = SalsaIdWrapper, debug)]
 struct InternedStringWithCustomId<'db> {
     data: String,
 }
 
-#[salsa::interned(id = SalsaIdWrapper, no_lifetime)]
+#[salsa::interned(id = SalsaIdWrapper, no_lifetime, debug)]
 struct InternedStringWithCustomIdAndNoLifetime<'db> {
     data: String,
 }

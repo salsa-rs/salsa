@@ -19,7 +19,7 @@ pub(crate) fn accumulator(
     let ident = struct_item.ident.clone();
     let m = StructMacro {
         hygiene,
-        args,
+        _args: args,
         struct_item,
     };
     match m.try_expand() {
@@ -34,8 +34,8 @@ impl AllowedOptions for Accumulator {
     const RETURN_REF: bool = false;
     const SPECIFY: bool = false;
     const NO_EQ: bool = false;
-    const NO_DEBUG: bool = true;
-    const NO_CLONE: bool = true;
+    const DEBUG: bool = false;
+    const NO_CLONE: bool = false;
     const NO_LIFETIME: bool = false;
     const SINGLETON: bool = false;
     const DATA: bool = false;
@@ -49,7 +49,7 @@ impl AllowedOptions for Accumulator {
 
 struct StructMacro {
     hygiene: Hygiene,
-    args: Options<Accumulator>,
+    _args: Options<Accumulator>,
     struct_item: syn::ItemStruct,
 }
 
@@ -65,16 +65,7 @@ impl StructMacro {
 
         let struct_item = self.struct_item;
 
-        let mut derives = vec![];
-        if self.args.no_debug.is_none() {
-            derives.push(quote!(Debug));
-        }
-        if self.args.no_clone.is_none() {
-            derives.push(quote!(Clone));
-        }
-
         Ok(quote! {
-            #[derive(#(#derives),*)]
             #struct_item
 
             salsa::plumbing::setup_accumulator_impl! {

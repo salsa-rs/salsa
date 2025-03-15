@@ -7,7 +7,7 @@ use expect_test::expect;
 use salsa::Database as _;
 use test_log::test;
 
-#[salsa::input(singleton)]
+#[salsa::input(singleton, debug)]
 struct MyInput {
     field: u32,
     id_field: u16,

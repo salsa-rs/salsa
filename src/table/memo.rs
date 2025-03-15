@@ -1,6 +1,5 @@
 use std::{
     any::{Any, TypeId},
-    fmt::Debug,
     ptr::NonNull,
     sync::atomic::{AtomicPtr, Ordering},
 };
@@ -17,7 +16,7 @@ pub(crate) struct MemoTable {
     memos: RwLock<Vec<MemoEntry>>,
 }
 
-pub(crate) trait Memo: Any + Send + Sync + Debug {
+pub(crate) trait Memo: Any + Send + Sync {
     /// Returns the `origin` of this memo
     fn origin(&self) -> &QueryOrigin;
 }

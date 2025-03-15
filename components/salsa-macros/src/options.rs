@@ -20,10 +20,10 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `no_eq` identifier.
     pub no_eq: Option<syn::Ident>,
 
-    /// Signal we should not generate a `Debug` impl.
+    /// Signal we should generate a `Debug` impl.
     ///
-    /// If this is `Some`, the value is the `no_debug` identifier.
-    pub no_debug: Option<syn::Ident>,
+    /// If this is `Some`, the value is the `debug` identifier.
+    pub debug: Option<syn::Ident>,
 
     /// Signal we should not include the `'db` lifetime.
     ///
@@ -93,7 +93,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             return_ref: Default::default(),
             specify: Default::default(),
             no_eq: Default::default(),
-            no_debug: Default::default(),
+            debug: Default::default(),
             no_lifetime: Default::default(),
             no_clone: Default::default(),
             db_path: Default::default(),
@@ -114,7 +114,7 @@ pub(crate) trait AllowedOptions {
     const RETURN_REF: bool;
     const SPECIFY: bool;
     const NO_EQ: bool;
-    const NO_DEBUG: bool;
+    const DEBUG: bool;
     const NO_LIFETIME: bool;
     const NO_CLONE: bool;
     const SINGLETON: bool;
@@ -161,18 +161,15 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                         "`no_eq` option not allowed here",
                     ));
                 }
-            } else if ident == "no_debug" {
-                if A::NO_DEBUG {
-                    if let Some(old) = options.no_debug.replace(ident) {
-                        return Err(syn::Error::new(
-                            old.span(),
-                            "option `no_debug` provided twice",
-                        ));
+            } else if ident == "debug" {
+                if A::DEBUG {
+                    if let Some(old) = options.debug.replace(ident) {
+                        return Err(syn::Error::new(old.span(), "option `debug` provided twice"));
                     }
                 } else {
                     return Err(syn::Error::new(
                         ident.span(),
-                        "`no_debug` option not allowed here",
+                        "`debug` option not allowed here",
                     ));
                 }
             } else if ident == "no_lifetime" {

@@ -223,7 +223,12 @@ macro_rules! setup_input_struct {
                 }
 
                 /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
-                pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+                where
+                    // rustc rejects trivial bounds, but it cannot see through higher-ranked bounds
+                    // with its check :^)
+                    $(for<'__trivial_bounds> $field_ty: std::fmt::Debug),*
+                {
                     $zalsa::with_attached_database(|db| {
                         let fields = $Configuration::ingredient(db).leak_fields(db, this);
                         let mut f = f.debug_struct(stringify!($Struct));

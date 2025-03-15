@@ -1,17 +1,17 @@
 //! Test that a `tracked` fn on a `salsa::interned`
 //! compiles and executes successfully.
 
-#[salsa::interned(no_lifetime)]
+#[salsa::interned(no_lifetime, debug)]
 struct Name {
     name: String,
 }
 
-#[salsa::interned]
+#[salsa::interned(debug)]
 struct NameAndAge<'db> {
     name_and_age: String,
 }
 
-#[salsa::interned(no_lifetime)]
+#[salsa::interned(no_lifetime, debug)]
 struct Age {
     age: u32,
 }
@@ -23,7 +23,7 @@ enum Enum<'db> {
     Age(Age),
 }
 
-#[salsa::input]
+#[salsa::input(debug)]
 struct Input {
     value: String,
 }
