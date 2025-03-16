@@ -1,4 +1,3 @@
-use crate::cycle::CycleRecoveryStrategy;
 use crate::function::VerifyResult;
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::input::Configuration;
@@ -44,10 +43,6 @@ where
 {
     fn ingredient_index(&self) -> IngredientIndex {
         self.index
-    }
-
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        CycleRecoveryStrategy::Panic
     }
 
     unsafe fn maybe_changed_after(
