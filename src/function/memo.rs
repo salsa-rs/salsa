@@ -174,6 +174,7 @@ impl<V> Memo<V> {
     pub(super) fn provisional_retry(
         &self,
         db: &dyn crate::Database,
+        zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
     ) -> bool {
         let mut retry = false;
@@ -182,7 +183,7 @@ impl<V> Memo<V> {
             .into_iter()
             .filter(|&head| head != database_key_index)
             .any(|head| {
-                let ingredient = db.zalsa().lookup_ingredient(head.ingredient_index);
+                let ingredient = zalsa.lookup_ingredient(head.ingredient_index);
                 if !ingredient.is_provisional_cycle_head(db, head.key_index) {
                     // This cycle is already finalized, so we don't need to wait on it;
                     // keep looping through cycle heads.

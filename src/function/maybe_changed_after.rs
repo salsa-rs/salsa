@@ -62,7 +62,9 @@ where
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
             if let Some(memo) = memo_guard {
-                if self.shallow_verify_memo(db, zalsa, database_key_index, memo, false) {
+                if self.validate_may_be_provisional(db, zalsa, database_key_index, memo)
+                    && self.shallow_verify_memo(db, zalsa, database_key_index, memo)
+                {
                     return if memo.revisions.changed_at > revision {
                         VerifyResult::Changed
                     } else {
@@ -173,11 +175,6 @@ where
     /// eagerly finalize all provisional memos in cycle iteration, we have to lazily check here
     /// (via `validate_provisional`) whether a may-be-provisional memo should actually be verified
     /// final, because its cycle heads are all now final.
-    ///
-    /// If `allow_provisional` is `true`, don't check provisionality and return whatever memo we
-    /// find that can be verified in this revision, whether provisional or not. This only occurs at
-    /// one call-site, in `fetch_cold` when we actually encounter a cycle, and want to check if
-    /// there is an existing provisional memo we can reuse.
     #[inline]
     pub(super) fn shallow_verify_memo(
         &self,
@@ -185,21 +182,11 @@ where
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
-        allow_provisional: bool,
     ) -> bool {
         tracing::debug!(
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
-        if !allow_provisional && memo.may_be_provisional() {
-            tracing::debug!(
-                "{database_key_index:?}: validate_provisional(memo = {memo:#?})",
-                memo = memo.tracing_debug()
-            );
-            if !self.validate_provisional(db, zalsa, memo) {
-                return false;
-            }
-        }
         let verified_at = memo.verified_at.load();
         let revision_now = zalsa.current_revision();
 
@@ -231,14 +218,36 @@ where
         false
     }
 
+    /// Validates this memo if it is a provisional memo. Returns true for non provisional memos or
+    /// if the provisional memo has been successfully marked as verified final, that is, its
+    /// cycle heads have all been finalized.
+    #[inline]
+    pub(super) fn validate_may_be_provisional(
+        &self,
+        db: &C::DbView,
+        zalsa: &Zalsa,
+        database_key_index: DatabaseKeyIndex,
+        memo: &Memo<C::Output<'_>>,
+    ) -> bool {
+        // Wouldn't it be nice if rust had an implication operator ...
+        // may_be_provisional -> validate_provisional
+        !memo.may_be_provisional() || self.validate_provisional(db, zalsa, database_key_index, memo)
+    }
+
     /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
     /// return true, if not return false.
+    #[inline]
     fn validate_provisional(
         &self,
         db: &C::DbView,
         zalsa: &Zalsa,
+        database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
+        tracing::debug!(
+            "{database_key_index:?}: validate_provisional(memo = {memo:#?})",
+            memo = memo.tracing_debug()
+        );
         if (&memo.revisions.cycle_heads).into_iter().any(|cycle_head| {
             zalsa
                 .lookup_ingredient(cycle_head.ingredient_index)
@@ -273,38 +282,40 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        if self.shallow_verify_memo(db, zalsa, database_key_index, old_memo, false) {
-            return VerifyResult::Unchanged(InputAccumulatedValues::Empty, Default::default());
-        }
-        if old_memo.may_be_provisional() {
-            return VerifyResult::Changed;
+        if self.validate_may_be_provisional(db, zalsa, database_key_index, old_memo)
+            && self.shallow_verify_memo(db, zalsa, database_key_index, old_memo)
+        {
+            return VerifyResult::unchanged();
         }
 
-        let mut cycle_heads = vec![];
-        loop {
-            let inputs = match &old_memo.revisions.origin {
-                QueryOrigin::Assigned(_) => {
-                    // If the value was assigneed by another query,
-                    // and that query were up-to-date,
-                    // then we would have updated the `verified_at` field already.
-                    // So the fact that we are here means that it was not specified
-                    // during this revision or is otherwise stale.
-                    //
-                    // Example of how this can happen:
-                    //
-                    // Conditionally specified queries
-                    // where the value is specified
-                    // in rev 1 but not in rev 2.
+        match &old_memo.revisions.origin {
+            QueryOrigin::Assigned(_) => {
+                // If the value was assigneed by another query,
+                // and that query were up-to-date,
+                // then we would have updated the `verified_at` field already.
+                // So the fact that we are here means that it was not specified
+                // during this revision or is otherwise stale.
+                //
+                // Example of how this can happen:
+                //
+                // Conditionally specified queries
+                // where the value is specified
+                // in rev 1 but not in rev 2.
+                VerifyResult::Changed
+            }
+            QueryOrigin::FixpointInitial if old_memo.may_be_provisional() => VerifyResult::Changed,
+            QueryOrigin::FixpointInitial => VerifyResult::unchanged(),
+            QueryOrigin::DerivedUntracked(_) => {
+                // Untracked inputs? Have to assume that it changed.
+                VerifyResult::Changed
+            }
+            QueryOrigin::Derived(edges) => {
+                if old_memo.may_be_provisional() {
                     return VerifyResult::Changed;
                 }
-                QueryOrigin::FixpointInitial => {
-                    return VerifyResult::unchanged();
-                }
-                QueryOrigin::DerivedUntracked(_) => {
-                    // Untracked inputs? Have to assume that it changed.
-                    return VerifyResult::Changed;
-                }
-                QueryOrigin::Derived(edges) => {
+
+                let mut cycle_heads = vec![];
+                'cycle: loop {
                     // Fully tracked inputs? Iterate over the inputs and check them, one by one.
                     //
                     // NB: It's important here that we are iterating the inputs in the order that
@@ -317,10 +328,9 @@ where
                     for &edge in edges.input_outputs.iter() {
                         match edge {
                             QueryEdge::Input(dependency_index) => {
-                                match dependency_index
-                                    .maybe_changed_after(db.as_dyn_database(), last_verified_at)
+                                match dependency_index.maybe_changed_after(dyn_db, last_verified_at)
                                 {
-                                    VerifyResult::Changed => return VerifyResult::Changed,
+                                    VerifyResult::Changed => break 'cycle VerifyResult::Changed,
                                     VerifyResult::Unchanged(input_accumulated, cycles) => {
                                         cycles.insert_into(&mut cycle_heads);
                                         inputs |= input_accumulated;
@@ -352,58 +362,62 @@ where
                             }
                         }
                     }
-                    inputs
-                }
-            };
 
-            // Possible scenarios here:
-            //
-            // 1. Cycle heads is empty. We traversed our full dependency graph and neither hit any
-            //    cycles, nor found any changed dependencies. We can mark our memo verified and
-            //    return Unchanged with empty cycle heads.
-            //
-            // 2. Cycle heads is non-empty, and does not contain our own key index. We are part of
-            //    a cycle, and since we don't know if some other cycle participant that hasn't been
-            //    traversed yet (that is, some other dependency of the cycle head, which is only a
-            //    dependency of ours via the cycle) might still have changed, we can't yet mark our
-            //    memo verified. We can return a provisional Unchanged, with cycle heads.
-            //
-            // 3. Cycle heads is non-empty, and contains only our own key index. We are the head of
-            //    a cycle, and we've now traversed the entire cycle and found no changes, but no
-            //    other cycle participants were verified (they would have all hit case 2 above). We
-            //    can now safely mark our own memo as verified. Then we have to traverse the entire
-            //    cycle again. This time, since our own memo is verified, there will be no cycle
-            //    encountered, and the rest of the cycle will be able to verify itself.
-            //
-            // 4. Cycle heads is non-empty, and contains our own key index as well as other key
-            //    indices. We are the head of a cycle nested within another cycle. We can't mark
-            //    our own memo verified (for the same reason as in case 2: the full outer cycle
-            //    hasn't been validated unchanged yet). We return Unchanged, with ourself removed
-            //    from cycle heads. We will handle our own memo (and the rest of our cycle) on a
-            //    future iteration; first the outer cycle head needs to verify itself.
+                    // Possible scenarios here:
+                    //
+                    // 1. Cycle heads is empty. We traversed our full dependency graph and neither hit any
+                    //    cycles, nor found any changed dependencies. We can mark our memo verified and
+                    //    return Unchanged with empty cycle heads.
+                    //
+                    // 2. Cycle heads is non-empty, and does not contain our own key index. We are part of
+                    //    a cycle, and since we don't know if some other cycle participant that hasn't been
+                    //    traversed yet (that is, some other dependency of the cycle head, which is only a
+                    //    dependency of ours via the cycle) might still have changed, we can't yet mark our
+                    //    memo verified. We can return a provisional Unchanged, with cycle heads.
+                    //
+                    // 3. Cycle heads is non-empty, and contains only our own key index. We are the head of
+                    //    a cycle, and we've now traversed the entire cycle and found no changes, but no
+                    //    other cycle participants were verified (they would have all hit case 2 above). We
+                    //    can now safely mark our own memo as verified. Then we have to traverse the entire
+                    //    cycle again. This time, since our own memo is verified, there will be no cycle
+                    //    encountered, and the rest of the cycle will be able to verify itself.
+                    //
+                    // 4. Cycle heads is non-empty, and contains our own key index as well as other key
+                    //    indices. We are the head of a cycle nested within another cycle. We can't mark
+                    //    our own memo verified (for the same reason as in case 2: the full outer cycle
+                    //    hasn't been validated unchanged yet). We return Unchanged, with ourself removed
+                    //    from cycle heads. We will handle our own memo (and the rest of our cycle) on a
+                    //    future iteration; first the outer cycle head needs to verify itself.
 
-            let in_heads = cycle_heads
-                .iter()
-                .position(|&head| head == database_key_index)
-                .inspect(|&head| _ = cycle_heads.swap_remove(head))
-                .is_some();
+                    let in_heads = cycle_heads
+                        .iter()
+                        .position(|&head| head == database_key_index)
+                        .inspect(|&head| _ = cycle_heads.swap_remove(head))
+                        .is_some();
 
-            if cycle_heads.is_empty() {
-                old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index, inputs);
+                    if cycle_heads.is_empty() {
+                        old_memo.mark_as_verified(
+                            db,
+                            zalsa.current_revision(),
+                            database_key_index,
+                            inputs,
+                        );
 
-                if in_heads {
-                    // Iterate our dependency graph again, starting from the top. We clear the
-                    // cycle heads here because we are starting a fresh traversal. (It might be
-                    // logically clearer to create a new HashSet each time, but clearing the
-                    // existing one is more efficient.)
-                    cycle_heads.clear();
-                    continue;
+                        if in_heads {
+                            // Iterate our dependency graph again, starting from the top. We clear the
+                            // cycle heads here because we are starting a fresh traversal. (It might be
+                            // logically clearer to create a new HashSet each time, but clearing the
+                            // existing one is more efficient.)
+                            cycle_heads.clear();
+                            continue 'cycle;
+                        }
+                    }
+                    break 'cycle VerifyResult::Unchanged(
+                        InputAccumulatedValues::Empty,
+                        CycleHeads::from(cycle_heads),
+                    );
                 }
             }
-            return VerifyResult::Unchanged(
-                InputAccumulatedValues::Empty,
-                CycleHeads::from(cycle_heads),
-            );
         }
     }
 }
