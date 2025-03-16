@@ -4,7 +4,6 @@ use crossbeam_queue::SegQueue;
 use tracked_field::FieldIngredientImpl;
 
 use crate::{
-    cycle::CycleRecoveryStrategy,
     function::VerifyResult,
     ingredient::{fmt_index, Ingredient, Jar},
     key::{DatabaseKeyIndex, InputDependencyIndex},
@@ -751,10 +750,6 @@ where
 
     fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
         true
-    }
-
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        crate::cycle::CycleRecoveryStrategy::Panic
     }
 
     fn origin(&self, _db: &dyn Database, _key_index: crate::Id) -> Option<QueryOrigin> {

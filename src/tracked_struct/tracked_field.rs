@@ -47,10 +47,6 @@ where
         self.ingredient_index
     }
 
-    fn cycle_recovery_strategy(&self) -> crate::cycle::CycleRecoveryStrategy {
-        crate::cycle::CycleRecoveryStrategy::Panic
-    }
-
     unsafe fn maybe_changed_after<'db>(
         &'db self,
         db: &'db dyn Database,

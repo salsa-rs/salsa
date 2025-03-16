@@ -5,7 +5,6 @@ use std::{
 
 use crate::{
     accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
-    cycle::CycleRecoveryStrategy,
     function::VerifyResult,
     plumbing::IngredientIndices,
     table::Table,
@@ -116,11 +115,6 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
 
     /// Returns the [`IngredientIndex`] of this ingredient.
     fn ingredient_index(&self) -> IngredientIndex;
-
-    /// If this ingredient is a participant in a cycle, what is its cycle recovery strategy?
-    /// (Really only relevant to [`crate::function::FunctionIngredient`],
-    /// since only function ingredients push themselves onto the active query stack.)
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy;
 
     /// Returns true if `reset_for_new_revision` should be called when new revisions start.
     /// Invoked once when ingredient is added and not after that.

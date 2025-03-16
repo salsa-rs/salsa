@@ -11,7 +11,6 @@ pub mod singleton;
 use input_field::FieldIngredientImpl;
 
 use crate::{
-    cycle::CycleRecoveryStrategy,
     function::VerifyResult,
     id::{AsId, FromIdWithDb},
     ingredient::{fmt_index, Ingredient},
@@ -231,10 +230,6 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
 
     fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
         true
-    }
-
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        CycleRecoveryStrategy::Panic
     }
 
     fn origin(&self, _db: &dyn Database, _key_index: Id) -> Option<QueryOrigin> {

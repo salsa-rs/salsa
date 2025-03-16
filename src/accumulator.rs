@@ -11,7 +11,6 @@ use accumulated::Accumulated;
 use accumulated::AnyAccumulated;
 
 use crate::{
-    cycle::CycleRecoveryStrategy,
     function::VerifyResult,
     ingredient::{fmt_index, Ingredient, Jar},
     plumbing::IngredientIndices,
@@ -116,10 +115,6 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
 
     fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
         true
-    }
-
-    fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {
-        CycleRecoveryStrategy::Panic
     }
 
     fn origin(&self, _db: &dyn Database, _key_index: crate::Id) -> Option<QueryOrigin> {
