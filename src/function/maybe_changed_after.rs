@@ -7,7 +7,6 @@ use crate::{
     zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
     AsDynDatabase as _, Id, Revision,
 };
-use std::sync::atomic::Ordering;
 
 use super::{memo::Memo, Configuration, IngredientImpl};
 
@@ -257,7 +256,7 @@ where
         }
         // Relaxed is sufficient here because there are no other writes we need to ensure have
         // happened before marking this memo as verified-final.
-        memo.verified_final.store(true, Ordering::Relaxed);
+        memo.revisions.cycle_heads.clear();
         true
     }
 
