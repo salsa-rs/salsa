@@ -5,7 +5,7 @@ use crate::accumulator::accumulated_map::{
     AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues,
 };
 use crate::active_query::ActiveQuery;
-use crate::cycle::CycleHeads;
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy};
 use crate::durability::Durability;
 use crate::key::{DatabaseKeyIndex, InputDependencyIndex, OutputDependencyIndex};
 use crate::runtime::StampedValue;
@@ -164,7 +164,7 @@ impl ZalsaLocal {
     }
 
     /// Register that currently active query reads the given input
-    pub(crate) fn report_tracked_read(
+    pub(crate) fn report_tracked_read_with_cycle_heads(
         &self,
         input: InputDependencyIndex,
         durability: Durability,
@@ -178,7 +178,32 @@ impl ZalsaLocal {
         );
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.add_read(input, durability, changed_at, accumulated, cycle_heads);
+                top_query.add_read_with_cycle_heads(
+                    input,
+                    durability,
+                    changed_at,
+                    accumulated,
+                    cycle_heads,
+                );
+            }
+        })
+    }
+
+    /// Register that currently active query reads the given input
+    pub(crate) fn report_tracked_read(
+        &self,
+        input: InputDependencyIndex,
+        durability: Durability,
+        changed_at: Revision,
+        accumulated: InputAccumulatedValues,
+    ) {
+        debug!(
+            "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
+            input, durability, changed_at
+        );
+        self.with_query_stack(|stack| {
+            if let Some(top_query) = stack.last_mut() {
+                top_query.add_read(input, durability, changed_at, accumulated);
             }
         })
     }
@@ -294,7 +319,7 @@ impl std::panic::RefUnwindSafe for ZalsaLocal {}
 /// and "all the outputs it has written to"
 #[derive(Debug)]
 // #[derive(Clone)] cloning this is expensive, so we don't derive
-pub(crate) struct QueryRevisions {
+pub(crate) struct QueryRevisions<CycleHeads> {
     /// The most revision in which some input changed.
     pub(crate) changed_at: Revision,
 
@@ -340,7 +365,7 @@ pub(crate) struct QueryRevisions {
     pub(super) cycle_heads: CycleHeads,
 }
 
-impl QueryRevisions {
+impl<CycleHeads: CycleRecoveryStrategy> QueryRevisions<CycleHeads> {
     pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, revision: Revision) -> Self {
         Self {
             changed_at: revision,
@@ -349,10 +374,12 @@ impl QueryRevisions {
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
-            cycle_heads: CycleHeads::from(query),
+            cycle_heads: CycleHeads::new(query),
         }
     }
+}
 
+impl<CycleHeads> QueryRevisions<CycleHeads> {
     pub(crate) fn stamped_value<V>(&self, value: V) -> StampedValue<V> {
         self.stamp_template().stamp(value)
     }
@@ -525,7 +552,7 @@ impl ActiveQueryGuard<'_> {
     /// which summarizes the other queries that were accessed during this
     /// query's execution.
     #[inline]
-    pub(crate) fn pop(self) -> QueryRevisions {
+    pub(crate) fn pop<CycleHeads: CycleRecoveryStrategy>(self) -> QueryRevisions<CycleHeads> {
         // Extract accumulated inputs.
         let popped_query = self.complete();
 

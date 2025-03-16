@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 
 use crate::{
     key::DatabaseKeyIndex,
-    runtime::{BlockResult, WaitResult},
+    runtime::BlockResult,
     zalsa::{MemoIngredientIndex, Zalsa},
     Database,
 };
@@ -107,14 +107,9 @@ impl ClaimGuard<'_> {
             syncs[self.memo_ingredient_index.as_usize()].take().unwrap();
 
         if anyone_waiting {
-            self.zalsa.runtime().unblock_queries_blocked_on(
-                self.database_key_index,
-                if std::thread::panicking() {
-                    WaitResult::Panicked
-                } else {
-                    WaitResult::Completed
-                },
-            )
+            self.zalsa
+                .runtime()
+                .unblock_queries_blocked_on(self.database_key_index)
         }
     }
 }

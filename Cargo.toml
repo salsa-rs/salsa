@@ -21,7 +21,7 @@ indexmap = "2"
 parking_lot = "0.12"
 portable-atomic = "1"
 rustc-hash = "2"
-smallvec = "1"
+smallvec = {version = "1", features = ["union"]}
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 
 # parallel map

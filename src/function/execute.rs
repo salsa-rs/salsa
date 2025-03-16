@@ -24,8 +24,8 @@ where
         &'db self,
         db: &'db C::DbView,
         mut active_query: ActiveQueryGuard<'db>,
-        opt_old_memo: Option<&Memo<C::Output<'_>>>,
-    ) -> &'db Memo<C::Output<'db>> {
+        opt_old_memo: Option<&Memo<C::Output<'_>, <C as Configuration>::CycleStrategy>>,
+    ) -> &'db Memo<C::Output<'db>, <C as Configuration>::CycleStrategy> {
         let (zalsa, zalsa_local) = db.zalsas();
         let revision_now = zalsa.current_revision();
         let database_key_index = active_query.database_key_index;
@@ -47,7 +47,9 @@ where
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
         // Initially it's set to None, because the initial provisional value is created lazily,
         // only when a cycle is actually encountered.
-        let mut opt_last_provisional: Option<&Memo<<C as Configuration>::Output<'db>>> = None;
+        let mut opt_last_provisional: Option<
+            &Memo<<C as Configuration>::Output<'db>, <C as Configuration>::CycleStrategy>,
+        > = None;
 
         loop {
             // If we already executed this query once, then use the tracked-struct ids from the
@@ -59,12 +61,11 @@ where
             // Query was not previously executed, or value is potentially
             // stale, or value is absent. Let's execute!
             let mut new_value = C::execute(db, C::id_to_input(db, id));
-            let mut revisions = active_query.pop();
+            let mut revisions = active_query.pop::<C::CycleStrategy>();
 
             // Did the new result we got depend on our own provisional value, in a cycle?
-            if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint
-                && revisions.cycle_heads.contains(&database_key_index)
-            {
+            let enabled = C::CycleStrategy::if_enabled(|| true, || false);
+            if enabled && revisions.cycle_heads.contains(database_key_index) {
                 let opt_owned_last_provisional;
                 let last_provisional_value = if let Some(last_provisional) = opt_last_provisional {
                     // We have a last provisional value from our previous time around the loop.
@@ -85,7 +86,7 @@ where
                     opt_owned_last_provisional
                         .expect(
                             "{database_key_index:#?} is a cycle head, \
-                            but no provisional memo found",
+                    but no provisional memo found",
                         )
                         .value
                         .as_ref()
@@ -93,7 +94,7 @@ where
                 };
                 tracing::debug!(
                     "{database_key_index:?}: execute: \
-                    I am a cycle head, comparing last provisional value with new value"
+            I am a cycle head, comparing last provisional value with new value"
                 );
                 // If the new result is equal to the last provisional result, the cycle has
                 // converged and we are done.
@@ -150,7 +151,7 @@ where
                 tracing::debug!(
                     "{database_key_index:?}: execute: fixpoint iteration has a final value"
                 );
-                revisions.cycle_heads.remove(&database_key_index);
+                revisions.cycle_heads.remove(database_key_index);
             }
 
             tracing::debug!("{database_key_index:?}: execute: result.revisions = {revisions:#?}");

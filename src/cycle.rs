@@ -66,21 +66,103 @@ pub enum CycleRecoveryAction<T> {
     Fallback(T),
 }
 
+/// Cannot recover from cycles: panic.
+///
+/// This is the default.
+pub type PanicStrategy = ();
+/// Recovers from cycles by fixpoint iterating and/or falling
+/// back to a sentinel value.
+///
+/// This choice is computed by the query's `cycle_recovery`
+/// function and initial value.
+pub type FixpointStrategy = CycleHeads;
+
 /// Cycle recovery strategy: Is this query capable of recovering from
 /// a cycle that results from executing the function? If so, how?
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum CycleRecoveryStrategy {
-    /// Cannot recover from cycles: panic.
-    ///
-    /// This is the default.
-    Panic,
+pub trait CycleRecoveryStrategy: Send + Sync + Default + std::fmt::Debug + 'static {
+    const EMPTY: &Self;
+    type VerifiedFinal: Send + Sync + std::fmt::Debug + 'static;
+    fn new_verified_final(&self) -> Self::VerifiedFinal;
+    fn is_verified_final(verified_final: &Self::VerifiedFinal) -> bool;
+    fn if_enabled<T>(yes: impl FnOnce() -> T, no: impl FnOnce() -> T) -> T;
+    fn maybe_discard(heads: CycleHeads) -> Self;
+    fn is_empty(&self) -> bool;
+    fn contains(&self, key: DatabaseKeyIndex) -> bool;
+    fn remove(&mut self, key: DatabaseKeyIndex);
+    fn new(key: DatabaseKeyIndex) -> Self;
+}
 
-    /// Recovers from cycles by fixpoint iterating and/or falling
-    /// back to a sentinel value.
-    ///
-    /// This choice is computed by the query's `cycle_recovery`
-    /// function and initial value.
-    Fixpoint,
+impl CycleRecoveryStrategy for () {
+    const EMPTY: &Self = &();
+    type VerifiedFinal = ();
+    #[inline]
+    fn new_verified_final(&self) {}
+    #[inline]
+    fn is_verified_final(_: &Self::VerifiedFinal) -> bool {
+        true
+    }
+    #[inline]
+    fn is_empty(&self) -> bool {
+        true
+    }
+    #[inline]
+    fn if_enabled<T>(_: impl FnOnce() -> T, no: impl FnOnce() -> T) -> T {
+        no()
+    }
+    #[inline]
+    fn contains(&self, _: DatabaseKeyIndex) -> bool {
+        false
+    }
+    #[inline]
+    fn remove(&mut self, _: DatabaseKeyIndex) {}
+    #[inline]
+    fn new(_: DatabaseKeyIndex) -> Self {
+        ()
+    }
+    #[inline]
+    fn maybe_discard(_: CycleHeads) -> Self {
+        ()
+    }
+}
+impl CycleRecoveryStrategy for CycleHeads {
+    const EMPTY: &Self = &EMPTY_CYCLE_HEADS;
+    type VerifiedFinal = std::sync::atomic::AtomicBool;
+    #[inline]
+    fn new_verified_final(&self) -> Self::VerifiedFinal {
+        std::sync::atomic::AtomicBool::new(self.is_empty())
+    }
+    #[inline]
+    fn is_verified_final(verified_final: &Self::VerifiedFinal) -> bool {
+        // Relaxed is OK here, because `verified_final` is only ever mutated in one direction (from
+        // `false` to `true`), and changing it to `true` on memos with cycle heads where it was
+        // ever `false` is purely an optimization; if we read an out-of-date `false`, it just means
+        // we might go validate it again unnecessarily.
+        !verified_final.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.is_empty()
+    }
+    #[inline]
+    fn if_enabled<T>(yes: impl FnOnce() -> T, _: impl FnOnce() -> T) -> T {
+        yes()
+    }
+    #[inline]
+    fn contains(&self, key: DatabaseKeyIndex) -> bool {
+        self.contains(&key)
+    }
+    #[inline]
+    fn remove(&mut self, key: DatabaseKeyIndex) {
+        self.remove(&key);
+    }
+    #[inline]
+    fn new(key: DatabaseKeyIndex) -> Self {
+        key.into()
+    }
+    #[inline]
+    fn maybe_discard(heads: CycleHeads) -> Self {
+        heads
+    }
 }
 
 /// A "cycle head" is the query at which we encounter a cycle; that is, if A -> B -> C -> A, then A

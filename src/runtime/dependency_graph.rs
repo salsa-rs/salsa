@@ -20,7 +20,7 @@ pub(super) struct DependencyGraph {
 
     /// Encodes the `ThreadId` that are blocked waiting for the result
     /// of a given query.
-    query_dependents: FxHashMap<DatabaseKeyIndex, SmallVec<[ThreadId; 4]>>,
+    query_dependents: FxHashMap<DatabaseKeyIndex, SmallVec<[ThreadId; 2]>>,
 
     /// When a key K completes which had dependent queries Qs blocked on it,
     /// it stores its `WaitResult` here. As they wake up, each query Q in Qs will
@@ -122,18 +122,18 @@ impl DependencyGraph {
 
     /// Invoked when runtime `to_id` completes executing
     /// `database_key`.
-    pub(super) fn unblock_runtimes_blocked_on(
-        &mut self,
-        database_key: DatabaseKeyIndex,
-        wait_result: WaitResult,
-    ) {
-        let dependents = self
-            .query_dependents
-            .remove(&database_key)
-            .unwrap_or_default();
+    pub(super) fn unblock_runtimes_blocked_on(&mut self, database_key: DatabaseKeyIndex) {
+        let Some(dependents) = self.query_dependents.remove(&database_key) else {
+            return;
+        };
 
+        let wait_result = if std::thread::panicking() {
+            WaitResult::Panicked
+        } else {
+            WaitResult::Completed
+        };
         for from_id in dependents {
-            self.unblock_runtime(from_id, wait_result.clone());
+            self.unblock_runtime(from_id, wait_result);
         }
     }
 

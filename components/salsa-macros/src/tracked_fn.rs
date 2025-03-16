@@ -202,12 +202,12 @@ impl Macro {
             (Some(cycle_fn), Some(cycle_initial)) => Ok((
                 quote!((#cycle_fn)),
                 quote!((#cycle_initial)),
-                quote!(Fixpoint),
+                quote!(FixpointStrategy),
             )),
             (None, None) => Ok((
                 quote!((salsa::plumbing::unexpected_cycle_recovery!)),
                 quote!((salsa::plumbing::unexpected_cycle_initial!)),
-                quote!(Panic),
+                quote!(PanicStrategy),
             )),
             (Some(_), None) => Err(syn::Error::new_spanned(
                 self.args.cycle_fn.as_ref().unwrap(),

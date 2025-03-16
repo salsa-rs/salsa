@@ -76,6 +76,8 @@ pub mod plumbing {
     pub use crate::attach::with_attached_database;
     pub use crate::cycle::CycleRecoveryAction;
     pub use crate::cycle::CycleRecoveryStrategy;
+    pub use crate::cycle::FixpointStrategy;
+    pub use crate::cycle::PanicStrategy;
     pub use crate::database::current_revision;
     pub use crate::database::Database;
     pub use crate::function::values_equal;

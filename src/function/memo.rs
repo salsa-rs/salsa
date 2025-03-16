@@ -2,19 +2,16 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::cycle::CycleRecoveryStrategy;
 use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
 use crate::zalsa::MemoIngredientIndex;
 use crate::zalsa_local::QueryOrigin;
 use crate::{
-    cycle::{CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE_HEADS},
-    key::DatabaseKeyIndex,
-    zalsa::Zalsa,
-    zalsa_local::QueryRevisions,
-    Event, EventKind, Id, Revision,
+    cycle::CycleHeads, key::DatabaseKeyIndex, zalsa::Zalsa, zalsa_local::QueryRevisions, Event,
+    EventKind, Id, Revision,
 };
 
 use super::{Configuration, IngredientImpl};
@@ -26,8 +23,8 @@ impl<C: Configuration> IngredientImpl<C> {
     /// when they are returned to the user.
     unsafe fn to_static<'db>(
         &'db self,
-        memo: NonNull<Memo<C::Output<'db>>>,
-    ) -> NonNull<Memo<C::Output<'static>>> {
+        memo: NonNull<Memo<C::Output<'db>, C::CycleStrategy>>,
+    ) -> NonNull<Memo<C::Output<'static>, C::CycleStrategy>> {
         memo.cast()
     }
 
@@ -35,8 +32,8 @@ impl<C: Configuration> IngredientImpl<C> {
     /// so it can be publicly released.
     unsafe fn to_self<'db>(
         &'db self,
-        memo: NonNull<Memo<C::Output<'static>>>,
-    ) -> NonNull<Memo<C::Output<'db>>> {
+        memo: NonNull<Memo<C::Output<'static>, C::CycleStrategy>>,
+    ) -> NonNull<Memo<C::Output<'db>, C::CycleStrategy>> {
         memo.cast()
     }
 
@@ -44,8 +41,8 @@ impl<C: Configuration> IngredientImpl<C> {
     /// so it can be publicly released.
     unsafe fn to_self_ref<'db>(
         &'db self,
-        memo: &'db Memo<C::Output<'static>>,
-    ) -> &'db Memo<C::Output<'db>> {
+        memo: &'db Memo<C::Output<'static>, C::CycleStrategy>,
+    ) -> &'db Memo<C::Output<'db>, C::CycleStrategy> {
         unsafe { std::mem::transmute(memo) }
     }
 
@@ -59,9 +56,9 @@ impl<C: Configuration> IngredientImpl<C> {
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
-        memo: NonNull<Memo<C::Output<'db>>>,
+        memo: NonNull<Memo<C::Output<'db>, C::CycleStrategy>>,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<NonNull<Memo<C::Output<'db>>>> {
+    ) -> Option<NonNull<Memo<C::Output<'db>, C::CycleStrategy>>> {
         let static_memo = unsafe { self.to_static(memo) };
         let old_static_memo = unsafe {
             zalsa
@@ -79,7 +76,7 @@ impl<C: Configuration> IngredientImpl<C> {
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> Option<&'db Memo<C::Output<'db>>> {
+    ) -> Option<&'db Memo<C::Output<'db>, C::CycleStrategy>> {
         let static_memo = zalsa.memo_table_for(id).get(memo_ingredient_index)?;
 
         unsafe { Some(self.to_self_ref(static_memo)) }
@@ -92,7 +89,7 @@ impl<C: Configuration> IngredientImpl<C> {
         table: &mut MemoTable,
         memo_ingredient_index: MemoIngredientIndex,
     ) {
-        let map = |memo: &mut Memo<C::Output<'static>>| {
+        let map = |memo: &mut Memo<C::Output<'static>, C::CycleStrategy>| {
             match &memo.revisions.origin {
                 QueryOrigin::Assigned(_)
                 | QueryOrigin::DerivedUntracked(_)
@@ -111,21 +108,10 @@ impl<C: Configuration> IngredientImpl<C> {
 
         table.map_memo(memo_ingredient_index, map)
     }
-
-    pub(super) fn initial_value<'db>(
-        &'db self,
-        db: &'db C::DbView,
-        key: Id,
-    ) -> Option<C::Output<'db>> {
-        match C::CYCLE_STRATEGY {
-            CycleRecoveryStrategy::Fixpoint => Some(C::cycle_initial(db, C::id_to_input(db, key))),
-            CycleRecoveryStrategy::Panic => None,
-        }
-    }
 }
 
 #[derive(Debug)]
-pub(super) struct Memo<V> {
+pub(super) struct Memo<V, CycleHeads: CycleRecoveryStrategy> {
     /// The result of the query, if we decide to memoize it.
     pub(super) value: Option<V>,
 
@@ -134,37 +120,18 @@ pub(super) struct Memo<V> {
     pub(super) verified_at: AtomicRevision,
 
     /// Is this memo verified to not be a provisional cycle result?
-    pub(super) verified_final: AtomicBool,
+    pub(super) verified_final: CycleHeads::VerifiedFinal,
 
     /// Revision information
-    pub(super) revisions: QueryRevisions,
+    pub(super) revisions: QueryRevisions<CycleHeads>,
 }
 
 // Memo's are stored a lot, make sure their size is doesn't randomly increase.
 // #[cfg(test)]
-const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
+const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize, CycleHeads>>()] =
     [(); std::mem::size_of::<[usize; 14]>()];
 
-impl<V> Memo<V> {
-    pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
-        Memo {
-            value,
-            verified_at: AtomicRevision::from(revision_now),
-            verified_final: AtomicBool::new(revisions.cycle_heads.is_empty()),
-            revisions,
-        }
-    }
-
-    /// True if this may be a provisional cycle-iteration result.
-    #[inline]
-    pub(super) fn may_be_provisional(&self) -> bool {
-        // Relaxed is OK here, because `verified_final` is only ever mutated in one direction (from
-        // `false` to `true`), and changing it to `true` on memos with cycle heads where it was
-        // ever `false` is purely an optimization; if we read an out-of-date `false`, it just means
-        // we might go validate it again unnecessarily.
-        !self.verified_final.load(Ordering::Relaxed)
-    }
-
+impl<V> Memo<V, CycleHeads> {
     /// Invoked when `refresh_memo` is about to return a memo to the caller; if that memo is
     /// provisional, and its cycle head is claimed by another thread, we need to wait for that
     /// other thread to complete the fixpoint iteration, and then retry fetching our own memo.
@@ -213,13 +180,49 @@ impl<V> Memo<V> {
         // above other than "cycle head is self" are either terminal or set `retry`.)
         retry
     }
+}
+impl<V, CycleHeads: CycleRecoveryStrategy> Memo<V, CycleHeads> {
+    pub(super) fn new(
+        value: Option<V>,
+        revision_now: Revision,
+        revisions: QueryRevisions<CycleHeads>,
+    ) -> Self {
+        Memo {
+            value,
+            verified_at: AtomicRevision::from(revision_now),
+            verified_final: revisions.cycle_heads.new_verified_final(),
+            revisions,
+        }
+    }
+
+    /// True if this may be a provisional cycle-iteration result.
+    #[inline]
+    pub(super) fn match_cycle_strategy<T>(
+        &self,
+        yes: impl FnOnce(&Memo<V, crate::cycle::CycleHeads>) -> T,
+        no: impl FnOnce(&Memo<V, ()>) -> T,
+    ) -> T {
+        unsafe {
+            if std::any::TypeId::of::<CycleHeads>() == std::any::TypeId::of::<()>() {
+                no(std::mem::transmute(self))
+            } else {
+                yes(std::mem::transmute(self))
+            }
+        }
+    }
+
+    /// True if this may be a provisional cycle-iteration result.
+    #[inline]
+    pub(super) fn may_be_provisional(&self) -> bool {
+        CycleHeads::is_verified_final(&self.verified_final)
+    }
 
     /// Cycle heads that should be propagated to dependent queries.
     pub(super) fn cycle_heads(&self) -> &CycleHeads {
         if self.may_be_provisional() {
             &self.revisions.cycle_heads
         } else {
-            &EMPTY_CYCLE_HEADS
+            CycleHeads::EMPTY
         }
     }
 
@@ -254,11 +257,11 @@ impl<V> Memo<V> {
     }
 
     pub(super) fn tracing_debug(&self) -> impl std::fmt::Debug + '_ {
-        struct TracingDebug<'a, T> {
-            memo: &'a Memo<T>,
+        struct TracingDebug<'a, T, CycleHeads: CycleRecoveryStrategy> {
+            memo: &'a Memo<T, CycleHeads>,
         }
 
-        impl<T> std::fmt::Debug for TracingDebug<'_, T> {
+        impl<T, CycleHeads: CycleRecoveryStrategy> std::fmt::Debug for TracingDebug<'_, T, CycleHeads> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 f.debug_struct("Memo")
                     .field(
@@ -280,7 +283,9 @@ impl<V> Memo<V> {
     }
 }
 
-impl<V: Send + Sync + Any> crate::table::memo::Memo for Memo<V> {
+impl<V: Send + Sync + Any, CycleHeads: CycleRecoveryStrategy> crate::table::memo::Memo
+    for Memo<V, CycleHeads>
+{
     fn origin(&self) -> &QueryOrigin {
         &self.revisions.origin
     }

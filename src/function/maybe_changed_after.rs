@@ -105,18 +105,22 @@ where
             memo_ingredient_index,
         ) {
             ClaimResult::Retry => return None,
-            ClaimResult::Cycle => match C::CYCLE_STRATEGY {
-                CycleRecoveryStrategy::Panic => panic!(
-                    "dependency graph cycle validating {database_key_index:#?}; \
-                     set cycle_fn/cycle_initial to fixpoint iterate"
-                ),
-                CycleRecoveryStrategy::Fixpoint => {
-                    return Some(VerifyResult::Unchanged(
-                        InputAccumulatedValues::Empty,
-                        CycleHeads::from(database_key_index),
-                    ));
-                }
-            },
+            ClaimResult::Cycle => {
+                return C::CycleStrategy::if_enabled(
+                    || {
+                        Some(VerifyResult::Unchanged(
+                            InputAccumulatedValues::Empty,
+                            CycleHeads::from(database_key_index),
+                        ))
+                    },
+                    || {
+                        panic!(
+                            "dependency graph cycle validating {database_key_index:#?}; \
+                 set cycle_fn/cycle_initial to fixpoint iterate"
+                        )
+                    },
+                )
+            }
             ClaimResult::Claimed(guard) => guard,
         };
         // Load the current memo, if any.
@@ -181,7 +185,7 @@ where
         db: &C::DbView,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Output<'_>>,
+        memo: &Memo<C::Output<'_>, C::CycleStrategy>,
     ) -> bool {
         tracing::debug!(
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
@@ -227,11 +231,17 @@ where
         db: &C::DbView,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Output<'_>>,
+        memo: &Memo<C::Output<'_>, C::CycleStrategy>,
     ) -> bool {
-        // Wouldn't it be nice if rust had an implication operator ...
-        // may_be_provisional -> validate_provisional
-        !memo.may_be_provisional() || self.validate_provisional(db, zalsa, database_key_index, memo)
+        memo.match_cycle_strategy(
+            |memo| {
+                // Wouldn't it be nice if rust had an implication operator ...
+                // may_be_provisional -> validate_provisional
+                !memo.may_be_provisional()
+                    || self.validate_provisional(db, zalsa, database_key_index, memo)
+            },
+            |_| true,
+        )
     }
 
     /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
@@ -242,7 +252,7 @@ where
         db: &C::DbView,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Output<'_>>,
+        memo: &Memo<C::Output<'_>, CycleHeads>,
     ) -> bool {
         tracing::debug!(
             "{database_key_index:?}: validate_provisional(memo = {memo:#?})",
@@ -272,7 +282,7 @@ where
         &self,
         db: &C::DbView,
         zalsa: &Zalsa,
-        old_memo: &Memo<C::Output<'_>>,
+        old_memo: &Memo<C::Output<'_>, C::CycleStrategy>,
         active_query: &ActiveQueryGuard<'_>,
     ) -> VerifyResult {
         let database_key_index = active_query.database_key_index;

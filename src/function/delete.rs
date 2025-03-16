@@ -9,7 +9,7 @@ use super::Configuration;
 /// once the next revision starts. See the comment on the field
 /// `deleted_entries` of [`FunctionIngredient`][] for more details.
 pub(super) struct DeletedEntries<C: Configuration> {
-    seg_queue: SegQueue<SharedBox<Memo<C::Output<'static>>>>,
+    seg_queue: SegQueue<SharedBox<Memo<C::Output<'static>, C::CycleStrategy>>>,
 }
 
 unsafe impl<T: Send> Send for SharedBox<T> {}
@@ -27,11 +27,12 @@ impl<C: Configuration> DeletedEntries<C> {
     /// # Safety
     ///
     /// The memo must be valid and safe to free when the `DeletedEntries` list is dropped.
-    pub(super) unsafe fn push(&self, memo: NonNull<Memo<C::Output<'_>>>) {
+    pub(super) unsafe fn push(&self, memo: NonNull<Memo<C::Output<'_>, C::CycleStrategy>>) {
         let memo = unsafe {
-            std::mem::transmute::<NonNull<Memo<C::Output<'_>>>, NonNull<Memo<C::Output<'static>>>>(
-                memo,
-            )
+            std::mem::transmute::<
+                NonNull<Memo<C::Output<'_>, C::CycleStrategy>>,
+                NonNull<Memo<C::Output<'static>, C::CycleStrategy>>,
+            >(memo)
         };
 
         self.seg_queue.push(SharedBox(memo));

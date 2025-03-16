@@ -40,15 +40,15 @@ pub struct Runtime {
     table: Table,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) enum WaitResult {
-    Completed,
-    Panicked,
+#[derive(Copy, Clone, Debug)]
+pub enum WaitResult {
+    Completed = 0,
+    Panicked = 1,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) enum BlockResult {
-    Completed,
+    Completed = WaitResult::Completed as isize,
     Cycle,
 }
 
@@ -217,13 +217,9 @@ impl Runtime {
     /// computing `database_key` panicked and could not complete).
     /// This function unblocks any dependent queries and allows them
     /// to continue executing.
-    pub(crate) fn unblock_queries_blocked_on(
-        &self,
-        database_key: DatabaseKeyIndex,
-        wait_result: WaitResult,
-    ) {
+    pub(crate) fn unblock_queries_blocked_on(&self, database_key: DatabaseKeyIndex) {
         self.dependency_graph
             .lock()
-            .unblock_runtimes_blocked_on(database_key, wait_result);
+            .unblock_runtimes_blocked_on(database_key);
     }
 }

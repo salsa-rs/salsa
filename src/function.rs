@@ -7,8 +7,7 @@ use crate::{
     key::DatabaseKeyIndex,
     plumbing::MemoIngredientMap,
     salsa_struct::SalsaStructInDb,
-    table::sync::ClaimResult,
-    table::Table,
+    table::{sync::ClaimResult, Table},
     views::DatabaseDownCaster,
     zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
     zalsa_local::QueryOrigin,
@@ -52,7 +51,7 @@ pub trait Configuration: Any {
 
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
-    const CYCLE_STRATEGY: CycleRecoveryStrategy;
+    type CycleStrategy: CycleRecoveryStrategy;
 
     /// Invokes after a new result `new_value` has been computed for which an older memoized value
     /// existed `old_value`, or in fixpoint iteration. Returns true if the new value is equal to
@@ -180,8 +179,8 @@ where
     /// only cleared with `&mut self`.
     unsafe fn extend_memo_lifetime<'this>(
         &'this self,
-        memo: &memo::Memo<C::Output<'this>>,
-    ) -> &'this memo::Memo<C::Output<'this>> {
+        memo: &memo::Memo<C::Output<'this>, C::CycleStrategy>,
+    ) -> &'this memo::Memo<C::Output<'this>, C::CycleStrategy> {
         unsafe { std::mem::transmute(memo) }
     }
 
@@ -189,9 +188,9 @@ where
         &'db self,
         zalsa: &'db Zalsa,
         id: Id,
-        memo: memo::Memo<C::Output<'db>>,
+        memo: memo::Memo<C::Output<'db>, C::CycleStrategy>,
         memo_ingredient_index: MemoIngredientIndex,
-    ) -> &'db memo::Memo<C::Output<'db>> {
+    ) -> &'db memo::Memo<C::Output<'db>, C::CycleStrategy> {
         // We convert to a `NonNull` here as soon as possible because we are going to alias
         // into the `Box`, which is a `noalias` type.
         let memo = unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memo))) };
@@ -243,9 +242,14 @@ where
     /// True if the input `input` contains a memo that cites itself as a cycle head.
     /// This indicates an intermediate value for a cycle that has not yet reached a fixed point.
     fn is_provisional_cycle_head<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool {
-        let zalsa = db.zalsa();
-        self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-            .is_some_and(|memo| memo.cycle_heads().contains(&self.database_key_index(input)))
+        C::CycleStrategy::if_enabled(
+            || {
+                let zalsa = db.zalsa();
+                self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+                    .is_some_and(|memo| memo.cycle_heads().contains(self.database_key_index(input)))
+            },
+            || false,
+        )
     }
 
     /// Attempts to claim `key_index`, returning `false` if a cycle occurs.

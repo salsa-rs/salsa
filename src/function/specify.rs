@@ -1,7 +1,6 @@
-use std::sync::atomic::AtomicBool;
-
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
+    cycle::CycleRecoveryStrategy as _,
     revision::AtomicRevision,
     tracked_struct::TrackedStructInDb,
     zalsa::ZalsaDatabase,
@@ -92,7 +91,7 @@ where
         let memo = Memo {
             value: Some(value),
             verified_at: AtomicRevision::from(revision),
-            verified_final: AtomicBool::new(true),
+            verified_final: C::CycleStrategy::default().new_verified_final(),
             revisions,
         };
 

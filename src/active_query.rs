@@ -2,6 +2,7 @@ use std::ops::Not;
 
 use super::zalsa_local::{QueryEdges, QueryOrigin, QueryRevisions};
 use crate::accumulator::accumulated_map::AtomicInputAccumulatedValues;
+use crate::cycle::CycleRecoveryStrategy;
 use crate::key::OutputDependencyIndex;
 use crate::tracked_struct::{DisambiguatorMap, IdentityHash, IdentityMap};
 use crate::zalsa_local::QueryEdge;
@@ -79,7 +80,7 @@ impl ActiveQuery {
         }
     }
 
-    pub(super) fn add_read(
+    pub(super) fn add_read_with_cycle_heads(
         &mut self,
         input: InputDependencyIndex,
         durability: Durability,
@@ -92,6 +93,19 @@ impl ActiveQuery {
         self.changed_at = self.changed_at.max(revision);
         self.accumulated_inputs |= accumulated;
         self.cycle_heads.extend(cycle_heads);
+    }
+
+    pub(super) fn add_read(
+        &mut self,
+        input: InputDependencyIndex,
+        durability: Durability,
+        revision: Revision,
+        accumulated: InputAccumulatedValues,
+    ) {
+        self.input_outputs.insert(QueryEdge::Input(input));
+        self.durability = self.durability.min(durability);
+        self.changed_at = self.changed_at.max(revision);
+        self.accumulated_inputs |= accumulated;
     }
 
     pub(super) fn add_read_simple(
@@ -127,7 +141,9 @@ impl ActiveQuery {
         self.input_outputs.contains(&QueryEdge::Output(key))
     }
 
-    pub(crate) fn into_revisions(self) -> QueryRevisions {
+    pub(crate) fn into_revisions<CycleHeads: CycleRecoveryStrategy>(
+        self,
+    ) -> QueryRevisions<CycleHeads> {
         let edges = QueryEdges::new(self.input_outputs);
         let origin = if self.untracked_read {
             QueryOrigin::DerivedUntracked(edges)
@@ -146,7 +162,7 @@ impl ActiveQuery {
             tracked_struct_ids: self.tracked_struct_ids,
             accumulated_inputs: AtomicInputAccumulatedValues::new(self.accumulated_inputs),
             accumulated,
-            cycle_heads: self.cycle_heads,
+            cycle_heads: CycleHeads::maybe_discard(self.cycle_heads),
         }
     }
 

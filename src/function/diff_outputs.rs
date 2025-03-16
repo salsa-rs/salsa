@@ -21,8 +21,8 @@ where
         zalsa: &Zalsa,
         db: &C::DbView,
         key: DatabaseKeyIndex,
-        old_memo: &Memo<C::Output<'_>>,
-        revisions: &mut QueryRevisions,
+        old_memo: &Memo<C::Output<'_>, C::CycleStrategy>,
+        revisions: &mut QueryRevisions<C::CycleStrategy>,
         provisional: bool,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset

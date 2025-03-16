@@ -181,7 +181,7 @@ macro_rules! setup_tracked_fn {
 
                 type Output<$db_lt> = $output_ty;
 
-                const CYCLE_STRATEGY: $zalsa::CycleRecoveryStrategy = $zalsa::CycleRecoveryStrategy::$cycle_recovery_strategy;
+                type CycleStrategy = $zalsa::$cycle_recovery_strategy;
 
                 fn values_equal(
                     old_value: &Self::Output<'_>,
