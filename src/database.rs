@@ -56,7 +56,7 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     /// which are the fine-grained components we use to track data. This is intended
     /// for debugging and the contents of the returned string are not semver-guaranteed.
     ///
-    /// Ingredient indices can be extracted from [`DependencyIndex`](`crate::DependencyIndex`) values.
+    /// Ingredient indices can be extracted from [`DatabaseKeyIndex`](`crate::DatabaseKeyIndex`) values.
     fn ingredient_debug_name(&self, ingredient_index: IngredientIndex) -> Cow<'_, str> {
         Cow::Borrowed(
             self.zalsa()

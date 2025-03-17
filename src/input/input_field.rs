@@ -85,7 +85,7 @@ where
     ) {
     }
 
-    fn fmt_index(&self, index: Option<crate::Id>, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt_index(C::FIELD_DEBUG_NAMES[self.field_index], index, fmt)
     }
 

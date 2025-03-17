@@ -78,7 +78,7 @@ pub struct EventLoggerDatabase {
 #[salsa::db]
 impl Database for EventLoggerDatabase {
     fn salsa_event(&self, event: &dyn Fn() -> salsa::Event) {
-        self.push_log(format!("{:?}", event()));
+        self.push_log(format!("{:?}", event().kind));
     }
 }
 

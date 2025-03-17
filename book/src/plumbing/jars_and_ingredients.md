@@ -146,9 +146,6 @@ It combines an [`IngredientIndex`] with a `key_index`, which is a `salsa::Id`:
 {{#include ../../../src/key.rs:DatabaseKeyIndex}}
 ```
 
-A `DependencyIndex` is similar, but the `key_index` is optional.
-This is used when we sometimes wish to refer to the ingredient as a whole, and not any specific value within the ingredient.
-
 These kinds of indices are used to store connetions between ingredients.
 For example, each memoized value has to track its inputs.
 Those inputs are stored as dependency indices.

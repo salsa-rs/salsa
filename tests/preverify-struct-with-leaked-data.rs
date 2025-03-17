@@ -59,10 +59,10 @@ fn test_leaked_inputs_ignored() {
     let result_in_rev_1 = function(&db, input);
     db.assert_logs(expect![[r#"
         [
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: counter_field(Id(400)) } }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: function(Id(0)) }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: counter_field(Id(400)) }",
         ]"#]]);
 
     assert_eq!(result_in_rev_1, (0, 0));
@@ -77,12 +77,12 @@ fn test_leaked_inputs_ignored() {
     let result_in_rev_2 = function(&db, input);
     db.assert_logs(expect![[r#"
         [
-            "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: DidValidateMemoizedValue { database_key: counter_field(Id(400)) } }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
+            "DidSetCancellationFlag",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "DidValidateMemoizedValue { database_key: counter_field(Id(400)) }",
+            "WillExecute { database_key: function(Id(0)) }",
+            "WillCheckCancellation",
         ]"#]]);
 
     // Because salsa does not see any way for the tracked

@@ -94,17 +94,13 @@ where
         panic!("tracked field ingredients have no outputs")
     }
 
-    fn fmt_index(
-        &self,
-        index: Option<crate::Id>,
-        fmt: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+    fn fmt_index(&self, index: crate::Id, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             fmt,
             "{}.{}({:?})",
             C::DEBUG_NAME,
             C::FIELD_DEBUG_NAMES[self.field_index],
-            index.unwrap()
+            index
         )
     }
 
