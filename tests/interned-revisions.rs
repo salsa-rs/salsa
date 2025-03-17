@@ -38,13 +38,13 @@ fn test_intern_new() {
 
     db.assert_logs(expect![[r#"
         [
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
-            "Event { thread_id: ThreadId(2), kind: DidInternValue { id: Id(400), revision: R1 } }",
-            "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
-            "Event { thread_id: ThreadId(2), kind: DidInternValue { id: Id(401), revision: R2 } }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: function(Id(0)) }",
+            "DidInternValue { id: Id(400), revision: R1 }",
+            "DidSetCancellationFlag",
+            "WillCheckCancellation",
+            "WillExecute { database_key: function(Id(0)) }",
+            "DidInternValue { id: Id(401), revision: R2 }",
         ]"#]]);
 }
 
@@ -62,9 +62,9 @@ fn test_reintern() {
     let result_in_rev_1 = function(&db, input);
     db.assert_logs(expect![[r#"
         [
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
-            "Event { thread_id: ThreadId(2), kind: DidInternValue { id: Id(400), revision: R1 } }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: function(Id(0)) }",
+            "DidInternValue { id: Id(400), revision: R1 }",
         ]"#]]);
 
     assert_eq!(result_in_rev_1.field1(&db), 0);
@@ -75,10 +75,10 @@ fn test_reintern() {
     let result_in_rev_2 = function(&db, input);
     db.assert_logs(expect![[r#"
         [
-            "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
-            "Event { thread_id: ThreadId(2), kind: DidReinternValue { id: Id(400), revision: R2 } }",
+            "DidSetCancellationFlag",
+            "WillCheckCancellation",
+            "WillExecute { database_key: function(Id(0)) }",
+            "DidReinternValue { id: Id(400), revision: R2 }",
         ]"#]]);
 
     assert_eq!(result_in_rev_2.field1(&db), 0);
@@ -106,11 +106,11 @@ fn test_durability() {
 
     db.assert_logs(expect![[r#"
         [
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
-            "Event { thread_id: ThreadId(2), kind: DidInternValue { id: Id(400), revision: R1 } }",
-            "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: DidValidateMemoizedValue { database_key: function(Id(0)) } }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: function(Id(0)) }",
+            "DidInternValue { id: Id(400), revision: R1 }",
+            "DidSetCancellationFlag",
+            "WillCheckCancellation",
+            "DidValidateMemoizedValue { database_key: function(Id(0)) }",
         ]"#]]);
 }

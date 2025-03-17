@@ -28,10 +28,10 @@ fn execute() {
 
     db.assert_logs(expect![[r#"
         [
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: tracked_fn(Id(0)) } }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: tracked_fn(Id(1)) } }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: tracked_fn(Id(0)) }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: tracked_fn(Id(1)) }",
         ]"#]]);
 
     db.synthetic_write(Durability::LOW);
@@ -46,10 +46,10 @@ fn execute() {
     // executed the query.
     db.assert_logs(expect![[r#"
         [
-            "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: DidValidateMemoizedValue { database_key: tracked_fn(Id(0)) } }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: DidValidateMemoizedValue { database_key: tracked_fn(Id(1)) } }",
+            "DidSetCancellationFlag",
+            "WillCheckCancellation",
+            "DidValidateMemoizedValue { database_key: tracked_fn(Id(0)) }",
+            "WillCheckCancellation",
+            "DidValidateMemoizedValue { database_key: tracked_fn(Id(1)) }",
         ]"#]]);
 }

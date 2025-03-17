@@ -62,11 +62,11 @@ fn test_leaked_inputs_ignored() {
     let result_in_rev_1 = function(&db, input);
     db.assert_logs(expect![[r#"
         [
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
-            "Event { thread_id: ThreadId(2), kind: DidInternValue { id: Id(800), revision: R1 } }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: counter_field(Id(800)) } }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: function(Id(0)) }",
+            "DidInternValue { id: Id(800), revision: R1 }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: counter_field(Id(800)) }",
         ]"#]]);
 
     assert_eq!(result_in_rev_1, (0, 0));
@@ -81,13 +81,13 @@ fn test_leaked_inputs_ignored() {
     let result_in_rev_2 = function(&db, input);
     db.assert_logs(expect![[r#"
         [
-            "Event { thread_id: ThreadId(2), kind: DidSetCancellationFlag }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: DidReinternValue { id: Id(800), revision: R2 } }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: counter_field(Id(800)) } }",
-            "Event { thread_id: ThreadId(2), kind: WillExecute { database_key: function(Id(0)) } }",
-            "Event { thread_id: ThreadId(2), kind: WillCheckCancellation }",
+            "DidSetCancellationFlag",
+            "WillCheckCancellation",
+            "DidReinternValue { id: Id(800), revision: R2 }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: counter_field(Id(800)) }",
+            "WillExecute { database_key: function(Id(0)) }",
+            "WillCheckCancellation",
         ]"#]]);
 
     // Salsa will re-execute `counter_field` before re-executing
