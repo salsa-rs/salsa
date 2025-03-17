@@ -233,11 +233,7 @@ where
 
                 // Record a dependency on this value.
                 let index = self.database_key_index(id);
-                zalsa_local.report_tracked_read_simple(
-                    index,
-                    durability,
-                    value.first_interned_at,
-                );
+                zalsa_local.report_tracked_read_simple(index, durability, value.first_interned_at);
 
                 return id;
             }
@@ -276,11 +272,7 @@ where
 
                 // Record a dependency on this value.
                 let index = self.database_key_index(id);
-                zalsa_local.report_tracked_read_simple(
-                    index,
-                    durability,
-                    value.first_interned_at,
-                );
+                zalsa_local.report_tracked_read_simple(index, durability, value.first_interned_at);
 
                 id
             }
@@ -320,11 +312,7 @@ where
 
                 // Record a dependency on this value.
                 let index = self.database_key_index(id);
-                zalsa_local.report_tracked_read_simple(
-                    index,
-                    durability,
-                    value.first_interned_at,
-                );
+                zalsa_local.report_tracked_read_simple(index, durability, value.first_interned_at);
 
                 db.salsa_event(&|| {
                     Event::new(EventKind::DidInternValue {
