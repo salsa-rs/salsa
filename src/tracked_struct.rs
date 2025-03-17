@@ -251,6 +251,10 @@ impl IdentityMap {
     pub(crate) fn retain(&mut self, f: impl FnMut(&Identity, &mut Id) -> bool) {
         self.map.retain(f);
     }
+
+    pub fn clear(&mut self) {
+        self.map.clear()
+    }
 }
 
 // ANCHOR: ValueStruct
@@ -338,6 +342,14 @@ impl DisambiguatorMap {
         let result = *disambiguator;
         disambiguator.0 += 1;
         result
+    }
+
+    pub fn clear(&mut self) {
+        self.map.clear()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
     }
 }
 

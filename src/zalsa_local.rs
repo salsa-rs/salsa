@@ -4,11 +4,11 @@ use tracing::debug;
 use crate::accumulator::accumulated_map::{
     AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues,
 };
-use crate::active_query::ActiveQuery;
+use crate::active_query::QueryStack;
 use crate::cycle::CycleHeads;
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
-use crate::runtime::StampedValue;
+use crate::runtime::{Stamp, StampedValue};
 use crate::table::PageIndex;
 use crate::table::Slot;
 use crate::table::Table;
@@ -32,7 +32,7 @@ pub struct ZalsaLocal {
     ///
     /// Unwinding note: pushes onto this vector must be popped -- even
     /// during unwinding.
-    query_stack: RefCell<Vec<ActiveQuery>>,
+    query_stack: RefCell<QueryStack>,
 
     /// Stores the most recent page for a given ingredient.
     /// This is thread-local to avoid contention.
@@ -42,7 +42,7 @@ pub struct ZalsaLocal {
 impl ZalsaLocal {
     pub(crate) fn new() -> Self {
         ZalsaLocal {
-            query_stack: RefCell::new(vec![]),
+            query_stack: RefCell::new(QueryStack::default()),
             most_recent_pages: RefCell::new(FxHashMap::default()),
         }
     }
@@ -92,10 +92,11 @@ impl ZalsaLocal {
     #[inline]
     pub(crate) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
         let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push(ActiveQuery::new(database_key_index));
+        query_stack.push_new_query(database_key_index);
         ActiveQueryGuard {
             local_state: self,
             database_key_index,
+            #[cfg(debug_assertions)]
             push_len: query_stack.len(),
         }
     }
@@ -103,25 +104,18 @@ impl ZalsaLocal {
     /// Executes a closure within the context of the current active query stacks.
     pub(crate) fn with_query_stack<R>(
         &self,
-        c: impl UnwindSafe + FnOnce(&mut Vec<ActiveQuery>) -> R,
+        c: impl UnwindSafe + FnOnce(&mut QueryStack) -> R,
     ) -> R {
-        c(self.query_stack.borrow_mut().as_mut())
+        c(&mut self.query_stack.borrow_mut())
     }
 
     /// Returns the index of the active query along with its *current* durability/changed-at
     /// information. As the query continues to execute, naturally, that information may change.
-    pub(crate) fn active_query(&self) -> Option<(DatabaseKeyIndex, StampedValue<()>)> {
+    pub(crate) fn active_query(&self) -> Option<(DatabaseKeyIndex, Stamp)> {
         self.with_query_stack(|stack| {
-            stack.last().map(|active_query| {
-                (
-                    active_query.database_key_index,
-                    StampedValue {
-                        value: (),
-                        durability: active_query.durability,
-                        changed_at: active_query.changed_at,
-                    },
-                )
-            })
+            stack
+                .last()
+                .map(|active_query| (active_query.database_key_index, active_query.stamp()))
         })
     }
 
@@ -135,7 +129,7 @@ impl ZalsaLocal {
     ) -> Result<(), ()> {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.accumulated.accumulate(index, value);
+                top_query.accumulate(index, value);
                 Ok(())
             } else {
                 Err(())
@@ -237,20 +231,13 @@ impl ZalsaLocal {
     ///   * the current dependencies (durability, changed_at) of current query
     ///   * the disambiguator index
     #[track_caller]
-    pub(crate) fn disambiguate(&self, key: IdentityHash) -> (StampedValue<()>, Disambiguator) {
+    pub(crate) fn disambiguate(&self, key: IdentityHash) -> (Stamp, Disambiguator) {
         self.with_query_stack(|stack| {
             let top_query = stack.last_mut().expect(
                 "cannot create a tracked struct disambiguator outside of a tracked function",
             );
             let disambiguator = top_query.disambiguate(key);
-            (
-                StampedValue {
-                    value: (),
-                    durability: top_query.durability,
-                    changed_at: top_query.changed_at,
-                },
-                disambiguator,
-            )
+            (top_query.stamp(), disambiguator)
         })
     }
 
@@ -488,26 +475,16 @@ impl QueryEdges {
 /// destructor will also remove the query.
 pub(crate) struct ActiveQueryGuard<'me> {
     local_state: &'me ZalsaLocal,
+    #[cfg(debug_assertions)]
     push_len: usize,
     pub(crate) database_key_index: DatabaseKeyIndex,
 }
 
 impl ActiveQueryGuard<'_> {
-    fn pop_helper(&self) -> ActiveQuery {
-        self.local_state.with_query_stack(|stack| {
-            // Sanity check: pushes and pops should be balanced.
-            assert_eq!(stack.len(), self.push_len);
-            debug_assert_eq!(
-                stack.last().unwrap().database_key_index,
-                self.database_key_index
-            );
-            stack.pop().unwrap()
-        })
-    }
-
     /// Initialize the tracked struct ids with the values from the prior execution.
     pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &IdentityMap) {
         self.local_state.with_query_stack(|stack| {
+            #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
             assert!(frame.tracked_struct_ids.is_empty());
@@ -516,8 +493,14 @@ impl ActiveQueryGuard<'_> {
     }
 
     /// Invoked when the query has successfully completed execution.
-    pub(crate) fn complete(self) -> ActiveQuery {
-        let query = self.pop_helper();
+    fn complete(self) -> QueryRevisions {
+        let query = self.local_state.with_query_stack(|stack| {
+            stack.pop_into_revisions(
+                self.database_key_index,
+                #[cfg(debug_assertions)]
+                self.push_len,
+            )
+        });
         std::mem::forget(self);
         query
     }
@@ -527,15 +510,18 @@ impl ActiveQueryGuard<'_> {
     /// query's execution.
     #[inline]
     pub(crate) fn pop(self) -> QueryRevisions {
-        // Extract accumulated inputs.
-        let popped_query = self.complete();
-
-        popped_query.into_revisions()
+        self.complete()
     }
 }
 
 impl Drop for ActiveQueryGuard<'_> {
     fn drop(&mut self) {
-        self.pop_helper();
+        self.local_state.with_query_stack(|stack| {
+            stack.pop(
+                self.database_key_index,
+                #[cfg(debug_assertions)]
+                self.push_len,
+            );
+        });
     }
 }

@@ -1,5 +1,4 @@
 use std::{
-    mem,
     panic::AssertUnwindSafe,
     sync::atomic::{AtomicBool, Ordering},
     thread::ThreadId,
@@ -196,16 +195,14 @@ impl Runtime {
         // we cannot enter an inconsistent state for this parameter.
         let query_mutex_guard = AssertUnwindSafe(query_mutex_guard);
         let result = local_state.with_query_stack(|stack| {
-            let (new_stack, result) = DependencyGraph::block_on(
+            DependencyGraph::block_on(
                 { dg }.0,
                 thread_id,
                 database_key,
                 other_id,
-                mem::take(stack),
+                stack,
                 { query_mutex_guard }.0,
-            );
-            *stack = new_stack;
-            result
+            )
         });
 
         match result {
