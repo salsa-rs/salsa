@@ -8,7 +8,7 @@ use crate::active_query::QueryStack;
 use crate::cycle::CycleHeads;
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
-use crate::runtime::StampedValue;
+use crate::runtime::{Stamp, StampedValue};
 use crate::table::PageIndex;
 use crate::table::Slot;
 use crate::table::Table;
@@ -111,18 +111,11 @@ impl ZalsaLocal {
 
     /// Returns the index of the active query along with its *current* durability/changed-at
     /// information. As the query continues to execute, naturally, that information may change.
-    pub(crate) fn active_query(&self) -> Option<(DatabaseKeyIndex, StampedValue<()>)> {
+    pub(crate) fn active_query(&self) -> Option<(DatabaseKeyIndex, Stamp)> {
         self.with_query_stack(|stack| {
-            stack.last().map(|active_query| {
-                (
-                    active_query.database_key_index,
-                    StampedValue {
-                        value: (),
-                        durability: active_query.durability,
-                        changed_at: active_query.changed_at,
-                    },
-                )
-            })
+            stack
+                .last()
+                .map(|active_query| (active_query.database_key_index, active_query.stamp()))
         })
     }
 
@@ -136,7 +129,7 @@ impl ZalsaLocal {
     ) -> Result<(), ()> {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.accumulated.accumulate(index, value);
+                top_query.accumulate(index, value);
                 Ok(())
             } else {
                 Err(())
@@ -238,20 +231,13 @@ impl ZalsaLocal {
     ///   * the current dependencies (durability, changed_at) of current query
     ///   * the disambiguator index
     #[track_caller]
-    pub(crate) fn disambiguate(&self, key: IdentityHash) -> (StampedValue<()>, Disambiguator) {
+    pub(crate) fn disambiguate(&self, key: IdentityHash) -> (Stamp, Disambiguator) {
         self.with_query_stack(|stack| {
             let top_query = stack.last_mut().expect(
                 "cannot create a tracked struct disambiguator outside of a tracked function",
             );
             let disambiguator = top_query.disambiguate(key);
-            (
-                StampedValue {
-                    value: (),
-                    durability: top_query.durability,
-                    changed_at: top_query.changed_at,
-                },
-                disambiguator,
-            )
+            (top_query.stamp(), disambiguator)
         })
     }
 
