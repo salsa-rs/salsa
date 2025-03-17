@@ -19,6 +19,7 @@ use crate::Cancelled;
 use crate::Id;
 use crate::Revision;
 use std::cell::RefCell;
+use std::panic::UnwindSafe;
 
 /// State that is specific to a single execution thread.
 ///
@@ -102,8 +103,7 @@ impl ZalsaLocal {
     /// Executes a closure within the context of the current active query stacks.
     pub(crate) fn with_query_stack<R>(
         &self,
-        // FIXME: We ought to require `UnwindSafe` here to prove that `ZalsaLocal: RefUnwindSafe`
-        c: impl FnOnce(&mut Vec<ActiveQuery>) -> R, /*+ UnwindSafe */
+        c: impl UnwindSafe + FnOnce(&mut Vec<ActiveQuery>) -> R,
     ) -> R {
         c(self.query_stack.borrow_mut().as_mut())
     }
@@ -285,9 +285,10 @@ impl ZalsaLocal {
     }
 }
 
-// Okay to implement as `ZalsaLocal`` is !Sync and FIXME: See `Self::with_query_stack`
+// Okay to implement as `ZalsaLocal`` is !Sync
 // - `most_recent_pages` can't observe broken states as we cannot panic such that we enter an
 //   inconsistent state
+// - neither can `query_stack` as we require the closures accessing it to be `UnwindSafe`
 impl std::panic::RefUnwindSafe for ZalsaLocal {}
 
 /// Summarizes "all the inputs that a query used"
