@@ -26,7 +26,7 @@ where
         mut active_query: ActiveQueryGuard<'db>,
         opt_old_memo: Option<&Memo<C::Output<'_>>>,
     ) -> &'db Memo<C::Output<'db>> {
-        let (zalsa, zalsa_local) = db.zalsas();
+        let zalsa = db.zalsa();
         let revision_now = zalsa.current_revision();
         let database_key_index = active_query.database_key_index;
         let id = database_key_index.key_index();
@@ -65,32 +65,21 @@ where
             if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint
                 && revisions.cycle_heads.contains(&database_key_index)
             {
-                let opt_owned_last_provisional;
                 let last_provisional_value = if let Some(last_provisional) = opt_last_provisional {
                     // We have a last provisional value from our previous time around the loop.
-                    last_provisional
-                        .value
-                        .as_ref()
-                        .expect("provisional value should not be evicted by LRU")
+                    last_provisional.value.as_ref()
                 } else {
                     // This is our first time around the loop; a provisional value must have been
                     // inserted into the memo table when the cycle was hit, so let's pull our
                     // initial provisional value from there.
-                    opt_owned_last_provisional =
-                        self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-                    debug_assert!(opt_owned_last_provisional
-                        .as_ref()
-                        .unwrap()
-                        .may_be_provisional());
-                    opt_owned_last_provisional
-                        .expect(
-                            "{database_key_index:#?} is a cycle head, \
-                            but no provisional memo found",
-                        )
-                        .value
-                        .as_ref()
-                        .expect("provisional value should not be evicted by LRU")
+                    let memo =
+                        self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)
+                        .unwrap_or_else(|| panic!("{database_key_index:#?} is a cycle head, but no provisional memo found"));
+                    debug_assert!(memo.may_be_provisional());
+                    memo.value.as_ref()
                 };
+                // SAFETY: The `LRU` does not run mid-execution, so the value remains filled
+                let last_provisional_value = unsafe { last_provisional_value.unwrap_unchecked() };
                 tracing::debug!(
                     "{database_key_index:?}: execute: \
                     I am a cycle head, comparing last provisional value with new value"
@@ -130,9 +119,9 @@ where
                             fell_back = true;
                         }
                     }
-                    iteration_count = iteration_count
-                        .checked_add(1)
-                        .expect("fixpoint iteration should converge before u32::MAX iterations");
+                    // `iteration_count` can't overflow as we check it against `MAX_ITERATIONS`
+                    // which is less than `u32::MAX`.
+                    iteration_count += 1;
                     if iteration_count > MAX_ITERATIONS {
                         panic!("{database_key_index:?}: execute: too many cycle iterations");
                     }
@@ -143,7 +132,7 @@ where
                         memo_ingredient_index,
                     ));
 
-                    active_query = zalsa_local.push_query(database_key_index);
+                    active_query = db.zalsa_local().push_query(database_key_index);
 
                     continue;
                 }
