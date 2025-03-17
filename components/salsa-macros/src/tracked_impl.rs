@@ -87,7 +87,7 @@ impl Macro {
         };
 
         let InnerTrait = self.hygiene.ident("InnerTrait");
-        let inner_fn_name = self.hygiene.ident("inner_fn_name");
+        let inner_fn_name = self.hygiene.ident(&fn_item.sig.ident.to_string());
 
         let MethodArguments {
             self_token,

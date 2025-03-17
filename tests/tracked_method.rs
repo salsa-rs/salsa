@@ -2,6 +2,11 @@
 //! compiles and executes successfully.
 #![allow(warnings)]
 
+use common::LogDatabase as _;
+use expect_test::expect;
+
+mod common;
+
 trait TrackedTrait {
     fn tracked_trait_fn(self, db: &dyn salsa::Database) -> u32;
 }
@@ -39,4 +44,16 @@ fn execute() {
     // assert_eq!(object.tracked_fn(&db), 44);
     // assert_eq!(*object.tracked_fn_ref(&db), 66);
     assert_eq!(object.tracked_trait_fn(&db), 88);
+}
+
+#[test]
+fn debug_name() {
+    let mut db = common::ExecuteValidateLoggerDatabase::default();
+    let object = MyInput::new(&mut db, 22);
+
+    assert_eq!(object.tracked_trait_fn(&db), 88);
+    db.assert_logs(expect![[r#"
+        [
+            "salsa_event(WillExecute { database_key: tracked_trait_fn_(Id(0)) })",
+        ]"#]]);
 }
