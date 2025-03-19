@@ -364,12 +364,7 @@ where
         &'db self,
         db: &'db dyn crate::Database,
     ) -> impl Iterator<Item = &'db Value<C>> {
-        db.zalsa()
-            .table()
-            .pages
-            .iter()
-            .filter_map(|(_, page)| page.cast_type::<crate::table::Page<Value<C>>>())
-            .flat_map(|page| page.slots())
+        db.zalsa().table().slots_of::<Value<C>>()
     }
 }
 
@@ -475,14 +470,17 @@ impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
+    #[inline]
     unsafe fn memos(&self, _current_revision: Revision) -> &MemoTable {
         &self.memos
     }
 
+    #[inline]
     fn memos_mut(&mut self) -> &mut MemoTable {
         &mut self.memos
     }
 
+    #[inline]
     unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {
         &self.syncs
     }
