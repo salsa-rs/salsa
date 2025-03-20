@@ -1,7 +1,7 @@
 use crate::{
     cycle::{CycleRecoveryStrategy, MAX_ITERATIONS},
     zalsa::ZalsaDatabase,
-    zalsa_local::ActiveQueryGuard,
+    zalsa_local::{ActiveQueryGuard, QueryRevisions},
     Database, Event, EventKind,
 };
 
@@ -52,8 +52,16 @@ where
         loop {
             // If we already executed this query once, then use the tracked-struct ids from the
             // previous execution as the starting point for the new one.
-            if let Some(old_memo) = opt_old_memo {
-                active_query.seed_tracked_struct_ids(&old_memo.revisions.tracked_struct_ids);
+            if let Some(Memo {
+                revisions:
+                    QueryRevisions {
+                        tracked_struct_ids: Some(tracked_struct_ids),
+                        ..
+                    },
+                ..
+            }) = opt_old_memo
+            {
+                active_query.seed_tracked_struct_ids(tracked_struct_ids);
             }
 
             // Query was not previously executed, or value is potentially
