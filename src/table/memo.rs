@@ -5,6 +5,7 @@ use std::{
 };
 
 use parking_lot::RwLock;
+use thin_vec::ThinVec;
 
 use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
 
@@ -13,7 +14,7 @@ use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
 /// and memo tables are attached to those salsa structs as auxiliary data.
 #[derive(Default)]
 pub(crate) struct MemoTable {
-    memos: RwLock<Vec<MemoEntry>>,
+    memos: RwLock<ThinVec<MemoEntry>>,
 }
 
 pub(crate) trait Memo: Any + Send + Sync {
@@ -131,8 +132,8 @@ impl MemoTable {
     ) -> Option<NonNull<M>> {
         let mut memos = self.memos.write();
         let memo_ingredient_index = memo_ingredient_index.as_usize();
-        if memos.len() < memo_ingredient_index + 1 {
-            memos.resize_with(memo_ingredient_index + 1, MemoEntry::default);
+        while memos.len() < memo_ingredient_index + 1 {
+            memos.push(MemoEntry { data: None });
         }
         let old_entry = memos[memo_ingredient_index].data.replace(MemoEntryData {
             type_id: TypeId::of::<M>(),
