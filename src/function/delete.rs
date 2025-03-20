@@ -24,7 +24,7 @@ impl<C: Configuration> Default for DeletedEntries<C> {
 impl<C: Configuration> DeletedEntries<C> {
     /// # Safety
     ///
-    /// The memo must be valid and safe to free when the `DeletedEntries` list is dropped.
+    /// The memo must be valid and safe to free when the `DeletedEntries` list is cleared or dropped.
     pub(super) unsafe fn push(&self, memo: NonNull<Memo<C::Output<'_>>>) {
         let memo = unsafe {
             std::mem::transmute::<NonNull<Memo<C::Output<'_>>>, NonNull<Memo<C::Output<'static>>>>(
@@ -33,6 +33,11 @@ impl<C: Configuration> DeletedEntries<C> {
         };
 
         self.memos.push(SharedBox(memo));
+    }
+
+    /// Free all deleted memos, keeping the list available for reuse.
+    pub(super) fn clear(&mut self) {
+        self.memos.clear();
     }
 }
 

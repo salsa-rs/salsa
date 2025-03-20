@@ -296,7 +296,8 @@ where
                 self.memo_ingredient_indices.get(ingredient_index),
             )
         });
-        std::mem::take(&mut self.deleted_entries);
+
+        self.deleted_entries.clear();
     }
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
