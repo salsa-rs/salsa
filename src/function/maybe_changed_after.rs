@@ -257,7 +257,7 @@ where
         }
         // Relaxed is sufficient here because there are no other writes we need to ensure have
         // happened before marking this memo as verified-final.
-        memo.verified_final.store(true, Ordering::Relaxed);
+        memo.revisions.verified_final.store(true, Ordering::Relaxed);
         true
     }
 

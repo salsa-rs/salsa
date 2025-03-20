@@ -20,6 +20,7 @@ use crate::Id;
 use crate::Revision;
 use std::cell::RefCell;
 use std::panic::UnwindSafe;
+use std::sync::atomic::AtomicBool;
 
 /// State that is specific to a single execution thread.
 ///
@@ -317,6 +318,9 @@ pub(crate) struct QueryRevisions {
     /// has any direct or indirect accumulated values.
     pub(super) accumulated_inputs: AtomicInputAccumulatedValues,
 
+    /// Are the `cycle_heads` verified to not be provisional anymore?
+    pub(super) verified_final: AtomicBool,
+
     /// This result was computed based on provisional values from
     /// these cycle heads. The "cycle head" is the query responsible
     /// for managing a fixpoint iteration. In a cycle like
@@ -337,6 +341,7 @@ impl QueryRevisions {
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
+            verified_final: AtomicBool::new(false),
             cycle_heads: CycleHeads::from(query),
         }
     }

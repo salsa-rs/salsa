@@ -72,6 +72,7 @@ where
             tracked_struct_ids: Default::default(),
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
+            verified_final: AtomicBool::new(true),
             cycle_heads: Default::default(),
         };
 
@@ -91,7 +92,6 @@ where
         let memo = Memo {
             value: Some(value),
             verified_at: AtomicRevision::from(revision),
-            verified_final: AtomicBool::new(true),
             revisions,
         };
 
