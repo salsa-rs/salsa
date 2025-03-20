@@ -164,7 +164,7 @@ where
             lru: lru::Lru::new(lru),
             deleted_entries: Default::default(),
             view_caster,
-            sync_table: Default::default(),
+            sync_table: SyncTable::new(index),
         }
     }
 
@@ -273,10 +273,7 @@ where
     /// Attempts to claim `key_index`, returning `false` if a cycle occurs.
     fn wait_for(&self, db: &dyn Database, key_index: Id) -> bool {
         let zalsa = db.zalsa();
-        match self
-            .sync_table
-            .try_claim(db, zalsa, self.database_key_index(key_index))
-        {
+        match self.sync_table.try_claim(db, zalsa, key_index) {
             ClaimResult::Retry | ClaimResult::Claimed(_) => true,
             ClaimResult::Cycle => false,
         }

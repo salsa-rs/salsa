@@ -102,7 +102,7 @@ where
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = match self.sync_table.try_claim(db, zalsa, database_key_index) {
+        let _claim_guard = match self.sync_table.try_claim(db, zalsa, key_index) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => match C::CYCLE_STRATEGY {
                 CycleRecoveryStrategy::Panic => db.zalsa_local().with_query_stack(|stack| {

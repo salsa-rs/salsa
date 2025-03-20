@@ -96,12 +96,11 @@ where
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
-        let database_key_index = self.database_key_index(id);
-
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let _claim_guard = match self.sync_table.try_claim(db, zalsa, database_key_index) {
+        let _claim_guard = match self.sync_table.try_claim(db, zalsa, id) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => {
+                let database_key_index = self.database_key_index(id);
                 // check if there's a provisional value for this query
                 // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
                 // existing provisional memo if it exists
@@ -144,12 +143,10 @@ where
                             database_key_index,
                             zalsa.current_revision(),
                         );
-                        let initial_value = self
-                            .initial_value(db, database_key_index.key_index())
-                            .expect(
-                                "`CycleRecoveryStrategy::Fixpoint` \
+                        let initial_value = self.initial_value(db, id).expect(
+                            "`CycleRecoveryStrategy::Fixpoint` \
                                 should have initial_value",
-                            );
+                        );
                         Some(self.insert_memo(
                             zalsa,
                             id,
@@ -162,12 +159,10 @@ where
                             "hit a `FallbackImmediate` cycle at {database_key_index:#?}"
                         );
                         let active_query = db.zalsa_local().push_query(database_key_index, 0);
-                        let fallback_value = self
-                            .initial_value(db, database_key_index.key_index())
-                            .expect(
-                                "`CycleRecoveryStrategy::FallbackImmediate` \
+                        let fallback_value = self.initial_value(db, id).expect(
+                            "`CycleRecoveryStrategy::FallbackImmediate` \
                                     should have initial_value",
-                            );
+                        );
                         let mut revisions = active_query.pop();
                         revisions.cycle_heads = CycleHeads::initial(database_key_index);
                         // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
@@ -189,7 +184,7 @@ where
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
                 if let VerifyResult::Unchanged(_, cycle_heads) =
-                    self.deep_verify_memo(db, zalsa, old_memo, database_key_index)
+                    self.deep_verify_memo(db, zalsa, old_memo, self.database_key_index(id))
                 {
                     if cycle_heads.is_empty() {
                         // SAFETY: memo is present in memo_map and we have verified that it is
@@ -202,7 +197,7 @@ where
 
         let memo = self.execute(
             db,
-            db.zalsa_local().push_query(database_key_index, 0),
+            db.zalsa_local().push_query(self.database_key_index(id), 0),
             opt_old_memo,
         );
 

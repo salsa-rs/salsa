@@ -7,14 +7,14 @@ use crate::{
     key::DatabaseKeyIndex,
     runtime::{BlockResult, WaitResult},
     zalsa::Zalsa,
-    Database, Id,
+    Database, Id, IngredientIndex,
 };
 
 /// Tracks the keys that are currently being processed; used to coordinate between
 /// worker threads.
-#[derive(Default)]
 pub(crate) struct SyncTable {
     syncs: Mutex<FxHashMap<Id, SyncState>>,
+    ingredient: IngredientIndex,
 }
 
 pub(crate) enum ClaimResult<'a> {
@@ -32,14 +32,21 @@ struct SyncState {
 }
 
 impl SyncTable {
+    pub(crate) fn new(ingredient: IngredientIndex) -> Self {
+        Self {
+            syncs: Default::default(),
+            ingredient,
+        }
+    }
+
     pub(crate) fn try_claim<'me>(
         &'me self,
         db: &'me (impl ?Sized + Database),
         zalsa: &'me Zalsa,
-        database_key_index: DatabaseKeyIndex,
+        key_index: Id,
     ) -> ClaimResult<'me> {
         let mut write = self.syncs.lock();
-        match write.entry(database_key_index.key_index()) {
+        match write.entry(key_index) {
             std::collections::hash_map::Entry::Occupied(occupied_entry) => {
                 let &mut SyncState {
                     id,
@@ -52,7 +59,12 @@ impl SyncTable {
                 // boolean is to decide *whether* to acquire the lock,
                 // not to gate future atomic reads.
                 *anyone_waiting = true;
-                match zalsa.runtime().block_on(db, database_key_index, id, write) {
+                match zalsa.runtime().block_on(
+                    db,
+                    DatabaseKeyIndex::new(self.ingredient, key_index),
+                    id,
+                    write,
+                ) {
                     BlockResult::Completed => ClaimResult::Retry,
                     BlockResult::Cycle => ClaimResult::Cycle,
                 }
@@ -63,7 +75,7 @@ impl SyncTable {
                     anyone_waiting: false,
                 });
                 ClaimResult::Claimed(ClaimGuard {
-                    database_key_index,
+                    key_index,
                     zalsa,
                     sync_table: self,
                     _padding: false,
@@ -77,7 +89,7 @@ impl SyncTable {
 /// released when this value is dropped.
 #[must_use]
 pub(crate) struct ClaimGuard<'me> {
-    database_key_index: DatabaseKeyIndex,
+    key_index: Id,
     zalsa: &'me Zalsa,
     sync_table: &'me SyncTable,
     // Reduce the size of ClaimResult by making more niches available in ClaimGuard; this fits into
@@ -90,11 +102,11 @@ impl ClaimGuard<'_> {
         let mut syncs = self.sync_table.syncs.lock();
 
         let SyncState { anyone_waiting, .. } =
-            syncs.remove(&self.database_key_index.key_index()).unwrap();
+            syncs.remove(&self.key_index).expect("key claimed twice?");
 
         if anyone_waiting {
             self.zalsa.runtime().unblock_queries_blocked_on(
-                self.database_key_index,
+                DatabaseKeyIndex::new(self.sync_table.ingredient, self.key_index),
                 if std::thread::panicking() {
                     WaitResult::Panicked
                 } else {
