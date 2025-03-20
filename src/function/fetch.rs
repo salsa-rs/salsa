@@ -103,12 +103,11 @@ where
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
-        let database_key_index = self.database_key_index(id);
-
         // Try to claim this query: if someone else has claimed it already, go back and start again.
-        let _claim_guard = match self.sync_table.try_claim(db, zalsa, database_key_index) {
+        let _claim_guard = match self.sync_table.try_claim(db, zalsa, id) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => {
+                let database_key_index = self.database_key_index(id);
                 // check if there's a provisional value for this query
                 // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
                 // existing provisional memo if it exists
@@ -124,7 +123,7 @@ where
                 }
                 // no provisional value; create/insert/return initial provisional value
                 return self
-                    .initial_value(db, database_key_index.key_index())
+                    .initial_value(db, id)
                     .map(|initial_value| {
                         tracing::debug!(
                             "hit cycle at {database_key_index:#?}, \
@@ -155,7 +154,7 @@ where
         };
 
         // Push the query on the stack.
-        let active_query = db.zalsa_local().push_query(database_key_index);
+        let active_query = db.zalsa_local().push_query(self.database_key_index(id));
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
