@@ -1,5 +1,4 @@
 use std::{
-    panic::AssertUnwindSafe,
     sync::atomic::{AtomicBool, Ordering},
     thread::ThreadId,
 };
@@ -7,8 +6,8 @@ use std::{
 use parking_lot::Mutex;
 
 use crate::{
-    durability::Durability, key::DatabaseKeyIndex, table::Table, zalsa_local::ZalsaLocal,
-    Cancelled, Database, Event, EventKind, Revision,
+    durability::Durability, key::DatabaseKeyIndex, table::Table, Cancelled, Database, Event,
+    EventKind, Revision,
 };
 
 use self::dependency_graph::DependencyGraph;
@@ -169,8 +168,7 @@ impl Runtime {
     /// cancelled, so this function will panic with a `Cancelled` value.
     pub(crate) fn block_on<QueryMutexGuard>(
         &self,
-        db: &dyn Database,
-        local_state: &ZalsaLocal,
+        db: &(impl Database + ?Sized),
         database_key: DatabaseKeyIndex,
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
@@ -189,21 +187,8 @@ impl Runtime {
             })
         });
 
-        // `DependencyGraph::block_on` does not panic, so we cannot enter an inconsistent state.
-        let dg = AssertUnwindSafe(dg);
-        // `DependencyGraph::block_on` does not panic, nor does it read from query_mutex_guard, so
-        // we cannot enter an inconsistent state for this parameter.
-        let query_mutex_guard = AssertUnwindSafe(query_mutex_guard);
-        let result = local_state.with_query_stack(|stack| {
-            DependencyGraph::block_on(
-                { dg }.0,
-                thread_id,
-                database_key,
-                other_id,
-                stack,
-                { query_mutex_guard }.0,
-            )
-        });
+        let result =
+            DependencyGraph::block_on(dg, thread_id, database_key, other_id, query_mutex_guard);
 
         match result {
             WaitResult::Completed => BlockResult::Completed,
