@@ -71,13 +71,10 @@ impl SyncTable {
                 // boolean is to decide *whether* to acquire the lock,
                 // not to gate future atomic reads.
                 *anyone_waiting = true;
-                match zalsa.runtime().block_on(
-                    db.as_dyn_database(),
-                    db.zalsa_local(),
-                    database_key_index,
-                    *other_id,
-                    syncs,
-                ) {
+                match zalsa
+                    .runtime()
+                    .block_on(db, database_key_index, *other_id, syncs)
+                {
                     BlockResult::Completed => ClaimResult::Retry,
                     BlockResult::Cycle => ClaimResult::Cycle,
                 }

@@ -29,6 +29,7 @@ rayon = { version = "1.10.0", optional = true }
 
 # Stuff we want Update impls for by default
 compact_str = { version = "0.8", optional = true }
+thin-vec = "0.2.13"
 
 [features]
 default = ["salsa_unstable", "rayon", "macros"]
