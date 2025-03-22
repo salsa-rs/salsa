@@ -1,8 +1,8 @@
 use crate::{
     accumulator::accumulated_map::InputAccumulatedValues,
     cycle::{CycleHeads, CycleRecoveryStrategy},
+    function::sync::ClaimResult,
     key::DatabaseKeyIndex,
-    table::sync::ClaimResult,
     zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase},
     zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
     AsDynDatabase as _, Id, Revision,
@@ -98,12 +98,7 @@ where
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = match zalsa.sync_table_for(key_index).claim(
-            db,
-            zalsa,
-            database_key_index,
-            memo_ingredient_index,
-        ) {
+        let _claim_guard = match self.sync_table.try_claim(db, zalsa, key_index) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => match C::CYCLE_STRATEGY {
                 CycleRecoveryStrategy::Panic => panic!(
