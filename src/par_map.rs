@@ -1,3 +1,5 @@
+use std::thread::{self, ThreadId};
+
 use rayon::iter::{FromParallelIterator, IntoParallelIterator, ParallelIterator};
 
 use crate::Database;
@@ -10,7 +12,11 @@ where
     R: Send + Sync,
     C: FromParallelIterator<R>,
 {
-    let parallel_db = ParallelDb::Ref(db.as_dyn_database());
+    let parallel_db = ParallelDb::Ref(
+        db.as_dyn_database(),
+        #[cfg(debug_assertions)]
+        thread::current().id(),
+    );
 
     inputs
         .into_par_iter()
@@ -22,7 +28,11 @@ where
 
 /// This enum _must not_ be public or used outside of `par_map`.
 enum ParallelDb<'db> {
-    Ref(&'db dyn Database),
+    Ref(
+        &'db dyn Database,
+        #[cfg(debug_assertions)] ThreadId,
+        #[cfg(not(debug_assertions))] (),
+    ),
     Fork(Box<dyn Database>),
 }
 
@@ -31,16 +41,36 @@ enum ParallelDb<'db> {
 unsafe impl Send for ParallelDb<'_> where dyn Database: Send {}
 
 impl ParallelDb<'_> {
+    #[inline]
+    #[track_caller]
+    fn thread_id_assert(&self) {
+        #[cfg(debug_assertions)]
+        {
+            match self {
+                ParallelDb::Ref(_, thread_id) => {
+                    assert_eq!(
+                        thread_id,
+                        &thread::current().id(),
+                        "reference was smuggled to another thread!"
+                    );
+                }
+                ParallelDb::Fork(_) => {}
+            }
+        }
+    }
+
     fn fork(&self) -> ParallelDb<'static> {
+        self.thread_id_assert();
         ParallelDb::Fork(match self {
-            ParallelDb::Ref(db) => db.fork_db(),
+            ParallelDb::Ref(db, _) => db.fork_db(),
             ParallelDb::Fork(db) => db.fork_db(),
         })
     }
 
     fn as_view<Db: Database + ?Sized>(&self) -> &Db {
+        self.thread_id_assert();
         match self {
-            ParallelDb::Ref(db) => db.as_view::<Db>(),
+            ParallelDb::Ref(db, _) => db.as_view::<Db>(),
             ParallelDb::Fork(db) => db.as_view::<Db>(),
         }
     }
@@ -48,8 +78,9 @@ impl ParallelDb<'_> {
 
 impl Clone for ParallelDb<'_> {
     fn clone(&self) -> Self {
+        self.thread_id_assert();
         ParallelDb::Fork(match self {
-            ParallelDb::Ref(db) => db.fork_db(),
+            ParallelDb::Ref(db, _) => db.fork_db(),
             ParallelDb::Fork(db) => db.fork_db(),
         })
     }
@@ -85,7 +116,13 @@ where
 {
     rayon::in_place_scope(move |s| {
         let scope = Scope {
-            db: ParallelDb::Ref(db.as_dyn_database()),
+            db: ParallelDb::Ref(
+                db.as_dyn_database(),
+                #[cfg(debug_assertions)]
+                thread::current().id(),
+                #[cfg(not(debug_assertions))]
+                (),
+            ),
             base: s,
             phantom: std::marker::PhantomData,
         };
