@@ -34,7 +34,7 @@ impl MyInput {
 #[salsa::interned(constructor = from_string)]
 struct MyInterned<'db> {
     #[get(text)]
-    #[return_ref]
+    #[returns(as_ref)]
     field: String,
 }
 

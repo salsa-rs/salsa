@@ -67,7 +67,7 @@ fn main() -> Result<()> {
 #[salsa::input]
 struct File {
     path: PathBuf,
-    #[return_ref]
+    #[returns(as_ref)]
     contents: String,
 }
 
@@ -158,7 +158,7 @@ impl Diagnostic {
 #[salsa::tracked]
 struct ParsedFile<'db> {
     value: u32,
-    #[return_ref]
+    #[returns(as_ref)]
     links: Vec<ParsedFile<'db>>,
 }
 

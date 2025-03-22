@@ -52,24 +52,24 @@ macro_rules! setup_tracked_struct {
 
         // A set of "field options" for each tracked field.
         //
-        // Each field option is a tuple `(maybe_clone, maybe_backdate)` where:
+        // Each field option is a tuple `(return_mode, maybe_backdate)` where:
         //
-        // * `maybe_clone` is either the identifier `clone` or `no_clone`
+        // * `return_mode` is either the identifier `as_ref` or `cloned`
         // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
         //
         // These are used to drive conditional logic for each field via recursive macro invocation
-        // (see e.g. @maybe_clone below).
+        // (see e.g. @return_mode below).
         tracked_options: [$($tracked_option:tt),*],
 
         // A set of "field options" for each untracked field.
         //
-        // Each field option is a tuple `(maybe_clone, maybe_backdate)` where:
+        // Each field option is a tuple `(return_mode, maybe_backdate)` where:
         //
-        // * `maybe_clone` is either the identifier `clone` or `no_clone`
+        // * `return_mode` is either the identifier `as_ref` or `cloned`
         // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
         //
         // These are used to drive conditional logic for each field via recursive macro invocation
-        // (see e.g. @maybe_clone below).
+        // (see e.g. @return_mode below).
         untracked_options: [$($untracked_option:tt),*],
 
         // Number of tracked fields.
@@ -260,14 +260,14 @@ macro_rules! setup_tracked_struct {
                 }
 
                 $(
-                    $tracked_getter_vis fn $tracked_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($tracked_option, $db_lt, $tracked_ty)
+                    $tracked_getter_vis fn $tracked_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::return_mode_ty!($tracked_option, $db_lt, $tracked_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let db = db.as_dyn_database();
                         let fields = $Configuration::ingredient(db).tracked_field(db, self, $relative_tracked_index);
-                        $crate::maybe_clone!(
+                        $crate::return_mode!(
                             $tracked_option,
                             $tracked_ty,
                             &fields.$absolute_tracked_index,
@@ -276,14 +276,14 @@ macro_rules! setup_tracked_struct {
                 )*
 
                 $(
-                    $untracked_getter_vis fn $untracked_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::maybe_cloned_ty!($untracked_option, $db_lt, $untracked_ty)
+                    $untracked_getter_vis fn $untracked_getter_id<$Db>(self, db: &$db_lt $Db) -> $crate::return_mode_ty!($untracked_option, $db_lt, $untracked_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let db = db.as_dyn_database();
                         let fields = $Configuration::ingredient(db).untracked_field(db, self);
-                        $crate::maybe_clone!(
+                        $crate::return_mode!(
                             $untracked_option,
                             $untracked_ty,
                             &fields.$absolute_untracked_index,

@@ -33,7 +33,7 @@ type InternedArgs = Options<InternedStruct>;
 struct InternedStruct;
 
 impl crate::options::AllowedOptions for InternedStruct {
-    const RETURN_REF: bool = false;
+    const RETURNS: bool = false;
 
     const SPECIFY: bool = false;
 

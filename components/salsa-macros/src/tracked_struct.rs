@@ -28,7 +28,7 @@ type TrackedArgs = Options<TrackedStruct>;
 struct TrackedStruct;
 
 impl crate::options::AllowedOptions for TrackedStruct {
-    const RETURN_REF: bool = false;
+    const RETURNS: bool = false;
 
     const SPECIFY: bool = false;
 

@@ -33,7 +33,7 @@ type InputArgs = Options<InputStruct>;
 struct InputStruct;
 
 impl crate::options::AllowedOptions for InputStruct {
-    const RETURN_REF: bool = false;
+    const RETURNS: bool = false;
 
     const SPECIFY: bool = false;
 

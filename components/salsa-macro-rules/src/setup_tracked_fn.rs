@@ -55,8 +55,8 @@ macro_rules! setup_tracked_fn {
         // LRU capacity (a literal, maybe 0)
         lru: $lru:tt,
 
-        // True if we `return_ref` flag was given to the function
-        return_ref: $return_ref:tt,
+        // The return mode for the function, either `as_ref` or `cloned`
+        return_mode: $return_mode:tt,
 
         assert_return_type_is_update: {$($assert_return_type_is_update:tt)*},
 
@@ -80,13 +80,7 @@ macro_rules! setup_tracked_fn {
         $vis fn $fn_name<$db_lt>(
             $db: &$db_lt dyn $Db,
             $($input_id: $input_ty,)*
-        ) -> salsa::plumbing::macro_if! {
-            if $return_ref {
-                &$db_lt $output_ty
-            } else {
-                $output_ty
-            }
-        } {
+        ) -> salsa::plumbing::return_mode_ty!(($return_mode, __, __), $db_lt, $output_ty) {
             use salsa::plumbing as $zalsa;
 
             struct $Configuration;
@@ -372,13 +366,7 @@ macro_rules! setup_tracked_fn {
                     }
                 };
 
-                $zalsa::macro_if! {
-                    if $return_ref {
-                        result
-                    } else {
-                        <$output_ty as std::clone::Clone>::clone(result)
-                    }
-                }
+                $zalsa::return_mode!(($return_mode, __, __), $output_ty, result,)
             })
         }
         // The struct needs be last in the macro expansion in order to make the tracked

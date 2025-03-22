@@ -12,7 +12,7 @@ struct Input {
 
 #[salsa::interned(debug)]
 struct Output<'db> {
-    #[return_ref]
+    #[returns(as_ref)]
     value: u32,
 }
 
@@ -170,7 +170,7 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
         }
     }
 
-    #[salsa::tracked(return_ref)]
+    #[salsa::tracked(returns(as_ref))]
     fn index<'db>(db: &'db dyn salsa::Database, input: Input) -> Index<'db> {
         Index {
             scope: Scope::new(db, input.value(db) * 2),

@@ -215,13 +215,13 @@ macro_rules! setup_interned_struct {
                 }
 
                 $(
-                    $field_getter_vis fn $field_getter_id<$Db>(self, db: &'db $Db) -> $zalsa::maybe_cloned_ty!($field_option, 'db, $field_ty)
+                    $field_getter_vis fn $field_getter_id<$Db>(self, db: &'db $Db) -> $zalsa::return_mode_ty!($field_option, 'db, $field_ty)
                     where
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
                         let fields = $Configuration::ingredient(db).fields(db.as_dyn_database(), self);
-                        $zalsa::maybe_clone!(
+                        $zalsa::return_mode!(
                             $field_option,
                             $field_ty,
                             &fields.$field_index,

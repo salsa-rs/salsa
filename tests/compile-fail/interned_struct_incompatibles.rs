@@ -1,4 +1,4 @@
-#[salsa::interned(return_ref)]
+#[salsa::interned(returns(as_ref))]
 struct InternedWithRetRef {
     field: u32,
 }

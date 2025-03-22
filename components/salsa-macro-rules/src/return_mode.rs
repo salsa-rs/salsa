@@ -2,9 +2,9 @@
 ///
 /// Used when generating field getters.
 #[macro_export]
-macro_rules! maybe_clone {
+macro_rules! return_mode {
     (
-        (no_clone, $maybe_backdate:ident, $maybe_default:ident),
+        (as_ref, $maybe_backdate:ident, $maybe_default:ident),
         $field_ty:ty,
         $field_ref_expr:expr,
     ) => {
@@ -12,7 +12,7 @@ macro_rules! maybe_clone {
     };
 
     (
-        (clone, $maybe_backdate:ident, $maybe_default:ident),
+        (cloned, $maybe_backdate:ident, $maybe_default:ident),
         $field_ty:ty,
         $field_ref_expr:expr,
     ) => {
@@ -21,9 +21,9 @@ macro_rules! maybe_clone {
 }
 
 #[macro_export]
-macro_rules! maybe_cloned_ty {
+macro_rules! return_mode_ty {
     (
-        (no_clone, $maybe_backdate:ident, $maybe_default:ident),
+        (as_ref, $maybe_backdate:ident, $maybe_default:ident),
         $db_lt:lifetime,
         $field_ty:ty
     ) => {
@@ -31,7 +31,7 @@ macro_rules! maybe_cloned_ty {
     };
 
     (
-        (clone, $maybe_backdate:ident, $maybe_default:ident),
+        (cloned, $maybe_backdate:ident, $maybe_default:ident),
         $db_lt:lifetime,
         $field_ty:ty
     ) => {

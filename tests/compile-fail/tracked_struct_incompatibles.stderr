@@ -1,8 +1,8 @@
-error: `return_ref` option not allowed here
+error: `returns` option not allowed here
  --> tests/compile-fail/tracked_struct_incompatibles.rs:1:18
   |
-1 | #[salsa::tracked(return_ref)]
-  |                  ^^^^^^^^^^
+1 | #[salsa::tracked(returns(as_ref))]
+  |                  ^^^^^^^
 
 error: `specify` option not allowed here
  --> tests/compile-fail/tracked_struct_incompatibles.rs:6:18

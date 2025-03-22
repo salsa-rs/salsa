@@ -26,6 +26,7 @@
 //!     * this could be optimized, particularly for interned fields
 
 use proc_macro2::{Ident, Literal, Span, TokenStream};
+use syn::spanned::Spanned;
 
 use crate::db_lifetime;
 use crate::options::{AllowedOptions, Options};
@@ -58,7 +59,7 @@ pub(crate) struct SalsaField<'s> {
 
     pub(crate) has_tracked_attr: bool,
     pub(crate) has_default_attr: bool,
-    pub(crate) has_ref_attr: bool,
+    pub(crate) returns: syn::Ident,
     pub(crate) has_no_eq_attr: bool,
     get_name: syn::Ident,
     set_name: syn::Ident,
@@ -70,7 +71,9 @@ const BANNED_FIELD_NAMES: &[&str] = &["from", "new"];
 pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(&str, fn(&syn::Attribute, &mut SalsaField))] = &[
     ("tracked", |_, ef| ef.has_tracked_attr = true),
     ("default", |_, ef| ef.has_default_attr = true),
-    ("return_ref", |_, ef| ef.has_ref_attr = true),
+    ("returns", |attr, ef| {
+        ef.returns = attr.parse_args().unwrap();
+    }),
     ("no_eq", |_, ef| ef.has_no_eq_attr = true),
     ("get", |attr, ef| {
         ef.get_name = attr.parse_args().unwrap();
@@ -364,10 +367,11 @@ impl<'s> SalsaField<'s> {
 
         let get_name = Ident::new(&field_name_str, field_name.span());
         let set_name = Ident::new(&format!("set_{field_name_str}",), field_name.span());
+        let returns = Ident::new("cloned", field.span());
         let mut result = SalsaField {
             field,
             has_tracked_attr: false,
-            has_ref_attr: false,
+            returns,
             has_default_attr: false,
             has_no_eq_attr: false,
             get_name,
@@ -387,11 +391,7 @@ impl<'s> SalsaField<'s> {
     }
 
     fn options(&self) -> TokenStream {
-        let clone_ident = if self.has_ref_attr {
-            syn::Ident::new("no_clone", Span::call_site())
-        } else {
-            syn::Ident::new("clone", Span::call_site())
-        };
+        let returns = &self.returns;
 
         let backdate_ident = if self.has_no_eq_attr {
             syn::Ident::new("no_backdate", Span::call_site())
@@ -405,6 +405,6 @@ impl<'s> SalsaField<'s> {
             syn::Ident::new("required", Span::call_site())
         };
 
-        quote!((#clone_ident, #backdate_ident, #default_ident))
+        quote!((#returns, #backdate_ident, #default_ident))
     }
 }

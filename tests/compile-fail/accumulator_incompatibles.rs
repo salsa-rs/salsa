@@ -1,4 +1,4 @@
-#[salsa::accumulator(return_ref)]
+#[salsa::accumulator(returns(as_ref))]
 struct AccWithRetRef(u32);
 
 #[salsa::accumulator(specify)]
