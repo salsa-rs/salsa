@@ -2,7 +2,7 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::revision::AtomicRevision;
@@ -133,9 +133,6 @@ pub(super) struct Memo<V> {
     /// as the current revision.
     pub(super) verified_at: AtomicRevision,
 
-    /// Is this memo verified to not be a provisional cycle result?
-    pub(super) verified_final: AtomicBool,
-
     /// Revision information
     pub(super) revisions: QueryRevisions,
 }
@@ -143,14 +140,13 @@ pub(super) struct Memo<V> {
 // Memo's are stored a lot, make sure their size is doesn't randomly increase.
 // #[cfg(test)]
 const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
-    [(); std::mem::size_of::<[usize; 14]>()];
+    [(); std::mem::size_of::<[usize; 13]>()];
 
 impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
         Memo {
             value,
             verified_at: AtomicRevision::from(revision_now),
-            verified_final: AtomicBool::new(revisions.cycle_heads.is_empty()),
             revisions,
         }
     }
@@ -162,7 +158,7 @@ impl<V> Memo<V> {
         // `false` to `true`), and changing it to `true` on memos with cycle heads where it was
         // ever `false` is purely an optimization; if we read an out-of-date `false`, it just means
         // we might go validate it again unnecessarily.
-        !self.verified_final.load(Ordering::Relaxed)
+        !self.revisions.verified_final.load(Ordering::Relaxed)
     }
 
     /// Invoked when `refresh_memo` is about to return a memo to the caller; if that memo is
@@ -270,7 +266,6 @@ impl<V> Memo<V> {
                         },
                     )
                     .field("verified_at", &self.memo.verified_at)
-                    .field("verified_final", &self.memo.verified_final)
                     .field("revisions", &self.memo.revisions)
                     .finish()
             }

@@ -1,4 +1,5 @@
 use std::ops::Not;
+use std::sync::atomic::AtomicBool;
 use std::{mem, ops};
 
 use super::zalsa_local::{QueryEdges, QueryOrigin, QueryRevisions};
@@ -74,9 +75,9 @@ impl ActiveQuery {
         accumulated: InputAccumulatedValues,
         cycle_heads: &CycleHeads,
     ) {
-        self.input_outputs.insert(QueryEdge::Input(input));
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(revision);
+        self.input_outputs.insert(QueryEdge::Input(input));
         self.accumulated_inputs |= accumulated;
         self.cycle_heads.extend(cycle_heads);
     }
@@ -87,9 +88,9 @@ impl ActiveQuery {
         durability: Durability,
         revision: Revision,
     ) {
-        self.input_outputs.insert(QueryEdge::Input(input));
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(revision);
+        self.input_outputs.insert(QueryEdge::Input(input));
     }
 
     pub(super) fn add_untracked_read(&mut self, changed_at: Revision) {
@@ -182,6 +183,7 @@ impl ActiveQuery {
             tracked_struct_ids,
             accumulated_inputs,
             accumulated,
+            verified_final: AtomicBool::new(cycle_heads.is_empty()),
             cycle_heads,
         }
     }
