@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.19.0...salsa-v0.20.0) - 2025-03-22
+
+### Added
+
+- Drop `Debug` requirements and flip implementation defaults ([#756](https://github.com/salsa-rs/salsa/pull/756))
+
+### Other
+
+- Move `verified_final` from `Memo` into `QueryRevisions` ([#769](https://github.com/salsa-rs/salsa/pull/769))
+- Use `ThinVec` for `MemoTable`, halving its size ([#770](https://github.com/salsa-rs/salsa/pull/770))
+- Remove unnecessary query stack acess in `block_on` ([#771](https://github.com/salsa-rs/salsa/pull/771))
+- Replace memo queue with append-only vector ([#767](https://github.com/salsa-rs/salsa/pull/767))
+- update boxcar ([#696](https://github.com/salsa-rs/salsa/pull/696))
+- Remove extra page indirection in `Table` ([#710](https://github.com/salsa-rs/salsa/pull/710))
+- update release steps ([#705](https://github.com/salsa-rs/salsa/pull/705))
+- Remove some unnecessary panicking paths in cycle execution ([#765](https://github.com/salsa-rs/salsa/pull/765))
+- *(perf)* Pool `ActiveQuerys` in the query stack ([#629](https://github.com/salsa-rs/salsa/pull/629))
+- Resolve unwind safety fixme ([#761](https://github.com/salsa-rs/salsa/pull/761))
+- Enable Garbage Collection for Interned Values ([#602](https://github.com/salsa-rs/salsa/pull/602))
+- bug [salsa-macros]: Improve debug name of tracked methods ([#755](https://github.com/salsa-rs/salsa/pull/755))
+- Remove dead code ([#764](https://github.com/salsa-rs/salsa/pull/764))
+- Reduce unnecessary conditional work in `deep_verify_memo` ([#759](https://github.com/salsa-rs/salsa/pull/759))
+- Use a `Vec` for `CycleHeads` ([#760](https://github.com/salsa-rs/salsa/pull/760))
+- Use nextest for miri test runs ([#758](https://github.com/salsa-rs/salsa/pull/758))
+- Pin `half` version to prevent CI failure ([#757](https://github.com/salsa-rs/salsa/pull/757))
+- rewrite cycle handling to support fixed-point iteration ([#603](https://github.com/salsa-rs/salsa/pull/603))
+
 ## [0.19.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.18.0...salsa-v0.19.0) - 2025-03-10
 
 ### Fixed
