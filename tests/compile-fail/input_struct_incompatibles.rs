@@ -1,4 +1,4 @@
-#[salsa::input(return_ref)]
+#[salsa::input(returns(as_ref))]
 struct InputWithRetRef(u32);
 
 #[salsa::input(specify)]
