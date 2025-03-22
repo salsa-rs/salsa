@@ -2,7 +2,7 @@ use salsa::Database as Db;
 
 #[salsa::input]
 struct MyInput {
-    #[return_ref]
+    #[returns(as_ref)]
     text: String,
 }
 
