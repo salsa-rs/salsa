@@ -1004,3 +1004,34 @@ fn cycle_unchanged_nested_intertwined() {
         a.assert_value(&db, 45);
     }
 }
+
+/// Provisional query results in a cycle should still be cached within a single iteration.
+///
+/// a:Ni(v59, b) -> b:Np(v60, c, c, c) -> c:Np(a)
+/// ^                                          |
+/// +------------------------------------------+
+#[test]
+fn repeat_provisional_query() {
+    let mut db = ExecuteValidateLoggerDatabase::default();
+    let a_in = Inputs::new(&db, vec![]);
+    let b_in = Inputs::new(&db, vec![]);
+    let c_in = Inputs::new(&db, vec![]);
+    let a = Input::MinIterate(a_in);
+    let b = Input::MinPanic(b_in);
+    let c = Input::MinPanic(c_in);
+    a_in.set_inputs(&mut db).to(vec![value(59), b.clone()]);
+    b_in.set_inputs(&mut db)
+        .to(vec![value(60), c.clone(), c.clone(), c]);
+    c_in.set_inputs(&mut db).to(vec![a.clone()]);
+
+    a.assert_value(&db, 59);
+
+    db.assert_logs(expect![[r#"
+        [
+            "salsa_event(WillExecute { database_key: min_iterate(Id(0)) })",
+            "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
+            "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
+            "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
+            "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
+        ]"#]]);
+}
