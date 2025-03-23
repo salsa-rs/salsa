@@ -393,6 +393,7 @@ where
     phantom: PhantomData<fn() -> I>,
 }
 
+#[allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 unsafe impl<I> Sync for IngredientCache<I> where I: Ingredient + Sync {}
 
 impl<I> Default for IngredientCache<I>
@@ -469,6 +470,7 @@ where
 pub unsafe fn transmute_data_ptr<T: ?Sized, U>(t: &T) -> &U {
     let t: *const T = t;
     let u: *const U = t as *const U;
+    // SAFETY: the caller must guarantee that `T` is a wide pointer for `U`
     unsafe { &*u }
 }
 
@@ -480,5 +482,6 @@ pub unsafe fn transmute_data_ptr<T: ?Sized, U>(t: &T) -> &U {
 pub(crate) unsafe fn transmute_data_mut_ptr<T: ?Sized, U>(t: &mut T) -> &mut U {
     let t: *mut T = t;
     let u: *mut U = t as *mut U;
+    // SAFETY: the caller must guarantee that `T` is a wide pointer for `U`
     unsafe { &mut *u }
 }

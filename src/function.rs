@@ -179,6 +179,7 @@ where
         &'this self,
         memo: &memo::Memo<C::Output<'this>>,
     ) -> &'this memo::Memo<C::Output<'this>> {
+        // SAFETY: the caller must guarantee that the memo will not be released before `&self`
         unsafe { std::mem::transmute(memo) }
     }
 
@@ -191,16 +192,19 @@ where
     ) -> &'db memo::Memo<C::Output<'db>> {
         // We convert to a `NonNull` here as soon as possible because we are going to alias
         // into the `Box`, which is a `noalias` type.
+        // SAFETY: memo is not null
         let memo = unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memo))) };
 
-        // Unsafety conditions: memo must be in the map (it's not yet, but it will be by the time this
+        // SAFETY: memo must be in the map (it's not yet, but it will be by the time this
         // value is returned) and anything removed from map is added to deleted entries (ensured elsewhere).
         let db_memo = unsafe { self.extend_memo_lifetime(memo.as_ref()) };
 
-        // Safety: We delay the drop of `old_value` until a new revision starts which ensures no
-        // references will exist for the memo contents.
         if let Some(old_value) =
-            unsafe { self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index) }
+            // SAFETY: We delay the drop of `old_value` until a new revision starts which ensures no
+            // references will exist for the memo contents.
+            unsafe {
+                self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index)
+            }
         {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.

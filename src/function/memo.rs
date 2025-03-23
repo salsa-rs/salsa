@@ -1,3 +1,5 @@
+#![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
+
 use std::any::Any;
 use std::fmt::Debug;
 use std::fmt::Formatter;

@@ -81,8 +81,9 @@ impl SlotVTable {
     const fn of<T: Slot>() -> &'static Self {
         const {
             &Self {
+                drop_impl: |data, initialized|
                 // SAFETY: The caller is required to supply a correct data pointer and initialized length
-                drop_impl: |data, initialized| unsafe {
+                unsafe {
                     let data = Box::from_raw(data.cast::<PageData<T>>());
                     for i in 0..initialized {
                         ptr::drop_in_place(data[i].get().cast::<T>());

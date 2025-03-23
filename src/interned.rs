@@ -1,3 +1,5 @@
+#![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
+
 use dashmap::SharedValue;
 
 use crate::durability::Durability;

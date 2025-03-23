@@ -18,13 +18,13 @@ where
         zalsa.unwind_if_revision_cancelled(db);
 
         let memo = self.refresh_memo(db, id);
-        // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let StampedValue {
             value,
             durability,
             changed_at,
         } = memo
             .revisions
+            // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
             .stamped_value(unsafe { memo.value.as_ref().unwrap_unchecked() });
 
         self.lru.record_use(id);
@@ -89,7 +89,7 @@ where
                 && self.validate_may_be_provisional(db, zalsa, database_key_index, memo)
                 && self.shallow_verify_memo(db, zalsa, database_key_index, memo)
             {
-                // Unsafety invariant: memo is present in memo_map and we have verified that it is
+                // SAFETY: memo is present in memo_map and we have verified that it is
                 // still valid for the current revision.
                 return unsafe { Some(self.extend_memo_lifetime(memo)) };
             }
@@ -124,7 +124,7 @@ where
                         && memo.revisions.cycle_heads.contains(&database_key_index)
                         && self.shallow_verify_memo(db, zalsa, database_key_index, memo)
                     {
-                        // Unsafety invariant: memo is present in memo_map.
+                        // SAFETY: memo is present in memo_map.
                         return unsafe { Some(self.extend_memo_lifetime(memo)) };
                     }
                 }
@@ -171,7 +171,7 @@ where
                     self.deep_verify_memo(db, zalsa, old_memo, &active_query)
                 {
                     if cycle_heads.is_empty() {
-                        // Unsafety invariant: memo is present in memo_map and we have verified that it is
+                        // SAFETY: memo is present in memo_map and we have verified that it is
                         // still valid for the current revision.
                         return unsafe { Some(self.extend_memo_lifetime(old_memo)) };
                     }

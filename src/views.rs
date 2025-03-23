@@ -62,6 +62,7 @@ impl<DbView: ?Sized + Any> DatabaseDownCaster<DbView> {
     ///
     /// The caller must ensure that `db` is of the correct type.
     pub unsafe fn downcast_unchecked<'db>(&self, db: &'db dyn Database) -> &'db DbView {
+        // SAFETY: The caller must ensure that `db` is of the correct type.
         unsafe { (self.1)(db) }
     }
 }

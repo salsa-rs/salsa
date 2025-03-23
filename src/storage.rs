@@ -146,6 +146,7 @@ impl<Db: Database> Storage<Db> {
     // ANCHOR_END: cancel_other_workers
 }
 
+#[allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 unsafe impl<T: HasStorage> ZalsaDatabase for T {
     fn zalsa(&self) -> &Zalsa {
         &self.storage().handle.zalsa_impl
