@@ -18,14 +18,13 @@ where
         zalsa.unwind_if_revision_cancelled(db);
 
         let memo = self.refresh_memo(db, id);
+        // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
+        let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
         let StampedValue {
             value,
             durability,
             changed_at,
-        } = memo
-            .revisions
-            // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
-            .stamped_value(unsafe { memo.value.as_ref().unwrap_unchecked() });
+        } = memo.revisions.stamped_value(memo_value);
 
         self.lru.record_use(id);
 

@@ -393,9 +393,6 @@ where
     phantom: PhantomData<fn() -> I>,
 }
 
-#[allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
-unsafe impl<I> Sync for IngredientCache<I> where I: Ingredient + Sync {}
-
 impl<I> Default for IngredientCache<I>
 where
     I: Ingredient,
