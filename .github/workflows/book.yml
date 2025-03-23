@@ -36,7 +36,7 @@ jobs:
         id: deployment
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./book/book
+          path: ./book/book/html
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
