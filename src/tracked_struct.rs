@@ -1,3 +1,5 @@
+#![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
+
 use std::{any::TypeId, fmt, hash::Hash, marker::PhantomData, ops::DerefMut};
 
 use crossbeam_queue::SegQueue;

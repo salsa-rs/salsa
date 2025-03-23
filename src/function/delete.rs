@@ -10,7 +10,9 @@ pub(super) struct DeletedEntries<C: Configuration> {
     memos: boxcar::Vec<SharedBox<Memo<C::Output<'static>>>>,
 }
 
+#[allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 unsafe impl<T: Send> Send for SharedBox<T> {}
+#[allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 unsafe impl<T: Sync> Sync for SharedBox<T> {}
 
 impl<C: Configuration> Default for DeletedEntries<C> {
@@ -26,6 +28,7 @@ impl<C: Configuration> DeletedEntries<C> {
     ///
     /// The memo must be valid and safe to free when the `DeletedEntries` list is cleared or dropped.
     pub(super) unsafe fn push(&self, memo: NonNull<Memo<C::Output<'_>>>) {
+        // Safety: The memo must be valid and safe to free when the `DeletedEntries` list is cleared or dropped.
         let memo = unsafe {
             std::mem::transmute::<NonNull<Memo<C::Output<'_>>>, NonNull<Memo<C::Output<'static>>>>(
                 memo,

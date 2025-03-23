@@ -73,6 +73,7 @@ impl MemoTable {
     fn to_dyn_fn<M: Memo>() -> fn(NonNull<DummyMemo>) -> NonNull<dyn Memo> {
         let f: fn(NonNull<M>) -> NonNull<dyn Memo> = |x| x;
 
+        #[allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
         unsafe {
             std::mem::transmute::<
                 fn(NonNull<M>) -> NonNull<dyn Memo>,
@@ -145,10 +146,9 @@ impl MemoTable {
                  type_id: _,
                  to_dyn_fn: _,
                  atomic_memo,
-             }| unsafe {
+                }|
                 // SAFETY: The `atomic_memo` field is never null.
-                Self::from_dummy(NonNull::new_unchecked(atomic_memo.into_inner()))
-            },
+                unsafe { Self::from_dummy(NonNull::new_unchecked(atomic_memo.into_inner())) },
         )
     }
 

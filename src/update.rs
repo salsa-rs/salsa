@@ -1,3 +1,5 @@
+#![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
+
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     hash::{BuildHasher, Hash},
@@ -52,6 +54,7 @@ pub mod helper {
         ///
         /// See the `maybe_update` method in the [`Update`][] trait.
         pub unsafe fn maybe_update(old_pointer: *mut D, new_value: D) -> bool {
+            // SAFETY: Same safety conditions as `Update::maybe_update`
             unsafe { D::maybe_update(old_pointer, new_value) }
         }
     }
@@ -66,8 +69,10 @@ pub mod helper {
         unsafe fn maybe_update(old_pointer: *mut T, new_value: T) -> bool;
     }
 
+    // SAFETY: Same safety conditions as `Update::maybe_update`
     unsafe impl<T: 'static + PartialEq> Fallback<T> for Dispatch<T> {
         unsafe fn maybe_update(old_pointer: *mut T, new_value: T) -> bool {
+            // SAFETY: Same safety conditions as `Update::maybe_update`
             unsafe { update_fallback(old_pointer, new_value) }
         }
     }
@@ -87,7 +92,7 @@ pub unsafe fn update_fallback<T>(old_pointer: *mut T, new_value: T) -> bool
 where
     T: 'static + PartialEq,
 {
-    // Because everything is owned, this ref is simply a valid `&mut`
+    // SAFETY: Because everything is owned, this ref is simply a valid `&mut`
     let old_ref: &mut T = unsafe { &mut *old_pointer };
 
     if *old_ref != new_value {

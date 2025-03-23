@@ -143,7 +143,7 @@ impl DbMacro {
             #[inline(always)]
             unsafe fn downcast(db: &dyn salsa::plumbing::Database) -> &dyn #TraitPath where Self: Sized {
                 debug_assert_eq!(db.type_id(), ::core::any::TypeId::of::<Self>());
-                // SAFETY: Same as the safety of the `downcast` method.
+                // SAFETY: The input database must be of type `Self`.
                 unsafe { &*salsa::plumbing::transmute_data_ptr::<dyn salsa::plumbing::Database, Self>(db) }
             }
         });

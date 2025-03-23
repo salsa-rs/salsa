@@ -25,10 +25,7 @@ impl Database for DatabaseImpl {
     }
 }
 
-// # Safety
-//
-// The `storage` and `storage_mut` fields return a reference to the same
-// storage field owned by `self`.
+// SAFETY: The `storage` and `storage_mut` fields return a reference to the same storage field owned by `self`.
 unsafe impl HasStorage for DatabaseImpl {
     fn storage(&self) -> &Storage<Self> {
         &self.storage
