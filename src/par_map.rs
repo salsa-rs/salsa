@@ -12,18 +12,20 @@ where
     R: Send + Sync,
     C: FromParallelIterator<R>,
 {
-    let parallel_db = ParallelDb::Ref(
-        db.as_dyn_database(),
-        #[cfg(debug_assertions)]
-        thread::current().id(),
-    );
-
     inputs
         .into_par_iter()
-        .map_with(parallel_db, |parallel_db, element| {
-            op(parallel_db.as_view(), element)
+        .map_with(DbForkOnClone(db.fork_db()), |db, element| {
+            op(db.0.as_view(), element)
         })
         .collect()
+}
+
+struct DbForkOnClone(Box<dyn Database>);
+
+impl Clone for DbForkOnClone {
+    fn clone(&self) -> Self {
+        DbForkOnClone(self.0.fork_db())
+    }
 }
 
 /// This enum _must not_ be public or used outside of `par_map`.
