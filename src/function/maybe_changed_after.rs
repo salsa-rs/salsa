@@ -290,7 +290,7 @@ where
 
         match &old_memo.revisions.origin {
             QueryOrigin::Assigned(_) => {
-                // If the value was assigneed by another query,
+                // If the value was assigned by another query,
                 // and that query were up-to-date,
                 // then we would have updated the `verified_at` field already.
                 // So the fact that we are here means that it was not specified

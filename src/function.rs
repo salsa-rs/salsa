@@ -209,7 +209,7 @@ where
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
             //
-            // SAFETY: Once the revision starts, there will be no oustanding borrows to the
+            // SAFETY: Once the revision starts, there will be no outstanding borrows to the
             // memo contents, and so it will be safe to free.
             unsafe { self.deleted_entries.push(old_value) };
         }
