@@ -126,7 +126,7 @@ where
         };
 
         // If we are marking this as validated, it must be a value that was
-        // assigneed by `executor`.
+        // assigned by `executor`.
         match memo.revisions.origin {
             QueryOrigin::Assigned(by_query) => assert_eq!(by_query, executor),
             _ => panic!(
