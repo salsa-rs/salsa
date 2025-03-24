@@ -21,7 +21,7 @@ mod key;
 mod memo_ingredient_indices;
 mod nonce;
 #[cfg(feature = "rayon")]
-mod par_map;
+mod parallel;
 mod revision;
 mod runtime;
 mod salsa_struct;
@@ -52,7 +52,7 @@ pub use self::update::Update;
 pub use self::zalsa::IngredientIndex;
 pub use crate::attach::with_attached_database;
 #[cfg(feature = "rayon")]
-pub use par_map::par_map;
+pub use parallel::{join, par_map, scope, Scope};
 #[cfg(feature = "macros")]
 pub use salsa_macros::{accumulator, db, input, interned, tracked, Supertype, Update};
 
