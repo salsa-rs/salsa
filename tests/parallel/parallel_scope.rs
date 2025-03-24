@@ -1,5 +1,5 @@
 #![cfg(feature = "rayon")]
-// test for rayon-like parallel map interactions.
+// test for rayon-like scope interactions.
 
 use salsa::Cancelled;
 use salsa::Setter;
@@ -9,21 +9,37 @@ use crate::setup::KnobsDatabase;
 
 #[salsa::input]
 struct ParallelInput {
-    field: Vec<u32>,
+    a: u32,
+    b: u32,
 }
 
 #[salsa::tracked]
-fn tracked_fn(db: &dyn salsa::Database, input: ParallelInput) -> Vec<u32> {
-    salsa::par_map(db, input.field(db), |_db, field| field + 1)
+fn tracked_fn(db: &dyn salsa::Database, input: ParallelInput) -> (u32, u32) {
+    let mut a = None;
+    let mut b = None;
+    salsa::scope(db, |scope| {
+        scope.spawn(|scope| a = Some(input.a(scope.db()) + 1));
+        scope.spawn(|scope| b = Some(input.b(scope.db()) + 1));
+    });
+    (a.unwrap(), b.unwrap())
 }
 
 #[salsa::tracked]
-fn a1(db: &dyn KnobsDatabase, input: ParallelInput) -> Vec<u32> {
+fn a1(db: &dyn KnobsDatabase, input: ParallelInput) -> (u32, u32) {
     db.signal(1);
-    salsa::par_map(db, input.field(db), |db, field| {
-        db.wait_for(2);
-        field + dummy(db)
-    })
+    let mut a = None;
+    let mut b = None;
+    salsa::scope(db, |scope| {
+        scope.spawn(|scope| {
+            scope.db().wait_for(2);
+            a = Some(input.a(scope.db()) + 1)
+        });
+        scope.spawn(|scope| {
+            scope.db().wait_for(2);
+            b = Some(input.b(scope.db()) + 1)
+        });
+    });
+    (a.unwrap(), b.unwrap())
 }
 
 #[salsa::tracked]
@@ -36,8 +52,7 @@ fn dummy(_db: &dyn KnobsDatabase) -> u32 {
 fn execute() {
     let db = salsa::DatabaseImpl::new();
 
-    let counts = (1..=10).collect::<Vec<u32>>();
-    let input = ParallelInput::new(&db, counts);
+    let input = ParallelInput::new(&db, 10, 20);
 
     tracked_fn(&db, input);
 }
@@ -49,9 +64,11 @@ fn execute() {
 fn direct_calls_panic() {
     let db = salsa::DatabaseImpl::new();
 
-    let counts = (1..=10).collect::<Vec<u32>>();
-    let input = ParallelInput::new(&db, counts);
-    let _: Vec<u32> = salsa::par_map(&db, input.field(&db), |_db, field| field + 1);
+    let input = ParallelInput::new(&db, 10, 20);
+    salsa::scope(&db, |scope| {
+        scope.spawn(|scope| _ = input.a(scope.db()) + 1);
+        scope.spawn(|scope| _ = input.b(scope.db()) + 1);
+    });
 }
 
 // Cancellation signalling test
@@ -74,20 +91,17 @@ fn direct_calls_panic() {
 fn execute_cancellation() {
     let mut db = Knobs::default();
 
-    let counts = (1..=10).collect::<Vec<u32>>();
-    let input = ParallelInput::new(&db, counts);
+    let input = ParallelInput::new(&db, 10, 20);
 
     let thread_a = std::thread::spawn({
         let db = db.clone();
         move || a1(&db, input)
     });
 
-    let counts = (2..=20).collect::<Vec<u32>>();
-
     db.signal_on_did_cancel(2);
-    input.set_field(&mut db).to(counts);
+    input.set_a(&mut db).to(30);
 
-    // Assert thread A *should* was cancelled
+    // Assert thread A was cancelled
     let cancelled = thread_a
         .join()
         .unwrap_err()

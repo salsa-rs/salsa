@@ -5,5 +5,7 @@ mod cycle_ab_peeping_c;
 mod cycle_nested_three_threads;
 mod cycle_panic;
 mod parallel_cancellation;
+mod parallel_join;
 mod parallel_map;
+mod parallel_scope;
 mod signal;
