@@ -553,7 +553,7 @@ where
         // to meet its safety invariant.
         unsafe {
             if C::update_fields(
-                current_revision,
+                current_deps.changed_at,
                 &mut data.revisions,
                 self.to_self_ptr(std::ptr::addr_of_mut!(data.fields)),
                 fields,
@@ -568,7 +568,7 @@ where
             }
         }
         if current_deps.durability < data.durability {
-            data.revisions = C::new_revisions(current_revision);
+            data.revisions = C::new_revisions(current_deps.changed_at);
             data.created_at = current_revision;
         }
         data.durability = current_deps.durability;
