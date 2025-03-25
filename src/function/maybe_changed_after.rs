@@ -30,8 +30,8 @@ pub enum VerifyResult {
 }
 
 impl VerifyResult {
-    pub(crate) const fn changed_if(changed: bool) -> Self {
-        if changed {
+    pub(crate) fn changed_after(revision: Revision, after: Revision) -> Self {
+        if revision > after {
             Self::changed()
         } else {
             Self::unchanged()
@@ -557,6 +557,8 @@ where
         debug_assert!(!cycle_heads.contains_head(database_key_index));
 
         match old_memo.revisions.origin.as_ref() {
+            // Shouldn't end up here, shallow verify ought to always pass
+            QueryOriginRef::DerivedImmutable => VerifyResult::unchanged(),
             QueryOriginRef::Derived(edges) => {
                 #[cfg(feature = "accumulator")]
                 let mut inputs = InputAccumulatedValues::Empty;

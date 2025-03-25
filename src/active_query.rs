@@ -203,13 +203,6 @@ impl ActiveQuery {
             accumulated_inputs,
         } = self;
 
-        let origin = if untracked_read {
-            QueryOrigin::derived_untracked(input_outputs.drain(..).collect())
-        } else {
-            QueryOrigin::derived(input_outputs.drain(..).collect())
-        };
-        disambiguator_map.clear();
-
         #[cfg(feature = "accumulator")]
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
         let verified_final = cycle_heads.is_empty();
@@ -222,6 +215,23 @@ impl ActiveQuery {
             mem::take(cycle_heads),
             iteration_count,
         );
+        #[cfg(not(feature = "accumulator"))]
+        let has_accumulated_inputs = || false;
+        #[cfg(feature = "accumulator")]
+        let has_accumulated_inputs = || accumulated_inputs.load().is_any();
+        let origin =
+            if durability == Durability::IMMUTABLE && extra.is_empty() && !has_accumulated_inputs()
+            {
+                // We only depend on immutable inputs, we can discard our dependencies
+                // as we will never be invalidated again
+                input_outputs.clear();
+                QueryOrigin::derived_immutable()
+            } else if untracked_read {
+                QueryOrigin::derived_untracked(input_outputs.drain(..).collect())
+            } else {
+                QueryOrigin::derived(input_outputs.drain(..).collect())
+            };
+        disambiguator_map.clear();
 
         let revisions = QueryRevisions {
             changed_at,

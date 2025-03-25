@@ -19,9 +19,9 @@ pub struct Runtime {
     #[cfg_attr(feature = "persistence", serde(skip))]
     revision_canceled: AtomicBool,
 
-    /// Stores the "last change" revision for values of each duration.
-    /// This vector is always of length at least 1 (for Durability 0)
-    /// but its total length depends on the number of durations. The
+    /// Stores the "last change" revision for values of each [`Durability`].
+    /// This vector is always of length at least 1 (for [`Durability::MIN`])
+    /// but its total length depends on the number of durabilities. The
     /// element at index 0 is special as it represents the "current
     /// revision".  In general, we have the invariant that revisions
     /// in here are *declining* -- that is, `revisions[i] >=
@@ -209,7 +209,16 @@ impl Runtime {
     /// Reports that an input with durability `durability` changed.
     /// This will update the 'last changed at' values for every durability
     /// less than or equal to `durability` to the current revision.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `durability` is `Durability::IMMUTABLE`.
     pub(crate) fn report_tracked_write(&mut self, durability: Durability) {
+        assert_ne!(
+            durability,
+            Durability::IMMUTABLE,
+            "can't write revision of immutable durability"
+        );
         let new_revision = self.current_revision();
         self.revisions[1..=durability.index()].fill(new_revision);
     }

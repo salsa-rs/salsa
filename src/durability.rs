@@ -1,3 +1,5 @@
+use std::fmt;
+
 /// Describes how likely a value is to change—how "durable" it is.
 ///
 /// By default, inputs have `Durability::LOW` and interned values have
@@ -42,11 +44,7 @@ impl<'de> serde::Deserialize<'de> for Durability {
 impl std::fmt::Debug for Durability {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            match self.0 {
-                DurabilityVal::Low => f.write_str("Durability::LOW"),
-                DurabilityVal::Medium => f.write_str("Durability::MEDIUM"),
-                DurabilityVal::High => f.write_str("Durability::HIGH"),
-            }
+            fmt::Display::fmt(self, f)
         } else {
             f.debug_tuple("Durability")
                 .field(&(self.0 as usize))
@@ -55,12 +53,26 @@ impl std::fmt::Debug for Durability {
     }
 }
 
+impl fmt::Display for Durability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Durability::")?;
+        match self.0 {
+            DurabilityVal::Low => write!(f, "Low"),
+            DurabilityVal::Medium => write!(f, "Medium"),
+            DurabilityVal::High => write!(f, "High"),
+            DurabilityVal::Immutable => write!(f, "Immutable"),
+        }
+    }
+}
+
 // We use an enum here instead of a u8 for niches.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+// Note that the order is important here
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum DurabilityVal {
     Low = 0,
     Medium = 1,
     High = 2,
+    Immutable = 3,
 }
 
 impl From<u8> for DurabilityVal {
@@ -69,7 +81,8 @@ impl From<u8> for DurabilityVal {
             0 => DurabilityVal::Low,
             1 => DurabilityVal::Medium,
             2 => DurabilityVal::High,
-            _ => panic!("invalid durability"),
+            3 => DurabilityVal::Immutable,
+            _ => unreachable!("invalid durability"),
         }
     }
 }
@@ -91,26 +104,33 @@ impl Durability {
     /// Example: the standard library or something from crates.io
     pub const HIGH: Durability = Durability(DurabilityVal::High);
 
-    /// The minimum possible durability; equivalent to LOW but
-    /// "conceptually" distinct (i.e., if we add more durability
-    /// levels, this could change).
-    pub(crate) const MIN: Durability = Self::LOW;
-
-    /// The maximum possible durability; equivalent to HIGH but
-    /// "conceptually" distinct (i.e., if we add more durability
-    /// levels, this could change).
-    pub(crate) const MAX: Durability = Self::HIGH;
-
-    /// Number of durability levels.
-    pub(crate) const LEN: usize = Self::HIGH.0 as usize + 1;
-
-    pub(crate) fn index(self) -> usize {
-        self.0 as usize
-    }
+    /// Immutable durability: things that are not expected to change.
+    ///
+    /// Example: the standard library or something from crates.io
+    pub const IMMUTABLE: Durability = Durability(DurabilityVal::Immutable);
 }
 
 impl Default for Durability {
     fn default() -> Self {
         Durability::LOW
+    }
+}
+
+impl Durability {
+    /// The minimum possible durability; equivalent to LOW but
+    /// "conceptually" distinct (i.e., if we add more durability
+    /// levels, this could change).
+    pub(crate) const MIN: Durability = Self::LOW;
+
+    /// The maximum possible durability; equivalent to IMMUTABLE but
+    /// "conceptually" distinct (i.e., if we add more durability
+    /// levels, this could change).
+    pub(crate) const MAX: Durability = Self::IMMUTABLE;
+
+    /// Number of durability levels.
+    pub(crate) const LEN: usize = Self::IMMUTABLE.0 as usize + 1;
+
+    pub(crate) fn index(self) -> usize {
+        self.0 as usize
     }
 }
