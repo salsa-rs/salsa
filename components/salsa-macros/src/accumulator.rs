@@ -31,7 +31,7 @@ pub(crate) fn accumulator(
 struct Accumulator;
 
 impl AllowedOptions for Accumulator {
-    const RETURN_REF: bool = false;
+    const RETURNS: bool = false;
     const SPECIFY: bool = false;
     const NO_EQ: bool = false;
     const DEBUG: bool = false;

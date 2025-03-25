@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use syn::{ext::IdentExt, spanned::Spanned};
+use syn::{ext::IdentExt, parenthesized, spanned::Spanned};
 
 /// "Options" are flags that can be supplied to the various salsa related
 /// macros. They are listed like `(ref, no_eq, foo=bar)` etc. The commas
@@ -9,10 +9,10 @@ use syn::{ext::IdentExt, spanned::Spanned};
 /// trait.
 #[derive(Debug)]
 pub(crate) struct Options<A: AllowedOptions> {
-    /// The `return_ref` option is used to signal that field/return type is "by ref"
+    /// The `returns` option is used to signal whether the field/return type is cloned or returned as a reference
     ///
-    /// If this is `Some`, the value is the `ref` identifier.
-    pub return_ref: Option<syn::Ident>,
+    /// If this is `Some`, the value is the return mode (`as_ref`, `cloned`).
+    pub returns: Option<syn::Ident>,
 
     /// The `no_eq` option is used to signal that a given field does not implement
     /// the `Eq` trait and cannot be compared for equality.
@@ -90,7 +90,7 @@ pub(crate) struct Options<A: AllowedOptions> {
 impl<A: AllowedOptions> Default for Options<A> {
     fn default() -> Self {
         Self {
-            return_ref: Default::default(),
+            returns: Default::default(),
             specify: Default::default(),
             no_eq: Default::default(),
             debug: Default::default(),
@@ -111,7 +111,7 @@ impl<A: AllowedOptions> Default for Options<A> {
 
 /// These flags determine which options are allowed in a given context
 pub(crate) trait AllowedOptions {
-    const RETURN_REF: bool;
+    const RETURNS: bool;
     const SPECIFY: bool;
     const NO_EQ: bool;
     const DEBUG: bool;
@@ -136,18 +136,21 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
 
         while !input.is_empty() {
             let ident: syn::Ident = syn::Ident::parse_any(input)?;
-            if ident == "return_ref" {
-                if A::RETURN_REF {
-                    if let Some(old) = options.return_ref.replace(ident) {
+            if ident == "returns" {
+                let content;
+                parenthesized!(content in input);
+                let mode = content.parse()?;
+                if A::RETURNS {
+                    if let Some(old) = options.returns.replace(mode) {
                         return Err(syn::Error::new(
                             old.span(),
-                            "option `return_ref` provided twice",
+                            "option `returns` provided twice",
                         ));
                     }
                 } else {
                     return Err(syn::Error::new(
                         ident.span(),
-                        "`return_ref` option not allowed here",
+                        "`returns` option not allowed here",
                     ));
                 }
             } else if ident == "no_eq" {
