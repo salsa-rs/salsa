@@ -1,5 +1,6 @@
-use crate::token_stream_with_error;
 use proc_macro2::TokenStream;
+
+use crate::token_stream_with_error;
 
 /// The implementation of the `supertype` macro.
 ///

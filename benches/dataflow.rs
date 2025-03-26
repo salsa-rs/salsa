@@ -2,10 +2,11 @@
 //!
 //! This benchmark simulates a (very simplified) version of a real dataflow analysis using fixpoint
 //! iteration.
-use codspeed_criterion_compat::{criterion_group, criterion_main, BatchSize, Criterion};
-use salsa::{CycleRecoveryAction, Database as Db, Setter};
 use std::collections::BTreeSet;
 use std::iter::IntoIterator;
+
+use codspeed_criterion_compat::{criterion_group, criterion_main, BatchSize, Criterion};
+use salsa::{CycleRecoveryAction, Database as Db, Setter};
 
 include!("shims/global_alloc_overwrite.rs");
 

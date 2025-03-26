@@ -1,15 +1,14 @@
-use crate::{
-    accumulator::accumulated_map::InputAccumulatedValues,
-    cycle::{CycleHeads, CycleRecoveryStrategy},
-    key::DatabaseKeyIndex,
-    table::sync::ClaimResult,
-    zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase},
-    zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin},
-    AsDynDatabase as _, Id, Revision,
-};
 use std::sync::atomic::Ordering;
 
-use super::{memo::Memo, Configuration, IngredientImpl};
+use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy};
+use crate::function::memo::Memo;
+use crate::function::{Configuration, IngredientImpl};
+use crate::key::DatabaseKeyIndex;
+use crate::table::sync::ClaimResult;
+use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
+use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin};
+use crate::{AsDynDatabase as _, Id, Revision};
 
 /// Result of memo validation.
 pub enum VerifyResult {

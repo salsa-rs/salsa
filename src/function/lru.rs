@@ -1,8 +1,9 @@
 use std::num::NonZeroUsize;
 
-use crate::{hash::FxLinkedHashSet, Id};
-
 use parking_lot::Mutex;
+
+use crate::hash::FxLinkedHashSet;
+use crate::Id;
 
 pub(super) struct Lru {
     capacity: Option<NonZeroUsize>,

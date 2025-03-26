@@ -1,12 +1,10 @@
-use super::{Configuration, IngredientImpl};
-use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
+use crate::accumulator::{self};
+use crate::function::{Configuration, IngredientImpl};
+use crate::hash::FxHashSet;
+use crate::zalsa::ZalsaDatabase;
 use crate::zalsa_local::QueryOrigin;
-use crate::{
-    accumulator::{self, accumulated_map::AccumulatedMap},
-    hash::FxHashSet,
-    zalsa::ZalsaDatabase,
-    AsDynDatabase, DatabaseKeyIndex, Id,
-};
+use crate::{AsDynDatabase, DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
 where

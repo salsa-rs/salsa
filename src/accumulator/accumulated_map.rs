@@ -1,13 +1,11 @@
-use std::{
-    ops,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::ops;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rustc_hash::FxHashMap;
 
+use crate::accumulator::accumulated::Accumulated;
+use crate::accumulator::{Accumulator, AnyAccumulated};
 use crate::IngredientIndex;
-
-use super::{accumulated::Accumulated, Accumulator, AnyAccumulated};
 
 #[derive(Default)]
 pub struct AccumulatedMap {

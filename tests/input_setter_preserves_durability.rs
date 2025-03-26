@@ -1,7 +1,6 @@
-use test_log::test;
-
 use salsa::plumbing::ZalsaDatabase;
 use salsa::{Durability, Setter};
+use test_log::test;
 
 #[salsa::input]
 struct MyInput {

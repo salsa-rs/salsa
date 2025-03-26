@@ -1,10 +1,9 @@
-use crate::{
-    db_lifetime,
-    hygiene::Hygiene,
-    options::Options,
-    salsa_struct::{SalsaStruct, SalsaStructAllowedOptions},
-};
 use proc_macro2::TokenStream;
+
+use crate::db_lifetime;
+use crate::hygiene::Hygiene;
+use crate::options::Options;
+use crate::salsa_struct::{SalsaStruct, SalsaStructAllowedOptions};
 
 /// For an entity struct `Foo` with fields `f1: T1, ..., fN: TN`, we generate...
 ///

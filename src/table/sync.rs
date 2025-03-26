@@ -2,14 +2,11 @@ use std::thread::ThreadId;
 
 use parking_lot::Mutex;
 
-use crate::{
-    key::DatabaseKeyIndex,
-    runtime::{BlockResult, WaitResult},
-    zalsa::{MemoIngredientIndex, Zalsa},
-    Database,
-};
-
-use super::util;
+use crate::key::DatabaseKeyIndex;
+use crate::runtime::{BlockResult, WaitResult};
+use crate::table::util;
+use crate::zalsa::{MemoIngredientIndex, Zalsa};
+use crate::Database;
 
 /// Tracks the keys that are currently being processed; used to coordinate between
 /// worker threads.

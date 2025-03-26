@@ -1,20 +1,14 @@
-use std::{
-    any::{Any, TypeId},
-    fmt,
-};
+use std::any::{Any, TypeId};
+use std::fmt;
 
-use crate::{
-    accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
-    cycle::CycleRecoveryStrategy,
-    function::VerifyResult,
-    plumbing::IngredientIndices,
-    table::Table,
-    zalsa::{transmute_data_mut_ptr, transmute_data_ptr, IngredientIndex, Zalsa},
-    zalsa_local::QueryOrigin,
-    Database, DatabaseKeyIndex, Id,
-};
-
-use super::Revision;
+use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
+use crate::cycle::CycleRecoveryStrategy;
+use crate::function::VerifyResult;
+use crate::plumbing::IngredientIndices;
+use crate::table::Table;
+use crate::zalsa::{transmute_data_mut_ptr, transmute_data_ptr, IngredientIndex, Zalsa};
+use crate::zalsa_local::QueryOrigin;
+use crate::{Database, DatabaseKeyIndex, Id, Revision};
 
 /// A "jar" is a group of ingredients that are added atomically.
 /// Each type implementing jar can be added to the database at most once.

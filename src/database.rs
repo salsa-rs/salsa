@@ -1,9 +1,8 @@
-use std::{any::Any, borrow::Cow};
+use std::any::Any;
+use std::borrow::Cow;
 
-use crate::{
-    zalsa::{IngredientIndex, ZalsaDatabase},
-    Durability, Event, Revision,
-};
+use crate::zalsa::{IngredientIndex, ZalsaDatabase};
+use crate::{Durability, Event, Revision};
 
 /// The trait implemented by all Salsa databases.
 /// You can create your own subtraits of this trait using the `#[salsa::db]`(`crate::db`) procedural macro.

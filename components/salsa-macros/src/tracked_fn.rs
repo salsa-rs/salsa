@@ -1,8 +1,11 @@
 use proc_macro2::{Literal, Span, TokenStream};
 use quote::ToTokens;
-use syn::{spanned::Spanned, ItemFn};
+use syn::spanned::Spanned;
+use syn::ItemFn;
 
-use crate::{db_lifetime, fn_util, hygiene::Hygiene, options::Options};
+use crate::hygiene::Hygiene;
+use crate::options::Options;
+use crate::{db_lifetime, fn_util};
 
 // Source:
 //

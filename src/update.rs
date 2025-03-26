@@ -1,12 +1,10 @@
 #![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    hash::{BuildHasher, Hash},
-    marker::PhantomData,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::hash::{BuildHasher, Hash};
+use std::marker::PhantomData;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[cfg(feature = "rayon")]
 use rayon::iter::Either;

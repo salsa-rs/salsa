@@ -1,4 +1,5 @@
-use syn::{spanned::Spanned, Item};
+use syn::spanned::Spanned;
+use syn::Item;
 
 use crate::token_stream_with_error;
 

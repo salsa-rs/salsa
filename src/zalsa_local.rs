@@ -1,3 +1,7 @@
+use std::cell::RefCell;
+use std::panic::UnwindSafe;
+use std::sync::atomic::AtomicBool;
+
 use rustc_hash::FxHashMap;
 use tracing::debug;
 
@@ -9,18 +13,10 @@ use crate::cycle::CycleHeads;
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::{Stamp, StampedValue};
-use crate::table::PageIndex;
-use crate::table::Slot;
-use crate::table::Table;
+use crate::table::{PageIndex, Slot, Table};
 use crate::tracked_struct::{Disambiguator, Identity, IdentityHash, IdentityMap};
 use crate::zalsa::IngredientIndex;
-use crate::Accumulator;
-use crate::Cancelled;
-use crate::Id;
-use crate::Revision;
-use std::cell::RefCell;
-use std::panic::UnwindSafe;
-use std::sync::atomic::AtomicBool;
+use crate::{Accumulator, Cancelled, Id, Revision};
 
 /// State that is specific to a single execution thread.
 ///

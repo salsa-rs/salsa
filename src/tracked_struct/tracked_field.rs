@@ -1,8 +1,10 @@
 use std::marker::PhantomData;
 
-use crate::{function::VerifyResult, ingredient::Ingredient, zalsa::IngredientIndex, Database, Id};
-
-use super::{Configuration, Value};
+use crate::function::VerifyResult;
+use crate::ingredient::Ingredient;
+use crate::tracked_struct::{Configuration, Value};
+use crate::zalsa::IngredientIndex;
+use crate::{Database, Id};
 
 /// Created for each tracked struct.
 ///

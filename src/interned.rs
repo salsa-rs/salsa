@@ -1,18 +1,5 @@
 #![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 
-use dashmap::SharedValue;
-
-use crate::durability::Durability;
-use crate::function::VerifyResult;
-use crate::ingredient::fmt_index;
-use crate::plumbing::{IngredientIndices, Jar};
-use crate::revision::AtomicRevision;
-use crate::table::memo::MemoTable;
-use crate::table::sync::SyncTable;
-use crate::table::Slot;
-use crate::zalsa::{IngredientIndex, Zalsa};
-use crate::zalsa_local::QueryOrigin;
-use crate::{Database, DatabaseKeyIndex, Event, EventKind, Id};
 use std::any::TypeId;
 use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
@@ -20,9 +7,19 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use super::hash::FxDashMap;
-use super::ingredient::Ingredient;
-use super::Revision;
+use dashmap::SharedValue;
+
+use crate::durability::Durability;
+use crate::function::VerifyResult;
+use crate::hash::FxDashMap;
+use crate::ingredient::{fmt_index, Ingredient};
+use crate::plumbing::{IngredientIndices, Jar};
+use crate::revision::AtomicRevision;
+use crate::table::memo::MemoTable;
+use crate::table::sync::SyncTable;
+use crate::table::Slot;
+use crate::zalsa::{IngredientIndex, Zalsa};
+use crate::{Database, DatabaseKeyIndex, Event, EventKind, Id, Revision};
 
 pub trait Configuration: Sized + 'static {
     const DEBUG_NAME: &'static str;

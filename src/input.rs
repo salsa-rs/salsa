@@ -1,8 +1,6 @@
-use std::{
-    any::{Any, TypeId},
-    fmt,
-    ops::DerefMut,
-};
+use std::any::{Any, TypeId};
+use std::fmt;
+use std::ops::DerefMut;
 
 pub mod input_field;
 pub mod setter;
@@ -10,17 +8,17 @@ pub mod singleton;
 
 use input_field::FieldIngredientImpl;
 
-use crate::{
-    function::VerifyResult,
-    id::{AsId, FromIdWithDb},
-    ingredient::{fmt_index, Ingredient},
-    input::singleton::{Singleton, SingletonChoice},
-    key::DatabaseKeyIndex,
-    plumbing::{Jar, Stamp},
-    table::{memo::MemoTable, sync::SyncTable, Slot, Table},
-    zalsa::{IngredientIndex, Zalsa},
-    Database, Durability, Id, Revision, Runtime,
-};
+use crate::function::VerifyResult;
+use crate::id::{AsId, FromIdWithDb};
+use crate::ingredient::{fmt_index, Ingredient};
+use crate::input::singleton::{Singleton, SingletonChoice};
+use crate::key::DatabaseKeyIndex;
+use crate::plumbing::{Jar, Stamp};
+use crate::table::memo::MemoTable;
+use crate::table::sync::SyncTable;
+use crate::table::{Slot, Table};
+use crate::zalsa::{IngredientIndex, Zalsa};
+use crate::{Database, Durability, Id, Revision, Runtime};
 
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;

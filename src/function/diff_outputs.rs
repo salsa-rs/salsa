@@ -1,8 +1,9 @@
-use super::{memo::Memo, Configuration, IngredientImpl};
-use crate::{
-    hash::FxHashSet, zalsa::Zalsa, zalsa_local::QueryRevisions, AsDynDatabase as _, Database,
-    DatabaseKeyIndex, Event, EventKind,
-};
+use crate::function::memo::Memo;
+use crate::function::{Configuration, IngredientImpl};
+use crate::hash::FxHashSet;
+use crate::zalsa::Zalsa;
+use crate::zalsa_local::QueryRevisions;
+use crate::{AsDynDatabase as _, Database, DatabaseKeyIndex, Event, EventKind};
 
 impl<C> IngredientImpl<C>
 where

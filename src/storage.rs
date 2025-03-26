@@ -1,13 +1,13 @@
 //! Public API facades for the implementation details of [`Zalsa`] and [`ZalsaLocal`].
-use std::{marker::PhantomData, panic::RefUnwindSafe, sync::Arc};
+use std::marker::PhantomData;
+use std::panic::RefUnwindSafe;
+use std::sync::Arc;
 
 use parking_lot::{Condvar, Mutex};
 
-use crate::{
-    zalsa::{Zalsa, ZalsaDatabase},
-    zalsa_local::{self, ZalsaLocal},
-    Database, Event, EventKind,
-};
+use crate::zalsa::{Zalsa, ZalsaDatabase};
+use crate::zalsa_local::{self, ZalsaLocal};
+use crate::{Database, Event, EventKind};
 
 /// A handle to non-local database state.
 pub struct StorageHandle<Db> {

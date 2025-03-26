@@ -1,22 +1,17 @@
 //! Basic test of accumulator functionality.
 
-use std::{
-    any::{Any, TypeId},
-    fmt,
-    marker::PhantomData,
-    panic::UnwindSafe,
-};
+use std::any::{Any, TypeId};
+use std::fmt;
+use std::marker::PhantomData;
+use std::panic::UnwindSafe;
 
-use accumulated::Accumulated;
-use accumulated::AnyAccumulated;
+use accumulated::{Accumulated, AnyAccumulated};
 
-use crate::{
-    function::VerifyResult,
-    ingredient::{fmt_index, Ingredient, Jar},
-    plumbing::IngredientIndices,
-    zalsa::{IngredientIndex, Zalsa},
-    Database, Id, Revision,
-};
+use crate::function::VerifyResult;
+use crate::ingredient::{fmt_index, Ingredient, Jar};
+use crate::plumbing::IngredientIndices;
+use crate::zalsa::{IngredientIndex, Zalsa};
+use crate::{Database, Id, Revision};
 
 mod accumulated;
 pub(crate) mod accumulated_map;

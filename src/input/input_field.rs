@@ -1,12 +1,11 @@
-use crate::function::VerifyResult;
-use crate::ingredient::{fmt_index, Ingredient};
-use crate::input::Configuration;
-use crate::zalsa::IngredientIndex;
-use crate::{Database, Id, Revision};
 use std::fmt;
 use std::marker::PhantomData;
 
-use super::{IngredientImpl, Value};
+use crate::function::VerifyResult;
+use crate::ingredient::{fmt_index, Ingredient};
+use crate::input::{Configuration, IngredientImpl, Value};
+use crate::zalsa::IngredientIndex;
+use crate::{Database, Id, Revision};
 
 /// Ingredient used to represent the fields of a `#[salsa::input]`.
 ///

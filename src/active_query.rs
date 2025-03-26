@@ -2,21 +2,17 @@ use std::ops::Not;
 use std::sync::atomic::AtomicBool;
 use std::{mem, ops};
 
-use super::zalsa_local::{QueryEdges, QueryOrigin, QueryRevisions};
-use crate::accumulator::accumulated_map::AtomicInputAccumulatedValues;
-use crate::runtime::Stamp;
-use crate::tracked_struct::{DisambiguatorMap, IdentityHash, IdentityMap};
-use crate::zalsa_local::QueryEdge;
-use crate::{
-    accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
-    cycle::CycleHeads,
-    durability::Durability,
-    hash::FxIndexSet,
-    key::DatabaseKeyIndex,
-    tracked_struct::Disambiguator,
-    Revision,
+use crate::accumulator::accumulated_map::{
+    AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues,
 };
-use crate::{Accumulator, IngredientIndex};
+use crate::cycle::CycleHeads;
+use crate::durability::Durability;
+use crate::hash::FxIndexSet;
+use crate::key::DatabaseKeyIndex;
+use crate::runtime::Stamp;
+use crate::tracked_struct::{Disambiguator, DisambiguatorMap, IdentityHash, IdentityMap};
+use crate::zalsa_local::{QueryEdge, QueryEdges, QueryOrigin, QueryRevisions};
+use crate::{Accumulator, IngredientIndex, Revision};
 
 #[derive(Debug)]
 pub(crate) struct ActiveQuery {

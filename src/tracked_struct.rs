@@ -1,22 +1,26 @@
 #![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 
-use std::{any::TypeId, fmt, hash::Hash, marker::PhantomData, ops::DerefMut};
+use std::any::TypeId;
+use std::fmt;
+use std::hash::Hash;
+use std::marker::PhantomData;
+use std::ops::DerefMut;
 
 use crossbeam_queue::SegQueue;
 use tracked_field::FieldIngredientImpl;
 
-use crate::{
-    function::VerifyResult,
-    ingredient::{fmt_index, Ingredient, Jar},
-    key::DatabaseKeyIndex,
-    plumbing::ZalsaLocal,
-    revision::OptionalAtomicRevision,
-    runtime::StampedValue,
-    salsa_struct::SalsaStructInDb,
-    table::{memo::MemoTable, sync::SyncTable, Slot, Table},
-    zalsa::{IngredientIndex, Zalsa},
-    Database, Durability, Event, EventKind, Id, Revision,
-};
+use crate::function::VerifyResult;
+use crate::ingredient::{fmt_index, Ingredient, Jar};
+use crate::key::DatabaseKeyIndex;
+use crate::plumbing::ZalsaLocal;
+use crate::revision::OptionalAtomicRevision;
+use crate::runtime::StampedValue;
+use crate::salsa_struct::SalsaStructInDb;
+use crate::table::memo::MemoTable;
+use crate::table::sync::SyncTable;
+use crate::table::{Slot, Table};
+use crate::zalsa::{IngredientIndex, Zalsa};
+use crate::{Database, Durability, Event, EventKind, Id, Revision};
 
 pub mod tracked_field;
 

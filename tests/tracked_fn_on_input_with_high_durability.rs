@@ -1,8 +1,7 @@
 #![allow(warnings)]
 
-use expect_test::expect;
-
 use common::{EventLoggerDatabase, HasLogger, LogDatabase, Logger};
+use expect_test::expect;
 use salsa::plumbing::HasStorage;
 use salsa::{Database, Durability, Event, EventKind, Setter};
 

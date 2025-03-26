@@ -1,19 +1,15 @@
 #![allow(unreachable_patterns)]
 // FIXME(rust-lang/rust#129031): regression in nightly
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crossbeam_channel::{unbounded, Sender};
-use dashmap::{mapref::entry::Entry, DashMap};
+use dashmap::mapref::entry::Entry;
+use dashmap::DashMap;
 use eyre::{eyre, Context, Report, Result};
-use notify_debouncer_mini::{
-    new_debouncer,
-    notify::{RecommendedWatcher, RecursiveMode},
-    DebounceEventResult, Debouncer,
-};
+use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
+use notify_debouncer_mini::{new_debouncer, DebounceEventResult, Debouncer};
 use salsa::{Accumulator, Setter, Storage};
 
 // ANCHOR: main

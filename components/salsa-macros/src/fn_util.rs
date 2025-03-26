@@ -1,4 +1,5 @@
-use crate::{hygiene::Hygiene, xform::ChangeLt};
+use crate::hygiene::Hygiene;
+use crate::xform::ChangeLt;
 
 /// Returns a vector of ids representing the function arguments.
 /// Prefers to reuse the names given by the user, if possible.

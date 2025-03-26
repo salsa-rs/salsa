@@ -1,7 +1,8 @@
 use proc_macro2::TokenStream;
 use syn::parse::Nothing;
 
-use crate::{hygiene::Hygiene, token_stream_with_error};
+use crate::hygiene::Hygiene;
+use crate::token_stream_with_error;
 
 // Source:
 //

@@ -2,9 +2,10 @@
 //!
 //! This test case is intended to simulate a (very simplified) version of a real dataflow analysis
 //! using fixpoint iteration.
-use salsa::{CycleRecoveryAction, Database as Db, Setter};
 use std::collections::BTreeSet;
 use std::iter::IntoIterator;
+
+use salsa::{CycleRecoveryAction, Database as Db, Setter};
 
 /// A Use of a symbol.
 #[salsa::input]

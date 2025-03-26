@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
-use syn::{ext::IdentExt, spanned::Spanned};
+use syn::ext::IdentExt;
+use syn::spanned::Spanned;
 
 /// "Options" are flags that can be supplied to the various salsa related
 /// macros. They are listed like `(ref, no_eq, foo=bar)` etc. The commas

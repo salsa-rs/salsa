@@ -1,15 +1,13 @@
 use std::sync::atomic::AtomicBool;
 
-use crate::{
-    accumulator::accumulated_map::InputAccumulatedValues,
-    revision::AtomicRevision,
-    tracked_struct::TrackedStructInDb,
-    zalsa::ZalsaDatabase,
-    zalsa_local::{QueryOrigin, QueryRevisions},
-    AsDynDatabase as _, Database, DatabaseKeyIndex, Id,
-};
-
-use super::{memo::Memo, Configuration, IngredientImpl};
+use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::function::memo::Memo;
+use crate::function::{Configuration, IngredientImpl};
+use crate::revision::AtomicRevision;
+use crate::tracked_struct::TrackedStructInDb;
+use crate::zalsa::ZalsaDatabase;
+use crate::zalsa_local::{QueryOrigin, QueryRevisions};
+use crate::{AsDynDatabase as _, Database, DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
 where

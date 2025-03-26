@@ -4,7 +4,6 @@
 
 mod common;
 use common::{LogDatabase, LoggerDatabase};
-
 use expect_test::expect;
 use salsa::{Accumulator, Setter};
 use test_log::test;

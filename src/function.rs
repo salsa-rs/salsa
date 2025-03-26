@@ -1,25 +1,22 @@
-use std::{any::Any, fmt, ptr::NonNull};
-
-use crate::{
-    accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues},
-    cycle::{CycleRecoveryAction, CycleRecoveryStrategy},
-    ingredient::fmt_index,
-    key::DatabaseKeyIndex,
-    plumbing::MemoIngredientMap,
-    salsa_struct::SalsaStructInDb,
-    table::sync::ClaimResult,
-    table::Table,
-    views::DatabaseDownCaster,
-    zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa},
-    zalsa_local::QueryOrigin,
-    Database, Id, Revision,
-};
-
-use self::delete::DeletedEntries;
-
-use super::ingredient::Ingredient;
+use std::any::Any;
+use std::fmt;
+use std::ptr::NonNull;
 
 pub(crate) use maybe_changed_after::VerifyResult;
+
+use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
+use crate::cycle::{CycleRecoveryAction, CycleRecoveryStrategy};
+use crate::function::delete::DeletedEntries;
+use crate::ingredient::{fmt_index, Ingredient};
+use crate::key::DatabaseKeyIndex;
+use crate::plumbing::MemoIngredientMap;
+use crate::salsa_struct::SalsaStructInDb;
+use crate::table::sync::ClaimResult;
+use crate::table::Table;
+use crate::views::DatabaseDownCaster;
+use crate::zalsa::{IngredientIndex, MemoIngredientIndex, Zalsa};
+use crate::zalsa_local::QueryOrigin;
+use crate::{Database, Id, Revision};
 
 mod accumulated;
 mod backdate;
