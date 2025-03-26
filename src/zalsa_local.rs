@@ -310,7 +310,11 @@ pub(crate) struct QueryRevisions {
     ///   previous revision. To handle this, `diff_outputs` compares
     ///   the structs from the old/new revision and retains
     ///   only entries that appeared in the new revision.
-    pub(super) tracked_struct_ids: IdentityMap,
+    ///
+    /// Since not all queries produce a tracked struct, wrapping
+    /// `IdentityMap` in an `Option<Box<T>>` reduces the size of
+    /// `QueryRevisions` by 3 words (24 bytes on a 64-bit platform).
+    pub(super) tracked_struct_ids: Option<Box<IdentityMap>>,
 
     pub(super) accumulated: Option<Box<AccumulatedMap>>,
 

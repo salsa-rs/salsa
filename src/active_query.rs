@@ -173,7 +173,10 @@ impl ActiveQuery {
             .is_empty()
             .not()
             .then(|| Box::new(mem::take(accumulated)));
-        let tracked_struct_ids = mem::take(tracked_struct_ids);
+        let tracked_struct_ids = tracked_struct_ids
+            .is_empty()
+            .not()
+            .then(|| Box::new(mem::take(tracked_struct_ids)));
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
         let cycle_heads = mem::take(cycle_heads);
         QueryRevisions {

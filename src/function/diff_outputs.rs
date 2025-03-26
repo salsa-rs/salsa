@@ -27,19 +27,23 @@ where
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset
         let mut old_outputs: FxHashSet<_> = old_memo.revisions.origin.outputs().collect();
-
         // Iterate over the outputs of the current query
         // and remove elements from `old_outputs` when we find them
         for new_output in revisions.origin.outputs() {
             old_outputs.remove(&new_output);
         }
 
-        if !old_outputs.is_empty() {
-            // Remove the outputs that are no longer present in the current revision
-            // to prevent that the next revision is seeded with a id mapping that no longer exists.
-            revisions.tracked_struct_ids.retain(|&k, &mut value| {
-                !old_outputs.contains(&DatabaseKeyIndex::new(k.ingredient_index(), value))
-            });
+        if let Some(tracked_struct_ids) = &mut revisions.tracked_struct_ids {
+            if !old_outputs.is_empty() {
+                // Remove the outputs that are no longer present in the current revision
+                // to prevent that the next revision is seeded with a id mapping that no longer exists.
+                tracked_struct_ids.retain(|&k, &mut value| {
+                    !old_outputs.contains(&DatabaseKeyIndex::new(k.ingredient_index(), value))
+                });
+            }
+            if tracked_struct_ids.is_empty() {
+                revisions.tracked_struct_ids = None;
+            }
         }
 
         for old_output in old_outputs {
