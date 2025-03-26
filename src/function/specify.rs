@@ -134,11 +134,9 @@ where
         }
 
         let database_key_index = self.database_key_index(key);
-        memo.mark_as_verified(
-            db,
-            zalsa.current_revision(),
-            database_key_index,
-            InputAccumulatedValues::Empty,
-        );
+        memo.mark_as_verified(db, zalsa.current_revision(), database_key_index);
+        memo.revisions
+            .accumulated_inputs
+            .store(InputAccumulatedValues::Empty);
     }
 }
