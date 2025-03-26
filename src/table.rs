@@ -12,13 +12,10 @@ use std::{
 use memo::MemoTable;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use sync::SyncTable;
 
 use crate::{Id, IngredientIndex, Revision};
 
 pub(crate) mod memo;
-pub(crate) mod sync;
-mod util;
 
 const PAGE_LEN_BITS: usize = 10;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
@@ -44,13 +41,6 @@ pub(crate) trait Slot: Any + Send + Sync {
 
     /// Mutably access the [`MemoTable`] for this slot.
     fn memos_mut(&mut self) -> &mut MemoTable;
-
-    /// Access the [`SyncTable`][] for this slot.
-    ///
-    /// # Safety condition
-    ///
-    /// The current revision MUST be the current revision of the database containing this slot.
-    unsafe fn syncs(&self, current_revision: Revision) -> &SyncTable;
 }
 
 /// [Slot::memos]
@@ -61,17 +51,12 @@ type SlotMemosFn<T> = unsafe fn(&T, current_revision: Revision) -> &MemoTable;
 type SlotMemosMutFnRaw = unsafe fn(*mut ()) -> *mut MemoTable;
 /// [Slot::memos_mut]
 type SlotMemosMutFn<T> = unsafe fn(&mut T) -> &mut MemoTable;
-/// [Slot::syncs]
-type SlotSyncsFnRaw = unsafe fn(*const (), current_revision: Revision) -> *const SyncTable;
-/// [Slot::syncs]
-type SlotSyncsFn<T> = unsafe fn(&T, current_revision: Revision) -> &SyncTable;
 
 struct SlotVTable {
     layout: Layout,
     /// [`Slot`] methods
     memos: SlotMemosFnRaw,
     memos_mut: SlotMemosMutFnRaw,
-    syncs: SlotSyncsFnRaw,
     /// A drop impl to call when the own page drops
     /// SAFETY: The caller is required to supply a correct data pointer to a `Box<PageDataEntry<T>>` and initialized length
     drop_impl: unsafe fn(data: *mut (), initialized: usize),
@@ -96,8 +81,6 @@ impl SlotVTable {
                 memos_mut: unsafe {
                     mem::transmute::<SlotMemosMutFn<T>, SlotMemosMutFnRaw>(T::memos_mut)
                 },
-                // SAFETY: The signatures are compatible
-                syncs: unsafe { mem::transmute::<SlotSyncsFn<T>, SlotSyncsFnRaw>(T::syncs) },
             }
         }
     }
@@ -244,19 +227,6 @@ impl Table {
             .unwrap_or_else(|| panic!("index `{page_index}` is uninitialized"));
         // SAFETY: We supply a proper slot pointer and the caller is required to pass the `current_revision`.
         unsafe { &mut *(page.slot_vtable.memos_mut)(page.get(slot)) }
-    }
-
-    /// Get the sync table associated with `id`
-    ///
-    /// # Safety condition
-    ///
-    /// The parameter `current_revision` MUST be the current revision
-    /// of the owner of database owning this table.
-    pub(crate) unsafe fn syncs(&self, id: Id, current_revision: Revision) -> &SyncTable {
-        let (page, slot) = split_id(id);
-        let page = &self.pages[page.0];
-        // SAFETY: We supply a proper slot pointer and the caller is required to pass the `current_revision`.
-        unsafe { &*(page.slot_vtable.syncs)(page.get(slot), current_revision) }
     }
 
     pub(crate) fn slots_of<T: Slot>(&self) -> impl Iterator<Item = &T> + '_ {
