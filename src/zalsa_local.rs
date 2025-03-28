@@ -338,7 +338,7 @@ impl QueryRevisions {
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(false),
-            cycle_heads: CycleHeads::from(query),
+            cycle_heads: CycleHeads::initial(query),
         }
     }
 

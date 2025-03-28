@@ -243,7 +243,11 @@ where
     fn is_provisional_cycle_head<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool {
         let zalsa = db.zalsa();
         self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
-            .is_some_and(|memo| memo.cycle_heads().contains(&self.database_key_index(input)))
+            .is_some_and(|memo| {
+                memo.cycle_heads()
+                    .into_iter()
+                    .any(|head| head.database_key_index == self.database_key_index(input))
+            })
     }
 
     /// Attempts to claim `key_index`, returning `false` if a cycle occurs.

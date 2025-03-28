@@ -112,7 +112,7 @@ where
                 CycleRecoveryStrategy::Fixpoint => {
                     return Some(VerifyResult::Unchanged(
                         InputAccumulatedValues::Empty,
-                        CycleHeads::from(database_key_index),
+                        CycleHeads::initial(database_key_index),
                     ));
                 }
             },
@@ -249,8 +249,11 @@ where
         );
         if (&memo.revisions.cycle_heads).into_iter().any(|cycle_head| {
             zalsa
-                .lookup_ingredient(cycle_head.ingredient_index())
-                .is_provisional_cycle_head(db.as_dyn_database(), cycle_head.key_index())
+                .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
+                .is_provisional_cycle_head(
+                    db.as_dyn_database(),
+                    cycle_head.database_key_index.key_index(),
+                )
         }) {
             return false;
         }
@@ -390,7 +393,7 @@ where
 
                     let in_heads = cycle_heads
                         .iter()
-                        .position(|&head| head == database_key_index)
+                        .position(|&head| head.database_key_index == database_key_index)
                         .inspect(|&head| _ = cycle_heads.swap_remove(head))
                         .is_some();
 

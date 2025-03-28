@@ -173,15 +173,16 @@ impl<V> Memo<V> {
         let hit_cycle = self
             .cycle_heads()
             .into_iter()
-            .filter(|&head| head != database_key_index)
+            .filter(|&head| head.database_key_index != database_key_index)
             .any(|head| {
-                let ingredient = zalsa.lookup_ingredient(head.ingredient_index());
-                if !ingredient.is_provisional_cycle_head(db, head.key_index()) {
+                let head_index = head.database_key_index;
+                let ingredient = zalsa.lookup_ingredient(head_index.ingredient_index());
+                if !ingredient.is_provisional_cycle_head(db, head_index.key_index()) {
                     // This cycle is already finalized, so we don't need to wait on it;
                     // keep looping through cycle heads.
                     retry = true;
                     false
-                } else if ingredient.wait_for(db, head.key_index()) {
+                } else if ingredient.wait_for(db, head_index.key_index()) {
                     // There's a new memo available for the cycle head; fetch our own
                     // updated memo and see if it's still provisional or if the cycle
                     // has resolved.
