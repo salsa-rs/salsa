@@ -1,10 +1,8 @@
 use core::fmt;
 
-use crate::{
-    function::VerifyResult,
-    zalsa::{IngredientIndex, Zalsa},
-    Database, Id,
-};
+use crate::function::VerifyResult;
+use crate::zalsa::{IngredientIndex, Zalsa};
+use crate::{Database, Id};
 
 // ANCHOR: DatabaseKeyIndex
 /// An integer that uniquely identifies a particular query instance within the

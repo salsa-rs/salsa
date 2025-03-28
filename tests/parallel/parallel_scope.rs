@@ -1,11 +1,9 @@
 #![cfg(feature = "rayon")]
 // test for rayon-like scope interactions.
 
-use salsa::Cancelled;
-use salsa::Setter;
+use salsa::{Cancelled, Setter};
 
-use crate::setup::Knobs;
-use crate::setup::KnobsDatabase;
+use crate::setup::{Knobs, KnobsDatabase};
 
 #[salsa::input]
 struct ParallelInput {

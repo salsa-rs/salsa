@@ -1,11 +1,9 @@
-use crate::{
-    cycle::{CycleRecoveryStrategy, MAX_ITERATIONS},
-    zalsa::ZalsaDatabase,
-    zalsa_local::ActiveQueryGuard,
-    Database, Event, EventKind,
-};
-
-use super::{memo::Memo, Configuration, IngredientImpl};
+use crate::cycle::{CycleRecoveryStrategy, MAX_ITERATIONS};
+use crate::function::memo::Memo;
+use crate::function::{Configuration, IngredientImpl};
+use crate::zalsa::ZalsaDatabase;
+use crate::zalsa_local::ActiveQueryGuard;
+use crate::{Database, Event, EventKind};
 
 impl<C> IngredientImpl<C>
 where

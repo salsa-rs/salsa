@@ -1,7 +1,5 @@
-use std::{
-    fmt,
-    panic::{self, UnwindSafe},
-};
+use std::fmt;
+use std::panic::{self, UnwindSafe};
 
 /// A panic payload indicating that execution of a salsa query was cancelled.
 ///

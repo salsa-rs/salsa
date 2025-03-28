@@ -1,4 +1,5 @@
-use crate::{storage::HasStorage, Database, Event, Storage};
+use crate::storage::HasStorage;
+use crate::{Database, Event, Storage};
 
 /// Default database implementation that you can use if you don't
 /// require any custom user data.

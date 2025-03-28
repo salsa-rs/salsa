@@ -1,6 +1,6 @@
+use crate::function::memo::Memo;
+use crate::function::{Configuration, IngredientImpl};
 use crate::zalsa_local::QueryRevisions;
-
-use super::{memo::Memo, Configuration, IngredientImpl};
 
 impl<C> IngredientImpl<C>
 where

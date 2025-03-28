@@ -2,9 +2,12 @@ use std::collections::HashSet;
 
 use proc_macro2::TokenStream;
 use quote::ToTokens;
-use syn::{parse::Nothing, visit_mut::VisitMut};
+use syn::parse::Nothing;
+use syn::visit_mut::VisitMut;
 
-use crate::{hygiene::Hygiene, tracked_fn::FnArgs, xform::ChangeSelfPath};
+use crate::hygiene::Hygiene;
+use crate::tracked_fn::FnArgs;
+use crate::xform::ChangeSelfPath;
 
 pub(crate) fn tracked_impl(
     args: proc_macro::TokenStream,

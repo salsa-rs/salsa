@@ -1,9 +1,10 @@
 //! Test that a `tracked` fn on a `salsa::input`
 //! compiles and executes successfully.
 
+use std::path::{Path, PathBuf};
+
 use expect_test::expect;
 use salsa::plumbing::{AsId, FromId};
-use std::path::{Path, PathBuf};
 use test_log::test;
 
 #[salsa::interned(debug)]

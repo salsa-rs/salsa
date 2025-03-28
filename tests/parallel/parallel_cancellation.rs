@@ -1,10 +1,8 @@
 //! Test for thread cancellation.
 
-use salsa::Cancelled;
-use salsa::Setter;
+use salsa::{Cancelled, Setter};
 
-use crate::setup::Knobs;
-use crate::setup::KnobsDatabase;
+use crate::setup::{Knobs, KnobsDatabase};
 
 #[salsa::input(debug)]
 struct MyInput {

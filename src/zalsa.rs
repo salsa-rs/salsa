@@ -1,6 +1,3 @@
-use parking_lot::{Mutex, RwLock};
-use portable_atomic::AtomicU64;
-use rustc_hash::FxHashMap;
 use std::any::{Any, TypeId};
 use std::collections::hash_map;
 use std::marker::PhantomData;
@@ -8,6 +5,10 @@ use std::mem;
 use std::num::NonZeroU32;
 use std::panic::RefUnwindSafe;
 use std::sync::atomic::Ordering;
+
+use parking_lot::{Mutex, RwLock};
+use portable_atomic::AtomicU64;
+use rustc_hash::FxHashMap;
 
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};

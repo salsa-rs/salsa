@@ -1,13 +1,11 @@
-use std::{
-    alloc::Layout,
-    any::{Any, TypeId},
-    cell::UnsafeCell,
-    marker::PhantomData,
-    mem::{self, MaybeUninit},
-    ptr::{self, NonNull},
-    slice,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::alloc::Layout;
+use std::any::{Any, TypeId};
+use std::cell::UnsafeCell;
+use std::marker::PhantomData;
+use std::mem::{self, MaybeUninit};
+use std::ptr::{self, NonNull};
+use std::slice;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use memo::MemoTable;
 use parking_lot::Mutex;

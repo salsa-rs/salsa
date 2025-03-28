@@ -1,16 +1,13 @@
-use std::{
-    sync::atomic::{AtomicBool, Ordering},
-    thread::ThreadId,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::ThreadId;
 
 use parking_lot::Mutex;
 
-use crate::{
-    durability::Durability, key::DatabaseKeyIndex, table::Table, Cancelled, Database, Event,
-    EventKind, Revision,
-};
-
 use self::dependency_graph::DependencyGraph;
+use crate::durability::Durability;
+use crate::key::DatabaseKeyIndex;
+use crate::table::Table;
+use crate::{Cancelled, Database, Event, EventKind, Revision};
 
 mod dependency_graph;
 

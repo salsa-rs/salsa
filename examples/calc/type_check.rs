@@ -1,11 +1,12 @@
-use crate::ir::{
-    Diagnostic, Expression, Function, FunctionId, Program, Span, StatementData, VariableId,
-};
 #[cfg(test)]
 use expect_test::expect;
 use salsa::Accumulator;
 #[cfg(test)]
 use test_log::test;
+
+use crate::ir::{
+    Diagnostic, Expression, Function, FunctionId, Program, Span, StatementData, VariableId,
+};
 
 // ANCHOR: parse_statements
 #[salsa::tracked]
@@ -112,7 +113,9 @@ fn check_string(
 ) {
     use salsa::{Database, Setter};
 
-    use crate::{db::CalcDatabaseImpl, ir::SourceProgram, parser::parse_statements};
+    use crate::db::CalcDatabaseImpl;
+    use crate::ir::SourceProgram;
+    use crate::parser::parse_statements;
 
     // Create the database
     let mut db = CalcDatabaseImpl::default();

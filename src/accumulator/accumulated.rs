@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::fmt::Debug;
 
-use super::Accumulator;
+use crate::accumulator::Accumulator;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Accumulated<A: Accumulator> {

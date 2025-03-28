@@ -1,10 +1,11 @@
 use std::thread::ThreadId;
 
-use crate::key::DatabaseKeyIndex;
-use crate::runtime::WaitResult;
 use parking_lot::MutexGuard;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
+
+use crate::key::DatabaseKeyIndex;
+use crate::runtime::WaitResult;
 
 #[derive(Debug, Default)]
 pub(super) struct DependencyGraph {
@@ -127,7 +128,8 @@ impl DependencyGraph {
 }
 
 mod edge {
-    use std::{sync::Arc, thread::ThreadId};
+    use std::sync::Arc;
+    use std::thread::ThreadId;
 
     use parking_lot::MutexGuard;
 

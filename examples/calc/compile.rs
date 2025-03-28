@@ -1,4 +1,6 @@
-use crate::{ir::SourceProgram, parser::parse_statements, type_check::type_check_program};
+use crate::ir::SourceProgram;
+use crate::parser::parse_statements;
+use crate::type_check::type_check_program;
 
 #[salsa::tracked]
 pub fn compile(db: &dyn crate::Db, source_program: SourceProgram) {

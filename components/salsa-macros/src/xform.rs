@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 
 use quote::ToTokens;
-use syn::{punctuated::Punctuated, spanned::Spanned, visit_mut::VisitMut};
+use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
+use syn::visit_mut::VisitMut;
 
 pub(crate) struct ChangeLt<'a> {
     from: Option<&'a str>,

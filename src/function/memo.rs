@@ -1,25 +1,19 @@
 #![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 
 use std::any::Any;
-use std::fmt::Debug;
-use std::fmt::Formatter;
+use std::fmt::{Debug, Formatter};
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE_HEADS};
+use crate::function::{Configuration, IngredientImpl};
+use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
-use crate::zalsa::MemoIngredientIndex;
-use crate::zalsa_local::QueryOrigin;
-use crate::{
-    cycle::{CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE_HEADS},
-    key::DatabaseKeyIndex,
-    zalsa::Zalsa,
-    zalsa_local::QueryRevisions,
-    Event, EventKind, Id, Revision,
-};
-
-use super::{Configuration, IngredientImpl};
+use crate::zalsa::{MemoIngredientIndex, Zalsa};
+use crate::zalsa_local::{QueryOrigin, QueryRevisions};
+use crate::{Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
     /// Memos have to be stored internally using `'static` as the database lifetime.

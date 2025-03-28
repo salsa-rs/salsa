@@ -1,13 +1,11 @@
-use super::{memo::Memo, Configuration, IngredientImpl, VerifyResult};
-use crate::zalsa::MemoIngredientIndex;
-use crate::{
-    accumulator::accumulated_map::InputAccumulatedValues,
-    runtime::StampedValue,
-    table::sync::ClaimResult,
-    zalsa::{Zalsa, ZalsaDatabase},
-    zalsa_local::QueryRevisions,
-    AsDynDatabase as _, Id,
-};
+use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::function::memo::Memo;
+use crate::function::{Configuration, IngredientImpl, VerifyResult};
+use crate::runtime::StampedValue;
+use crate::table::sync::ClaimResult;
+use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
+use crate::zalsa_local::QueryRevisions;
+use crate::{AsDynDatabase as _, Id};
 
 impl<C> IngredientImpl<C>
 where

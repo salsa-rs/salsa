@@ -1,23 +1,17 @@
 //! Basic test of accumulator functionality.
 
-use std::{
-    any::{Any, TypeId},
-    fmt,
-    marker::PhantomData,
-    panic::UnwindSafe,
-};
+use std::any::{Any, TypeId};
+use std::fmt;
+use std::marker::PhantomData;
+use std::panic::UnwindSafe;
 
-use accumulated::Accumulated;
-use accumulated::AnyAccumulated;
+use accumulated::{Accumulated, AnyAccumulated};
 
-use crate::{
-    function::VerifyResult,
-    ingredient::{fmt_index, Ingredient, Jar},
-    plumbing::IngredientIndices,
-    zalsa::{IngredientIndex, Zalsa},
-    zalsa_local::QueryOrigin,
-    Database, DatabaseKeyIndex, Id, Revision,
-};
+use crate::function::VerifyResult;
+use crate::ingredient::{fmt_index, Ingredient, Jar};
+use crate::plumbing::IngredientIndices;
+use crate::zalsa::{IngredientIndex, Zalsa};
+use crate::{Database, Id, Revision};
 
 mod accumulated;
 pub(crate) mod accumulated_map;
@@ -107,35 +101,6 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _revision: Revision,
     ) -> VerifyResult {
         panic!("nothing should ever depend on an accumulator directly")
-    }
-
-    fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
-        false
-    }
-
-    fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
-        true
-    }
-
-    fn origin(&self, _db: &dyn Database, _key_index: crate::Id) -> Option<QueryOrigin> {
-        None
-    }
-
-    fn mark_validated_output(
-        &self,
-        _db: &dyn Database,
-        _executor: DatabaseKeyIndex,
-        _output_key: crate::Id,
-    ) {
-    }
-
-    fn remove_stale_output(
-        &self,
-        _db: &dyn Database,
-        _executor: DatabaseKeyIndex,
-        _stale_output_key: crate::Id,
-        _provisional: bool,
-    ) {
     }
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {

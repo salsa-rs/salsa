@@ -1,13 +1,12 @@
-use std::{
-    any::{Any, TypeId},
-    ptr::NonNull,
-    sync::atomic::{AtomicPtr, Ordering},
-};
+use std::any::{Any, TypeId};
+use std::ptr::NonNull;
+use std::sync::atomic::{AtomicPtr, Ordering};
 
 use parking_lot::RwLock;
 use thin_vec::ThinVec;
 
-use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
+use crate::zalsa::MemoIngredientIndex;
+use crate::zalsa_local::QueryOrigin;
 
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument

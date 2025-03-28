@@ -1,7 +1,7 @@
 use std::ptr::NonNull;
 
-use super::memo::Memo;
-use super::Configuration;
+use crate::function::memo::Memo;
+use crate::function::Configuration;
 
 /// Stores the list of memos that have been deleted so they can be freed
 /// once the next revision starts. See the comment on the field

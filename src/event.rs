@@ -1,6 +1,7 @@
 use std::thread::ThreadId;
 
-use crate::{key::DatabaseKeyIndex, Id, Revision};
+use crate::key::DatabaseKeyIndex;
+use crate::{Id, Revision};
 
 /// The `Event` struct identifies various notable things that can
 /// occur during salsa execution. Instances of this struct are given

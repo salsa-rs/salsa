@@ -25,11 +25,10 @@
 //! * data method `impl Foo { fn data(&self, db: &dyn crate::Db) -> FooData { FooData { f: self.f(db), ... } } }`
 //!     * this could be optimized, particularly for interned fields
 
-use crate::{
-    db_lifetime,
-    options::{AllowedOptions, Options},
-};
 use proc_macro2::{Ident, Literal, Span, TokenStream};
+
+use crate::db_lifetime;
+use crate::options::{AllowedOptions, Options};
 
 pub(crate) struct SalsaStruct<'s, A: SalsaStructAllowedOptions> {
     struct_item: &'s syn::ItemStruct,

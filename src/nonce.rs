@@ -1,4 +1,6 @@
-use std::{marker::PhantomData, num::NonZeroU32, sync::atomic::AtomicU32};
+use std::marker::PhantomData;
+use std::num::NonZeroU32;
+use std::sync::atomic::AtomicU32;
 
 /// A type to generate nonces. Store it in a static and each nonce it produces will be unique from other nonces.
 /// The type parameter `T` just serves to distinguish different kinds of nonces.

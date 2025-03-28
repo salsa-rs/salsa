@@ -1,10 +1,8 @@
 use proc_macro2::TokenStream;
 
-use crate::{
-    hygiene::Hygiene,
-    options::{AllowedOptions, Options},
-    token_stream_with_error,
-};
+use crate::hygiene::Hygiene;
+use crate::options::{AllowedOptions, Options};
+use crate::token_stream_with_error;
 
 // #[salsa::accumulator(jar = Jar0)]
 // struct Accumulator(DataType);
