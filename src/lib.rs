@@ -64,6 +64,7 @@ pub mod prelude {
 /// # WARNING
 ///
 /// The contents of this module are NOT subject to semver.
+#[doc(hidden)]
 pub mod plumbing {
     pub use std::any::TypeId;
     pub use std::option::Option::{self, None, Some};
