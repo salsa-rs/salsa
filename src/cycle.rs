@@ -114,16 +114,6 @@ impl CycleHeads {
         }])))
     }
 
-    pub(crate) fn contains_at_iteration(
-        &self,
-        value: &DatabaseKeyIndex,
-        iteration_count: u32,
-    ) -> bool {
-        self.into_iter().any(|head| {
-            head.database_key_index == *value && head.iteration_count == iteration_count
-        })
-    }
-
     pub(crate) fn contains(&self, value: &DatabaseKeyIndex) -> bool {
         self.into_iter()
             .any(|head| head.database_key_index == *value)
@@ -144,45 +134,32 @@ impl CycleHeads {
         true
     }
 
-    pub(crate) fn remove_at_iteration(
-        &mut self,
-        value: &DatabaseKeyIndex,
-        iteration_count: u32,
-    ) -> bool {
-        let Some(cycle_heads) = &mut self.0 else {
-            return false;
-        };
-        let found = cycle_heads.iter().position(|&head| {
-            head.database_key_index == *value && head.iteration_count == iteration_count
-        });
-        let Some(found) = found else { return false };
-        cycle_heads.swap_remove(found);
-        if cycle_heads.is_empty() {
-            self.0.take();
-        }
-        true
-    }
-
     #[inline]
     pub(crate) fn insert_into(self, cycle_heads: &mut Vec<CycleHead>) {
         if let Some(heads) = self.0 {
-            for head in *heads {
-                if !cycle_heads.contains(&head) {
-                    cycle_heads.push(head);
-                }
-            }
+            insert_into_impl(&heads, cycle_heads);
         }
     }
 
     pub(crate) fn extend(&mut self, other: &Self) {
         if let Some(other) = &other.0 {
             let heads = &mut **self.0.get_or_insert_with(|| Box::new(Vec::new()));
-            heads.reserve(other.len());
-            other.iter().for_each(|&head| {
-                if !heads.contains(&head) {
-                    heads.push(head);
-                }
-            });
+            insert_into_impl(other, heads);
+        }
+    }
+}
+
+#[inline]
+fn insert_into_impl(insert_from: &Vec<CycleHead>, insert_into: &mut Vec<CycleHead>) {
+    insert_into.reserve(insert_from.len());
+    for head in insert_from {
+        if let Some(existing) = insert_into
+            .iter()
+            .find(|candidate| candidate.database_key_index == head.database_key_index)
+        {
+            assert!(existing.iteration_count == head.iteration_count);
+        } else {
+            insert_into.push(*head);
         }
     }
 }
