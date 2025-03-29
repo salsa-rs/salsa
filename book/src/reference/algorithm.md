@@ -20,7 +20,7 @@ fn parse_module(db: &dyn Db, module: Module) -> Ast {
     Ast::parse_text(module_text)
 }
 
-#[salsa::tracked(return_ref)]
+#[salsa::tracked(returns(ref))]
 fn module_text(db: &dyn Db, module: Module) -> String {
     panic!("text for module `{module:?}` not set")
 }

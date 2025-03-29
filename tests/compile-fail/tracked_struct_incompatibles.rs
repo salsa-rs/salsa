@@ -1,4 +1,4 @@
-#[salsa::tracked(returns(as_ref))]
+#[salsa::tracked(returns(ref))]
 struct TrackedWithRetRef {
     field: u32,
 }

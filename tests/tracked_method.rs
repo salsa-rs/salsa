@@ -23,7 +23,7 @@ impl MyInput {
         self.field(db) * 2
     }
 
-    #[salsa::tracked(returns(as_ref))]
+    #[salsa::tracked(returns(ref))]
     fn tracked_fn_ref(self, db: &dyn salsa::Database) -> u32 {
         self.field(db) * 3
     }

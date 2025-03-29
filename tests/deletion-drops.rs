@@ -17,7 +17,7 @@ struct MyTracked<'db> {
     identifier: u32,
 
     #[tracked]
-    #[returns(as_ref)]
+    #[returns(ref)]
     field: Bomb,
 }
 

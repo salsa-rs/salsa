@@ -79,7 +79,7 @@ pub struct ProgramFile(salsa::Id);
 This means that, when you have a `ProgramFile`, you can easily copy it around and put it wherever you like.
 To actually read any of its fields, however, you will need to use the database and a getter method.
 
-### Reading fields and `return_ref`
+### Reading fields and `returns(ref)`
 
 You can access the value of an input's fields by using the getter method.
 As this is only reading the field, it just needs a `&`-reference to the database:
@@ -89,13 +89,13 @@ let contents: String = file.contents(&db);
 ```
 
 Invoking the accessor clones the value from the database.
-Sometimes this is not what you want, so you can annotate fields with `#[returns(as_ref)]` to indicate that they should return a reference into the database instead:
+Sometimes this is not what you want, so you can annotate fields with `#[returns(ref)]` to indicate that they should return a reference into the database instead:
 
 ```rust
 #[salsa::input]
 pub struct ProgramFile {
     pub path: PathBuf,
-    #[returns(as_ref)]
+    #[returns(ref)]
     pub contents: String,
 }
 ```
@@ -145,7 +145,7 @@ Tracked functions have to follow a particular structure:
 - They must take a "Salsa struct" as the second argument -- in our example, this is an input struct, but there are other kinds of Salsa structs we'll describe shortly.
 - They _can_ take additional arguments, but it's faster and better if they don't.
 
-Tracked functions can return any clone-able type. A clone is required since, when the value is cached, the result will be cloned out of the database. Tracked functions can also be annotated with `#[returns(as_ref)]` if you would prefer to return a reference into the database instead (if `parse_file` were so annotated, then callers would actually get back an `&Ast`, for example).
+Tracked functions can return any clone-able type. A clone is required since, when the value is cached, the result will be cloned out of the database. Tracked functions can also be annotated with `#[returns(ref)]` if you would prefer to return a reference into the database instead (if `parse_file` were so annotated, then callers would actually get back an `&Ast`, for example).
 
 ## Tracked structs
 
@@ -158,7 +158,7 @@ Example:
 ```rust
 #[salsa::tracked]
 struct Ast<'db> {
-    #[returns(as_ref)]
+    #[returns(ref)]
     top_level_items: Vec<Item>,
 }
 ```
@@ -252,7 +252,7 @@ Most compilers, for example, will define a type to represent a user identifier:
 ```rust
 #[salsa::interned]
 struct Word {
-    #[returns(as_ref)]
+    #[returns(ref)]
     pub text: String,
 }
 ```
@@ -269,7 +269,7 @@ let w3 = Word::new(db, "foo".to_string());
 
 When you create two interned structs with the same field values, you are guaranteed to get back the same integer id. So here, we know that `assert_eq!(w1, w3)` is true and `assert_ne!(w1, w2)`.
 
-You can access the fields of an interned struct using a getter, like `word.text(db)`. These getters respect the `#[returns(as_ref)]` annotation. Like tracked structs, the fields of interned structs are immutable.
+You can access the fields of an interned struct using a getter, like `word.text(db)`. These getters respect the `#[returns(ref)]` annotation. Like tracked structs, the fields of interned structs are immutable.
 
 ## Accumulators
 

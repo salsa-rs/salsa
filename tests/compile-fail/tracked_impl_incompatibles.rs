@@ -3,7 +3,7 @@ struct MyTracked<'db> {
     field: u32,
 }
 
-#[salsa::tracked(returns(as_ref))]
+#[salsa::tracked(returns(ref))]
 impl<'db> std::default::Default for MyTracked<'db> {
     fn default() -> Self {}
 }
