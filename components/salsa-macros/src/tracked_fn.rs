@@ -150,7 +150,7 @@ impl Macro {
             .args
             .returns
             .clone()
-            .unwrap_or(Ident::new("cloned", Span::call_site()));
+            .unwrap_or(Ident::new("clone", Span::call_site()));
 
         // The path expression is responsible for emitting the primary span in the diagnostic we
         // want, so by uniformly using `output_ty.span()` we ensure that the diagnostic is emitted

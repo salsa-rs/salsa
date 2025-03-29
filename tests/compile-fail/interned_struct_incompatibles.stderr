@@ -1,7 +1,7 @@
 error: `returns` option not allowed here
  --> tests/compile-fail/interned_struct_incompatibles.rs:1:19
   |
-1 | #[salsa::interned(returns(as_ref))]
+1 | #[salsa::interned(returns(ref))]
   |                   ^^^^^^^
 
 error: `specify` option not allowed here

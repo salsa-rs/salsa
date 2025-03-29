@@ -5,7 +5,7 @@ use ordered_float::OrderedFloat;
 // ANCHOR: input
 #[salsa::input(debug)]
 pub struct SourceProgram {
-    #[returns(as_ref)]
+    #[returns(ref)]
     pub text: String,
 }
 // ANCHOR_END: input
@@ -13,13 +13,13 @@ pub struct SourceProgram {
 // ANCHOR: interned_ids
 #[salsa::interned(debug)]
 pub struct VariableId<'db> {
-    #[returns(as_ref)]
+    #[returns(ref)]
     pub text: String,
 }
 
 #[salsa::interned(debug)]
 pub struct FunctionId<'db> {
-    #[returns(as_ref)]
+    #[returns(ref)]
     pub text: String,
 }
 // ANCHOR_END: interned_ids
@@ -28,7 +28,7 @@ pub struct FunctionId<'db> {
 #[salsa::tracked(debug)]
 pub struct Program<'db> {
     #[tracked]
-    #[returns(as_ref)]
+    #[returns(ref)]
     pub statements: Vec<Statement<'db>>,
 }
 // ANCHOR_END: program
@@ -93,11 +93,11 @@ pub struct Function<'db> {
     name_span: Span<'db>,
 
     #[tracked]
-    #[returns(as_ref)]
+    #[returns(ref)]
     pub args: Vec<VariableId<'db>>,
 
     #[tracked]
-    #[returns(as_ref)]
+    #[returns(ref)]
     pub body: Expression<'db>,
 }
 // ANCHOR_END: functions

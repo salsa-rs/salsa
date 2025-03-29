@@ -11,7 +11,7 @@ trait Trait {
 
 #[salsa::tracked]
 impl Trait for Input {
-    #[salsa::tracked(returns(as_ref))]
+    #[salsa::tracked(returns(ref))]
     fn test(self, db: &dyn salsa::Database) -> Vec<String> {
         (0..self.number(db)).map(|i| format!("test {i}")).collect()
     }

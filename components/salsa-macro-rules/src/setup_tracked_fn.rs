@@ -55,7 +55,7 @@ macro_rules! setup_tracked_fn {
         // LRU capacity (a literal, maybe 0)
         lru: $lru:tt,
 
-        // The return mode for the function, either `as_ref` or `cloned`
+        // The return mode for the function, see `salsa_macros::options::Option::returns`
         return_mode: $return_mode:tt,
 
         assert_return_type_is_update: {$($assert_return_type_is_update:tt)*},

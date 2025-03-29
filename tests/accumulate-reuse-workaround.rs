@@ -37,7 +37,7 @@ fn compute(db: &dyn LogDatabase, input: List) -> u32 {
     result
 }
 
-#[salsa::tracked(returns(as_ref))]
+#[salsa::tracked(returns(ref))]
 fn accumulated(db: &dyn LogDatabase, input: List) -> Vec<u32> {
     db.push_log(format!("accumulated({input:?})"));
     compute::accumulated::<Integers>(db, input)

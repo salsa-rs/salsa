@@ -26,7 +26,7 @@
 //!     * this could be optimized, particularly for interned fields
 
 use proc_macro2::{Ident, Literal, Span, TokenStream};
-use syn::spanned::Spanned;
+use syn::{ext::IdentExt, spanned::Spanned};
 
 use crate::db_lifetime;
 use crate::options::{AllowedOptions, Options};
@@ -72,7 +72,7 @@ pub(crate) const FIELD_OPTION_ATTRIBUTES: &[(&str, fn(&syn::Attribute, &mut Sals
     ("tracked", |_, ef| ef.has_tracked_attr = true),
     ("default", |_, ef| ef.has_default_attr = true),
     ("returns", |attr, ef| {
-        ef.returns = attr.parse_args().unwrap();
+        ef.returns = attr.parse_args_with(syn::Ident::parse_any).unwrap();
     }),
     ("no_eq", |_, ef| ef.has_no_eq_attr = true),
     ("get", |attr, ef| {
@@ -367,7 +367,7 @@ impl<'s> SalsaField<'s> {
 
         let get_name = Ident::new(&field_name_str, field_name.span());
         let set_name = Ident::new(&format!("set_{field_name_str}",), field_name.span());
-        let returns = Ident::new("cloned", field.span());
+        let returns = Ident::new("clone", field.span());
         let mut result = SalsaField {
             field,
             has_tracked_attr: false,

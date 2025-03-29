@@ -11,9 +11,10 @@ use syn::spanned::Spanned;
 /// trait.
 #[derive(Debug)]
 pub(crate) struct Options<A: AllowedOptions> {
-    /// The `returns` option is used to signal whether the field/return type is cloned or returned as a reference
+    /// The `returns` option is used to configure the "return mode" for the field/function.
+    /// This may be one of `copy`, `clone`, `ref`, `as_ref`, `as_deref`.
     ///
-    /// If this is `Some`, the value is the return mode (`as_ref`, `cloned`).
+    /// If this is `Some`, the value is the ident representing the selected mode.
     pub returns: Option<syn::Ident>,
 
     /// The `no_eq` option is used to signal that a given field does not implement
@@ -148,7 +149,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
             if ident == "returns" {
                 let content;
                 parenthesized!(content in input);
-                let mode = content.parse()?;
+                let mode = syn::Ident::parse_any(&content)?;
                 if A::RETURNS {
                     if let Some(old) = options.returns.replace(mode) {
                         return Err(syn::Error::new(

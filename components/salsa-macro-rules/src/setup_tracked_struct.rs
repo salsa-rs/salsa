@@ -54,7 +54,7 @@ macro_rules! setup_tracked_struct {
         //
         // Each field option is a tuple `(return_mode, maybe_backdate)` where:
         //
-        // * `return_mode` is either the identifier `as_ref` or `cloned`
+        // * `return_mode` is an indentiefier as specified in `salsa_macros::options::Option::returns`
         // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
         //
         // These are used to drive conditional logic for each field via recursive macro invocation
@@ -65,7 +65,7 @@ macro_rules! setup_tracked_struct {
         //
         // Each field option is a tuple `(return_mode, maybe_backdate)` where:
         //
-        // * `return_mode` is either the identifier `as_ref` or `cloned`
+        // * `return_mode` is an indentiefier as specified in `salsa_macros::options::Option::returns`
         // * `maybe_backdate` is either the identifier `backdate` or `no_backdate`
         //
         // These are used to drive conditional logic for each field via recursive macro invocation

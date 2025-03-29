@@ -1,7 +1,7 @@
 error: `returns` option not allowed here
  --> tests/compile-fail/input_struct_incompatibles.rs:1:16
   |
-1 | #[salsa::input(returns(as_ref))]
+1 | #[salsa::input(returns(ref))]
   |                ^^^^^^^
 
 error: `specify` option not allowed here

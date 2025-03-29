@@ -30,10 +30,10 @@ struct Edge {
 
 #[salsa::tracked(debug)]
 struct Node<'db> {
-    #[returns(as_ref)]
+    #[returns(ref)]
     name: String,
 
-    #[returns(as_ref)]
+    #[returns(deref)]
     #[tracked]
     edges: Vec<Edge>,
 
@@ -45,7 +45,7 @@ struct GraphInput {
     simple: bool,
 }
 
-#[salsa::tracked(returns(as_ref))]
+#[salsa::tracked(returns(ref))]
 fn create_graph(db: &dyn salsa::Database, input: GraphInput) -> Graph<'_> {
     if input.simple(db) {
         let a = Node::new(db, "a".to_string(), vec![], input);
