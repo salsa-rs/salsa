@@ -134,6 +134,20 @@ impl CycleHeads {
         true
     }
 
+    pub(crate) fn update_iteration_count(
+        &mut self,
+        cycle_head_index: DatabaseKeyIndex,
+        new_iteration_count: u32,
+    ) {
+        if let Some(cycle_head) = self.0.as_mut().and_then(|cycle_heads| {
+            cycle_heads
+                .iter_mut()
+                .find(|cycle_head| cycle_head.database_key_index == cycle_head_index)
+        }) {
+            cycle_head.iteration_count = new_iteration_count;
+        }
+    }
+
     #[inline]
     pub(crate) fn insert_into(self, cycle_heads: &mut Vec<CycleHead>) {
         if let Some(heads) = self.0 {

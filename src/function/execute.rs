@@ -123,6 +123,9 @@ where
                     if iteration_count > MAX_ITERATIONS {
                         panic!("{database_key_index:?}: execute: too many cycle iterations");
                     }
+                    revisions
+                        .cycle_heads
+                        .update_iteration_count(database_key_index, iteration_count);
                     opt_last_provisional = Some(self.insert_memo(
                         zalsa,
                         id,
