@@ -87,9 +87,13 @@ impl ZalsaLocal {
     }
 
     #[inline]
-    pub(crate) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
+    pub(crate) fn push_query(
+        &self,
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: u32,
+    ) -> ActiveQueryGuard<'_> {
         let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push_new_query(database_key_index);
+        query_stack.push_new_query(database_key_index, iteration_count);
         ActiveQueryGuard {
             local_state: self,
             database_key_index,

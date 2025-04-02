@@ -984,7 +984,7 @@ fn cycle_unchanged_nested_intertwined() {
             e.assert_value(&db, 60);
         }
 
-        db.assert_logs_len(16 + i);
+        db.assert_logs_len(12 + i);
 
         // next revision, we change only A, which is not part of the cycle and the cycle does not
         // depend on.

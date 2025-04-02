@@ -131,7 +131,7 @@ where
         );
 
         // Check if the inputs are still valid. We can just compare `changed_at`.
-        let active_query = db.zalsa_local().push_query(database_key_index);
+        let active_query = db.zalsa_local().push_query(database_key_index, 0);
         if let VerifyResult::Unchanged(_, cycle_heads) =
             self.deep_verify_memo(db, zalsa, old_memo, &active_query)
         {
@@ -260,6 +260,35 @@ where
         // Relaxed is sufficient here because there are no other writes we need to ensure have
         // happened before marking this memo as verified-final.
         memo.revisions.verified_final.store(true, Ordering::Relaxed);
+        true
+    }
+
+    /// If this is a provisional memo, validate that it was cached in the same iteration of the
+    /// same cycle(s) that we are still executing. If so, it is valid for reuse. This avoids
+    /// runaway re-execution of the same queries within a fixpoint iteration.
+    pub(super) fn validate_same_iteration(
+        &self,
+        db: &C::DbView,
+        database_key_index: DatabaseKeyIndex,
+        memo: &Memo<C::Output<'_>>,
+    ) -> bool {
+        tracing::debug!(
+            "{database_key_index:?}: validate_same_iteration(memo = {memo:#?})",
+            memo = memo.tracing_debug()
+        );
+        for cycle_head in &memo.revisions.cycle_heads {
+            eprintln!("cycle_head: {:?}", cycle_head);
+            if !db.zalsa_local().with_query_stack(|stack| {
+                stack.iter().any(|entry| {
+                    dbg!(entry.database_key_index, entry.iteration_count);
+                    entry.database_key_index == cycle_head.database_key_index
+                        && entry.iteration_count == cycle_head.iteration_count
+                })
+            }) {
+                return false;
+            }
+        }
+
         true
     }
 
