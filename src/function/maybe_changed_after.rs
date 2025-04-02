@@ -276,21 +276,18 @@ where
             "{database_key_index:?}: validate_same_iteration(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
-
-        let heads = &memo.revisions.cycle_heads;
-        let num_heads = heads.len();
-        db.zalsa_local().with_query_stack(|stack| {
-            let mut found = 0;
-            for entry in stack.iter() {
-                if heads.contains_at_iteration(entry.database_key_index, entry.iteration_count) {
-                    found += 1;
-                    if found == num_heads {
-                        return true;
-                    }
-                }
+        for cycle_head in &memo.revisions.cycle_heads {
+            if !db.zalsa_local().with_query_stack(|stack| {
+                stack.iter().any(|entry| {
+                    entry.database_key_index == cycle_head.database_key_index
+                        && entry.iteration_count == cycle_head.iteration_count
+                })
+            }) {
+                return false;
             }
-            false
-        })
+        }
+
+        true
     }
 
     /// VerifyResult::Unchanged if the memo's value and `changed_at` time is up-to-date in the

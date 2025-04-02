@@ -119,16 +119,6 @@ impl CycleHeads {
             .any(|head| head.database_key_index == *value)
     }
 
-    pub(crate) fn contains_at_iteration(
-        &self,
-        database_key_index: DatabaseKeyIndex,
-        iteration_count: u32,
-    ) -> bool {
-        self.into_iter().any(|head| {
-            head.database_key_index == database_key_index && head.iteration_count == iteration_count
-        })
-    }
-
     pub(crate) fn remove(&mut self, value: &DatabaseKeyIndex) -> bool {
         let Some(cycle_heads) = &mut self.0 else {
             return false;
@@ -142,10 +132,6 @@ impl CycleHeads {
             self.0.take();
         }
         true
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.0.as_ref().map(|heads| heads.len()).unwrap_or_default()
     }
 
     pub(crate) fn update_iteration_count(
