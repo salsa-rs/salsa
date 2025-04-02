@@ -84,7 +84,11 @@ where
             let database_key_index = self.database_key_index(id);
             if memo.value.is_some()
                 && (self.validate_may_be_provisional(db, zalsa, database_key_index, memo)
-                    || self.validate_same_iteration(db, database_key_index, memo))
+                    // Provisional memos are only valid if we are still currently on the same cycle
+                    // iteration(s) that the memo was recorded within.
+                    || db
+                        .zalsa_local()
+                        .is_currently_iterating_all(&memo.revisions.cycle_heads))
                 && self.shallow_verify_memo(db, zalsa, database_key_index, memo)
             {
                 // SAFETY: memo is present in memo_map and we have verified that it is
@@ -134,6 +138,7 @@ where
                             "hit cycle at {database_key_index:#?}, \
                             inserting and returning fixpoint initial value"
                         );
+                        db.zalsa_local().start_cycle(database_key_index, 0);
                         self.insert_memo(
                             zalsa,
                             id,
@@ -159,7 +164,7 @@ where
         };
 
         // Push the query on the stack.
-        let active_query = db.zalsa_local().push_query(database_key_index, 0);
+        let active_query = db.zalsa_local().push_query(database_key_index);
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);

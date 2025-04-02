@@ -131,7 +131,7 @@ where
         );
 
         // Check if the inputs are still valid. We can just compare `changed_at`.
-        let active_query = db.zalsa_local().push_query(database_key_index, 0);
+        let active_query = db.zalsa_local().push_query(database_key_index);
         if let VerifyResult::Unchanged(_, cycle_heads) =
             self.deep_verify_memo(db, zalsa, old_memo, &active_query)
         {
@@ -261,36 +261,6 @@ where
         // happened before marking this memo as verified-final.
         memo.revisions.verified_final.store(true, Ordering::Relaxed);
         true
-    }
-
-    /// If this is a provisional memo, validate that it was cached in the same iteration of the
-    /// same cycle(s) that we are still executing. If so, it is valid for reuse. This avoids
-    /// runaway re-execution of the same queries within a fixpoint iteration.
-    pub(super) fn validate_same_iteration(
-        &self,
-        db: &C::DbView,
-        database_key_index: DatabaseKeyIndex,
-        memo: &Memo<C::Output<'_>>,
-    ) -> bool {
-        tracing::debug!(
-            "{database_key_index:?}: validate_same_iteration(memo = {memo:#?})",
-            memo = memo.tracing_debug()
-        );
-
-        let heads = &memo.revisions.cycle_heads;
-        let num_heads = heads.len();
-        db.zalsa_local().with_query_stack(|stack| {
-            let mut found = 0;
-            for entry in stack.iter() {
-                if heads.contains_at_iteration(entry.database_key_index, entry.iteration_count) {
-                    found += 1;
-                    if found == num_heads {
-                        return true;
-                    }
-                }
-            }
-            false
-        })
     }
 
     /// VerifyResult::Unchanged if the memo's value and `changed_at` time is up-to-date in the
@@ -444,6 +414,7 @@ where
                             continue 'cycle;
                         }
                     }
+                    db.zalsa_local().end_cycle(database_key_index);
                     break 'cycle VerifyResult::Unchanged(
                         InputAccumulatedValues::Empty,
                         CycleHeads::from(cycle_heads),

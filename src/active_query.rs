@@ -60,9 +60,6 @@ pub(crate) struct ActiveQuery {
 
     /// Provisional cycle results that this query depends on.
     cycle_heads: CycleHeads,
-
-    /// If this query is a cycle head, iteration count of that cycle.
-    pub(crate) iteration_count: u32,
 }
 
 impl ActiveQuery {
@@ -132,7 +129,7 @@ impl ActiveQuery {
 }
 
 impl ActiveQuery {
-    fn new(database_key_index: DatabaseKeyIndex, iteration_count: u32) -> Self {
+    fn new(database_key_index: DatabaseKeyIndex) -> Self {
         ActiveQuery {
             database_key_index,
             durability: Durability::MAX,
@@ -144,7 +141,6 @@ impl ActiveQuery {
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
             cycle_heads: Default::default(),
-            iteration_count,
         }
     }
 
@@ -160,7 +156,6 @@ impl ActiveQuery {
             ref mut accumulated,
             accumulated_inputs,
             ref mut cycle_heads,
-            iteration_count: _,
         } = self;
 
         let edges = QueryEdges::new(input_outputs.drain(..));
@@ -201,17 +196,15 @@ impl ActiveQuery {
             accumulated,
             accumulated_inputs: _,
             cycle_heads,
-            iteration_count,
         } = self;
         input_outputs.clear();
         disambiguator_map.clear();
         tracked_struct_ids.clear();
         accumulated.clear();
         *cycle_heads = Default::default();
-        *iteration_count = 0;
     }
 
-    fn reset_for(&mut self, new_database_key_index: DatabaseKeyIndex, new_iteration_count: u32) {
+    fn reset_for(&mut self, new_database_key_index: DatabaseKeyIndex) {
         let Self {
             database_key_index,
             durability,
@@ -223,14 +216,12 @@ impl ActiveQuery {
             accumulated,
             accumulated_inputs,
             cycle_heads,
-            iteration_count,
         } = self;
         *database_key_index = new_database_key_index;
         *durability = Durability::MAX;
         *changed_at = Revision::start();
         *untracked_read = false;
         *accumulated_inputs = Default::default();
-        *iteration_count = new_iteration_count;
         debug_assert!(
             input_outputs.is_empty(),
             "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
@@ -275,16 +266,11 @@ impl ops::DerefMut for QueryStack {
 }
 
 impl QueryStack {
-    pub(crate) fn push_new_query(
-        &mut self,
-        database_key_index: DatabaseKeyIndex,
-        iteration_count: u32,
-    ) {
+    pub(crate) fn push_new_query(&mut self, database_key_index: DatabaseKeyIndex) {
         if self.len < self.stack.len() {
-            self.stack[self.len].reset_for(database_key_index, iteration_count);
+            self.stack[self.len].reset_for(database_key_index);
         } else {
-            self.stack
-                .push(ActiveQuery::new(database_key_index, iteration_count));
+            self.stack.push(ActiveQuery::new(database_key_index));
         }
         self.len += 1;
     }
