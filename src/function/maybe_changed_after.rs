@@ -277,10 +277,8 @@ where
             memo = memo.tracing_debug()
         );
         for cycle_head in &memo.revisions.cycle_heads {
-            eprintln!("cycle_head: {:?}", cycle_head);
             if !db.zalsa_local().with_query_stack(|stack| {
                 stack.iter().any(|entry| {
-                    dbg!(entry.database_key_index, entry.iteration_count);
                     entry.database_key_index == cycle_head.database_key_index
                         && entry.iteration_count == cycle_head.iteration_count
                 })
