@@ -34,9 +34,6 @@ pub struct ZalsaLocal {
     /// Stores the most recent page for a given ingredient.
     /// This is thread-local to avoid contention.
     most_recent_pages: RefCell<FxHashMap<IngredientIndex, PageIndex>>,
-
-    /// Cycles that this thread is currently in the midst of iterating.
-    active_cycles: RefCell<CycleHeads>,
 }
 
 impl ZalsaLocal {
@@ -44,7 +41,6 @@ impl ZalsaLocal {
         ZalsaLocal {
             query_stack: RefCell::new(QueryStack::default()),
             most_recent_pages: RefCell::new(FxHashMap::default()),
-            active_cycles: RefCell::new(CycleHeads::default()),
         }
     }
 
@@ -91,9 +87,13 @@ impl ZalsaLocal {
     }
 
     #[inline]
-    pub(crate) fn push_query(&self, database_key_index: DatabaseKeyIndex) -> ActiveQueryGuard<'_> {
+    pub(crate) fn push_query(
+        &self,
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: u32,
+    ) -> ActiveQueryGuard<'_> {
         let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push_new_query(database_key_index);
+        query_stack.push_new_query(database_key_index, iteration_count);
         ActiveQueryGuard {
             local_state: self,
             database_key_index,
@@ -270,24 +270,6 @@ impl ZalsaLocal {
     pub(crate) fn unwind_cancelled(&self, current_revision: Revision) {
         self.report_untracked_read(current_revision);
         Cancelled::PendingWrite.throw();
-    }
-
-    /// Mark that we are going to iterate the cycle head `database_key_index` at `iteration_count`.
-    pub(crate) fn start_cycle(&self, database_key_index: DatabaseKeyIndex, iteration_count: u32) {
-        self.active_cycles
-            .borrow_mut()
-            .insert_or_update(database_key_index, iteration_count);
-    }
-
-    /// Mark that we are no longer iterating the cycle head `database_key_index`.
-    pub(crate) fn end_cycle(&self, database_key_index: DatabaseKeyIndex) {
-        self.active_cycles.borrow_mut().remove(&database_key_index);
-    }
-
-    /// Check if we are currently iterating, at the same iteration count, all cycle heads in
-    /// `cycle_heads`.
-    pub(crate) fn is_currently_iterating_all(&self, cycle_heads: &CycleHeads) -> bool {
-        self.active_cycles.borrow().contains_all(cycle_heads)
     }
 }
 

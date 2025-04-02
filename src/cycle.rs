@@ -119,10 +119,14 @@ impl CycleHeads {
             .any(|head| head.database_key_index == *value)
     }
 
-    pub(crate) fn contains_all(&self, other: &Self) -> bool {
-        other
-            .into_iter()
-            .all(|head| self.into_iter().any(|self_head| self_head == head))
+    pub(crate) fn contains_at_iteration(
+        &self,
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: u32,
+    ) -> bool {
+        self.into_iter().any(|head| {
+            head.database_key_index == database_key_index && head.iteration_count == iteration_count
+        })
     }
 
     pub(crate) fn remove(&mut self, value: &DatabaseKeyIndex) -> bool {
@@ -140,6 +144,10 @@ impl CycleHeads {
         true
     }
 
+    pub(crate) fn len(&self) -> usize {
+        self.0.as_ref().map(|heads| heads.len()).unwrap_or_default()
+    }
+
     pub(crate) fn update_iteration_count(
         &mut self,
         cycle_head_index: DatabaseKeyIndex,
@@ -151,31 +159,6 @@ impl CycleHeads {
                 .find(|cycle_head| cycle_head.database_key_index == cycle_head_index)
         }) {
             cycle_head.iteration_count = new_iteration_count;
-        }
-    }
-
-    pub(crate) fn insert_or_update(
-        &mut self,
-        database_key_index: DatabaseKeyIndex,
-        iteration_count: u32,
-    ) {
-        if let Some(cycle_heads) = &mut self.0 {
-            if let Some(cycle_head) = cycle_heads
-                .iter_mut()
-                .find(|cycle_head| cycle_head.database_key_index == database_key_index)
-            {
-                cycle_head.iteration_count = iteration_count;
-            } else {
-                cycle_heads.push(CycleHead {
-                    database_key_index,
-                    iteration_count,
-                });
-            }
-        } else {
-            self.0 = Some(Box::new(vec![CycleHead {
-                database_key_index,
-                iteration_count,
-            }]));
         }
     }
 

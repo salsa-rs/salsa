@@ -169,11 +169,6 @@ impl<V> Memo<V> {
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
     ) -> bool {
-        tracing::debug!(
-            "provisional_retry: {:?} {:?}",
-            database_key_index,
-            self.revisions.cycle_heads
-        );
         let mut retry = false;
         let hit_cycle = self
             .cycle_heads()

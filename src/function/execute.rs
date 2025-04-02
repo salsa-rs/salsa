@@ -133,9 +133,9 @@ where
                         memo_ingredient_index,
                     ));
 
-                    db.zalsa_local()
-                        .start_cycle(database_key_index, iteration_count);
-                    active_query = db.zalsa_local().push_query(database_key_index);
+                    active_query = db
+                        .zalsa_local()
+                        .push_query(database_key_index, iteration_count);
 
                     continue;
                 }
@@ -143,7 +143,6 @@ where
                     "{database_key_index:?}: execute: fixpoint iteration has a final value"
                 );
                 revisions.cycle_heads.remove(&database_key_index);
-                db.zalsa_local().end_cycle(database_key_index);
             }
 
             tracing::debug!("{database_key_index:?}: execute: result.revisions = {revisions:#?}");
