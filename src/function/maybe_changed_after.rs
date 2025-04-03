@@ -278,7 +278,7 @@ where
         );
         for cycle_head in &memo.revisions.cycle_heads {
             if !db.zalsa_local().with_query_stack(|stack| {
-                stack.iter().any(|entry| {
+                stack.iter().rev().any(|entry| {
                     entry.database_key_index == cycle_head.database_key_index
                         && entry.iteration_count() == cycle_head.iteration_count
                 })
