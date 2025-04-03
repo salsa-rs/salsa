@@ -180,7 +180,6 @@ fn accumulate_with_cycle_second_revision() {
         [
             "check_file(name = file_b, issues = [2, 3])",
             "check_file(name = file_a, issues = [1])",
-            "check_file(name = file_b, issues = [2, 3])",
             "check_file(name = file_a, issues = [1])",
             "check_file(name = file_b, issues = [2, 3])",
         ]"#]]);

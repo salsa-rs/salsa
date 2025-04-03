@@ -83,7 +83,8 @@ where
         if let Some(memo) = memo_guard {
             let database_key_index = self.database_key_index(id);
             if memo.value.is_some()
-                && self.validate_may_be_provisional(db, zalsa, database_key_index, memo)
+                && (self.validate_may_be_provisional(db, zalsa, database_key_index, memo)
+                    || self.validate_same_iteration(db, database_key_index, memo))
                 && self.shallow_verify_memo(db, zalsa, database_key_index, memo)
             {
                 // SAFETY: memo is present in memo_map and we have verified that it is
@@ -158,7 +159,7 @@ where
         };
 
         // Push the query on the stack.
-        let active_query = db.zalsa_local().push_query(database_key_index);
+        let active_query = db.zalsa_local().push_query(database_key_index, 0);
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
