@@ -243,7 +243,7 @@ where
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
-        tracing::debug!(
+        tracing::trace!(
             "{database_key_index:?}: validate_provisional(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
@@ -272,7 +272,7 @@ where
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
-        tracing::debug!(
+        tracing::trace!(
             "{database_key_index:?}: validate_same_iteration(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
