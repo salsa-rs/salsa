@@ -5,7 +5,7 @@ error[E0277]: the trait bound `MyInterned<'_>: TrackedStructInDb` is not satisfi
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `TrackedStructInDb` is not implemented for `MyInterned<'_>`
    |
    = help: the trait `TrackedStructInDb` is implemented for `MyTracked<'_>`
-note: required by a bound in `salsa::function::specify::<impl salsa::plumbing::function::IngredientImpl<C>>::specify_and_record`
+note: required by a bound in `salsa::function::specify::<impl salsa::function::IngredientImpl<C>>::specify_and_record`
   --> src/function/specify.rs
    |
    |     pub fn specify_and_record<'db>(&'db self, db: &'db C::DbView, key: Id, value: C::Output<'db>)
