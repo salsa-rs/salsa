@@ -62,7 +62,7 @@ pub(crate) struct ActiveQuery {
     cycle_heads: CycleHeads,
 
     /// If this query is a cycle head, iteration count of that cycle.
-    pub(crate) iteration_count: u32,
+    iteration_count: u32,
 }
 
 impl ActiveQuery {
@@ -128,6 +128,10 @@ impl ActiveQuery {
             durability: self.durability,
             changed_at: self.changed_at,
         }
+    }
+
+    pub(super) fn iteration_count(&self) -> u32 {
+        self.iteration_count
     }
 }
 
