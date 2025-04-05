@@ -1,0 +1,11 @@
+error: `derive(Update)` does not support `union`
+ --> tests/compile-fail/derive_update_expansion_failure.rs:2:1
+  |
+2 | union U {
+  | ^^^^^
+
+error: expected `unsafe`
+ --> tests/compile-fail/derive_update_expansion_failure.rs:8:14
+  |
+8 |     #[update(with(missing_unsafe))]
+  |              ^^^^

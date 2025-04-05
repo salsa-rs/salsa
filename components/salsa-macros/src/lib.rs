@@ -80,16 +80,21 @@ pub fn tracked(args: TokenStream, input: TokenStream) -> TokenStream {
     tracked::tracked(args, input)
 }
 
-#[proc_macro_derive(Update)]
+#[proc_macro_derive(Update, attributes(update))]
 pub fn update(input: TokenStream) -> TokenStream {
     let item = parse_macro_input!(input as syn::DeriveInput);
     match update::update_derive(item) {
         Ok(tokens) => tokens.into(),
-        Err(error) => token_stream_with_error(input, error),
+        Err(error) => error.into_compile_error().into(),
     }
 }
 
 pub(crate) fn token_stream_with_error(mut tokens: TokenStream, error: syn::Error) -> TokenStream {
     tokens.extend(TokenStream::from(error.into_compile_error()));
     tokens
+}
+
+mod kw {
+    syn::custom_keyword!(with);
+    syn::custom_keyword!(maybe_update);
 }
