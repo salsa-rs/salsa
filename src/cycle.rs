@@ -49,6 +49,8 @@
 //! cycle head may then iterate, which may result in a new set of iterations on the inner cycle,
 //! for each iteration of the outer cycle.
 
+use thin_vec::{thin_vec, ThinVec};
+
 use crate::key::DatabaseKeyIndex;
 
 /// The maximum number of times we'll fixpoint-iterate before panicking.
@@ -97,21 +99,22 @@ pub struct CycleHead {
 /// plural in case of nested cycles) representing the cycles it is part of, and the current
 /// iteration count for each cycle head. This struct tracks these cycle heads.
 #[derive(Clone, Debug, Default)]
-#[allow(clippy::box_collection)]
-pub struct CycleHeads(Option<Box<Vec<CycleHead>>>);
+pub struct CycleHeads(ThinVec<CycleHead>);
 
 impl CycleHeads {
     pub(crate) fn is_empty(&self) -> bool {
-        // We ensure in `remove` and `extend` that we never have an empty hashset, we always use
-        // None to signify empty.
-        self.0.is_none()
+        self.0.is_empty()
     }
 
     pub(crate) fn initial(database_key_index: DatabaseKeyIndex) -> Self {
-        Self(Some(Box::new(vec![CycleHead {
+        Self(thin_vec![CycleHead {
             database_key_index,
             iteration_count: 0,
-        }])))
+        }])
+    }
+
+    pub(crate) fn iter(&self) -> std::slice::Iter<'_, CycleHead> {
+        self.0.iter()
     }
 
     pub(crate) fn contains(&self, value: &DatabaseKeyIndex) -> bool {
@@ -120,18 +123,17 @@ impl CycleHeads {
     }
 
     pub(crate) fn remove(&mut self, value: &DatabaseKeyIndex) -> bool {
-        let Some(cycle_heads) = &mut self.0 else {
-            return false;
-        };
-        let found = cycle_heads
+        let found = self
+            .0
             .iter()
             .position(|&head| head.database_key_index == *value);
         let Some(found) = found else { return false };
-        cycle_heads.swap_remove(found);
-        if cycle_heads.is_empty() {
-            self.0.take();
-        }
+        self.0.swap_remove(found);
         true
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.0.clear();
     }
 
     pub(crate) fn update_iteration_count(
@@ -139,98 +141,56 @@ impl CycleHeads {
         cycle_head_index: DatabaseKeyIndex,
         new_iteration_count: u32,
     ) {
-        if let Some(cycle_head) = self.0.as_mut().and_then(|cycle_heads| {
-            cycle_heads
-                .iter_mut()
-                .find(|cycle_head| cycle_head.database_key_index == cycle_head_index)
-        }) {
+        if let Some(cycle_head) = self
+            .0
+            .iter_mut()
+            .find(|cycle_head| cycle_head.database_key_index == cycle_head_index)
+        {
             cycle_head.iteration_count = new_iteration_count;
         }
     }
 
     #[inline]
-    pub(crate) fn insert_into(self, cycle_heads: &mut Vec<CycleHead>) {
-        if let Some(heads) = self.0 {
-            insert_into_impl(&heads, cycle_heads);
-        }
-    }
-
     pub(crate) fn extend(&mut self, other: &Self) {
-        if let Some(other) = &other.0 {
-            let heads = &mut **self.0.get_or_insert_with(|| Box::new(Vec::new()));
-            insert_into_impl(other, heads);
-        }
-    }
-}
+        self.0.reserve(other.0.len());
 
-#[inline]
-fn insert_into_impl(insert_from: &Vec<CycleHead>, insert_into: &mut Vec<CycleHead>) {
-    insert_into.reserve(insert_from.len());
-    for head in insert_from {
-        if let Some(existing) = insert_into
-            .iter()
-            .find(|candidate| candidate.database_key_index == head.database_key_index)
-        {
-            assert!(existing.iteration_count == head.iteration_count);
-        } else {
-            insert_into.push(*head);
+        for head in other {
+            if let Some(existing) = self
+                .0
+                .iter()
+                .find(|candidate| candidate.database_key_index == head.database_key_index)
+            {
+                assert!(existing.iteration_count == head.iteration_count);
+            } else {
+                self.0.push(*head);
+            }
         }
     }
 }
 
 impl IntoIterator for CycleHeads {
     type Item = CycleHead;
-    type IntoIter = <Vec<Self::Item> as IntoIterator>::IntoIter;
+    type IntoIter = <ThinVec<Self::Item> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.map(|heads| *heads).unwrap_or_default().into_iter()
+        self.0.into_iter()
     }
 }
-
-pub struct CycleHeadsIter<'a>(std::slice::Iter<'a, CycleHead>);
-
-impl Iterator for CycleHeadsIter<'_> {
-    type Item = CycleHead;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().copied()
-    }
-
-    fn last(self) -> Option<Self::Item> {
-        self.0.last().copied()
-    }
-}
-
-impl std::iter::FusedIterator for CycleHeadsIter<'_> {}
 
 impl<'a> std::iter::IntoIterator for &'a CycleHeads {
-    type Item = CycleHead;
-    type IntoIter = CycleHeadsIter<'a>;
+    type Item = &'a CycleHead;
+    type IntoIter = std::slice::Iter<'a, CycleHead>;
 
     fn into_iter(self) -> Self::IntoIter {
-        CycleHeadsIter(
-            self.0
-                .as_ref()
-                .map(|heads| heads.iter())
-                .unwrap_or_default(),
-        )
+        self.iter()
     }
 }
 
 impl From<CycleHead> for CycleHeads {
     fn from(value: CycleHead) -> Self {
-        Self(Some(Box::new(vec![value])))
+        Self(thin_vec![value])
     }
 }
 
-impl From<Vec<CycleHead>> for CycleHeads {
-    fn from(value: Vec<CycleHead>) -> Self {
-        Self(if value.is_empty() {
-            None
-        } else {
-            Some(Box::new(value))
-        })
-    }
-}
-
-pub(crate) const EMPTY_CYCLE_HEADS: CycleHeads = CycleHeads(None);
+pub(crate) static EMPTY_CYCLE_HEADS: std::sync::LazyLock<CycleHeads> =
+    std::sync::LazyLock::new(|| CycleHeads(ThinVec::new()));
