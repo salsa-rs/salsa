@@ -69,15 +69,18 @@ impl ActiveQuery {
     pub(super) fn add_read(
         &mut self,
         input: DatabaseKeyIndex,
-        durability: Durability,
-        revision: Revision,
-        accumulated: InputAccumulatedValues,
+        revisions: &QueryRevisions,
         cycle_heads: &CycleHeads,
     ) {
-        self.durability = self.durability.min(durability);
-        self.changed_at = self.changed_at.max(revision);
+        self.durability = self.durability.min(revisions.durability);
+        self.changed_at = self.changed_at.max(revisions.changed_at);
         self.input_outputs.insert(QueryEdge::Input(input));
-        self.accumulated_inputs |= accumulated;
+        self.accumulated_inputs =
+            self.accumulated_inputs
+                .or_else(|| match &revisions.accumulated {
+                    Some(_) => InputAccumulatedValues::Any,
+                    None => revisions.accumulated_inputs.load(),
+                });
         self.cycle_heads.extend(cycle_heads);
     }
 

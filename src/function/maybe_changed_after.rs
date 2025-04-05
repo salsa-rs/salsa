@@ -204,12 +204,7 @@ where
         );
         if last_changed <= verified_at {
             // No input of the suitable durability has changed since last verified.
-            memo.mark_as_verified(
-                db,
-                revision_now,
-                database_key_index,
-                memo.revisions.accumulated_inputs.load(),
-            );
+            memo.mark_as_verified(db, revision_now, database_key_index);
             memo.mark_outputs_as_verified(zalsa, db.as_dyn_database(), database_key_index);
             return true;
         }
@@ -425,12 +420,8 @@ where
                         .is_some();
 
                     if cycle_heads.is_empty() {
-                        old_memo.mark_as_verified(
-                            db,
-                            zalsa.current_revision(),
-                            database_key_index,
-                            inputs,
-                        );
+                        old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index);
+                        old_memo.revisions.accumulated_inputs.store(inputs);
 
                         if in_heads {
                             // Iterate our dependency graph again, starting from the top. We clear the
@@ -441,10 +432,7 @@ where
                             continue 'cycle;
                         }
                     }
-                    break 'cycle VerifyResult::Unchanged(
-                        InputAccumulatedValues::Empty,
-                        CycleHeads::from(cycle_heads),
-                    );
+                    break 'cycle VerifyResult::Unchanged(inputs, CycleHeads::from(cycle_heads));
                 }
             }
         }
