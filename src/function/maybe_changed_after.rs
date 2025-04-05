@@ -343,7 +343,7 @@ where
                     return VerifyResult::Changed;
                 }
 
-                let mut cycle_heads = vec![];
+                let mut cycle_heads = CycleHeads::default();
                 'cycle: loop {
                     // Fully tracked inputs? Iterate over the inputs and check them, one by one.
                     //
@@ -361,7 +361,7 @@ where
                                 {
                                     VerifyResult::Changed => break 'cycle VerifyResult::Changed,
                                     VerifyResult::Unchanged(input_accumulated, cycles) => {
-                                        cycles.insert_into(&mut cycle_heads);
+                                        cycle_heads.extend(&cycles);
                                         inputs |= input_accumulated;
                                     }
                                 }
@@ -418,11 +418,7 @@ where
                     //    from cycle heads. We will handle our own memo (and the rest of our cycle) on a
                     //    future iteration; first the outer cycle head needs to verify itself.
 
-                    let in_heads = cycle_heads
-                        .iter()
-                        .position(|&head| head.database_key_index == database_key_index)
-                        .inspect(|&head| _ = cycle_heads.swap_remove(head))
-                        .is_some();
+                    let in_heads = cycle_heads.remove(&database_key_index);
 
                     if cycle_heads.is_empty() {
                         old_memo.mark_as_verified(
@@ -443,7 +439,7 @@ where
                     }
                     break 'cycle VerifyResult::Unchanged(
                         InputAccumulatedValues::Empty,
-                        CycleHeads::from(cycle_heads),
+                        cycle_heads,
                     );
                 }
             }
