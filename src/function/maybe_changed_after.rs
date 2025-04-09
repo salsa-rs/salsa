@@ -67,7 +67,7 @@ where
 
             if let Some(shallow_update) = self.shallow_verify_memo(zalsa, database_key_index, memo)
             {
-                if self.validate_provisional(db, zalsa, database_key_index, memo) {
+                if self.validate_may_be_provisional(db, zalsa, database_key_index, memo) {
                     self.update_shallow(db, zalsa, database_key_index, memo, shallow_update);
 
                     return if memo.revisions.changed_at > revision {
@@ -332,7 +332,7 @@ where
         let shallow_update_possible = shallow_update.is_some();
 
         if let Some(shallow_update) = shallow_update {
-            if self.validate_provisional(db, zalsa, database_key_index, old_memo) {
+            if self.validate_may_be_provisional(db, zalsa, database_key_index, old_memo) {
                 self.update_shallow(db, zalsa, database_key_index, old_memo, shallow_update);
 
                 return VerifyResult::unchanged();
