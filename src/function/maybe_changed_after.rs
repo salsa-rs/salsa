@@ -60,10 +60,16 @@ where
 
             // Check if we have a verified version: this is the hot path.
             let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-            if let Some(memo) = memo_guard {
-                if self.validate_may_be_provisional(db, zalsa, database_key_index, memo)
-                    && self.shallow_verify_memo(db, zalsa, database_key_index, memo)
-                {
+            let Some(memo) = memo_guard else {
+                // No memo? Assume has changed.
+                return VerifyResult::Changed;
+            };
+
+            if let Some(shallow_update) = self.shallow_verify_memo(zalsa, database_key_index, memo)
+            {
+                if self.validate_provisional(db, zalsa, database_key_index, memo) {
+                    self.update_shallow(db, zalsa, database_key_index, memo, shallow_update);
+
                     return if memo.revisions.changed_at > revision {
                         VerifyResult::Changed
                     } else {
@@ -73,16 +79,14 @@ where
                         )
                     };
                 }
-                if let Some(mcs) =
-                    self.maybe_changed_after_cold(zalsa, db, id, revision, memo_ingredient_index)
-                {
-                    return mcs;
-                } else {
-                    // We failed to claim, have to retry.
-                }
+            }
+
+            if let Some(mcs) =
+                self.maybe_changed_after_cold(zalsa, db, id, revision, memo_ingredient_index)
+            {
+                return mcs;
             } else {
-                // No memo? Assume has changed.
-                return VerifyResult::Changed;
+                // We failed to claim, have to retry.
             }
         }
     }
@@ -167,7 +171,7 @@ where
         Some(VerifyResult::Changed)
     }
 
-    /// True if the memo's value and `changed_at` time is still valid in this revision.
+    /// `Some` if the memo's value and `changed_at` time is still valid in this revision.
     /// Does only a shallow O(1) check, doesn't walk the dependencies.
     ///
     /// In general, a provisional memo (from cycle iteration) does not verify. Since we don't
@@ -177,11 +181,10 @@ where
     #[inline]
     pub(super) fn shallow_verify_memo(
         &self,
-        db: &C::DbView,
         zalsa: &Zalsa,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
-    ) -> bool {
+    ) -> Option<ShallowUpdate> {
         tracing::debug!(
             "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
             memo = memo.tracing_debug()
@@ -191,7 +194,7 @@ where
 
         if verified_at == revision_now {
             // Already verified.
-            return true;
+            return Some(ShallowUpdate::Verified);
         }
 
         let last_changed = zalsa.last_changed_revision(memo.revisions.durability);
@@ -204,17 +207,31 @@ where
         );
         if last_changed <= verified_at {
             // No input of the suitable durability has changed since last verified.
+            Some(ShallowUpdate::HigherDurability(revision_now))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub(super) fn update_shallow(
+        &self,
+        db: &C::DbView,
+        zalsa: &Zalsa,
+        database_key_index: DatabaseKeyIndex,
+        memo: &Memo<C::Output<'_>>,
+        update: ShallowUpdate,
+    ) {
+        if let ShallowUpdate::HigherDurability(revision_now) = update {
             memo.mark_as_verified(
                 db,
                 revision_now,
                 database_key_index,
                 memo.revisions.accumulated_inputs.load(),
             );
-            memo.mark_outputs_as_verified(zalsa, db.as_dyn_database(), database_key_index);
-            return true;
-        }
 
-        false
+            memo.mark_outputs_as_verified(zalsa, db.as_dyn_database(), database_key_index);
+        }
     }
 
     /// Validates this memo if it is a provisional memo. Returns true for non provisional memos or
@@ -311,10 +328,15 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        if self.validate_may_be_provisional(db, zalsa, database_key_index, old_memo)
-            && self.shallow_verify_memo(db, zalsa, database_key_index, old_memo)
-        {
-            return VerifyResult::unchanged();
+        let shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
+        let shallow_update_possible = shallow_update.is_some();
+
+        if let Some(shallow_update) = shallow_update {
+            if self.validate_provisional(db, zalsa, database_key_index, old_memo) {
+                self.update_shallow(db, zalsa, database_key_index, old_memo, shallow_update);
+
+                return VerifyResult::unchanged();
+            }
         }
 
         match &old_memo.revisions.origin {
@@ -339,7 +361,9 @@ where
                 VerifyResult::Changed
             }
             QueryOrigin::Derived(edges) => {
-                if old_memo.may_be_provisional() {
+                let is_provisional = old_memo.may_be_provisional();
+                // If the value is from the same revision but is still provisional, consider it changed
+                if shallow_update_possible && is_provisional {
                     return VerifyResult::Changed;
                 }
 
@@ -428,15 +452,18 @@ where
                             inputs,
                         );
 
+                        if is_provisional {
+                            old_memo
+                                .revisions
+                                .verified_final
+                                .store(true, Ordering::Relaxed);
+                        }
+
                         if in_heads {
-                            // Iterate our dependency graph again, starting from the top. We clear the
-                            // cycle heads here because we are starting a fresh traversal. (It might be
-                            // logically clearer to create a new HashSet each time, but clearing the
-                            // existing one is more efficient.)
-                            cycle_heads.clear();
                             continue 'cycle;
                         }
                     }
+
                     break 'cycle VerifyResult::Unchanged(
                         InputAccumulatedValues::Empty,
                         cycle_heads,
@@ -445,4 +472,14 @@ where
             }
         }
     }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub(super) enum ShallowUpdate {
+    /// The memo is from this revision and has already been verified
+    Verified,
+
+    /// The revision for the memo's durability hasn't changed. It can be marked as verified
+    /// in this revision.
+    HigherDurability(Revision),
 }
