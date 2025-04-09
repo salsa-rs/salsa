@@ -132,10 +132,6 @@ impl CycleHeads {
         true
     }
 
-    pub(crate) fn clear(&mut self) {
-        self.0.clear();
-    }
-
     pub(crate) fn update_iteration_count(
         &mut self,
         cycle_head_index: DatabaseKeyIndex,

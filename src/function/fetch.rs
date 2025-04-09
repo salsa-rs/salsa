@@ -79,19 +79,24 @@ where
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
-        let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
-        if let Some(memo) = memo_guard {
-            let database_key_index = self.database_key_index(id);
-            if memo.value.is_some()
-                && (self.validate_may_be_provisional(db, zalsa, database_key_index, memo)
-                    || self.validate_same_iteration(db, database_key_index, memo))
-                && self.shallow_verify_memo(db, zalsa, database_key_index, memo)
-            {
-                // SAFETY: memo is present in memo_map and we have verified that it is
-                // still valid for the current revision.
-                return unsafe { Some(self.extend_memo_lifetime(memo)) };
-            }
+        let memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)?;
+
+        memo.value.as_ref()?;
+
+        let database_key_index = self.database_key_index(id);
+
+        let shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo)?;
+
+        if self.validate_may_be_provisional(db, zalsa, database_key_index, memo)
+            || self.validate_same_iteration(db, database_key_index, memo)
+        {
+            self.update_shallow(db, zalsa, database_key_index, memo, shallow_update);
+
+            // SAFETY: memo is present in memo_map and we have verified that it is
+            // still valid for the current revision.
+            return unsafe { Some(self.extend_memo_lifetime(memo)) };
         }
+
         None
     }
 
@@ -120,10 +125,20 @@ where
                 if let Some(memo) = memo_guard {
                     if memo.value.is_some()
                         && memo.revisions.cycle_heads.contains(&database_key_index)
-                        && self.shallow_verify_memo(db, zalsa, database_key_index, memo)
                     {
-                        // SAFETY: memo is present in memo_map.
-                        return unsafe { Some(self.extend_memo_lifetime(memo)) };
+                        if let Some(shallow_update) =
+                            self.shallow_verify_memo(zalsa, database_key_index, memo)
+                        {
+                            self.update_shallow(
+                                db,
+                                zalsa,
+                                database_key_index,
+                                memo,
+                                shallow_update,
+                            );
+                            // SAFETY: memo is present in memo_map.
+                            return unsafe { Some(self.extend_memo_lifetime(memo)) };
+                        }
                     }
                 }
                 // no provisional value; create/insert/return initial provisional value

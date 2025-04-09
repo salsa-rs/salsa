@@ -1,4 +1,5 @@
-//! Tests for cycles where the cycle head is stored on a tracked struct.
+//! Tests for cycles where the cycle head is stored on a tracked struct
+//! and that tracked struct is freed in a later revision.
 
 mod common;
 
@@ -87,14 +88,12 @@ fn create_graph(db: &dyn salsa::Database, input: GraphInput) -> Graph<'_> {
 /// Computes the minimum cost from the node with offset `0` to the given node.
 #[salsa::tracked(cycle_fn=cycle_recover, cycle_initial=max_initial)]
 fn cost_to_start<'db>(db: &'db dyn Database, node: Node<'db>) -> usize {
-    let mut min_cost = None;
+    let mut min_cost = usize::MAX;
     let graph = create_graph(db, node.graph(db));
 
     for edge in node.edges(db) {
         if edge.to == 0 {
-            if min_cost.is_none_or(|min| min > edge.cost) {
-                min_cost = Some(edge.cost);
-            }
+            min_cost = min_cost.min(edge.cost);
         }
 
         let edge_cost_to_start = cost_to_start(db, graph.nodes[edge.to]);
@@ -105,14 +104,10 @@ fn cost_to_start<'db>(db: &'db dyn Database, node: Node<'db>) -> usize {
             continue;
         }
 
-        let total_cost = edge.cost + edge_cost_to_start;
-        if min_cost.is_none_or(|min| min > total_cost) {
-            min_cost = Some(total_cost);
-        }
+        min_cost = min_cost.min(edge.cost + edge_cost_to_start);
     }
 
-    // If `None`, it means that there's no path from `node` to the start.
-    min_cost.unwrap_or(usize::MAX)
+    min_cost
 }
 
 fn max_initial(_db: &dyn Database, _node: Node) -> usize {
@@ -132,7 +127,7 @@ fn cycle_recover(
 fn main() {
     let mut db = EventLoggerDatabase::default();
 
-    let input = GraphInput::new(&mut db, false);
+    let input = GraphInput::new(&db, false);
     let graph = create_graph(&db, input);
     let c = graph.find_node(&db, "c").unwrap();
 
@@ -151,5 +146,46 @@ fn main() {
 
     assert_eq!(cost_to_start(&db, c), 22);
 
-    db.assert_logs(expect![[r#""#]]);
+    db.assert_logs(expect![[r#"
+        [
+            "WillCheckCancellation",
+            "WillExecute { database_key: create_graph(Id(0)) }",
+            "WillCheckCancellation",
+            "WillExecute { database_key: cost_to_start(Id(402)) }",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "WillExecute { database_key: cost_to_start(Id(403)) }",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "WillExecute { database_key: cost_to_start(Id(400)) }",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "WillExecute { database_key: cost_to_start(Id(401)) }",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "WillExecute { database_key: cost_to_start(Id(401)) }",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "DidSetCancellationFlag",
+            "WillCheckCancellation",
+            "WillExecute { database_key: create_graph(Id(0)) }",
+            "WillDiscardStaleOutput { execute_key: create_graph(Id(0)), output_key: Node(Id(403)) }",
+            "DidDiscard { key: Node(Id(403)) }",
+            "DidDiscard { key: cost_to_start(Id(403)) }",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "WillExecute { database_key: cost_to_start(Id(402)) }",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "WillExecute { database_key: cost_to_start(Id(401)) }",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "WillCheckCancellation",
+            "WillExecute { database_key: cost_to_start(Id(400)) }",
+            "WillCheckCancellation",
+        ]"#]]);
 }
