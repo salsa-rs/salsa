@@ -293,18 +293,21 @@ where
             "{database_key_index:?}: validate_same_iteration(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
-        for cycle_head in &memo.revisions.cycle_heads {
-            if !db.zalsa_local().with_query_stack(|stack| {
-                stack.iter().rev().any(|entry| {
-                    entry.database_key_index == cycle_head.database_key_index
-                        && entry.iteration_count() == cycle_head.iteration_count
-                })
-            }) {
-                return false;
-            }
+
+        if memo.revisions.cycle_heads.is_empty() {
+            return true;
         }
 
-        true
+        let cycle_heads = &memo.revisions.cycle_heads;
+
+        db.zalsa_local().with_query_stack(|stack| {
+            cycle_heads.iter().all(|cycle_head| {
+                stack.iter().rev().any(|query| {
+                    query.database_key_index == cycle_head.database_key_index
+                        && query.iteration_count() == cycle_head.iteration_count
+                })
+            })
+        })
     }
 
     /// VerifyResult::Unchanged if the memo's value and `changed_at` time is up-to-date in the
