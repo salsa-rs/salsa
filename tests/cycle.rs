@@ -871,7 +871,7 @@ fn cycle_unchanged() {
     a.assert_value(&db, 59);
     b.assert_value(&db, 60);
 
-    db.assert_logs_len(4);
+    db.assert_logs_len(5);
 
     // next revision, we change only A, which is not part of the cycle and the cycle does not
     // depend on.
@@ -917,7 +917,7 @@ fn cycle_unchanged_nested() {
     a.assert_value(&db, 59);
     b.assert_value(&db, 60);
 
-    db.assert_logs_len(10);
+    db.assert_logs_len(13);
 
     // next revision, we change only A, which is not part of the cycle and the cycle does not
     // depend on.
@@ -984,7 +984,7 @@ fn cycle_unchanged_nested_intertwined() {
             e.assert_value(&db, 60);
         }
 
-        db.assert_logs_len(12 + i);
+        db.assert_logs_len(15 + i);
 
         // next revision, we change only A, which is not part of the cycle and the cycle does not
         // depend on.
@@ -1031,6 +1031,7 @@ fn repeat_provisional_query() {
             "salsa_event(WillExecute { database_key: min_iterate(Id(0)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
+            "salsa_event(WillIterateCycle { database_key: min_iterate(Id(0)), iteration_count: 1, fell_back: false })",
             "salsa_event(WillExecute { database_key: min_panic(Id(1)) })",
             "salsa_event(WillExecute { database_key: min_panic(Id(2)) })",
         ]"#]]);

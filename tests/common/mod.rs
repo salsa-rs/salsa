@@ -128,6 +128,7 @@ impl Database for ExecuteValidateLoggerDatabase {
         let event = event();
         match event.kind {
             salsa::EventKind::WillExecute { .. }
+            | salsa::EventKind::WillIterateCycle { .. }
             | salsa::EventKind::DidValidateMemoizedValue { .. } => {
                 self.push_log(format!("salsa_event({:?})", event.kind));
             }
