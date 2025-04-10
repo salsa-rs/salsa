@@ -171,7 +171,7 @@ where
             ClaimResult::Claimed(guard) => guard,
         };
 
-        let mut active_query = LazyActiveQuery::new(database_key_index, db.zalsa_local());
+        let mut active_query = LazyActiveQueryGuard::new(database_key_index);
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
@@ -189,23 +189,21 @@ where
             }
         }
 
-        let memo = self.execute(db, active_query.into_inner(), opt_old_memo);
+        let memo = self.execute(db, active_query.into_inner(db.zalsa_local()), opt_old_memo);
 
         Some(memo)
     }
 }
 
-pub(super) struct LazyActiveQuery<'me> {
+pub(super) struct LazyActiveQueryGuard<'me> {
     guard: Option<ActiveQueryGuard<'me>>,
-    zalsa_local: &'me ZalsaLocal,
     database_key_index: DatabaseKeyIndex,
 }
 
-impl<'me> LazyActiveQuery<'me> {
-    pub(super) fn new(database_key_index: DatabaseKeyIndex, zalsa_local: &'me ZalsaLocal) -> Self {
+impl<'me> LazyActiveQueryGuard<'me> {
+    pub(super) fn new(database_key_index: DatabaseKeyIndex) -> Self {
         Self {
             guard: None,
-            zalsa_local,
             database_key_index,
         }
     }
@@ -214,13 +212,13 @@ impl<'me> LazyActiveQuery<'me> {
         self.database_key_index
     }
 
-    pub(super) fn get(&mut self) -> &ActiveQueryGuard<'me> {
+    pub(super) fn guard(&mut self, zalsa_local: &'me ZalsaLocal) -> &ActiveQueryGuard<'me> {
         self.guard
-            .get_or_insert_with(|| self.zalsa_local.push_query(self.database_key_index, 0))
+            .get_or_insert_with(|| zalsa_local.push_query(self.database_key_index, 0))
     }
 
-    pub(super) fn into_inner(self) -> ActiveQueryGuard<'me> {
+    pub(super) fn into_inner(self, zalsa_local: &'me ZalsaLocal) -> ActiveQueryGuard<'me> {
         self.guard
-            .unwrap_or_else(|| self.zalsa_local.push_query(self.database_key_index, 0))
+            .unwrap_or_else(|| zalsa_local.push_query(self.database_key_index, 0))
     }
 }

@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy};
-use crate::function::fetch::LazyActiveQuery;
+use crate::function::fetch::LazyActiveQueryGuard;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
@@ -136,7 +136,7 @@ where
         );
 
         // Check if the inputs are still valid. We can just compare `changed_at`.
-        let mut active_query = LazyActiveQuery::new(database_key_index, db.zalsa_local());
+        let mut active_query = LazyActiveQueryGuard::new(database_key_index);
         if let VerifyResult::Unchanged(_, cycle_heads) =
             self.deep_verify_memo(db, zalsa, old_memo, &mut active_query)
         {
@@ -152,7 +152,11 @@ where
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
         if old_memo.value.is_some() {
-            let memo = self.execute(db, active_query.into_inner(), Some(old_memo));
+            let memo = self.execute(
+                db,
+                active_query.into_inner(db.zalsa_local()),
+                Some(old_memo),
+            );
             let changed_at = memo.revisions.changed_at;
 
             return Some(if changed_at > revision {
@@ -315,12 +319,12 @@ where
     /// Takes an [`ActiveQueryGuard`] argument because this function recursively
     /// walks dependencies of `old_memo` and may even execute them to see if their
     /// outputs have changed.
-    pub(super) fn deep_verify_memo(
+    pub(super) fn deep_verify_memo<'db>(
         &self,
-        db: &C::DbView,
+        db: &'db C::DbView,
         zalsa: &Zalsa,
         old_memo: &Memo<C::Output<'_>>,
-        active_query: &mut LazyActiveQuery<'_>,
+        active_query: &mut LazyActiveQueryGuard<'db>,
     ) -> VerifyResult {
         let database_key_index = active_query.database_key_index();
 
@@ -329,21 +333,17 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
+        let mut is_shallow_update_possible = false;
         if let Some(shallow_update) = self.shallow_verify_memo(zalsa, database_key_index, old_memo)
         {
+            is_shallow_update_possible = true;
+
             if self.validate_may_be_provisional(db, zalsa, database_key_index, old_memo)
                 || self.validate_same_iteration(db, database_key_index, old_memo)
             {
                 self.update_shallow(db, zalsa, database_key_index, old_memo, shallow_update);
 
                 return VerifyResult::unchanged();
-            }
-
-            if let QueryOrigin::Derived(_) = &old_memo.revisions.origin {
-                // If the value is from the same revision but is still provisional, consider it changed
-                if old_memo.may_be_provisional() {
-                    return VerifyResult::Changed;
-                }
             }
         }
 
@@ -369,7 +369,14 @@ where
                 VerifyResult::Changed
             }
             QueryOrigin::Derived(edges) => {
-                let _guard = active_query.get();
+                let is_provisional = old_memo.may_be_provisional();
+
+                // If the value is from the same revision but is still provisional, consider it changed
+                if is_shallow_update_possible && old_memo.may_be_provisional() {
+                    return VerifyResult::Changed;
+                }
+
+                let _guard = active_query.guard(db.zalsa_local());
 
                 let mut cycle_heads = CycleHeads::default();
                 'cycle: loop {
@@ -456,10 +463,12 @@ where
                             inputs,
                         );
 
-                        old_memo
-                            .revisions
-                            .verified_final
-                            .store(true, Ordering::Relaxed);
+                        if is_provisional {
+                            old_memo
+                                .revisions
+                                .verified_final
+                                .store(true, Ordering::Relaxed);
+                        }
 
                         if in_heads {
                             continue 'cycle;
