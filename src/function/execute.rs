@@ -105,6 +105,11 @@ where
                     ) {
                         crate::CycleRecoveryAction::Iterate => {
                             tracing::debug!("{database_key_index:?}: execute: iterate again");
+                            db.salsa_event(&|| {
+                                Event::new(EventKind::WillIterateCycle {
+                                    database_key: database_key_index,
+                                })
+                            });
                         }
                         crate::CycleRecoveryAction::Fallback(fallback_value) => {
                             tracing::debug!(

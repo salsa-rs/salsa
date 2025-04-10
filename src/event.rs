@@ -59,6 +59,11 @@ pub enum EventKind {
         database_key: DatabaseKeyIndex,
     },
 
+    WillIterateCycle {
+        /// The database-key for the cycle head. Implements `Debug`.
+        database_key: DatabaseKeyIndex,
+    },
+
     /// Indicates that `unwind_if_cancelled` was called and salsa will check if
     /// the current revision has been cancelled.
     WillCheckCancellation,
