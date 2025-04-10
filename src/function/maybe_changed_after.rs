@@ -333,11 +333,9 @@ where
             old_memo = old_memo.tracing_debug()
         );
 
-        let mut is_shallow_update_possible = false;
-        if let Some(shallow_update) = self.shallow_verify_memo(zalsa, database_key_index, old_memo)
-        {
-            is_shallow_update_possible = true;
-
+        let shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
+        let shallow_update_possible = shallow_update.is_some();
+        if let Some(shallow_update) = shallow_update {
             if self.validate_may_be_provisional(db, zalsa, database_key_index, old_memo)
                 || self.validate_same_iteration(db, database_key_index, old_memo)
             {
@@ -372,7 +370,7 @@ where
                 let is_provisional = old_memo.may_be_provisional();
 
                 // If the value is from the same revision but is still provisional, consider it changed
-                if is_shallow_update_possible && old_memo.may_be_provisional() {
+                if shallow_update_possible && is_provisional {
                     return VerifyResult::Changed;
                 }
 
