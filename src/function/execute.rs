@@ -105,11 +105,6 @@ where
                     ) {
                         crate::CycleRecoveryAction::Iterate => {
                             tracing::debug!("{database_key_index:?}: execute: iterate again");
-                            db.salsa_event(&|| {
-                                Event::new(EventKind::WillIterateCycle {
-                                    database_key: database_key_index,
-                                })
-                            });
                         }
                         crate::CycleRecoveryAction::Fallback(fallback_value) => {
                             tracing::debug!(
@@ -128,6 +123,13 @@ where
                     if iteration_count > MAX_ITERATIONS {
                         panic!("{database_key_index:?}: execute: too many cycle iterations");
                     }
+                    db.salsa_event(&|| {
+                        Event::new(EventKind::WillIterateCycle {
+                            database_key: database_key_index,
+                            iteration_count,
+                            fell_back,
+                        })
+                    });
                     revisions
                         .cycle_heads
                         .update_iteration_count(database_key_index, iteration_count);
