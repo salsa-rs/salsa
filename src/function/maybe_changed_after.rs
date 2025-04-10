@@ -2,12 +2,13 @@ use std::sync::atomic::Ordering;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy};
+use crate::function::fetch::LazyActiveQuery;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
 use crate::table::sync::ClaimResult;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::{ActiveQueryGuard, QueryEdge, QueryOrigin};
+use crate::zalsa_local::{QueryEdge, QueryOrigin};
 use crate::{AsDynDatabase as _, Id, Revision};
 
 /// Result of memo validation.
@@ -135,9 +136,9 @@ where
         );
 
         // Check if the inputs are still valid. We can just compare `changed_at`.
-        let active_query = db.zalsa_local().push_query(database_key_index, 0);
+        let mut active_query = LazyActiveQuery::new(database_key_index, db.zalsa_local());
         if let VerifyResult::Unchanged(_, cycle_heads) =
-            self.deep_verify_memo(db, zalsa, old_memo, &active_query)
+            self.deep_verify_memo(db, zalsa, old_memo, &mut active_query)
         {
             return Some(if old_memo.revisions.changed_at > revision {
                 VerifyResult::Changed
@@ -151,7 +152,7 @@ where
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
         if old_memo.value.is_some() {
-            let memo = self.execute(db, active_query, Some(old_memo));
+            let memo = self.execute(db, active_query.into_inner(), Some(old_memo));
             let changed_at = memo.revisions.changed_at;
 
             return Some(if changed_at > revision {
@@ -319,23 +320,30 @@ where
         db: &C::DbView,
         zalsa: &Zalsa,
         old_memo: &Memo<C::Output<'_>>,
-        active_query: &ActiveQueryGuard<'_>,
+        active_query: &mut LazyActiveQuery<'_>,
     ) -> VerifyResult {
-        let database_key_index = active_query.database_key_index;
+        let database_key_index = active_query.database_key_index();
 
         tracing::debug!(
             "{database_key_index:?}: deep_verify_memo(old_memo = {old_memo:#?})",
             old_memo = old_memo.tracing_debug()
         );
 
-        let shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
-        let shallow_update_possible = shallow_update.is_some();
-
-        if let Some(shallow_update) = shallow_update {
-            if self.validate_may_be_provisional(db, zalsa, database_key_index, old_memo) {
+        if let Some(shallow_update) = self.shallow_verify_memo(zalsa, database_key_index, old_memo)
+        {
+            if self.validate_may_be_provisional(db, zalsa, database_key_index, old_memo)
+                || self.validate_same_iteration(db, database_key_index, old_memo)
+            {
                 self.update_shallow(db, zalsa, database_key_index, old_memo, shallow_update);
 
                 return VerifyResult::unchanged();
+            }
+
+            if let QueryOrigin::Derived(_) = &old_memo.revisions.origin {
+                // If the value is from the same revision but is still provisional, consider it changed
+                if old_memo.may_be_provisional() {
+                    return VerifyResult::Changed;
+                }
             }
         }
 
@@ -361,11 +369,7 @@ where
                 VerifyResult::Changed
             }
             QueryOrigin::Derived(edges) => {
-                let is_provisional = old_memo.may_be_provisional();
-                // If the value is from the same revision but is still provisional, consider it changed
-                if shallow_update_possible && is_provisional {
-                    return VerifyResult::Changed;
-                }
+                let _guard = active_query.get();
 
                 let mut cycle_heads = CycleHeads::default();
                 'cycle: loop {
@@ -452,12 +456,10 @@ where
                             inputs,
                         );
 
-                        if is_provisional {
-                            old_memo
-                                .revisions
-                                .verified_final
-                                .store(true, Ordering::Relaxed);
-                        }
+                        old_memo
+                            .revisions
+                            .verified_final
+                            .store(true, Ordering::Relaxed);
 
                         if in_heads {
                             continue 'cycle;
