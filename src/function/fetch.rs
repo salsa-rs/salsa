@@ -4,8 +4,8 @@ use crate::function::{Configuration, IngredientImpl, VerifyResult};
 use crate::runtime::StampedValue;
 use crate::table::sync::ClaimResult;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
-use crate::zalsa_local::QueryRevisions;
-use crate::{AsDynDatabase as _, Id};
+use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions, ZalsaLocal};
+use crate::{AsDynDatabase as _, DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
 where
@@ -87,17 +87,15 @@ where
 
         let shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo)?;
 
-        if self.validate_may_be_provisional(db, zalsa, database_key_index, memo)
-            || self.validate_same_iteration(db, database_key_index, memo)
-        {
+        if self.validate_may_be_provisional(db, zalsa, database_key_index, memo) {
             self.update_shallow(db, zalsa, database_key_index, memo, shallow_update);
 
             // SAFETY: memo is present in memo_map and we have verified that it is
             // still valid for the current revision.
-            return unsafe { Some(self.extend_memo_lifetime(memo)) };
+            unsafe { Some(self.extend_memo_lifetime(memo)) }
+        } else {
+            None
         }
-
-        None
     }
 
     fn fetch_cold<'db>(
@@ -173,15 +171,14 @@ where
             ClaimResult::Claimed(guard) => guard,
         };
 
-        // Push the query on the stack.
-        let active_query = db.zalsa_local().push_query(database_key_index, 0);
+        let mut active_query = LazyActiveQueryGuard::new(database_key_index);
 
         // Now that we've claimed the item, check again to see if there's a "hot" value.
         let opt_old_memo = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
         if let Some(old_memo) = opt_old_memo {
             if old_memo.value.is_some() {
                 if let VerifyResult::Unchanged(_, cycle_heads) =
-                    self.deep_verify_memo(db, zalsa, old_memo, &active_query)
+                    self.deep_verify_memo(db, zalsa, old_memo, &mut active_query)
                 {
                     if cycle_heads.is_empty() {
                         // SAFETY: memo is present in memo_map and we have verified that it is
@@ -192,8 +189,36 @@ where
             }
         }
 
-        let memo = self.execute(db, active_query, opt_old_memo);
+        let memo = self.execute(db, active_query.into_inner(db.zalsa_local()), opt_old_memo);
 
         Some(memo)
+    }
+}
+
+pub(super) struct LazyActiveQueryGuard<'me> {
+    guard: Option<ActiveQueryGuard<'me>>,
+    database_key_index: DatabaseKeyIndex,
+}
+
+impl<'me> LazyActiveQueryGuard<'me> {
+    pub(super) fn new(database_key_index: DatabaseKeyIndex) -> Self {
+        Self {
+            guard: None,
+            database_key_index,
+        }
+    }
+
+    pub(super) const fn database_key_index(&self) -> DatabaseKeyIndex {
+        self.database_key_index
+    }
+
+    pub(super) fn guard(&mut self, zalsa_local: &'me ZalsaLocal) -> &ActiveQueryGuard<'me> {
+        self.guard
+            .get_or_insert_with(|| zalsa_local.push_query(self.database_key_index, 0))
+    }
+
+    pub(super) fn into_inner(self, zalsa_local: &'me ZalsaLocal) -> ActiveQueryGuard<'me> {
+        self.guard
+            .unwrap_or_else(|| zalsa_local.push_query(self.database_key_index, 0))
     }
 }
