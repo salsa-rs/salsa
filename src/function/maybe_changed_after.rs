@@ -67,7 +67,7 @@ where
 
             if let Some(shallow_update) = self.shallow_verify_memo(zalsa, database_key_index, memo)
             {
-                if self.validate_may_be_provisional(db, zalsa, database_key_index, memo) {
+                if !memo.may_be_provisional() {
                     self.update_shallow(db, zalsa, database_key_index, memo, shallow_update);
 
                     return if memo.revisions.changed_at > revision {
@@ -249,7 +249,9 @@ where
     ) -> bool {
         // Wouldn't it be nice if rust had an implication operator ...
         // may_be_provisional -> validate_provisional
-        !memo.may_be_provisional() || self.validate_provisional(db, zalsa, database_key_index, memo)
+        !memo.may_be_provisional()
+            || self.validate_provisional(db, zalsa, database_key_index, memo)
+            || self.validate_same_iteration(db, database_key_index, memo)
     }
 
     /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
@@ -353,9 +355,7 @@ where
         let shallow_update = self.shallow_verify_memo(zalsa, database_key_index, old_memo);
         let shallow_update_possible = shallow_update.is_some();
         if let Some(shallow_update) = shallow_update {
-            if self.validate_may_be_provisional(db, zalsa, database_key_index, old_memo)
-                || self.validate_same_iteration(db, database_key_index, old_memo)
-            {
+            if self.validate_may_be_provisional(db, zalsa, database_key_index, old_memo) {
                 self.update_shallow(db, zalsa, database_key_index, old_memo, shallow_update);
 
                 return VerifyResult::unchanged();

@@ -77,7 +77,7 @@ where
 
         let shallow_update = self.shallow_verify_memo(zalsa, database_key_index, memo)?;
 
-        if self.validate_may_be_provisional(db, zalsa, database_key_index, memo) {
+        if !memo.may_be_provisional() {
             self.update_shallow(db, zalsa, database_key_index, memo, shallow_update);
 
             // SAFETY: memo is present in memo_map and we have verified that it is
