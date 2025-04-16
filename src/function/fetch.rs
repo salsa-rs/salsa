@@ -162,10 +162,14 @@ where
                         )
                     })
                     .or_else(|| {
-                        panic!(
-                            "dependency graph cycle querying {database_key_index:#?}; \
-                             set cycle_fn/cycle_initial to fixpoint iterate"
-                        )
+                        db.zalsa_local().with_query_stack(|stack| {
+                            panic!(
+                                "dependency graph cycle when querying {database_key_index:#?}, \
+                                set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                                Query stack:\n{:#?}",
+                                stack,
+                            );
+                        })
                     });
             }
             ClaimResult::Claimed(guard) => guard,
