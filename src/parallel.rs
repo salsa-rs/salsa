@@ -26,39 +26,6 @@ impl Clone for DbForkOnClone {
     }
 }
 
-pub struct Scope<'scope, 'local, Db: Database + ?Sized> {
-    db: &'local Db,
-    base: &'local rayon::Scope<'scope>,
-}
-
-impl<'scope, 'local, Db: Database + ?Sized> Scope<'scope, 'local, Db> {
-    pub fn spawn<BODY>(&self, body: BODY)
-    where
-        BODY: for<'l> FnOnce(&'l Scope<'scope, 'l, Db>) + Send + 'scope,
-    {
-        let db = self.db.fork_db();
-        self.base.spawn(move |scope| {
-            let scope = Scope {
-                db: db.as_view::<Db>(),
-                base: scope,
-            };
-            body(&scope)
-        })
-    }
-
-    pub fn db(&self) -> &'local Db {
-        self.db
-    }
-}
-
-pub fn scope<'scope, Db: Database + ?Sized, OP, R>(db: &Db, op: OP) -> R
-where
-    OP: FnOnce(&Scope<'scope, '_, Db>) -> R + Send,
-    R: Send,
-{
-    rayon::in_place_scope(move |s| op(&Scope { db, base: s }))
-}
-
 pub fn join<A, B, RA, RB, Db: Database + ?Sized>(db: &Db, a: A, b: B) -> (RA, RB)
 where
     A: FnOnce(&Db) -> RA + Send,

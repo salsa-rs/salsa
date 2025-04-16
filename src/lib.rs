@@ -34,7 +34,7 @@ mod zalsa;
 mod zalsa_local;
 
 #[cfg(feature = "rayon")]
-pub use parallel::{join, par_map, scope, Scope};
+pub use parallel::{join, par_map};
 #[cfg(feature = "macros")]
 pub use salsa_macros::{accumulator, db, input, interned, tracked, Supertype, Update};
 

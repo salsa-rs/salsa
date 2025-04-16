@@ -7,5 +7,4 @@ mod cycle_panic;
 mod parallel_cancellation;
 mod parallel_join;
 mod parallel_map;
-mod parallel_scope;
 mod signal;
