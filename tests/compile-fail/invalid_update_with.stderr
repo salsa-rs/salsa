@@ -1,0 +1,43 @@
+error[E0308]: mismatched types
+ --> tests/compile-fail/invalid_update_with.rs:3:26
+  |
+3 |     #[update(unsafe(with(my_wrong_update)))]
+  |                     ---- ^^^^^^^^^^^^^^^ incorrect number of function parameters
+  |                     |
+  |                     expected due to this
+  |
+  = note: expected fn pointer `unsafe fn(*mut i32, i32) -> bool`
+                found fn item `fn() -> () {my_wrong_update}`
+
+error[E0308]: mismatched types
+ --> tests/compile-fail/invalid_update_with.rs:5:26
+  |
+5 |     #[update(unsafe(with(my_wrong_update2)))]
+  |                     ---- ^^^^^^^^^^^^^^^^ expected fn pointer, found fn item
+  |                     |
+  |                     expected due to this
+  |
+  = note: expected fn pointer `unsafe fn(*mut i32, i32) -> bool`
+                found fn item `fn((), ()) -> bool {my_wrong_update2}`
+
+error[E0308]: mismatched types
+ --> tests/compile-fail/invalid_update_with.rs:7:26
+  |
+7 |     #[update(unsafe(with(my_wrong_update3)))]
+  |                     ---- ^^^^^^^^^^^^^^^^ expected fn pointer, found fn item
+  |                     |
+  |                     expected due to this
+  |
+  = note: expected fn pointer `unsafe fn(*mut i32, i32) -> bool`
+                found fn item `fn(*mut i32, i32) -> () {my_wrong_update3}`
+
+error[E0308]: mismatched types
+ --> tests/compile-fail/invalid_update_with.rs:9:26
+  |
+9 |     #[update(unsafe(with(true)))]
+  |                     ---- ^^^^ expected fn pointer, found `bool`
+  |                     |
+  |                     expected due to this
+  |
+  = note: expected fn pointer `unsafe fn(*mut &'static str, &'static str) -> bool`
+                   found type `bool`
