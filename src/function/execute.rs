@@ -72,7 +72,7 @@ where
                     // initial provisional value from there.
                     let memo =
                         self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)
-                        .unwrap_or_else(|| panic!("{database_key_index:#?} is a cycle head, but no provisional memo found"));
+                        .unwrap_or_else(|| unreachable!("{database_key_index:#?} is a cycle head, but no provisional memo found"));
                     debug_assert!(memo.may_be_provisional());
                     memo.value.as_ref()
                 };

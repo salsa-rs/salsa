@@ -119,6 +119,9 @@ where
                         stack,
                     );
                 }),
+                CycleRecoveryStrategy::FallbackImmediate => {
+                    return Some(VerifyResult::unchanged());
+                }
                 CycleRecoveryStrategy::Fixpoint => {
                     return Some(VerifyResult::Unchanged(
                         InputAccumulatedValues::Empty,
