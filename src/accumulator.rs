@@ -4,12 +4,14 @@ use std::any::{Any, TypeId};
 use std::fmt;
 use std::marker::PhantomData;
 use std::panic::UnwindSafe;
+use std::sync::Arc;
 
 use accumulated::{Accumulated, AnyAccumulated};
 
 use crate::function::VerifyResult;
 use crate::ingredient::{fmt_index, Ingredient, Jar};
 use crate::plumbing::IngredientIndices;
+use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::{Database, Id, Revision};
 
@@ -109,6 +111,10 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
 
     fn debug_name(&self) -> &'static str {
         A::DEBUG_NAME
+    }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        unreachable!("accumulator does not allocate pages")
     }
 }
 

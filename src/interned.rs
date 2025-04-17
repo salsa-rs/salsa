@@ -16,7 +16,7 @@ use crate::hash::FxDashMap;
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::plumbing::{IngredientIndices, Jar};
 use crate::revision::AtomicRevision;
-use crate::table::memo::MemoTable;
+use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::sync::SyncTable;
 use crate::table::Slot;
 use crate::zalsa::{IngredientIndex, Zalsa};
@@ -62,6 +62,8 @@ pub struct IngredientImpl<C: Configuration> {
     ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
     key_map: FxDashMap<C::Fields<'static>, Id>,
+
+    memo_table_types: Arc<MemoTableTypes>,
 }
 
 /// Struct storing the interned fields.
@@ -132,6 +134,7 @@ where
         Self {
             ingredient_index,
             key_map: Default::default(),
+            memo_table_types: Arc::new(MemoTableTypes::default()),
         }
     }
 
@@ -279,8 +282,6 @@ where
 
             // We won any races so should intern the data
             Err(slot) => {
-                let table = zalsa.table();
-
                 // Record the durability of the current query on the interned value.
                 let durability = zalsa_local
                     .active_query()
@@ -288,7 +289,7 @@ where
                     // If there is no active query this durability does not actually matter.
                     .unwrap_or(Durability::MAX);
 
-                let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
+                let id = zalsa_local.allocate(zalsa, self.ingredient_index, |id| Value::<C> {
                     fields: unsafe { self.to_internal_data(assemble(id, key)) },
                     memos: Default::default(),
                     syncs: Default::default(),
@@ -298,7 +299,7 @@ where
                     last_interned_at: AtomicRevision::from(current_revision),
                 });
 
-                let value = table.get::<Value<C>>(id);
+                let value = zalsa.table().get::<Value<C>>(id);
 
                 let slot_value = (value.fields.clone(), SharedValue::new(id));
                 unsafe { lock.insert_in_slot(data_hash, slot, slot_value) };
@@ -307,7 +308,7 @@ where
                     data_hash,
                     self.key_map
                         .hasher()
-                        .hash_one(table.get::<Value<C>>(id).fields.clone())
+                        .hash_one(zalsa.table().get::<Value<C>>(id).fields.clone())
                 );
 
                 // Record a dependency on this value.
@@ -408,6 +409,10 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
+    }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        self.memo_table_types.clone()
     }
 }
 

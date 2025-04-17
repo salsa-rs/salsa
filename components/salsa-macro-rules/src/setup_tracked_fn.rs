@@ -254,21 +254,45 @@ macro_rules! setup_tracked_fn {
                             struct_index
                         }
                     };
-                    let memo_ingredient_indices = From::from((zalsa, struct_index, first_index));
 
-                    let fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
-                        first_index,
-                        memo_ingredient_indices,
-                        $lru,
-                        zalsa.views().downcaster_for::<dyn $Db>()
-                    );
+                    $zalsa::macro_if! { $needs_interner =>
+                        let intern_ingredient = <$zalsa::interned::IngredientImpl<$Configuration>>::new(
+                            first_index.successor(0)
+                        );
+                    }
+
+                    let intern_ingredient_memo_types = $zalsa::macro_if! {
+                        if $needs_interner {
+                            Some($zalsa::Ingredient::memo_table_types(&intern_ingredient))
+                        } else {
+                            None
+                        }
+                    };
+                    // SAFETY: We call with the correct memo types.
+                    let memo_ingredient_indices = unsafe {
+                        $zalsa::NewMemoIngredientIndices::create(
+                            zalsa,
+                            struct_index,
+                            first_index,
+                            $zalsa::function::MemoEntryType::of::<$zalsa::function::Memo<$Configuration>>(),
+                            intern_ingredient_memo_types,
+                        )
+                    };
+
+                    // SAFETY: We pass the MemoEntryType for this Configuration, and we lookup the memo types table correctly.
+                    let fn_ingredient = unsafe {
+                        <$zalsa::function::IngredientImpl<$Configuration>>::new(
+                            first_index,
+                            memo_ingredient_indices,
+                            $lru,
+                            zalsa.views().downcaster_for::<dyn $Db>(),
+                        )
+                    };
                     $zalsa::macro_if! {
                         if $needs_interner {
                             vec![
                                 Box::new(fn_ingredient),
-                                Box::new(<$zalsa::interned::IngredientImpl<$Configuration>>::new(
-                                    first_index.successor(0)
-                                )),
+                                Box::new(intern_ingredient),
                             ]
                         } else {
                             vec![
