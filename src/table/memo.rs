@@ -254,18 +254,7 @@ pub(crate) struct MemoTableWithTypesMut<'a> {
     memos: &'a mut MemoTable,
 }
 
-impl<'a> MemoTableWithTypesMut<'a> {
-    #[inline]
-    pub(crate) fn reborrow<'b>(&'b mut self) -> MemoTableWithTypesMut<'b>
-    where
-        'a: 'b,
-    {
-        MemoTableWithTypesMut {
-            types: self.types,
-            memos: self.memos,
-        }
-    }
-
+impl MemoTableWithTypesMut<'_> {
     /// Calls `f` on the memo at `memo_ingredient_index`.
     ///
     /// If the memo is not present, `f` is not called.
@@ -308,9 +297,7 @@ impl<'a> MemoTableWithTypesMut<'a> {
         for (type_, memo) in std::iter::zip(types, self.memos.memos.get_mut()) {
             if let Some(type_) = type_ {
                 // SAFETY: The types match because this is an invariant of `MemoTableWithTypesMut`.
-                unsafe {
-                    memo.drop(type_);
-                }
+                unsafe { memo.drop(type_) };
             }
         }
     }

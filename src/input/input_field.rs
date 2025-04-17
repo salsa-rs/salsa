@@ -21,7 +21,6 @@ use crate::{Database, Id, Revision};
 pub struct FieldIngredientImpl<C: Configuration> {
     index: IngredientIndex,
     field_index: usize,
-    memo_table_types: Arc<MemoTableTypes>,
     phantom: PhantomData<fn() -> Value<C>>,
 }
 
@@ -33,7 +32,6 @@ where
         Self {
             index: struct_index.successor(field_index),
             field_index,
-            memo_table_types: Arc::new(MemoTableTypes::default()),
             phantom: PhantomData,
         }
     }
@@ -75,7 +73,7 @@ where
     }
 
     fn memo_table_types(&self) -> Arc<MemoTableTypes> {
-        self.memo_table_types.clone()
+        unreachable!("input fields do not allocate pages")
     }
 }
 

@@ -14,7 +14,6 @@ use rustc_hash::FxHashMap;
 use sync::SyncTable;
 
 use crate::table::memo::{MemoTableTypes, MemoTableWithTypes, MemoTableWithTypesMut};
-use crate::zalsa::Zalsa;
 use crate::{Id, IngredientIndex, Revision};
 
 pub(crate) mod memo;
@@ -52,11 +51,6 @@ pub(crate) trait Slot: Any + Send + Sync {
     ///
     /// The current revision MUST be the current revision of the database containing this slot.
     unsafe fn syncs(&self, current_revision: Revision) -> &SyncTable;
-
-    /// # Safety
-    ///
-    /// `types` must be correct.
-    unsafe fn drop_memos(&mut self, types: &MemoTableTypes);
 }
 
 /// [Slot::memos]
@@ -94,7 +88,7 @@ impl SlotVTable {
                     let data = Box::from_raw(data.cast::<PageData<T>>());
                     for i in 0..initialized {
                         let item = data[i].get().cast::<T>();
-                        T::drop_memos(&mut *item, memo_types);
+                        memo_types.attach_memos_mut((*item).memos_mut()).drop();
                         ptr::drop_in_place(item);
                     }
                 },
@@ -159,6 +153,7 @@ unsafe impl Sync for Page {}
 pub struct PageIndex(usize);
 
 impl PageIndex {
+    #[inline]
     fn new(idx: usize) -> Self {
         debug_assert!(idx < MAX_PAGES);
         Self(idx)
@@ -228,12 +223,13 @@ impl Table {
     }
 
     /// Allocate a new page for the given ingredient and with slots of type `T`
+    #[inline]
     pub(crate) fn push_page<T: Slot>(
         &self,
         ingredient: IngredientIndex,
-        zalsa: &Zalsa,
+        memo_types: Arc<MemoTableTypes>,
     ) -> PageIndex {
-        PageIndex::new(self.pages.push(Page::new::<T>(ingredient, zalsa)))
+        PageIndex::new(self.pages.push(Page::new::<T>(ingredient, memo_types)))
     }
 
     /// Get the memo table associated with `id`
@@ -292,7 +288,7 @@ impl Table {
     pub(crate) fn fetch_or_push_page<T: Slot>(
         &self,
         ingredient: IngredientIndex,
-        zalsa: &Zalsa,
+        memo_types: impl FnOnce() -> Arc<MemoTableTypes>,
     ) -> PageIndex {
         if let Some(page) = self
             .non_full_pages
@@ -302,7 +298,7 @@ impl Table {
         {
             return page;
         }
-        self.push_page::<T>(ingredient, zalsa)
+        self.push_page::<T>(ingredient, memo_types())
     }
 
     pub(crate) fn record_unfilled_page(&self, ingredient: IngredientIndex, page: PageIndex) {
@@ -354,11 +350,8 @@ impl<'p, T: Slot> PageView<'p, T> {
 }
 
 impl Page {
-    fn new<T: Slot>(ingredient: IngredientIndex, zalsa: &Zalsa) -> Self {
-        let memo_types = zalsa
-            .lookup_ingredient(ingredient)
-            .memo_table_types()
-            .clone();
+    #[inline]
+    fn new<T: Slot>(ingredient: IngredientIndex, memo_types: Arc<MemoTableTypes>) -> Self {
         let data: Box<PageData<T>> =
             Box::new([const { UnsafeCell::new(MaybeUninit::uninit()) }; PAGE_LEN]);
         Self {

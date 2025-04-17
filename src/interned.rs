@@ -282,8 +282,6 @@ where
 
             // We won any races so should intern the data
             Err(slot) => {
-                let table = zalsa.table();
-
                 // Record the durability of the current query on the interned value.
                 let durability = zalsa_local
                     .active_query()
@@ -291,18 +289,17 @@ where
                     // If there is no active query this durability does not actually matter.
                     .unwrap_or(Durability::MAX);
 
-                let id =
-                    zalsa_local.allocate(zalsa, table, self.ingredient_index, |id| Value::<C> {
-                        fields: unsafe { self.to_internal_data(assemble(id, key)) },
-                        memos: Default::default(),
-                        syncs: Default::default(),
-                        durability: AtomicU8::new(durability.as_u8()),
-                        // Record the revision we are interning in.
-                        first_interned_at: current_revision,
-                        last_interned_at: AtomicRevision::from(current_revision),
-                    });
+                let id = zalsa_local.allocate(zalsa, self.ingredient_index, |id| Value::<C> {
+                    fields: unsafe { self.to_internal_data(assemble(id, key)) },
+                    memos: Default::default(),
+                    syncs: Default::default(),
+                    durability: AtomicU8::new(durability.as_u8()),
+                    // Record the revision we are interning in.
+                    first_interned_at: current_revision,
+                    last_interned_at: AtomicRevision::from(current_revision),
+                });
 
-                let value = table.get::<Value<C>>(id);
+                let value = zalsa.table().get::<Value<C>>(id);
 
                 let slot_value = (value.fields.clone(), SharedValue::new(id));
                 unsafe { lock.insert_in_slot(data_hash, slot, slot_value) };
@@ -311,7 +308,7 @@ where
                     data_hash,
                     self.key_map
                         .hasher()
-                        .hash_one(table.get::<Value<C>>(id).fields.clone())
+                        .hash_one(zalsa.table().get::<Value<C>>(id).fields.clone())
                 );
 
                 // Record a dependency on this value.
@@ -447,12 +444,6 @@ where
     #[inline(always)]
     unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {
         &self.syncs
-    }
-
-    unsafe fn drop_memos(&mut self, types: &MemoTableTypes) {
-        // SAFETY: Our precondition.
-        let memos = unsafe { types.attach_memos_mut(&mut self.memos) };
-        memos.drop();
     }
 }
 

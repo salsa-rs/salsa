@@ -17,7 +17,7 @@ use crate::plumbing::ZalsaLocal;
 use crate::revision::OptionalAtomicRevision;
 use crate::runtime::StampedValue;
 use crate::salsa_struct::SalsaStructInDb;
-use crate::table::memo::{MemoTable, MemoTableTypes, MemoTableWithTypesMut};
+use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::sync::SyncTable;
 use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, Zalsa};
@@ -470,7 +470,7 @@ where
 
             id
         } else {
-            zalsa_local.allocate::<Value<C>>(zalsa, zalsa.table(), self.ingredient_index, value)
+            zalsa_local.allocate::<Value<C>>(zalsa, self.ingredient_index, value)
         }
     }
 
@@ -633,24 +633,20 @@ where
 
         // Take the memo table. This is safe because we have modified `data_ref.updated_at` to `None`
         // and the code that references the memo-table has a read-lock.
-        struct MemoTableWithTypes<'a>(MemoTableWithTypesMut<'a>);
+        struct MemoTableWithTypes<'a>(MemoTable, &'a MemoTableTypes);
         impl Drop for MemoTableWithTypes<'_> {
             fn drop(&mut self) {
-                self.0.reborrow().drop();
+                // SAFETY: We use the correct types table.
+                unsafe { self.1.attach_memos_mut(&mut self.0) }.drop();
             }
         }
-        // Keep those statements in this order, so that if the first panics we won't leak the table.
-        let mut memo_table = unsafe { (*data).take_memo_table() };
-        // SAFETY: We use the correct types table.
         let mut memo_table =
-            MemoTableWithTypes(unsafe { self.memo_table_types.attach_memos_mut(&mut memo_table) });
+            MemoTableWithTypes(unsafe { (*data).take_memo_table() }, &self.memo_table_types);
         // SAFETY: We have verified that no more references to these memos exist and so we are good
         // to drop them.
         unsafe {
-            memo_table
-                .0
-                .reborrow()
-                .with_memos(|memo_ingredient_index, memo| {
+            memo_table.1.attach_memos_mut(&mut memo_table.0).with_memos(
+                |memo_ingredient_index, memo| {
                     let ingredient_index = zalsa
                         .ingredient_index_for_memo(self.ingredient_index, memo_ingredient_index);
 
@@ -661,8 +657,9 @@ where
                     for stale_output in memo.origin().outputs() {
                         stale_output.remove_stale_output(zalsa, db, executor, provisional);
                     }
-                });
-        }
+                },
+            )
+        };
 
         // now that all cleanup has occurred, make available for re-use
         self.free_list.push(id);
@@ -896,12 +893,6 @@ where
         // when deleting a tracked struct.
         self.read_lock(current_revision);
         &self.syncs
-    }
-
-    unsafe fn drop_memos(&mut self, types: &MemoTableTypes) {
-        // SAFETY: Our precondition.
-        let memos = unsafe { types.attach_memos_mut(&mut self.memos) };
-        memos.drop();
     }
 }
 

@@ -13,7 +13,7 @@ use rustc_hash::FxHashMap;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
-use crate::table::memo::{MemoEntryType, MemoTableTypes, MemoTableWithTypes};
+use crate::table::memo::MemoTableWithTypes;
 use crate::table::sync::SyncTable;
 use crate::table::Table;
 use crate::views::Views;
@@ -184,6 +184,7 @@ impl Zalsa {
     }
 
     /// Returns the [`Table`] used to store the value of salsa structs
+    #[inline]
     pub(crate) fn table(&self) -> &Table {
         self.runtime.table()
     }
@@ -234,15 +235,10 @@ impl Zalsa {
         }
     }
 
-    /// # Safety
-    ///
-    /// The memo types must be correct.
-    pub(crate) unsafe fn next_memo_ingredient_index(
+    pub(crate) fn next_memo_ingredient_index(
         &self,
         struct_ingredient_index: IngredientIndex,
         ingredient_index: IngredientIndex,
-        memo_type: MemoEntryType,
-        memo_types: &MemoTableTypes,
     ) -> MemoIngredientIndex {
         let mut memo_ingredients = self.memo_ingredient_indices.write();
         let idx = struct_ingredient_index.as_usize();
@@ -254,8 +250,6 @@ impl Zalsa {
         };
         let mi = MemoIngredientIndex(u32::try_from(memo_ingredients.len()).unwrap());
         memo_ingredients.push(ingredient_index);
-
-        memo_types.set(mi, memo_type);
 
         mi
     }

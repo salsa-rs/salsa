@@ -55,20 +55,29 @@ impl ZalsaLocal {
     pub(crate) fn allocate<T: Slot>(
         &self,
         zalsa: &Zalsa,
-        table: &Table,
         ingredient: IngredientIndex,
         mut value: impl FnOnce(Id) -> T,
     ) -> Id {
+        let memo_types = || {
+            zalsa
+                .lookup_ingredient(ingredient)
+                .memo_table_types()
+                .clone()
+        };
         // Find the most recent page, pushing a page if needed
         let mut page = *self
             .most_recent_pages
             .borrow_mut()
             .entry(ingredient)
-            .or_insert_with(|| table.fetch_or_push_page::<T>(ingredient, zalsa));
+            .or_insert_with(|| {
+                zalsa
+                    .table()
+                    .fetch_or_push_page::<T>(ingredient, memo_types)
+            });
 
         loop {
             // Try to allocate an entry on that page
-            let page_ref = table.page::<T>(page);
+            let page_ref = zalsa.table().page::<T>(page);
             match page_ref.allocate(page, value) {
                 // If successful, return
                 Ok(id) => return id,
@@ -78,7 +87,7 @@ impl ZalsaLocal {
                 // it is unlikely that there is a non-full one available.
                 Err(v) => {
                     value = v;
-                    page = table.push_page::<T>(ingredient, zalsa);
+                    page = zalsa.table().push_page::<T>(ingredient, memo_types());
                     self.most_recent_pages.borrow_mut().insert(ingredient, page);
                 }
             }

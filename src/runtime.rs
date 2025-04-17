@@ -133,6 +133,7 @@ impl Runtime {
     }
 
     /// Returns the [`Table`] used to store the value of salsa structs
+    #[inline]
     pub(crate) fn table(&self) -> &Table {
         &self.table
     }

@@ -57,7 +57,6 @@ impl<A: Accumulator> Jar for JarImpl<A> {
 
 pub struct IngredientImpl<A: Accumulator> {
     index: IngredientIndex,
-    memo_table_types: Arc<MemoTableTypes>,
     phantom: PhantomData<Accumulated<A>>,
 }
 
@@ -76,7 +75,6 @@ impl<A: Accumulator> IngredientImpl<A> {
     pub fn new(index: IngredientIndex) -> Self {
         Self {
             index,
-            memo_table_types: Arc::new(MemoTableTypes::default()),
             phantom: PhantomData,
         }
     }
@@ -116,7 +114,7 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
     }
 
     fn memo_table_types(&self) -> Arc<MemoTableTypes> {
-        self.memo_table_types.clone()
+        unreachable!("accumulator does not allocate pages")
     }
 }
 

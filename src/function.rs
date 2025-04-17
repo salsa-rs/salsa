@@ -133,9 +133,6 @@ pub struct IngredientImpl<C: Configuration> {
     /// we don't know that we can trust the database to give us the same runtime
     /// everytime and so forth.
     deleted_entries: DeletedEntries<C>,
-
-    /// This is empty, but we need this for the trait and it doesn't consume a lot of memory anyway.
-    _memo_table_types: Arc<MemoTableTypes>,
 }
 
 /// True if `old_value == new_value`. Invoked by the generated
@@ -163,7 +160,6 @@ where
             memo_ingredient_indices,
             lru: lru::Lru::new(lru),
             deleted_entries: Default::default(),
-            _memo_table_types: Arc::new(MemoTableTypes::default()),
             view_caster,
         }
     }
@@ -326,7 +322,7 @@ where
     }
 
     fn memo_table_types(&self) -> Arc<MemoTableTypes> {
-        self._memo_table_types.clone()
+        unreachable!("function does not allocate pages")
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {

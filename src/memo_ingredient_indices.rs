@@ -85,15 +85,11 @@ impl NewMemoIngredientIndices for MemoIngredientIndices {
             let memo_types = zalsa
                 .lookup_ingredient(struct_ingredient)
                 .memo_table_types();
-            // SAFETY: By our precondition the memo types are correct.
-            indices[struct_ingredient.as_usize()] = unsafe {
-                zalsa.next_memo_ingredient_index(
-                    struct_ingredient,
-                    ingredient,
-                    memo_type,
-                    &memo_types,
-                )
-            };
+
+            let mi = zalsa.next_memo_ingredient_index(struct_ingredient, ingredient);
+            memo_types.set(mi, memo_type);
+
+            indices[struct_ingredient.as_usize()] = mi;
         }
         MemoIngredientIndices {
             indices: indices.into_boxed_slice(),
@@ -166,10 +162,10 @@ impl NewMemoIngredientIndices for MemoIngredientSingletonIndex {
                 .lookup_ingredient(struct_ingredient)
                 .memo_table_types()
         });
-        // SAFETY: By our precondition, we are passed the correct memo types.
-        Self(unsafe {
-            zalsa.next_memo_ingredient_index(struct_ingredient, ingredient, memo_type, &memo_types)
-        })
+
+        let mi = zalsa.next_memo_ingredient_index(struct_ingredient, ingredient);
+        memo_types.set(mi, memo_type);
+        Self(mi)
     }
 }
 

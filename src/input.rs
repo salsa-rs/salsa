@@ -103,17 +103,12 @@ impl<C: Configuration> IngredientImpl<C> {
         let (zalsa, zalsa_local) = db.zalsas();
 
         let id = self.singleton.with_scope(|| {
-            zalsa_local.allocate(
-                zalsa,
-                zalsa.table(),
-                self.ingredient_index,
-                |_| Value::<C> {
-                    fields,
-                    stamps,
-                    memos: Default::default(),
-                    syncs: Default::default(),
-                },
-            )
+            zalsa_local.allocate(zalsa, self.ingredient_index, |_| Value::<C> {
+                fields,
+                stamps,
+                memos: Default::default(),
+                syncs: Default::default(),
+            })
         });
 
         FromIdWithDb::from_id(id, db)
@@ -297,11 +292,5 @@ where
     #[inline(always)]
     unsafe fn syncs(&self, _current_revision: Revision) -> &SyncTable {
         &self.syncs
-    }
-
-    unsafe fn drop_memos(&mut self, types: &MemoTableTypes) {
-        // SAFETY: Our precondition.
-        let memos = unsafe { types.attach_memos_mut(&mut self.memos) };
-        memos.drop();
     }
 }
