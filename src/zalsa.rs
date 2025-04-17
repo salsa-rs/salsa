@@ -13,7 +13,7 @@ use rustc_hash::FxHashMap;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
-use crate::table::memo::{GarbageMemoTableTypes, MemoTableWithTypes};
+use crate::table::memo::{MemoTableTypes, MemoTableWithTypes};
 use crate::table::sync::SyncTable;
 use crate::table::Table;
 use crate::views::Views;
@@ -151,7 +151,7 @@ pub struct Zalsa {
     runtime: Runtime,
 
     /// Items can only be removed during a revision bump.
-    pub(crate) garbage_memo_types: Mutex<Vec<GarbageMemoTableTypes>>,
+    pub(crate) garbage_memo_types: Mutex<Vec<MemoTableTypes>>,
 }
 
 /// All fields on Zalsa are locked behind [`Mutex`]es and [`RwLock`]s and cannot enter

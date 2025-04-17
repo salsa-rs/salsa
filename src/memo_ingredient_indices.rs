@@ -87,7 +87,7 @@ impl NewMemoIngredientIndices for MemoIngredientIndices {
                 .memo_table_types();
 
             let mi = zalsa.next_memo_ingredient_index(struct_ingredient, ingredient);
-            memo_types.set(mi, memo_type.clone(), zalsa);
+            memo_types.set(mi, &memo_type, zalsa);
 
             indices[struct_ingredient.as_usize()] = mi;
         }
@@ -164,7 +164,7 @@ impl NewMemoIngredientIndices for MemoIngredientSingletonIndex {
         });
 
         let mi = zalsa.next_memo_ingredient_index(struct_ingredient, ingredient);
-        memo_types.set(mi, memo_type, zalsa);
+        memo_types.set(mi, &memo_type, zalsa);
 
         Self(mi)
     }

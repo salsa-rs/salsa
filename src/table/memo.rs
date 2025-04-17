@@ -3,7 +3,10 @@ use std::{
     fmt::Debug,
     mem::{self, ManuallyDrop},
     ptr::{self, NonNull},
-    sync::atomic::{AtomicPtr, Ordering},
+    sync::{
+        atomic::{AtomicPtr, Ordering},
+        OnceLock,
+    },
 };
 
 use parking_lot::RwLock;
@@ -50,26 +53,9 @@ struct MemoEntry {
     atomic_memo: AtomicPtr<DummyMemo>,
 }
 
+#[derive(Default, Clone)]
 pub struct MemoEntryType {
-    /// This points at a `Box`. It is initialized as null, and only ever changes from null to value.
-    data: AtomicPtr<MemoEntryTypeData>,
-}
-
-impl Clone for MemoEntryType {
-    #[inline]
-    fn clone(&self) -> Self {
-        match self.load() {
-            Some(data) => Self {
-                data: AtomicPtr::new(Box::into_raw(Box::new(MemoEntryTypeData {
-                    type_id: data.type_id,
-                    to_dyn_fn: data.to_dyn_fn,
-                }))),
-            },
-            None => Self {
-                data: AtomicPtr::new(ptr::null_mut()),
-            },
-        }
-    }
+    data: OnceLock<MemoEntryTypeData>,
 }
 
 #[derive(Clone, Copy)]
@@ -108,38 +94,27 @@ impl MemoEntryType {
     #[inline]
     pub fn of<M: Memo>() -> Self {
         Self {
-            data: AtomicPtr::new(Box::into_raw(Box::new(MemoEntryTypeData {
+            data: OnceLock::from(MemoEntryTypeData {
                 type_id: TypeId::of::<M>(),
                 to_dyn_fn: Self::to_dyn_fn::<M>(),
-            }))),
+            }),
         }
     }
 
     #[inline]
     fn load(&self) -> Option<&MemoEntryTypeData> {
-        // Note: Relaxed is fine as we only set the pointer once, right when we initialize it.
-        // SAFETY: The pointer is either null or initialized properly.
-        unsafe { self.data.load(Ordering::Relaxed).as_ref() }
+        self.data.get()
     }
 
     #[inline]
-    fn set(&self, new: MemoEntryType) {
-        let mut new = ManuallyDrop::new(new);
-        let old = self.data.swap(*new.data.get_mut(), Ordering::Release);
-        if !old.is_null() {
-            // We can't just panic here, as panics can be recovered from, and we already swapped the value.
-            std::process::abort();
-        }
-    }
-}
-
-impl Drop for MemoEntryType {
-    #[inline]
-    fn drop(&mut self) {
-        if let Some(ptr) = NonNull::new(*self.data.get_mut()) {
-            // SAFETY: The value is either null or points to a valid `Box`.
-            unsafe { drop(Box::from_raw(ptr.as_ptr())) };
-        }
+    fn set(&self, new: &MemoEntryType) {
+        self.data
+            .set(
+                *new.data
+                    .get()
+                    .expect("cannot provide an empty `MemoEntryType` for `MemoEntryType::set()`"),
+            )
+            .unwrap_or_else(|_| panic!("`MemoEntryType` was already set"));
     }
 }
 
@@ -155,7 +130,7 @@ impl Memo for DummyMemo {
 
 /// # Safety
 ///
-/// Only call this with `GarbageMemoTableTypes::types` or `MemoTableTypes::types`.
+/// Only call this with `MemoTableTypes::types`.
 #[inline]
 unsafe fn to_memo_table_types_vec(ptr: *mut ()) -> ManuallyDrop<ThinVec<MemoEntryType>> {
     // SAFETY: The allowed types contain a valid `ThinVec`.
@@ -166,29 +141,6 @@ unsafe fn to_memo_table_types_vec(ptr: *mut ()) -> ManuallyDrop<ThinVec<MemoEntr
 fn from_memo_table_types_vec(vec: ThinVec<MemoEntryType>) -> *mut () {
     // SAFETY: They have the same layout.
     unsafe { mem::transmute::<ThinVec<MemoEntryType>, *mut ()>(vec) }
-}
-
-pub(crate) struct GarbageMemoTableTypes {
-    /// This always holds a valid `ThinVec`, and only garbage-collect during a revision bump.
-    types: *mut (),
-}
-
-// SAFETY: We never use the pointer thread-unsafely.
-unsafe impl Send for GarbageMemoTableTypes {}
-// SAFETY: We never use the pointer thread-unsafely.
-unsafe impl Sync for GarbageMemoTableTypes {}
-
-impl Drop for GarbageMemoTableTypes {
-    #[inline]
-    fn drop(&mut self) {
-        // SAFETY: We are a `GarbageMemoTableTypes`, and we have a mutable reference so it can only be
-        // a revision bump.
-        unsafe {
-            drop(ManuallyDrop::into_inner(to_memo_table_types_vec(
-                self.types,
-            )))
-        };
-    }
 }
 
 pub struct MemoTableTypes {
@@ -203,7 +155,7 @@ impl Default for MemoTableTypes {
         let types = ThinVec::from_iter(
             [const {
                 MemoEntryType {
-                    data: AtomicPtr::new(ptr::null_mut()),
+                    data: OnceLock::new(),
                 }
             }; 4],
         );
@@ -224,7 +176,7 @@ impl MemoTableTypes {
     }
 
     #[inline]
-    pub(crate) fn set(&self, index: MemoIngredientIndex, new: MemoEntryType, zalsa: &Zalsa) {
+    pub(crate) fn set(&self, index: MemoIngredientIndex, new: &MemoEntryType, zalsa: &Zalsa) {
         let index = index.as_usize();
         // Guard everything behind the lock, to make sure we're consistent.
         let mut garbage_types_guard = zalsa.garbage_memo_types.lock();
@@ -237,21 +189,19 @@ impl MemoTableTypes {
             let additional_len = new_len - types.len();
             let new_vec = types
                 .iter()
-                .map(|ty| MemoEntryType {
-                    data: AtomicPtr::new(ty.data.load(Ordering::Relaxed)),
-                })
-                .chain((0..additional_len).map(|_| MemoEntryType {
-                    data: AtomicPtr::new(ptr::null_mut()),
-                }))
+                .map(|ty| ty.clone())
+                .chain((0..additional_len).map(|_| MemoEntryType::default()))
                 .collect();
             let new_types = from_memo_table_types_vec(new_vec);
             let old_types = self.types.swap(new_types, Ordering::Release);
-            garbage_types_guard.push(GarbageMemoTableTypes { types: old_types });
+            garbage_types_guard.push(MemoTableTypes {
+                types: AtomicPtr::new(old_types),
+            });
         }
 
         // This must still be done behind the lock, otherwise someone could replace the new types,
         // and we will set in the old types.
-        self.load()[index].set(new);
+        self.load()[index].set(&new);
     }
 
     /// # Safety
