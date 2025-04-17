@@ -110,10 +110,14 @@ where
         ) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => match C::CYCLE_STRATEGY {
-                CycleRecoveryStrategy::Panic => panic!(
-                    "dependency graph cycle validating {database_key_index:#?}; \
-                     set cycle_fn/cycle_initial to fixpoint iterate"
-                ),
+                CycleRecoveryStrategy::Panic => db.zalsa_local().with_query_stack(|stack| {
+                    panic!(
+                        "dependency graph cycle when validating {database_key_index:#?}, \
+                            set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                            Query stack:\n{:#?}",
+                        stack,
+                    );
+                }),
                 CycleRecoveryStrategy::Fixpoint => {
                     return Some(VerifyResult::Unchanged(
                         InputAccumulatedValues::Empty,
