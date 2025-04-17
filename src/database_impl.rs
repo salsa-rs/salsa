@@ -21,6 +21,7 @@ impl DatabaseImpl {
 
 impl Database for DatabaseImpl {
     /// Default behavior: tracing debug log the event.
+    #[inline(always)]
     fn salsa_event(&self, event: &dyn Fn() -> Event) {
         tracing::debug!("salsa_event({:?})", event());
     }
@@ -28,10 +29,12 @@ impl Database for DatabaseImpl {
 
 // SAFETY: The `storage` and `storage_mut` fields return a reference to the same storage field owned by `self`.
 unsafe impl HasStorage for DatabaseImpl {
+    #[inline(always)]
     fn storage(&self) -> &Storage<Self> {
         &self.storage
     }
 
+    #[inline(always)]
     fn storage_mut(&mut self) -> &mut Storage<Self> {
         &mut self.storage
     }

@@ -853,7 +853,7 @@ impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
-    #[inline]
+    #[inline(always)]
     unsafe fn memos(&self, current_revision: Revision) -> &crate::table::memo::MemoTable {
         // Acquiring the read lock here with the current revision
         // ensures that there is no danger of a race
@@ -862,12 +862,12 @@ where
         &self.memos
     }
 
-    #[inline]
+    #[inline(always)]
     fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
         &mut self.memos
     }
 
-    #[inline]
+    #[inline(always)]
     unsafe fn syncs(&self, current_revision: Revision) -> &crate::table::sync::SyncTable {
         // Acquiring the read lock here with the current revision
         // ensures that there is no danger of a race

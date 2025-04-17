@@ -26,6 +26,7 @@ impl Attached {
         }
     }
 
+    #[inline]
     fn attach<Db, R>(&self, db: &Db, op: impl FnOnce() -> R) -> R
     where
         Db: ?Sized + Database,
@@ -35,31 +36,31 @@ impl Attached {
         }
 
         impl<'s> DbGuard<'s> {
+            #[inline]
             fn new(attached: &'s Attached, db: &dyn Database) -> Self {
-                if let Some(current_db) = attached.database.get() {
-                    let new_db = NonNull::from(db);
-
-                    // Already attached? Assert that the database has not changed.
-                    // NOTE: It's important to use `addr_eq` here because `NonNull::eq`
-                    // not only compares the address but also the type's metadata.
-                    if !std::ptr::addr_eq(current_db.as_ptr(), new_db.as_ptr()) {
-                        panic!(
-                            "Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}",
-                        );
+                match attached.database.get() {
+                    Some(current_db) => {
+                        let new_db = NonNull::from(db);
+                        if !std::ptr::addr_eq(current_db.as_ptr(), new_db.as_ptr()) {
+                            panic!(
+                                                "Cannot change database mid-query. current: {current_db:?}, new: {new_db:?}",
+                                            );
+                        }
+                        Self { state: None }
                     }
-
-                    Self { state: None }
-                } else {
-                    // Otherwise, set the database.
-                    attached.database.set(Some(NonNull::from(db)));
-                    Self {
-                        state: Some(attached),
+                    None => {
+                        // Otherwise, set the database.
+                        attached.database.set(Some(NonNull::from(db)));
+                        Self {
+                            state: Some(attached),
+                        }
                     }
                 }
             }
         }
 
         impl Drop for DbGuard<'_> {
+            #[inline]
             fn drop(&mut self) {
                 // Reset database to null if we did anything in `DbGuard::new`.
                 if let Some(attached) = self.state {
@@ -74,6 +75,7 @@ impl Attached {
 
     /// Access the "attached" database. Returns `None` if no database is attached.
     /// Databases are attached with `attach_database`.
+    #[inline]
     fn with<R>(&self, op: impl FnOnce(&dyn Database) -> R) -> Option<R> {
         let db = self.database.get()?;
 
@@ -85,15 +87,23 @@ impl Attached {
 
 /// Attach the database to the current thread and execute `op`.
 /// Panics if a different database has already been attached.
+#[inline]
 pub fn attach<R, Db>(db: &Db, op: impl FnOnce() -> R) -> R
 where
     Db: ?Sized + Database,
 {
-    ATTACHED.with(|a| a.attach(db, op))
+    ATTACHED.with(
+        #[inline]
+        |a| a.attach(db, op),
+    )
 }
 
 /// Access the "attached" database. Returns `None` if no database is attached.
 /// Databases are attached with `attach_database`.
+#[inline]
 pub fn with_attached_database<R>(op: impl FnOnce(&dyn Database) -> R) -> Option<R> {
-    ATTACHED.with(|a| a.with(op))
+    ATTACHED.with(
+        #[inline]
+        |a| a.with(op),
+    )
 }

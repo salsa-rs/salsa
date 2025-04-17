@@ -426,17 +426,17 @@ impl<C> Slot for Value<C>
 where
     C: Configuration,
 {
-    #[inline]
+    #[inline(always)]
     unsafe fn memos(&self, _current_revision: Revision) -> &MemoTable {
         &self.memos
     }
 
-    #[inline]
+    #[inline(always)]
     fn memos_mut(&mut self) -> &mut MemoTable {
         &mut self.memos
     }
 
-    #[inline]
+    #[inline(always)]
     unsafe fn syncs(&self, _current_revision: Revision) -> &crate::table::sync::SyncTable {
         &self.syncs
     }

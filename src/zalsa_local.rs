@@ -101,6 +101,7 @@ impl ZalsaLocal {
     }
 
     /// Executes a closure within the context of the current active query stacks.
+    #[inline(always)]
     pub(crate) fn with_query_stack<R>(
         &self,
         c: impl UnwindSafe + FnOnce(&mut QueryStack) -> R,
@@ -157,7 +158,7 @@ impl ZalsaLocal {
     }
 
     /// Register that currently active query reads the given input
-    #[inline]
+    #[inline(always)]
     pub(crate) fn report_tracked_read(
         &self,
         input: DatabaseKeyIndex,
@@ -186,6 +187,7 @@ impl ZalsaLocal {
     }
 
     /// Register that currently active query reads the given input
+    #[inline(always)]
     pub(crate) fn report_tracked_read_simple(
         &self,
         input: DatabaseKeyIndex,
@@ -208,6 +210,7 @@ impl ZalsaLocal {
     /// # Parameters
     ///
     /// * `current_revision`, the current revision
+    #[inline(always)]
     pub(crate) fn report_untracked_read(&self, current_revision: Revision) {
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {

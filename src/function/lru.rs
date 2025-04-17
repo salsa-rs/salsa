@@ -20,11 +20,9 @@ impl Lru {
 
     #[inline(always)]
     pub(super) fn record_use(&self, index: Id) {
-        if self.capacity.is_none() {
-            // LRU is disabled
-            return;
+        if self.capacity.is_some() {
+            self.insert(index);
         }
-        self.insert(index);
     }
 
     #[inline(never)]

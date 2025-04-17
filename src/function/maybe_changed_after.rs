@@ -92,6 +92,7 @@ where
         }
     }
 
+    #[inline(never)]
     fn maybe_changed_after_cold<'db>(
         &'db self,
         zalsa: &Zalsa,
