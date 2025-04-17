@@ -189,7 +189,7 @@ impl MemoTableTypes {
             let additional_len = new_len - types.len();
             let new_vec = types
                 .iter()
-                .map(|ty| ty.clone())
+                .cloned()
                 .chain((0..additional_len).map(|_| MemoEntryType::default()))
                 .collect();
             let new_types = from_memo_table_types_vec(new_vec);
@@ -201,7 +201,7 @@ impl MemoTableTypes {
 
         // This must still be done behind the lock, otherwise someone could replace the new types,
         // and we will set in the old types.
-        self.load()[index].set(&new);
+        self.load()[index].set(new);
     }
 
     /// # Safety
