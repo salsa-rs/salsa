@@ -106,6 +106,7 @@ impl MemoIngredientIndex {
         MemoIngredientIndex(u as u32)
     }
 
+    #[inline]
     pub(crate) fn as_usize(self) -> usize {
         self.0 as usize
     }
