@@ -5,7 +5,6 @@ use std::fmt::{Debug, Formatter};
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
-use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE_HEADS};
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
@@ -218,12 +217,14 @@ impl<V> Memo<V> {
 
     /// Mark memo as having been verified in the `revision_now`, which should
     /// be the current revision.
+    /// The caller is responsible to update the memo's `accumulated` state if heir accumulated
+    /// values have changed since.
+    #[inline]
     pub(super) fn mark_as_verified<Db: ?Sized + crate::Database>(
         &self,
         db: &Db,
         revision_now: Revision,
         database_key_index: DatabaseKeyIndex,
-        accumulated: InputAccumulatedValues,
     ) {
         db.salsa_event(&|| {
             Event::new(EventKind::DidValidateMemoizedValue {
@@ -232,7 +233,6 @@ impl<V> Memo<V> {
         });
 
         self.verified_at.store(revision_now);
-        self.revisions.accumulated_inputs.store(accumulated);
     }
 
     pub(super) fn mark_outputs_as_verified(

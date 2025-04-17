@@ -66,18 +66,23 @@ pub(crate) struct ActiveQuery {
 }
 
 impl ActiveQuery {
+    #[inline]
     pub(super) fn add_read(
         &mut self,
         input: DatabaseKeyIndex,
         durability: Durability,
-        revision: Revision,
-        accumulated: InputAccumulatedValues,
+        changed_at: Revision,
+        has_accumulated: bool,
+        accumulated_inputs: &AtomicInputAccumulatedValues,
         cycle_heads: &CycleHeads,
     ) {
         self.durability = self.durability.min(durability);
-        self.changed_at = self.changed_at.max(revision);
+        self.changed_at = self.changed_at.max(changed_at);
         self.input_outputs.insert(QueryEdge::Input(input));
-        self.accumulated_inputs |= accumulated;
+        self.accumulated_inputs = self.accumulated_inputs.or_else(|| match has_accumulated {
+            true => InputAccumulatedValues::Any,
+            false => accumulated_inputs.load(),
+        });
         self.cycle_heads.extend(cycle_heads);
     }
 

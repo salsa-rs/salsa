@@ -1,7 +1,5 @@
-use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl, VerifyResult};
-use crate::runtime::StampedValue;
 use crate::table::sync::ClaimResult;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions, ZalsaLocal};
@@ -18,26 +16,19 @@ where
         let memo = self.refresh_memo(db, id);
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
-        let StampedValue {
-            value,
-            durability,
-            changed_at,
-        } = memo.revisions.stamped_value(memo_value);
 
         self.lru.record_use(id);
 
         zalsa_local.report_tracked_read(
             self.database_key_index(id),
-            durability,
-            changed_at,
-            match &memo.revisions.accumulated {
-                Some(_) => InputAccumulatedValues::Any,
-                None => memo.revisions.accumulated_inputs.load(),
-            },
+            memo.revisions.durability,
+            memo.revisions.changed_at,
+            memo.revisions.accumulated.is_some(),
+            &memo.revisions.accumulated_inputs,
             memo.cycle_heads(),
         );
 
-        value
+        memo_value
     }
 
     #[inline]

@@ -232,13 +232,7 @@ where
         update: ShallowUpdate,
     ) {
         if let ShallowUpdate::HigherDurability(revision_now) = update {
-            memo.mark_as_verified(
-                db,
-                revision_now,
-                database_key_index,
-                memo.revisions.accumulated_inputs.load(),
-            );
-
+            memo.mark_as_verified(db, revision_now, database_key_index);
             memo.mark_outputs_as_verified(zalsa, db.as_dyn_database(), database_key_index);
         }
     }
@@ -461,12 +455,8 @@ where
                     let in_heads = cycle_heads.remove(&database_key_index);
 
                     if cycle_heads.is_empty() {
-                        old_memo.mark_as_verified(
-                            db,
-                            zalsa.current_revision(),
-                            database_key_index,
-                            inputs,
-                        );
+                        old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index);
+                        old_memo.revisions.accumulated_inputs.store(inputs);
 
                         if is_provisional {
                             old_memo
@@ -479,11 +469,7 @@ where
                             continue 'cycle;
                         }
                     }
-
-                    break 'cycle VerifyResult::Unchanged(
-                        InputAccumulatedValues::Empty,
-                        cycle_heads,
-                    );
+                    break 'cycle VerifyResult::Unchanged(inputs, cycle_heads);
                 }
             }
         }

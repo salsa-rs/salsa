@@ -74,6 +74,14 @@ impl InputAccumulatedValues {
     pub const fn is_empty(self) -> bool {
         matches!(self, Self::Empty)
     }
+
+    pub fn or_else(self, other: impl FnOnce() -> Self) -> Self {
+        if self.is_any() {
+            Self::Any
+        } else {
+            other()
+        }
+    }
 }
 
 impl ops::BitOr for InputAccumulatedValues {

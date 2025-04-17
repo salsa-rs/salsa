@@ -5,14 +5,12 @@ use std::sync::atomic::AtomicBool;
 use rustc_hash::FxHashMap;
 use tracing::debug;
 
-use crate::accumulator::accumulated_map::{
-    AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues,
-};
+use crate::accumulator::accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues};
 use crate::active_query::QueryStack;
 use crate::cycle::CycleHeads;
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
-use crate::runtime::{Stamp, StampedValue};
+use crate::runtime::Stamp;
 use crate::table::{PageIndex, Slot, Table};
 use crate::tracked_struct::{Disambiguator, Identity, IdentityHash, IdentityMap};
 use crate::zalsa::IngredientIndex;
@@ -159,12 +157,14 @@ impl ZalsaLocal {
     }
 
     /// Register that currently active query reads the given input
+    #[inline]
     pub(crate) fn report_tracked_read(
         &self,
         input: DatabaseKeyIndex,
         durability: Durability,
         changed_at: Revision,
-        accumulated: InputAccumulatedValues,
+        has_accumulated: bool,
+        accumulated_inputs: &AtomicInputAccumulatedValues,
         cycle_heads: &CycleHeads,
     ) {
         debug!(
@@ -173,7 +173,14 @@ impl ZalsaLocal {
         );
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.add_read(input, durability, changed_at, accumulated, cycle_heads);
+                top_query.add_read(
+                    input,
+                    durability,
+                    changed_at,
+                    has_accumulated,
+                    accumulated_inputs,
+                    cycle_heads,
+                );
             }
         })
     }
@@ -343,33 +350,6 @@ impl QueryRevisions {
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(false),
             cycle_heads: CycleHeads::initial(query),
-        }
-    }
-
-    pub(crate) fn stamped_value<V>(&self, value: V) -> StampedValue<V> {
-        self.stamp_template().stamp(value)
-    }
-
-    pub(crate) fn stamp_template(&self) -> StampTemplate {
-        StampTemplate {
-            durability: self.durability,
-            changed_at: self.changed_at,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) struct StampTemplate {
-    durability: Durability,
-    changed_at: Revision,
-}
-
-impl StampTemplate {
-    pub(crate) fn stamp<V>(self, value: V) -> StampedValue<V> {
-        StampedValue {
-            value,
-            durability: self.durability,
-            changed_at: self.changed_at,
         }
     }
 }
