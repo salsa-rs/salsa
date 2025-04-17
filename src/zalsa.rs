@@ -13,7 +13,7 @@ use rustc_hash::FxHashMap;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
-use crate::table::memo::MemoTableWithTypes;
+use crate::table::memo::{GarbageMemoTableTypes, MemoTableWithTypes};
 use crate::table::sync::SyncTable;
 use crate::table::Table;
 use crate::views::Views;
@@ -149,6 +149,9 @@ pub struct Zalsa {
     /// The runtime for this particular salsa database handle.
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
     runtime: Runtime,
+
+    /// Items can only be removed during a revision bump.
+    pub(crate) garbage_memo_types: Mutex<Vec<GarbageMemoTableTypes>>,
 }
 
 /// All fields on Zalsa are locked behind [`Mutex`]es and [`RwLock`]s and cannot enter
@@ -169,6 +172,7 @@ impl Zalsa {
             ingredients_requiring_reset: boxcar::Vec::new(),
             runtime: Runtime::default(),
             memo_ingredient_indices: Default::default(),
+            garbage_memo_types: Default::default(),
         }
     }
 
@@ -363,6 +367,8 @@ impl Zalsa {
 
             ingredient.reset_for_new_revision(self.runtime.table_mut());
         }
+
+        self.garbage_memo_types.get_mut().clear();
 
         new_revision
     }

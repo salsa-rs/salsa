@@ -1,7 +1,7 @@
 use std::{
     any::{Any, TypeId},
     fmt::Debug,
-    mem,
+    mem::{self, ManuallyDrop},
     ptr::{self, NonNull},
     sync::atomic::{AtomicPtr, Ordering},
 };
@@ -10,7 +10,8 @@ use parking_lot::RwLock;
 use thin_vec::ThinVec;
 
 use crate::{
-    table::const_type_id::ConstTypeId, zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin,
+    zalsa::{MemoIngredientIndex, Zalsa},
+    zalsa_local::QueryOrigin,
 };
 
 /// The "memo table" stores the memoized results of tracked function calls.
@@ -50,27 +51,48 @@ struct MemoEntry {
 }
 
 pub struct MemoEntryType {
+    /// This points at a `Box`. It is initialized as null, and only ever changes from null to value.
     data: AtomicPtr<MemoEntryTypeData>,
+}
+
+impl Clone for MemoEntryType {
+    #[inline]
+    fn clone(&self) -> Self {
+        match self.load() {
+            Some(data) => Self {
+                data: AtomicPtr::new(Box::into_raw(Box::new(MemoEntryTypeData {
+                    type_id: data.type_id,
+                    to_dyn_fn: data.to_dyn_fn,
+                }))),
+            },
+            None => Self {
+                data: AtomicPtr::new(ptr::null_mut()),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
 struct MemoEntryTypeData {
     /// The `type_id` of the erased memo type `M`
-    type_id: ConstTypeId,
+    type_id: TypeId,
 
     /// A type-coercion function for the erased memo type `M`
     to_dyn_fn: fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>,
 }
 
 impl MemoEntryType {
+    #[inline]
     fn to_dummy<M: Memo>(memo: NonNull<M>) -> NonNull<DummyMemo> {
         memo.cast()
     }
 
+    #[inline]
     unsafe fn from_dummy<M: Memo>(memo: NonNull<DummyMemo>) -> NonNull<M> {
         memo.cast()
     }
 
+    #[inline]
     const fn to_dyn_fn<M: Memo>() -> fn(NonNull<DummyMemo>) -> NonNull<dyn Memo> {
         let f: fn(NonNull<M>) -> NonNull<dyn Memo> = |x| x;
 
@@ -86,15 +108,10 @@ impl MemoEntryType {
     #[inline]
     pub fn of<M: Memo>() -> Self {
         Self {
-            data: AtomicPtr::new(
-                (&const {
-                    MemoEntryTypeData {
-                        type_id: ConstTypeId::of::<M>(),
-                        to_dyn_fn: Self::to_dyn_fn::<M>(),
-                    }
-                } as *const MemoEntryTypeData)
-                    .cast_mut(),
-            ),
+            data: AtomicPtr::new(Box::into_raw(Box::new(MemoEntryTypeData {
+                type_id: TypeId::of::<M>(),
+                to_dyn_fn: Self::to_dyn_fn::<M>(),
+            }))),
         }
     }
 
@@ -103,6 +120,26 @@ impl MemoEntryType {
         // Note: Relaxed is fine as we only set the pointer once, right when we initialize it.
         // SAFETY: The pointer is either null or initialized properly.
         unsafe { self.data.load(Ordering::Relaxed).as_ref() }
+    }
+
+    #[inline]
+    fn set(&self, new: MemoEntryType) {
+        let mut new = ManuallyDrop::new(new);
+        let old = self.data.swap(*new.data.get_mut(), Ordering::Release);
+        if !old.is_null() {
+            // We can't just panic here, as panics can be recovered from, and we already swapped the value.
+            std::process::abort();
+        }
+    }
+}
+
+impl Drop for MemoEntryType {
+    #[inline]
+    fn drop(&mut self) {
+        if let Some(ptr) = NonNull::new(*self.data.get_mut()) {
+            // SAFETY: The value is either null or points to a valid `Box`.
+            unsafe { drop(Box::from_raw(ptr.as_ptr())) };
+        }
     }
 }
 
@@ -116,28 +153,105 @@ impl Memo for DummyMemo {
     }
 }
 
-#[derive(Default)]
+/// # Safety
+///
+/// Only call this with `GarbageMemoTableTypes::types` or `MemoTableTypes::types`.
+#[inline]
+unsafe fn to_memo_table_types_vec(ptr: *mut ()) -> ManuallyDrop<ThinVec<MemoEntryType>> {
+    // SAFETY: The allowed types contain a valid `ThinVec`.
+    unsafe { mem::transmute::<*mut (), ManuallyDrop<ThinVec<MemoEntryType>>>(ptr) }
+}
+
+#[inline]
+fn from_memo_table_types_vec(vec: ThinVec<MemoEntryType>) -> *mut () {
+    // SAFETY: They have the same layout.
+    unsafe { mem::transmute::<ThinVec<MemoEntryType>, *mut ()>(vec) }
+}
+
+pub(crate) struct GarbageMemoTableTypes {
+    /// This always holds a valid `ThinVec`, and only garbage-collect during a revision bump.
+    types: *mut (),
+}
+
+// SAFETY: We never use the pointer thread-unsafely.
+unsafe impl Send for GarbageMemoTableTypes {}
+// SAFETY: We never use the pointer thread-unsafely.
+unsafe impl Sync for GarbageMemoTableTypes {}
+
+impl Drop for GarbageMemoTableTypes {
+    #[inline]
+    fn drop(&mut self) {
+        // SAFETY: We are a `GarbageMemoTableTypes`, and we have a mutable reference so it can only be
+        // a revision bump.
+        unsafe {
+            drop(ManuallyDrop::into_inner(to_memo_table_types_vec(
+                self.types,
+            )))
+        };
+    }
+}
+
 pub struct MemoTableTypes {
-    types: boxcar::Vec<MemoEntryType>,
+    /// This holds a `ThinVec`, replaced when we want to grow it, and old values are only garbage-collected
+    /// during a revision bump. This way, we can do a simple atomic load to load the current types.
+    types: AtomicPtr<()>,
+}
+
+impl Default for MemoTableTypes {
+    #[inline]
+    fn default() -> Self {
+        let types = ThinVec::from_iter(
+            [const {
+                MemoEntryType {
+                    data: AtomicPtr::new(ptr::null_mut()),
+                }
+            }; 4],
+        );
+        MemoTableTypes {
+            types: AtomicPtr::new(from_memo_table_types_vec(types)),
+        }
+    }
 }
 
 impl MemoTableTypes {
-    pub(crate) fn set(
-        &self,
-        memo_ingredient_index: MemoIngredientIndex,
-        memo_type: &MemoEntryType,
-    ) {
-        let memo_ingredient_index = memo_ingredient_index.as_usize();
-        while memo_ingredient_index >= self.types.count() {
-            self.types.push(MemoEntryType {
-                data: AtomicPtr::default(),
-            });
+    #[inline]
+    pub(crate) fn load(&self) -> &[MemoEntryType] {
+        let types = self.types.load(Ordering::Acquire);
+        // SAFETY: We are `MemoTableTypes`.
+        let types = unsafe { to_memo_table_types_vec(types) };
+        // SAFETY: The real data is stored in the `ThinVec` behind an indirection.
+        unsafe { &*ptr::from_ref(&*types) }
+    }
+
+    #[inline]
+    pub(crate) fn set(&self, index: MemoIngredientIndex, new: MemoEntryType, zalsa: &Zalsa) {
+        let index = index.as_usize();
+        // Guard everything behind the lock, to make sure we're consistent.
+        let mut garbage_types_guard = zalsa.garbage_memo_types.lock();
+
+        let types = self.types.load(Ordering::Acquire);
+        // SAFETY: We are `MemoTableTypes`.
+        let types = unsafe { to_memo_table_types_vec(types) };
+        if types.len() < index + 1 {
+            let new_len = std::cmp::max(types.len() * 2, index + 1);
+            let additional_len = new_len - types.len();
+            let new_vec = types
+                .iter()
+                .map(|ty| MemoEntryType {
+                    data: AtomicPtr::new(ty.data.load(Ordering::Relaxed)),
+                })
+                .chain((0..additional_len).map(|_| MemoEntryType {
+                    data: AtomicPtr::new(ptr::null_mut()),
+                }))
+                .collect();
+            let new_types = from_memo_table_types_vec(new_vec);
+            let old_types = self.types.swap(new_types, Ordering::Release);
+            garbage_types_guard.push(GarbageMemoTableTypes { types: old_types });
         }
-        let memo_entry_type = self.types.get(memo_ingredient_index).unwrap();
-        let old = memo_entry_type
-            .data
-            .swap(memo_type.data.load(Ordering::Relaxed), Ordering::AcqRel);
-        debug_assert!(old.is_null(), "memo type should only be set once");
+
+        // This must still be done behind the lock, otherwise someone could replace the new types,
+        // and we will set in the old types.
+        self.load()[index].set(new);
     }
 
     /// # Safety
@@ -163,6 +277,18 @@ impl MemoTableTypes {
     }
 }
 
+impl Drop for MemoTableTypes {
+    #[inline]
+    fn drop(&mut self) {
+        // SAFETY: We are `MemoTableTypes`, and we are dropping so nobody will use us anymore.
+        unsafe {
+            drop(ManuallyDrop::into_inner(to_memo_table_types_vec(
+                *self.types.get_mut(),
+            )))
+        };
+    }
+}
+
 pub(crate) struct MemoTableWithTypes<'a> {
     types: &'a MemoTableTypes,
     memos: &'a MemoTable,
@@ -181,7 +307,7 @@ impl<'a> MemoTableWithTypes<'a> {
         // The type must already exist, we insert it when creating the memo ingredient.
         assert_eq!(
             self.types
-                .types
+                .load()
                 .get(memo_ingredient_index.as_usize())
                 .and_then(MemoEntryType::load)?
                 .type_id,
@@ -245,7 +371,7 @@ impl<'a> MemoTableWithTypes<'a> {
         {
             assert_eq!(
                 self.types
-                    .types
+                    .load()
                     .get(memo_ingredient_index.as_usize())
                     .and_then(MemoEntryType::load)?
                     .type_id,
@@ -277,7 +403,7 @@ impl MemoTableWithTypesMut<'_> {
     ) {
         let Some(type_) = self
             .types
-            .types
+            .load()
             .get(memo_ingredient_index.as_usize())
             .and_then(MemoEntryType::load)
         else {
@@ -307,8 +433,8 @@ impl MemoTableWithTypesMut<'_> {
     /// To drop an entry, we need its type, so we don't implement `Drop`, and instead have this method.
     #[inline]
     pub fn drop(self) {
-        let types = self.types.types.iter();
-        for ((_, type_), memo) in std::iter::zip(types, self.memos.memos.get_mut()) {
+        let types = self.types.load().iter();
+        for (type_, memo) in std::iter::zip(types, self.memos.memos.get_mut()) {
             // SAFETY: The types match because this is an invariant of `MemoTableWithTypesMut`.
             unsafe { memo.drop(type_) };
         }
@@ -322,9 +448,9 @@ impl MemoTableWithTypesMut<'_> {
         let memos = self.memos.memos.get_mut();
         memos
             .iter_mut()
-            .zip(self.types.types.iter())
+            .zip(self.types.load().iter())
             .zip(0..)
-            .filter_map(|((memo, (_, type_)), index)| {
+            .filter_map(|((memo, type_), index)| {
                 let memo = mem::replace(memo.atomic_memo.get_mut(), ptr::null_mut());
                 let memo = NonNull::new(memo)?;
                 Some((memo, type_.load()?, index))
