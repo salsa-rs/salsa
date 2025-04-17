@@ -21,7 +21,10 @@ where
 
         zalsa_local.report_tracked_read(
             self.database_key_index(id),
-            &memo.revisions,
+            memo.revisions.durability,
+            memo.revisions.changed_at,
+            memo.revisions.accumulated.is_some(),
+            &memo.revisions.accumulated_inputs,
             memo.cycle_heads(),
         );
 

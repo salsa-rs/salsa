@@ -217,6 +217,8 @@ impl<V> Memo<V> {
 
     /// Mark memo as having been verified in the `revision_now`, which should
     /// be the current revision.
+    /// The caller is responsible to update the memo's `accumulated` state if heir accumulated
+    /// values have changed since.
     #[inline]
     pub(super) fn mark_as_verified<Db: ?Sized + crate::Database>(
         &self,

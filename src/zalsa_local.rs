@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::panic::{AssertUnwindSafe, UnwindSafe};
+use std::panic::UnwindSafe;
 use std::sync::atomic::AtomicBool;
 
 use rustc_hash::FxHashMap;
@@ -157,21 +157,30 @@ impl ZalsaLocal {
     }
 
     /// Register that currently active query reads the given input
+    #[inline]
     pub(crate) fn report_tracked_read(
         &self,
         input: DatabaseKeyIndex,
-        revisions: &QueryRevisions,
+        durability: Durability,
+        changed_at: Revision,
+        has_accumulated: bool,
+        accumulated_inputs: &AtomicInputAccumulatedValues,
         cycle_heads: &CycleHeads,
     ) {
         debug!(
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
-            input, revisions.durability, revisions.changed_at
+            input, durability, changed_at
         );
-        // We don't access the accumulator anyways
-        let revisions = AssertUnwindSafe(revisions);
         self.with_query_stack(|stack| {
             if let Some(top_query) = stack.last_mut() {
-                top_query.add_read(input, { revisions }.0, cycle_heads);
+                top_query.add_read(
+                    input,
+                    durability,
+                    changed_at,
+                    has_accumulated,
+                    accumulated_inputs,
+                    cycle_heads,
+                );
             }
         })
     }
