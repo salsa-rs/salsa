@@ -81,6 +81,7 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     }
 
     /// Execute `op` with the database in thread-local storage for debug print-outs.
+    #[inline(always)]
     fn attach<R>(&self, op: impl FnOnce(&Self) -> R) -> R
     where
         Self: Sized,
@@ -89,6 +90,7 @@ pub trait Database: Send + AsDynDatabase + Any + ZalsaDatabase {
     }
 
     #[doc(hidden)]
+    #[inline(always)]
     fn zalsa_register_downcaster(&self) {
         // The no-op downcaster is special cased in view caster construction.
     }
@@ -113,10 +115,12 @@ pub trait AsDynDatabase {
 }
 
 impl<T: Database> AsDynDatabase for T {
+    #[inline(always)]
     fn as_dyn_database(&self) -> &dyn Database {
         self
     }
 
+    #[inline(always)]
     fn as_dyn_database_mut(&mut self) -> &mut dyn Database {
         self
     }

@@ -3,7 +3,7 @@ use crate::function::{Configuration, IngredientImpl, VerifyResult};
 use crate::table::sync::ClaimResult;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{ActiveQueryGuard, QueryRevisions, ZalsaLocal};
-use crate::{AsDynDatabase as _, DatabaseKeyIndex, Id};
+use crate::{DatabaseKeyIndex, Id};
 
 impl<C> IngredientImpl<C>
 where
@@ -13,7 +13,7 @@ where
         let (zalsa, zalsa_local) = db.zalsas();
         zalsa.unwind_if_revision_cancelled(db);
 
-        let memo = self.refresh_memo(db, id);
+        let memo = self.refresh_memo(db, zalsa, id);
         // SAFETY: We just refreshed the memo so it is guaranteed to contain a value now.
         let memo_value = unsafe { memo.value.as_ref().unwrap_unchecked() };
 
@@ -31,13 +31,13 @@ where
         memo_value
     }
 
-    #[inline]
+    #[inline(always)]
     pub(super) fn refresh_memo<'db>(
         &'db self,
         db: &'db C::DbView,
+        zalsa: &'db Zalsa,
         id: Id,
     ) -> &'db Memo<C::Output<'db>> {
-        let zalsa = db.zalsa();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
         loop {
             if let Some(memo) = self
@@ -49,13 +49,7 @@ where
                 // any further (it could escape outside the cycle); we need to block on the other
                 // thread completing fixpoint iteration of the cycle, and then we can re-query for
                 // our no-longer-provisional memo.
-                if !(memo.may_be_provisional()
-                    && memo.provisional_retry(
-                        db.as_dyn_database(),
-                        zalsa,
-                        self.database_key_index(id),
-                    ))
-                {
+                if !memo.provisional_retry(db, zalsa, self.database_key_index(id)) {
                     return memo;
                 }
             }
@@ -89,6 +83,7 @@ where
         }
     }
 
+    #[inline(never)]
     fn fetch_cold<'db>(
         &'db self,
         zalsa: &'db Zalsa,

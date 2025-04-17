@@ -225,6 +225,7 @@ impl Zalsa {
     ///
     /// Cancellation will automatically be triggered by salsa on any query
     /// invocation.
+    #[inline]
     pub(crate) fn unwind_if_revision_cancelled(&self, db: &(impl Database + ?Sized)) {
         db.salsa_event(&|| crate::Event::new(crate::EventKind::WillCheckCancellation));
         if self.runtime().load_cancellation_flag() {
@@ -419,6 +420,7 @@ where
 
     /// Get a reference to the ingredient in the database.
     /// If the ingredient is not already in the cache, it will be created.
+    #[inline(never)]
     pub fn get_or_create<'s>(
         &self,
         db: &'s dyn Database,

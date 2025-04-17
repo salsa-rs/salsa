@@ -157,6 +157,7 @@ where
         }
     }
 
+    #[inline]
     pub fn database_key_index(&self, key: Id) -> DatabaseKeyIndex {
         DatabaseKeyIndex::new(self.index, key)
     }

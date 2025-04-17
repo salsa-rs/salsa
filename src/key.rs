@@ -17,6 +17,7 @@ pub struct DatabaseKeyIndex {
 // ANCHOR_END: DatabaseKeyIndex
 
 impl DatabaseKeyIndex {
+    #[inline]
     pub(crate) fn new(ingredient_index: IngredientIndex, key_index: Id) -> Self {
         Self {
             key_index,

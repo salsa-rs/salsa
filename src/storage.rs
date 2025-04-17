@@ -148,6 +148,7 @@ impl<Db: Database> Storage<Db> {
 
 #[allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 unsafe impl<T: HasStorage> ZalsaDatabase for T {
+    #[inline(always)]
     fn zalsa(&self) -> &Zalsa {
         &self.storage().handle.zalsa_impl
     }
@@ -163,10 +164,12 @@ unsafe impl<T: HasStorage> ZalsaDatabase for T {
         zalsa
     }
 
+    #[inline(always)]
     fn zalsa_local(&self) -> &ZalsaLocal {
         &self.storage().zalsa_local
     }
 
+    #[inline(always)]
     fn fork_db(&self) -> Box<dyn Database> {
         Box::new(self.clone())
     }

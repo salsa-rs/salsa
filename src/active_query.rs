@@ -66,7 +66,6 @@ pub(crate) struct ActiveQuery {
 }
 
 impl ActiveQuery {
-    #[inline]
     pub(super) fn add_read(
         &mut self,
         input: DatabaseKeyIndex,
@@ -287,12 +286,14 @@ impl std::fmt::Debug for QueryStack {
 impl ops::Deref for QueryStack {
     type Target = [ActiveQuery];
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.stack[..self.len]
     }
 }
 
 impl ops::DerefMut for QueryStack {
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.stack[..self.len]
     }
