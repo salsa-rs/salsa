@@ -242,6 +242,12 @@ where
     /// True if the input `input` contains a memo that cites itself as a cycle head.
     /// This indicates an intermediate value for a cycle that has not yet reached a fixed point.
     fn is_provisional_cycle_head<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool {
+        if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
+            // We never want to consider results from `FallbackImmediate` cycles, only
+            // for the cycle head.
+            return true;
+        }
+
         let zalsa = db.zalsa();
         self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
             .is_some_and(|memo| {

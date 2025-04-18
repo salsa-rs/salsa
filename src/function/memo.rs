@@ -113,7 +113,9 @@ impl<C: Configuration> IngredientImpl<C> {
         key: Id,
     ) -> Option<C::Output<'db>> {
         match C::CYCLE_STRATEGY {
-            CycleRecoveryStrategy::Fixpoint => Some(C::cycle_initial(db, C::id_to_input(db, key))),
+            CycleRecoveryStrategy::Fixpoint | CycleRecoveryStrategy::FallbackImmediate => {
+                Some(C::cycle_initial(db, C::id_to_input(db, key)))
+            }
             CycleRecoveryStrategy::Panic => None,
         }
     }

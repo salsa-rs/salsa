@@ -50,6 +50,8 @@ impl crate::options::AllowedOptions for TrackedStruct {
 
     const CYCLE_INITIAL: bool = false;
 
+    const CYCLE_RESULT: bool = false;
+
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = true;
