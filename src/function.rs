@@ -5,7 +5,7 @@ use std::ptr::NonNull;
 pub(crate) use maybe_changed_after::VerifyResult;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
-use crate::cycle::{CycleRecoveryAction, CycleRecoveryStrategy};
+use crate::cycle::{CycleHeadKind, CycleRecoveryAction, CycleRecoveryStrategy};
 use crate::function::delete::DeletedEntries;
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::key::DatabaseKeyIndex;
@@ -241,14 +241,22 @@ where
 
     /// True if the input `input` contains a memo that cites itself as a cycle head.
     /// This indicates an intermediate value for a cycle that has not yet reached a fixed point.
-    fn is_provisional_cycle_head<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool {
+    fn cycle_head_kind<'db>(&'db self, db: &'db dyn Database, input: Id) -> CycleHeadKind {
         let zalsa = db.zalsa();
-        self.get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
+        let is_provisional = self
+            .get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
             .is_some_and(|memo| {
                 memo.cycle_heads()
                     .into_iter()
                     .any(|head| head.database_key_index == self.database_key_index(input))
-            })
+            });
+        if is_provisional {
+            CycleHeadKind::Provisional
+        } else if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
+            CycleHeadKind::FallbackImmediate
+        } else {
+            CycleHeadKind::NotProvisional
+        }
     }
 
     /// Attempts to claim `key_index`, returning `false` if a cycle occurs.

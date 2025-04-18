@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering;
+
 use crate::cycle::{CycleRecoveryStrategy, MAX_ITERATIONS};
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
@@ -60,99 +62,137 @@ where
             let mut revisions = active_query.pop();
 
             // Did the new result we got depend on our own provisional value, in a cycle?
-            if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint
-                && revisions.cycle_heads.contains(&database_key_index)
-            {
-                let last_provisional_value = if let Some(last_provisional) = opt_last_provisional {
-                    // We have a last provisional value from our previous time around the loop.
-                    last_provisional.value.as_ref()
-                } else {
-                    // This is our first time around the loop; a provisional value must have been
-                    // inserted into the memo table when the cycle was hit, so let's pull our
-                    // initial provisional value from there.
-                    let memo =
-                        self.get_memo_from_table_for(zalsa, id, memo_ingredient_index)
-                        .unwrap_or_else(|| panic!("{database_key_index:#?} is a cycle head, but no provisional memo found"));
-                    debug_assert!(memo.may_be_provisional());
-                    memo.value.as_ref()
-                };
-                // SAFETY: The `LRU` does not run mid-execution, so the value remains filled
-                let last_provisional_value = unsafe { last_provisional_value.unwrap_unchecked() };
-                tracing::debug!(
-                    "{database_key_index:?}: execute: \
-                    I am a cycle head, comparing last provisional value with new value"
-                );
-                // If the new result is equal to the last provisional result, the cycle has
-                // converged and we are done.
-                if !C::values_equal(&new_value, last_provisional_value) {
-                    if fell_back {
-                        // We fell back to a value last iteration, but the fallback didn't result
-                        // in convergence. We only have bad options here: continue iterating
-                        // (ignoring the request to fall back), or forcibly use the fallback and
-                        // leave the cycle in an inconsistent state (we'll be using a value for
-                        // this query that it doesn't evaluate to, given its inputs). Maybe we'll
-                        // have to go with the latter, but for now let's panic and see if real use
-                        // cases need non-converging fallbacks.
-                        panic!("{database_key_index:?}: execute: fallback did not converge");
-                    }
-                    // We are in a cycle that hasn't converged; ask the user's
-                    // cycle-recovery function what to do:
-                    match C::recover_from_cycle(
-                        db,
-                        &new_value,
-                        iteration_count,
-                        C::id_to_input(db, id),
-                    ) {
-                        crate::CycleRecoveryAction::Iterate => {
-                            tracing::debug!("{database_key_index:?}: execute: iterate again");
+            if revisions.cycle_heads.contains(&database_key_index) {
+                if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
+                    // Ignore the computed value, leave the fallback value there.
+                    let memo = self
+                        .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
+                        .unwrap_or_else(|| {
+                            unreachable!(
+                                "{database_key_index:#?} is a `FallbackImmediate` cycle head, \
+                                    but no memo found"
+                            )
+                        });
+                    // We need to mark the memo as finalized so other cycle participants that have fallbacks
+                    // will be verified (participants that don't have fallbacks will not be verified).
+                    memo.revisions.verified_final.store(true, Ordering::Release);
+                    // SAFETY: This is ours memo.
+                    return unsafe { self.extend_memo_lifetime(memo) };
+                } else if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint {
+                    let last_provisional_value =
+                        if let Some(last_provisional) = opt_last_provisional {
+                            // We have a last provisional value from our previous time around the loop.
+                            last_provisional.value.as_ref()
+                        } else {
+                            // This is our first time around the loop; a provisional value must have been
+                            // inserted into the memo table when the cycle was hit, so let's pull our
+                            // initial provisional value from there.
+                            let memo = self
+                                .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
+                                .unwrap_or_else(|| {
+                                    unreachable!(
+                                        "{database_key_index:#?} is a cycle head, \
+                                        but no provisional memo found"
+                                    )
+                                });
+                            debug_assert!(memo.may_be_provisional());
+                            memo.value.as_ref()
+                        };
+                    // SAFETY: The `LRU` does not run mid-execution, so the value remains filled
+                    let last_provisional_value =
+                        unsafe { last_provisional_value.unwrap_unchecked() };
+                    tracing::debug!(
+                        "{database_key_index:?}: execute: \
+                        I am a cycle head, comparing last provisional value with new value"
+                    );
+                    // If the new result is equal to the last provisional result, the cycle has
+                    // converged and we are done.
+                    if !C::values_equal(&new_value, last_provisional_value) {
+                        if fell_back {
+                            // We fell back to a value last iteration, but the fallback didn't result
+                            // in convergence. We only have bad options here: continue iterating
+                            // (ignoring the request to fall back), or forcibly use the fallback and
+                            // leave the cycle in an inconsistent state (we'll be using a value for
+                            // this query that it doesn't evaluate to, given its inputs). Maybe we'll
+                            // have to go with the latter, but for now let's panic and see if real use
+                            // cases need non-converging fallbacks.
+                            panic!("{database_key_index:?}: execute: fallback did not converge");
                         }
-                        crate::CycleRecoveryAction::Fallback(fallback_value) => {
-                            tracing::debug!(
+                        // We are in a cycle that hasn't converged; ask the user's
+                        // cycle-recovery function what to do:
+                        match C::recover_from_cycle(
+                            db,
+                            &new_value,
+                            iteration_count,
+                            C::id_to_input(db, id),
+                        ) {
+                            crate::CycleRecoveryAction::Iterate => {
+                                tracing::debug!("{database_key_index:?}: execute: iterate again");
+                            }
+                            crate::CycleRecoveryAction::Fallback(fallback_value) => {
+                                tracing::debug!(
                                 "{database_key_index:?}: execute: user cycle_fn says to fall back"
                             );
-                            new_value = fallback_value;
-                            // We have to insert the fallback value for this query and then iterate
-                            // one more time to fill in correct values for everything else in the
-                            // cycle based on it; then we'll re-insert it as final value.
-                            fell_back = true;
+                                new_value = fallback_value;
+                                // We have to insert the fallback value for this query and then iterate
+                                // one more time to fill in correct values for everything else in the
+                                // cycle based on it; then we'll re-insert it as final value.
+                                fell_back = true;
+                            }
                         }
-                    }
-                    // `iteration_count` can't overflow as we check it against `MAX_ITERATIONS`
-                    // which is less than `u32::MAX`.
-                    iteration_count += 1;
-                    if iteration_count > MAX_ITERATIONS {
-                        panic!("{database_key_index:?}: execute: too many cycle iterations");
-                    }
-                    db.salsa_event(&|| {
-                        Event::new(EventKind::WillIterateCycle {
-                            database_key: database_key_index,
-                            iteration_count,
-                            fell_back,
-                        })
-                    });
-                    revisions
-                        .cycle_heads
-                        .update_iteration_count(database_key_index, iteration_count);
-                    opt_last_provisional = Some(self.insert_memo(
-                        zalsa,
-                        id,
-                        Memo::new(Some(new_value), revision_now, revisions),
-                        memo_ingredient_index,
-                    ));
+                        // `iteration_count` can't overflow as we check it against `MAX_ITERATIONS`
+                        // which is less than `u32::MAX`.
+                        iteration_count += 1;
+                        if iteration_count > MAX_ITERATIONS {
+                            panic!("{database_key_index:?}: execute: too many cycle iterations");
+                        }
+                        db.salsa_event(&|| {
+                            Event::new(EventKind::WillIterateCycle {
+                                database_key: database_key_index,
+                                iteration_count,
+                                fell_back,
+                            })
+                        });
+                        revisions
+                            .cycle_heads
+                            .update_iteration_count(database_key_index, iteration_count);
+                        opt_last_provisional = Some(self.insert_memo(
+                            zalsa,
+                            id,
+                            Memo::new(Some(new_value), revision_now, revisions),
+                            memo_ingredient_index,
+                        ));
 
-                    active_query = db
-                        .zalsa_local()
-                        .push_query(database_key_index, iteration_count);
+                        active_query = db
+                            .zalsa_local()
+                            .push_query(database_key_index, iteration_count);
 
-                    continue;
+                        continue;
+                    }
+                    tracing::debug!(
+                        "{database_key_index:?}: execute: fixpoint iteration has a final value"
+                    );
+                    revisions.cycle_heads.remove(&database_key_index);
                 }
-                tracing::debug!(
-                    "{database_key_index:?}: execute: fixpoint iteration has a final value"
-                );
-                revisions.cycle_heads.remove(&database_key_index);
             }
 
             tracing::debug!("{database_key_index:?}: execute: result.revisions = {revisions:#?}");
+
+            if !revisions.cycle_heads.is_empty()
+                && C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate
+            {
+                // If we're in the middle of a cycle and we have a fallback, use it instead.
+                // Cycle participants that don't have a fallback will be discarded in
+                // `validate_provisional()`.
+                let cycle_heads = revisions.cycle_heads;
+                let active_query = db.zalsa_local().push_query(database_key_index, 0);
+                new_value = C::cycle_initial(db, C::id_to_input(db, id));
+                revisions = active_query.pop();
+                // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
+                // When verifying this, we will see we have fallback and mark ourselves verified.
+                revisions.cycle_heads = cycle_heads;
+                *revisions.verified_final.get_mut() = false;
+            }
 
             if let Some(old_memo) = opt_old_memo {
                 // If the new value is equal to the old one, then it didn't

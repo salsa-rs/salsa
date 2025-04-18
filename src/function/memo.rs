@@ -5,7 +5,7 @@ use std::fmt::{Debug, Formatter};
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
-use crate::cycle::{CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE_HEADS};
+use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE_HEADS};
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
@@ -113,7 +113,9 @@ impl<C: Configuration> IngredientImpl<C> {
         key: Id,
     ) -> Option<C::Output<'db>> {
         match C::CYCLE_STRATEGY {
-            CycleRecoveryStrategy::Fixpoint => Some(C::cycle_initial(db, C::id_to_input(db, key))),
+            CycleRecoveryStrategy::Fixpoint | CycleRecoveryStrategy::FallbackImmediate => {
+                Some(C::cycle_initial(db, C::id_to_input(db, key)))
+            }
             CycleRecoveryStrategy::Panic => None,
         }
     }
@@ -198,7 +200,11 @@ impl<V> Memo<V> {
                 .any(|head| {
                     let head_index = head.database_key_index;
                     let ingredient = zalsa.lookup_ingredient(head_index.ingredient_index());
-                    if !ingredient.is_provisional_cycle_head(db, head_index.key_index()) {
+                    let cycle_head_kind = ingredient.cycle_head_kind(db, head_index.key_index());
+                    if matches!(
+                        cycle_head_kind,
+                        CycleHeadKind::NotProvisional | CycleHeadKind::FallbackImmediate
+                    ) {
                         // This cycle is already finalized, so we don't need to wait on it;
                         // keep looping through cycle heads.
                         retry = true;
