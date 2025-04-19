@@ -24,7 +24,6 @@ where
         key: DatabaseKeyIndex,
         old_memo: &Memo<C::Output<'_>>,
         revisions: &mut QueryRevisions,
-        provisional: bool,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset
         let mut old_outputs: FxHashSet<_> = old_memo.revisions.origin.outputs().collect();
@@ -35,14 +34,17 @@ where
             old_outputs.remove(&new_output);
         }
 
-        if !old_outputs.is_empty() {
-            // Remove the outputs that are no longer present in the current revision
-            // to prevent that the next revision is seeded with a id mapping that no longer exists.
-            revisions.tracked_struct_ids.retain(|&k, &mut value| {
-                !old_outputs.contains(&DatabaseKeyIndex::new(k.ingredient_index(), value))
-            });
+        if old_outputs.is_empty() {
+            return;
         }
 
+        // Remove the outputs that are no longer present in the current revision
+        // to prevent that the next revision is seeded with a id mapping that no longer exists.
+        revisions.tracked_struct_ids.retain(|&k, &mut value| {
+            !old_outputs.contains(&DatabaseKeyIndex::new(k.ingredient_index(), value))
+        });
+
+        let provisional = !revisions.cycle_heads.is_empty();
         for old_output in old_outputs {
             Self::report_stale_output(zalsa, db, key, old_output, provisional);
         }
