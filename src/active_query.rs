@@ -5,7 +5,7 @@ use std::{mem, ops};
 use crate::accumulator::accumulated_map::{
     AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues,
 };
-use crate::cycle::CycleHeads;
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy};
 use crate::durability::Durability;
 use crate::hash::FxIndexSet;
 use crate::key::DatabaseKeyIndex;
@@ -63,6 +63,9 @@ pub(crate) struct ActiveQuery {
 
     /// If this query is a cycle head, iteration count of that cycle.
     iteration_count: u32,
+
+    /// The cycle strategy for this query.
+    cycle_strategy: CycleRecoveryStrategy,
 }
 
 impl ActiveQuery {
@@ -137,10 +140,18 @@ impl ActiveQuery {
     pub(super) fn iteration_count(&self) -> u32 {
         self.iteration_count
     }
+
+    pub(crate) fn cycle_strategy(&self) -> CycleRecoveryStrategy {
+        self.cycle_strategy
+    }
 }
 
 impl ActiveQuery {
-    fn new(database_key_index: DatabaseKeyIndex, iteration_count: u32) -> Self {
+    fn new(
+        database_key_index: DatabaseKeyIndex,
+        iteration_count: u32,
+        cycle_strategy: CycleRecoveryStrategy,
+    ) -> Self {
         ActiveQuery {
             database_key_index,
             durability: Durability::MAX,
@@ -153,6 +164,7 @@ impl ActiveQuery {
             accumulated_inputs: Default::default(),
             cycle_heads: Default::default(),
             iteration_count,
+            cycle_strategy,
         }
     }
 
@@ -169,6 +181,7 @@ impl ActiveQuery {
             accumulated_inputs,
             ref mut cycle_heads,
             iteration_count: _,
+            cycle_strategy: _,
         } = self;
 
         let edges = QueryEdges::new(input_outputs.drain(..));
@@ -210,6 +223,7 @@ impl ActiveQuery {
             accumulated_inputs: _,
             cycle_heads,
             iteration_count,
+            cycle_strategy: _,
         } = self;
         input_outputs.clear();
         disambiguator_map.clear();
@@ -219,7 +233,12 @@ impl ActiveQuery {
         *iteration_count = 0;
     }
 
-    fn reset_for(&mut self, new_database_key_index: DatabaseKeyIndex, new_iteration_count: u32) {
+    fn reset_for(
+        &mut self,
+        new_database_key_index: DatabaseKeyIndex,
+        new_iteration_count: u32,
+        new_cycle_strategy: CycleRecoveryStrategy,
+    ) {
         let Self {
             database_key_index,
             durability,
@@ -232,6 +251,7 @@ impl ActiveQuery {
             accumulated_inputs,
             cycle_heads,
             iteration_count,
+            cycle_strategy: is_cycle_result_query,
         } = self;
         *database_key_index = new_database_key_index;
         *durability = Durability::MAX;
@@ -239,6 +259,7 @@ impl ActiveQuery {
         *untracked_read = false;
         *accumulated_inputs = Default::default();
         *iteration_count = new_iteration_count;
+        *is_cycle_result_query = new_cycle_strategy;
         debug_assert!(
             input_outputs.is_empty(),
             "`ActiveQuery::clear` or `ActiveQuery::into_revisions` should've been called"
@@ -304,12 +325,16 @@ impl QueryStack {
         &mut self,
         database_key_index: DatabaseKeyIndex,
         iteration_count: u32,
+        cycle_strategy: CycleRecoveryStrategy,
     ) {
         if self.len < self.stack.len() {
-            self.stack[self.len].reset_for(database_key_index, iteration_count);
+            self.stack[self.len].reset_for(database_key_index, iteration_count, cycle_strategy);
         } else {
-            self.stack
-                .push(ActiveQuery::new(database_key_index, iteration_count));
+            self.stack.push(ActiveQuery::new(
+                database_key_index,
+                iteration_count,
+                cycle_strategy,
+            ));
         }
         self.len += 1;
     }

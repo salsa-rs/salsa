@@ -83,6 +83,10 @@ pub enum CycleRecoveryStrategy {
     /// This choice is computed by the query's `cycle_recovery`
     /// function and initial value.
     Fixpoint,
+
+    /// Recovers from cycles by falling back to a sentinel value
+    /// for cycle invocations.
+    FallbackImmediate,
 }
 
 /// A "cycle head" is the query at which we encounter a cycle; that is, if A -> B -> C -> A, then A

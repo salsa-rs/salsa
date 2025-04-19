@@ -55,6 +55,8 @@ impl crate::options::AllowedOptions for InputStruct {
 
     const CYCLE_INITIAL: bool = false;
 
+    const CYCLE_RESULT: bool = false;
+
     const LRU: bool = false;
 
     const CONSTRUCTOR_NAME: bool = true;

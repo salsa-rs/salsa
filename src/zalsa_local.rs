@@ -7,7 +7,7 @@ use tracing::debug;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, AtomicInputAccumulatedValues};
 use crate::active_query::QueryStack;
-use crate::cycle::CycleHeads;
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy};
 use crate::durability::Durability;
 use crate::key::DatabaseKeyIndex;
 use crate::runtime::Stamp;
@@ -89,9 +89,10 @@ impl ZalsaLocal {
         &self,
         database_key_index: DatabaseKeyIndex,
         iteration_count: u32,
+        cycle_strategy: CycleRecoveryStrategy,
     ) -> ActiveQueryGuard<'_> {
         let mut query_stack = self.query_stack.borrow_mut();
-        query_stack.push_new_query(database_key_index, iteration_count);
+        query_stack.push_new_query(database_key_index, iteration_count, cycle_strategy);
         ActiveQueryGuard {
             local_state: self,
             database_key_index,
@@ -154,6 +155,37 @@ impl ZalsaLocal {
             } else {
                 false
             }
+        })
+    }
+
+    #[track_caller]
+    pub(crate) fn assert_top_non_panic_cycle(&self, database_key_index: DatabaseKeyIndex) {
+        self.with_query_stack(|stack| {
+            let top_differs = stack
+                .iter()
+                .rev()
+                .find(|query| query.cycle_strategy() != CycleRecoveryStrategy::Panic)
+                .is_some_and(|q| q.database_key_index != database_key_index);
+            if top_differs {
+                panic!(
+                    "fallback immediate cycle containing multiple fallback \
+                    immediate queries when validating {database_key_index:#?}, \
+                    query stack:\n{:#?}",
+                    stack,
+                );
+            }
+        })
+    }
+
+    #[track_caller]
+    pub(crate) fn cycle_panic(&self, database_key_index: DatabaseKeyIndex, operation: &str) -> ! {
+        self.with_query_stack(|stack| {
+            panic!(
+                "dependency graph cycle when {operation} {database_key_index:#?}, \
+                    set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                    query stack:\n{:#?}",
+                stack,
+            );
         })
     }
 
