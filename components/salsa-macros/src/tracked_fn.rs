@@ -100,7 +100,6 @@ impl Macro {
         let Configuration = self.hygiene.ident("Configuration");
         let InternedData = self.hygiene.ident("InternedData");
         let FN_CACHE = self.hygiene.ident("FN_CACHE");
-        let INTERN_CACHE = self.hygiene.ident("INTERN_CACHE");
         let inner = &inner_fn.sig.ident;
 
         let function_type = function_type(&item);
@@ -175,7 +174,6 @@ impl Macro {
                     #Configuration,
                     #InternedData,
                     #FN_CACHE,
-                    #INTERN_CACHE,
                     #inner,
                 ]
             }],

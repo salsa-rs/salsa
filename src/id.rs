@@ -72,12 +72,14 @@ pub trait FromId: AsId + Copy + Eq + Hash {
 }
 
 impl AsId for Id {
+    #[inline]
     fn as_id(&self) -> Id {
         *self
     }
 }
 
 impl FromId for Id {
+    #[inline]
     fn from_id(id: Id) -> Self {
         id
     }
@@ -87,11 +89,17 @@ impl FromId for Id {
 /// so they use this trait instead, that has a blanket implementation for `FromId`.
 pub trait FromIdWithDb: AsId + Copy + Eq + Hash {
     fn from_id(id: Id, db: &(impl ?Sized + Database)) -> Self;
+    #[doc(hidden)]
+    fn from_id_zalsa(id: Id, zalsa: &crate::zalsa::Zalsa) -> Self;
 }
 
 impl<T: FromId> FromIdWithDb for T {
     #[inline]
-    fn from_id(id: Id, _db: &(impl ?Sized + Database)) -> Self {
+    fn from_id(id: Id, _: &(impl ?Sized + Database)) -> Self {
+        FromId::from_id(id)
+    }
+    #[inline]
+    fn from_id_zalsa(id: Id, _: &crate::zalsa::Zalsa) -> Self {
         FromId::from_id(id)
     }
 }
