@@ -64,5 +64,5 @@ fn fallback(_db: &dyn KnobsDatabase) -> u32 {
 
 One problem with this fallback mode is that execution order / entry points become part of the query computation and can affect the results of queries containing cycles.
 This introduces a potential form on non-determinism depending on the query graph when multiple differing cycling queries are involved.
-
-Note that cycles consisting of only a single `cycle_result` cycle won't be able to observe this behavior, and as such are still deterministic.
+Due to this, when an immediate fallback cycle occurs, salsa walks back the active query stacks to verify that the cycle does not occur within the context of another non-panic cycle query.
+In other words, it is only valid to immediate fallback cycle recover for a query if either all ancestors queries are panic cycle queries or if the cycle is immediate self-referential.

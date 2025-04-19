@@ -140,9 +140,11 @@ where
                         memo_ingredient_index,
                     ));
 
-                    active_query = db
-                        .zalsa_local()
-                        .push_query(database_key_index, iteration_count);
+                    active_query = db.zalsa_local().push_query(
+                        database_key_index,
+                        iteration_count,
+                        C::CYCLE_STRATEGY,
+                    );
 
                     continue;
                 }

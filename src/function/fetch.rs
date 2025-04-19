@@ -1,3 +1,4 @@
+use crate::cycle::CycleRecoveryStrategy;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl, VerifyResult};
 use crate::table::sync::ClaimResult;
@@ -121,42 +122,43 @@ where
                                 shallow_update,
                             );
                             // SAFETY: memo is present in memo_map.
-                            return unsafe { Some(self.extend_memo_lifetime(memo)) };
+                            return Some(unsafe { self.extend_memo_lifetime(memo) });
                         }
                     }
                 }
+
+                let initial_value = match C::CYCLE_STRATEGY {
+                    CycleRecoveryStrategy::Fixpoint => {
+                        C::cycle_initial(db, C::id_to_input(db, database_key_index.key_index()))
+                    }
+                    CycleRecoveryStrategy::FallbackImmediate => {
+                        db.zalsa_local()
+                            .assert_top_non_panic_cycle(database_key_index);
+                        C::cycle_initial(db, C::id_to_input(db, database_key_index.key_index()))
+                    }
+                    CycleRecoveryStrategy::Panic => {
+                        db.zalsa_local().cycle_panic(database_key_index, "querying")
+                    }
+                };
+
+                tracing::debug!(
+                    "hit cycle at {database_key_index:#?}, \
+                    inserting and returning fixpoint initial value"
+                );
                 // no provisional value; create/insert/return initial provisional value
-                return self
-                    .initial_value(db, database_key_index.key_index())
-                    .map(|initial_value| {
-                        tracing::debug!(
-                            "hit cycle at {database_key_index:#?}, \
-                            inserting and returning fixpoint initial value"
-                        );
-                        self.insert_memo(
-                            zalsa,
-                            id,
-                            Memo::new(
-                                Some(initial_value),
-                                zalsa.current_revision(),
-                                QueryRevisions::fixpoint_initial(
-                                    database_key_index,
-                                    zalsa.current_revision(),
-                                ),
-                            ),
-                            memo_ingredient_index,
-                        )
-                    })
-                    .or_else(|| {
-                        db.zalsa_local().with_query_stack(|stack| {
-                            panic!(
-                                "dependency graph cycle when querying {database_key_index:#?}, \
-                                set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                                Query stack:\n{:#?}",
-                                stack,
-                            );
-                        })
-                    });
+                return Some(self.insert_memo(
+                    zalsa,
+                    id,
+                    Memo::new(
+                        Some(initial_value),
+                        zalsa.current_revision(),
+                        QueryRevisions::fixpoint_initial(
+                            database_key_index,
+                            zalsa.current_revision(),
+                        ),
+                    ),
+                    memo_ingredient_index,
+                ));
             }
             ClaimResult::Claimed(guard) => guard,
         };
@@ -179,7 +181,11 @@ where
             }
         }
 
-        let memo = self.execute(db, active_query.into_inner(db.zalsa_local()), opt_old_memo);
+        let memo = self.execute(
+            db,
+            active_query.into_inner(db.zalsa_local(), C::CYCLE_STRATEGY),
+            opt_old_memo,
+        );
 
         Some(memo)
     }
@@ -202,13 +208,24 @@ impl<'me> LazyActiveQueryGuard<'me> {
         self.database_key_index
     }
 
-    pub(super) fn guard(&mut self, zalsa_local: &'me ZalsaLocal) -> &ActiveQueryGuard<'me> {
-        self.guard
-            .get_or_insert_with(|| zalsa_local.push_query(self.database_key_index, 0))
+    #[inline]
+    pub(super) fn guard(
+        &mut self,
+        zalsa_local: &'me ZalsaLocal,
+        cycle_strategy: CycleRecoveryStrategy,
+    ) -> &ActiveQueryGuard<'me> {
+        self.guard.get_or_insert_with(|| {
+            zalsa_local.push_query(self.database_key_index, 0, cycle_strategy)
+        })
     }
 
-    pub(super) fn into_inner(self, zalsa_local: &'me ZalsaLocal) -> ActiveQueryGuard<'me> {
+    #[inline]
+    pub(super) fn into_inner(
+        self,
+        zalsa_local: &'me ZalsaLocal,
+        cycle_strategy: CycleRecoveryStrategy,
+    ) -> ActiveQueryGuard<'me> {
         self.guard
-            .unwrap_or_else(|| zalsa_local.push_query(self.database_key_index, 0))
+            .unwrap_or_else(|| zalsa_local.push_query(self.database_key_index, 0, cycle_strategy))
     }
 }

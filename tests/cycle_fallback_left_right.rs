@@ -14,6 +14,7 @@ fn cycle_result(_db: &dyn salsa::Database) -> u32 {
 }
 
 #[test_log::test]
+#[should_panic = "fallback immediate cycle"]
 fn left_entry() {
     let db = salsa::DatabaseImpl::default();
 
@@ -21,6 +22,7 @@ fn left_entry() {
 }
 
 #[test_log::test]
+#[should_panic = "fallback immediate cycle"]
 fn right_entry() {
     let db = salsa::DatabaseImpl::default();
 

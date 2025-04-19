@@ -111,15 +111,12 @@ where
         ) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => match C::CYCLE_STRATEGY {
-                CycleRecoveryStrategy::Panic => db.zalsa_local().with_query_stack(|stack| {
-                    panic!(
-                        "dependency graph cycle when validating {database_key_index:#?}, \
-                            set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                            Query stack:\n{:#?}",
-                        stack,
-                    );
-                }),
+                CycleRecoveryStrategy::Panic => db
+                    .zalsa_local()
+                    .cycle_panic(database_key_index, "validating"),
                 CycleRecoveryStrategy::FallbackImmediate => {
+                    db.zalsa_local()
+                        .assert_top_non_panic_cycle(database_key_index);
                     return Some(VerifyResult::unchanged());
                 }
                 CycleRecoveryStrategy::Fixpoint => {
@@ -162,7 +159,7 @@ where
         if old_memo.value.is_some() {
             let memo = self.execute(
                 db,
-                active_query.into_inner(db.zalsa_local()),
+                active_query.into_inner(db.zalsa_local(), C::CYCLE_STRATEGY),
                 Some(old_memo),
             );
             let changed_at = memo.revisions.changed_at;
@@ -379,7 +376,7 @@ where
                     return VerifyResult::Changed;
                 }
 
-                let _guard = active_query.guard(db.zalsa_local());
+                let _guard = active_query.guard(db.zalsa_local(), C::CYCLE_STRATEGY);
 
                 let mut cycle_heads = CycleHeads::default();
                 'cycle: loop {

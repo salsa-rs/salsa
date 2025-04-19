@@ -51,6 +51,7 @@ fn cycle_result_b(_db: &dyn KnobsDatabase) -> u32 {
 }
 
 #[test_log::test]
+#[should_panic = "fallback immediate cycle"]
 fn the_test() {
     std::thread::scope(|scope| {
         let db_t1 = Knobs::default();
@@ -59,14 +60,16 @@ fn the_test() {
         let t1 = scope.spawn(move || query_a(&db_t1));
         let t2 = scope.spawn(move || query_b(&db_t2));
 
-        let (r_t1, r_t2) = (t1.join().unwrap(), t2.join().unwrap());
+        let (r_t1, r_t2) = (t1.join(), t2.join());
 
         assert_eq!(
-            (r_t1, r_t2),
+            (r_t1?, r_t2?),
             (
                 FALLBACK_A | OFFSET_A | OFFSET_B,
                 FALLBACK_B | OFFSET_A | OFFSET_B,
             )
         );
-    });
+        Ok(())
+    })
+    .unwrap_or_else(|e| std::panic::resume_unwind(e));
 }
