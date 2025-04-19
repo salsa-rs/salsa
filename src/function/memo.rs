@@ -10,7 +10,7 @@ use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
 use crate::table::memo::MemoTable;
-use crate::zalsa::{MemoIngredientIndex, Zalsa};
+use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryOrigin, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
 
@@ -113,7 +113,9 @@ impl<C: Configuration> IngredientImpl<C> {
         key: Id,
     ) -> Option<C::Output<'db>> {
         match C::CYCLE_STRATEGY {
-            CycleRecoveryStrategy::Fixpoint => Some(C::cycle_initial(db, C::id_to_input(db, key))),
+            CycleRecoveryStrategy::Fixpoint => {
+                Some(C::cycle_initial(db, C::id_to_input(db, db.zalsa(), key)))
+            }
             CycleRecoveryStrategy::Panic => None,
         }
     }

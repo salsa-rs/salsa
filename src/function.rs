@@ -60,7 +60,7 @@ pub trait Configuration: Any {
 
     /// Convert from the id used internally to the value that execute is expecting.
     /// This is a no-op if the input to the function is a salsa struct.
-    fn id_to_input(db: &Self::DbView, key: Id) -> Self::Input<'_>;
+    fn id_to_input<'db>(db: &'db Self::DbView, zalsa: &'db Zalsa, key: Id) -> Self::Input<'db>;
 
     /// Invoked when we need to compute the value for the given key, either because we've never
     /// computed it before or because the old one relied on inputs that have changed.
