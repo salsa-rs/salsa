@@ -57,7 +57,7 @@ where
 
                 // Query was not previously executed, or value is potentially
                 // stale, or value is absent. Let's execute!
-                let mut new_value = C::execute(db, C::id_to_input(db, id));
+                let mut new_value = C::execute(db, C::id_to_input(db, zalsa, id));
                 let mut revisions = active_query.pop();
 
                 // Did the new result we got depend on our own provisional value, in a cycle?
@@ -105,7 +105,7 @@ where
                             db,
                             &new_value,
                             iteration_count,
-                            C::id_to_input(db, id),
+                            C::id_to_input(db, zalsa, id),
                         ) {
                             crate::CycleRecoveryAction::Iterate => {
                                 tracing::debug!(
@@ -169,7 +169,7 @@ where
 
             // Query was not previously executed, or value is potentially
             // stale, or value is absent. Let's execute!
-            let new_value = C::execute(db, C::id_to_input(db, id));
+            let new_value = C::execute(db, C::id_to_input(db, zalsa, id));
             let revisions = active_query.pop();
 
             (new_value, revisions)

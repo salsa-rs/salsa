@@ -90,6 +90,7 @@ impl IngredientIndex {
         self.0 as usize
     }
 
+    #[inline]
     pub fn successor(self, index: usize) -> Self {
         IngredientIndex(self.0 + 1 + index as u32)
     }
@@ -198,15 +199,6 @@ impl Zalsa {
     pub(crate) fn sync_table_for(&self, id: Id) -> &SyncTable {
         // SAFETY: We are supplying the correct current revision
         unsafe { self.table().syncs(id, self.current_revision()) }
-    }
-
-    #[inline]
-    pub(crate) fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
-        let index = index.as_usize();
-        self.ingredients_vec
-            .get(index)
-            .unwrap_or_else(|| panic!("index `{index}` is uninitialized"))
-            .as_ref()
     }
 
     pub(crate) fn ingredient_index_for_memo(
@@ -337,6 +329,16 @@ impl Zalsa {
 
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
+    pub fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
+        let index = index.as_usize();
+        self.ingredients_vec
+            .get(index)
+            .unwrap_or_else(|| panic!("index `{index}` is uninitialized"))
+            .as_ref()
+    }
+
+    /// **NOT SEMVER STABLE**
+    #[doc(hidden)]
     pub fn current_revision(&self) -> Revision {
         self.runtime.current_revision()
     }
@@ -420,6 +422,7 @@ where
             phantom: PhantomData,
         }
     }
+
     /// Get a reference to the ingredient in the database.
     /// If the ingredient is not already in the cache, it will be created.
     #[inline(always)]

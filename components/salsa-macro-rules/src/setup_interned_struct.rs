@@ -118,17 +118,17 @@ macro_rules! setup_interned_struct {
                 }
             }
 
-            impl salsa::plumbing::interned::Configuration for $StructWithStatic {
+            impl $zalsa::interned::Configuration for $StructWithStatic {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
                 type Fields<'a> = $StructDataIdent<'a>;
                 type Struct<'db> = $Struct< $($db_lt_arg)? >;
                 fn struct_from_id<'db>(id: salsa::Id) -> Self::Struct<'db> {
-                    use salsa::plumbing::FromId;
+                    use $zalsa::FromId;
                     $Struct(<$Id>::from_id(id), std::marker::PhantomData)
                 }
 
                 fn deref_struct(s: Self::Struct<'_>) -> salsa::Id {
-                    use salsa::plumbing::AsId;
+                    use $zalsa::AsId;
                     s.0.as_id()
                 }
             }
@@ -218,7 +218,7 @@ macro_rules! setup_interned_struct {
                         // FIXME(rust-lang/rust#65991): The `db` argument *should* have the type `dyn Database`
                         $Db: ?Sized + $zalsa::Database,
                     {
-                        let fields = $Configuration::ingredient(db).fields(db.as_dyn_database(), self);
+                        let fields = $Configuration::ingredient(db).data_zalsa(db.zalsa(), <$StructWithStatic as $zalsa::interned::Configuration>::deref_struct(self));
                         $zalsa::maybe_clone!(
                             $field_option,
                             $field_ty,
@@ -230,7 +230,7 @@ macro_rules! setup_interned_struct {
                 /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
                 pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     $zalsa::with_attached_database(|db| {
-                        let fields = $Configuration::ingredient(db).fields(db.as_dyn_database(), this);
+                        let fields = $Configuration::ingredient(db).data_zalsa(db.zalsa(), <$StructWithStatic as $zalsa::interned::Configuration>::deref_struct(this));
                         let mut f = f.debug_struct(stringify!($Struct));
                         $(
                             let f = f.field(stringify!($field_id), &fields.$field_index);

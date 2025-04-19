@@ -108,7 +108,7 @@ impl<C: Configuration> IngredientImpl<C> {
             })
         });
 
-        FromIdWithDb::from_id(id, db)
+        FromIdWithDb::from_id_zalsa(id, zalsa)
     }
 
     /// Change the value of the field `field_index` to a new value.
