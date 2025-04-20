@@ -9,9 +9,7 @@ use std::{
 use parking_lot::RwLock;
 use thin_vec::ThinVec;
 
-use crate::{
-    table::const_type_id::ConstTypeId, zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin,
-};
+use crate::{zalsa::MemoIngredientIndex, zalsa_local::QueryOrigin};
 
 /// The "memo table" stores the memoized results of tracked function calls.
 /// Every tracked function must take a salsa struct as its first argument
@@ -56,7 +54,7 @@ pub struct MemoEntryType {
 #[derive(Clone, Copy)]
 struct MemoEntryTypeData {
     /// The `type_id` of the erased memo type `M`
-    type_id: ConstTypeId,
+    type_id: TypeId,
 
     /// A type-coercion function for the erased memo type `M`
     to_dyn_fn: fn(NonNull<DummyMemo>) -> NonNull<dyn Memo>,
@@ -86,15 +84,10 @@ impl MemoEntryType {
     #[inline]
     pub fn of<M: Memo>() -> Self {
         Self {
-            data: AtomicPtr::new(
-                (&const {
-                    MemoEntryTypeData {
-                        type_id: ConstTypeId::of::<M>(),
-                        to_dyn_fn: Self::to_dyn_fn::<M>(),
-                    }
-                } as *const MemoEntryTypeData)
-                    .cast_mut(),
-            ),
+            data: AtomicPtr::new(Box::into_raw(Box::new(MemoEntryTypeData {
+                type_id: TypeId::of::<M>(),
+                to_dyn_fn: Self::to_dyn_fn::<M>(),
+            }))),
         }
     }
 
@@ -236,28 +229,26 @@ impl<'a> MemoTableWithTypes<'a> {
         old_entry.map(|memo| unsafe { MemoEntryType::from_dummy(memo) })
     }
 
+    #[inline]
     pub(crate) fn get<M: Memo>(self, memo_ingredient_index: MemoIngredientIndex) -> Option<&'a M> {
-        if let Some(MemoEntry { atomic_memo }) = self
+        let memo = self
             .memos
             .memos
             .read()
+            .get(memo_ingredient_index.as_usize())?;
+        let type_ = self
+            .types
+            .types
             .get(memo_ingredient_index.as_usize())
-        {
-            assert_eq!(
-                self.types
-                    .types
-                    .get(memo_ingredient_index.as_usize())
-                    .and_then(MemoEntryType::load)?
-                    .type_id,
-                TypeId::of::<M>(),
-                "inconsistent type-id for `{memo_ingredient_index:?}`"
-            );
-            let memo = NonNull::new(atomic_memo.load(Ordering::Acquire));
-            // SAFETY: `type_id` check asserted above
-            return memo.map(|memo| unsafe { MemoEntryType::from_dummy(memo).as_ref() });
-        }
-
-        None
+            .and_then(MemoEntryType::load)?;
+        assert_eq!(
+            type_.type_id,
+            TypeId::of::<M>(),
+            "inconsistent type-id for `{memo_ingredient_index:?}`"
+        );
+        let memo = NonNull::new(memo.atomic_memo.load(Ordering::Acquire));
+        // SAFETY: `type_id` check asserted above
+        memo.map(|memo| unsafe { MemoEntryType::from_dummy(memo).as_ref() })
     }
 }
 

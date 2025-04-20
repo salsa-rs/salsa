@@ -16,7 +16,6 @@ use sync::SyncTable;
 use crate::table::memo::{MemoTableTypes, MemoTableWithTypes, MemoTableWithTypesMut};
 use crate::{Id, IngredientIndex, Revision};
 
-mod const_type_id;
 pub(crate) mod memo;
 pub(crate) mod sync;
 mod util;
