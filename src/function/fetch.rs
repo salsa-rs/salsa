@@ -265,7 +265,7 @@ where
                 let active_query =
                     zalsa_local.push_query(database_key_index, IterationCount::initial());
                 let fallback_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
-                let mut completed_query = active_query.pop();
+                let mut completed_query = active_query.pop(C::FORCE_DURABILITY);
                 completed_query
                     .revisions
                     .set_cycle_heads(CycleHeads::initial(

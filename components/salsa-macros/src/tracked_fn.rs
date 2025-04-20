@@ -63,6 +63,8 @@ impl AllowedOptions for TrackedFn {
     const SELF_TY: bool = true;
 
     const PERSIST: AllowedPersistOptions = AllowedPersistOptions::AllowedIdent;
+
+    const FORCE_DURABILITY: bool = true;
 }
 
 struct Macro {
@@ -209,6 +211,10 @@ impl Macro {
             Some(ty) => quote! { self_ty: #ty, },
             None => quote! {},
         };
+        let force_durability = match &self.args.force_durability {
+            Some(durability) => quote!(Some(#durability)),
+            None => quote!(None),
+        };
 
         Ok(crate::debug::dump_tokens(
             fn_name,
@@ -234,6 +240,7 @@ impl Macro {
                 lru: #lru,
                 return_mode: #return_mode,
                 persist: #persist,
+                force_durability: #force_durability,
                 assert_return_type_is_update: { #assert_return_type_is_update },
                 #self_ty
                 unused_names: [

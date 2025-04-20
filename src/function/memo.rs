@@ -534,6 +534,7 @@ mod _memory_usage {
         const LOCATION: Location = Location { file: "", line: 0 };
         const PERSIST: bool = false;
         const CYCLE_STRATEGY: CycleRecoveryStrategy = CycleRecoveryStrategy::Panic;
+        const FORCE_DURABILITY: Option<crate::Durability> = None;
 
         type DbView = dyn Database;
         type SalsaStruct<'db> = DummyStruct;

@@ -70,6 +70,8 @@ impl AllowedOptions for InputStruct {
     const SELF_TY: bool = false;
 
     const PERSIST: AllowedPersistOptions = AllowedPersistOptions::AllowedValue;
+
+    const FORCE_DURABILITY: bool = false;
 }
 
 impl SalsaStructAllowedOptions for InputStruct {

@@ -21,7 +21,7 @@ use crate::table::Table;
 use crate::views::DatabaseDownCaster;
 use crate::zalsa::{IngredientIndex, JarKind, MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryEdge, QueryOriginRef};
-use crate::{Cycle, Id, Revision};
+use crate::{Cycle, Durability, Id, Revision};
 
 #[cfg(feature = "accumulator")]
 mod accumulated;
@@ -61,6 +61,8 @@ pub trait Configuration: Any {
     /// Determines whether this function can recover from being a participant in a cycle
     /// (and, if so, how).
     const CYCLE_STRATEGY: CycleRecoveryStrategy;
+
+    const FORCE_DURABILITY: Option<Durability>;
 
     /// Invokes after a new result `new_value` has been computed for which an older memoized value
     /// existed `old_value`, or in fixpoint iteration. Returns true if the new value is equal to

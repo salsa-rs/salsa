@@ -63,7 +63,7 @@ where
                     zalsa_local.push_query(database_key_index, IterationCount::initial()),
                     opt_old_memo,
                 );
-                (new_value, active_query.pop())
+                (new_value, active_query.pop(C::FORCE_DURABILITY))
             }
             CycleRecoveryStrategy::FallbackImmediate => {
                 let (mut new_value, active_query) = Self::execute_query(
@@ -73,7 +73,7 @@ where
                     opt_old_memo,
                 );
 
-                let mut completed_query = active_query.pop();
+                let mut completed_query = active_query.pop(C::FORCE_DURABILITY);
 
                 if let Some(cycle_heads) = completed_query.revisions.cycle_heads_mut() {
                     // Did the new result we got depend on our own provisional value, in a cycle?
@@ -100,7 +100,7 @@ where
                     let active_query =
                         zalsa_local.push_query(database_key_index, IterationCount::initial());
                     new_value = C::cycle_initial(db, id, C::id_to_input(zalsa, id));
-                    completed_query = active_query.pop();
+                    completed_query = active_query.pop(C::FORCE_DURABILITY);
                     // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
                     // When verifying this, we will see we have fallback and mark ourselves verified.
                     completed_query.revisions.set_cycle_heads(cycle_heads);
@@ -232,7 +232,7 @@ where
                     panic!("{database_key_index:?}: execute: too many cycle iterations")
                 });
 
-                let mut completed_query = active_query.pop();
+                let mut completed_query = active_query.pop(C::FORCE_DURABILITY);
                 completed_query
                     .revisions
                     .update_iteration_count_mut(database_key_index, iteration_count);
@@ -312,7 +312,7 @@ where
                     claim_guard.set_release_mode(ReleaseMode::SelfOnly);
                 }
 
-                let mut completed_query = active_query.pop();
+                let mut completed_query = active_query.pop(C::FORCE_DURABILITY);
                 *completed_query.revisions.verified_final.get_mut() = false;
                 completed_query.revisions.set_cycle_heads(cycle_heads);
 
@@ -392,7 +392,7 @@ where
                 }
             }
 
-            let mut completed_query = active_query.pop();
+            let mut completed_query = active_query.pop(C::FORCE_DURABILITY);
 
             let value_converged = C::values_equal(&new_value, last_provisional_value);
 
