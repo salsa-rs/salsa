@@ -3,7 +3,10 @@ use std::{
     fmt::Debug,
     mem,
     ptr::{self, NonNull},
-    sync::atomic::{AtomicPtr, Ordering},
+    sync::{
+        atomic::{AtomicPtr, Ordering},
+        OnceLock,
+    },
 };
 
 use parking_lot::RwLock;
@@ -48,7 +51,7 @@ struct MemoEntry {
 }
 
 pub struct MemoEntryType {
-    data: AtomicPtr<MemoEntryTypeData>,
+    data: OnceLock<MemoEntryTypeData>,
 }
 
 #[derive(Clone, Copy)]
@@ -84,18 +87,16 @@ impl MemoEntryType {
     #[inline]
     pub fn of<M: Memo>() -> Self {
         Self {
-            data: AtomicPtr::new(Box::into_raw(Box::new(MemoEntryTypeData {
+            data: OnceLock::from(MemoEntryTypeData {
                 type_id: TypeId::of::<M>(),
                 to_dyn_fn: Self::to_dyn_fn::<M>(),
-            }))),
+            }),
         }
     }
 
     #[inline]
     fn load(&self) -> Option<&MemoEntryTypeData> {
-        // Note: Relaxed is fine as we only set the pointer once, right when we initialize it.
-        // SAFETY: The pointer is either null or initialized properly.
-        unsafe { self.data.load(Ordering::Relaxed).as_ref() }
+        self.data.get()
     }
 }
 
@@ -123,14 +124,20 @@ impl MemoTableTypes {
         let memo_ingredient_index = memo_ingredient_index.as_usize();
         while memo_ingredient_index >= self.types.count() {
             self.types.push(MemoEntryType {
-                data: AtomicPtr::default(),
+                data: OnceLock::new(),
             });
         }
         let memo_entry_type = self.types.get(memo_ingredient_index).unwrap();
-        let old = memo_entry_type
+        memo_entry_type
             .data
-            .swap(memo_type.data.load(Ordering::Relaxed), Ordering::AcqRel);
-        debug_assert!(old.is_null(), "memo type should only be set once");
+            .set(
+                *memo_type
+                    .data
+                    .get()
+                    .expect("cannot provide an empty `MemoEntryType` for `MemoEntryType::set()`"),
+            )
+            .ok()
+            .expect("memo type should only be set once");
     }
 
     /// # Safety
@@ -231,11 +238,8 @@ impl<'a> MemoTableWithTypes<'a> {
 
     #[inline]
     pub(crate) fn get<M: Memo>(self, memo_ingredient_index: MemoIngredientIndex) -> Option<&'a M> {
-        let memo = self
-            .memos
-            .memos
-            .read()
-            .get(memo_ingredient_index.as_usize())?;
+        let read = self.memos.memos.read();
+        let memo = read.get(memo_ingredient_index.as_usize())?;
         let type_ = self
             .types
             .types
