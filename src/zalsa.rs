@@ -329,6 +329,7 @@ impl Zalsa {
 
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
+    #[inline]
     pub fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
         let index = index.as_usize();
         self.ingredients_vec
