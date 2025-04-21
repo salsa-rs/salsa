@@ -382,14 +382,15 @@ where
         input: Id,
         revision: Revision,
     ) -> VerifyResult {
-        let value = db.zalsa().table().get::<Value<C>>(input);
+        let zalsa = db.zalsa();
+        let value = zalsa.table().get::<Value<C>>(input);
         if value.first_interned_at > revision {
             // The slot was reused.
             return VerifyResult::Changed;
         }
 
         // The slot is valid in this revision but we have to sync the value's revision.
-        let current_revision = db.zalsa().current_revision();
+        let current_revision = zalsa.current_revision();
         value.last_interned_at.store(current_revision);
 
         db.salsa_event(&|| {
