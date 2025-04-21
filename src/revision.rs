@@ -17,24 +17,34 @@ pub struct Revision {
 }
 
 impl Revision {
+    #[inline]
+    pub(crate) fn max() -> Self {
+        Self::from(usize::MAX)
+    }
+
+    #[inline]
     pub(crate) fn start() -> Self {
         Self::from(START)
     }
 
+    #[inline]
     pub(crate) fn from(g: usize) -> Self {
         Self {
             generation: NonZeroUsize::new(g).unwrap(),
         }
     }
 
+    #[inline]
     pub(crate) fn from_opt(g: usize) -> Option<Self> {
         NonZeroUsize::new(g).map(|generation| Self { generation })
     }
 
+    #[inline]
     pub(crate) fn next(self) -> Revision {
         Self::from(self.generation.get() + 1)
     }
 
+    #[inline]
     fn as_usize(self) -> usize {
         self.generation.get()
     }
