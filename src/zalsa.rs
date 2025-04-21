@@ -200,6 +200,7 @@ impl Zalsa {
         unsafe { self.table().syncs(id, self.current_revision()) }
     }
 
+    #[inline]
     pub(crate) fn lookup_ingredient(&self, index: IngredientIndex) -> &dyn Ingredient {
         let index = index.as_usize();
         self.ingredients_vec
@@ -272,17 +273,19 @@ impl Zalsa {
 
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
+    #[inline]
     pub fn add_or_lookup_jar_by_type<J: Jar>(&self) -> IngredientIndex {
         let jar_type_id = TypeId::of::<J>();
-        let mut jar_map = self.jar_map.lock();
-        if let Some(index) = jar_map.get(&jar_type_id) {
+        if let Some(index) = self.jar_map.lock().get(&jar_type_id) {
             return *index;
         };
-        // Drop the map as `J::create_dependencies` may recurse into this function taking the lock again.
-        drop(jar_map);
-        let dependencies = J::create_dependencies(self);
+        self.add_or_lookup_jar_by_type_slow::<J>(jar_type_id)
+    }
 
-        jar_map = self.jar_map.lock();
+    #[inline(never)]
+    fn add_or_lookup_jar_by_type_slow<J: Jar>(&self, jar_type_id: TypeId) -> IngredientIndex {
+        let dependencies = J::create_dependencies(self);
+        let mut jar_map = self.jar_map.lock();
         let index = IngredientIndex::from(self.ingredients_vec.count());
         match jar_map.entry(jar_type_id) {
             hash_map::Entry::Occupied(entry) => {
@@ -417,35 +420,55 @@ where
             phantom: PhantomData,
         }
     }
+    /// Get a reference to the ingredient in the database.
+    /// If the ingredient is not already in the cache, it will be created.
+    #[inline(always)]
+    pub fn get_or_create<'db>(
+        &self,
+        zalsa: &'db Zalsa,
+        create_index: impl Fn() -> IngredientIndex,
+    ) -> &'db I {
+        let index = self.get_or_create_index(zalsa, create_index);
+        zalsa.lookup_ingredient(index).assert_type::<I>()
+    }
 
     /// Get a reference to the ingredient in the database.
     /// If the ingredient is not already in the cache, it will be created.
-    #[inline(never)]
-    pub fn get_or_create<'s>(
+    #[inline(always)]
+    pub fn get_or_create_index(
         &self,
-        db: &'s dyn Database,
+        zalsa: &Zalsa,
         create_index: impl Fn() -> IngredientIndex,
-    ) -> &'s I {
+    ) -> IngredientIndex {
         const _: () = assert!(
             mem::size_of::<(Nonce<StorageNonce>, IngredientIndex)>() == mem::size_of::<u64>()
         );
         let cached_data = self.cached_data.load(Ordering::Acquire);
         if cached_data == Self::UNINITIALIZED {
-            let index = create_index();
-            let nonce = db.zalsa().nonce().into_u32().get() as u64;
-            let packed = (nonce << u32::BITS) | (index.0 as u64);
-            debug_assert_ne!(packed, Self::UNINITIALIZED);
+            #[inline(never)]
+            fn get_or_create_index_slow<I: Ingredient>(
+                this: &IngredientCache<I>,
+                zalsa: &Zalsa,
+                create_index: impl Fn() -> IngredientIndex,
+            ) -> IngredientIndex {
+                let index = create_index();
+                let nonce = zalsa.nonce().into_u32().get() as u64;
+                let packed = (nonce << u32::BITS) | (index.0 as u64);
+                debug_assert_ne!(packed, IngredientCache::<I>::UNINITIALIZED);
 
-            // Discard the result, whether we won over the cache or not does not matter
-            // we know that something has been cached now
-            _ = self.cached_data.compare_exchange(
-                Self::UNINITIALIZED,
-                packed,
-                Ordering::Release,
-                Ordering::Acquire,
-            );
-            // and we already have our index computed so we can just use that
-            return db.zalsa().lookup_ingredient(index).assert_type::<I>();
+                // Discard the result, whether we won over the cache or not does not matter
+                // we know that something has been cached now
+                _ = this.cached_data.compare_exchange(
+                    IngredientCache::<I>::UNINITIALIZED,
+                    packed,
+                    Ordering::Release,
+                    Ordering::Acquire,
+                );
+                // and we already have our index computed so we can just use that
+                index
+            }
+
+            return get_or_create_index_slow(self, zalsa, create_index);
         };
 
         // unpack our u64
@@ -455,10 +478,10 @@ where
         });
         let mut index = IngredientIndex(cached_data as u32);
 
-        if db.zalsa().nonce() != nonce {
+        if zalsa.nonce() != nonce {
             index = create_index();
         }
-        db.zalsa().lookup_ingredient(index).assert_type::<I>()
+        index
     }
 }
 
