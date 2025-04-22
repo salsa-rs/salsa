@@ -171,12 +171,12 @@ unsafe impl Update for std::convert::Infallible {
     }
 }
 
-unsafe impl<T> Update for Vec<T>
-where
-    T: Update,
-{
-    unsafe fn maybe_update(old_pointer: *mut Self, new_vec: Self) -> bool {
-        let old_vec: &mut Vec<T> = unsafe { &mut *old_pointer };
+macro_rules! maybe_update_vec {
+    ($old_pointer: expr, $new_vec: expr, $elem_ty: ty) => {{
+        let old_pointer = $old_pointer;
+        let new_vec = $new_vec;
+
+        let old_vec: &mut Self = unsafe { &mut *old_pointer };
 
         if old_vec.len() != new_vec.len() {
             old_vec.clear();
@@ -186,10 +186,28 @@ where
 
         let mut changed = false;
         for (old_element, new_element) in old_vec.iter_mut().zip(new_vec) {
-            changed |= unsafe { T::maybe_update(old_element, new_element) };
+            changed |= unsafe { <$elem_ty>::maybe_update(old_element, new_element) };
         }
 
         changed
+    }};
+}
+
+unsafe impl<T> Update for Vec<T>
+where
+    T: Update,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_vec: Self) -> bool {
+        maybe_update_vec!(old_pointer, new_vec, T)
+    }
+}
+
+unsafe impl<T> Update for thin_vec::ThinVec<T>
+where
+    T: Update,
+{
+    unsafe fn maybe_update(old_pointer: *mut Self, new_vec: Self) -> bool {
+        maybe_update_vec!(old_pointer, new_vec, T)
     }
 }
 
@@ -199,20 +217,7 @@ where
     A::Item: Update,
 {
     unsafe fn maybe_update(old_pointer: *mut Self, new_vec: Self) -> bool {
-        let old_vec: &mut smallvec::SmallVec<A> = unsafe { &mut *old_pointer };
-
-        if old_vec.len() != new_vec.len() {
-            old_vec.clear();
-            old_vec.extend(new_vec);
-            return true;
-        }
-
-        let mut changed = false;
-        for (old_element, new_element) in old_vec.iter_mut().zip(new_vec) {
-            changed |= unsafe { A::Item::maybe_update(old_element, new_element) };
-        }
-
-        changed
+        maybe_update_vec!(old_pointer, new_vec, A::Item)
     }
 }
 
