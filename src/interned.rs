@@ -335,7 +335,11 @@ where
     /// Rarely used since end-users generally carry a struct with a pointer directly
     /// to the interned item.
     pub fn data<'db>(&'db self, db: &'db dyn Database, id: Id) -> &'db C::Fields<'db> {
-        let zalsa = db.zalsa();
+        self.data_zalsa(db.zalsa(), id)
+    }
+
+    #[doc(hidden)]
+    pub fn data_zalsa<'db>(&'db self, zalsa: &'db Zalsa, id: Id) -> &'db C::Fields<'db> {
         let internal_data = zalsa.table().get::<Value<C>>(id);
         let last_changed_revision = zalsa.last_changed_revision(internal_data.durability());
 
@@ -350,7 +354,7 @@ where
     /// Lookup the fields from an interned struct.
     /// Note that this is not "leaking" since no dependency edge is required.
     pub fn fields<'db>(&'db self, db: &'db dyn Database, s: C::Struct<'db>) -> &'db C::Fields<'db> {
-        self.data(db, C::deref_struct(s))
+        self.data_zalsa(db.zalsa(), C::deref_struct(s))
     }
 
     pub fn reset(&mut self, db: &mut dyn Database) {

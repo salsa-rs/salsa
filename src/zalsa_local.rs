@@ -93,7 +93,7 @@ impl ZalsaLocal {
         let mut query_stack = self.query_stack.borrow_mut();
         query_stack.push_new_query(database_key_index, iteration_count);
         ActiveQueryGuard {
-            local_state: self,
+            zalsa_local: self,
             database_key_index,
             #[cfg(debug_assertions)]
             push_len: query_stack.len(),
@@ -462,16 +462,16 @@ impl QueryEdges {
 /// the query from the stack -- in the case of unwinding, the guard's
 /// destructor will also remove the query.
 pub(crate) struct ActiveQueryGuard<'me> {
-    local_state: &'me ZalsaLocal,
+    zalsa_local: &'me ZalsaLocal,
     #[cfg(debug_assertions)]
     push_len: usize,
     pub(crate) database_key_index: DatabaseKeyIndex,
 }
 
-impl ActiveQueryGuard<'_> {
+impl<'me> ActiveQueryGuard<'me> {
     /// Initialize the tracked struct ids with the values from the prior execution.
     pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &IdentityMap) {
-        self.local_state.with_query_stack(|stack| {
+        self.zalsa_local.with_query_stack(|stack| {
             #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
@@ -482,7 +482,7 @@ impl ActiveQueryGuard<'_> {
 
     /// Invoked when the query has successfully completed execution.
     fn complete(self) -> QueryRevisions {
-        let query = self.local_state.with_query_stack(|stack| {
+        let query = self.zalsa_local.with_query_stack(|stack| {
             stack.pop_into_revisions(
                 self.database_key_index,
                 #[cfg(debug_assertions)]
@@ -500,11 +500,15 @@ impl ActiveQueryGuard<'_> {
     pub(crate) fn pop(self) -> QueryRevisions {
         self.complete()
     }
+
+    pub(crate) fn zalsa_local(&self) -> &'me ZalsaLocal {
+        self.zalsa_local
+    }
 }
 
 impl Drop for ActiveQueryGuard<'_> {
     fn drop(&mut self) {
-        self.local_state.with_query_stack(|stack| {
+        self.zalsa_local.with_query_stack(|stack| {
             stack.pop(
                 self.database_key_index,
                 #[cfg(debug_assertions)]

@@ -68,7 +68,6 @@ macro_rules! setup_tracked_fn {
             $Configuration:ident,
             $InternedData:ident,
             $FN_CACHE:ident,
-            $INTERN_CACHE:ident,
             $inner:ident,
         ]
     ) => {
@@ -99,9 +98,6 @@ macro_rules! setup_tracked_fn {
                         salsa::Id,
                         std::marker::PhantomData<&$db_lt $zalsa::interned::Value<$Configuration>>,
                     );
-
-                    static $INTERN_CACHE: $zalsa::IngredientCache<$zalsa::interned::IngredientImpl<$Configuration>> =
-                        $zalsa::IngredientCache::new();
 
                     impl $zalsa::SalsaStructInDb for $InternedData<'_> {
                         type MemoIngredientMap = $zalsa::MemoIngredientSingletonIndex;
@@ -164,10 +160,11 @@ macro_rules! setup_tracked_fn {
                         db: &dyn $Db,
                     ) -> &$zalsa::interned::IngredientImpl<$Configuration> {
                         let zalsa = db.zalsa();
-                        $INTERN_CACHE.get_or_create(zalsa, || {
+                        let index = $FN_CACHE.get_or_create_index(zalsa, || {
                             <dyn $Db as $Db>::zalsa_register_downcaster(db);
-                            zalsa.add_or_lookup_jar_by_type::<$Configuration>().successor(0)
-                        })
+                            db.zalsa().add_or_lookup_jar_by_type::<$Configuration>()
+                        }).successor(0);
+                        zalsa.lookup_ingredient(index).assert_type()
                     }
                 }
             }
@@ -219,12 +216,13 @@ macro_rules! setup_tracked_fn {
                     $($cycle_recovery_fn)*(db, value, count, $($input_id),*)
                 }
 
-                fn id_to_input<$db_lt>(db: &$db_lt Self::DbView, key: salsa::Id) -> Self::Input<$db_lt> {
+                #[inline]
+                fn id_to_input<$db_lt>(db: &$db_lt Self::DbView, zalsa: &$db_lt $zalsa::Zalsa, key: salsa::Id) -> Self::Input<$db_lt> {
                     $zalsa::macro_if! {
                         if $needs_interner {
-                            $Configuration::intern_ingredient(db).data(db.as_dyn_database(), key).clone()
+                            $Configuration::intern_ingredient(db).data_zalsa(zalsa, key).clone()
                         } else {
-                            $zalsa::FromIdWithDb::from_id(key, db)
+                            $zalsa::FromIdWithDb::from_id_zalsa(key, zalsa)
                         }
                     }
                 }

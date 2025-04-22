@@ -164,20 +164,20 @@ const _: () = {
         where
             Db_: ?Sized + zalsa_::Database,
         {
-            let fields = Configuration_::ingredient(db).fields(db.as_dyn_database(), self);
+            let fields = Configuration_::ingredient(db).data_zalsa(db.zalsa(), self.0);
             std::clone::Clone::clone((&fields.0))
         }
         fn other<Db_>(self, db: &'db Db_) -> InternedString<'db>
         where
             Db_: ?Sized + zalsa_::Database,
         {
-            let fields = Configuration_::ingredient(db).fields(db.as_dyn_database(), self);
+            let fields = Configuration_::ingredient(db).data_zalsa(db.zalsa(), self.0);
             std::clone::Clone::clone((&fields.1))
         }
         #[doc = r" Default debug formatting for this struct (may be useful if you define your own `Debug` impl)"]
         pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             zalsa_::with_attached_database(|db| {
-                let fields = Configuration_::ingredient(db).fields(db.as_dyn_database(), this);
+                let fields = Configuration_::ingredient(db).data_zalsa(db.zalsa(), this.0);
                 let mut f = f.debug_struct("InternedString");
                 let f = f.field("data", &fields.0);
                 let f = f.field("other", &fields.1);
