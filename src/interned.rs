@@ -282,11 +282,12 @@ where
                 let table = zalsa.table();
 
                 // Record the durability of the current query on the interned value.
-                let durability = zalsa_local
+                let (durability, last_interned_at) = zalsa_local
                     .active_query()
-                    .map(|(_, stamp)| stamp.durability)
+                    .map(|(_, stamp)| (stamp.durability, current_revision))
                     // If there is no active query this durability does not actually matter.
-                    .unwrap_or(Durability::MAX);
+                    // `last_interned_at` needs to be `Revision::MAX`, see the intern_access_in_different_revision test.
+                    .unwrap_or((Durability::MAX, Revision::max()));
 
                 let id = zalsa_local.allocate(table, self.ingredient_index, |id| Value::<C> {
                     fields: unsafe { self.to_internal_data(assemble(id, key)) },
@@ -295,7 +296,7 @@ where
                     durability: AtomicU8::new(durability.as_u8()),
                     // Record the revision we are interning in.
                     first_interned_at: current_revision,
-                    last_interned_at: AtomicRevision::from(current_revision),
+                    last_interned_at: AtomicRevision::from(last_interned_at),
                 });
 
                 let value = table.get::<Value<C>>(id);
@@ -391,7 +392,11 @@ where
 
         // The slot is valid in this revision but we have to sync the value's revision.
         let current_revision = zalsa.current_revision();
-        value.last_interned_at.store(current_revision);
+        // No `if` to be branchless.
+        value.last_interned_at.store(std::cmp::max(
+            current_revision,
+            value.last_interned_at.load(),
+        ));
 
         db.salsa_event(&|| {
             Event::new(EventKind::DidReinternValue {
