@@ -63,6 +63,8 @@ macro_rules! setup_input_struct {
         #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
         $vis struct $Struct(salsa::Id);
 
+        #[allow(clippy::all)]
+        #[allow(dead_code)]
         const _: () = {
             use salsa::plumbing as $zalsa;
             use $zalsa::input as $zalsa_struct;

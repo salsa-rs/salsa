@@ -15,6 +15,8 @@ macro_rules! setup_accumulator_impl {
             $ingredient:ident,
         ]
     ) => {
+        #[allow(clippy::all)]
+        #[allow(dead_code)]
         const _: () = {
             use salsa::plumbing as $zalsa;
             use salsa::plumbing::accumulator as $zalsa_struct;
