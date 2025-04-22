@@ -1,9 +1,11 @@
 use std::fmt;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use crate::function::VerifyResult;
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::input::{Configuration, IngredientImpl, Value};
+use crate::table::memo::MemoTableTypes;
 use crate::zalsa::IngredientIndex;
 use crate::{Database, Id, Revision};
 
@@ -64,6 +66,10 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::FIELD_DEBUG_NAMES[self.field_index]
+    }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        unreachable!("input fields do not allocate pages")
     }
 }
 

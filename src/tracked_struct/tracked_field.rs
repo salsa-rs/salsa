@@ -1,7 +1,8 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use crate::function::VerifyResult;
 use crate::ingredient::Ingredient;
+use crate::table::memo::MemoTableTypes;
 use crate::tracked_struct::{Configuration, Value};
 use crate::zalsa::IngredientIndex;
 use crate::{Database, Id};
@@ -24,7 +25,6 @@ where
 
     /// The absolute index of this field on the tracked struct.
     field_index: usize,
-
     phantom: PhantomData<fn() -> Value<C>>,
 }
 
@@ -73,6 +73,10 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::FIELD_DEBUG_NAMES[self.field_index]
+    }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        unreachable!("tracked field does not allocate pages")
     }
 }
 

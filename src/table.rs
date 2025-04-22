@@ -6,12 +6,14 @@ use std::mem::{self, MaybeUninit};
 use std::ptr::{self, NonNull};
 use std::slice;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use memo::MemoTable;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use sync::SyncTable;
 
+use crate::table::memo::{MemoTableTypes, MemoTableWithTypes, MemoTableWithTypesMut};
 use crate::{Id, IngredientIndex, Revision};
 
 pub(crate) mod memo;
@@ -71,20 +73,23 @@ struct SlotVTable {
     memos_mut: SlotMemosMutFnRaw,
     syncs: SlotSyncsFnRaw,
     /// A drop impl to call when the own page drops
-    /// SAFETY: The caller is required to supply a correct data pointer to a `Box<PageDataEntry<T>>` and initialized length
-    drop_impl: unsafe fn(data: *mut (), initialized: usize),
+    /// SAFETY: The caller is required to supply a correct data pointer to a `Box<PageDataEntry<T>>` and initialized length,
+    /// and correct memo types.
+    drop_impl: unsafe fn(data: *mut (), initialized: usize, memo_types: &MemoTableTypes),
 }
 
 impl SlotVTable {
     const fn of<T: Slot>() -> &'static Self {
         const {
             &Self {
-                drop_impl: |data, initialized|
+                drop_impl: |data, initialized, memo_types|
                 // SAFETY: The caller is required to supply a correct data pointer and initialized length
                 unsafe {
                     let data = Box::from_raw(data.cast::<PageData<T>>());
                     for i in 0..initialized {
-                        ptr::drop_in_place(data[i].get().cast::<T>());
+                        let item = data[i].get().cast::<T>();
+                        memo_types.attach_memos_mut((*item).memos_mut()).drop();
+                        ptr::drop_in_place(item);
                     }
                 },
                 layout: Layout::new::<T>(),
@@ -133,6 +138,8 @@ struct Page {
     /// The type name of what is stored as entries in data.
     // FIXME: Move this into SlotVTable once const stable
     slot_type_name: &'static str,
+
+    memo_types: Arc<MemoTableTypes>,
 }
 
 // SAFETY: `Page` is `Send` as we make sure to only ever store `Slot` types in it which
@@ -146,6 +153,7 @@ unsafe impl Sync for Page {}
 pub struct PageIndex(usize);
 
 impl PageIndex {
+    #[inline]
     fn new(idx: usize) -> Self {
         debug_assert!(idx < MAX_PAGES);
         Self(idx)
@@ -215,8 +223,13 @@ impl Table {
     }
 
     /// Allocate a new page for the given ingredient and with slots of type `T`
-    pub(crate) fn push_page<T: Slot>(&self, ingredient: IngredientIndex) -> PageIndex {
-        PageIndex::new(self.pages.push(Page::new::<T>(ingredient)))
+    #[inline]
+    pub(crate) fn push_page<T: Slot>(
+        &self,
+        ingredient: IngredientIndex,
+        memo_types: Arc<MemoTableTypes>,
+    ) -> PageIndex {
+        PageIndex::new(self.pages.push(Page::new::<T>(ingredient, memo_types)))
     }
 
     /// Get the memo table associated with `id`
@@ -225,15 +238,21 @@ impl Table {
     ///
     /// The parameter `current_revision` MUST be the current revision
     /// of the owner of database owning this table.
-    pub(crate) unsafe fn memos(&self, id: Id, current_revision: Revision) -> &MemoTable {
+    pub(crate) unsafe fn memos(
+        &self,
+        id: Id,
+        current_revision: Revision,
+    ) -> MemoTableWithTypes<'_> {
         let (page, slot) = split_id(id);
         let page = &self.pages[page.0];
         // SAFETY: We supply a proper slot pointer and the caller is required to pass the `current_revision`.
-        unsafe { &*(page.slot_vtable.memos)(page.get(slot), current_revision) }
+        let memos = unsafe { &*(page.slot_vtable.memos)(page.get(slot), current_revision) };
+        // SAFETY: The `Page` keeps the correct memo types.
+        unsafe { page.memo_types.attach_memos(memos) }
     }
 
     /// Get the memo table associated with `id`
-    pub(crate) fn memos_mut(&mut self, id: Id) -> &mut MemoTable {
+    pub(crate) fn memos_mut(&mut self, id: Id) -> MemoTableWithTypesMut<'_> {
         let (page, slot) = split_id(id);
         let page_index = page.0;
         let page = self
@@ -241,7 +260,9 @@ impl Table {
             .get_mut(page_index)
             .unwrap_or_else(|| panic!("index `{page_index}` is uninitialized"));
         // SAFETY: We supply a proper slot pointer and the caller is required to pass the `current_revision`.
-        unsafe { &mut *(page.slot_vtable.memos_mut)(page.get(slot)) }
+        let memos = unsafe { &mut *(page.slot_vtable.memos_mut)(page.get(slot)) };
+        // SAFETY: The `Page` keeps the correct memo types.
+        unsafe { page.memo_types.attach_memos_mut(memos) }
     }
 
     /// Get the sync table associated with `id`
@@ -264,7 +285,11 @@ impl Table {
             .flat_map(|view| view.data())
     }
 
-    pub(crate) fn fetch_or_push_page<T: Slot>(&self, ingredient: IngredientIndex) -> PageIndex {
+    pub(crate) fn fetch_or_push_page<T: Slot>(
+        &self,
+        ingredient: IngredientIndex,
+        memo_types: impl FnOnce() -> Arc<MemoTableTypes>,
+    ) -> PageIndex {
         if let Some(page) = self
             .non_full_pages
             .lock()
@@ -273,7 +298,7 @@ impl Table {
         {
             return page;
         }
-        self.push_page::<T>(ingredient)
+        self.push_page::<T>(ingredient, memo_types())
     }
 
     pub(crate) fn record_unfilled_page(&self, ingredient: IngredientIndex, page: PageIndex) {
@@ -325,7 +350,8 @@ impl<'p, T: Slot> PageView<'p, T> {
 }
 
 impl Page {
-    fn new<T: Slot>(ingredient: IngredientIndex) -> Self {
+    #[inline]
+    fn new<T: Slot>(ingredient: IngredientIndex, memo_types: Arc<MemoTableTypes>) -> Self {
         let data: Box<PageData<T>> =
             Box::new([const { UnsafeCell::new(MaybeUninit::uninit()) }; PAGE_LEN]);
         Self {
@@ -336,6 +362,7 @@ impl Page {
             allocated: Default::default(),
             allocation_lock: Default::default(),
             data: NonNull::from(Box::leak(data)).cast::<()>(),
+            memo_types,
         }
     }
 
@@ -382,7 +409,7 @@ impl Drop for Page {
     fn drop(&mut self) {
         let &mut len = self.allocated.get_mut();
         // SAFETY: We supply the data pointer and the initialized length
-        unsafe { (self.slot_vtable.drop_impl)(self.data.as_ptr(), len) };
+        unsafe { (self.slot_vtable.drop_impl)(self.data.as_ptr(), len, &self.memo_types) };
     }
 }
 

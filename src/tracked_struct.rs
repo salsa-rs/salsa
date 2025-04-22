@@ -5,6 +5,7 @@ use std::fmt;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::DerefMut;
+use std::sync::Arc;
 
 use crossbeam_queue::SegQueue;
 use tracked_field::FieldIngredientImpl;
@@ -16,7 +17,7 @@ use crate::plumbing::ZalsaLocal;
 use crate::revision::OptionalAtomicRevision;
 use crate::runtime::StampedValue;
 use crate::salsa_struct::SalsaStructInDb;
-use crate::table::memo::MemoTable;
+use crate::table::memo::{MemoTable, MemoTableTypes};
 use crate::table::sync::SyncTable;
 use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, Zalsa};
@@ -168,6 +169,8 @@ where
 
     /// Store freed ids
     free_list: SegQueue<Id>,
+
+    memo_table_types: Arc<MemoTableTypes>,
 }
 
 /// Defines the identity of a tracked struct.
@@ -385,6 +388,7 @@ where
             ingredient_index: index,
             phantom: PhantomData,
             free_list: Default::default(),
+            memo_table_types: Arc::new(MemoTableTypes::default()),
         }
     }
 
@@ -466,7 +470,7 @@ where
 
             id
         } else {
-            zalsa_local.allocate::<Value<C>>(zalsa.table(), self.ingredient_index, value)
+            zalsa_local.allocate::<Value<C>>(zalsa, self.ingredient_index, value)
         }
     }
 
@@ -629,22 +633,33 @@ where
 
         // Take the memo table. This is safe because we have modified `data_ref.updated_at` to `None`
         // and the code that references the memo-table has a read-lock.
-        let memo_table = unsafe { (*data).take_memo_table() };
-
-        // SAFETY: We have verified that no more references to these memos exist and so we are good
-        // to drop them.
-        for (memo_ingredient_index, memo) in unsafe { memo_table.into_memos() } {
-            let ingredient_index =
-                zalsa.ingredient_index_for_memo(self.ingredient_index, memo_ingredient_index);
-
-            let executor = DatabaseKeyIndex::new(ingredient_index, id);
-
-            db.salsa_event(&|| Event::new(EventKind::DidDiscard { key: executor }));
-
-            for stale_output in memo.origin().outputs() {
-                stale_output.remove_stale_output(zalsa, db, executor, provisional);
+        struct MemoTableWithTypes<'a>(MemoTable, &'a MemoTableTypes);
+        impl Drop for MemoTableWithTypes<'_> {
+            fn drop(&mut self) {
+                // SAFETY: We use the correct types table.
+                unsafe { self.1.attach_memos_mut(&mut self.0) }.drop();
             }
         }
+        let mut memo_table =
+            MemoTableWithTypes(unsafe { (*data).take_memo_table() }, &self.memo_table_types);
+        // SAFETY: We have verified that no more references to these memos exist and so we are good
+        // to drop them.
+        unsafe {
+            memo_table.1.attach_memos_mut(&mut memo_table.0).with_memos(
+                |memo_ingredient_index, memo| {
+                    let ingredient_index = zalsa
+                        .ingredient_index_for_memo(self.ingredient_index, memo_ingredient_index);
+
+                    let executor = DatabaseKeyIndex::new(ingredient_index, id);
+
+                    db.salsa_event(&|| Event::new(EventKind::DidDiscard { key: executor }));
+
+                    for stale_output in memo.origin().outputs() {
+                        stale_output.remove_stale_output(zalsa, db, executor, provisional);
+                    }
+                },
+            )
+        };
 
         // now that all cleanup has occurred, make available for re-use
         self.free_list.push(id);
@@ -785,6 +800,10 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
+    }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        self.memo_table_types.clone()
     }
 }
 

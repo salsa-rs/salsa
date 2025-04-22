@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::fmt;
 use std::ptr::NonNull;
+use std::sync::Arc;
 
 pub(crate) use maybe_changed_after::VerifyResult;
 
@@ -11,6 +12,7 @@ use crate::ingredient::{fmt_index, Ingredient};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::MemoIngredientMap;
 use crate::salsa_struct::SalsaStructInDb;
+use crate::table::memo::MemoTableTypes;
 use crate::table::sync::ClaimResult;
 use crate::table::Table;
 use crate::views::DatabaseDownCaster;
@@ -29,6 +31,8 @@ mod lru;
 mod maybe_changed_after;
 mod memo;
 mod specify;
+
+pub type Memo<C> = memo::Memo<<C as Configuration>::Output<'static>>;
 
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
@@ -142,7 +146,10 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    pub fn new(
+    /// # Safety
+    ///
+    /// `memo_type` and `memo_table_types` must be correct.
+    pub unsafe fn new(
         index: IngredientIndex,
         memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
         lru: usize,
@@ -320,6 +327,10 @@ where
 
     fn debug_name(&self) -> &'static str {
         C::DEBUG_NAME
+    }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes> {
+        unreachable!("function does not allocate pages")
     }
 
     fn cycle_recovery_strategy(&self) -> CycleRecoveryStrategy {

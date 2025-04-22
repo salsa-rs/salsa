@@ -9,7 +9,7 @@ use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
-use crate::table::memo::MemoTable;
+use crate::table::memo::MemoTableWithTypesMut;
 use crate::zalsa::{MemoIngredientIndex, Zalsa};
 use crate::zalsa_local::{QueryOrigin, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
@@ -84,7 +84,7 @@ impl<C: Configuration> IngredientImpl<C> {
     /// with an equivalent memo that has no value. If the memo is untracked, FixpointInitial,
     /// or has values assigned as output of another query, this has no effect.
     pub(super) fn evict_value_from_memo_for(
-        table: &mut MemoTable,
+        table: MemoTableWithTypesMut<'_>,
         memo_ingredient_index: MemoIngredientIndex,
     ) {
         let map = |memo: &mut Memo<C::Output<'static>>| {
@@ -122,7 +122,7 @@ impl<C: Configuration> IngredientImpl<C> {
 }
 
 #[derive(Debug)]
-pub(super) struct Memo<V> {
+pub struct Memo<V> {
     /// The result of the query, if we decide to memoize it.
     pub(super) value: Option<V>,
 

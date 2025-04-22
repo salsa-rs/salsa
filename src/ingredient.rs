@@ -1,10 +1,12 @@
 use std::any::{Any, TypeId};
 use std::fmt;
+use std::sync::Arc;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
 use crate::cycle::{CycleHeadKind, CycleRecoveryStrategy};
 use crate::function::VerifyResult;
 use crate::plumbing::IngredientIndices;
+use crate::table::memo::MemoTableTypes;
 use crate::table::Table;
 use crate::zalsa::{transmute_data_mut_ptr, transmute_data_ptr, IngredientIndex, Zalsa};
 use crate::zalsa_local::QueryOrigin;
@@ -131,6 +133,8 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
             self.debug_name()
         );
     }
+
+    fn memo_table_types(&self) -> Arc<MemoTableTypes>;
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
     // Function ingredient methods
