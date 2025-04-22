@@ -42,6 +42,7 @@ impl Id {
     /// salsa computations.
     #[doc(hidden)]
     #[track_caller]
+    #[inline]
     pub const unsafe fn from_u32(v: u32) -> Self {
         debug_assert!(v < Self::MAX_U32);
         Id {
@@ -50,6 +51,7 @@ impl Id {
         }
     }
 
+    #[inline]
     pub const fn as_u32(self) -> u32 {
         self.value.get() - 1
     }
