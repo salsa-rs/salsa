@@ -1,3 +1,4 @@
+use crate::cycle::{CycleHeads, CycleRecoveryStrategy};
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl, VerifyResult};
 use crate::table::sync::ClaimResult;
@@ -49,7 +50,11 @@ where
                 // any further (it could escape outside the cycle); we need to block on the other
                 // thread completing fixpoint iteration of the cycle, and then we can re-query for
                 // our no-longer-provisional memo.
-                if !memo.provisional_retry(db, zalsa, self.database_key_index(id)) {
+                // That is only correct for fixpoint cycles, though: `FallbackImmediate` cycles
+                // never have provisional entries.
+                if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate
+                    || !memo.provisional_retry(db, zalsa, self.database_key_index(id))
+                {
                     return memo;
                 }
             }
@@ -100,7 +105,9 @@ where
             database_key_index,
             memo_ingredient_index,
         ) {
-            ClaimResult::Retry => return None,
+            ClaimResult::Retry => {
+                return None;
+            }
             ClaimResult::Cycle => {
                 // check if there's a provisional value for this query
                 // Note we don't `validate_may_be_provisional` the memo here as we want to reuse an
@@ -126,37 +133,60 @@ where
                     }
                 }
                 // no provisional value; create/insert/return initial provisional value
-                return self
-                    .initial_value(db, database_key_index.key_index())
-                    .map(|initial_value| {
+                return match C::CYCLE_STRATEGY {
+                    CycleRecoveryStrategy::Panic => db.zalsa_local().with_query_stack(|stack| {
+                        panic!(
+                            "dependency graph cycle when querying {database_key_index:#?}, \
+                            set cycle_fn/cycle_initial to fixpoint iterate.\n\
+                            Query stack:\n{:#?}",
+                            stack,
+                        );
+                    }),
+                    CycleRecoveryStrategy::Fixpoint => {
                         tracing::debug!(
                             "hit cycle at {database_key_index:#?}, \
                             inserting and returning fixpoint initial value"
                         );
-                        self.insert_memo(
+                        let revisions = QueryRevisions::fixpoint_initial(
+                            database_key_index,
+                            zalsa.current_revision(),
+                        );
+                        let initial_value = self
+                            .initial_value(db, database_key_index.key_index())
+                            .expect(
+                                "`CycleRecoveryStrategy::Fixpoint` \
+                                should have initial_value",
+                            );
+                        Some(self.insert_memo(
                             zalsa,
                             id,
-                            Memo::new(
-                                Some(initial_value),
-                                zalsa.current_revision(),
-                                QueryRevisions::fixpoint_initial(
-                                    database_key_index,
-                                    zalsa.current_revision(),
-                                ),
-                            ),
+                            Memo::new(Some(initial_value), zalsa.current_revision(), revisions),
                             memo_ingredient_index,
-                        )
-                    })
-                    .or_else(|| {
-                        db.zalsa_local().with_query_stack(|stack| {
-                            panic!(
-                                "dependency graph cycle when querying {database_key_index:#?}, \
-                                set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                                Query stack:\n{:#?}",
-                                stack,
+                        ))
+                    }
+                    CycleRecoveryStrategy::FallbackImmediate => {
+                        tracing::debug!(
+                            "hit a `FallbackImmediate` cycle at {database_key_index:#?}"
+                        );
+                        let active_query = db.zalsa_local().push_query(database_key_index, 0);
+                        let fallback_value = self
+                            .initial_value(db, database_key_index.key_index())
+                            .expect(
+                                "`CycleRecoveryStrategy::FallbackImmediate` \
+                                    should have initial_value",
                             );
-                        })
-                    });
+                        let mut revisions = active_query.pop();
+                        revisions.cycle_heads = CycleHeads::initial(database_key_index);
+                        // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
+                        *revisions.verified_final.get_mut() = false;
+                        Some(self.insert_memo(
+                            zalsa,
+                            id,
+                            Memo::new(Some(fallback_value), zalsa.current_revision(), revisions),
+                            memo_ingredient_index,
+                        ))
+                    }
+                };
             }
             ClaimResult::Claimed(guard) => guard,
         };

@@ -54,10 +54,6 @@ where
         VerifyResult::changed_if(value.stamps[self.field_index].changed_at > revision)
     }
 
-    fn is_provisional_cycle_head<'db>(&'db self, _db: &'db dyn Database, _input: Id) -> bool {
-        false
-    }
-
     fn wait_for(&self, _db: &dyn Database, _key_index: Id) -> bool {
         true
     }

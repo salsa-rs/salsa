@@ -48,6 +48,8 @@ impl crate::options::AllowedOptions for TrackedFn {
 
     const CYCLE_INITIAL: bool = true;
 
+    const CYCLE_RESULT: bool = true;
+
     const LRU: bool = true;
 
     const CONSTRUCTOR_NAME: bool = false;
@@ -201,24 +203,37 @@ impl Macro {
     fn cycle_recovery(&self) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
         // TODO should we ask the user to specify a struct that impls a trait with two methods,
         // rather than asking for two methods separately?
-        match (&self.args.cycle_fn, &self.args.cycle_initial) {
-            (Some(cycle_fn), Some(cycle_initial)) => Ok((
+        match (
+            &self.args.cycle_fn,
+            &self.args.cycle_initial,
+            &self.args.cycle_result,
+        ) {
+            (Some(cycle_fn), Some(cycle_initial), None) => Ok((
                 quote!((#cycle_fn)),
                 quote!((#cycle_initial)),
                 quote!(Fixpoint),
             )),
-            (None, None) => Ok((
+            (None, None, None) => Ok((
                 quote!((salsa::plumbing::unexpected_cycle_recovery!)),
                 quote!((salsa::plumbing::unexpected_cycle_initial!)),
                 quote!(Panic),
             )),
-            (Some(_), None) => Err(syn::Error::new_spanned(
+            (Some(_), None, None) => Err(syn::Error::new_spanned(
                 self.args.cycle_fn.as_ref().unwrap(),
                 "must provide `cycle_initial` along with `cycle_fn`",
             )),
-            (None, Some(_)) => Err(syn::Error::new_spanned(
+            (None, Some(_), None) => Err(syn::Error::new_spanned(
                 self.args.cycle_initial.as_ref().unwrap(),
                 "must provide `cycle_fn` along with `cycle_initial`",
+            )),
+            (None, None, Some(cycle_result)) => Ok((
+                quote!((salsa::plumbing::unexpected_cycle_recovery!)),
+                quote!((#cycle_result)),
+                quote!(FallbackImmediate),
+            )),
+            (_, _, Some(_)) => Err(syn::Error::new_spanned(
+                self.args.cycle_initial.as_ref().unwrap(),
+                "must provide either `cycle_result` or `cycle_fn` & `cycle_initial`, not both",
             )),
         }
     }

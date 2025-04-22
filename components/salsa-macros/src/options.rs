@@ -61,6 +61,11 @@ pub(crate) struct Options<A: AllowedOptions> {
     /// If this is `Some`, the value is the `<path>`.
     pub cycle_initial: Option<syn::Path>,
 
+    /// The `cycle_result = <path>` option is the result for non-fixpoint cycle.
+    ///
+    /// If this is `Some`, the value is the `<path>`.
+    pub cycle_result: Option<syn::Expr>,
+
     /// The `data = <ident>` option is used to define the name of the data type for an interned
     /// struct.
     ///
@@ -100,6 +105,7 @@ impl<A: AllowedOptions> Default for Options<A> {
             db_path: Default::default(),
             cycle_fn: Default::default(),
             cycle_initial: Default::default(),
+            cycle_result: Default::default(),
             data: Default::default(),
             constructor_name: Default::default(),
             phantom: Default::default(),
@@ -123,6 +129,7 @@ pub(crate) trait AllowedOptions {
     const DB: bool;
     const CYCLE_FN: bool;
     const CYCLE_INITIAL: bool;
+    const CYCLE_RESULT: bool;
     const LRU: bool;
     const CONSTRUCTOR_NAME: bool;
     const ID: bool;
@@ -272,6 +279,22 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
                     return Err(syn::Error::new(
                         ident.span(),
                         "`cycle_initial` option not allowed here",
+                    ));
+                }
+            } else if ident == "cycle_result" {
+                if A::CYCLE_RESULT {
+                    let _eq = Equals::parse(input)?;
+                    let expr = syn::Expr::parse(input)?;
+                    if let Some(old) = options.cycle_result.replace(expr) {
+                        return Err(syn::Error::new(
+                            old.span(),
+                            "option `cycle_result` provided twice",
+                        ));
+                    }
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`cycle_result` option not allowed here",
                     ));
                 }
             } else if ident == "data" {

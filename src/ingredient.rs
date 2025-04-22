@@ -2,7 +2,7 @@ use std::any::{Any, TypeId};
 use std::fmt;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
-use crate::cycle::CycleRecoveryStrategy;
+use crate::cycle::{CycleHeadKind, CycleRecoveryStrategy};
 use crate::function::VerifyResult;
 use crate::plumbing::IngredientIndices;
 use crate::table::Table;
@@ -61,9 +61,9 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     ///
     /// In the case of nested cycles, we are not asking here whether the value is provisional due
     /// to the outer cycle being unresolved, only whether its own cycle remains provisional.
-    fn is_provisional_cycle_head<'db>(&'db self, db: &'db dyn Database, input: Id) -> bool {
+    fn cycle_head_kind<'db>(&'db self, db: &'db dyn Database, input: Id) -> CycleHeadKind {
         _ = (db, input);
-        false
+        CycleHeadKind::NotProvisional
     }
 
     /// Invoked when the current thread needs to wait for a result for the given `key_index`.
