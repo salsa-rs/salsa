@@ -1,15 +1,7 @@
 name: Test
 
 on:
-  push:
-    branches:
-      - master
   pull_request:
-    paths:
-      - "**.rs"
-      - "**/Cargo.*"
-      - ".github/workflows/test.yml"
-      - "tests/compile-fail/**.stderr"
   merge_group:
 
 concurrency:
