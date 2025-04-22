@@ -1,6 +1,7 @@
 #![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
 
 use std::any::TypeId;
+use std::cell::Cell;
 use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
@@ -60,10 +61,14 @@ pub struct IngredientImpl<C: Configuration> {
 
     /// Maps from data to the existing interned id for that data.
     ///
+    /// This doesn't hold the fields themselves to save memory, instead it points to the slot ID.
+    ///
     /// Deadlock requirement: We access `value_map` while holding lock on `key_map`, but not vice versa.
-    key_map: FxDashMap<C::Fields<'static>, Id>,
+    key_map: FxDashMap<Id, ()>,
 
     memo_table_types: Arc<MemoTableTypes>,
+
+    _marker: PhantomData<fn() -> C>,
 }
 
 /// Struct storing the interned fields.
@@ -135,6 +140,7 @@ where
             ingredient_index,
             key_map: Default::default(),
             memo_table_types: Arc::new(MemoTableTypes::default()),
+            _marker: PhantomData,
         }
     }
 
@@ -193,14 +199,20 @@ where
     {
         let (zalsa, zalsa_local) = db.zalsas();
         let current_revision = zalsa.current_revision();
+        let table = zalsa.table();
 
         // Optimization to only get read lock on the map if the data has already been interned.
         let data_hash = self.key_map.hasher().hash_one(&key);
         let shard = &self.key_map.shards()[self.key_map.determine_shard(data_hash as _)];
-        let eq = |(data, _): &_| {
+        let found_value = Cell::new(None);
+        let eq = |(id, _): &_| {
+            let data = table.get::<Value<C>>(*id);
+            found_value.set(Some(data));
             // SAFETY: it's safe to go from Data<'static> to Data<'db>
             // shrink lifetime here to use a single lifetime in Lookup::eq(&StructKey<'db>, &C::Data<'db>)
-            let data: &C::Fields<'db> = unsafe { std::mem::transmute(data) };
+            let data = unsafe {
+                std::mem::transmute::<&C::Fields<'static>, &C::Fields<'db>>(&data.fields)
+            };
             HashEqLike::eq(data, &key)
         };
 
@@ -208,9 +220,11 @@ where
             let lock = shard.read();
             if let Some(bucket) = lock.find(data_hash, eq) {
                 // SAFETY: Read lock on map is held during this block
-                let id = unsafe { *bucket.as_ref().1.get() };
+                let id = unsafe { bucket.as_ref().0 };
 
-                let value = zalsa.table().get::<Value<C>>(id);
+                let value = found_value
+                    .get()
+                    .expect("found the interned, so `found_value` should be set");
 
                 // Sync the value's revision.
                 if value.last_interned_at.load() < current_revision {
@@ -243,12 +257,16 @@ where
         }
 
         let mut lock = shard.write();
-        match lock.find_or_find_insert_slot(data_hash, eq, |(element, _)| {
-            self.key_map.hasher().hash_one(element)
+        match lock.find_or_find_insert_slot(data_hash, eq, |(id, _)| {
+            // This closure is only called if the table is resized. So while it's expensive to lookup all values,
+            // it will only happen rarely.
+            self.key_map
+                .hasher()
+                .hash_one(&table.get::<Value<C>>(*id).fields)
         }) {
             // Data has been interned by a racing call, use that ID instead
             Ok(slot) => {
-                let id = unsafe { *slot.as_ref().1.get() };
+                let id = unsafe { slot.as_ref().0 };
                 let value = zalsa.table().get::<Value<C>>(id);
 
                 // Sync the value's revision.
@@ -302,8 +320,7 @@ where
 
                 let value = zalsa.table().get::<Value<C>>(id);
 
-                let slot_value = (value.fields.clone(), SharedValue::new(id));
-                unsafe { lock.insert_in_slot(data_hash, slot, slot_value) };
+                unsafe { lock.insert_in_slot(data_hash, slot, (id, SharedValue::new(()))) };
 
                 debug_assert_eq!(
                     data_hash,

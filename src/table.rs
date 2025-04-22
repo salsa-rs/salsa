@@ -164,6 +164,7 @@ impl PageIndex {
 struct SlotIndex(usize);
 
 impl SlotIndex {
+    #[inline]
     fn new(idx: usize) -> Self {
         debug_assert!(idx < PAGE_LEN);
         Self(idx)
@@ -218,6 +219,7 @@ impl Table {
     /// # Panics
     ///
     /// If `page` is out of bounds or the type `T` is incorrect.
+    #[inline]
     pub(crate) fn page<T: Slot>(&self, page: PageIndex) -> PageView<T> {
         self.pages[page.0].assert_type::<T>()
     }
@@ -317,6 +319,7 @@ impl<'p, T: Slot> PageView<'p, T> {
         unsafe { slice::from_raw_parts(self.0.data.cast::<PageDataEntry<T>>().as_ptr(), len) }
     }
 
+    #[inline]
     fn data(&self) -> &'p [T] {
         let len = self.0.allocated.load(Ordering::Acquire);
         // SAFETY: `len` is the initialized length of the page
@@ -385,6 +388,7 @@ impl Page {
         }
     }
 
+    #[inline]
     fn assert_type<T: Slot>(&self) -> PageView<T> {
         assert_eq!(
             self.slot_type_id,
@@ -420,6 +424,7 @@ fn make_id(page: PageIndex, slot: SlotIndex) -> Id {
     unsafe { Id::from_u32((page << PAGE_LEN_BITS) | slot) }
 }
 
+#[inline]
 fn split_id(id: Id) -> (PageIndex, SlotIndex) {
     let id = id.as_u32() as usize;
     let slot = id & PAGE_LEN_MASK;
