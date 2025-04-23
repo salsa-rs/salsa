@@ -236,9 +236,11 @@ where
         }
     }
 
-    /// Validates this memo if it is a provisional memo. Returns true for non provisional memos or
-    /// if the provisional memo has been successfully marked as verified final, that is, its
-    /// cycle heads have all been finalized.
+    /// Validates this memo if it is a provisional memo. Returns true for:
+    /// * non provisional memos
+    /// * provisional memos that have been successfully marked as verified final, that is, its
+    ///   cycle heads have all been finalized.
+    /// * provisional memos that have been created in the same revision and iteration and are part of the same cycle.
     #[inline]
     pub(super) fn validate_may_be_provisional(
         &self,
@@ -247,8 +249,6 @@ where
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
-        // Wouldn't it be nice if rust had an implication operator ...
-        // may_be_provisional -> validate_provisional
         !memo.may_be_provisional()
             || self.validate_provisional(db, zalsa, database_key_index, memo)
             || self.validate_same_iteration(db, database_key_index, memo)
