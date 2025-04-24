@@ -214,6 +214,8 @@ where
                 );
             }
 
+            revisions.tracked_struct_ids.shrink_to_fit();
+
             return self.insert_memo(
                 zalsa,
                 id,
