@@ -6,7 +6,7 @@ use std::sync::Arc;
 pub(crate) use maybe_changed_after::VerifyResult;
 
 use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues};
-use crate::cycle::{CycleHeadKind, CycleRecoveryAction, CycleRecoveryStrategy};
+use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryAction, CycleRecoveryStrategy};
 use crate::function::delete::DeletedEntries;
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::key::DatabaseKeyIndex;
@@ -191,9 +191,10 @@ where
     fn insert_memo<'db>(
         &'db self,
         zalsa: &'db Zalsa,
-        id: Id,
+        key: DatabaseKeyIndex,
         memo: memo::Memo<C::Output<'db>>,
         memo_ingredient_index: MemoIngredientIndex,
+        cycle_heads: CycleHeads,
     ) -> &'db memo::Memo<C::Output<'db>> {
         // We convert to a `NonNull` here as soon as possible because we are going to alias
         // into the `Box`, which is a `noalias` type.
@@ -208,7 +209,7 @@ where
             // SAFETY: We delay the drop of `old_value` until a new revision starts which ensures no
             // references will exist for the memo contents.
             unsafe {
-                self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index)
+                self.insert_memo_into_table_for(zalsa, key.key_index(), memo, memo_ingredient_index)
             }
         {
             // In case there is a reference to the old memo out there, we have to store it
@@ -218,6 +219,14 @@ where
             // memo contents, and so it will be safe to free.
             unsafe { self.deleted_entries.push(old_value) };
         }
+
+        if db_memo.may_be_provisional() && !cycle_heads.is_empty() {
+            // This needs to come after `Box::new(memo)`, so the memo address is stable.
+            zalsa
+                .cycle_heads_map
+                .insert(key, cycle_heads, db_memo as *const _ as *const ());
+        }
+
         db_memo
     }
 
@@ -253,9 +262,10 @@ where
         let is_provisional = self
             .get_memo_from_table_for(zalsa, input, self.memo_ingredient_index(zalsa, input))
             .is_some_and(|memo| {
-                memo.cycle_heads()
-                    .into_iter()
-                    .any(|head| head.database_key_index == self.database_key_index(input))
+                memo.may_be_provisional()
+                    && zalsa
+                        .cycle_heads_map
+                        .cycle_heads_contain(self.database_key_index(input))
             });
         if is_provisional {
             CycleHeadKind::Provisional

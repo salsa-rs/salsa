@@ -66,6 +66,7 @@ pub(crate) struct ActiveQuery {
 }
 
 impl ActiveQuery {
+    #[inline]
     pub(super) fn add_read(
         &mut self,
         input: DatabaseKeyIndex,
@@ -156,7 +157,7 @@ impl ActiveQuery {
         }
     }
 
-    fn top_into_revisions(&mut self) -> QueryRevisions {
+    fn top_into_revisions(&mut self) -> (QueryRevisions, CycleHeads) {
         let &mut Self {
             database_key_index: _,
             durability,
@@ -185,16 +186,18 @@ impl ActiveQuery {
         let tracked_struct_ids = mem::take(tracked_struct_ids);
         let accumulated_inputs = AtomicInputAccumulatedValues::new(accumulated_inputs);
         let cycle_heads = mem::take(cycle_heads);
-        QueryRevisions {
-            changed_at,
-            durability,
-            origin,
-            tracked_struct_ids,
-            accumulated_inputs,
-            accumulated,
-            verified_final: AtomicBool::new(cycle_heads.is_empty()),
+        (
+            QueryRevisions {
+                changed_at,
+                durability,
+                origin,
+                tracked_struct_ids,
+                accumulated_inputs,
+                accumulated,
+                verified_final: AtomicBool::new(cycle_heads.is_empty()),
+            },
             cycle_heads,
-        }
+        )
     }
 
     fn clear(&mut self) {
@@ -323,7 +326,7 @@ impl QueryStack {
         &mut self,
         key: DatabaseKeyIndex,
         #[cfg(debug_assertions)] push_len: usize,
-    ) -> QueryRevisions {
+    ) -> (QueryRevisions, CycleHeads) {
         #[cfg(debug_assertions)]
         assert_eq!(push_len, self.len(), "unbalanced push/pop");
         debug_assert_ne!(self.len, 0, "too many pops");

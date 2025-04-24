@@ -49,8 +49,9 @@
 //! cycle head may then iterate, which may result in a new set of iterations on the inner cycle,
 //! for each iteration of the outer cycle.
 
-use thin_vec::{thin_vec, ThinVec};
+use smallvec::{smallvec, SmallVec};
 
+use crate::hash::FxDashMap;
 use crate::key::DatabaseKeyIndex;
 
 /// The maximum number of times we'll fixpoint-iterate before panicking.
@@ -104,15 +105,17 @@ pub struct CycleHead {
 /// plural in case of nested cycles) representing the cycles it is part of, and the current
 /// iteration count for each cycle head. This struct tracks these cycle heads.
 #[derive(Clone, Debug, Default)]
-pub struct CycleHeads(ThinVec<CycleHead>);
+pub struct CycleHeads(SmallVec<[CycleHead; 1]>);
 
 impl CycleHeads {
+    pub(crate) const EMPTY: &'static Self = &CycleHeads(SmallVec::new_const());
+
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     pub(crate) fn initial(database_key_index: DatabaseKeyIndex) -> Self {
-        Self(thin_vec![CycleHead {
+        Self(smallvec![CycleHead {
             database_key_index,
             iteration_count: 0,
         }])
@@ -122,9 +125,9 @@ impl CycleHeads {
         self.0.iter()
     }
 
-    pub(crate) fn contains(&self, value: &DatabaseKeyIndex) -> bool {
+    pub(crate) fn contains(&self, value: DatabaseKeyIndex) -> bool {
         self.into_iter()
-            .any(|head| head.database_key_index == *value)
+            .any(|head| head.database_key_index == value)
     }
 
     pub(crate) fn remove(&mut self, value: &DatabaseKeyIndex) -> bool {
@@ -171,7 +174,7 @@ impl CycleHeads {
 
 impl IntoIterator for CycleHeads {
     type Item = CycleHead;
-    type IntoIter = <ThinVec<Self::Item> as IntoIterator>::IntoIter;
+    type IntoIter = smallvec::IntoIter<[CycleHead; 1]>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -189,12 +192,76 @@ impl<'a> std::iter::IntoIterator for &'a CycleHeads {
 
 impl From<CycleHead> for CycleHeads {
     fn from(value: CycleHead) -> Self {
-        Self(thin_vec![value])
+        Self(smallvec![value])
     }
 }
 
-pub(crate) static EMPTY_CYCLE_HEADS: std::sync::LazyLock<CycleHeads> =
-    std::sync::LazyLock::new(|| CycleHeads(ThinVec::new()));
+/// A query is only stored here if it is a part of a cycle, and removed as we verify it.
+/// This is stored as a side map and not in `Memo` to save space (most queries don't have
+/// cycles).
+///
+/// Subtle: in addition to the `CycleHeads`, this store the address of the memo (this is the
+/// `usize`). This is needed because sometimes, we retrieve a memo, then verify it. During
+/// this verification we enter a cycle, and a new, non-empty `CycleHeads` is inserted.
+/// Then, we complete the verification of the (old) memo, and find it up-to-date. Therefore,
+/// we remove it from this map. But the map now contains the `CycleHeads` of the **new**
+/// memo, and now we may verify it incorrectly! To prevent this, we only remove the `CycleHeads`
+/// if the memo matches.
+///
+/// This result was computed based on provisional values from
+/// these cycle heads. The "cycle head" is the query responsible
+/// for managing a fixpoint iteration. In a cycle like
+/// `--> A --> B --> C --> A`, the cycle head is query `A`: it is
+/// the query whose value is requested while it is executing,
+/// which must provide the initial provisional value and decide,
+/// after each iteration, whether the cycle has converged or must
+/// iterate again.
+#[derive(Default)]
+pub(crate) struct CycleHeadsMap(FxDashMap<DatabaseKeyIndex, (CycleHeads, usize)>);
+
+impl CycleHeadsMap {
+    /// Only call this after checking `may_be_provisional()`.
+    #[cold]
+    pub(crate) fn cycle_heads_contain(&self, key: DatabaseKeyIndex) -> bool {
+        self.0
+            .get(&key)
+            .is_some_and(|cycle_heads| cycle_heads.0.contains(key))
+    }
+
+    /// Only call this after checking `may_be_provisional()`.
+    #[cold]
+    pub(crate) fn insert(&self, key: DatabaseKeyIndex, cycle_heads: CycleHeads, memo: *const ()) {
+        self.0.insert(key, (cycle_heads, ptr_addr(memo)));
+    }
+
+    /// Only call this after checking `may_be_provisional()`.
+    #[cold]
+    pub(crate) fn remove(&self, key: DatabaseKeyIndex, memo: *const ()) {
+        self.0
+            .remove_if(&key, |_, &(_, memo_addr)| memo_addr == ptr_addr(memo));
+    }
+
+    /// Remove without checking the memo is the same.
+    #[cold]
+    pub(crate) fn always_remove(&self, key: DatabaseKeyIndex) {
+        self.0.remove(&key);
+    }
+
+    /// Only call this after checking `may_be_provisional()`.
+    #[cold]
+    pub(crate) fn get_cloned(&self, key: DatabaseKeyIndex) -> Option<CycleHeads> {
+        self.0.get(&key).map(|it| it.0.clone())
+    }
+}
+
+/// A copy of `<*const T>::addr()`.
+// FIXME: Use it when our MSRV is high enough.
+#[inline]
+#[allow(clippy::transmutes_expressible_as_ptr_casts)] // A cast will expose provenance and cause problems for Miri
+fn ptr_addr(ptr: *const ()) -> usize {
+    // SAFETY: We just get the address.
+    unsafe { std::mem::transmute::<*const (), usize>(ptr) }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CycleHeadKind {

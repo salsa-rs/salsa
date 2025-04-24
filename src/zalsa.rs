@@ -10,6 +10,7 @@ use parking_lot::{Mutex, RwLock};
 use portable_atomic::AtomicU64;
 use rustc_hash::FxHashMap;
 
+use crate::cycle::CycleHeadsMap;
 use crate::ingredient::{Ingredient, Jar};
 use crate::nonce::{Nonce, NonceGenerator};
 use crate::runtime::Runtime;
@@ -149,6 +150,8 @@ pub struct Zalsa {
     /// The runtime for this particular salsa database handle.
     /// Each handle gets its own runtime, but the runtimes have shared state between them.
     runtime: Runtime,
+
+    pub(crate) cycle_heads_map: CycleHeadsMap,
 }
 
 /// All fields on Zalsa are locked behind [`Mutex`]es and [`RwLock`]s and cannot enter
@@ -169,6 +172,7 @@ impl Zalsa {
             ingredients_requiring_reset: boxcar::Vec::new(),
             runtime: Runtime::default(),
             memo_ingredient_indices: Default::default(),
+            cycle_heads_map: Default::default(),
         }
     }
 

@@ -1,10 +1,9 @@
-use std::sync::atomic::Ordering;
-
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy};
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
+use crate::plumbing::ZalsaLocal;
 use crate::table::sync::ClaimResult;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryEdge, QueryOrigin};
@@ -240,7 +239,7 @@ where
     /// * provisional memos that have been successfully marked as verified final, that is, its
     ///   cycle heads have all been finalized.
     /// * provisional memos that have been created in the same revision and iteration and are part of the same cycle.
-    #[inline]
+    #[inline(always)]
     pub(super) fn validate_may_be_provisional(
         &self,
         db: &C::DbView,
@@ -250,12 +249,13 @@ where
     ) -> bool {
         !memo.may_be_provisional()
             || self.validate_provisional(db, zalsa, database_key_index, memo)
-            || self.validate_same_iteration(db, database_key_index, memo)
+            || self.validate_same_iteration(zalsa, db.zalsa_local(), database_key_index, memo)
     }
 
     /// Check if this memo's cycle heads have all been finalized. If so, mark it verified final and
     /// return true, if not return false.
-    #[inline]
+    #[inline(never)]
+    #[cold]
     fn validate_provisional(
         &self,
         db: &C::DbView,
@@ -267,7 +267,11 @@ where
             "{database_key_index:?}: validate_provisional(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
-        for cycle_head in &memo.revisions.cycle_heads {
+        let Some(cycle_heads) = zalsa.cycle_heads_map.get_cloned(database_key_index) else {
+            memo.mark_as_final(zalsa, database_key_index);
+            return true;
+        };
+        for cycle_head in &cycle_heads {
             let kind = zalsa
                 .lookup_ingredient(cycle_head.database_key_index.ingredient_index())
                 .cycle_head_kind(
@@ -296,9 +300,7 @@ where
                 },
             }
         }
-        // Relaxed is sufficient here because there are no other writes we need to ensure have
-        // happened before marking this memo as verified-final.
-        memo.revisions.verified_final.store(true, Ordering::Relaxed);
+        memo.mark_as_final(zalsa, database_key_index);
         true
     }
 
@@ -307,7 +309,8 @@ where
     /// runaway re-execution of the same queries within a fixpoint iteration.
     pub(super) fn validate_same_iteration(
         &self,
-        db: &C::DbView,
+        zalsa: &Zalsa,
+        zalsa_local: &ZalsaLocal,
         database_key_index: DatabaseKeyIndex,
         memo: &Memo<C::Output<'_>>,
     ) -> bool {
@@ -316,13 +319,14 @@ where
             memo = memo.tracing_debug()
         );
 
-        if memo.revisions.cycle_heads.is_empty() {
+        let Some(cycle_heads) = zalsa.cycle_heads_map.get_cloned(database_key_index) else {
+            return true;
+        };
+        if cycle_heads.is_empty() {
             return true;
         }
 
-        let cycle_heads = &memo.revisions.cycle_heads;
-
-        db.zalsa_local().with_query_stack(|stack| {
+        zalsa_local.with_query_stack(|stack| {
             cycle_heads.iter().all(|cycle_head| {
                 stack.iter().rev().any(|query| {
                     query.database_key_index == cycle_head.database_key_index
@@ -472,10 +476,7 @@ where
                         old_memo.revisions.accumulated_inputs.store(inputs);
 
                         if is_provisional {
-                            old_memo
-                                .revisions
-                                .verified_final
-                                .store(true, Ordering::Relaxed);
+                            old_memo.mark_as_final(zalsa, database_key_index);
                         }
 
                         if in_heads {

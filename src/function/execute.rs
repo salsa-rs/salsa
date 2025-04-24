@@ -1,5 +1,3 @@
-use std::sync::atomic::Ordering;
-
 use crate::cycle::{CycleRecoveryStrategy, MAX_ITERATIONS};
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
@@ -43,6 +41,7 @@ where
 
         let mut iteration_count: u32 = 0;
         let mut fell_back = false;
+        let mut had_fixpoint_cycle = false;
 
         // Our provisional value from the previous iteration, when doing fixpoint iteration.
         // Initially it's set to None, because the initial provisional value is created lazily,
@@ -59,10 +58,10 @@ where
             // Query was not previously executed, or value is potentially
             // stale, or value is absent. Let's execute!
             let mut new_value = C::execute(db, C::id_to_input(db, id));
-            let mut revisions = active_query.pop();
+            let (mut revisions, mut cycle_heads) = active_query.pop();
 
             // Did the new result we got depend on our own provisional value, in a cycle?
-            if revisions.cycle_heads.contains(&database_key_index) {
+            if cycle_heads.contains(database_key_index) {
                 if C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate {
                     // Ignore the computed value, leave the fallback value there.
                     let memo = self
@@ -75,7 +74,7 @@ where
                         });
                     // We need to mark the memo as finalized so other cycle participants that have fallbacks
                     // will be verified (participants that don't have fallbacks will not be verified).
-                    memo.revisions.verified_final.store(true, Ordering::Release);
+                    memo.mark_as_final(zalsa, database_key_index);
                     // SAFETY: This is ours memo.
                     return unsafe { self.extend_memo_lifetime(memo) };
                 } else if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint {
@@ -96,6 +95,7 @@ where
                                     )
                                 });
                             debug_assert!(memo.may_be_provisional());
+                            had_fixpoint_cycle = true;
                             memo.value.as_ref()
                         };
                     // SAFETY: The `LRU` does not run mid-execution, so the value remains filled
@@ -153,14 +153,13 @@ where
                                 fell_back,
                             })
                         });
-                        revisions
-                            .cycle_heads
-                            .update_iteration_count(database_key_index, iteration_count);
+                        cycle_heads.update_iteration_count(database_key_index, iteration_count);
                         opt_last_provisional = Some(self.insert_memo(
                             zalsa,
-                            id,
+                            database_key_index,
                             Memo::new(Some(new_value), revision_now, revisions),
                             memo_ingredient_index,
+                            cycle_heads,
                         ));
 
                         active_query = db
@@ -172,25 +171,23 @@ where
                     tracing::debug!(
                         "{database_key_index:?}: execute: fixpoint iteration has a final value"
                     );
-                    revisions.cycle_heads.remove(&database_key_index);
+                    cycle_heads.remove(&database_key_index);
                 }
             }
 
             tracing::debug!("{database_key_index:?}: execute: result.revisions = {revisions:#?}");
 
-            if !revisions.cycle_heads.is_empty()
+            if !cycle_heads.is_empty()
                 && C::CYCLE_STRATEGY == CycleRecoveryStrategy::FallbackImmediate
             {
                 // If we're in the middle of a cycle and we have a fallback, use it instead.
                 // Cycle participants that don't have a fallback will be discarded in
                 // `validate_provisional()`.
-                let cycle_heads = revisions.cycle_heads;
                 let active_query = db.zalsa_local().push_query(database_key_index, 0);
                 new_value = C::cycle_initial(db, C::id_to_input(db, id));
-                revisions = active_query.pop();
+                (revisions, _) = active_query.pop();
                 // We need to set `cycle_heads` and `verified_final` because it needs to propagate to the callers.
                 // When verifying this, we will see we have fallback and mark ourselves verified.
-                revisions.cycle_heads = cycle_heads;
                 *revisions.verified_final.get_mut() = false;
             }
 
@@ -203,7 +200,7 @@ where
 
                 // Diff the new outputs with the old, to discard any no-longer-emitted
                 // outputs and update the tracked struct IDs for seeding the next revision.
-                let provisional = !revisions.cycle_heads.is_empty();
+                let provisional = !cycle_heads.is_empty();
                 self.diff_outputs(
                     zalsa,
                     db,
@@ -214,11 +211,17 @@ where
                 );
             }
 
+            if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint && had_fixpoint_cycle {
+                // Remove the stale `CycleHeads`.
+                zalsa.cycle_heads_map.always_remove(database_key_index);
+            }
+
             return self.insert_memo(
                 zalsa,
-                id,
+                database_key_index,
                 Memo::new(Some(new_value), revision_now, revisions),
                 memo_ingredient_index,
+                cycle_heads,
             );
         }
     }

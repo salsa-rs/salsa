@@ -5,7 +5,7 @@ use std::fmt::{Debug, Formatter};
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
-use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy, EMPTY_CYCLE_HEADS};
+use crate::cycle::{CycleHeadKind, CycleRecoveryStrategy};
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
 use crate::revision::AtomicRevision;
@@ -136,8 +136,9 @@ pub struct Memo<V> {
 
 // Memo's are stored a lot, make sure their size is doesn't randomly increase.
 // #[cfg(test)]
-const _: [(); std::mem::size_of::<Memo<std::num::NonZeroUsize>>()] =
-    [(); std::mem::size_of::<[usize; 13]>()];
+const _: () = assert!(
+    std::mem::size_of::<Memo<std::num::NonZeroUsize>>() == std::mem::size_of::<[usize; 12]>()
+);
 
 impl<V> Memo<V> {
     pub(super) fn new(value: Option<V>, revision_now: Revision, revisions: QueryRevisions) -> Self {
@@ -174,23 +175,19 @@ impl<V> Memo<V> {
         if !self.may_be_provisional() {
             return false;
         };
-        if self.revisions.cycle_heads.is_empty() {
-            return false;
-        }
-        return provisional_retry_cold(
-            db.as_dyn_database(),
-            zalsa,
-            database_key_index,
-            &self.revisions.cycle_heads,
-        );
+        return provisional_retry_cold(db.as_dyn_database(), zalsa, database_key_index);
 
         #[inline(never)]
+        #[cold]
         fn provisional_retry_cold(
             db: &dyn crate::Database,
             zalsa: &Zalsa,
             database_key_index: DatabaseKeyIndex,
-            cycle_heads: &CycleHeads,
         ) -> bool {
+            let Some(cycle_heads) = zalsa.cycle_heads_map.get_cloned(database_key_index) else {
+                return false;
+            };
+
             let mut retry = false;
 
             let db = db.as_dyn_database();
@@ -233,16 +230,6 @@ impl<V> Memo<V> {
             } else {
                 retry
             }
-        }
-    }
-
-    /// Cycle heads that should be propagated to dependent queries.
-    #[inline(always)]
-    pub(super) fn cycle_heads(&self) -> &CycleHeads {
-        if self.may_be_provisional() {
-            &self.revisions.cycle_heads
-        } else {
-            &EMPTY_CYCLE_HEADS
         }
     }
 
@@ -300,6 +287,16 @@ impl<V> Memo<V> {
         }
 
         TracingDebug { memo: self }
+    }
+
+    #[inline]
+    pub(crate) fn mark_as_final(&self, zalsa: &Zalsa, key: DatabaseKeyIndex) {
+        // Relaxed is sufficient here because there are no other writes we need to ensure have
+        // happened before marking this memo as verified-final.
+        self.revisions.verified_final.store(true, Ordering::Relaxed);
+        zalsa
+            .cycle_heads_map
+            .remove(key, self as *const Self as *const ());
     }
 }
 

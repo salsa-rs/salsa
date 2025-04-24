@@ -20,14 +20,30 @@ where
 
         self.lru.record_use(id);
 
-        zalsa_local.report_tracked_read(
-            self.database_key_index(id),
-            memo.revisions.durability,
-            memo.revisions.changed_at,
-            memo.revisions.accumulated.is_some(),
-            &memo.revisions.accumulated_inputs,
-            memo.cycle_heads(),
-        );
+        if !memo.may_be_provisional() {
+            zalsa_local.report_tracked_read(
+                self.database_key_index(id),
+                memo.revisions.durability,
+                memo.revisions.changed_at,
+                memo.revisions.accumulated.is_some(),
+                &memo.revisions.accumulated_inputs,
+                CycleHeads::EMPTY,
+            );
+        } else {
+            let key = self.database_key_index(id);
+            zalsa_local.report_tracked_read(
+                key,
+                memo.revisions.durability,
+                memo.revisions.changed_at,
+                memo.revisions.accumulated.is_some(),
+                &memo.revisions.accumulated_inputs,
+                zalsa
+                    .cycle_heads_map
+                    .get_cloned(key)
+                    .as_ref()
+                    .unwrap_or(CycleHeads::EMPTY),
+            );
+        }
 
         memo_value
     }
@@ -115,7 +131,10 @@ where
                 let memo_guard = self.get_memo_from_table_for(zalsa, id, memo_ingredient_index);
                 if let Some(memo) = memo_guard {
                     if memo.value.is_some()
-                        && memo.revisions.cycle_heads.contains(&database_key_index)
+                        && memo.may_be_provisional()
+                        && zalsa
+                            .cycle_heads_map
+                            .cycle_heads_contain(database_key_index)
                     {
                         if let Some(shallow_update) =
                             self.shallow_verify_memo(zalsa, database_key_index, memo)
@@ -146,10 +165,7 @@ where
                             "hit cycle at {database_key_index:#?}, \
                             inserting and returning fixpoint initial value"
                         );
-                        let revisions = QueryRevisions::fixpoint_initial(
-                            database_key_index,
-                            zalsa.current_revision(),
-                        );
+                        let revisions = QueryRevisions::fixpoint_initial(zalsa.current_revision());
                         let initial_value = self
                             .initial_value(db, database_key_index.key_index())
                             .expect(
@@ -158,9 +174,10 @@ where
                             );
                         Some(self.insert_memo(
                             zalsa,
-                            id,
+                            database_key_index,
                             Memo::new(Some(initial_value), zalsa.current_revision(), revisions),
                             memo_ingredient_index,
+                            CycleHeads::initial(database_key_index),
                         ))
                     }
                     CycleRecoveryStrategy::FallbackImmediate => {
@@ -174,15 +191,16 @@ where
                                 "`CycleRecoveryStrategy::FallbackImmediate` \
                                     should have initial_value",
                             );
-                        let mut revisions = active_query.pop();
-                        revisions.cycle_heads = CycleHeads::initial(database_key_index);
+                        let (mut revisions, _) = active_query.pop();
+                        let cycle_heads = CycleHeads::initial(database_key_index);
                         // We need this for `cycle_heads()` to work. We will unset this in the outer `execute()`.
                         *revisions.verified_final.get_mut() = false;
                         Some(self.insert_memo(
                             zalsa,
-                            id,
+                            database_key_index,
                             Memo::new(Some(fallback_value), zalsa.current_revision(), revisions),
                             memo_ingredient_index,
+                            cycle_heads,
                         ))
                     }
                 };

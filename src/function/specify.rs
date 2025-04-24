@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
+use crate::cycle::CycleHeads;
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::revision::AtomicRevision;
@@ -71,7 +72,6 @@ where
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(true),
-            cycle_heads: Default::default(),
         };
 
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, key);
@@ -98,7 +98,13 @@ where
             memo.tracing_debug(),
             key
         );
-        self.insert_memo(zalsa, key, memo, memo_ingredient_index);
+        self.insert_memo(
+            zalsa,
+            self.database_key_index(key),
+            memo,
+            memo_ingredient_index,
+            CycleHeads::default(),
+        );
 
         // Record that the current query *specified* a value for this cell.
         let database_key_index = self.database_key_index(key);

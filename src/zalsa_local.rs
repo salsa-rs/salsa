@@ -340,20 +340,11 @@ pub(crate) struct QueryRevisions {
 
     /// Are the `cycle_heads` verified to not be provisional anymore?
     pub(super) verified_final: AtomicBool,
-
-    /// This result was computed based on provisional values from
-    /// these cycle heads. The "cycle head" is the query responsible
-    /// for managing a fixpoint iteration. In a cycle like
-    /// `--> A --> B --> C --> A`, the cycle head is query `A`: it is
-    /// the query whose value is requested while it is executing,
-    /// which must provide the initial provisional value and decide,
-    /// after each iteration, whether the cycle has converged or must
-    /// iterate again.
-    pub(super) cycle_heads: CycleHeads,
 }
 
 impl QueryRevisions {
-    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, revision: Revision) -> Self {
+    #[inline]
+    pub(crate) fn fixpoint_initial(revision: Revision) -> Self {
         Self {
             changed_at: revision,
             durability: Durability::MAX,
@@ -362,7 +353,6 @@ impl QueryRevisions {
             accumulated: Default::default(),
             accumulated_inputs: Default::default(),
             verified_final: AtomicBool::new(false),
-            cycle_heads: CycleHeads::initial(query),
         }
     }
 }
@@ -491,7 +481,7 @@ impl ActiveQueryGuard<'_> {
     }
 
     /// Invoked when the query has successfully completed execution.
-    fn complete(self) -> QueryRevisions {
+    fn complete(self) -> (QueryRevisions, CycleHeads) {
         let query = self.local_state.with_query_stack(|stack| {
             stack.pop_into_revisions(
                 self.database_key_index,
@@ -507,7 +497,7 @@ impl ActiveQueryGuard<'_> {
     /// which summarizes the other queries that were accessed during this
     /// query's execution.
     #[inline]
-    pub(crate) fn pop(self) -> QueryRevisions {
+    pub(crate) fn pop(self) -> (QueryRevisions, CycleHeads) {
         self.complete()
     }
 }
