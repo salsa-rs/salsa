@@ -15,13 +15,13 @@ struct MyInput {
 
 #[salsa::tracked]
 fn final_result_depends_on_x(db: &dyn LogDatabase, input: MyInput) -> u32 {
-    db.push_log(format!("final_result_depends_on_x({:?})", input));
+    db.push_log(format!("final_result_depends_on_x({input:?})"));
     intermediate_result(db, input).x(db) * 2
 }
 
 #[salsa::tracked]
 fn final_result_depends_on_y(db: &dyn LogDatabase, input: MyInput) -> u32 {
-    db.push_log(format!("final_result_depends_on_y({:?})", input));
+    db.push_log(format!("final_result_depends_on_y({input:?})"));
     intermediate_result(db, input).y(db) * 2
 }
 

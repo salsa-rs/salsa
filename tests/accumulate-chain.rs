@@ -53,6 +53,6 @@ fn accumulate_chain() {
                     "log d",
                 ),
             ]"#]]
-        .assert_eq(&format!("{:#?}", logs));
+        .assert_eq(&format!("{logs:#?}"));
     })
 }

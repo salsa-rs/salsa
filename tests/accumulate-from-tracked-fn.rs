@@ -26,7 +26,7 @@ fn compute(db: &dyn salsa::Database, input: List) {
     );
     let result = if let Some(next) = input.next(db) {
         let next_integers = compute::accumulated::<Integers>(db, next);
-        eprintln!("{:?}", next_integers);
+        eprintln!("{next_integers:?}");
         let v = input.value(db) + next_integers.iter().map(|a| a.0).sum::<u32>();
         eprintln!("input={:?} v={:?}", input.value(db), v);
         v
@@ -34,7 +34,7 @@ fn compute(db: &dyn salsa::Database, input: List) {
         input.value(db)
     };
     Integers(result).accumulate(db);
-    eprintln!("pushed result {:?}", result);
+    eprintln!("pushed result {result:?}");
 }
 
 #[test]

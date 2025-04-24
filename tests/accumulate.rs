@@ -36,20 +36,20 @@ fn push_logs(db: &dyn LogDatabase, input: MyInput) {
 #[salsa::tracked]
 fn push_a_logs(db: &dyn LogDatabase, input: MyInput) {
     let field_a = input.field_a(db);
-    db.push_log(format!("push_a_logs({})", field_a));
+    db.push_log(format!("push_a_logs({field_a})"));
 
     for i in 0..field_a {
-        Log(format!("log_a({} of {})", i, field_a)).accumulate(db);
+        Log(format!("log_a({i} of {field_a})")).accumulate(db);
     }
 }
 
 #[salsa::tracked]
 fn push_b_logs(db: &dyn LogDatabase, input: MyInput) {
     let field_a = input.field_b(db);
-    db.push_log(format!("push_b_logs({})", field_a));
+    db.push_log(format!("push_b_logs({field_a})"));
 
     for i in 0..field_a {
-        Log(format!("log_b({} of {})", i, field_a)).accumulate(db);
+        Log(format!("log_b({i} of {field_a})")).accumulate(db);
     }
 }
 
@@ -86,7 +86,7 @@ fn accumulate_once() {
                 "log_b(2 of 3)",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", logs));
+    .assert_eq(&format!("{logs:#?}"));
 }
 
 #[test]
@@ -114,7 +114,7 @@ fn change_a_from_2_to_0() {
                 "log_b(2 of 3)",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", logs));
+    .assert_eq(&format!("{logs:#?}"));
     db.assert_logs(expect![[r#"
         [
             "push_logs(a = 2, b = 3)",
@@ -137,7 +137,7 @@ fn change_a_from_2_to_0() {
                 "log_b(2 of 3)",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", logs));
+    .assert_eq(&format!("{logs:#?}"));
     db.assert_logs(expect![[r#"
         [
             "push_logs(a = 0, b = 3)",
@@ -169,7 +169,7 @@ fn change_a_from_2_to_1() {
                 "log_b(2 of 3)",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", logs));
+    .assert_eq(&format!("{logs:#?}"));
     db.assert_logs(expect![[r#"
         [
             "push_logs(a = 2, b = 3)",
@@ -195,7 +195,7 @@ fn change_a_from_2_to_1() {
                 "log_b(2 of 3)",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", logs));
+    .assert_eq(&format!("{logs:#?}"));
     db.assert_logs(expect![[r#"
         [
             "push_logs(a = 1, b = 3)",
@@ -219,7 +219,7 @@ fn get_a_logs_after_changing_b() {
                 "log_a(1 of 2)",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", logs));
+    .assert_eq(&format!("{logs:#?}"));
     db.assert_logs(expect![[r#"
         [
             "push_a_logs(2)",

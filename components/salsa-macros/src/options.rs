@@ -354,7 +354,7 @@ impl<A: AllowedOptions> syn::parse::Parse for Options<A> {
             } else {
                 return Err(syn::Error::new(
                     ident.span(),
-                    format!("unrecognized option `{}`", ident),
+                    format!("unrecognized option `{ident}`"),
                 ));
             }
 

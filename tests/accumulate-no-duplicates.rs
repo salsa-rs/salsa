@@ -100,6 +100,6 @@ fn accumulate_no_duplicates() {
                     "log e",
                 ),
             ]"#]]
-        .assert_eq(&format!("{:#?}", logs));
+        .assert_eq(&format!("{logs:#?}"));
     })
 }

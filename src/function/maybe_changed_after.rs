@@ -114,8 +114,7 @@ where
                     panic!(
                         "dependency graph cycle when validating {database_key_index:#?}, \
                             set cycle_fn/cycle_initial to fixpoint iterate.\n\
-                            Query stack:\n{:#?}",
-                        stack,
+                            Query stack:\n{stack:#?}",
                     );
                 }),
                 CycleRecoveryStrategy::FallbackImmediate => {

@@ -20,7 +20,7 @@ struct Integers(u32);
 
 #[salsa::tracked]
 fn compute(db: &dyn LogDatabase, input: List) -> u32 {
-    db.push_log(format!("compute({:?})", input,));
+    db.push_log(format!("compute({input:?})",));
 
     // always pushes 0
     Integers(0).accumulate(db);

@@ -20,7 +20,7 @@ struct Integers(u32);
 
 #[salsa::tracked]
 fn compute(db: &dyn LogDatabase, input: List) -> u32 {
-    db.push_log(format!("compute({:?})", input,));
+    db.push_log(format!("compute({input:?})",));
 
     // always pushes 0
     Integers(0).accumulate(db);
@@ -39,7 +39,7 @@ fn compute(db: &dyn LogDatabase, input: List) -> u32 {
 
 #[salsa::tracked(return_ref)]
 fn accumulated(db: &dyn LogDatabase, input: List) -> Vec<u32> {
-    db.push_log(format!("accumulated({:?})", input));
+    db.push_log(format!("accumulated({input:?})"));
     compute::accumulated::<Integers>(db, input)
         .into_iter()
         .map(|a| a.0)

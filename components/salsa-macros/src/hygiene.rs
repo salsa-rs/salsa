@@ -53,7 +53,7 @@ impl Hygiene {
     pub(crate) fn ident(&self, text: &str) -> syn::Ident {
         // Make the default be `foo_` rather than `foo` -- this helps detect
         // cases where people wrote `foo` instead of `#foo` or `$foo` in the generated code.
-        let mut buffer = format!("{}_", text);
+        let mut buffer = format!("{text}_");
 
         while self.user_tokens.contains(&buffer) {
             buffer.push('_');

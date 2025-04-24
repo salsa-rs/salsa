@@ -31,7 +31,7 @@ fn main() -> Result<()> {
         let sum = compile(&db, initial);
         let diagnostics = compile::accumulated::<Diagnostic>(&db, initial);
         if diagnostics.is_empty() {
-            println!("Sum is: {}", sum);
+            println!("Sum is: {sum}");
         } else {
             for diagnostic in diagnostics {
                 println!("{}", diagnostic.0);
@@ -39,7 +39,7 @@ fn main() -> Result<()> {
         }
 
         for log in db.logs.lock().unwrap().drain(..) {
-            eprintln!("{}", log);
+            eprintln!("{log}");
         }
 
         // Wait for file change events, the output can't change unless the
@@ -104,7 +104,7 @@ impl salsa::Database for LazyInputDatabase {
         // don't log boring events
         let event = event();
         if let salsa::EventKind::WillExecute { .. } = event.kind {
-            self.logs.lock().unwrap().push(format!("{:?}", event));
+            self.logs.lock().unwrap().push(format!("{event:?}"));
         }
     }
 }
@@ -177,8 +177,7 @@ fn parse(db: &dyn Db, input: File) -> ParsedFile<'_> {
                 db,
                 input,
                 Report::new(e).wrap_err(format!(
-                    "First line ({}) could not be parsed as an integer",
-                    line
+                    "First line ({line}) could not be parsed as an integer"
                 )),
             );
             0
@@ -196,7 +195,7 @@ fn parse(db: &dyn Db, input: File) -> ParsedFile<'_> {
                     Diagnostic::push_error(
                         db,
                         input,
-                        Report::new(err).wrap_err(format!("Failed to parse path: {}", path)),
+                        Report::new(err).wrap_err(format!("Failed to parse path: {path}")),
                     );
                     return None;
                 }

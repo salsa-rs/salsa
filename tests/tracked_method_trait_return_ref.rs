@@ -13,9 +13,7 @@ trait Trait {
 impl Trait for Input {
     #[salsa::tracked(return_ref)]
     fn test(self, db: &dyn salsa::Database) -> Vec<String> {
-        (0..self.number(db))
-            .map(|i| format!("test {}", i))
-            .collect()
+        (0..self.number(db)).map(|i| format!("test {i}")).collect()
     }
 }
 
