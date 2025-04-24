@@ -31,7 +31,7 @@ impl DependencyGraph {
     /// True if `from_id` depends on `to_id`.
     ///
     /// (i.e., there is a path from `from_id` to `to_id` in the graph.)
-    pub(super) fn depends_on(&mut self, from_id: ThreadId, to_id: ThreadId) -> bool {
+    pub(super) fn depends_on(&self, from_id: ThreadId, to_id: ThreadId) -> bool {
         let mut p = from_id;
         while let Some(q) = self.edges.get(&p).map(|edge| edge.blocked_on_id) {
             if q == to_id {

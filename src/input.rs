@@ -16,7 +16,6 @@ use crate::input::singleton::{Singleton, SingletonChoice};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{Jar, Stamp};
 use crate::table::memo::{MemoTable, MemoTableTypes};
-use crate::table::sync::SyncTable;
 use crate::table::{Slot, Table};
 use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::{Database, Durability, Id, Revision, Runtime};
@@ -107,7 +106,6 @@ impl<C: Configuration> IngredientImpl<C> {
                 fields,
                 stamps,
                 memos: Default::default(),
-                syncs: Default::default(),
             })
         });
 
@@ -252,9 +250,6 @@ where
 
     /// Memos
     memos: MemoTable,
-
-    /// Syncs
-    syncs: SyncTable,
 }
 
 impl<C> Value<C>
@@ -287,10 +282,5 @@ where
     #[inline(always)]
     fn memos_mut(&mut self) -> &mut crate::table::memo::MemoTable {
         &mut self.memos
-    }
-
-    #[inline(always)]
-    unsafe fn syncs(&self, _current_revision: Revision) -> &SyncTable {
-        &self.syncs
     }
 }

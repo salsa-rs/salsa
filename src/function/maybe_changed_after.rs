@@ -3,9 +3,9 @@ use std::sync::atomic::Ordering;
 use crate::accumulator::accumulated_map::InputAccumulatedValues;
 use crate::cycle::{CycleHeadKind, CycleHeads, CycleRecoveryStrategy};
 use crate::function::memo::Memo;
+use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl};
 use crate::key::DatabaseKeyIndex;
-use crate::table::sync::ClaimResult;
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::{QueryEdge, QueryOrigin};
 use crate::{AsDynDatabase as _, Id, Revision};
@@ -102,12 +102,7 @@ where
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
 
-        let _claim_guard = match zalsa.sync_table_for(key_index).claim(
-            db,
-            zalsa,
-            database_key_index,
-            memo_ingredient_index,
-        ) {
+        let _claim_guard = match self.sync_table.try_claim(db, zalsa, key_index) {
             ClaimResult::Retry => return None,
             ClaimResult::Cycle => match C::CYCLE_STRATEGY {
                 CycleRecoveryStrategy::Panic => db.zalsa_local().with_query_stack(|stack| {

@@ -1,18 +1,26 @@
 use std::thread::ThreadId;
 
 use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 
-use crate::key::DatabaseKeyIndex;
-use crate::runtime::{BlockResult, WaitResult};
-use crate::table::util;
-use crate::zalsa::{MemoIngredientIndex, Zalsa};
-use crate::Database;
+use crate::{
+    key::DatabaseKeyIndex,
+    runtime::{BlockResult, WaitResult},
+    zalsa::Zalsa,
+    Database, Id, IngredientIndex,
+};
 
 /// Tracks the keys that are currently being processed; used to coordinate between
 /// worker threads.
-#[derive(Default)]
 pub(crate) struct SyncTable {
-    syncs: Mutex<Vec<Option<SyncState>>>,
+    syncs: Mutex<FxHashMap<Id, SyncState>>,
+    ingredient: IngredientIndex,
+}
+
+pub(crate) enum ClaimResult<'a> {
+    Retry,
+    Cycle,
+    Claimed(ClaimGuard<'a>),
 }
 
 struct SyncState {
@@ -23,44 +31,27 @@ struct SyncState {
     anyone_waiting: bool,
 }
 
-pub(crate) enum ClaimResult<'a> {
-    Retry,
-    Cycle,
-    Claimed(ClaimGuard<'a>),
-}
-
 impl SyncTable {
-    #[inline]
-    pub(crate) fn claim<'me>(
+    pub(crate) fn new(ingredient: IngredientIndex) -> Self {
+        Self {
+            syncs: Default::default(),
+            ingredient,
+        }
+    }
+
+    pub(crate) fn try_claim<'me>(
         &'me self,
         db: &'me (impl ?Sized + Database),
         zalsa: &'me Zalsa,
-        database_key_index: DatabaseKeyIndex,
-        memo_ingredient_index: MemoIngredientIndex,
+        key_index: Id,
     ) -> ClaimResult<'me> {
-        let mut syncs = self.syncs.lock();
-        let thread_id = std::thread::current().id();
-
-        util::ensure_vec_len(&mut syncs, memo_ingredient_index.as_usize() + 1);
-
-        match &mut syncs[memo_ingredient_index.as_usize()] {
-            None => {
-                syncs[memo_ingredient_index.as_usize()] = Some(SyncState {
-                    id: thread_id,
-                    anyone_waiting: false,
-                });
-                ClaimResult::Claimed(ClaimGuard {
-                    database_key_index,
-                    memo_ingredient_index,
-                    zalsa,
-                    sync_table: self,
-                    _padding: false,
-                })
-            }
-            Some(SyncState {
-                id: other_id,
-                anyone_waiting,
-            }) => {
+        let mut write = self.syncs.lock();
+        match write.entry(key_index) {
+            std::collections::hash_map::Entry::Occupied(occupied_entry) => {
+                let &mut SyncState {
+                    id,
+                    ref mut anyone_waiting,
+                } = occupied_entry.into_mut();
                 // NB: `Ordering::Relaxed` is sufficient here,
                 // as there are no loads that are "gated" on this
                 // value. Everything that is written is also protected
@@ -68,13 +59,27 @@ impl SyncTable {
                 // boolean is to decide *whether* to acquire the lock,
                 // not to gate future atomic reads.
                 *anyone_waiting = true;
-                match zalsa
-                    .runtime()
-                    .block_on(db, database_key_index, *other_id, syncs)
-                {
+                match zalsa.runtime().block_on(
+                    db,
+                    DatabaseKeyIndex::new(self.ingredient, key_index),
+                    id,
+                    write,
+                ) {
                     BlockResult::Completed => ClaimResult::Retry,
                     BlockResult::Cycle => ClaimResult::Cycle,
                 }
+            }
+            std::collections::hash_map::Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(SyncState {
+                    id: std::thread::current().id(),
+                    anyone_waiting: false,
+                });
+                ClaimResult::Claimed(ClaimGuard {
+                    key_index,
+                    zalsa,
+                    sync_table: self,
+                    _padding: false,
+                })
             }
         }
     }
@@ -84,8 +89,7 @@ impl SyncTable {
 /// released when this value is dropped.
 #[must_use]
 pub(crate) struct ClaimGuard<'me> {
-    database_key_index: DatabaseKeyIndex,
-    memo_ingredient_index: MemoIngredientIndex,
+    key_index: Id,
     zalsa: &'me Zalsa,
     sync_table: &'me SyncTable,
     // Reduce the size of ClaimResult by making more niches available in ClaimGuard; this fits into
@@ -98,11 +102,11 @@ impl ClaimGuard<'_> {
         let mut syncs = self.sync_table.syncs.lock();
 
         let SyncState { anyone_waiting, .. } =
-            syncs[self.memo_ingredient_index.as_usize()].take().unwrap();
+            syncs.remove(&self.key_index).expect("key claimed twice?");
 
         if anyone_waiting {
             self.zalsa.runtime().unblock_queries_blocked_on(
-                self.database_key_index,
+                DatabaseKeyIndex::new(self.sync_table.ingredient, self.key_index),
                 if std::thread::panicking() {
                     WaitResult::Panicked
                 } else {

@@ -171,7 +171,7 @@ impl Runtime {
         other_id: ThreadId,
         query_mutex_guard: QueryMutexGuard,
     ) -> BlockResult {
-        let mut dg = self.dependency_graph.lock();
+        let dg = self.dependency_graph.lock();
         let thread_id = std::thread::current().id();
 
         if dg.depends_on(other_id, thread_id) {
