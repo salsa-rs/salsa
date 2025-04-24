@@ -15,7 +15,7 @@ pub fn input_ids(hygiene: &Hygiene, sig: &syn::Signature, skip: usize) -> Vec<sy
                 }
             }
 
-            hygiene.ident(&format!("input{}", index))
+            hygiene.ident(&format!("input{index}"))
         })
         .collect()
 }

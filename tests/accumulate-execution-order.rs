@@ -60,6 +60,6 @@ fn accumulate_execution_order() {
                     "log c",
                 ),
             ]"#]]
-        .assert_eq(&format!("{:#?}", logs));
+        .assert_eq(&format!("{logs:#?}"));
     })
 }

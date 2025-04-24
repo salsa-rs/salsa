@@ -33,7 +33,7 @@ pub trait LogDatabase: HasLogger + Database {
     /// it is meant to be run from outside any tracked functions.
     fn assert_logs(&self, expected: expect_test::Expect) {
         let logs = std::mem::take(&mut *self.logger().logs.lock().unwrap());
-        expected.assert_eq(&format!("{:#?}", logs));
+        expected.assert_eq(&format!("{logs:#?}"));
     }
 
     /// Asserts the length of the logs,

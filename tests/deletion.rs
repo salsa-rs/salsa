@@ -15,7 +15,7 @@ struct MyInput {
 
 #[salsa::tracked]
 fn final_result(db: &dyn LogDatabase, input: MyInput) -> u32 {
-    db.push_log(format!("final_result({:?})", input));
+    db.push_log(format!("final_result({input:?})"));
     let mut sum = 0;
     for tracked_struct in create_tracked_structs(db, input) {
         sum += contribution_from_struct(db, tracked_struct);
@@ -30,7 +30,7 @@ struct MyTracked<'db> {
 
 #[salsa::tracked]
 fn create_tracked_structs(db: &dyn LogDatabase, input: MyInput) -> Vec<MyTracked<'_>> {
-    db.push_log(format!("intermediate_result({:?})", input));
+    db.push_log(format!("intermediate_result({input:?})"));
     (0..input.field(db))
         .map(|i| MyTracked::new(db, i))
         .collect()

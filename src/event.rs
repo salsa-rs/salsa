@@ -1,7 +1,7 @@
 use std::thread::ThreadId;
 
 use crate::key::DatabaseKeyIndex;
-use crate::{Id, Revision};
+use crate::Revision;
 
 /// The `Event` struct identifies various notable things that can
 /// occur during salsa execution. Instances of this struct are given
@@ -101,8 +101,8 @@ pub enum EventKind {
 
     /// Indicates that a value was newly interned.
     DidInternValue {
-        // The ID of the interned value.
-        id: Id,
+        // The key of the interned value.
+        key: DatabaseKeyIndex,
 
         // The revision the value was interned in.
         revision: Revision,
@@ -110,8 +110,8 @@ pub enum EventKind {
 
     /// Indicates that a previously interned value was read in a new revision.
     DidReinternValue {
-        // The ID of the interned value.
-        id: Id,
+        // The key of the interned value.
+        key: DatabaseKeyIndex,
 
         // The revision the value was interned in.
         revision: Revision,

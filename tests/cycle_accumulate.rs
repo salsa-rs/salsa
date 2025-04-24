@@ -72,7 +72,7 @@ fn accumulate_once() {
                 "file fn: issue 1",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", diagnostics));
+    .assert_eq(&format!("{diagnostics:#?}"));
 }
 
 #[test]
@@ -101,7 +101,7 @@ fn accumulate_with_dep() {
                 "file file_a: issue 1",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", diagnostics));
+    .assert_eq(&format!("{diagnostics:#?}"));
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn accumulate_with_cycle() {
                 "file file_a: issue 2",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", diagnostics));
+    .assert_eq(&format!("{diagnostics:#?}"));
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn accumulate_with_cycle_second_revision() {
                 "file file_a: issue 2",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", diagnostics));
+    .assert_eq(&format!("{diagnostics:#?}"));
 
     file_b.set_issues(&mut db).to(vec![2, 3]);
 
@@ -205,7 +205,7 @@ fn accumulate_with_cycle_second_revision() {
                 "file file_b: issue 3",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", diagnostics));
+    .assert_eq(&format!("{diagnostics:#?}"));
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn accumulate_add_cycle() {
                 "file file_a: issue 1",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", diagnostics));
+    .assert_eq(&format!("{diagnostics:#?}"));
 
     file_a.set_dependencies(&mut db).to(vec![file_b]);
 
@@ -262,7 +262,7 @@ fn accumulate_add_cycle() {
                 "file file_b: issue 2",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", diagnostics));
+    .assert_eq(&format!("{diagnostics:#?}"));
 }
 
 #[test]
@@ -297,7 +297,7 @@ fn accumulate_remove_cycle() {
                 "file file_a: issue 2",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", diagnostics));
+    .assert_eq(&format!("{diagnostics:#?}"));
 
     file_a.set_dependencies(&mut db).to(vec![]);
 
@@ -320,5 +320,5 @@ fn accumulate_remove_cycle() {
                 "file file_a: issue 1",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", diagnostics));
+    .assert_eq(&format!("{diagnostics:#?}"));
 }

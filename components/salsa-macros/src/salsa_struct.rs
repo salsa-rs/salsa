@@ -358,15 +358,12 @@ impl<'s> SalsaField<'s> {
         if BANNED_FIELD_NAMES.iter().any(|n| *n == field_name_str) {
             return Err(syn::Error::new(
                 field_name.span(),
-                format!(
-                    "the field name `{}` is disallowed in salsa structs",
-                    field_name_str
-                ),
+                format!("the field name `{field_name_str}` is disallowed in salsa structs",),
             ));
         }
 
         let get_name = Ident::new(&field_name_str, field_name.span());
-        let set_name = Ident::new(&format!("set_{}", field_name_str), field_name.span());
+        let set_name = Ident::new(&format!("set_{field_name_str}",), field_name.span());
         let mut result = SalsaField {
             field,
             has_tracked_attr: false,

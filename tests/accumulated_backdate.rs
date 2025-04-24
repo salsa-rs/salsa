@@ -41,7 +41,7 @@ fn backdate() {
     let input = File::new(&db, "0".to_string());
 
     let logs = compile::accumulated::<Log>(&db, input);
-    expect![[r#"[]"#]].assert_eq(&format!("{:#?}", logs));
+    expect![[r#"[]"#]].assert_eq(&format!("{logs:#?}"));
 
     input.set_content(&mut db).to("a".to_string());
     let logs = compile::accumulated::<Log>(&db, input);
@@ -52,7 +52,7 @@ fn backdate() {
                 "invalid digit found in string",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", logs));
+    .assert_eq(&format!("{logs:#?}"));
 }
 
 #[test]
@@ -68,10 +68,10 @@ fn backdate_no_diagnostics() {
                 "invalid digit found in string",
             ),
         ]"#]]
-    .assert_eq(&format!("{:#?}", logs));
+    .assert_eq(&format!("{logs:#?}"));
 
     input.set_content(&mut db).to("0".to_string());
     let logs = compile::accumulated::<Log>(&db, input);
 
-    expect![[r#"[]"#]].assert_eq(&format!("{:#?}", logs));
+    expect![[r#"[]"#]].assert_eq(&format!("{logs:#?}"));
 }
