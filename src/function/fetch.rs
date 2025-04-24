@@ -61,7 +61,7 @@ where
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn fetch_hot<'db>(
         &'db self,
         zalsa: &'db Zalsa,
