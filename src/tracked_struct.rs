@@ -205,55 +205,59 @@ pub struct IdentityHash {
     hash: u64,
 }
 
+/// A map from tracked struct keys (which include the hash + [Disambiguator]) to their
+/// final [Id].
 #[derive(Default, Debug)]
 pub(crate) struct IdentityMap {
-    // we use a non-hasher hashmap here as our key contains its own hash (`Identity::hash`)
-    // so we use the raw entry api instead to avoid the overhead of hashing unnecessarily
-    map: hashbrown::HashMap<Identity, Id, ()>,
+    // we use a hashtable here as our key contains its own hash (`Identity::hash`)
+    // so we do the hash wrangling ourselves
+    table: hashbrown::HashTable<(Identity, Id)>,
 }
 
 impl Clone for IdentityMap {
     fn clone(&self) -> Self {
         Self {
-            map: self.map.clone(),
+            table: self.table.clone(),
         }
     }
     fn clone_from(&mut self, source: &Self) {
-        self.map.clone_from(&source.map);
+        self.table.clone_from(&source.table);
     }
 }
 
 impl IdentityMap {
     pub(crate) fn insert(&mut self, key: Identity, id: Id) -> Option<Id> {
-        use hashbrown::hash_map::RawEntryMut;
-
-        let entry = self.map.raw_entry_mut().from_hash(key.hash, |k| *k == key);
+        let entry = self.table.find_mut(key.hash, |&(k, _)| k == key);
         match entry {
-            RawEntryMut::Occupied(mut occupied) => Some(occupied.insert(id)),
-            RawEntryMut::Vacant(vacant) => {
-                vacant.insert_with_hasher(key.hash, key, id, |k| k.hash);
+            Some(occupied) => Some(mem::replace(&mut occupied.1, id)),
+            None => {
+                self.table
+                    .insert_unique(key.hash, (key, id), |(k, _)| k.hash);
                 None
             }
         }
     }
 
     pub(crate) fn get(&self, key: &Identity) -> Option<Id> {
-        self.map
-            .raw_entry()
-            .from_hash(key.hash, |k| *k == *key)
-            .map(|(_, &v)| v)
+        self.table
+            .find(key.hash, |&(k, _)| k == *key)
+            .map(|&(_, v)| v)
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.map.is_empty()
+        self.table.is_empty()
     }
 
-    pub(crate) fn retain(&mut self, f: impl FnMut(&Identity, &mut Id) -> bool) {
-        self.map.retain(f);
+    pub(crate) fn retain(&mut self, mut f: impl FnMut(&Identity, &mut Id) -> bool) {
+        self.table.retain(|(k, v)| f(k, v));
     }
 
-    pub fn clear(&mut self) {
-        self.map.clear()
+    pub(crate) fn clear(&mut self) {
+        self.table.clear()
+    }
+
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.table.shrink_to_fit(|(k, _)| k.hash);
     }
 }
 

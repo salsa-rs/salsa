@@ -48,7 +48,7 @@ pub(crate) struct ActiveQuery {
 
     /// Map from tracked struct keys (which include the hash + disambiguator) to their
     /// final id.
-    pub(crate) tracked_struct_ids: IdentityMap,
+    tracked_struct_ids: IdentityMap,
 
     /// Stores the values accumulated to the given ingredient.
     /// The type of accumulated value is erased but known to the ingredient.
@@ -150,6 +150,14 @@ impl ActiveQuery {
 
     pub(super) fn iteration_count(&self) -> u32 {
         self.iteration_count
+    }
+
+    pub(crate) fn tracked_struct_ids(&self) -> &IdentityMap {
+        &self.tracked_struct_ids
+    }
+
+    pub(crate) fn tracked_struct_ids_mut(&mut self) -> &mut IdentityMap {
+        &mut self.tracked_struct_ids
     }
 }
 
