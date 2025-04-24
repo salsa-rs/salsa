@@ -226,12 +226,14 @@ where
                     .get()
                     .expect("found the interned, so `found_value` should be set");
 
+                let index = self.database_key_index(id);
+
                 // Sync the value's revision.
                 if value.last_interned_at.load() < current_revision {
                     value.last_interned_at.store(current_revision);
                     db.salsa_event(&|| {
                         Event::new(EventKind::DidReinternValue {
-                            id,
+                            key: index,
                             revision: current_revision,
                         })
                     });
@@ -249,7 +251,6 @@ where
                 };
 
                 // Record a dependency on this value.
-                let index = self.database_key_index(id);
                 zalsa_local.report_tracked_read_simple(index, durability, value.first_interned_at);
 
                 return id;
@@ -268,13 +269,14 @@ where
             Ok(slot) => {
                 let id = unsafe { slot.as_ref().0 };
                 let value = zalsa.table().get::<Value<C>>(id);
+                let index = self.database_key_index(id);
 
                 // Sync the value's revision.
                 if value.last_interned_at.load() < current_revision {
                     value.last_interned_at.store(current_revision);
                     db.salsa_event(&|| {
                         Event::new(EventKind::DidReinternValue {
-                            id,
+                            key: index,
                             revision: current_revision,
                         })
                     });
@@ -292,7 +294,6 @@ where
                 };
 
                 // Record a dependency on this value.
-                let index = self.database_key_index(id);
                 zalsa_local.report_tracked_read_simple(index, durability, value.first_interned_at);
 
                 id
@@ -335,7 +336,7 @@ where
 
                 db.salsa_event(&|| {
                     Event::new(EventKind::DidInternValue {
-                        id,
+                        key: index,
                         revision: current_revision,
                     })
                 });
@@ -417,8 +418,10 @@ where
         ));
 
         db.salsa_event(&|| {
+            let index = self.database_key_index(input);
+
             Event::new(EventKind::DidReinternValue {
-                id: input,
+                key: index,
                 revision: current_revision,
             })
         });

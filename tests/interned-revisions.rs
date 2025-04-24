@@ -40,11 +40,11 @@ fn test_intern_new() {
         [
             "WillCheckCancellation",
             "WillExecute { database_key: function(Id(0)) }",
-            "DidInternValue { id: Id(400), revision: R1 }",
+            "DidInternValue { key: Interned(Id(400)), revision: R1 }",
             "DidSetCancellationFlag",
             "WillCheckCancellation",
             "WillExecute { database_key: function(Id(0)) }",
-            "DidInternValue { id: Id(401), revision: R2 }",
+            "DidInternValue { key: Interned(Id(401)), revision: R2 }",
         ]"#]]);
 }
 
@@ -64,7 +64,7 @@ fn test_reintern() {
         [
             "WillCheckCancellation",
             "WillExecute { database_key: function(Id(0)) }",
-            "DidInternValue { id: Id(400), revision: R1 }",
+            "DidInternValue { key: Interned(Id(400)), revision: R1 }",
         ]"#]]);
 
     assert_eq!(result_in_rev_1.field1(&db), 0);
@@ -78,7 +78,7 @@ fn test_reintern() {
             "DidSetCancellationFlag",
             "WillCheckCancellation",
             "WillExecute { database_key: function(Id(0)) }",
-            "DidReinternValue { id: Id(400), revision: R2 }",
+            "DidReinternValue { key: Interned(Id(400)), revision: R2 }",
         ]"#]]);
 
     assert_eq!(result_in_rev_2.field1(&db), 0);
@@ -108,7 +108,7 @@ fn test_durability() {
         [
             "WillCheckCancellation",
             "WillExecute { database_key: function(Id(0)) }",
-            "DidInternValue { id: Id(400), revision: R1 }",
+            "DidInternValue { key: Interned(Id(400)), revision: R1 }",
             "DidSetCancellationFlag",
             "WillCheckCancellation",
             "DidValidateMemoizedValue { database_key: function(Id(0)) }",
