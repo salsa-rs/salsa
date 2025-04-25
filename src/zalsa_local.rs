@@ -490,13 +490,16 @@ impl ActiveQueryGuard<'_> {
         })
     }
 
-    /// Initialize the tracked struct ids with the values from the prior execution.
-    pub(crate) fn add_output(&self, key: DatabaseKeyIndex) {
+    /// Initialize the outputs with the outputs from the prior execution.
+    pub(crate) fn seed_outputs<I>(&self, outputs: I) where I: IntoIterator<Item=DatabaseKeyIndex> + UnwindSafe {
         self.local_state.with_query_stack(|stack| {
             #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
-            frame.add_output(key);
+
+            for output in outputs {
+                frame.add_output(output);
+            }
         })
     }
 

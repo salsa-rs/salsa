@@ -57,13 +57,11 @@ where
 
                 // Copy over all outputs from a previous iteration.
                 // This is necessary to ensure that tracked struct created during the previous iteration
-                // (and are owned by the query) alive even if the query in this iteratoin no longer creates them.
+                // (and are owned by the query) alive even if the query in this iteration no longer creates them.
                 // The query not re-creating the tracked struct doesn't guarantee that there
                 // aren't any other queries depending on it.
                 if old_memo.verified_at.load() == revision_now && old_memo.may_be_provisional() {
-                    for output in old_memo.revisions.origin.outputs() {
-                        active_query.add_output(output);
-                    }
+                    active_query.seed_outputs(old_memo.revisions.origin.outputs());
                 }
             }
 
