@@ -90,27 +90,25 @@ where
                     // SAFETY: This is ours memo.
                     return unsafe { self.extend_memo_lifetime(memo) };
                 } else if C::CYCLE_STRATEGY == CycleRecoveryStrategy::Fixpoint {
-                    let last_provisional = if let Some(last_provisional) = opt_last_provisional {
-                        // We have a last provisional value from our previous time around the loop.
-                        last_provisional
-                    } else {
-                        // This is our first time around the loop; a provisional value must have been
-                        // inserted into the memo table when the cycle was hit, so let's pull our
-                        // initial provisional value from there.
-                        let memo = self
-                            .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
-                            .unwrap_or_else(|| {
-                                unreachable!(
-                                    "{database_key_index:#?} is a cycle head, \
+                    let last_provisional_value =
+                        if let Some(last_provisional) = opt_last_provisional {
+                            // We have a last provisional value from our previous time around the loop.
+                            last_provisional.value.as_ref()
+                        } else {
+                            // This is our first time around the loop; a provisional value must have been
+                            // inserted into the memo table when the cycle was hit, so let's pull our
+                            // initial provisional value from there.
+                            let memo = self
+                                .get_memo_from_table_for(zalsa, id, memo_ingredient_index)
+                                .unwrap_or_else(|| {
+                                    unreachable!(
+                                        "{database_key_index:#?} is a cycle head, \
                                         but no provisional memo found"
-                                )
-                            });
-                        debug_assert!(memo.may_be_provisional());
-                        memo
-                    };
-
-                    let last_provisional_value = last_provisional.value.as_ref();
-
+                                    )
+                                });
+                            debug_assert!(memo.may_be_provisional());
+                            memo.value.as_ref()
+                        };
                     // SAFETY: The `LRU` does not run mid-execution, so the value remains filled
                     let last_provisional_value =
                         unsafe { last_provisional_value.unwrap_unchecked() };
