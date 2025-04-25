@@ -490,6 +490,16 @@ impl ActiveQueryGuard<'_> {
         })
     }
 
+    /// Initialize the tracked struct ids with the values from the prior execution.
+    pub(crate) fn add_output(&self, key: DatabaseKeyIndex) {
+        self.local_state.with_query_stack(|stack| {
+            #[cfg(debug_assertions)]
+            assert_eq!(stack.len(), self.push_len);
+            let frame = stack.last_mut().unwrap();
+            frame.add_output(key);
+        })
+    }
+
     /// Invoked when the query has successfully completed execution.
     fn complete(self) -> QueryRevisions {
         let query = self.local_state.with_query_stack(|stack| {

@@ -284,23 +284,18 @@ impl<V> Memo<V> {
 
         impl<T> std::fmt::Debug for TracingDebug<'_, T> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-                let alternate = f.alternate();
-                let mut s = f.debug_struct("Memo");
-                s.field(
-                    "value",
-                    if self.memo.value.is_some() {
-                        &"Some(<value>)"
-                    } else {
-                        &"None"
-                    },
-                )
-                .field("verified_at", &self.memo.verified_at);
-
-                if alternate {
-                    s.field("revisions", &self.memo.revisions);
-                }
-
-                s.finish()
+                f.debug_struct("Memo")
+                    .field(
+                        "value",
+                        if self.memo.value.is_some() {
+                            &"Some(<value>)"
+                        } else {
+                            &"None"
+                        },
+                    )
+                    .field("verified_at", &self.memo.verified_at)
+                    .field("revisions", &self.memo.revisions)
+                    .finish()
             }
         }
 

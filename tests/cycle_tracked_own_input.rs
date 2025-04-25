@@ -108,8 +108,6 @@ fn main() {
             "WillCheckCancellation",
             "WillExecute { database_key: infer_type_param(Id(400)) }",
             "WillCheckCancellation",
-            "WillDiscardStaleOutput { execute_key: infer_type_param(Id(400)), output_key: TypeParam(Id(800)) }",
-            "DidDiscard { key: TypeParam(Id(800)) }",
         ]"#]]);
 
     if let Type::Class(class) = ty {

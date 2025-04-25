@@ -37,7 +37,7 @@ where
 
         if !old_outputs.is_empty() {
             // Remove the outputs that are no longer present in the current revision
-            // to prevent that the next revision is seeded with a id mapping that no longer exists.
+            // to prevent that the next revision is seeded with an id mapping that no longer exists.
             revisions.tracked_struct_ids.retain(|&k, &mut value| {
                 !old_outputs.contains(&DatabaseKeyIndex::new(k.ingredient_index(), value))
             });
