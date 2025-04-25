@@ -499,6 +499,7 @@ impl ActiveQueryGuard<'_> {
             #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
+            assert!(frame.is_input_outputs_empty());
 
             for output in outputs {
                 frame.add_output(output);
