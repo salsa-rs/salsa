@@ -60,7 +60,7 @@ where
                 // (and are owned by the query) alive even if the query in this iteratoin no longer creates them.
                 // The query not re-creating the tracked struct doesn't guarantee that there
                 // aren't any other queries depending on it.
-                if old_memo.may_be_provisional() {
+                if old_memo.verified_at.load() == revision_now && old_memo.may_be_provisional() {
                     for output in old_memo.revisions.origin.outputs() {
                         active_query.add_output(output);
                     }

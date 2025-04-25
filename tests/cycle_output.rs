@@ -169,9 +169,10 @@ fn revalidate_with_change_after_output_read() {
             "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(400)) })",
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(401)) })",
+            "salsa_event(WillExecute { database_key: read_value(Id(401)) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
-            "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(402)) })",
+            "salsa_event(WillExecute { database_key: read_value(Id(402)) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+            "salsa_event(WillExecute { database_key: read_value(Id(403)) })",
         ]"#]]);
 }
