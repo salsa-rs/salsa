@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::function::VerifyResult;
-use crate::ingredient::{fmt_index, Ingredient};
+use crate::ingredient::Ingredient;
 use crate::input::{Configuration, IngredientImpl, Value};
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::IngredientIndex;
@@ -61,7 +61,13 @@ where
     }
 
     fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_index(C::FIELD_DEBUG_NAMES[self.field_index], index, fmt)
+        write!(
+            fmt,
+            "{input}.{field}({id:?})",
+            input = C::DEBUG_NAME,
+            field = C::FIELD_DEBUG_NAMES[self.field_index],
+            id = index
+        )
     }
 
     fn debug_name(&self) -> &'static str {
