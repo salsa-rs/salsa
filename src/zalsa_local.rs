@@ -491,7 +491,10 @@ impl ActiveQueryGuard<'_> {
     }
 
     /// Initialize the outputs with the outputs from the prior execution.
-    pub(crate) fn seed_outputs<I>(&self, outputs: I) where I: IntoIterator<Item=DatabaseKeyIndex> + UnwindSafe {
+    pub(crate) fn seed_outputs<I>(&self, outputs: I)
+    where
+        I: IntoIterator<Item = DatabaseKeyIndex> + UnwindSafe,
+    {
         self.local_state.with_query_stack(|stack| {
             #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
