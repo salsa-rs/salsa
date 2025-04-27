@@ -78,6 +78,8 @@ macro_rules! setup_interned_struct {
             std::marker::PhantomData < & $interior_lt salsa::plumbing::interned::Value <$StructWithStatic> >
         );
 
+        #[allow(clippy::all)]
+        #[allow(dead_code)]
         const _: () = {
             use salsa::plumbing as $zalsa;
             use $zalsa::interned as $zalsa_struct;

@@ -86,6 +86,8 @@ impl DbMacro {
         let zalsa = self.hygiene.ident("zalsa");
 
         Ok(quote! {
+            #[allow(clippy::all)]
+            #[allow(dead_code)]
             const _: () = {
                 use salsa::plumbing as #zalsa;
 
