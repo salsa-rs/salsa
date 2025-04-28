@@ -120,22 +120,26 @@ macro_rules! setup_tracked_fn {
                         }
                     }
 
+                    impl $zalsa::AsId for $InternedData<'_> {
+                        #[inline]
+                        fn as_id(&self) -> salsa::Id {
+                            self.0
+                        }
+                    }
+
+                    impl $zalsa::FromId for $InternedData<'_> {
+                        #[inline]
+                        fn from_id(id: salsa::Id) -> Self {
+                            Self(id, ::core::marker::PhantomData)
+                        }
+                    }
+
                     impl $zalsa::interned::Configuration for $Configuration {
                         const DEBUG_NAME: &'static str = "Configuration";
 
                         type Fields<$db_lt> = ($($input_ty),*);
 
                         type Struct<$db_lt> = $InternedData<$db_lt>;
-
-                        fn struct_from_id<$db_lt>(
-                            id: salsa::Id,
-                        ) -> Self::Struct<$db_lt> {
-                            $InternedData(id, std::marker::PhantomData)
-                        }
-
-                        fn deref_struct(s: Self::Struct<'_>) -> salsa::Id {
-                            s.0
-                        }
                     }
                 } else {
                     type $InternedData<$db_lt> = ($($input_ty),*);

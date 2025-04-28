@@ -10,7 +10,7 @@ pub mod singleton;
 use input_field::FieldIngredientImpl;
 
 use crate::function::VerifyResult;
-use crate::id::{AsId, FromIdWithDb};
+use crate::id::{AsId, FromId, FromIdWithDb};
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::input::singleton::{Singleton, SingletonChoice};
 use crate::key::DatabaseKeyIndex;
@@ -28,7 +28,7 @@ pub trait Configuration: Any {
     type Singleton: SingletonChoice + Send + Sync;
 
     /// The input struct (which wraps an `Id`)
-    type Struct: FromIdWithDb + 'static + Send + Sync;
+    type Struct: FromId + AsId + 'static + Send + Sync;
 
     /// A (possibly empty) tuple of the fields for this struct.
     type Fields: Send + Sync;
