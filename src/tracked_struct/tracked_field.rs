@@ -66,13 +66,13 @@ where
             fmt,
             "{}.{}({:?})",
             C::DEBUG_NAME,
-            C::FIELD_DEBUG_NAMES[self.field_index],
+            C::TRACKED_FIELD_NAMES[self.field_index],
             index
         )
     }
 
     fn debug_name(&self) -> &'static str {
-        C::FIELD_DEBUG_NAMES[self.field_index]
+        C::TRACKED_FIELD_NAMES[self.field_index]
     }
 
     fn memo_table_types(&self) -> Arc<MemoTableTypes> {
