@@ -268,7 +268,7 @@ impl ZalsaLocal {
             let top_query = stack
                 .last()
                 .expect("cannot create a tracked struct ID outside of a tracked function");
-            top_query.tracked_struct_ids.get(identity)
+            top_query.tracked_struct_ids().get(identity)
         })
     }
 
@@ -278,7 +278,7 @@ impl ZalsaLocal {
             let top_query = stack
                 .last_mut()
                 .expect("cannot store a tracked struct ID outside of a tracked function");
-            let old_id = top_query.tracked_struct_ids.insert(identity, id);
+            let old_id = top_query.tracked_struct_ids_mut().insert(identity, id);
             assert!(
                 old_id.is_none(),
                 "overwrote a previous id for `{identity:?}`"
@@ -485,8 +485,10 @@ impl ActiveQueryGuard<'_> {
             #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
-            assert!(frame.tracked_struct_ids.is_empty());
-            frame.tracked_struct_ids.clone_from(tracked_struct_ids);
+            assert!(frame.tracked_struct_ids().is_empty());
+            frame
+                .tracked_struct_ids_mut()
+                .clone_from(tracked_struct_ids);
         })
     }
 
