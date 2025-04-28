@@ -72,12 +72,6 @@ const _: () = {
         const DEBUG_NAME: &'static str = "InternedString";
         type Fields<'a> = StructData<'a>;
         type Struct<'a> = InternedString<'a>;
-        fn struct_from_id<'db>(id: salsa::Id) -> Self::Struct<'db> {
-            InternedString(id, std::marker::PhantomData)
-        }
-        fn deref_struct(s: Self::Struct<'_>) -> salsa::Id {
-            s.0
-        }
     }
     impl Configuration_ {
         pub fn ingredient<Db>(db: &Db) -> &zalsa_struct_::IngredientImpl<Self>

@@ -14,6 +14,7 @@ use dashmap::SharedValue;
 use crate::durability::Durability;
 use crate::function::VerifyResult;
 use crate::hash::FxDashMap;
+use crate::id::{AsId, FromId};
 use crate::ingredient::{fmt_index, Ingredient};
 use crate::plumbing::{IngredientIndices, Jar};
 use crate::revision::AtomicRevision;
@@ -29,18 +30,7 @@ pub trait Configuration: Sized + 'static {
     type Fields<'db>: InternedData;
 
     /// The end user struct
-    type Struct<'db>: Copy;
-
-    /// Create an end-user struct from the salsa id
-    ///
-    /// This call is an "end-step" to the tracked struct lookup/creation
-    /// process in a given revision: it occurs only when the struct is newly
-    /// created or, if a struct is being reused, after we have updated its
-    /// fields (or confirmed it is green and no updates are required).
-    fn struct_from_id<'db>(id: Id) -> Self::Struct<'db>;
-
-    /// Deref the struct to yield the underlying id.
-    fn deref_struct(s: Self::Struct<'_>) -> Id;
+    type Struct<'db>: Copy + FromId + AsId;
 }
 
 pub trait InternedData: Sized + Eq + Hash + Clone + Sync + Send {}
@@ -169,7 +159,7 @@ where
         Key: Hash,
         C::Fields<'db>: HashEqLike<Key>,
     {
-        C::struct_from_id(self.intern_id(db, key, assemble))
+        FromId::from_id(self.intern_id(db, key, assemble))
     }
 
     /// Intern data to a unique reference.
@@ -367,7 +357,7 @@ where
     /// Lookup the fields from an interned struct.
     /// Note that this is not "leaking" since no dependency edge is required.
     pub fn fields<'db>(&'db self, db: &'db dyn Database, s: C::Struct<'db>) -> &'db C::Fields<'db> {
-        self.data(db, C::deref_struct(s))
+        self.data(db, AsId::as_id(&s))
     }
 
     pub fn reset(&mut self, db: &mut dyn Database) {

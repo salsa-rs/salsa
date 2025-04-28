@@ -125,14 +125,6 @@ macro_rules! setup_tracked_struct {
 
                 type Struct<$db_lt> = $Struct<$db_lt>;
 
-                fn struct_from_id<$db_lt>(id: salsa::Id) -> Self::Struct<$db_lt> {
-                    $Struct(id, std::marker::PhantomData)
-                }
-
-                fn deref_struct(s: Self::Struct<'_>) -> salsa::Id {
-                    s.0
-                }
-
                 fn untracked_fields(fields: &Self::Fields<'_>) -> impl std::hash::Hash {
                     ( $( &fields.$absolute_untracked_index ),* )
                 }
@@ -187,12 +179,14 @@ macro_rules! setup_tracked_struct {
             }
 
             impl<$db_lt> $zalsa::FromId for $Struct<$db_lt> {
+                #[inline]
                 fn from_id(id: salsa::Id) -> Self {
                     $Struct(id, std::marker::PhantomData)
                 }
             }
 
             impl $zalsa::AsId for $Struct<'_> {
+                #[inline]
                 fn as_id(&self) -> $zalsa::Id {
                     self.0
                 }

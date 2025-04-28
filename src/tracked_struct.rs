@@ -11,6 +11,7 @@ use crossbeam_queue::SegQueue;
 use tracked_field::FieldIngredientImpl;
 
 use crate::function::VerifyResult;
+use crate::id::{AsId, FromId};
 use crate::ingredient::{fmt_index, Ingredient, Jar};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::ZalsaLocal;
@@ -47,18 +48,7 @@ pub trait Configuration: Sized + 'static {
     /// values have changed (or if the field is marked as `#[no_eq]`).
     type Revisions: Send + Sync + Index<usize, Output = Revision>;
 
-    type Struct<'db>: Copy;
-
-    /// Create an end-user struct from the underlying raw pointer.
-    ///
-    /// This call is an "end-step" to the tracked struct lookup/creation
-    /// process in a given revision: it occurs only when the struct is newly
-    /// created or, if a struct is being reused, after we have updated its
-    /// fields (or confirmed it is green and no updates are required).
-    fn struct_from_id<'db>(id: Id) -> Self::Struct<'db>;
-
-    /// Deref the struct to yield the underlying id.
-    fn deref_struct(s: Self::Struct<'_>) -> Id;
+    type Struct<'db>: Copy + FromId + AsId;
 
     fn untracked_fields(fields: &Self::Fields<'_>) -> impl Hash;
 
@@ -419,7 +409,7 @@ where
                 // The struct already exists in the intern map.
                 zalsa_local.add_output(self.database_key_index(id));
                 self.update(zalsa, current_revision, id, &current_deps, fields);
-                C::struct_from_id(id)
+                FromId::from_id(id)
             }
 
             None => {
@@ -428,7 +418,7 @@ where
                 let key = self.database_key_index(id);
                 zalsa_local.add_output(key);
                 zalsa_local.store_tracked_struct_id(identity, id);
-                C::struct_from_id(id)
+                FromId::from_id(id)
             }
         }
     }
@@ -667,7 +657,7 @@ where
         db: &'db dyn Database,
         s: C::Struct<'db>,
     ) -> &'db C::Fields<'db> {
-        let id = C::deref_struct(s);
+        let id = AsId::as_id(&s);
         let value = Self::data(db.zalsa().table(), id);
         unsafe { self.to_self_ref(&value.fields) }
     }
@@ -683,7 +673,7 @@ where
         relative_tracked_index: usize,
     ) -> &'db C::Fields<'db> {
         let (zalsa, zalsa_local) = db.zalsas();
-        let id = C::deref_struct(s);
+        let id = AsId::as_id(&s);
         let field_ingredient_index = self.ingredient_index.successor(relative_tracked_index);
         let data = Self::data(zalsa.table(), id);
 
@@ -710,7 +700,7 @@ where
         s: C::Struct<'db>,
     ) -> &'db C::Fields<'db> {
         let (zalsa, zalsa_local) = db.zalsas();
-        let id = C::deref_struct(s);
+        let id = AsId::as_id(&s);
         let data = Self::data(zalsa.table(), id);
 
         data.read_lock(zalsa.current_revision());
