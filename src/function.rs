@@ -61,7 +61,7 @@ pub trait Configuration: Any {
     /// the older one.
     ///
     /// This invokes user code in form of the `Eq` impl.
-    fn values_equal(old_value: &Self::Output<'_>, new_value: &Self::Output<'_>) -> bool;
+    fn values_equal<'db>(old_value: &Self::Output<'db>, new_value: &Self::Output<'db>) -> bool;
 
     /// Convert from the id used internally to the value that execute is expecting.
     /// This is a no-op if the input to the function is a salsa struct.

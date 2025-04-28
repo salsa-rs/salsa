@@ -9,11 +9,11 @@ where
     /// If the value/durability of this memo is equal to what is found in `revisions`/`value`,
     /// then update `revisions.changed_at` to match `self.revisions.changed_at`. This is invoked
     /// on an old memo when a new memo has been produced to check whether there have been changed.
-    pub(super) fn backdate_if_appropriate(
+    pub(super) fn backdate_if_appropriate<'db>(
         &self,
-        old_memo: &Memo<C::Output<'_>>,
+        old_memo: &Memo<C::Output<'db>>,
         revisions: &mut QueryRevisions,
-        value: &C::Output<'_>,
+        value: &C::Output<'db>,
     ) {
         if let Some(old_value) = &old_memo.value {
             // Careful: if the value became less durable than it
