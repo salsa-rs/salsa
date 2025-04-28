@@ -29,19 +29,25 @@ where
         // Iterate over the outputs of the `old_memo` and put them into a hashset
         let mut old_outputs: FxIndexSet<_> = old_memo.revisions.origin.outputs().collect();
 
+        if old_outputs.is_empty() {
+            return;
+        }
+
         // Iterate over the outputs of the current query
         // and remove elements from `old_outputs` when we find them
         for new_output in revisions.origin.outputs() {
             old_outputs.swap_remove(&new_output);
         }
 
-        if !old_outputs.is_empty() {
-            // Remove the outputs that are no longer present in the current revision
-            // to prevent that the next revision is seeded with an id mapping that no longer exists.
-            revisions.tracked_struct_ids.retain(|&k, &mut value| {
-                !old_outputs.contains(&DatabaseKeyIndex::new(k.ingredient_index(), value))
-            });
+        if old_outputs.is_empty() {
+            return;
         }
+
+        // Remove the outputs that are no longer present in the current revision
+        // to prevent that the next revision is seeded with an id mapping that no longer exists.
+        revisions.tracked_struct_ids.retain(|&k, &mut value| {
+            !old_outputs.contains(&DatabaseKeyIndex::new(k.ingredient_index(), value))
+        });
 
         for old_output in old_outputs {
             Self::report_stale_output(zalsa, db, key, old_output, provisional);

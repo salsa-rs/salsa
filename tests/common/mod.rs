@@ -41,7 +41,7 @@ pub trait LogDatabase: HasLogger + Database {
     /// it is meant to be run from outside any tracked functions.
     fn assert_logs_len(&self, expected: usize) {
         let logs = std::mem::take(&mut *self.logger().logs.lock().unwrap());
-        assert_eq!(logs.len(), expected, "Logs length mismatch: {logs:#?}");
+        assert_eq!(logs.len(), expected, "Actual logs: {logs:#?}");
     }
 }
 

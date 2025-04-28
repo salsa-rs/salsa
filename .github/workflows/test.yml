@@ -54,7 +54,7 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-features --all-targets -- -D warnings
       - name: Test
-        run: RUST_LOG=trace cargo nextest run --workspace --all-features --all-targets --no-fail-fast
+        run: cargo nextest run --workspace --all-features --all-targets --no-fail-fast
       - name: Test docs
         run: cargo test --workspace --all-features --doc
       - name: Check (without default features)

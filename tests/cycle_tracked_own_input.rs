@@ -63,7 +63,7 @@ fn infer_class<'db>(db: &'db dyn salsa::Database, node: ClassNode) -> Type<'db> 
 fn infer_type_param<'db>(db: &'db dyn salsa::Database, node: TypeParamNode) -> TypeParam<'db> {
     if let Some(constraint) = node.constraint(db) {
         // Reuse the type param from the class if any.
-        // The example is a bit silly, because it's a reduction of what we have in Red Knot
+        // The example is a bit silly, because it's a reduction of what we have in Astral's type checker
         // but including all the details doesn't make sense. What's important for the test is
         // that this query doesn't re-create the `TypeParam` tracked struct in the second iteration
         // and instead returns the one from the first iteration which

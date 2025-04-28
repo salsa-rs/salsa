@@ -490,8 +490,8 @@ impl ActiveQueryGuard<'_> {
         })
     }
 
-    /// Initialize the outputs with the outputs from the prior execution.
-    pub(crate) fn merge_outputs<I>(&self, outputs: I)
+    /// Append the given `outputs` to the query's output list.
+    pub(crate) fn append_outputs<I>(&self, outputs: I)
     where
         I: IntoIterator<Item = DatabaseKeyIndex> + UnwindSafe,
     {
