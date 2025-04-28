@@ -490,6 +490,22 @@ impl ActiveQueryGuard<'_> {
         })
     }
 
+    /// Append the given `outputs` to the query's output list.
+    pub(crate) fn append_outputs<I>(&self, outputs: I)
+    where
+        I: IntoIterator<Item = DatabaseKeyIndex> + UnwindSafe,
+    {
+        self.local_state.with_query_stack(|stack| {
+            #[cfg(debug_assertions)]
+            assert_eq!(stack.len(), self.push_len);
+            let frame = stack.last_mut().unwrap();
+
+            for output in outputs {
+                frame.add_output(output);
+            }
+        })
+    }
+
     /// Invoked when the query has successfully completed execution.
     fn complete(self) -> QueryRevisions {
         let query = self.local_state.with_query_stack(|stack| {

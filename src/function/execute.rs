@@ -59,6 +59,18 @@ where
             // Query was not previously executed, or value is potentially
             // stale, or value is absent. Let's execute!
             let mut new_value = C::execute(db, C::id_to_input(db, id));
+
+            if let Some(old_memo) = opt_old_memo {
+                // Copy over all outputs from a previous iteration.
+                // This is necessary to ensure that tracked struct created during the previous iteration
+                // (and are owned by the query) are alive even if the query in this iteration no longer creates them.
+                // The query not re-creating the tracked struct doesn't guarantee that there
+                // aren't any other queries depending on it.
+                if old_memo.may_be_provisional() && old_memo.verified_at.load() == revision_now {
+                    active_query.append_outputs(old_memo.revisions.origin.outputs());
+                }
+            }
+
             let mut revisions = active_query.pop();
 
             // Did the new result we got depend on our own provisional value, in a cycle?

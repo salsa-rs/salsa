@@ -102,7 +102,10 @@ impl salsa::Database for Database {
             | salsa::EventKind::DidValidateMemoizedValue { .. } => {
                 self.push_log(format!("salsa_event({:?})", event.kind));
             }
-            _ => {}
+            salsa::EventKind::WillCheckCancellation => {}
+            _ => {
+                self.push_log(format!("salsa_event({:?})", event.kind));
+            }
         }
     }
 }
@@ -127,7 +130,7 @@ fn revalidate_no_changes() {
     assert_eq!(query_c(&db, c_input), 10);
     assert_eq!(query_b(&db, ab_input), 3);
 
-    db.assert_logs_len(11);
+    db.assert_logs_len(15);
 
     // trigger a new revision, but one that doesn't touch the query_a/query_b cycle
     c_input.set_value(&mut db).to(20);
@@ -136,9 +139,12 @@ fn revalidate_no_changes() {
 
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(401)) })",
+            "salsa_event(DidSetCancellationFlag)",
+            "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(403)) })",
+            "salsa_event(DidReinternValue { key: Configuration(Id(800)), revision: R2 })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_d(Id(800)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_b(Id(0)) })",
+            "salsa_event(DidReinternValue { key: Configuration(Id(800)), revision: R2 })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_a(Id(0)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_b(Id(0)) })",
         ]"#]]);
@@ -154,7 +160,7 @@ fn revalidate_with_change_after_output_read() {
 
     assert_eq!(query_b(&db, ab_input), 3);
 
-    db.assert_logs_len(10);
+    db.assert_logs_len(14);
 
     // trigger a new revision that changes the output of query_d
     d_input.set_value(&mut db).to(20);
@@ -163,15 +169,29 @@ fn revalidate_with_change_after_output_read() {
 
     db.assert_logs(expect![[r#"
         [
-            "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(401)) })",
+            "salsa_event(DidSetCancellationFlag)",
+            "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(403)) })",
+            "salsa_event(DidReinternValue { key: Configuration(Id(800)), revision: R2 })",
             "salsa_event(WillExecute { database_key: query_d(Id(800)) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
-            "salsa_event(WillExecute { database_key: read_value(Id(400)) })",
+            "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(400)) })",
+            "salsa_event(WillDiscardStaleOutput { execute_key: query_a(Id(0)), output_key: Output(Id(403)) })",
+            "salsa_event(DidDiscard { key: Output(Id(403)) })",
+            "salsa_event(DidDiscard { key: read_value(Id(403)) })",
+            "salsa_event(WillDiscardStaleOutput { execute_key: query_a(Id(0)), output_key: Output(Id(402)) })",
+            "salsa_event(DidDiscard { key: Output(Id(402)) })",
+            "salsa_event(DidDiscard { key: read_value(Id(402)) })",
+            "salsa_event(WillDiscardStaleOutput { execute_key: query_a(Id(0)), output_key: Output(Id(401)) })",
+            "salsa_event(DidDiscard { key: Output(Id(401)) })",
+            "salsa_event(DidDiscard { key: read_value(Id(401)) })",
             "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
+            "salsa_event(WillIterateCycle { database_key: query_b(Id(0)), iteration_count: 1, fell_back: false })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
-            "salsa_event(WillExecute { database_key: read_value(Id(401)) })",
+            "salsa_event(WillExecute { database_key: read_value(Id(403)) })",
+            "salsa_event(WillIterateCycle { database_key: query_b(Id(0)), iteration_count: 2, fell_back: false })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
-            "salsa_event(WillExecute { database_key: read_value(Id(400)) })",
+            "salsa_event(WillExecute { database_key: read_value(Id(402)) })",
+            "salsa_event(WillIterateCycle { database_key: query_b(Id(0)), iteration_count: 3, fell_back: false })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
             "salsa_event(WillExecute { database_key: read_value(Id(401)) })",
         ]"#]]);
