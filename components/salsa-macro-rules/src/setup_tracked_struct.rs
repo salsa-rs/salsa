@@ -87,7 +87,6 @@ macro_rules! setup_tracked_struct {
             $Configuration:ident,
             $CACHE:ident,
             $Db:ident,
-            $NonNull:ident,
             $Revision:ident,
         ]
     ) => {
@@ -104,7 +103,6 @@ macro_rules! setup_tracked_struct {
             use salsa::plumbing as $zalsa;
             use $zalsa::tracked_struct as $zalsa_struct;
             use $zalsa::Revision as $Revision;
-            use std::ptr::NonNull as $NonNull;
 
             type $Configuration = $Struct<'static>;
 
@@ -207,8 +205,8 @@ macro_rules! setup_tracked_struct {
 
                 #[inline]
                 fn cast(id: $zalsa::Id, type_id: $zalsa::TypeId) -> $zalsa::Option<Self> {
-                    if type_id == $zalsa::TypeId::of::<$Struct>() {
-                        $zalsa::Some(<$Struct as $zalsa::FromId>::from_id(id))
+                    if type_id == $zalsa::TypeId::of::<$Struct<'static>>() {
+                        $zalsa::Some(<$Struct<'static> as $zalsa::FromId>::from_id(id))
                     } else {
                         $zalsa::None
                     }
@@ -289,6 +287,7 @@ macro_rules! setup_tracked_struct {
                 )*
             }
 
+            #[allow(unused_lifetimes)]
             impl<'_db> $Struct<'_db> {
                 /// Default debug formatting for this struct (may be useful if you define your own `Debug` impl)
                 pub fn default_debug_fmt(this: Self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
