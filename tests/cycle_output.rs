@@ -154,7 +154,19 @@ fn revalidate_with_change_after_output_read() {
 
     assert_eq!(query_b(&db, ab_input), 3);
 
-    db.assert_logs_len(10);
+    db.assert_logs(expect![[r#"
+        [
+            "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
+            "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+            "salsa_event(WillExecute { database_key: read_value(Id(400)) })",
+            "salsa_event(WillExecute { database_key: query_d(Id(800)) })",
+            "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+            "salsa_event(WillExecute { database_key: read_value(Id(401)) })",
+            "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+            "salsa_event(WillExecute { database_key: read_value(Id(402)) })",
+            "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+            "salsa_event(WillExecute { database_key: read_value(Id(403)) })",
+        ]"#]]);
 
     // trigger a new revision that changes the output of query_d
     d_input.set_value(&mut db).to(20);
