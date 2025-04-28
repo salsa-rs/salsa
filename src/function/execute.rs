@@ -24,7 +24,7 @@ where
         &'db self,
         db: &'db C::DbView,
         mut active_query: ActiveQueryGuard<'db>,
-        opt_old_memo: Option<&Memo<C::Output<'_>>>,
+        opt_old_memo: Option<&Memo<C::Output<'db>>>,
     ) -> &'db Memo<C::Output<'db>> {
         let zalsa = db.zalsa();
         let revision_now = zalsa.current_revision();
