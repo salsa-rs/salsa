@@ -117,10 +117,6 @@ impl ActiveQuery {
         self.input_outputs.insert(QueryEdge::Output(key));
     }
 
-    pub(super) fn is_input_outputs_empty(&self) -> bool {
-        self.input_outputs.is_empty()
-    }
-
     /// True if the given key was output by this query.
     pub(super) fn is_output(&self, key: DatabaseKeyIndex) -> bool {
         self.input_outputs.contains(&QueryEdge::Output(key))

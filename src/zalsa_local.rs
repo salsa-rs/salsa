@@ -491,7 +491,7 @@ impl ActiveQueryGuard<'_> {
     }
 
     /// Initialize the outputs with the outputs from the prior execution.
-    pub(crate) fn seed_outputs<I>(&self, outputs: I)
+    pub(crate) fn merge_outputs<I>(&self, outputs: I)
     where
         I: IntoIterator<Item = DatabaseKeyIndex> + UnwindSafe,
     {
@@ -499,7 +499,6 @@ impl ActiveQueryGuard<'_> {
             #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
-            assert!(frame.is_input_outputs_empty());
 
             for output in outputs {
                 frame.add_output(output);
