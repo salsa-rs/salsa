@@ -119,7 +119,6 @@ impl Macro {
         let Configuration = self.hygiene.ident("Configuration");
         let CACHE = self.hygiene.ident("CACHE");
         let Db = self.hygiene.ident("Db");
-        let NonNull = self.hygiene.ident("NonNull");
         let Revision = self.hygiene.ident("Revision");
 
         Ok(crate::debug::dump_tokens(
@@ -160,7 +159,6 @@ impl Macro {
                         #Configuration,
                         #CACHE,
                         #Db,
-                        #NonNull,
                         #Revision,
                     ]
                 );
