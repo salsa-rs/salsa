@@ -1,6 +1,6 @@
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
-use crate::hash::FxHashSet;
+use crate::hash::FxIndexSet;
 use crate::zalsa::Zalsa;
 use crate::zalsa_local::QueryRevisions;
 use crate::{AsDynDatabase as _, Database, DatabaseKeyIndex, Event, EventKind};
@@ -27,12 +27,12 @@ where
         provisional: bool,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset
-        let mut old_outputs: FxHashSet<_> = old_memo.revisions.origin.outputs().collect();
+        let mut old_outputs: FxIndexSet<_> = old_memo.revisions.origin.outputs().collect();
 
         // Iterate over the outputs of the current query
         // and remove elements from `old_outputs` when we find them
         for new_output in revisions.origin.outputs() {
-            old_outputs.remove(&new_output);
+            old_outputs.swap_remove(&new_output);
         }
 
         if !old_outputs.is_empty() {

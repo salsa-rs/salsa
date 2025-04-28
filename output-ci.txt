@@ -1,0 +1,5585 @@
+running 1 test
+[2m2025-04-28T12:24:00.178042Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): executing query
+[2m2025-04-28T12:24:00.178142Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): executing query
+[2m2025-04-28T12:24:00.178190Z[0m [34mDEBUG[0m [2msalsa::function::fetch[0m[2m:[0m hit cycle at query_b(Id(0)), inserting and returning fixpoint initial value
+[2m2025-04-28T12:24:00.178227Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_b(Id(0)), durability=Durability(2), changed_at=R1)
+[2m2025-04-28T12:24:00.178317Z[0m [35mTRACE[0m [2msalsa::tracked_struct[0m[2m:[0m Allocated new tracked struct Output(Id(400))
+[2m2025-04-28T12:24:00.178373Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(400)): executing query
+[2m2025-04-28T12:24:00.178405Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Output(Id(400)), durability=Durability(2), changed_at=R1)
+[2m2025-04-28T12:24:00.178440Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(400)): execute: result.revisions = QueryRevisions {
+    changed_at: R1,
+    durability: Durability(
+        2,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    Output(Id(400)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {},
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: true,
+    cycle_heads: CycleHeads(
+        [],
+    ),
+}
+[2m2025-04-28T12:24:00.178484Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=read_value(Id(400)), durability=Durability(2), changed_at=R1)
+[2m2025-04-28T12:24:00.178633Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Configuration(Id(800)), durability=Durability(2), changed_at=R1)
+[2m2025-04-28T12:24:00.178704Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m query_d(Id(800)): executing query
+[2m2025-04-28T12:24:00.178741Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=InputValue.value(Id(1)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.178773Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_d(Id(800)): execute: result.revisions = QueryRevisions {
+    changed_at: R1,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    InputValue.value(Id(1)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {},
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: true,
+    cycle_heads: CycleHeads(
+        [],
+    ),
+}
+[2m2025-04-28T12:24:00.178822Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_d(Id(800)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.178859Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=InputValue.value(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.178894Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): execute: result.revisions = QueryRevisions {
+    changed_at: R1,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    query_b(Id(0)),
+                ),
+                Output(
+                    Output(Id(400)),
+                ),
+                Input(
+                    read_value(Id(400)),
+                ),
+                Input(
+                    Configuration(Id(800)),
+                ),
+                Input(
+                    query_d(Id(800)),
+                ),
+                Input(
+                    InputValue.value(Id(0)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 0,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(400),
+        },
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: false,
+    cycle_heads: CycleHeads(
+        [
+            CycleHead {
+                database_key_index: query_b(Id(0)),
+                iteration_count: 0,
+            },
+        ],
+    ),
+}
+[2m2025-04-28T12:24:00.178973Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_a(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.179023Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: I am a cycle head, comparing last provisional value with new value
+[2m2025-04-28T12:24:00.179036Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: iterate again
+[2m2025-04-28T12:24:00.179079Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.179181Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): deep_verify_memo(old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.179294Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.179374Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_provisional(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.179456Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_same_iteration(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.179535Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): executing query
+[2m2025-04-28T12:24:00.179589Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.179637Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.179695Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_b(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.179729Z[0m [35mTRACE[0m [2msalsa::tracked_struct[0m[2m:[0m Allocated new tracked struct Output(Id(401))
+[2m2025-04-28T12:24:00.179809Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(401)): executing query
+[2m2025-04-28T12:24:00.179884Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Output(Id(401)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.179945Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(401)): execute: result.revisions = QueryRevisions {
+    changed_at: R1,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    Output(Id(401)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {},
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: true,
+    cycle_heads: CycleHeads(
+        [],
+    ),
+}
+[2m2025-04-28T12:24:00.180030Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=read_value(Id(401)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.180127Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Configuration(Id(800)), durability=Durability(2), changed_at=R1)
+[2m2025-04-28T12:24:00.180178Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.180223Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_d(Id(800)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.180250Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=InputValue.value(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.180285Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): execute: result.revisions = QueryRevisions {
+    changed_at: R1,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Output(
+                    Output(Id(400)),
+                ),
+                Input(
+                    query_b(Id(0)),
+                ),
+                Output(
+                    Output(Id(401)),
+                ),
+                Input(
+                    read_value(Id(401)),
+                ),
+                Input(
+                    Configuration(Id(800)),
+                ),
+                Input(
+                    query_d(Id(800)),
+                ),
+                Input(
+                    InputValue.value(Id(0)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 0,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(400),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 12157901119326311915,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(401),
+        },
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: false,
+    cycle_heads: CycleHeads(
+        [
+            CycleHead {
+                database_key_index: query_b(Id(0)),
+                iteration_count: 1,
+            },
+        ],
+    ),
+}
+[2m2025-04-28T12:24:00.180373Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_a(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.180394Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: I am a cycle head, comparing last provisional value with new value
+[2m2025-04-28T12:24:00.180402Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: iterate again
+[2m2025-04-28T12:24:00.180415Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Input(
+                        read_value(Id(401)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.180472Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): deep_verify_memo(old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Input(
+                        read_value(Id(401)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.180525Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Input(
+                        read_value(Id(401)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.180575Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_provisional(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Input(
+                        read_value(Id(401)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.180632Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_same_iteration(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Input(
+                        read_value(Id(401)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.180691Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): executing query
+[2m2025-04-28T12:24:00.180715Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.180745Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.180772Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_b(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.180795Z[0m [35mTRACE[0m [2msalsa::tracked_struct[0m[2m:[0m Allocated new tracked struct Output(Id(402))
+[2m2025-04-28T12:24:00.180813Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(402)): executing query
+[2m2025-04-28T12:24:00.180824Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Output(Id(402)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.180865Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(402)): execute: result.revisions = QueryRevisions {
+    changed_at: R1,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    Output(Id(402)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {},
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: true,
+    cycle_heads: CycleHeads(
+        [],
+    ),
+}
+[2m2025-04-28T12:24:00.180893Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=read_value(Id(402)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.180908Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Configuration(Id(800)), durability=Durability(2), changed_at=R1)
+[2m2025-04-28T12:24:00.180920Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.180941Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_d(Id(800)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.180953Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=InputValue.value(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.180975Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): execute: result.revisions = QueryRevisions {
+    changed_at: R1,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Output(
+                    Output(Id(400)),
+                ),
+                Output(
+                    Output(Id(401)),
+                ),
+                Input(
+                    query_b(Id(0)),
+                ),
+                Output(
+                    Output(Id(402)),
+                ),
+                Input(
+                    read_value(Id(402)),
+                ),
+                Input(
+                    Configuration(Id(800)),
+                ),
+                Input(
+                    query_d(Id(800)),
+                ),
+                Input(
+                    InputValue.value(Id(0)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 0,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(400),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 5869058164875963351,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(402),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 12157901119326311915,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(401),
+        },
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: false,
+    cycle_heads: CycleHeads(
+        [
+            CycleHead {
+                database_key_index: query_b(Id(0)),
+                iteration_count: 2,
+            },
+        ],
+    ),
+}
+[2m2025-04-28T12:24:00.181046Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_a(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.181066Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: I am a cycle head, comparing last provisional value with new value
+[2m2025-04-28T12:24:00.181074Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: iterate again
+[2m2025-04-28T12:24:00.181087Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        read_value(Id(402)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.181224Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): deep_verify_memo(old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        read_value(Id(402)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.181324Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        read_value(Id(402)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.181399Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_provisional(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        read_value(Id(402)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.181468Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_same_iteration(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        read_value(Id(402)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.181533Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): executing query
+[2m2025-04-28T12:24:00.181556Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 3,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.181584Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 3,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.181613Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_b(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.181646Z[0m [35mTRACE[0m [2msalsa::tracked_struct[0m[2m:[0m Allocated new tracked struct Output(Id(403))
+[2m2025-04-28T12:24:00.181669Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(403)): executing query
+[2m2025-04-28T12:24:00.181682Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Output(Id(403)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.181700Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(403)): execute: result.revisions = QueryRevisions {
+    changed_at: R1,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    Output(Id(403)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {},
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: true,
+    cycle_heads: CycleHeads(
+        [],
+    ),
+}
+[2m2025-04-28T12:24:00.181729Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=read_value(Id(403)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.181748Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Configuration(Id(800)), durability=Durability(2), changed_at=R1)
+[2m2025-04-28T12:24:00.181762Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.181785Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_d(Id(800)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.181803Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): execute: result.revisions = QueryRevisions {
+    changed_at: R1,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Output(
+                    Output(Id(400)),
+                ),
+                Output(
+                    Output(Id(401)),
+                ),
+                Output(
+                    Output(Id(402)),
+                ),
+                Input(
+                    query_b(Id(0)),
+                ),
+                Output(
+                    Output(Id(403)),
+                ),
+                Input(
+                    read_value(Id(403)),
+                ),
+                Input(
+                    Configuration(Id(800)),
+                ),
+                Input(
+                    query_d(Id(800)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 0,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(400),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 18026959284135166402,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(403),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 12157901119326311915,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(401),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 5869058164875963351,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(402),
+        },
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: false,
+    cycle_heads: CycleHeads(
+        [
+            CycleHead {
+                database_key_index: query_b(Id(0)),
+                iteration_count: 3,
+            },
+        ],
+    ),
+}
+[2m2025-04-28T12:24:00.181862Z[0m [34mDEBUG[0m [2msalsa::function::backdate[0m[2m:[0m value is equal, back-dating to R1
+[2m2025-04-28T12:24:00.181892Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_a(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.181912Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: I am a cycle head, comparing last provisional value with new value
+[2m2025-04-28T12:24:00.181922Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: fixpoint iteration has a final value
+[2m2025-04-28T12:24:00.181931Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: result.revisions = QueryRevisions {
+    changed_at: R1,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    query_a(Id(0)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {},
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: false,
+    cycle_heads: CycleHeads(
+        [],
+    ),
+}
+[2m2025-04-28T12:24:00.181958Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_b(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.182041Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182072Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): check_durability(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+}, last_changed=R2 <= verified_at=R1) = false
+[2m2025-04-28T12:24:00.182097Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): deep_verify_memo(old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182135Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182154Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): check_durability(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+}, last_changed=R2 <= verified_at=R1) = false
+[2m2025-04-28T12:24:00.182178Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): maybe_changed_after(revision = R1)
+[2m2025-04-28T12:24:00.182187Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(403)),
+                    ),
+                    Input(
+                        read_value(Id(403)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 18026959284135166402,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(403),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 3,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182259Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): check_durability(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(403)),
+                    ),
+                    Input(
+                        read_value(Id(403)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 18026959284135166402,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(403),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 3,
+                },
+            ],
+        ),
+    },
+}, last_changed=R2 <= verified_at=R1) = false
+[2m2025-04-28T12:24:00.182338Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): maybe_changed_after_cold, successful claim, revision = R1, old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(403)),
+                    ),
+                    Input(
+                        read_value(Id(403)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 18026959284135166402,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(403),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 3,
+                },
+            ],
+        ),
+    },
+}
+[2m2025-04-28T12:24:00.182411Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): deep_verify_memo(old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(403)),
+                    ),
+                    Input(
+                        read_value(Id(403)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 18026959284135166402,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(403),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 3,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182482Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(403)),
+                    ),
+                    Input(
+                        read_value(Id(403)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 18026959284135166402,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(403),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 3,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182551Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): check_durability(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(401)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(403)),
+                    ),
+                    Input(
+                        read_value(Id(403)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 18026959284135166402,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(403),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(401),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 3,
+                },
+            ],
+        ),
+    },
+}, last_changed=R2 <= verified_at=R1) = false
+[2m2025-04-28T12:24:00.182621Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): maybe_changed_after(revision = R1)
+[2m2025-04-28T12:24:00.182631Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182650Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): check_durability(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+}, last_changed=R2 <= verified_at=R1) = false
+[2m2025-04-28T12:24:00.182676Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m read_value(Id(403)): maybe_changed_after(revision = R1)
+[2m2025-04-28T12:24:00.182686Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m read_value(Id(403)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        Output(Id(403)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182705Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m read_value(Id(403)): check_durability(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        Output(Id(403)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+}, last_changed=R2 <= verified_at=R1) = false
+[2m2025-04-28T12:24:00.182726Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m read_value(Id(403)): maybe_changed_after_cold, successful claim, revision = R1, old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        Output(Id(403)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+}
+[2m2025-04-28T12:24:00.182745Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m read_value(Id(403)): deep_verify_memo(old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        Output(Id(403)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182764Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m read_value(Id(403)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        Output(Id(403)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182782Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m read_value(Id(403)): check_durability(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        Output(Id(403)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+}, last_changed=R2 <= verified_at=R1) = false
+[2m2025-04-28T12:24:00.182811Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): maybe_changed_after(revision = R1)
+[2m2025-04-28T12:24:00.182820Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182839Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): check_durability(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+}, last_changed=R2 <= verified_at=R1) = false
+[2m2025-04-28T12:24:00.182861Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): maybe_changed_after_cold, successful claim, revision = R1, old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+}
+[2m2025-04-28T12:24:00.182881Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): deep_verify_memo(old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182898Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.182917Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): check_durability(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+}, last_changed=R2 <= verified_at=R1) = false
+[2m2025-04-28T12:24:00.182940Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m query_d(Id(800)): executing query
+[2m2025-04-28T12:24:00.182953Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=InputValue.value(Id(1)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.182970Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_d(Id(800)): execute: result.revisions = QueryRevisions {
+    changed_at: R2,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    InputValue.value(Id(1)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {},
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: true,
+    cycle_heads: CycleHeads(
+        [],
+    ),
+}
+[2m2025-04-28T12:24:00.182997Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): executing query
+[2m2025-04-28T12:24:00.183012Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183033Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): check_durability(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+}, last_changed=R2 <= verified_at=R1) = false
+[2m2025-04-28T12:24:00.183056Z[0m [34mDEBUG[0m [2msalsa::function::fetch[0m[2m:[0m hit cycle at query_b(Id(0)), inserting and returning fixpoint initial value
+[2m2025-04-28T12:24:00.183068Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_b(Id(0)), durability=Durability(2), changed_at=R2)
+[2m2025-04-28T12:24:00.183201Z[0m [35mTRACE[0m [2msalsa::tracked_struct[0m[2m:[0m Reuse tracked struct Output(Id(400))
+[2m2025-04-28T12:24:00.183227Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m read_value(Id(400)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            2,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        Output(Id(400)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183255Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m read_value(Id(400)): check_durability(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 1,
+    },
+    revisions: QueryRevisions {
+        changed_at: R1,
+        durability: Durability(
+            2,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        Output(Id(400)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+}, last_changed=R1 <= verified_at=R1) = true
+[2m2025-04-28T12:24:00.183281Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=read_value(Id(400)), durability=Durability(2), changed_at=R1)
+[2m2025-04-28T12:24:00.183297Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Configuration(Id(800)), durability=Durability(2), changed_at=R1)
+[2m2025-04-28T12:24:00.183315Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183342Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_d(Id(800)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.183354Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=InputValue.value(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.183370Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): execute: result.revisions = QueryRevisions {
+    changed_at: R2,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    query_b(Id(0)),
+                ),
+                Output(
+                    Output(Id(400)),
+                ),
+                Input(
+                    read_value(Id(400)),
+                ),
+                Input(
+                    Configuration(Id(800)),
+                ),
+                Input(
+                    query_d(Id(800)),
+                ),
+                Input(
+                    InputValue.value(Id(0)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 0,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(400),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 18026959284135166402,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(403),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 12157901119326311915,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(401),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 5869058164875963351,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(402),
+        },
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: false,
+    cycle_heads: CycleHeads(
+        [
+            CycleHead {
+                database_key_index: query_b(Id(0)),
+                iteration_count: 0,
+            },
+        ],
+    ),
+}
+[2m2025-04-28T12:24:00.183459Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): executing query
+[2m2025-04-28T12:24:00.183479Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183531Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): deep_verify_memo(old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183577Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183623Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_provisional(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183672Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_same_iteration(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183725Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_a(Id(0)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.183746Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: I am a cycle head, comparing last provisional value with new value
+[2m2025-04-28T12:24:00.183755Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: iterate again
+[2m2025-04-28T12:24:00.183769Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183815Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): deep_verify_memo(old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183863Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183906Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_provisional(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183951Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_same_iteration(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        read_value(Id(400)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 0,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.183996Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): executing query
+[2m2025-04-28T12:24:00.184015Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.184040Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.184063Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_b(Id(0)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.184078Z[0m [35mTRACE[0m [2msalsa::tracked_struct[0m[2m:[0m Allocated new tracked struct Output(Id(402))
+[2m2025-04-28T12:24:00.184092Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(402)): executing query
+[2m2025-04-28T12:24:00.184119Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Output(Id(402)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.184138Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(402)): execute: result.revisions = QueryRevisions {
+    changed_at: R2,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    Output(Id(402)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {},
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: true,
+    cycle_heads: CycleHeads(
+        [],
+    ),
+}
+[2m2025-04-28T12:24:00.184164Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=read_value(Id(402)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.184180Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Configuration(Id(800)), durability=Durability(2), changed_at=R1)
+[2m2025-04-28T12:24:00.184191Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.184215Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_d(Id(800)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.184227Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=InputValue.value(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.185167Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): execute: result.revisions = QueryRevisions {
+    changed_at: R2,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Output(
+                    Output(Id(400)),
+                ),
+                Input(
+                    query_b(Id(0)),
+                ),
+                Output(
+                    Output(Id(402)),
+                ),
+                Input(
+                    read_value(Id(402)),
+                ),
+                Input(
+                    Configuration(Id(800)),
+                ),
+                Input(
+                    query_d(Id(800)),
+                ),
+                Input(
+                    InputValue.value(Id(0)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 0,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(400),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 12157901119326311915,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(402),
+        },
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: false,
+    cycle_heads: CycleHeads(
+        [
+            CycleHead {
+                database_key_index: query_b(Id(0)),
+                iteration_count: 1,
+            },
+        ],
+    ),
+}
+[2m2025-04-28T12:24:00.185269Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_a(Id(0)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.185314Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: I am a cycle head, comparing last provisional value with new value
+[2m2025-04-28T12:24:00.185346Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: iterate again
+[2m2025-04-28T12:24:00.185365Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        read_value(Id(402)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.185437Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): deep_verify_memo(old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        read_value(Id(402)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.185530Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        read_value(Id(402)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.185600Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_provisional(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        read_value(Id(402)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.185705Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_same_iteration(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        read_value(Id(402)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 1,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.185773Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): executing query
+[2m2025-04-28T12:24:00.185818Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.185874Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.185939Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_b(Id(0)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.185985Z[0m [35mTRACE[0m [2msalsa::tracked_struct[0m[2m:[0m Allocated new tracked struct Output(Id(403))
+[2m2025-04-28T12:24:00.186030Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(403)): executing query
+[2m2025-04-28T12:24:00.186079Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Output(Id(403)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.186176Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(403)): execute: result.revisions = QueryRevisions {
+    changed_at: R2,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    Output(Id(403)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {},
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: true,
+    cycle_heads: CycleHeads(
+        [],
+    ),
+}
+[2m2025-04-28T12:24:00.186228Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=read_value(Id(403)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.186264Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Configuration(Id(800)), durability=Durability(2), changed_at=R1)
+[2m2025-04-28T12:24:00.186280Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.186321Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_d(Id(800)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.186338Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=InputValue.value(Id(0)), durability=Durability(0), changed_at=R1)
+[2m2025-04-28T12:24:00.186357Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): execute: result.revisions = QueryRevisions {
+    changed_at: R2,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Output(
+                    Output(Id(400)),
+                ),
+                Output(
+                    Output(Id(402)),
+                ),
+                Input(
+                    query_b(Id(0)),
+                ),
+                Output(
+                    Output(Id(403)),
+                ),
+                Input(
+                    read_value(Id(403)),
+                ),
+                Input(
+                    Configuration(Id(800)),
+                ),
+                Input(
+                    query_d(Id(800)),
+                ),
+                Input(
+                    InputValue.value(Id(0)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 0,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(400),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 12157901119326311915,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(402),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 5869058164875963351,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(403),
+        },
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: false,
+    cycle_heads: CycleHeads(
+        [
+            CycleHead {
+                database_key_index: query_b(Id(0)),
+                iteration_count: 2,
+            },
+        ],
+    ),
+}
+[2m2025-04-28T12:24:00.186430Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_a(Id(0)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.186452Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: I am a cycle head, comparing last provisional value with new value
+[2m2025-04-28T12:24:00.186482Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: iterate again
+[2m2025-04-28T12:24:00.186503Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(403)),
+                    ),
+                    Input(
+                        read_value(Id(403)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(403),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.186573Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): deep_verify_memo(old_memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(403)),
+                    ),
+                    Input(
+                        read_value(Id(403)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(403),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.186638Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(403)),
+                    ),
+                    Input(
+                        read_value(Id(403)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(403),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.186695Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_provisional(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(403)),
+                    ),
+                    Input(
+                        read_value(Id(403)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(403),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.186870Z[0m [35mTRACE[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_a(Id(0)): validate_same_iteration(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Output(
+                        Output(Id(400)),
+                    ),
+                    Output(
+                        Output(Id(402)),
+                    ),
+                    Input(
+                        query_b(Id(0)),
+                    ),
+                    Output(
+                        Output(Id(403)),
+                    ),
+                    Input(
+                        read_value(Id(403)),
+                    ),
+                    Input(
+                        Configuration(Id(800)),
+                    ),
+                    Input(
+                        query_d(Id(800)),
+                    ),
+                    Input(
+                        InputValue.value(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 0,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(400),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 12157901119326311915,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(402),
+                Identity {
+                    ingredient_index: IngredientIndex(
+                        4,
+                    ),
+                    hash: 5869058164875963351,
+                    disambiguator: Disambiguator(
+                        0,
+                    ),
+                }: Id(403),
+            },
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 2,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.186978Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): executing query
+[2m2025-04-28T12:24:00.187019Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 3,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.187077Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_b(Id(0)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        query_a(Id(0)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: false,
+        cycle_heads: CycleHeads(
+            [
+                CycleHead {
+                    database_key_index: query_b(Id(0)),
+                    iteration_count: 3,
+                },
+            ],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.187153Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_b(Id(0)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.187178Z[0m [35mTRACE[0m [2msalsa::tracked_struct[0m[2m:[0m Allocated new tracked struct Output(Id(401))
+[2m2025-04-28T12:24:00.187209Z[0m [32m INFO[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(401)): executing query
+[2m2025-04-28T12:24:00.187232Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Output(Id(401)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.187258Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m read_value(Id(401)): execute: result.revisions = QueryRevisions {
+    changed_at: R2,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    Output(Id(401)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {},
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: true,
+    cycle_heads: CycleHeads(
+        [],
+    ),
+}
+[2m2025-04-28T12:24:00.187305Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=read_value(Id(401)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.187345Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=Configuration(Id(800)), durability=Durability(2), changed_at=R1)
+[2m2025-04-28T12:24:00.187390Z[0m [34mDEBUG[0m [2msalsa::function::maybe_changed_after[0m[2m:[0m query_d(Id(800)): shallow_verify_memo(memo = Memo {
+    value: "Some(<value>)",
+    verified_at: AtomicRevision {
+        data: 2,
+    },
+    revisions: QueryRevisions {
+        changed_at: R2,
+        durability: Durability(
+            0,
+        ),
+        origin: Derived(
+            QueryEdges {
+                input_outputs: [
+                    Input(
+                        InputValue.value(Id(1)),
+                    ),
+                ],
+            },
+        ),
+        tracked_struct_ids: IdentityMap {
+            map: {},
+        },
+        accumulated: None,
+        accumulated_inputs: AtomicInputAccumulatedValues(
+            false,
+        ),
+        verified_final: true,
+        cycle_heads: CycleHeads(
+            [],
+        ),
+    },
+})
+[2m2025-04-28T12:24:00.187436Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_d(Id(800)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.187462Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_a(Id(0)): execute: result.revisions = QueryRevisions {
+    changed_at: R2,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Output(
+                    Output(Id(400)),
+                ),
+                Output(
+                    Output(Id(402)),
+                ),
+                Output(
+                    Output(Id(403)),
+                ),
+                Input(
+                    query_b(Id(0)),
+                ),
+                Output(
+                    Output(Id(401)),
+                ),
+                Input(
+                    read_value(Id(401)),
+                ),
+                Input(
+                    Configuration(Id(800)),
+                ),
+                Input(
+                    query_d(Id(800)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 0,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(400),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 18026959284135166402,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(401),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 12157901119326311915,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(402),
+            Identity {
+                ingredient_index: IngredientIndex(
+                    4,
+                ),
+                hash: 5869058164875963351,
+                disambiguator: Disambiguator(
+                    0,
+                ),
+            }: Id(403),
+        },
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: false,
+    cycle_heads: CycleHeads(
+        [
+            CycleHead {
+                database_key_index: query_b(Id(0)),
+                iteration_count: 3,
+            },
+        ],
+    ),
+}
+[2m2025-04-28T12:24:00.187524Z[0m [34mDEBUG[0m [2msalsa::function::backdate[0m[2m:[0m value is equal, back-dating to R2
+[2m2025-04-28T12:24:00.187554Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_a(Id(0)), durability=Durability(0), changed_at=R2)
+[2m2025-04-28T12:24:00.187610Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: I am a cycle head, comparing last provisional value with new value
+[2m2025-04-28T12:24:00.187622Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: fixpoint iteration has a final value
+[2m2025-04-28T12:24:00.187630Z[0m [34mDEBUG[0m [2msalsa::function::execute[0m[2m:[0m query_b(Id(0)): execute: result.revisions = QueryRevisions {
+    changed_at: R2,
+    durability: Durability(
+        0,
+    ),
+    origin: Derived(
+        QueryEdges {
+            input_outputs: [
+                Input(
+                    query_a(Id(0)),
+                ),
+            ],
+        },
+    ),
+    tracked_struct_ids: IdentityMap {
+        map: {},
+    },
+    accumulated: None,
+    accumulated_inputs: AtomicInputAccumulatedValues(
+        false,
+    ),
+    verified_final: false,
+    cycle_heads: CycleHeads(
+        [],
+    ),
+}
+[2m2025-04-28T12:24:00.187671Z[0m [34mDEBUG[0m [2msalsa::function::backdate[0m[2m:[0m value is equal, back-dating to R1
+[2m2025-04-28T12:24:00.187694Z[0m [34mDEBUG[0m [2msalsa::zalsa_local[0m[2m:[0m report_tracked_read(input=query_b(Id(0)), durability=Durability(0), changed_at=R1)
+2025-04-28T12:24:00.3316295Z
+2025-04-28T12:24:00.3316301Z
+[1m[91merror[97m: expect test failed[0m
+   [1m[34m-->[0m tests/cycle_output.rs:176:20
+2025-04-28T12:24:00.3316840Z
+You can update all `expect!` tests by running:
+2025-04-28T12:24:00.3317075Z
+    env UPDATE_EXPECT=1 cargo test
+2025-04-28T12:24:00.3317246Z
+To update a single test, place the cursor on `expect` token and use `run` feature of rust-analyzer.
+2025-04-28T12:24:00.3317702Z
+[1mExpect[0m:
+----
+[
+    "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(403)) })",
+    "salsa_event(WillExecute { database_key: query_d(Id(800)) })",
+    "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+    "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(400)) })",
+    "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
+    "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+    "salsa_event(WillExecute { database_key: read_value(Id(401)) })",
+    "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+    "salsa_event(WillExecute { database_key: read_value(Id(402)) })",
+    "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+    "salsa_event(WillExecute { database_key: read_value(Id(403)) })",
+]
+----
+2025-04-28T12:24:00.3321743Z
+[1mActual[0m:
+----
+[
+    "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(403)) })",
+    "salsa_event(WillExecute { database_key: query_d(Id(800)) })",
+    "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+    "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(400)) })",
+    "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
+    "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+    "salsa_event(WillExecute { database_key: read_value(Id(402)) })",
+    "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+    "salsa_event(WillExecute { database_key: read_value(Id(403)) })",
+    "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+    "salsa_event(WillExecute { database_key: read_value(Id(401)) })",
+]
+----
+2025-04-28T12:24:00.3325324Z
+[1mDiff[0m:
+----
+[
+    "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(403)) })",
+    "salsa_event(WillExecute { database_key: query_d(Id(800)) })",
+    "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+    "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(400)) })",
+    "salsa_event(WillExecute { database_key: query_b(Id(0)) })",
+    "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+    "salsa_event(WillExecute { database_key: read_value(Id(40[4m[31m1[0m[4m[32m2[0m)) })",
+    "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+    "salsa_event(WillExecute { database_key: read_value(Id(40[4m[31m2[0m[4m[32m3[0m)) })",
+    "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
+    "salsa_event(WillExecute { database_key: read_value(Id(40[4m[31m3[0m[4m[32m1[0m)) })",
+]
+----
+2025-04-28T12:24:00.3329764Z
+test revalidate_with_change_after_output_read ... FAILED
+2025-04-28T12:24:00.3330003Z
+failures:
+2025-04-28T12:24:00.3330131Z
+failures:
+    revalidate_with_change_after_output_read
+2025-04-28T12:24:00.3330425Z
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.02s
+[0m
+2025-04-28T12:24:00.3331464Z
