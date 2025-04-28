@@ -1,6 +1,6 @@
 use std::any::{Any, TypeId};
 use std::fmt;
-use std::ops::DerefMut;
+use std::ops::IndexMut;
 use std::sync::Arc;
 
 pub mod input_field;
@@ -34,7 +34,7 @@ pub trait Configuration: Any {
     type Fields: Send + Sync;
 
     /// A array of [`StampedValue<()>`](`StampedValue`) tuples, one per each of the value fields.
-    type Stamps: Send + Sync + fmt::Debug + DerefMut<Target = [Stamp]>;
+    type Stamps: Send + Sync + fmt::Debug + IndexMut<usize, Output = Stamp>;
 }
 
 pub struct JarImpl<C: Configuration> {

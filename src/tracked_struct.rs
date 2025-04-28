@@ -4,7 +4,7 @@ use std::any::TypeId;
 use std::fmt;
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::ops::DerefMut;
+use std::ops::Index;
 use std::sync::Arc;
 
 use crossbeam_queue::SegQueue;
@@ -45,7 +45,7 @@ pub trait Configuration: Sized + 'static {
     /// When a struct is re-recreated in a new revision, the corresponding
     /// entries for each field are updated to the new revision if their
     /// values have changed (or if the field is marked as `#[no_eq]`).
-    type Revisions: Send + Sync + DerefMut<Target = [Revision]>;
+    type Revisions: Send + Sync + Index<usize, Output = Revision>;
 
     type Struct<'db>: Copy;
 
@@ -151,7 +151,7 @@ pub trait TrackedStructInDb: SalsaStructInDb {
 ///
 /// This ingredient only stores the "id" fields. It is a kind of "dressed up" interner;
 /// the active query + values of id fields are hashed to create the tracked
-/// struct id. The value fields are stored in [`crate::function::FunctionIngredient`]
+/// struct id. The value fields are stored in [`crate::function::IngredientImpl`]
 /// instances keyed by the tracked struct id. Unlike normal interners, tracked
 /// struct indices can be deleted and reused aggressively: when a tracked
 /// function re-executes, any tracked structs that it created before but did
@@ -676,11 +676,6 @@ where
     ///
     /// Note that this function returns the entire tuple of value fields.
     /// The caller is responsible for selecting the appropriate element.
-    ///
-    /// This function takes two indices:
-    /// - `field_index` is the absolute index of the field on the tracked struct.
-    /// - `relative_tracked_index` is the index of the field relative only to other
-    ///   tracked fields.
     pub fn tracked_field<'db>(
         &'db self,
         db: &'db dyn crate::Database,

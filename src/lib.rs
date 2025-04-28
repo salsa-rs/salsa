@@ -3,7 +3,6 @@
 
 mod accumulator;
 mod active_query;
-mod array;
 mod attach;
 mod cancelled;
 mod cycle;
@@ -50,7 +49,7 @@ pub use self::input::setter::Setter;
 pub use self::key::DatabaseKeyIndex;
 pub use self::revision::Revision;
 pub use self::runtime::Runtime;
-pub use self::storage::Storage;
+pub use self::storage::{Storage, StorageHandle};
 pub use self::update::Update;
 pub use self::zalsa::IngredientIndex;
 pub use crate::attach::with_attached_database;
@@ -77,7 +76,6 @@ pub mod plumbing {
     };
 
     pub use crate::accumulator::Accumulator;
-    pub use crate::array::Array;
     pub use crate::attach::{attach, with_attached_database};
     pub use crate::cycle::{CycleRecoveryAction, CycleRecoveryStrategy};
     pub use crate::database::{current_revision, Database};

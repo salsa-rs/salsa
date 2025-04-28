@@ -83,7 +83,7 @@ macro_rules! setup_input_struct {
                 type Fields = ($($field_ty,)*);
 
                 /// A array of [`StampedValue<()>`](`StampedValue`) tuples, one per each of the value fields.
-                type Stamps = $zalsa::Array<$zalsa::Stamp, $N>;
+                type Stamps = [$zalsa::Stamp; $N];
             }
 
             impl $Configuration {
@@ -284,10 +284,8 @@ macro_rules! setup_input_struct {
                     }
                 }
 
-                pub(super) fn builder_into_inner(builder: $Builder, revision: $zalsa::Revision) -> (($($field_ty,)*), $zalsa::Array<$zalsa::Stamp, $N>) {
-                    let stamps = $zalsa::Array::new([
-                        $($zalsa::stamp(revision, builder.durabilities[$field_index])),*
-                    ]);
+                pub(super) fn builder_into_inner(builder: $Builder, revision: $zalsa::Revision) -> (($($field_ty,)*), [$zalsa::Stamp; $N]) {
+                    let stamps = [$($zalsa::stamp(revision, builder.durabilities[$field_index])),*];
 
                     (builder.fields, stamps)
                 }
