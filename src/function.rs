@@ -138,13 +138,6 @@ pub struct IngredientImpl<C: Configuration> {
     deleted_entries: DeletedEntries<C>,
 }
 
-/// True if `old_value == new_value`. Invoked by the generated
-/// code for `values_equal` so as to give a better
-/// error message.
-pub fn values_equal<V: Eq>(old_value: &V, new_value: &V) -> bool {
-    old_value == new_value
-}
-
 impl<C> IngredientImpl<C>
 where
     C: Configuration,

@@ -1,0 +1,34 @@
+error[E0599]: the function or associated item `maybe_update` exists for struct `UpdateDispatch<NotUpdate>`, but its trait bounds were not satisfied
+ --> tests/compile-fail/tracked_struct_not_update.rs:1:1
+  |
+1 | #[salsa::tracked]
+  | ^^^^^^^^^^^^^^^^^ function or associated item cannot be called on `UpdateDispatch<NotUpdate>` due to unsatisfied trait bounds
+...
+7 | struct NotUpdate;
+  | ---------------- doesn't satisfy `NotUpdate: PartialEq` or `NotUpdate: Update`
+  |
+ ::: src/update.rs
+  |
+  |     pub struct Dispatch<D>(PhantomData<D>);
+  |     ---------------------- doesn't satisfy `_: UpdateFallback<NotUpdate>`
+  |
+note: if you're trying to build a new `UpdateDispatch<NotUpdate>`, consider using `UpdateDispatch::<D>::new` which returns `UpdateDispatch<_>`
+ --> src/update.rs
+  |
+  |         pub fn new() -> Self {
+  |         ^^^^^^^^^^^^^^^^^^^^
+  = note: the following trait bounds were not satisfied:
+          `NotUpdate: Update`
+          `NotUpdate: PartialEq`
+          which is required by `UpdateDispatch<NotUpdate>: UpdateFallback<NotUpdate>`
+note: the trait `Update` must be implemented
+ --> src/update.rs
+  |
+  | pub unsafe trait Update {
+  | ^^^^^^^^^^^^^^^^^^^^^^^
+  = note: this error originates in the macro `salsa::plumbing::setup_tracked_struct` which comes from the expansion of the attribute macro `salsa::tracked` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `NotUpdate` with `#[derive(PartialEq)]`
+  |
+7   + #[derive(PartialEq)]
+8   | struct NotUpdate;
+    |
