@@ -33,8 +33,8 @@ pub trait Configuration: Sized + 'static {
     /// The debug name of the tracked struct.
     const DEBUG_NAME: &'static str;
 
-    /// The debug names of any fields.
-    const FIELD_DEBUG_NAMES: &'static [&'static str];
+    /// The debug names of any tracked fields.
+    const TRACKED_FIELD_NAMES: &'static [&'static str];
 
     /// The relative indices of any tracked fields.
     const TRACKED_FIELD_INDICES: &'static [usize];
@@ -115,10 +115,10 @@ impl<C: Configuration> Jar for JarImpl<C> {
             C::TRACKED_FIELD_INDICES
                 .iter()
                 .copied()
-                .map(|relative_tracked_index| {
+                .map(|tracked_index| {
                     Box::new(<FieldIngredientImpl<C>>::new(
-                        relative_tracked_index,
-                        struct_index.successor(relative_tracked_index),
+                        tracked_index,
+                        struct_index.successor(tracked_index),
                     )) as _
                 });
 

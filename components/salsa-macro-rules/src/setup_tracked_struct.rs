@@ -109,8 +109,8 @@ macro_rules! setup_tracked_struct {
             impl $zalsa_struct::Configuration for $Configuration {
                 const DEBUG_NAME: &'static str = stringify!($Struct);
 
-                const FIELD_DEBUG_NAMES: &'static [&'static str] = &[
-                    $(stringify!($field_id),)*
+                const TRACKED_FIELD_NAMES: &'static [&'static str] = &[
+                    $(stringify!($tracked_id),)*
                 ];
 
                 const TRACKED_FIELD_INDICES: &'static [usize] = &[
