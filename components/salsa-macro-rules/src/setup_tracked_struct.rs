@@ -121,7 +121,7 @@ macro_rules! setup_tracked_struct {
 
                 type Fields<$db_lt> = ($($field_ty,)*);
 
-                type Revisions = $zalsa::Array<$Revision, $N>;
+                type Revisions = [$Revision; $N];
 
                 type Struct<$db_lt> = $Struct<$db_lt>;
 
@@ -138,7 +138,7 @@ macro_rules! setup_tracked_struct {
                 }
 
                 fn new_revisions(current_revision: $Revision) -> Self::Revisions {
-                    $zalsa::Array::new([current_revision; $N])
+                    [current_revision; $N]
                 }
 
                 unsafe fn update_fields<$db_lt>(

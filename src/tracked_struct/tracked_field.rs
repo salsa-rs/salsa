@@ -12,7 +12,7 @@ use crate::{Database, Id};
 /// This ingredient only stores the "id" fields.
 /// It is a kind of "dressed up" interner;
 /// the active query + values of id fields are hashed to create the tracked struct id.
-/// The value fields are stored in [`crate::function::FunctionIngredient`] instances keyed by the tracked struct id.
+/// The value fields are stored in [`crate::function::IngredientImpl`] instances keyed by the tracked struct id.
 /// Unlike normal interners, tracked struct indices can be deleted and reused aggressively:
 /// when a tracked function re-executes,
 /// any tracked structs that it created before but did not create this time can be deleted.
@@ -23,7 +23,7 @@ where
     /// Index of this ingredient in the database (used to construct database-ids, etc).
     ingredient_index: IngredientIndex,
 
-    /// The absolute index of this field on the tracked struct.
+    /// The index of this field on the tracked struct relative to all other tracked fields.
     field_index: usize,
     phantom: PhantomData<fn() -> Value<C>>,
 }
