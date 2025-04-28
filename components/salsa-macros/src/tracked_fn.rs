@@ -82,16 +82,29 @@ impl Macro {
         let (cycle_recovery_fn, cycle_recovery_initial, cycle_recovery_strategy) =
             self.cycle_recovery()?;
         let is_specifiable = self.args.specify.is_some();
-        let no_eq = if let Some(token) = &self.args.no_eq {
+        let eq = if let Some(token) = &self.args.no_eq {
             if self.args.cycle_fn.is_some() {
                 return Err(syn::Error::new_spanned(
                     token,
                     "the `no_eq` option cannot be used with `cycle_fn`",
                 ));
             }
-            true
+            quote!(false)
         } else {
-            false
+            quote_spanned!(output_ty.span() =>
+                old_value == new_value
+            )
+        };
+        // we need to generate the entire function here
+        // as the locals (parameters) will have def site hygiene otherwise
+        // if emitted in the decl macro
+        let eq = quote! {
+            fn values_equal<#db_lt>(
+                old_value: &Self::Output<#db_lt>,
+                new_value: &Self::Output<#db_lt>,
+            ) -> bool {
+                #eq
+            }
         };
 
         let mut inner_fn = item.clone();
@@ -167,7 +180,7 @@ impl Macro {
                 cycle_recovery_initial: #cycle_recovery_initial,
                 cycle_recovery_strategy: #cycle_recovery_strategy,
                 is_specifiable: #is_specifiable,
-                no_eq: #no_eq,
+                values_equal: {#eq},
                 needs_interner: #needs_interner,
                 lru: #lru,
                 return_ref: #return_ref,

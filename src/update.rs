@@ -32,12 +32,7 @@ pub mod helper {
 
     pub struct Dispatch<D>(PhantomData<D>);
 
-    impl<D> Default for Dispatch<D> {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
+    #[allow(clippy::new_without_default)]
     impl<D> Dispatch<D> {
         pub fn new() -> Self {
             Dispatch(PhantomData)
@@ -135,6 +130,12 @@ pub fn always_update<T>(
 /// have been part of a tracked struct whose values were mutated,
 /// thus invalidating the `'db` lifetime (from a stacked borrows perspective).
 /// Either way, the `Eq` implementation would be invalid.
+#[diagnostic::on_unimplemented(
+    message = "My Message for `ImportantTrait` implemented for `{Self}`",
+    label = "My Label",
+    note = "Note 1",
+    note = "Note 2"
+)]
 pub unsafe trait Update {
     /// # Returns
     ///
