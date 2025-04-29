@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.20.0...salsa-macros-v0.21.0) - 2025-04-29
+
+### Fixed
+
+- allow unused lifetimes in tracked_struct expansion ([#824](https://github.com/salsa-rs/salsa/pull/824))
+
+### Other
+
+- Add a compile-fail test for a `'static` `!Update` struct ([#820](https://github.com/salsa-rs/salsa/pull/820))
+- squelch most clippy warnings in generated code ([#809](https://github.com/salsa-rs/salsa/pull/809))
+- Use `DatabaseKey` for interned events ([#813](https://github.com/salsa-rs/salsa/pull/813))
+
 ## [0.20.0](https://github.com/salsa-rs/salsa/compare/salsa-macros-v0.19.0...salsa-macros-v0.20.0) - 2025-04-22
 
 ### Added

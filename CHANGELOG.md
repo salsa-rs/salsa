@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.20.0...salsa-v0.21.0) - 2025-04-29
+
+### Fixed
+
+- Access to tracked-struct that was freed during fixpoint ([#817](https://github.com/salsa-rs/salsa/pull/817))
+- correct debug output for tracked fields ([#826](https://github.com/salsa-rs/salsa/pull/826))
+- Fix incorrect `values_equal` signature ([#825](https://github.com/salsa-rs/salsa/pull/825))
+- allow unused lifetimes in tracked_struct expansion ([#824](https://github.com/salsa-rs/salsa/pull/824))
+
+### Other
+
+- Implement a query stack `Backtrace` analog ([#827](https://github.com/salsa-rs/salsa/pull/827))
+- Simplify ID conversions ([#822](https://github.com/salsa-rs/salsa/pull/822))
+- Attempt to fix codspeed ([#823](https://github.com/salsa-rs/salsa/pull/823))
+- Remove unnecessary `Array` abstraction ([#821](https://github.com/salsa-rs/salsa/pull/821))
+- Add a compile-fail test for a `'static` `!Update` struct ([#820](https://github.com/salsa-rs/salsa/pull/820))
+- squelch most clippy warnings in generated code ([#809](https://github.com/salsa-rs/salsa/pull/809))
+- Include struct name in formatted input-field index ([#819](https://github.com/salsa-rs/salsa/pull/819))
+- Force inline `fetch_hot` ([#818](https://github.com/salsa-rs/salsa/pull/818))
+- Per ingredient sync table ([#650](https://github.com/salsa-rs/salsa/pull/650))
+- Use `DatabaseKey` for interned events ([#813](https://github.com/salsa-rs/salsa/pull/813))
+- [refactor] More `fetch_hot` simplification ([#793](https://github.com/salsa-rs/salsa/pull/793))
+- Don't store the fields in the interned map ([#812](https://github.com/salsa-rs/salsa/pull/812))
+- Fix ci not always running ([#810](https://github.com/salsa-rs/salsa/pull/810))
+
 ## [0.20.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.19.0...salsa-v0.20.0) - 2025-04-22
 
 ### Added
