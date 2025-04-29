@@ -69,6 +69,10 @@ const _: () = {
         }
     }
     impl zalsa_struct_::Configuration for Configuration_ {
+        const LOCATION: zalsa_::Location = zalsa_::Location {
+            file: file!(),
+            line: line!(),
+        };
         const DEBUG_NAME: &'static str = "InternedString";
         type Fields<'a> = StructData<'a>;
         type Struct<'a> = InternedString<'a>;

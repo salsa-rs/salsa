@@ -9,7 +9,7 @@ use crate::accumulator::accumulated_map::{AccumulatedMap, InputAccumulatedValues
 use crate::cycle::{CycleHeadKind, CycleRecoveryAction, CycleRecoveryStrategy};
 use crate::function::delete::DeletedEntries;
 use crate::function::sync::{ClaimResult, SyncTable};
-use crate::ingredient::{fmt_index, Ingredient};
+use crate::ingredient::Ingredient;
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::MemoIngredientMap;
 use crate::salsa_struct::SalsaStructInDb;
@@ -37,6 +37,7 @@ pub type Memo<C> = memo::Memo<<C as Configuration>::Output<'static>>;
 
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
+    const LOCATION: crate::ingredient::Location;
 
     /// The database that this function is associated with.
     type DbView: ?Sized + crate::Database;
@@ -228,6 +229,10 @@ impl<C> Ingredient for IngredientImpl<C>
 where
     C: Configuration,
 {
+    fn location(&self) -> &'static crate::ingredient::Location {
+        &C::LOCATION
+    }
+
     fn ingredient_index(&self) -> IngredientIndex {
         self.index
     }
@@ -311,10 +316,6 @@ where
         });
 
         self.deleted_entries.clear();
-    }
-
-    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_index(C::DEBUG_NAME, index, fmt)
     }
 
     fn debug_name(&self) -> &'static str {

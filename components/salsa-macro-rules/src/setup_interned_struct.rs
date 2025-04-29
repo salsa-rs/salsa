@@ -121,6 +121,10 @@ macro_rules! setup_interned_struct {
             }
 
             impl salsa::plumbing::interned::Configuration for $StructWithStatic {
+                const LOCATION: $zalsa::Location = $zalsa::Location {
+                    file: file!(),
+                    line: line!(),
+                };
                 const DEBUG_NAME: &'static str = stringify!($Struct);
                 type Fields<'a> = $StructDataIdent<'a>;
                 type Struct<'db> = $Struct< $($db_lt_arg)? >;

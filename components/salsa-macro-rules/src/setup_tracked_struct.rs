@@ -107,6 +107,10 @@ macro_rules! setup_tracked_struct {
             type $Configuration = $Struct<'static>;
 
             impl $zalsa_struct::Configuration for $Configuration {
+                const LOCATION: $zalsa::Location = $zalsa::Location {
+                    file: file!(),
+                    line: line!(),
+                };
                 const DEBUG_NAME: &'static str = stringify!($Struct);
 
                 const TRACKED_FIELD_NAMES: &'static [&'static str] = &[

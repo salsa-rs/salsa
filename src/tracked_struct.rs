@@ -12,7 +12,7 @@ use tracked_field::FieldIngredientImpl;
 
 use crate::function::VerifyResult;
 use crate::id::{AsId, FromId};
-use crate::ingredient::{fmt_index, Ingredient, Jar};
+use crate::ingredient::{Ingredient, Jar};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::ZalsaLocal;
 use crate::revision::OptionalAtomicRevision;
@@ -30,6 +30,8 @@ pub mod tracked_field;
 /// Implemented by the `#[salsa::tracked]` macro when applied
 /// to a struct.
 pub trait Configuration: Sized + 'static {
+    const LOCATION: crate::ingredient::Location;
+
     /// The debug name of the tracked struct.
     const DEBUG_NAME: &'static str;
 
@@ -732,6 +734,10 @@ impl<C> Ingredient for IngredientImpl<C>
 where
     C: Configuration,
 {
+    fn location(&self) -> &'static crate::ingredient::Location {
+        &C::LOCATION
+    }
+
     fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
     }
@@ -775,10 +781,6 @@ where
         // but it did not in the current revision.
         // In that case, we can delete `stale_output_key` and any data associated with it.
         self.delete_entity(db, stale_output_key, provisional);
-    }
-
-    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_index(C::DEBUG_NAME, index, fmt)
     }
 
     fn debug_name(&self) -> &'static str {

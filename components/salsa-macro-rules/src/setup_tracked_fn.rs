@@ -135,6 +135,10 @@ macro_rules! setup_tracked_fn {
                     }
 
                     impl $zalsa::interned::Configuration for $Configuration {
+                        const LOCATION: $zalsa::Location = $zalsa::Location {
+                            file: file!(),
+                            line: line!(),
+                        };
                         const DEBUG_NAME: &'static str = "Configuration";
 
                         type Fields<$db_lt> = ($($input_ty),*);
@@ -177,6 +181,10 @@ macro_rules! setup_tracked_fn {
             }
 
             impl $zalsa::function::Configuration for $Configuration {
+                const LOCATION: $zalsa::Location = $zalsa::Location {
+                    file: file!(),
+                    line: line!(),
+                };
                 const DEBUG_NAME: &'static str = stringify!($fn_name);
 
                 type DbView = dyn $Db;

@@ -72,6 +72,10 @@ macro_rules! setup_input_struct {
             type $Configuration = $Struct;
 
             impl $zalsa_struct::Configuration for $Configuration {
+                const LOCATION: $zalsa::Location = $zalsa::Location {
+                    file: file!(),
+                    line: line!(),
+                };
                 const DEBUG_NAME: &'static str = stringify!($Struct);
                 const FIELD_DEBUG_NAMES: &'static [&'static str] = &[$(stringify!($field_id)),*];
                 type Singleton = $zalsa::macro_if! {if $is_singleton {$zalsa::input::Singleton} else {$zalsa::input::NotSingleton}};

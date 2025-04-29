@@ -45,6 +45,10 @@ impl<C> Ingredient for FieldIngredientImpl<C>
 where
     C: Configuration,
 {
+    fn location(&self) -> &'static crate::ingredient::Location {
+        &C::LOCATION
+    }
+
     fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
     }

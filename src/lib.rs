@@ -38,6 +38,7 @@ pub use parallel::{join, par_map};
 pub use salsa_macros::{accumulator, db, input, interned, tracked, Supertype, Update};
 
 pub use self::accumulator::Accumulator;
+pub use self::active_query::Backtrace;
 pub use self::cancelled::Cancelled;
 pub use self::cycle::CycleRecoveryAction;
 pub use self::database::{AsDynDatabase, Database};
@@ -80,7 +81,7 @@ pub mod plumbing {
     pub use crate::cycle::{CycleRecoveryAction, CycleRecoveryStrategy};
     pub use crate::database::{current_revision, Database};
     pub use crate::id::{AsId, FromId, FromIdWithDb, Id};
-    pub use crate::ingredient::{Ingredient, Jar};
+    pub use crate::ingredient::{Ingredient, Jar, Location};
     pub use crate::key::DatabaseKeyIndex;
     pub use crate::memo_ingredient_indices::{
         IngredientIndices, MemoIngredientIndices, MemoIngredientMap, MemoIngredientSingletonIndex,

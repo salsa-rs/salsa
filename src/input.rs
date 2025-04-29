@@ -11,7 +11,7 @@ use input_field::FieldIngredientImpl;
 
 use crate::function::VerifyResult;
 use crate::id::{AsId, FromId, FromIdWithDb};
-use crate::ingredient::{fmt_index, Ingredient};
+use crate::ingredient::Ingredient;
 use crate::input::singleton::{Singleton, SingletonChoice};
 use crate::key::DatabaseKeyIndex;
 use crate::plumbing::{Jar, Stamp};
@@ -23,6 +23,7 @@ use crate::{Database, Durability, Id, Revision, Runtime};
 pub trait Configuration: Any {
     const DEBUG_NAME: &'static str;
     const FIELD_DEBUG_NAMES: &'static [&'static str];
+    const LOCATION: crate::ingredient::Location;
 
     /// The singleton state for this input if any.
     type Singleton: SingletonChoice + Send + Sync;
@@ -199,6 +200,10 @@ impl<C: Configuration> IngredientImpl<C> {
 }
 
 impl<C: Configuration> Ingredient for IngredientImpl<C> {
+    fn location(&self) -> &'static crate::ingredient::Location {
+        &C::LOCATION
+    }
+
     fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
     }
@@ -212,9 +217,6 @@ impl<C: Configuration> Ingredient for IngredientImpl<C> {
         // Input ingredients are just a counter, they store no data, they are immortal.
         // Their *fields* are stored in function ingredients elsewhere.
         VerifyResult::unchanged()
-    }
-    fn fmt_index(&self, index: Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_index(C::DEBUG_NAME, index, fmt)
     }
 
     fn debug_name(&self) -> &'static str {
