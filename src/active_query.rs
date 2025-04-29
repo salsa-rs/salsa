@@ -1,6 +1,6 @@
 use std::ops::Not;
 use std::sync::atomic::AtomicBool;
-use std::{mem, ops};
+use std::{fmt, mem, ops};
 
 use crate::accumulator::accumulated_map::{
     AccumulatedMap, AtomicInputAccumulatedValues, InputAccumulatedValues,
@@ -345,5 +345,120 @@ impl QueryStack {
             "unbalanced push/pop"
         );
         self.stack[self.len].clear()
+    }
+}
+
+struct CapturedQuery {
+    database_key_index: DatabaseKeyIndex,
+    durability: Durability,
+    changed_at: Revision,
+    cycle_heads: CycleHeads,
+    iteration_count: u32,
+}
+
+impl fmt::Debug for CapturedQuery {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug_struct = f.debug_struct("CapturedQuery");
+        debug_struct
+            .field("database_key_index", &self.database_key_index)
+            .field("durability", &self.durability)
+            .field("changed_at", &self.changed_at);
+        if !self.cycle_heads.is_empty() {
+            debug_struct
+                .field("cycle_heads", &self.cycle_heads)
+                .field("iteration_count", &self.iteration_count);
+        }
+        debug_struct.finish()
+    }
+}
+
+pub struct Backtrace(Box<[CapturedQuery]>);
+
+impl Backtrace {
+    pub fn capture() -> Option<Self> {
+        crate::with_attached_database(|db| {
+            db.zalsa_local().with_query_stack(|stack| {
+                Backtrace(
+                    stack
+                        .iter()
+                        .rev()
+                        .map(|query| CapturedQuery {
+                            database_key_index: query.database_key_index,
+                            durability: query.durability,
+                            changed_at: query.changed_at,
+                            cycle_heads: query.cycle_heads.clone(),
+                            iteration_count: query.iteration_count,
+                        })
+                        .collect(),
+                )
+            })
+        })
+    }
+}
+
+impl fmt::Debug for Backtrace {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "Backtrace ")?;
+
+        let mut dbg = fmt.debug_list();
+
+        for frame in &self.0 {
+            dbg.entry(&frame);
+        }
+
+        dbg.finish()
+    }
+}
+
+impl fmt::Display for Backtrace {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(fmt, "query stacktrace:")?;
+        let full = fmt.alternate();
+        let indent = "             ";
+        for (
+            idx,
+            &CapturedQuery {
+                database_key_index,
+                durability,
+                changed_at,
+                ref cycle_heads,
+                iteration_count,
+            },
+        ) in self.0.iter().enumerate()
+        {
+            write!(fmt, "{idx:>4}: {database_key_index:?}")?;
+            if full {
+                write!(fmt, " -> ({changed_at:?}, {durability:#?}")?;
+                if !cycle_heads.is_empty() || iteration_count > 0 {
+                    write!(fmt, ", iteration = {iteration_count:?}")?;
+                }
+                write!(fmt, ")")?;
+            }
+            writeln!(fmt)?;
+            crate::attach::with_attached_database(|db| {
+                let ingredient = db
+                    .zalsa()
+                    .lookup_ingredient(database_key_index.ingredient_index());
+                let loc = ingredient.location();
+                writeln!(fmt, "{indent}at {}:{}", loc.file, loc.line)?;
+                if !cycle_heads.is_empty() {
+                    write!(fmt, "{indent}cycle heads: ")?;
+                    for (idx, head) in cycle_heads.iter().enumerate() {
+                        if idx != 0 {
+                            write!(fmt, ", ")?;
+                        }
+                        write!(
+                            fmt,
+                            "{:?} -> {:?}",
+                            head.database_key_index, head.iteration_count
+                        )?;
+                    }
+                    writeln!(fmt)?;
+                }
+                Ok(())
+            })
+            .transpose()?;
+        }
+        Ok(())
     }
 }

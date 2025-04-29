@@ -15,7 +15,7 @@ use crate::durability::Durability;
 use crate::function::VerifyResult;
 use crate::hash::FxDashMap;
 use crate::id::{AsId, FromId};
-use crate::ingredient::{fmt_index, Ingredient};
+use crate::ingredient::Ingredient;
 use crate::plumbing::{IngredientIndices, Jar};
 use crate::revision::AtomicRevision;
 use crate::table::memo::{MemoTable, MemoTableTypes};
@@ -24,6 +24,8 @@ use crate::zalsa::{IngredientIndex, Zalsa};
 use crate::{Database, DatabaseKeyIndex, Event, EventKind, Id, Revision};
 
 pub trait Configuration: Sized + 'static {
+    const LOCATION: crate::ingredient::Location;
+
     const DEBUG_NAME: &'static str;
 
     /// The fields of the struct being interned.
@@ -379,6 +381,10 @@ impl<C> Ingredient for IngredientImpl<C>
 where
     C: Configuration,
 {
+    fn location(&self) -> &'static crate::ingredient::Location {
+        &C::LOCATION
+    }
+
     fn ingredient_index(&self) -> IngredientIndex {
         self.ingredient_index
     }
@@ -414,10 +420,6 @@ where
         });
 
         VerifyResult::unchanged()
-    }
-
-    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_index(C::DEBUG_NAME, index, fmt)
     }
 
     fn debug_name(&self) -> &'static str {

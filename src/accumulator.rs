@@ -9,7 +9,7 @@ use std::sync::Arc;
 use accumulated::{Accumulated, AnyAccumulated};
 
 use crate::function::VerifyResult;
-use crate::ingredient::{fmt_index, Ingredient, Jar};
+use crate::ingredient::{Ingredient, Jar};
 use crate::plumbing::IngredientIndices;
 use crate::table::memo::MemoTableTypes;
 use crate::zalsa::{IngredientIndex, Zalsa};
@@ -92,6 +92,15 @@ impl<A: Accumulator> IngredientImpl<A> {
 }
 
 impl<A: Accumulator> Ingredient for IngredientImpl<A> {
+    fn location(&self) -> &'static crate::ingredient::Location {
+        &const {
+            crate::ingredient::Location {
+                file: file!(),
+                line: line!(),
+            }
+        }
+    }
+
     fn ingredient_index(&self) -> IngredientIndex {
         self.index
     }
@@ -103,10 +112,6 @@ impl<A: Accumulator> Ingredient for IngredientImpl<A> {
         _revision: Revision,
     ) -> VerifyResult {
         panic!("nothing should ever depend on an accumulator directly")
-    }
-
-    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt_index(A::DEBUG_NAME, index, fmt)
     }
 
     fn debug_name(&self) -> &'static str {

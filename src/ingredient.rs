@@ -44,8 +44,14 @@ pub trait Jar: Any {
         Self: Sized;
 }
 
+pub struct Location {
+    pub file: &'static str,
+    pub line: u32,
+}
+
 pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
     fn debug_name(&self) -> &'static str;
+    fn location(&self) -> &'static Location;
 
     /// Has the value for `input` in this ingredient changed after `revision`?
     ///
@@ -136,7 +142,9 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
 
     fn memo_table_types(&self) -> Arc<MemoTableTypes>;
 
-    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result;
+    fn fmt_index(&self, index: crate::Id, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_index(self.debug_name(), index, fmt)
+    }
     // Function ingredient methods
 
     /// If this ingredient is a participant in a cycle, what is its cycle recovery strategy?
