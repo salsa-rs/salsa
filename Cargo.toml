@@ -14,12 +14,10 @@ salsa-macros = { version = "0.22.0", path = "components/salsa-macros", optional 
 
 boxcar = { version = "0.2.12" }
 crossbeam-queue = "0.3.11"
-dashmap = { version = "6", features = ["raw-api"] }
-# the version of hashbrown used by dashmap
-hashbrown_14 = { version = "0.14", package = "hashbrown" }
 hashbrown = "0.15"
 hashlink = "0.10"
 indexmap = "2"
+intrusive-collections = "0.9.7"
 parking_lot = "0.12"
 portable-atomic = "1"
 rustc-hash = "2"
@@ -52,6 +50,7 @@ salsa-macros = { version = "=0.22.0", path = "components/salsa-macros" }
 [dev-dependencies]
 # examples
 crossbeam-channel = "0.5.14"
+dashmap = { version = "6", features = ["raw-api"] }
 eyre = "0.6.8"
 notify-debouncer-mini = "0.4.1"
 ordered-float = "4.2.1"

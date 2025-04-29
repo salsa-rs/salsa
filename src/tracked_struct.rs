@@ -28,6 +28,7 @@ pub mod tracked_field;
 
 // ANCHOR: Configuration
 /// Trait that defines the key properties of a tracked struct.
+///
 /// Implemented by the `#[salsa::tracked]` macro when applied
 /// to a struct.
 pub trait Configuration: Sized + 'static {
