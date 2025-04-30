@@ -141,10 +141,10 @@ fn revalidate_no_changes() {
         [
             "salsa_event(DidSetCancellationFlag)",
             "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(403)) })",
-            "salsa_event(DidReinternValue { key: Configuration(Id(800)), revision: R2 })",
+            "salsa_event(DidReinternValue { key: query_d_arguments(Id(800)), revision: R2 })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_d(Id(800)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_b(Id(0)) })",
-            "salsa_event(DidReinternValue { key: Configuration(Id(800)), revision: R2 })",
+            "salsa_event(DidReinternValue { key: query_d_arguments(Id(800)), revision: R2 })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_a(Id(0)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: query_b(Id(0)) })",
         ]"#]]);
@@ -171,7 +171,7 @@ fn revalidate_with_change_after_output_read() {
         [
             "salsa_event(DidSetCancellationFlag)",
             "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(403)) })",
-            "salsa_event(DidReinternValue { key: Configuration(Id(800)), revision: R2 })",
+            "salsa_event(DidReinternValue { key: query_d_arguments(Id(800)), revision: R2 })",
             "salsa_event(WillExecute { database_key: query_d(Id(800)) })",
             "salsa_event(WillExecute { database_key: query_a(Id(0)) })",
             "salsa_event(DidValidateMemoizedValue { database_key: read_value(Id(400)) })",

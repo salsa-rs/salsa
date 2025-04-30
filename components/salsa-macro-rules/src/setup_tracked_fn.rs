@@ -139,7 +139,7 @@ macro_rules! setup_tracked_fn {
                             file: file!(),
                             line: line!(),
                         };
-                        const DEBUG_NAME: &'static str = "Configuration";
+                        const DEBUG_NAME: &'static str = concat!(stringify!($fn_name), "_arguments");
 
                         type Fields<$db_lt> = ($($input_ty),*);
 
