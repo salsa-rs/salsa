@@ -334,12 +334,14 @@ impl Zalsa {
 
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
+    #[inline]
     pub fn current_revision(&self) -> Revision {
         self.runtime.current_revision()
     }
 
     /// **NOT SEMVER STABLE**
     #[doc(hidden)]
+    #[inline]
     pub fn last_changed_revision(&self, durability: Durability) -> Revision {
         self.runtime.last_changed_revision(durability)
     }
