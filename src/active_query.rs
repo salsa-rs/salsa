@@ -377,7 +377,7 @@ pub struct Backtrace(Box<[CapturedQuery]>);
 impl Backtrace {
     pub fn capture() -> Option<Self> {
         crate::with_attached_database(|db| {
-            db.zalsa_local().with_query_stack(|stack| {
+            db.zalsa_local().try_with_query_stack(|stack| {
                 Backtrace(
                     stack
                         .iter()
@@ -392,7 +392,7 @@ impl Backtrace {
                         .collect(),
                 )
             })
-        })
+        })?
     }
 }
 

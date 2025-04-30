@@ -110,13 +110,30 @@ impl ZalsaLocal {
         }
     }
 
-    /// Executes a closure within the context of the current active query stacks.
+    /// Executes a closure within the context of the current active query stacks (mutable).
     #[inline(always)]
-    pub(crate) fn with_query_stack<R>(
+    pub(crate) fn with_query_stack_mut<R>(
         &self,
         c: impl UnwindSafe + FnOnce(&mut QueryStack) -> R,
     ) -> R {
         c(&mut self.query_stack.borrow_mut())
+    }
+
+    #[inline(always)]
+    pub(crate) fn with_query_stack<R>(&self, c: impl UnwindSafe + FnOnce(&QueryStack) -> R) -> R {
+        c(&mut self.query_stack.borrow())
+    }
+
+    #[inline(always)]
+    pub(crate) fn try_with_query_stack<R>(
+        &self,
+        c: impl UnwindSafe + FnOnce(&QueryStack) -> R,
+    ) -> Option<R> {
+        self.query_stack
+            .try_borrow()
+            .ok()
+            .as_ref()
+            .map(|stack| c(stack))
     }
 
     /// Returns the index of the active query along with its *current* durability/changed-at
@@ -137,7 +154,7 @@ impl ZalsaLocal {
         index: IngredientIndex,
         value: A,
     ) -> Result<(), ()> {
-        self.with_query_stack(|stack| {
+        self.with_query_stack_mut(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.accumulate(index, value);
                 Ok(())
@@ -149,7 +166,7 @@ impl ZalsaLocal {
 
     /// Add an output to the current query's list of dependencies
     pub(crate) fn add_output(&self, entity: DatabaseKeyIndex) {
-        self.with_query_stack(|stack| {
+        self.with_query_stack_mut(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_output(entity)
             }
@@ -158,7 +175,7 @@ impl ZalsaLocal {
 
     /// Check whether `entity` is an output of the currently active query (if any)
     pub(crate) fn is_output_of_active_query(&self, entity: DatabaseKeyIndex) -> bool {
-        self.with_query_stack(|stack| {
+        self.with_query_stack_mut(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.is_output(entity)
             } else {
@@ -182,7 +199,7 @@ impl ZalsaLocal {
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
             input, durability, changed_at
         );
-        self.with_query_stack(|stack| {
+        self.with_query_stack_mut(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_read(
                     input,
@@ -208,7 +225,7 @@ impl ZalsaLocal {
             "report_tracked_read(input={:?}, durability={:?}, changed_at={:?})",
             input, durability, changed_at
         );
-        self.with_query_stack(|stack| {
+        self.with_query_stack_mut(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_read_simple(input, durability, changed_at);
             }
@@ -222,7 +239,7 @@ impl ZalsaLocal {
     /// * `current_revision`, the current revision
     #[inline(always)]
     pub(crate) fn report_untracked_read(&self, current_revision: Revision) {
-        self.with_query_stack(|stack| {
+        self.with_query_stack_mut(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_untracked_read(current_revision);
             }
@@ -234,7 +251,7 @@ impl ZalsaLocal {
     // FIXME: Use or remove this.
     #[allow(dead_code)]
     pub(crate) fn report_synthetic_read(&self, durability: Durability, revision: Revision) {
-        self.with_query_stack(|stack| {
+        self.with_query_stack_mut(|stack| {
             if let Some(top_query) = stack.last_mut() {
                 top_query.add_synthetic_read(durability, revision);
             }
@@ -253,7 +270,7 @@ impl ZalsaLocal {
     ///   * the disambiguator index
     #[track_caller]
     pub(crate) fn disambiguate(&self, key: IdentityHash) -> (Stamp, Disambiguator) {
-        self.with_query_stack(|stack| {
+        self.with_query_stack_mut(|stack| {
             let top_query = stack.last_mut().expect(
                 "cannot create a tracked struct disambiguator outside of a tracked function",
             );
@@ -274,7 +291,7 @@ impl ZalsaLocal {
 
     #[track_caller]
     pub(crate) fn store_tracked_struct_id(&self, identity: Identity, id: Id) {
-        self.with_query_stack(|stack| {
+        self.with_query_stack_mut(|stack| {
             let top_query = stack
                 .last_mut()
                 .expect("cannot store a tracked struct ID outside of a tracked function");
@@ -481,7 +498,7 @@ pub(crate) struct ActiveQueryGuard<'me> {
 impl ActiveQueryGuard<'_> {
     /// Initialize the tracked struct ids with the values from the prior execution.
     pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &IdentityMap) {
-        self.local_state.with_query_stack(|stack| {
+        self.local_state.with_query_stack_mut(|stack| {
             #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
@@ -495,7 +512,7 @@ impl ActiveQueryGuard<'_> {
     where
         I: IntoIterator<Item = DatabaseKeyIndex> + UnwindSafe,
     {
-        self.local_state.with_query_stack(|stack| {
+        self.local_state.with_query_stack_mut(|stack| {
             #[cfg(debug_assertions)]
             assert_eq!(stack.len(), self.push_len);
             let frame = stack.last_mut().unwrap();
@@ -508,7 +525,7 @@ impl ActiveQueryGuard<'_> {
 
     /// Invoked when the query has successfully completed execution.
     fn complete(self) -> QueryRevisions {
-        let query = self.local_state.with_query_stack(|stack| {
+        let query = self.local_state.with_query_stack_mut(|stack| {
             stack.pop_into_revisions(
                 self.database_key_index,
                 #[cfg(debug_assertions)]
@@ -530,7 +547,7 @@ impl ActiveQueryGuard<'_> {
 
 impl Drop for ActiveQueryGuard<'_> {
     fn drop(&mut self) {
-        self.local_state.with_query_stack(|stack| {
+        self.local_state.with_query_stack_mut(|stack| {
             stack.pop(
                 self.database_key_index,
                 #[cfg(debug_assertions)]
