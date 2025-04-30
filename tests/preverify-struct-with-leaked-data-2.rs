@@ -64,7 +64,7 @@ fn test_leaked_inputs_ignored() {
         [
             "WillCheckCancellation",
             "WillExecute { database_key: function(Id(0)) }",
-            "DidInternValue { key: Configuration(Id(800)), revision: R1 }",
+            "DidInternValue { key: counter_field::interned_arguments(Id(800)), revision: R1 }",
             "WillCheckCancellation",
             "WillExecute { database_key: counter_field(Id(800)) }",
         ]"#]]);
@@ -83,7 +83,7 @@ fn test_leaked_inputs_ignored() {
         [
             "DidSetCancellationFlag",
             "WillCheckCancellation",
-            "DidReinternValue { key: Configuration(Id(800)), revision: R2 }",
+            "DidReinternValue { key: counter_field::interned_arguments(Id(800)), revision: R2 }",
             "WillCheckCancellation",
             "WillExecute { database_key: counter_field(Id(800)) }",
             "WillExecute { database_key: function(Id(0)) }",
