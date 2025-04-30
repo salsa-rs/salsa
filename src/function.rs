@@ -143,10 +143,7 @@ impl<C> IngredientImpl<C>
 where
     C: Configuration,
 {
-    /// # Safety
-    ///
-    /// `memo_type` and `memo_table_types` must be correct.
-    pub unsafe fn new(
+    pub fn new(
         index: IngredientIndex,
         memo_ingredient_indices: <C::SalsaStruct<'static> as SalsaStructInDb>::MemoIngredientMap,
         lru: usize,
@@ -195,19 +192,11 @@ where
     ) -> &'db memo::Memo<C::Output<'db>> {
         // We convert to a `NonNull` here as soon as possible because we are going to alias
         // into the `Box`, which is a `noalias` type.
-        // SAFETY: memo is not null
-        let memo = unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(memo))) };
-
-        // SAFETY: memo must be in the map (it's not yet, but it will be by the time this
-        // value is returned) and anything removed from map is added to deleted entries (ensured elsewhere).
-        let db_memo = unsafe { self.extend_memo_lifetime(memo.as_ref()) };
+        // FIXME: Use `Box::into_non_null` once stable
+        let memo = NonNull::from(Box::leak(Box::new(memo)));
 
         if let Some(old_value) =
-            // SAFETY: We delay the drop of `old_value` until a new revision starts which ensures no
-            // references will exist for the memo contents.
-            unsafe {
-                self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index)
-            }
+            self.insert_memo_into_table_for(zalsa, id, memo, memo_ingredient_index)
         {
             // In case there is a reference to the old memo out there, we have to store it
             // in the deleted entries. This will get cleared when a new revision starts.
@@ -216,7 +205,8 @@ where
             // memo contents, and so it will be safe to free.
             unsafe { self.deleted_entries.push(old_value) };
         }
-        db_memo
+        // SAFETY: memo has been inserted into the table
+        unsafe { self.extend_memo_lifetime(memo.as_ref()) }
     }
 
     #[inline]

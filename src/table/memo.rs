@@ -75,7 +75,8 @@ impl MemoEntryType {
     const fn to_dyn_fn<M: Memo>() -> fn(NonNull<DummyMemo>) -> NonNull<dyn Memo> {
         let f: fn(NonNull<M>) -> NonNull<dyn Memo> = |x| x;
 
-        #[allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
+        // SAFETY: `M: Sized` and `DummyMemo: Sized`, as such they are ABI compatible behind a
+        // `NonNull` making it safe to do type erasure.
         unsafe {
             mem::transmute::<
                 fn(NonNull<M>) -> NonNull<dyn Memo>,
@@ -144,7 +145,7 @@ impl MemoTableTypes {
     ///
     /// The types table must be the correct one of `memos`.
     #[inline]
-    pub(crate) unsafe fn attach_memos<'a>(
+    pub(super) unsafe fn attach_memos<'a>(
         &'a self,
         memos: &'a MemoTable,
     ) -> MemoTableWithTypes<'a> {
@@ -168,12 +169,8 @@ pub(crate) struct MemoTableWithTypes<'a> {
     memos: &'a MemoTable,
 }
 
-impl<'a> MemoTableWithTypes<'a> {
-    /// # Safety
-    ///
-    /// The caller needs to make sure to not drop the returned value until no more references into
-    /// the database exist as there may be outstanding borrows into the `Arc` contents.
-    pub(crate) unsafe fn insert<M: Memo>(
+impl MemoTableWithTypes<'_> {
+    pub(crate) fn insert<M: Memo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
         memo: NonNull<M>,
@@ -207,15 +204,11 @@ impl<'a> MemoTableWithTypes<'a> {
         }
 
         // Otherwise we need the write lock.
-        // SAFETY: The caller is responsible for dropping
-        unsafe { self.insert_cold(memo_ingredient_index, memo) }
+        self.insert_cold(memo_ingredient_index, memo)
     }
 
-    /// # Safety
-    ///
-    /// The caller needs to make sure to not drop the returned value until no more references into
-    /// the database exist as there may be outstanding borrows into the `Arc` contents.
-    unsafe fn insert_cold<M: Memo>(
+    #[cold]
+    fn insert_cold<M: Memo>(
         self,
         memo_ingredient_index: MemoIngredientIndex,
         memo: NonNull<M>,
@@ -237,7 +230,10 @@ impl<'a> MemoTableWithTypes<'a> {
     }
 
     #[inline]
-    pub(crate) fn get<M: Memo>(self, memo_ingredient_index: MemoIngredientIndex) -> Option<&'a M> {
+    pub(crate) fn get<M: Memo>(
+        self,
+        memo_ingredient_index: MemoIngredientIndex,
+    ) -> Option<NonNull<M>> {
         let read = self.memos.memos.read();
         let memo = read.get(memo_ingredient_index.as_usize())?;
         let type_ = self
@@ -250,9 +246,9 @@ impl<'a> MemoTableWithTypes<'a> {
             TypeId::of::<M>(),
             "inconsistent type-id for `{memo_ingredient_index:?}`"
         );
-        let memo = NonNull::new(memo.atomic_memo.load(Ordering::Acquire));
+        let memo = NonNull::new(memo.atomic_memo.load(Ordering::Acquire))?;
         // SAFETY: `type_id` check asserted above
-        memo.map(|memo| unsafe { MemoEntryType::from_dummy(memo).as_ref() })
+        Some(unsafe { MemoEntryType::from_dummy(memo) })
     }
 }
 
@@ -300,12 +296,19 @@ impl MemoTableWithTypesMut<'_> {
     }
 
     /// To drop an entry, we need its type, so we don't implement `Drop`, and instead have this method.
+    ///
+    /// Note that calling this multiple times is safe, dropping an uninitialized entry is a no-op.
+    ///
+    /// # Safety
+    ///
+    /// The caller needs to make sure to not call this function until no more references into
+    /// the database exist as there may be outstanding borrows into the pointer contents.
     #[inline]
-    pub fn drop(self) {
+    pub unsafe fn drop(&mut self) {
         let types = self.types.types.iter();
         for ((_, type_), memo) in std::iter::zip(types, self.memos.memos.get_mut()) {
-            // SAFETY: The types match because this is an invariant of `MemoTableWithTypesMut`.
-            unsafe { memo.drop(type_) };
+            // SAFETY: The types match as per our constructor invariant.
+            unsafe { memo.take(type_) };
         }
     }
 
@@ -313,22 +316,19 @@ impl MemoTableWithTypesMut<'_> {
     ///
     /// The caller needs to make sure to not call this function until no more references into
     /// the database exist as there may be outstanding borrows into the pointer contents.
-    pub(crate) unsafe fn with_memos(self, mut f: impl FnMut(MemoIngredientIndex, Box<dyn Memo>)) {
+    pub(crate) unsafe fn take_memos(
+        &mut self,
+        mut f: impl FnMut(MemoIngredientIndex, Box<dyn Memo>),
+    ) {
         let memos = self.memos.memos.get_mut();
         memos
             .iter_mut()
             .zip(self.types.types.iter())
-            .zip(0..)
-            .filter_map(|((memo, (_, type_)), index)| {
-                let memo = mem::replace(memo.atomic_memo.get_mut(), ptr::null_mut());
-                let memo = NonNull::new(memo)?;
-                Some((memo, type_.load()?, index))
-            })
-            .map(|(memo, type_, index)| {
-                // SAFETY: We took ownership of the memo, and converted it to the correct type.
-                // The caller guarantees that there are no outstanding borrows into the `Box` contents.
-                let memo = unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) };
-                (MemoIngredientIndex::from_usize(index), memo)
+            .enumerate()
+            .filter_map(|(index, (memo, (_, type_)))| {
+                // SAFETY: The types match as per our constructor invariant.
+                let memo = unsafe { memo.take(type_)? };
+                Some((MemoIngredientIndex::from_usize(index), memo))
             })
             .for_each(|(index, memo)| f(index, memo));
     }
@@ -339,14 +339,11 @@ impl MemoEntry {
     ///
     /// The type must match.
     #[inline]
-    unsafe fn drop(&mut self, type_: &MemoEntryType) {
-        if let Some(memo) = NonNull::new(mem::replace(self.atomic_memo.get_mut(), ptr::null_mut()))
-        {
-            if let Some(type_) = type_.load() {
-                // SAFETY: Our preconditions.
-                mem::drop(unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) });
-            }
-        }
+    unsafe fn take(&mut self, type_: &MemoEntryType) -> Option<Box<dyn Memo>> {
+        let memo = NonNull::new(mem::replace(self.atomic_memo.get_mut(), ptr::null_mut()))?;
+        let type_ = type_.load()?;
+        // SAFETY: Our preconditions.
+        Some(unsafe { Box::from_raw((type_.to_dyn_fn)(memo).as_ptr()) })
     }
 }
 

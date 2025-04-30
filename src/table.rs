@@ -20,7 +20,7 @@ pub(crate) mod memo;
 const PAGE_LEN_BITS: usize = 10;
 const PAGE_LEN_MASK: usize = PAGE_LEN - 1;
 const PAGE_LEN: usize = 1 << PAGE_LEN_BITS;
-const MAX_PAGES: usize = 1 << (32 - PAGE_LEN_BITS);
+const MAX_PAGES: usize = 1 << (u32::BITS as usize - PAGE_LEN_BITS);
 
 /// A typed [`Page`] view.
 pub(crate) struct PageView<'p, T: Slot>(&'p Page, PhantomData<&'p T>);
@@ -50,7 +50,7 @@ type SlotMemosFn<T> = unsafe fn(&T, current_revision: Revision) -> &MemoTable;
 /// [Slot::memos_mut]
 type SlotMemosMutFnRaw = unsafe fn(*mut ()) -> *mut MemoTable;
 /// [Slot::memos_mut]
-type SlotMemosMutFn<T> = unsafe fn(&mut T) -> &mut MemoTable;
+type SlotMemosMutFn<T> = fn(&mut T) -> &mut MemoTable;
 
 struct SlotVTable {
     layout: Layout,
@@ -127,10 +127,10 @@ struct Page {
 
 // SAFETY: `Page` is `Send` as we make sure to only ever store `Slot` types in it which
 // requires `Send`.`
-unsafe impl Send for Page {}
+unsafe impl Send for Page /* where for<M: Memo> M: Send */ {}
 // SAFETY: `Page` is `Sync` as we make sure to only ever store `Slot` types in it which
 // requires `Sync`.`
-unsafe impl Sync for Page {}
+unsafe impl Sync for Page /* where for<M: Memo> M: Sync */ {}
 
 #[derive(Copy, Clone, Debug)]
 pub struct PageIndex(usize);
@@ -283,6 +283,7 @@ impl Table {
 }
 
 impl<'p, T: Slot> PageView<'p, T> {
+    #[inline]
     fn page_data(&self) -> &[PageDataEntry<T>] {
         let len = self.0.allocated.load(Ordering::Acquire);
         // SAFETY: `len` is the initialized length of the page
@@ -390,7 +391,7 @@ impl Drop for Page {
 fn make_id(page: PageIndex, slot: SlotIndex) -> Id {
     let page = page.0 as u32;
     let slot = slot.0 as u32;
-    // SAFETY: `page` and `slot` are derived from proper indices.
+    // SAFETY: `slot` is guaranteed to be small enough that the resulting Id won't be bigger than `Id::MAX_U32`
     unsafe { Id::from_u32((page << PAGE_LEN_BITS) | slot) }
 }
 

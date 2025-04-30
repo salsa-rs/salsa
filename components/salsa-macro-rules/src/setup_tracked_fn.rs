@@ -282,15 +282,12 @@ macro_rules! setup_tracked_fn {
                         )
                     };
 
-                    // SAFETY: We pass the MemoEntryType for this Configuration, and we lookup the memo types table correctly.
-                    let fn_ingredient = unsafe {
-                        <$zalsa::function::IngredientImpl<$Configuration>>::new(
-                            first_index,
-                            memo_ingredient_indices,
-                            $lru,
-                            zalsa.views().downcaster_for::<dyn $Db>(),
-                        )
-                    };
+                    let fn_ingredient = <$zalsa::function::IngredientImpl<$Configuration>>::new(
+                        first_index,
+                        memo_ingredient_indices,
+                        $lru,
+                        zalsa.views().downcaster_for::<dyn $Db>(),
+                    );
                     $zalsa::macro_if! {
                         if $needs_interner {
                             vec![

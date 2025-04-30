@@ -1,7 +1,6 @@
-#![allow(clippy::undocumented_unsafe_blocks)] // TODO(#697) document safety
-
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
+use std::mem::transmute;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 
@@ -15,69 +14,46 @@ use crate::zalsa_local::{QueryOrigin, QueryRevisions};
 use crate::{Event, EventKind, Id, Revision};
 
 impl<C: Configuration> IngredientImpl<C> {
-    /// Memos have to be stored internally using `'static` as the database lifetime.
-    /// This (unsafe) function call converts from something tied to self to static.
-    /// Values transmuted this way have to be transmuted back to being tied to self
-    /// when they are returned to the user.
-    unsafe fn to_static<'db>(
-        &'db self,
-        memo: NonNull<Memo<C::Output<'db>>>,
-    ) -> NonNull<Memo<C::Output<'static>>> {
-        memo.cast()
-    }
-
-    /// Convert from an internal memo (which uses `'static`) to one tied to self
-    /// so it can be publicly released.
-    unsafe fn to_self<'db>(
-        &'db self,
-        memo: NonNull<Memo<C::Output<'static>>>,
-    ) -> NonNull<Memo<C::Output<'db>>> {
-        memo.cast()
-    }
-
-    /// Convert from an internal memo (which uses `'static`) to one tied to self
-    /// so it can be publicly released.
-    unsafe fn to_self_ref<'db>(
-        &'db self,
-        memo: &'db Memo<C::Output<'static>>,
-    ) -> &'db Memo<C::Output<'db>> {
-        unsafe { std::mem::transmute(memo) }
-    }
-
     /// Inserts the memo for the given key; (atomically) overwrites and returns any previously existing memo
-    ///
-    /// # Safety
-    ///
-    /// The caller needs to make sure to not drop the returned value until no more references into
-    /// the database exist as there may be outstanding borrows into the `Arc` contents.
-    pub(super) unsafe fn insert_memo_into_table_for<'db>(
-        &'db self,
+    pub(super) fn insert_memo_into_table_for<'db>(
+        &self,
         zalsa: &'db Zalsa,
         id: Id,
         memo: NonNull<Memo<C::Output<'db>>>,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<NonNull<Memo<C::Output<'db>>>> {
-        let static_memo = unsafe { self.to_static(memo) };
-        let old_static_memo = unsafe {
-            zalsa
-                .memo_table_for(id)
-                .insert(memo_ingredient_index, static_memo)
-        }?;
-        Some(unsafe { self.to_self(old_static_memo) })
+        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
+        // for `'db` though as we delay their dropping to the end of a revision.
+        let static_memo = unsafe {
+            transmute::<NonNull<Memo<C::Output<'db>>>, NonNull<Memo<C::Output<'static>>>>(memo)
+        };
+        let old_static_memo = zalsa
+            .memo_table_for(id)
+            .insert(memo_ingredient_index, static_memo)?;
+        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
+        // for `'db` though as we delay their dropping to the end of a revision.
+        Some(unsafe {
+            transmute::<NonNull<Memo<C::Output<'static>>>, NonNull<Memo<C::Output<'db>>>>(
+                old_static_memo,
+            )
+        })
     }
 
     /// Loads the current memo for `key_index`. This does not hold any sort of
     /// lock on the `memo_map` once it returns, so this memo could immediately
     /// become outdated if other threads store into the `memo_map`.
     pub(super) fn get_memo_from_table_for<'db>(
-        &'db self,
+        &self,
         zalsa: &'db Zalsa,
         id: Id,
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<&'db Memo<C::Output<'db>>> {
         let static_memo = zalsa.memo_table_for(id).get(memo_ingredient_index)?;
-
-        unsafe { Some(self.to_self_ref(static_memo)) }
+        // SAFETY: The table stores 'static memos (to support `Any`), the memos are in fact valid
+        // for `'db` though as we delay their dropping to the end of a revision.
+        Some(unsafe {
+            transmute::<&Memo<C::Output<'static>>, &'db Memo<C::Output<'db>>>(static_memo.as_ref())
+        })
     }
 
     /// Evicts the existing memo for the given key, replacing it
