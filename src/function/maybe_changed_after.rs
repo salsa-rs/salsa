@@ -188,7 +188,7 @@ where
         memo: &Memo<C::Output<'_>>,
     ) -> Option<ShallowUpdate> {
         tracing::debug!(
-            "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
+            "{database_key_index:?}: shallow_verify_memo(memo = {memo:?})",
             memo = memo.tracing_debug()
         );
         let verified_at = memo.verified_at.load();

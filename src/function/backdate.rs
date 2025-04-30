@@ -1,6 +1,7 @@
 use crate::function::memo::Memo;
 use crate::function::{Configuration, IngredientImpl};
 use crate::zalsa_local::QueryRevisions;
+use crate::DatabaseKeyIndex;
 
 impl<C> IngredientImpl<C>
 where
@@ -12,6 +13,7 @@ where
     pub(super) fn backdate_if_appropriate<'db>(
         &self,
         old_memo: &Memo<C::Output<'db>>,
+        index: DatabaseKeyIndex,
         revisions: &mut QueryRevisions,
         value: &C::Output<'db>,
     ) {
@@ -24,7 +26,7 @@ where
                 && C::values_equal(old_value, value)
             {
                 tracing::debug!(
-                    "value is equal, back-dating to {:?}",
+                    "{index:?} value is equal, back-dating to {:?}",
                     old_memo.revisions.changed_at,
                 );
 

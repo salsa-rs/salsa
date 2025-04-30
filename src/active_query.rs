@@ -66,6 +66,20 @@ pub(crate) struct ActiveQuery {
 }
 
 impl ActiveQuery {
+    pub(super) fn seed_iteration(
+        &mut self,
+        durability: Durability,
+        changed_at: Revision,
+        edges: &[QueryEdge],
+        untracked_read: bool,
+    ) {
+        assert!(self.input_outputs.is_empty());
+        self.input_outputs = edges.iter().cloned().collect();
+        self.durability = self.durability.min(durability);
+        self.changed_at = self.changed_at.max(changed_at);
+        self.untracked_read = untracked_read;
+    }
+
     pub(super) fn add_read(
         &mut self,
         input: DatabaseKeyIndex,

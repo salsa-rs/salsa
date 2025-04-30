@@ -101,7 +101,7 @@ where
             // really change, even if some of its inputs have. So we can
             // "backdate" its `changed_at` revision to be the same as the
             // old value.
-            self.backdate_if_appropriate(old_memo, &mut revisions, &new_value);
+            self.backdate_if_appropriate(old_memo, database_key_index, &mut revisions, &new_value);
 
             // Diff the new outputs with the old, to discard any no-longer-emitted
             // outputs and update the tracked struct IDs for seeding the next revision.
@@ -115,12 +115,20 @@ where
                 provisional,
             );
         }
-        self.insert_memo(
+        let memo = self.insert_memo(
             zalsa,
             id,
             Memo::new(Some(new_value), zalsa.current_revision(), revisions),
             memo_ingredient_index,
-        )
+        );
+
+        tracing::info!(
+            "{:?}: executed query {:?}",
+            database_key_index,
+            memo.tracing_debug()
+        );
+
+        memo
     }
 
     #[inline]
@@ -255,26 +263,24 @@ where
         current_revision: Revision,
         id: Id,
     ) -> (C::Output<'db>, QueryRevisions) {
-        // If we already executed this query once, then use the tracked-struct ids from the
-        // previous execution as the starting point for the new one.
         if let Some(old_memo) = opt_old_memo {
+            // If we already executed this query once, then use the tracked-struct ids from the
+            // previous execution as the starting point for the new one.
             active_query.seed_tracked_struct_ids(&old_memo.revisions.tracked_struct_ids);
-        }
 
-        // Query was not previously executed, or value is potentially
-        // stale, or value is absent. Let's execute!
-        let new_value = C::execute(db, C::id_to_input(db, id));
-
-        if let Some(old_memo) = opt_old_memo {
             // Copy over all outputs from a previous iteration.
             // This is necessary to ensure that tracked struct created during the previous iteration
             // (and are owned by the query) are alive even if the query in this iteration no longer creates them.
             // The query not re-creating the tracked struct doesn't guarantee that there
             // aren't any other queries depending on it.
             if old_memo.may_be_provisional() && old_memo.verified_at.load() == current_revision {
-                active_query.append_outputs(old_memo.revisions.origin.outputs());
+                active_query.seed_iteration(&old_memo.revisions);
             }
         }
+
+        // Query was not previously executed, or value is potentially
+        // stale, or value is absent. Let's execute!
+        let new_value = C::execute(db, C::id_to_input(db, id));
 
         (new_value, active_query.pop())
     }

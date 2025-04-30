@@ -270,7 +270,10 @@ impl<V> Memo<V> {
                         },
                     )
                     .field("verified_at", &self.memo.verified_at)
-                    .field("revisions", &self.memo.revisions)
+                    .field("changed_at", &self.memo.revisions.changed_at)
+                    .field("durability", &self.memo.revisions.durability)
+                    .field("cycle_heads", &self.memo.revisions.cycle_heads)
+                    // .field("revisions", &self.memo.revisions)
                     .finish()
             }
         }
