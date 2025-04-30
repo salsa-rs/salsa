@@ -96,6 +96,7 @@ impl std::fmt::Debug for Runtime {
 }
 
 impl Runtime {
+    #[inline]
     pub(crate) fn current_revision(&self) -> Revision {
         self.revisions[0]
     }
