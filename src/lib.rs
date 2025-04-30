@@ -52,7 +52,7 @@ pub use self::runtime::Runtime;
 pub use self::storage::{Storage, StorageHandle};
 pub use self::update::Update;
 pub use self::zalsa::IngredientIndex;
-pub use crate::attach::with_attached_database;
+pub use crate::attach::{attach, with_attached_database};
 
 pub mod prelude {
     pub use crate::{Accumulator, Database, Setter};
