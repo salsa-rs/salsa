@@ -161,7 +161,7 @@ impl CycleHeads {
                 .iter()
                 .find(|candidate| candidate.database_key_index == head.database_key_index)
             {
-                assert!(existing.iteration_count == head.iteration_count);
+                assert_eq!(existing.iteration_count, head.iteration_count);
             } else {
                 self.0.push(*head);
             }
