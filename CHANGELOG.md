@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.1](https://github.com/salsa-rs/salsa/compare/salsa-v0.21.0...salsa-v0.21.1) - 2025-04-30
+
+### Added
+
+- Make `attach` pub ([#832](https://github.com/salsa-rs/salsa/pull/832))
+
+### Other
+
+- better debug name for interned query arguments ([#837](https://github.com/salsa-rs/salsa/pull/837))
+- Avoid panic in `Backtrace::capture` if `query_stack` is already borrowed ([#835](https://github.com/salsa-rs/salsa/pull/835))
+- Clean up `function::execute` ([#833](https://github.com/salsa-rs/salsa/pull/833))
+- Change an `assert!` to `assert_eq!` ([#828](https://github.com/salsa-rs/salsa/pull/828))
+
 ## [0.21.0](https://github.com/salsa-rs/salsa/compare/salsa-v0.20.0...salsa-v0.21.0) - 2025-04-29
 
 ### Fixed
