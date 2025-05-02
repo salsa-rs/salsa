@@ -35,11 +35,6 @@ impl Id {
     /// # Safety
     ///
     /// The supplied value must be less than [`Self::MAX_U32`].
-    ///
-    /// Additionally, creating an arbitrary `Id` can lead to unsoundness if such an ID ends up being used to index
-    /// the internal allocation tables which end up being out of bounds. Care must be taken that the
-    /// ID is either constructed with a valid value or that it never ends up being used as keys to
-    /// salsa computations.
     #[doc(hidden)]
     #[track_caller]
     #[inline]
