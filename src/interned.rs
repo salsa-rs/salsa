@@ -350,7 +350,8 @@ where
 
         assert!(
             internal_data.last_interned_at.load() >= last_changed_revision,
-            "Data was not interned in the latest revision for its durability."
+            "Data {:?} was not interned in the latest revision for its durability.",
+            self.database_key_index(id)
         );
 
         unsafe { Self::from_internal_data(&internal_data.fields) }
@@ -397,6 +398,10 @@ where
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let value = zalsa.table().get::<Value<C>>(input);
+        tracing::debug!(
+            "interned::maybe_changed_after: {:?}",
+            self.database_key_index(input)
+        );
         if value.first_interned_at > revision {
             // The slot was reused.
             return VerifyResult::Changed;

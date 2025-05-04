@@ -405,7 +405,7 @@ where
                 // This is a new tracked struct, so create an entry in the struct map.
                 let id = self.allocate(zalsa, zalsa_local, current_revision, &current_deps, fields);
                 let key = self.database_key_index(id);
-                tracing::trace!("Allocated new tracked struct {id:?}", id = key);
+                tracing::trace!("Allocated new tracked struct {key:?}");
                 zalsa_local.add_output(key);
                 zalsa_local.store_tracked_struct_id(identity, id);
                 FromId::from_id(id)

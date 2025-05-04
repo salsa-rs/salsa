@@ -77,7 +77,11 @@ impl ActiveQuery {
         self.input_outputs = edges.iter().cloned().collect();
         self.durability = self.durability.min(durability);
         self.changed_at = self.changed_at.max(changed_at);
-        self.untracked_read = untracked_read;
+        self.untracked_read |= untracked_read;
+    }
+
+    pub(super) fn is_provisional(&self) -> bool {
+        !self.cycle_heads.is_empty()
     }
 
     pub(super) fn add_read(

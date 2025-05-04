@@ -222,6 +222,10 @@ impl<V> Memo<V> {
         }
     }
 
+    pub(super) fn had_cycle_heads(&self) -> bool {
+        !self.revisions.cycle_heads.is_empty()
+    }
+
     /// Mark memo as having been verified in the `revision_now`, which should
     /// be the current revision.
     /// The caller is responsible to update the memo's `accumulated` state if heir accumulated
@@ -270,10 +274,7 @@ impl<V> Memo<V> {
                         },
                     )
                     .field("verified_at", &self.memo.verified_at)
-                    .field("changed_at", &self.memo.revisions.changed_at)
-                    .field("durability", &self.memo.revisions.durability)
-                    .field("cycle_heads", &self.memo.revisions.cycle_heads)
-                    // .field("revisions", &self.memo.revisions)
+                    .field("revisions", &self.memo.revisions)
                     .finish()
             }
         }

@@ -122,10 +122,9 @@ where
             memo_ingredient_index,
         );
 
-        tracing::info!(
-            "{:?}: executed query {:?}",
-            database_key_index,
-            memo.tracing_debug()
+        tracing::debug!(
+            "Executed {database_key_index:?}, memo: {memo:#?}",
+            memo = memo.tracing_debug()
         );
 
         memo
@@ -150,14 +149,20 @@ where
         // only when a cycle is actually encountered.
         let mut opt_last_provisional: Option<&Memo<<C as Configuration>::Output<'db>>> = None;
         loop {
-            let (mut new_value, mut revisions) =
-                Self::execute_query(db, active_query, opt_old_memo, zalsa.current_revision(), id);
+            let previous_memo = opt_last_provisional.or(opt_old_memo);
+            let (mut new_value, mut revisions) = Self::execute_query(
+                db,
+                active_query,
+                previous_memo,
+                zalsa.current_revision(),
+                id,
+            );
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             if revisions.cycle_heads.contains(&database_key_index) {
-                let last_provisional_value = if let Some(last_provisional) = opt_last_provisional {
+                let provisional_memo = if let Some(last_provisional) = opt_last_provisional {
                     // We have a last provisional value from our previous time around the loop.
-                    last_provisional.value.as_ref()
+                    last_provisional
                 } else {
                     // This is our first time around the loop; a provisional value must have been
                     // inserted into the memo table when the cycle was hit, so let's pull our
@@ -171,8 +176,9 @@ where
                             )
                         });
                     debug_assert!(memo.may_be_provisional());
-                    memo.value.as_ref()
+                    memo
                 };
+                let last_provisional_value = provisional_memo.value.as_ref();
                 // SAFETY: The `LRU` does not run mid-execution, so the value remains filled
                 let last_provisional_value = unsafe { last_provisional_value.unwrap_unchecked() };
                 tracing::debug!(
@@ -201,7 +207,10 @@ where
                         C::id_to_input(db, id),
                     ) {
                         crate::CycleRecoveryAction::Iterate => {
-                            tracing::debug!("{database_key_index:?}: execute: iterate again");
+                            tracing::debug!(
+                                "{database_key_index:?}: execute: iterate again {:#?}",
+                                provisional_memo.tracing_debug()
+                            );
                         }
                         crate::CycleRecoveryAction::Fallback(fallback_value) => {
                             tracing::debug!(

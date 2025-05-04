@@ -126,6 +126,7 @@ impl Runtime {
     }
 
     pub(crate) fn set_cancellation_flag(&self) {
+        tracing::trace!("set_cancellation_flag");
         self.revision_canceled.store(true, Ordering::Release);
     }
 
@@ -151,6 +152,7 @@ impl Runtime {
         let r_old = self.current_revision();
         let r_new = r_old.next();
         self.revisions[0] = r_new;
+        tracing::debug!("new_revision: {r_old:?} -> {r_new:?}");
         r_new
     }
 

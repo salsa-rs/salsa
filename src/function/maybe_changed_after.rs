@@ -68,6 +68,7 @@ where
             if let Some(shallow_update) = self.shallow_verify_memo(zalsa, database_key_index, memo)
             {
                 if !memo.may_be_provisional() {
+                    tracing::info!("maybe_changed_after: update_shallow");
                     self.update_shallow(db, zalsa, database_key_index, memo, shallow_update);
 
                     return if memo.revisions.changed_at > revision {
@@ -101,6 +102,7 @@ where
         memo_ingredient_index: MemoIngredientIndex,
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
+        tracing::info!("maybe_changed_after_cold: {:?}", database_key_index);
 
         let _claim_guard = match self.sync_table.try_claim(db, zalsa, key_index) {
             ClaimResult::Retry => return None,
@@ -116,6 +118,10 @@ where
                     return Some(VerifyResult::unchanged());
                 }
                 CycleRecoveryStrategy::Fixpoint => {
+                    tracing::debug!(
+                        "Hit cycle, return fixpoint initial for {:?}",
+                        database_key_index
+                    );
                     return Some(VerifyResult::Unchanged(
                         InputAccumulatedValues::Empty,
                         CycleHeads::initial(database_key_index),
@@ -188,7 +194,7 @@ where
         memo: &Memo<C::Output<'_>>,
     ) -> Option<ShallowUpdate> {
         tracing::debug!(
-            "{database_key_index:?}: shallow_verify_memo(memo = {memo:?})",
+            "{database_key_index:?}: shallow_verify_memo(memo = {memo:#?})",
             memo = memo.tracing_debug()
         );
         let verified_at = memo.verified_at.load();
@@ -462,6 +468,12 @@ where
 
                     let in_heads = cycle_heads.remove(&database_key_index);
 
+                    tracing::debug!(
+                        "maybe_changed_after({:?}): cycle_heads = {:?}",
+                        database_key_index,
+                        cycle_heads
+                    );
+
                     if cycle_heads.is_empty() {
                         old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index);
                         old_memo.revisions.accumulated_inputs.store(inputs);
@@ -474,7 +486,16 @@ where
                         }
 
                         if in_heads {
+                            tracing::debug!(
+                                "maybe_changed_after: I'm the cycle head, last iteration for {:?}",
+                                database_key_index
+                            );
                             continue 'cycle;
+                        } else {
+                            tracing::debug!(
+                                "maybe_changed_after({:?}): I'm not the cycle head",
+                                database_key_index
+                            );
                         }
                     }
                     break 'cycle VerifyResult::Unchanged(inputs, cycle_heads);
