@@ -24,7 +24,6 @@ where
         key: DatabaseKeyIndex,
         old_memo: &Memo<C::Output<'_>>,
         revisions: &mut QueryRevisions,
-        provisional: bool,
     ) {
         // Iterate over the outputs of the `old_memo` and put them into a hashset
         let mut old_outputs: FxIndexSet<_> = old_memo.revisions.origin.outputs().collect();
@@ -50,7 +49,7 @@ where
         });
 
         for old_output in old_outputs {
-            Self::report_stale_output(zalsa, db, key, old_output, provisional);
+            Self::report_stale_output(zalsa, db, key, old_output);
         }
     }
 
@@ -59,7 +58,6 @@ where
         db: &C::DbView,
         key: DatabaseKeyIndex,
         output: DatabaseKeyIndex,
-        provisional: bool,
     ) {
         db.salsa_event(&|| {
             Event::new(EventKind::WillDiscardStaleOutput {
@@ -67,6 +65,6 @@ where
                 output_key: output,
             })
         });
-        output.remove_stale_output(zalsa, db.as_dyn_database(), key, provisional);
+        output.remove_stale_output(zalsa, db.as_dyn_database(), key);
     }
 }

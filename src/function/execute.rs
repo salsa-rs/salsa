@@ -105,15 +105,7 @@ where
 
             // Diff the new outputs with the old, to discard any no-longer-emitted
             // outputs and update the tracked struct IDs for seeding the next revision.
-            let provisional = !revisions.cycle_heads.is_empty();
-            self.diff_outputs(
-                zalsa,
-                db,
-                database_key_index,
-                old_memo,
-                &mut revisions,
-                provisional,
-            );
+            self.diff_outputs(zalsa, db, database_key_index, old_memo, &mut revisions);
         }
         let memo = self.insert_memo(
             zalsa,

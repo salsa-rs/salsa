@@ -285,7 +285,6 @@ where
         _db: &dyn Database,
         _executor: DatabaseKeyIndex,
         _stale_output_key: crate::Id,
-        _provisional: bool,
     ) {
         // This function is invoked when a query Q specifies the value for `stale_output_key` in rev 1,
         // but not in rev 2. We don't do anything in this case, we just leave the (now stale) memo.
