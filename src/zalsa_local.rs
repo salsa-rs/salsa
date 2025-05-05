@@ -507,11 +507,6 @@ pub(crate) struct ActiveQueryGuard<'me> {
 }
 
 impl ActiveQueryGuard<'_> {
-    pub(crate) fn is_provisional(&self) -> bool {
-        self.local_state
-            .with_query_stack(|c| c.last().unwrap().is_provisional())
-    }
-
     /// Initialize the tracked struct ids with the values from the prior execution.
     pub(crate) fn seed_tracked_struct_ids(&self, tracked_struct_ids: &IdentityMap) {
         self.local_state.with_query_stack_mut(|stack| {

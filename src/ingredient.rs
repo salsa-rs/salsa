@@ -63,6 +63,7 @@ pub trait Ingredient: Any + std::fmt::Debug + Send + Sync {
         db: &'db dyn Database,
         input: Id,
         revision: Revision,
+        in_cycle: bool,
     ) -> VerifyResult;
 
     /// Is the value for `input` in this ingredient a cycle head that is still provisional?

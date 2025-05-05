@@ -232,10 +232,11 @@ where
         db: &dyn Database,
         input: Id,
         revision: Revision,
+        in_cycle: bool,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient as per caller invariant
         let db = unsafe { self.view_caster.downcast_unchecked(db) };
-        self.maybe_changed_after(db, input, revision)
+        self.maybe_changed_after(db, input, revision, in_cycle)
     }
 
     /// True if the input `input` contains a memo that cites itself as a cycle head.

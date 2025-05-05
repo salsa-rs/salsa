@@ -48,6 +48,7 @@ where
         db: &'db C::DbView,
         id: Id,
         revision: Revision,
+        in_cycle: bool,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let memo_ingredient_index = self.memo_ingredient_index(zalsa, id);
@@ -68,7 +69,6 @@ where
             if let Some(shallow_update) = self.shallow_verify_memo(zalsa, database_key_index, memo)
             {
                 if !memo.may_be_provisional() {
-                    tracing::info!("maybe_changed_after: update_shallow");
                     self.update_shallow(db, zalsa, database_key_index, memo, shallow_update);
 
                     return if memo.revisions.changed_at > revision {
@@ -82,9 +82,14 @@ where
                 }
             }
 
-            if let Some(mcs) =
-                self.maybe_changed_after_cold(zalsa, db, id, revision, memo_ingredient_index)
-            {
+            if let Some(mcs) = self.maybe_changed_after_cold(
+                zalsa,
+                db,
+                id,
+                revision,
+                memo_ingredient_index,
+                in_cycle,
+            ) {
                 return mcs;
             } else {
                 // We failed to claim, have to retry.
@@ -100,9 +105,9 @@ where
         key_index: Id,
         revision: Revision,
         memo_ingredient_index: MemoIngredientIndex,
+        in_cycle: bool,
     ) -> Option<VerifyResult> {
         let database_key_index = self.database_key_index(key_index);
-        tracing::info!("maybe_changed_after_cold: {:?}", database_key_index);
 
         let _claim_guard = match self.sync_table.try_claim(db, zalsa, key_index) {
             ClaimResult::Retry => return None,
@@ -119,8 +124,7 @@ where
                 }
                 CycleRecoveryStrategy::Fixpoint => {
                     tracing::debug!(
-                        "Hit cycle, return fixpoint initial for {:?}",
-                        database_key_index
+                        "hit cycle at {database_key_index:?} in `maybe_changed_after`,  returning fixpoint initial value",
                     );
                     return Some(VerifyResult::Unchanged(
                         InputAccumulatedValues::Empty,
@@ -157,7 +161,7 @@ where
         // It is possible the result will be equal to the old value and hence
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
-        if old_memo.value.is_some() {
+        if old_memo.value.is_some() && !in_cycle {
             let active_query = db.zalsa_local().push_query(database_key_index, 0);
             let memo = self.execute(db, active_query, Some(old_memo));
             let changed_at = memo.revisions.changed_at;
@@ -405,8 +409,11 @@ where
                     for &edge in edges.input_outputs.iter() {
                         match edge {
                             QueryEdge::Input(dependency_index) => {
-                                match dependency_index.maybe_changed_after(dyn_db, last_verified_at)
-                                {
+                                match dependency_index.maybe_changed_after(
+                                    dyn_db,
+                                    last_verified_at,
+                                    !cycle_heads.is_empty(),
+                                ) {
                                     VerifyResult::Changed => break 'cycle VerifyResult::Changed,
                                     VerifyResult::Unchanged(input_accumulated, cycles) => {
                                         cycle_heads.extend(&cycles);
@@ -468,12 +475,6 @@ where
 
                     let in_heads = cycle_heads.remove(&database_key_index);
 
-                    tracing::debug!(
-                        "maybe_changed_after({:?}): cycle_heads = {:?}",
-                        database_key_index,
-                        cycle_heads
-                    );
-
                     if cycle_heads.is_empty() {
                         old_memo.mark_as_verified(db, zalsa.current_revision(), database_key_index);
                         old_memo.revisions.accumulated_inputs.store(inputs);
@@ -486,16 +487,7 @@ where
                         }
 
                         if in_heads {
-                            tracing::debug!(
-                                "maybe_changed_after: I'm the cycle head, last iteration for {:?}",
-                                database_key_index
-                            );
                             continue 'cycle;
-                        } else {
-                            tracing::debug!(
-                                "maybe_changed_after({:?}): I'm not the cycle head",
-                                database_key_index
-                            );
                         }
                     }
                     break 'cycle VerifyResult::Unchanged(inputs, cycle_heads);

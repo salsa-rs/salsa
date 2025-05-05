@@ -739,6 +739,7 @@ where
         db: &dyn Database,
         input: Id,
         revision: Revision,
+        _in_cycle: bool,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let data = Self::data(zalsa.table(), input);

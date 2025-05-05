@@ -37,12 +37,13 @@ impl DatabaseKeyIndex {
         &self,
         db: &dyn Database,
         last_verified_at: crate::Revision,
+        in_cycle: bool,
     ) -> VerifyResult {
         // SAFETY: The `db` belongs to the ingredient
         unsafe {
             db.zalsa()
                 .lookup_ingredient(self.ingredient_index)
-                .maybe_changed_after(db, self.key_index, last_verified_at)
+                .maybe_changed_after(db, self.key_index, last_verified_at, in_cycle)
         }
     }
 

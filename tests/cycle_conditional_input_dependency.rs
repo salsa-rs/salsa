@@ -36,12 +36,12 @@ fn query_d<'db>(db: &'db dyn salsa::Database, input: Input) -> u32 {
 }
 
 // Note: Also requires same output or backdating won't happen.  but other query output needs to be different at least once to fixpint
-fn query_a_initial<'db>(db: &'db dyn Database, input: Input) -> u32 {
+fn query_a_initial(_db: &dyn Database, _input: Input) -> u32 {
     0
 }
 
-fn query_a_recover<'db>(
-    _db: &'db dyn Database,
+fn query_a_recover(
+    _db: &dyn Database,
     _output: &u32,
     _count: u32,
     _input: Input,
@@ -63,8 +63,8 @@ fn main() {
         if value < input.max(db) {
             // Only the first iteration depends on value but the entire
             // cycle must re-run if input changes.
-            let result = value + input.value(db);
-            result
+            
+            value + input.value(db)
         } else {
             value
         }
@@ -137,7 +137,7 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
         })
     }
 
-    fn head_initial<'db>(_db: &'db dyn Database, _input: Input) -> Option<ClassLiteral<'db>> {
+    fn head_initial(_db: &dyn Database, _input: Input) -> Option<ClassLiteral<'_>> {
         None
     }
 

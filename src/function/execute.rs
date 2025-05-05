@@ -107,19 +107,12 @@ where
             // outputs and update the tracked struct IDs for seeding the next revision.
             self.diff_outputs(zalsa, db, database_key_index, old_memo, &mut revisions);
         }
-        let memo = self.insert_memo(
+        self.insert_memo(
             zalsa,
             id,
             Memo::new(Some(new_value), zalsa.current_revision(), revisions),
             memo_ingredient_index,
-        );
-
-        tracing::debug!(
-            "Executed {database_key_index:?}, memo: {memo:#?}",
-            memo = memo.tracing_debug()
-        );
-
-        memo
+        )
     }
 
     #[inline]
@@ -152,9 +145,9 @@ where
 
             // Did the new result we got depend on our own provisional value, in a cycle?
             if revisions.cycle_heads.contains(&database_key_index) {
-                let provisional_memo = if let Some(last_provisional) = opt_last_provisional {
+                let last_provisional_value = if let Some(last_provisional) = opt_last_provisional {
                     // We have a last provisional value from our previous time around the loop.
-                    last_provisional
+                    last_provisional.value.as_ref()
                 } else {
                     // This is our first time around the loop; a provisional value must have been
                     // inserted into the memo table when the cycle was hit, so let's pull our
@@ -168,9 +161,8 @@ where
                             )
                         });
                     debug_assert!(memo.may_be_provisional());
-                    memo
+                    memo.value.as_ref()
                 };
-                let last_provisional_value = provisional_memo.value.as_ref();
                 // SAFETY: The `LRU` does not run mid-execution, so the value remains filled
                 let last_provisional_value = unsafe { last_provisional_value.unwrap_unchecked() };
                 tracing::debug!(
@@ -199,10 +191,7 @@ where
                         C::id_to_input(db, id),
                     ) {
                         crate::CycleRecoveryAction::Iterate => {
-                            tracing::debug!(
-                                "{database_key_index:?}: execute: iterate again {:#?}",
-                                provisional_memo.tracing_debug()
-                            );
+                            tracing::debug!("{database_key_index:?}: execute: iterate again");
                         }
                         crate::CycleRecoveryAction::Fallback(fallback_value) => {
                             tracing::debug!(

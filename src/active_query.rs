@@ -80,10 +80,6 @@ impl ActiveQuery {
         self.untracked_read |= untracked_read;
     }
 
-    pub(super) fn is_provisional(&self) -> bool {
-        !self.cycle_heads.is_empty()
-    }
-
     pub(super) fn add_read(
         &mut self,
         input: DatabaseKeyIndex,

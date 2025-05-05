@@ -4,7 +4,7 @@ use crate::function::sync::ClaimResult;
 use crate::function::{Configuration, IngredientImpl, VerifyResult};
 use crate::zalsa::{MemoIngredientIndex, Zalsa, ZalsaDatabase};
 use crate::zalsa_local::QueryRevisions;
-use crate::{Durability, Id};
+use crate::Id;
 
 impl<C> IngredientImpl<C>
 where

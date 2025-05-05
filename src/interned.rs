@@ -395,13 +395,10 @@ where
         db: &dyn Database,
         input: Id,
         revision: Revision,
+        _in_cycle: bool,
     ) -> VerifyResult {
         let zalsa = db.zalsa();
         let value = zalsa.table().get::<Value<C>>(input);
-        tracing::debug!(
-            "interned::maybe_changed_after: {:?}",
-            self.database_key_index(input)
-        );
         if value.first_interned_at > revision {
             // The slot was reused.
             return VerifyResult::Changed;
