@@ -138,12 +138,10 @@ where
                             "hit cycle at {database_key_index:#?}, \
                             inserting and returning fixpoint initial value"
                         );
-                        let revisions = QueryRevisions::fixpoint_initial(
-                            database_key_index,
-                        );
-                        let initial_value = self.initial_value(db, id).expect(
-                            "`CycleRecoveryStrategy::Fixpoint` should have initial_value",
-                        );
+                        let revisions = QueryRevisions::fixpoint_initial(database_key_index);
+                        let initial_value = self
+                            .initial_value(db, id)
+                            .expect("`CycleRecoveryStrategy::Fixpoint` should have initial_value");
                         Some(self.insert_memo(
                             zalsa,
                             id,
