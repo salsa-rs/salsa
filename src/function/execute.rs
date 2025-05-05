@@ -258,11 +258,11 @@ where
             // previous execution as the starting point for the new one.
             active_query.seed_tracked_struct_ids(&old_memo.revisions.tracked_struct_ids);
 
-            // Copy over all outputs from a previous iteration.
-            // This is necessary to ensure that tracked struct created during the previous iteration
-            // (and are owned by the query) are alive even if the query in this iteration no longer creates them.
-            // The query not re-creating the tracked struct doesn't guarantee that there
-            // aren't any other queries depending on it.
+            // Copy over all inputs and outputs from a previous iteration.
+            // This is necessary to:
+            // * ensure that tracked struct created during the previous iteration
+            //   (and are owned by the query) are alive even if the query in this iteration no longer creates them.
+            // * ensure the final returned memo depends on all inputs from all iterations.
             if old_memo.may_be_provisional() && old_memo.verified_at.load() == current_revision {
                 active_query.seed_iteration(&old_memo.revisions);
             }
