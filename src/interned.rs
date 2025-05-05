@@ -401,7 +401,7 @@ where
         let value = zalsa.table().get::<Value<C>>(input);
         if value.first_interned_at > revision {
             // The slot was reused.
-            return VerifyResult::Changed;
+            return VerifyResult::changed();
         }
 
         // The slot is valid in this revision but we have to sync the value's revision.
