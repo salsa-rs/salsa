@@ -161,6 +161,10 @@ where
         // It is possible the result will be equal to the old value and hence
         // backdated. In that case, although we will have computed a new memo,
         // the value has not logically changed.
+        // However, executing the query here is only safe if we are not in a cycle.
+        // In a cycle, it's important that the cycle head gets executed or we
+        // risk that some dependencies of this query haven't been verified yet because
+        // the cycle head returned *fixpoint initial* without validating its dependencies.
         if old_memo.value.is_some() && !in_cycle {
             let active_query = db.zalsa_local().push_query(database_key_index, 0);
             let memo = self.execute(db, active_query, Some(old_memo));
