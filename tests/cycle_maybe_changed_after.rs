@@ -1,4 +1,4 @@
-//! Test for cycle where only the first iteration of a query depends on the input value.
+//! Tests for incremental validation for queries involved in a cycle.
 mod common;
 
 use crate::common::EventLoggerDatabase;
@@ -35,7 +35,6 @@ fn query_d<'db>(db: &'db dyn salsa::Database, input: Input) -> u32 {
     }
 }
 
-// Note: Also requires same output or backdating won't happen.  but other query output needs to be different at least once to fixpint
 fn query_a_initial(_db: &dyn Database, _input: Input) -> u32 {
     0
 }
@@ -49,8 +48,11 @@ fn query_a_recover(
     CycleRecoveryAction::Iterate
 }
 
+/// Only the first iteration depends on `input.value`. It's important that the entire query
+/// reruns if `input.value` changes. That's why salsa has to carry-over the inputs and outputs
+/// from the previous iteration.
 #[test_log::test]
-fn main() {
+fn first_iteration_input_only() {
     #[salsa::tracked(cycle_fn=query_a_recover, cycle_initial=query_a_initial)]
     fn query_a<'db>(db: &'db dyn salsa::Database, input: Input) -> u32 {
         query_b(db, input)
@@ -63,7 +65,6 @@ fn main() {
         if value < input.max(db) {
             // Only the first iteration depends on value but the entire
             // cycle must re-run if input changes.
-            
             value + input.value(db)
         } else {
             value
@@ -88,6 +89,9 @@ fn main() {
     }
 }
 
+/// Very similar to the previous test, but the difference is that the called function
+/// isn't the cycle head and that `cycle_participant` is called from
+/// both the `cycle_head` and the `entry` function.
 #[test_log::test]
 fn nested_cycle_fewer_dependencies_in_first_iteration() {
     #[salsa::interned(debug)]
@@ -97,10 +101,8 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
 
     #[salsa::tracked]
     impl<'db> ClassLiteral<'db> {
-        /// Some method on an interned. Panics if any field is accessed before the class literal is re-interned.
         #[salsa::tracked]
         fn context(self, db: &'db dyn salsa::Database) -> u32 {
-            // Read a field, that should panic
             let scope = self.scope(db);
 
             // Access a field on `scope` that changed in the new revision.
@@ -110,12 +112,9 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
 
     #[salsa::tracked(debug)]
     struct Scope<'db> {
-        // #[tracked]
         field: u32,
     }
 
-    /// This query must re-run in the second revision or at least be validated to ensure
-    /// the `ClassLiteral` is re-interned.
     #[salsa::tracked]
     fn create_interned<'db>(db: &'db dyn salsa::Database, scope: Scope<'db>) -> ClassLiteral<'db> {
         ClassLiteral::new(db, scope)
@@ -152,8 +151,6 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
 
     #[salsa::tracked]
     fn cycle_outer<'db>(db: &'db dyn salsa::Database, input: Input) -> Option<ClassLiteral<'db>> {
-        // Read some unrelated input that forces the entire cycle to re-executed
-        // let _ = input.value(db);
         cycle_participant(db, input)
     }
 
@@ -206,9 +203,6 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
         assert_eq!(result, 6);
     }
 
-    db.synthetic_write(Durability::LOW);
-    db.synthetic_write(Durability::LOW);
-    db.synthetic_write(Durability::LOW);
     db.synthetic_write(Durability::MEDIUM);
 
     {
@@ -217,59 +211,3 @@ fn nested_cycle_fewer_dependencies_in_first_iteration() {
         assert_eq!(result, 8);
     }
 }
-
-// #[test_log::test]
-// fn nested_cycle_durability_upgrade() {
-//     #[salsa::tracked(cycle_fn=query_a_recover, cycle_initial=query_a_initial)]
-//     fn query_a<'db>(db: &'db dyn salsa::Database, input: Input) -> u32 {
-//         let c = query_c(db, input);
-//         tracing::debug!("query_c = {}", c);
-//         c
-//     }
-
-//     // Query b also gets low durability because of query_a. How can we avoid that?
-//     // Or is the bug that we loose the durability somehow?
-//     #[salsa::tracked]
-//     fn query_b<'db>(db: &'db dyn salsa::Database, input: Input) -> u32 {
-//         let value = query_c(db, input);
-//         tracing::debug!("query_c = {}", value);
-
-//         value
-//     }
-
-//     #[salsa::tracked(cycle_fn=query_a_recover, cycle_initial=query_a_initial)]
-//     fn query_c<'db>(db: &'db dyn salsa::Database, input: Input) -> u32 {
-//         let value = query_a(db, input);
-//         tracing::debug!("query_a = {}", value);
-
-//         if value < input.max(db) {
-//             let b = query_b(db, input);
-//             tracing::debug!("query_b = {}", b);
-//             Output::new(db, value);
-//             input.value(db) + value
-//         } else {
-//             value
-//         }
-//     }
-
-//     let mut db = EventLoggerDatabase::default();
-
-//     let input = Input::builder(4, 5).durability(Durability::MEDIUM).new(&db);
-
-//     {
-//         let result = query_a(&db, input);
-
-//         assert_eq!(result, 6);
-//     }
-
-//     db.synthetic_write(Durability::LOW);
-//     db.synthetic_write(Durability::LOW);
-//     db.synthetic_write(Durability::LOW);
-//     db.synthetic_write(Durability::MEDIUM);
-
-//     {
-//         input.set_value(&mut db).to(2);
-//         let result = query_a(&db, input);
-//         assert_eq!(result, 8);
-//     }
-// }
