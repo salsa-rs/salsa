@@ -140,11 +140,9 @@ where
                         );
                         let revisions = QueryRevisions::fixpoint_initial(
                             database_key_index,
-                            zalsa.current_revision(),
                         );
                         let initial_value = self.initial_value(db, id).expect(
-                            "`CycleRecoveryStrategy::Fixpoint` \
-                                should have initial_value",
+                            "`CycleRecoveryStrategy::Fixpoint` should have initial_value",
                         );
                         Some(self.insert_memo(
                             zalsa,
@@ -159,8 +157,7 @@ where
                         );
                         let active_query = db.zalsa_local().push_query(database_key_index, 0);
                         let fallback_value = self.initial_value(db, id).expect(
-                            "`CycleRecoveryStrategy::FallbackImmediate` \
-                                    should have initial_value",
+                            "`CycleRecoveryStrategy::FallbackImmediate` should have initial_value",
                         );
                         let mut revisions = active_query.pop();
                         revisions.cycle_heads = CycleHeads::initial(database_key_index);

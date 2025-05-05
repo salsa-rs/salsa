@@ -370,10 +370,9 @@ pub(crate) struct QueryRevisions {
 }
 
 impl QueryRevisions {
-    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex, revision: Revision) -> Self {
+    pub(crate) fn fixpoint_initial(query: DatabaseKeyIndex) -> Self {
         Self {
-            // TODO: I think it would be fine to use Revision::start here
-            changed_at: revision,
+            changed_at: Revision::start(),
             durability: Durability::MAX,
             origin: QueryOrigin::FixpointInitial,
             tracked_struct_ids: Default::default(),
