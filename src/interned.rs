@@ -10,12 +10,12 @@ use dashmap::SharedValue;
 
 use crate::durability::Durability;
 use crate::function::VerifyResult;
-use crate::hash::FxDashMap;
 use crate::id::{AsId, FromId};
 use crate::ingredient::Ingredient;
 use crate::loom::cell::Cell;
 use crate::loom::sync::atomic::{AtomicU8, Ordering};
 use crate::loom::sync::Arc;
+use crate::loom::sync::FxDashMap;
 use crate::plumbing::{IngredientIndices, Jar};
 use crate::revision::AtomicRevision;
 use crate::table::memo::{MemoTable, MemoTableTypes};

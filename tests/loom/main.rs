@@ -1,0 +1,3 @@
+#![cfg(loom)]
+
+mod interned;
